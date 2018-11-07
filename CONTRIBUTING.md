@@ -11,7 +11,9 @@ unless all tests are passing.
 
 A TODO comment should include the number of an issue that describes the outstanding work in greater detail.
 
-[All APIs should be documented in the code.](https://rust-lang-nursery.github.io/api-guidelines/documentation.html)
+All APIs should be [documented](https://rust-lang-nursery.github.io/api-guidelines/documentation.html) in the code and
+all public methods and functions should have explicit assertion statements to document and enforce any preconditions 
+that they depend on.
 
 A pull request that is a work in progress that has been published to get help and feedback from the community should
 be tagged with WIP.
