@@ -6,6 +6,8 @@
 * Implementing taint analysis and software fault isolation for Rust 
 using the [SMACK tool](https://www.ics.uci.edu/~aburtsev/doc/crust-hotos17.pdf).
 * Another paper about Rust verification with SMACK: http://soarlab.org/publications/atva2018-bhr.pdf
+* A tool for formally verifying Rust programs by transpiling them into definitions in the Lean theorem
+ prover: https://github.com/Kha/electrolysis
 * Documentation on MIR, the Rust intermediate representation where borrow checking and optimization passes 
 happen: https://rust-lang-nursery.github.io/rustc-guide/mir/index.html
 * A tool for visualizing MIRI, among other things: https://play.rust-lang.org/
