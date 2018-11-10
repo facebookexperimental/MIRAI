@@ -10,11 +10,13 @@ The initial focus will be on taint analyis.
 ## Requirements
 __________ requires or works with
 * Mac OS X or Linux
-* ...
+* ... -->
 
-## Building __________
-...
+## Building
+See the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation//DeveloperGuide.md)
+for instructions on how to build, run and debug MIRAI.
 
+<!--
 ## Installing __________
 ...
 
@@ -32,7 +34,7 @@ __________ requires or works with
 * Facebook page:
 * Mailing list
 * irc:  -->
-See the CONTRIBUTING file for how to help out.
+See the [CONTRIBUTING](https://github.com/facebookexperimental/MIRAI/blob/master/CONTRIBUTING.md) file for how to help out.
 
 ## License
-Mirai is MIT licensed, as found in the LICENSE file.
+Mirai is MIT licensed, as found in the [LICENSE](https://github.com/facebookexperimental/MIRAI/blob/master/LICENSE) file.
