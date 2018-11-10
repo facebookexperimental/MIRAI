@@ -58,7 +58,7 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
         descriptions: &::errors::registry::Registry,
         output: ::ErrorOutputType,
     ) -> Compilation {
-        // todo: #1 extract options that are relevant to Mirai and store them in self
+        // todo: #3 extract options that are relevant to Mirai and store them in self
         // also remove these arguments so that Rustc does not try to process them
         // and possibly also add arguments here to make the compilation process more
         // friendly to static analysis.
@@ -79,7 +79,7 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
         output_directory: &Option<PathBuf>,
         output_filename: &Option<PathBuf>,
     ) -> Compilation {
-        // todo: this is a place where some information about the analysis run can be logged
+        // todo: #4 this is a place where some information about the analysis run can be logged
         // for debugging purposes
         self.default_calls.late_callback(
             codegen_backend,
@@ -99,7 +99,7 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
         input: Input,
         input_path: Option<PathBuf>,
     ) -> (Input, Option<PathBuf>) {
-        // todo: this is an opportunity to look for and load or construct the summaries for each input
+        // todo: #5 this is an opportunity to look for and load or construct the summaries for each input
         self.default_calls.some_input(input, input_path)
     }
 
@@ -118,7 +118,6 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
         descriptions: &::errors::registry::Registry,
     ) -> Option<(Input, Option<PathBuf>)> {
         // The default behavior will do for now.
-        // todo: Does the default behavior actually result in a decent error message?
         self.default_calls.no_input(
             matches,
             options,
@@ -164,10 +163,9 @@ fn main() {
 
         // Setting RUSTC_WRAPPER causes Cargo to pass 'rustc' as the first argument.
         // We're invoking the compiler programmatically, so we ignore this.
-        if command_line_arguments.len() <= 1 {
-            std::process::exit(1);
-        }
-        if Path::new(&command_line_arguments[1]).file_stem() == Some("rustc".as_ref()) {
+        if command_line_arguments.len() > 1
+            && Path::new(&command_line_arguments[1]).file_stem() == Some("rustc".as_ref())
+        {
             // we still want to be able to invoke it normally though
             command_line_arguments.remove(1);
         }
