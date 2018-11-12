@@ -33,10 +33,7 @@ before_script:
 # install linter
 - rustup component add clippy-preview
 # install code coverage tool
-- |
-  if [[ "$TRAVIS_RUST_VERSION" == nightly ]]; then
-    RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-tarpaulin
-  fi
+- RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-tarpaulin
 
 script:
 # Exit immediately if a command exits with a non-zero status.
@@ -57,7 +54,5 @@ script:
 - cargo build
 
 after_success: |
-  if [[ "$TRAVIS_RUST_VERSION" == nightly ]]; then
-    cargo tarpaulin --out Xml
-    bash <(curl -s https://codecov.io/bash)
-  fi
+- cargo tarpaulin --out Xml
+- bash <(curl -s https://codecov.io/bash)
