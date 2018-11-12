@@ -1,13 +1,20 @@
+os:
+- linux
+sudo: required
+dist: trusty
+addons:
+  apt:
+    packages:
+    - libssl-dev
+
 language: generic
+
 cache:
   # Cache the global cargo directory, but NOT the local `target` directory which
   # we cannot reuse anyway when the nightly changes (and it grows quite large
   # over time).
   directories:
   - /home/travis/.cargo
-
-os:
-- linux
 
 before_script:
 # Compute the rust version we use. We do not use "language: rust" to have more control here.
@@ -25,6 +32,11 @@ before_script:
 - rustup component add rustfmt-preview
 # install linter
 - rustup component add clippy-preview
+# install code coverage tool
+- |
+  if [[ "$TRAVIS_RUST_VERSION" == nightly ]]; then
+    RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-tarpaulin
+  fi
 
 script:
 # Exit immediately if a command exits with a non-zero status.
@@ -34,6 +46,7 @@ script:
 # Run lint checks
 - cargo clippy -- -D warnings
 # Build
+- cargo clean
 - cargo build
 # Run unit and integration tests
 - cargo test
@@ -43,12 +56,8 @@ script:
 - export RUSTC_WRAPPER=mirai
 - cargo build
 
-notifications:
-  email:
-    on_success: never
-branches:
-  only:
-  - master
-env:
-  global:
-  - RUST_TEST_NOCAPTURE=1
+after_success: |
+  if [[ "$TRAVIS_RUST_VERSION" == nightly ]]; then
+    cargo tarpaulin --out Xml
+    bash <(curl -s https://codecov.io/bash)
+  fi

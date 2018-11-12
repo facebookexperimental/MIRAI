@@ -1,0 +1,19 @@
+[package]
+
+name = "Mirai"
+version = "0.0.1"
+authors = ["Herman Venter <hermanv@fb.com>"]
+description = "A static analysis tool for Rust, based on Abstract Interpretation of MIR"
+repository = "https://github.com/facebookexperimental/MIRAI"
+readme = "README.md"
+license = "MIT"
+
+[[bin]]
+name = "mirai"
+path = "src/main.rs"
+
+[profile.release]
+debug = true
+
+[profile.bench]
+debug = true
