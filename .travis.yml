@@ -53,6 +53,6 @@ script:
 - export RUSTC_WRAPPER=mirai
 - cargo build
 
-after_success: |
+after_success:
 - cargo tarpaulin --out Xml
 - bash <(curl -s https://codecov.io/bash)
