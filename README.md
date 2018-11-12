@@ -1,16 +1,8 @@
-# Mirai
+# Mirai  [![Build Status](https://travis-ci.org/facebookexperimental/mirai.svg?branch=master)](https://travis-ci.org/facebookexperimental/mirai)
 Mirai is an abstract interpreter for the [Rust](https://www.rust-lang.org/) compiler's [mid-level intermediate
 representation](https://github.com/rust-lang/rfcs/blob/master/text/1211-mir.md) (MIR).
 It is intended to become a widely used static analysis tool for Rust.
 The initial focus will be on taint analyis.
-
-<!-- ## Examples
-...
-
-## Requirements
-__________ requires or works with
-* Mac OS X or Linux
-* ... -->
 
 ## Building
 See the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation//DeveloperGuide.md)
