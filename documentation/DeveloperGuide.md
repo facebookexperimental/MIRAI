@@ -30,11 +30,11 @@ actually use Clion for editing, VSCode for debugging and Nuclide for doing sourc
 
 ## Running
 
-Run the mirai binary as if it were rustc. To do this via cargo, set the `RUSTC_WRAPPER` environment variable to `mirai`.
+Running `cargo build` will produce a binary at `target/debug/mirai`. Create a handy alias for the binary with
 
-At the moment you'll also need to set the `DYLD_LIBRARY_PATH` environment variable to
-`~/.rustup/toolchains/nightly-x86_64-apple-darwin/lib`. This is a bit strange and I'd love to find out how to avoid
-it.
+`alias mirai="DYLD_LIBRARY_PATH=~/.rustup/toolchains/nightly-x86_64-apple-darwin/lib ~/mirai/target/debug/mirai"`
+
+Afterward, you can run the mirai binary as if it were rustc. To do this via cargo, set the `RUSTC_WRAPPER` environment variable to `mirai`.
 
 ## Debugging
 
