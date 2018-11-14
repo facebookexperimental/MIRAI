@@ -1,5 +1,7 @@
 # Developer Guide
 
+The instructions assume that you've cloned the mirai repository into your home directory.
+
 ## Building
 
 You'll need to have Rust installed on your system. See 
@@ -34,7 +36,11 @@ Running `cargo build` will produce a binary at `target/debug/mirai`. Create a ha
 
 `alias mirai="DYLD_LIBRARY_PATH=~/.rustup/toolchains/nightly-x86_64-apple-darwin/lib ~/mirai/target/debug/mirai"`
 
-Afterward, you can run the mirai binary as if it were rustc. To do this via cargo, set the `RUSTC_WRAPPER` environment variable to `mirai`.
+Afterward, you can run the mirai binary as if it were rustc.
+ 
+To run mirai via cargo, first do `cargo install --force --path  ~/mirai` then set the `RUSTC_WRAPPER` environment
+variable to `mirai`. Note that Cargo takes care of the library path so the alias is not needed unless you want
+to run mirai directly. 
 
 ## Debugging
 
