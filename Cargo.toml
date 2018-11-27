@@ -1,12 +1,16 @@
 [package]
 
-name = "Mirai"
+name = "mirai"
 version = "0.0.1"
 authors = ["Herman Venter <hermanv@fb.com>"]
 description = "A static analysis tool for Rust, based on Abstract Interpretation of MIR"
 repository = "https://github.com/facebookexperimental/MIRAI"
 readme = "README.md"
 license = "MIT"
+
+[lib]
+test = false # we have no unit tests
+doctest = false # but no doc tests
 
 [[bin]]
 name = "mirai"
