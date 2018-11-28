@@ -9,11 +9,11 @@ using the [SMACK tool](https://www.ics.uci.edu/~aburtsev/doc/crust-hotos17.pdf).
 * A tool for formally verifying Rust programs by transpiling them into definitions in the Lean theorem
  prover: https://github.com/Kha/electrolysis
 * Documentation on MIR, the Rust intermediate representation where borrow checking and optimization passes 
-happen: https://rust-lang-nursery.github.io/rustc-guide/mir/index.html
+happen: https://rust-lang.github.io/rustc-guide/mir/index.html
 * A tool for visualizing MIRI, among other things: https://play.rust-lang.org/
 * MIRI: MIR interpreter: https://github.com/solson/miri.
 * A tutorial on creating a drop-in replacement for rustc: https://github.com/nrc/stupid-stats
-* HIR: An IR between the AST and MIR: https://rust-lang-nursery.github.io/rustc-guide/hir.html
+* HIR: An IR between the AST and MIR: https://rust-lang.github.io/rustc-guide/hir.html
 * Clippy, the AST-based Rust linter: https://github.com/rust-lang-nursery/rust-clippy
 * Plugins for fetching the source code for a Rust crate (important for building/analyzing third-party crates)
     * https://github.com/rust-lang/cargo/issues/1861
