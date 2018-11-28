@@ -32,7 +32,7 @@ fn invoke_driver() {
             String::from("-C"),
             String::from("debuginfo=2"),
             String::from("--out-dir"),
-            String::from("/tmp"),
+            String::from(std::env::temp_dir().to_str().unwrap()),
             String::from("--sysroot"),
             utils::find_sysroot(),
         ];
@@ -56,7 +56,7 @@ fn invoke_driver_with_no_input() {
             String::from("-C"),
             String::from("debuginfo=2"),
             String::from("--out-dir"),
-            String::from("/tmp"),
+            String::from(std::env::temp_dir().to_str().unwrap()),
             String::from("--sysroot"),
             utils::find_sysroot(),
         ];
