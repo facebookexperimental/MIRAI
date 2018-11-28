@@ -16,6 +16,10 @@ cache:
   directories:
   - /home/travis/.cargo
 
+before_cache:
+  # install code coverage tool
+  - RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install --force cargo-tarpaulin
+
 before_script:
 # Compute the rust version we use. We do not use "language: rust" to have more control here.
 - |
@@ -32,8 +36,6 @@ before_script:
 - rustup component add rustfmt-preview
 # install linter
 - rustup component add clippy-preview
-# install code coverage tool
-- RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install --force cargo-tarpaulin
 
 script:
 # Exit immediately if a command exits with a non-zero status.

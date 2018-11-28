@@ -20,28 +20,47 @@ extern crate rustc_driver;
 
 use mirai::callbacks;
 use mirai::utils;
-use std::path::Path;
 
-#[cfg_attr(tarpaulin, skip)]
-fn main() {
+#[test]
+fn invoke_driver() {
     rustc_driver::run(|| {
-        rustc_driver::init_rustc_env_logger();
-        let mut command_line_arguments: Vec<_> = std::env::args().collect();
+        let command_line_arguments: Vec<String> = vec![
+            String::from("--crate-name mirai"),
+            String::from("src/lib.rs"),
+            String::from("--crate-type"),
+            String::from("lib"),
+            String::from("-C"),
+            String::from("debuginfo=2"),
+            String::from("--out-dir"),
+            String::from(std::env::temp_dir().to_str().unwrap()),
+            String::from("--sysroot"),
+            utils::find_sysroot(),
+        ];
 
-        // Setting RUSTC_WRAPPER causes Cargo to pass 'rustc' as the first argument.
-        // We're invoking the compiler programmatically, so we ignore this.
-        if command_line_arguments.len() > 1
-            && Path::new(&command_line_arguments[1]).file_stem() == Some("rustc".as_ref())
-        {
-            // we still want to be able to invoke it normally though
-            command_line_arguments.remove(1);
-        }
+        rustc_driver::run_compiler(
+            &command_line_arguments,
+            box callbacks::MiraiCallbacks::default(),
+            None, // use default file loader
+            None, // emit output to default destination
+        )
+    });
+}
 
-        // Tell compiler where to find the std library and so on.
-        // Have to do this here because the standard rustc driver does it and we are replacing it.
-        command_line_arguments.push(String::from("--sysroot"));
-        command_line_arguments.push(utils::find_sysroot());
-        // todo figure out how and where summaries will be written to
+#[test]
+fn invoke_driver_with_no_input() {
+    rustc_driver::run(|| {
+        let command_line_arguments: Vec<String> = vec![
+            String::from("--crate-name mirai"),
+            String::from("--crate-type"),
+            String::from("lib"),
+            String::from("-C"),
+            String::from("debuginfo=2"),
+            String::from("--out-dir"),
+            String::from(std::env::temp_dir().to_str().unwrap()),
+            String::from("--sysroot"),
+            utils::find_sysroot(),
+        ];
+
         rustc_driver::run_compiler(
             &command_line_arguments,
             box callbacks::MiraiCallbacks::default(),
