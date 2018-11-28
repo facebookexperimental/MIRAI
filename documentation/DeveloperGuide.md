@@ -54,7 +54,7 @@ configurations property of the content of the launch.json file in the .vscode di
             "args": [
                 "build",
                 "--bin=mirai",
-                "--package=Mirai"
+                "--package=mirai"
             ],
             "filter": {
                 "kind": "bin"

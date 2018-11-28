@@ -8,18 +8,23 @@ The initial focus will be on taint analyis.
 See the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation//DeveloperGuide.md)
 for instructions on how to build, run and debug MIRAI.
 
-<!--
-## Installing __________
-...
-
-## How __________ works
-...  -->
-
 ## Full documentation
 * [Overview of project](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Overview.md).
-* Architecture.
-* Design discussions.
+* [Architecture](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Architecture.md).
+* [Design discussions](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/DesignDiscussions.md).
 * [Further reading](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/FurtherReading.md).
+
+## Road map
+* Set up visitor infrastructure for MIR (Early December)
+* Provide a way to store and retrieve function summaries (Late December)
+* State tracking and memory operations (January)
+* Design Abstract Domain abstraction and implement some domains (February)
+* Full scale Abstract Interpreter (March, April)
+* Expression simplifier (May)
+* Hook up SMT solver (June)
+* Work on scalability (July)
+* Deploy Mirai in the build system of a large project (August)
+* More domains and refined diagnostics (September)
 
 ## Join the Mirai community
 <!-- * Website:
