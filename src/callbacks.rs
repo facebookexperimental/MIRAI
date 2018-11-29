@@ -66,8 +66,10 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
         output_directory: &Option<PathBuf>,
         output_filename: &Option<PathBuf>,
     ) -> Compilation {
-        // todo: #4 this is a place where some information about the analysis run can be logged
-        // for debugging purposes
+        match input {
+            Input::File(path_buf) => info!("Processing input file: {}", path_buf.display()),
+            Input::Str { input, .. } => info!("Processing input string: {}", input),
+        }
         self.default_calls.late_callback(
             codegen_backend,
             matches,

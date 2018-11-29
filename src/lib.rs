@@ -2,8 +2,7 @@
 //
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
-
-#![feature(box_syntax)]
+//
 // In an ideal world there would be a stable well documented set of crates containing a specific
 // version of the Rust compiler along with its sources and debug information. We'd then just get
 // those from crate.io and merely go on our way as just another Rust application. Rust compiler
@@ -14,12 +13,17 @@
 // private and not very stable set of APIs from whatever compiler is in the path when we run Mirai.
 // While pretty bad, it is a lot less bad than having to write our own compiler, so here goes.
 #![feature(rustc_private)]
+#![feature(box_syntax)]
+
 extern crate getopts;
 extern crate rustc;
 extern crate rustc_codegen_utils;
 extern crate rustc_driver;
 extern crate rustc_metadata;
 extern crate syntax;
+
+#[macro_use]
+extern crate log;
 
 pub mod callbacks;
 pub mod utils;
