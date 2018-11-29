@@ -20,11 +20,11 @@ for instructions on how to build, run and debug MIRAI.
 * State tracking and memory operations (January)
 * Design Abstract Domain abstraction and implement some domains (February)
 * Full scale Abstract Interpreter (March, April)
-* Expression simplifier (May)
-* Hook up SMT solver (June)
-* Work on scalability (July)
-* Deploy Mirai in the build system of a large project (August)
-* More domains and refined diagnostics (September)
+* Expression simplifier
+* Hook up SMT solver
+* Work on scalability
+* Deploy Mirai in the build system of a large project
+* More domains and refined diagnostics
 
 ## Join the Mirai community
 <!-- * Website:
