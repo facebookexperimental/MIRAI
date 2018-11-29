@@ -48,7 +48,7 @@ script:
 - cargo clean
 - cargo build
 # Run unit and integration tests
-- cargo test
+- cargo test < /dev/null
 # Run mirai on itself
 - cargo install --force --path .
 - cargo clean
@@ -56,5 +56,5 @@ script:
 - cargo build
 
 after_success:
-- cargo tarpaulin --out Xml
+- cargo tarpaulin --out Xml < /dev/null
 - bash <(curl -s https://codecov.io/bash)
