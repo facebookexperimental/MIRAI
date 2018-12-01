@@ -10,6 +10,7 @@ use rustc_driver::{driver, Compilation, CompilerCalls, RustcDefaultCalls};
 use rustc_metadata::cstore::CStore;
 use std::path::PathBuf;
 use syntax::{ast, errors};
+use visitors;
 
 /// Private state used to implement the callbacks.
 pub struct MiraiCallbacks {
@@ -126,15 +127,20 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
         _session: &Session,
         _matches: &::getopts::Matches,
     ) -> driver::CompileController<'a> {
-        // For now we just do what rustc does, which is what basic() will return.
         let mut controller = driver::CompileController::basic();
         controller.after_analysis.callback = Box::new(move |state| after_analysis(state));
+        // Note: the callback is only invoked if the compiler discovers no errors beforehand.
         controller
     }
 }
 
+/// Called after the compiler has completed all analysis passes and before it lowers MIR to LLVM IR.
+/// At this point the compiler is ready to tell us all it knows and we can proceed to do abstract
+/// interpretation of all of the functions that will end up in the compiler output.
 fn after_analysis(state: &mut driver::CompileState) {
-    state.session.abort_if_errors();
-
-    let _type_context = state.tcx.unwrap();
+    let tcx = state.tcx.unwrap();
+    state
+        .hir_crate
+        .unwrap()
+        .visit_all_item_likes(&mut visitors::CrateVisitor { tcx, state });
 }
