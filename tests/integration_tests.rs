@@ -26,7 +26,7 @@ fn invoke_driver() {
     rustc_driver::run(|| {
         let command_line_arguments: Vec<String> = vec![
             String::from("--crate-name mirai"),
-            String::from("src/lib.rs"),
+            String::from("tests/run-pass/crate_traversal.rs"),
             String::from("--crate-type"),
             String::from("lib"),
             String::from("-C"),
