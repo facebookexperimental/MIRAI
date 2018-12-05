@@ -36,9 +36,3 @@ impl<'a, 'tcx: 'a, 'hir> itemlikevisit::ItemLikeVisitor<'hir> for CrateVisitor<'
         }
     }
 }
-
-// todo: remove this once issue #10 is resolved.
-trait TestTrait {
-    #[cfg_attr(tarpaulin, skip)]
-    fn test_method() {}
-}
