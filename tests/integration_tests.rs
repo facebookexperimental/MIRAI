@@ -35,6 +35,12 @@ fn invoke_driver() {
             String::from(std::env::temp_dir().to_str().unwrap()),
             String::from("--sysroot"),
             utils::find_sysroot(),
+            String::from("-Z"),
+            String::from("span_free_formats"),
+            String::from("-Z"),
+            String::from("mir-emit-retag"),
+            String::from("-Z"),
+            String::from("mir-opt-level=0"),
         ];
 
         rustc_driver::run_compiler(

@@ -14,6 +14,7 @@
 // While pretty bad, it is a lot less bad than having to write our own compiler, so here goes.
 #![feature(rustc_private)]
 #![feature(box_syntax)]
+#![feature(extern_crate_item_prelude)]
 
 extern crate getopts;
 extern crate rustc;
@@ -21,6 +22,7 @@ extern crate rustc_codegen_utils;
 extern crate rustc_driver;
 extern crate rustc_metadata;
 extern crate syntax;
+extern crate syntax_pos;
 
 #[macro_use]
 extern crate log;

@@ -11,6 +11,7 @@ use rustc_metadata::cstore::CStore;
 use std::path::PathBuf;
 use syntax::{ast, errors};
 use visitors;
+use visitors::MirVisitor;
 
 /// Private state used to implement the callbacks.
 pub struct MiraiCallbacks {
@@ -139,8 +140,10 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
 /// interpretation of all of the functions that will end up in the compiler output.
 fn after_analysis(state: &mut driver::CompileState) {
     let tcx = state.tcx.unwrap();
-    state
-        .hir_crate
-        .unwrap()
-        .visit_all_item_likes(&mut visitors::CrateVisitor { tcx, state });
+    for def_id in tcx.body_owners() {
+        // By this time all analyses have been carried out, so it should be safe to borrow this now.
+        let mir = tcx.optimized_mir(def_id);
+        let mir_visitor = visitors::MirTestVisitor { tcx, def_id, mir };
+        mir_visitor.visit_body();
+    }
 }
