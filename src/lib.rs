@@ -21,6 +21,7 @@ extern crate rustc_codegen_utils;
 extern crate rustc_driver;
 extern crate rustc_metadata;
 extern crate syntax;
+extern crate syntax_pos;
 
 #[macro_use]
 extern crate log;

@@ -76,5 +76,9 @@ sources.
 
 ## Testing
 
-For now we test mirai by running it on itself, by doing `cargo build` in the mirai directory while setting the 
-`RUSTC_WRAPPER` environment variable to `mirai`.
+Testing is done via `cargo test`. We favor integration tests over unit tests and require every pull request to have 100%
+test coverage. The code coverage tool (`cargo tarpaulin`) is still buggy, so this may not always be possible, but all
+exceptions should be called out and explained in the pull request test plan.
+
+For the time being (see issue #10), we provide a separate test method in integration_tests.rs for each test input in
+the [tests/run-pass](https://github.com/facebookexperimental/MIRAI/blob/master/tests/run-pass) directory.
