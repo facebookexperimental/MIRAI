@@ -23,9 +23,19 @@ extern crate rustc_metadata;
 extern crate syntax;
 extern crate syntax_pos;
 
+extern crate bincode;
 #[macro_use]
 extern crate log;
+extern crate rocksdb;
+//#[macro_use]
+extern crate rpds;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
 
+pub mod abstract_domains;
+pub mod abstract_value;
 pub mod callbacks;
+pub mod summaries;
 pub mod utils;
 pub mod visitors;

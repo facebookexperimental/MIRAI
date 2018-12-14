@@ -3,10 +3,12 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use rustc::hir;
-use rustc::mir;
+use abstract_value::{AbstractValue, Path};
+use rpds::{HashTrieMap, List};
 use rustc::ty::TyCtxt;
+use rustc::{hir, mir};
 use std::borrow::Borrow;
+use summaries::PersistentSummaryCache;
 use syntax_pos;
 
 /// Holds the state for the MIR test visitor.
@@ -14,6 +16,13 @@ pub struct MirTestVisitor<'a, 'tcx: 'a> {
     pub tcx: TyCtxt<'a, 'tcx, 'tcx>,
     pub def_id: hir::def_id::DefId,
     pub mir: &'a mir::Mir<'tcx>,
+    pub environment: &'a mut HashTrieMap<Path, AbstractValue>,
+    pub inferred_preconditions: &'a mut List<AbstractValue>,
+    pub path_conditions: &'a mut List<AbstractValue>,
+    pub preconditions: &'a mut List<AbstractValue>,
+    pub post_conditions: &'a mut List<AbstractValue>,
+    pub unwind_condition: &'a mut Option<AbstractValue>,
+    pub summary_cache: &'a PersistentSummaryCache<'a, 'tcx>,
 }
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
@@ -86,7 +95,11 @@ pub trait MirVisitor<'a, 'tcx> {
                 outputs,
                 inputs,
             } => self.visit_inline_asm(asm, outputs, inputs),
-            mir::StatementKind::Retag { fn_entry, place } => self.visit_retag(*fn_entry, place),
+            mir::StatementKind::Retag {
+                fn_entry,
+                two_phase,
+                place,
+            } => self.visit_retag(*fn_entry, *two_phase, place),
             mir::StatementKind::EscapeToRaw(ref operands) => self.visit_escape_to_raw(operands),
             mir::StatementKind::AscribeUserType(..) => unreachable!(),
             mir::StatementKind::Nop => return,
@@ -142,10 +155,10 @@ pub trait MirVisitor<'a, 'tcx> {
     /// by miri and only generated when "-Z mir-emit-retag" is passed.
     /// See <https://internals.rust-lang.org/t/stacked-borrows-an-aliasing-model-for-rust/8153/>
     /// for more details.
-    fn visit_retag(&self, fn_entry: bool, place: &mir::Place) {
+    fn visit_retag(&self, fn_entry: bool, two_phase: bool, place: &mir::Place) {
         debug!(
-            "default visit_set_discriminant(fn_entry: {:?}, place: {:?})",
-            fn_entry, place
+            "default visit_set_discriminant(fn_entry: {:?}, two_phase: {:?} place: {:?})",
+            fn_entry, two_phase, place
         );
     }
 
@@ -170,7 +183,7 @@ pub trait MirVisitor<'a, 'tcx> {
                 targets,
             } => self.visit_switch_int(discr, switch_ty, values, targets),
             mir::TerminatorKind::Resume => self.visit_resume(),
-            mir::TerminatorKind::Abort => unreachable!(),
+            mir::TerminatorKind::Abort => self.visit_abort(),
             mir::TerminatorKind::Return => self.visit_return(),
             mir::TerminatorKind::Unreachable => self.visit_unreachable(),
             mir::TerminatorKind::Drop {
@@ -232,6 +245,12 @@ pub trait MirVisitor<'a, 'tcx> {
     /// continue. Emitted by build::scope::diverge_cleanup.
     fn visit_resume(&self) {
         debug!("default visit_resume()");
+    }
+
+    /// Indicates that the landing pad is finished and that the process
+    /// should abort. Used to prevent unwinding for foreign items.
+    fn visit_abort(&self) {
+        debug!("default visit_abort()");
     }
 
     /// Indicates a normal return. The return place should have

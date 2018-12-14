@@ -40,10 +40,9 @@ script:
 # Run lint checks
 - cargo clippy -- -D warnings
 # Build
-- cargo clean
 - cargo build
 # Run unit and integration tests
-- cargo test < /dev/null
+- cargo test
 # Run mirai on itself
 - cargo install --force --path .
 - cargo clean
@@ -51,5 +50,5 @@ script:
 - cargo build
 
 after_success:
-- cargo tarpaulin --out Xml < /dev/null
+- cargo tarpaulin --out Xml
 - bash <(curl -s https://codecov.io/bash)

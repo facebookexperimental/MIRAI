@@ -3,12 +3,15 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use abstract_value::{AbstractValue, Path};
+use rpds::{HashTrieMap, List};
 use rustc::session::config::{self, ErrorOutputType, Input};
 use rustc::session::Session;
 use rustc_codegen_utils::codegen_backend::CodegenBackend;
 use rustc_driver::{driver, Compilation, CompilerCalls, RustcDefaultCalls};
 use rustc_metadata::cstore::CStore;
 use std::path::PathBuf;
+use summaries;
 use syntax::{ast, errors};
 use visitors;
 use visitors::MirVisitor;
@@ -83,42 +86,6 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
         )
     }
 
-    /// Called after the compiler has extracted the input from the arguments.
-    /// Gives Mirai an opportunity to change the inputs or to add some custom input handling.
-    fn some_input(
-        &mut self,
-        input: Input,
-        input_path: Option<PathBuf>,
-    ) -> (Input, Option<PathBuf>) {
-        // todo: #5 this is an opportunity to look for and load or construct the summaries for each input
-        self.default_calls.some_input(input, input_path)
-    }
-
-    /// Called after the compiler extracted the input from the arguments, if there were no valid
-    /// input. Gives Mirai an opportunity to supply alternate input (by
-    /// returning a Some value) or to add custom behaviour for this error such as
-    /// emitting error messages. Returning None will cause compilation to stop
-    /// at this point.
-    fn no_input(
-        &mut self,
-        matches: &::getopts::Matches,
-        options: &config::Options,
-        config: &ast::CrateConfig,
-        output_directory: &Option<PathBuf>,
-        output_filename: &Option<PathBuf>,
-        descriptions: &errors::registry::Registry,
-    ) -> Option<(Input, Option<PathBuf>)> {
-        // The default behavior will do for now.
-        self.default_calls.no_input(
-            matches,
-            options,
-            config,
-            output_directory,
-            output_filename,
-            descriptions,
-        )
-    }
-
     /// Called when compilation starts and allows Mirai to supply the Rust compiler with a
     /// customized controller for the phases of the compilation. The controller provides hooks
     /// for further callbacks that can be used to obtain information from the
@@ -140,10 +107,44 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
 /// interpretation of all of the functions that will end up in the compiler output.
 fn after_analysis(state: &mut driver::CompileState) {
     let tcx = state.tcx.unwrap();
+    let crate_name: &str = state.crate_name.unwrap();
+    let summary_store_path: String = String::from(".summary_store.rocksdb");
+    let mut persistent_summary_cache =
+        summaries::PersistentSummaryCache::new(&tcx, crate_name, summary_store_path);
     for def_id in tcx.body_owners() {
+        let name = summaries::summary_key_str(&tcx, crate_name, def_id);
+        debug!("analyzing({:?})", name);
         // By this time all analyses have been carried out, so it should be safe to borrow this now.
         let mir = tcx.optimized_mir(def_id);
-        let mir_visitor = visitors::MirTestVisitor { tcx, def_id, mir };
-        mir_visitor.visit_body();
+        let mut environment: HashTrieMap<Path, AbstractValue> = HashTrieMap::new();
+        let mut inferred_preconditions: List<AbstractValue> = List::new();
+        let mut path_conditions: List<AbstractValue> = List::new();
+        let mut preconditions: List<AbstractValue> = List::new();
+        let mut post_conditions: List<AbstractValue> = List::new();
+        let mut unwind_condition: Option<AbstractValue> = None;
+        {
+            let mir_visitor = visitors::MirTestVisitor {
+                tcx,
+                def_id,
+                mir,
+                environment: &mut environment,
+                inferred_preconditions: &mut inferred_preconditions,
+                path_conditions: &mut path_conditions,
+                preconditions: &mut preconditions,
+                post_conditions: &mut post_conditions,
+                unwind_condition: &mut unwind_condition,
+                summary_cache: &mut persistent_summary_cache,
+            };
+            mir_visitor.visit_body();
+        }
+        let summary = summaries::summarize(
+            environment,
+            inferred_preconditions,
+            path_conditions,
+            preconditions,
+            post_conditions,
+            unwind_condition,
+        );
+        persistent_summary_cache.set_summary_for(def_id, summary);
     }
 }

@@ -10,7 +10,7 @@ license = "MIT"
 
 [lib]
 test = false # we have no unit tests
-doctest = false # but no doc tests
+doctest = false # and no doc tests
 
 [[bin]]
 name = "mirai"
@@ -23,5 +23,10 @@ debug = true
 debug = true
 
 [dependencies]
+bincode = "1.0"
 env_logger = "0.5"
 log = "0.4"
+rocksdb = "0.10"
+rpds = { version = "0.5", features = ["serde"] }
+serde = "1.0"
+serde_derive = "1.0"
