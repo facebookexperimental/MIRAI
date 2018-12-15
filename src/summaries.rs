@@ -65,7 +65,7 @@ pub struct Summary {
     // value that is not the actual value true, should be added to the current path conditions.
     pub post_conditions: List<AbstractValue>,
 
-    // Condition that if true imply that the call to the function will not complete normally
+    // Condition that if true implies that the call to the function will not complete normally
     // and thus cause the cleanup block of the call to execute (unwinding).
     // Callers should substitute parameter values with argument values and simplify the result
     // under the current path condition. If the simplified value is statically known to be true
