@@ -113,7 +113,7 @@ fn after_analysis(state: &mut driver::CompileState) {
         summaries::PersistentSummaryCache::new(&tcx, crate_name, summary_store_path);
     for def_id in tcx.body_owners() {
         let name = summaries::summary_key_str(&tcx, crate_name, def_id);
-        debug!("analyzing({:?})", name);
+        info!("analyzing({:?})", name);
         // By this time all analyses have been carried out, so it should be safe to borrow this now.
         let mir = tcx.optimized_mir(def_id);
         let mut environment: HashTrieMap<Path, AbstractValue> = HashTrieMap::new();
@@ -147,4 +147,5 @@ fn after_analysis(state: &mut driver::CompileState) {
         );
         persistent_summary_cache.set_summary_for(def_id, summary);
     }
+    info!("done with analysis");
 }
