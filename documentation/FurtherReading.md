@@ -1,5 +1,9 @@
 # Rust static analysis/verification reading and resources
 
+## Abstract interpretation
+
+* [IKOS](https://github.com/NASA-SW-VnV/ikos) A recent open source framework for analyzing C/C++ via LLVM 
+    * Overview [here](http://ti.arc.nasa.gov/publications/16610/download)
 
 ## Rust analysis
 
