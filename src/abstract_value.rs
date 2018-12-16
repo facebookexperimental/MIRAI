@@ -17,10 +17,10 @@ use rpds::List;
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Hash)]
 pub struct AbstractValue {
     /// An abstract value is the result of some expression.
-    /// The source location of that expression is stored in provence.
+    /// The source location of that expression is stored in provenance.
     /// When an expression is stored somewhere and then retrieved via an accessor expression, a new
-    /// abstract value is created (via refinement using the current path condition) with a provence
-    /// that is the source location of accessor expression prepended to the provence of the
+    /// abstract value is created (via refinement using the current path condition) with a provenance
+    /// that is the source location of accessor expression prepended to the provenance of the
     /// refined expression.
     pub provenance: List<Span>,
     /// Various approximations of the actual value.

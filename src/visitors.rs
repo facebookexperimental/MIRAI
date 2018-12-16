@@ -157,7 +157,7 @@ pub trait MirVisitor<'a, 'tcx> {
     /// for more details.
     fn visit_retag(&self, fn_entry: bool, two_phase: bool, place: &mir::Place) {
         debug!(
-            "default visit_set_discriminant(fn_entry: {:?}, two_phase: {:?} place: {:?})",
+            "default visit_retag(fn_entry: {:?}, two_phase: {:?} place: {:?})",
             fn_entry, two_phase, place
         );
     }
@@ -272,7 +272,7 @@ pub trait MirVisitor<'a, 'tcx> {
         unwind: Option<mir::BasicBlock>,
     ) {
         debug!(
-            "default visit_drop(location: {:?}, outputs: {:?}, inputs: {:?})",
+            "default visit_drop(location: {:?}, target: {:?}, unwind: {:?})",
             location, target, unwind
         );
     }
