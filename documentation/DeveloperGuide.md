@@ -35,7 +35,7 @@ actually use Clion for editing, VSCode for debugging and Nuclide for doing sourc
 Running `cargo build` will produce a binary at `target/debug/mirai`.
  
 Unfortunately cargo build sets the dynamic library load path (rpath) that is linked into the binary to a path that is
-invalid a when the binary is run. If you run the binary via cargo `cargo run -- <args>` then cargo overrides the bad
+invalid when the binary is run. If you run the binary via cargo `cargo run -- <args>` then cargo overrides the bad
 rpath by providing the correct path in the environment variable `DYLD_LIBRARY_PATH`.
  
 If you run without using cargo, you'll need to set the variable yourself, or you can create a handy alias for the binary
@@ -75,7 +75,7 @@ configurations property of the content of the launch.json file in the .vscode di
     },
 ```
 
-Note that VSCode runs cargo to build mirai (if necessary) and get's the location of the binary from cargo. When
+Note that VSCode runs cargo to build mirai (if necessary) and gets the location of the binary from cargo. When
 actually debugging, however, it runs the binary directly, so it is necessary to set DYLD_LIBRARY_PATH. VSCode config
 files don't support things like `$(rustc --print sysroot)`, hence the more brittle expression above.
 
