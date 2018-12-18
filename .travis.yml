@@ -10,15 +10,10 @@ addons:
 language: generic
 
 cache:
-  # Cache the global cargo directory, but NOT the local `target` directory which
-  # we cannot reuse anyway when the nightly changes (and it grows quite large
-  # over time).
+  # Cache the global cargo directory and the local binary dependencies
   directories:
   - /home/travis/.cargo
-
-before_cache:
-  # install code coverage tool
-  - RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install --force cargo-tarpaulin
+  - target/debug/deps
 
 before_script:
 # Compute the rust version we use. We do not use "language: rust" to have more control here.
@@ -31,6 +26,8 @@ before_script:
 - rustup component add rustfmt-preview
 # install linter
 - rustup component add clippy-preview
+# install code coverage tool
+- RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-tarpaulin || true
 
 script:
 # Exit immediately if a command exits with a non-zero status.
@@ -44,11 +41,12 @@ script:
 # Run unit and integration tests
 - cargo test
 # Run mirai on itself
-- cargo install --force --path .
-- cargo clean
-- export RUSTC_WRAPPER=mirai
-- cargo build
+- cargo uninstall mirai || true
+- cargo install --debug --path .
+- cargo clean -p mirai
+- RUSTC_WRAPPER=mirai cargo build
+- cargo uninstall mirai
 
 after_success:
-- cargo tarpaulin --out Xml
+- MIRAI_LOG=info cargo tarpaulin --out Xml
 - bash <(curl -s https://codecov.io/bash)
