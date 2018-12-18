@@ -17,13 +17,16 @@
 
 extern crate mirai;
 extern crate rustc_driver;
+extern crate tempdir;
 
 use mirai::callbacks;
 use mirai::utils;
+use tempdir::TempDir;
 
 #[test]
 fn invoke_driver() {
     rustc_driver::run(|| {
+        let temp_dir = TempDir::new("miraiTest").expect("failed to create a temp dir");
         let command_line_arguments: Vec<String> = vec![
             String::from("--crate-name mirai"),
             String::from("tests/run-pass/crate_traversal.rs"),
@@ -32,7 +35,7 @@ fn invoke_driver() {
             String::from("-C"),
             String::from("debuginfo=2"),
             String::from("--out-dir"),
-            String::from(std::env::temp_dir().to_str().unwrap()),
+            String::from(temp_dir.path().to_str().unwrap()),
             String::from("--sysroot"),
             utils::find_sysroot(),
             String::from("-Z"),

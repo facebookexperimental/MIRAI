@@ -32,15 +32,21 @@ actually use Clion for editing, VSCode for debugging and Nuclide for doing sourc
 
 ## Running
 
-Running `cargo build` will produce a binary at `target/debug/mirai`. Create a handy alias for the binary with
-
-`alias mirai="DYLD_LIBRARY_PATH=~/.rustup/toolchains/nightly-x86_64-apple-darwin/lib ~/mirai/target/debug/mirai"`
-
-Afterward, you can run the mirai binary as if it were rustc.
+Running `cargo build` will produce a binary at `target/debug/mirai`.
  
-To run mirai via cargo, first do `cargo install --force --path  ~/mirai` then set the `RUSTC_WRAPPER` environment
-variable to `mirai`. Note that Cargo takes care of the library path so the alias is not needed unless you want
-to run mirai directly. 
+Unfortunately cargo build sets the dynamic library load path (rpath) that is linked into the binary to a path that is
+invalid when the binary is run. If you run the binary via cargo `cargo run -- <args>` then cargo overrides the bad
+rpath by providing the correct path in the environment variable `DYLD_LIBRARY_PATH`.
+ 
+If you run without using cargo, you'll need to set the variable yourself, or you can create a handy alias for the binary
+with
+
+`alias mirai="DYLD_LIBRARY_PATH=$(rustc --print sysroot)/lib ~/mirai/target/debug/mirai"`
+
+You can then run mirai as if it were rustc, because it is in fact rustc, just with an added plug in.
+ 
+To run mirai via cargo, as if it were rustc, first do `cargo install --force --path  ~/mirai` then set the
+`RUSTC_WRAPPER` environment variable to `mirai`.
 
 ## Debugging
 
@@ -68,6 +74,12 @@ configurations property of the content of the launch.json file in the .vscode di
         "cwd": "${workspaceFolder}",
     },
 ```
+
+Note that VSCode runs cargo to build mirai (if necessary) and gets the location of the binary from cargo. When
+actually debugging, however, it runs the binary directly, so it is necessary to set DYLD_LIBRARY_PATH. VSCode config
+files don't support things like `$(rustc --print sysroot)`, hence the more brittle expression above.
+
+## Debugging rustc
 
 Since Mirai makes use of a private and unstable API with sparse documentation, it can be very helpful to debug
 Mirai while seeing the actual rustc sources in the debugger. By default, this does not happen. To make it happen, see 

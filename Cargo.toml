@@ -30,3 +30,4 @@ rocksdb = "0.10"
 rpds = { version = "0.5", features = ["serde"] }
 serde = "1.0"
 serde_derive = "1.0"
+tempdir = "0.3"

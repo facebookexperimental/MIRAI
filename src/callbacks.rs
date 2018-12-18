@@ -20,6 +20,7 @@ use visitors::MirVisitor;
 pub struct MiraiCallbacks {
     /// Use these to just defer to the Rust compiler's implementations.
     default_calls: RustcDefaultCalls,
+    output_directory: PathBuf,
 }
 
 /// Provides a default constructor
@@ -27,6 +28,7 @@ impl MiraiCallbacks {
     pub fn new() -> MiraiCallbacks {
         MiraiCallbacks {
             default_calls: RustcDefaultCalls,
+            output_directory: PathBuf::default(),
         }
     }
 }
@@ -75,6 +77,12 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
             Input::File(path_buf) => info!("Processing input file: {}", path_buf.display()),
             Input::Str { input, .. } => info!("Processing input string: {}", input),
         }
+        match output_directory {
+            None => self
+                .output_directory
+                .push(std::env::temp_dir().to_str().unwrap()),
+            Some(path_buf) => self.output_directory.push(path_buf.as_path()),
+        }
         self.default_calls.late_callback(
             codegen_backend,
             matches,
@@ -96,7 +104,8 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
         _matches: &::getopts::Matches,
     ) -> driver::CompileController<'a> {
         let mut controller = driver::CompileController::basic();
-        controller.after_analysis.callback = Box::new(move |state| after_analysis(state));
+        controller.after_analysis.callback =
+            Box::new(move |state| after_analysis(state, &mut self.output_directory.clone()));
         // Note: the callback is only invoked if the compiler discovers no errors beforehand.
         controller
     }
@@ -105,15 +114,18 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
 /// Called after the compiler has completed all analysis passes and before it lowers MIR to LLVM IR.
 /// At this point the compiler is ready to tell us all it knows and we can proceed to do abstract
 /// interpretation of all of the functions that will end up in the compiler output.
-fn after_analysis(state: &mut driver::CompileState) {
+fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathBuf) {
     let tcx = state.tcx.unwrap();
     let crate_name: &str = state.crate_name.unwrap();
-    let summary_store_path: String = String::from(".summary_store.rocksdb");
+    output_directory.set_file_name(".summary_store");
+    output_directory.set_extension("rocksdb");
+    let summary_store_path = String::from(output_directory.to_str().unwrap());
+    info!("storing summaries at {}", summary_store_path);
     let mut persistent_summary_cache =
         summaries::PersistentSummaryCache::new(&tcx, crate_name, summary_store_path);
     for def_id in tcx.body_owners() {
         let name = summaries::summary_key_str(&tcx, crate_name, def_id);
-        debug!("analyzing({:?})", name);
+        info!("analyzing({:?})", name);
         // By this time all analyses have been carried out, so it should be safe to borrow this now.
         let mir = tcx.optimized_mir(def_id);
         let mut environment: HashTrieMap<Path, AbstractValue> = HashTrieMap::new();
@@ -147,4 +159,5 @@ fn after_analysis(state: &mut driver::CompileState) {
         );
         persistent_summary_cache.set_summary_for(def_id, summary);
     }
+    info!("done with analysis");
 }
