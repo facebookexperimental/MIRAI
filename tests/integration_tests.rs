@@ -17,27 +17,71 @@
 
 extern crate mirai;
 extern crate rustc_driver;
+extern crate rustc_rayon;
 extern crate tempdir;
 
 use mirai::callbacks;
 use mirai::utils;
+use rustc_rayon::iter::IntoParallelRefIterator;
+use rustc_rayon::iter::ParallelIterator;
+use std::fs;
+use std::path::PathBuf;
+use std::str::FromStr;
+
 use tempdir::TempDir;
 
+// Run the tests in the tests/run-pass directory.
+// Eventually, there will be separate test cases for other directories such as compile-fail.
 #[test]
-fn invoke_driver() {
-    rustc_driver::run(|| {
+fn run_pass() {
+    let run_pass_path = PathBuf::from_str("tests/run-pass").unwrap();
+    run_directory(run_pass_path);
+}
+
+// Iterates through the files in the directory at the given path and runs each as a separate test
+// case. For each case, a temporary output directory is created. The cases are then iterated in
+// parallel and run via invoke_driver.
+fn run_directory(directory_path: PathBuf) {
+    let sys_root = utils::find_sysroot();
+    let mut files_and_temp_dirs = Vec::new();
+    for entry in fs::read_dir(directory_path).expect("failed to read run-pass dir") {
+        let entry = entry.unwrap();
+        if !entry.file_type().unwrap().is_file() {
+            continue;
+        };
+        let file_path = entry.path();
+        let file_name = entry.file_name();
         let temp_dir = TempDir::new("miraiTest").expect("failed to create a temp dir");
+        let temp_dir_path_buf = temp_dir.into_path();
+        let output_dir_path_buf = temp_dir_path_buf.join(file_name.into_string().unwrap());
+        fs::create_dir(output_dir_path_buf.as_path()).expect("failed to create test output dir");
+        files_and_temp_dirs.push((
+            file_path.into_os_string().into_string().unwrap(),
+            output_dir_path_buf.into_os_string().into_string().unwrap(),
+        ));
+    }
+    files_and_temp_dirs
+        .par_iter()
+        .for_each(|(file_name, temp_dir_path)| {
+            self::invoke_driver(file_name.clone(), temp_dir_path.clone(), sys_root.clone());
+        });
+}
+
+// Runs the single test case found in file_name, using temp_dir_path as the place
+// to put compiler output, which for Mirai includes the persistent summary store.
+fn invoke_driver(file_name: String, temp_dir_path: String, sys_root: String) {
+    rustc_driver::run(|| {
         let command_line_arguments: Vec<String> = vec![
             String::from("--crate-name mirai"),
-            String::from("tests/run-pass/crate_traversal.rs"),
+            file_name,
             String::from("--crate-type"),
             String::from("lib"),
             String::from("-C"),
             String::from("debuginfo=2"),
             String::from("--out-dir"),
-            String::from(temp_dir.path().to_str().unwrap()),
+            temp_dir_path,
             String::from("--sysroot"),
-            utils::find_sysroot(),
+            sys_root,
             String::from("-Z"),
             String::from("span_free_formats"),
             String::from("-Z"),
