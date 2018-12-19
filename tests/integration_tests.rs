@@ -22,7 +22,7 @@ extern crate tempdir;
 
 use mirai::callbacks;
 use mirai::utils;
-use rustc_rayon::iter::IntoParallelRefIterator;
+use rustc_rayon::iter::IntoParallelIterator;
 use rustc_rayon::iter::ParallelIterator;
 use std::fs;
 use std::path::PathBuf;
@@ -61,9 +61,9 @@ fn run_directory(directory_path: PathBuf) {
         ));
     }
     files_and_temp_dirs
-        .par_iter()
+        .into_par_iter()
         .for_each(|(file_name, temp_dir_path)| {
-            self::invoke_driver(file_name.clone(), temp_dir_path.clone(), sys_root.clone());
+            self::invoke_driver(file_name, temp_dir_path, sys_root.clone());
         });
 }
 
