@@ -98,8 +98,26 @@ pub fn summarize(
 /// the summary cache, which is a key value store. The string will always be the same as
 /// long as the definition does not change its name or location, so it can be used to
 /// transfer information from one compilation to the next, making incremental analysis possible.
-pub fn summary_key_str(tcx: &TyCtxt, crate_name: &str, def_id: DefId) -> String {
-    let mut name: String = String::from(crate_name);
+pub fn summary_key_str(tcx: &TyCtxt, def_id: DefId) -> String {
+    let crate_name = if def_id.is_local() {
+        tcx.crate_name.as_interned_str().as_str().get()
+    } else {
+        // This is both ugly and probably brittle, but I can't find any other
+        // way to retrieve the crate name from a def_id that is not local.
+        // tcx.crate_data_as_rc_any returns an untracked value, which is potentially problematic
+        // as per the comments on the function:
+        // "Note that this is *untracked* and should only be used within the query
+        // system if the result is otherwise tracked through queries"
+        // For now, this seems OK since we are only using the crate name.
+        // Of course, should a crate name change in an incremental scenario this
+        // is going to be the least of our worries.
+        let cdata = tcx.crate_data_as_rc_any(def_id.krate);
+        let cdata = cdata
+            .downcast_ref::<rustc_metadata::cstore::CrateMetadata>()
+            .unwrap();
+        cdata.name.as_str().get()
+    };
+    let mut name = String::from(crate_name);
     for component in &tcx.def_path(def_id).data {
         name.push('.');
         let cn = component.data.as_interned_str().as_str().get();
@@ -120,7 +138,6 @@ pub struct PersistentSummaryCache<'a, 'tcx: 'a> {
     cache: HashTrieMap<DefId, Summary>,
     dependencies: HashMap<DefId, Vec<DefId>>,
     type_context: &'a TyCtxt<'a, 'tcx, 'tcx>,
-    crate_name: &'a str,
 }
 
 impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
@@ -128,7 +145,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// file path.
     pub fn new(
         type_context: &'a TyCtxt<'a, 'tcx, 'tcx>,
-        crate_name: &'a str,
         summary_store_path: String,
     ) -> PersistentSummaryCache<'a, 'tcx> {
         PersistentSummaryCache {
@@ -137,7 +153,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             cache: HashTrieMap::new(),
             dependencies: HashMap::new(),
             type_context,
-            crate_name,
         }
     }
 
@@ -147,7 +162,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// if the cache is updated with a new summary for def_id.
     pub fn get_summary_for(&mut self, def_id: DefId, dependent_def_id: Option<DefId>) -> &Summary {
         if !self.cache.contains_key(&def_id) {
-            let persistent_key = summary_key_str(self.type_context, self.crate_name, def_id);
+            let persistent_key = summary_key_str(self.type_context, def_id);
             let summary = match self.db.get(persistent_key.as_bytes()) {
                 Ok(Some(serialized_summary)) => {
                     bincode::deserialize(serialized_summary.deref()).unwrap()
@@ -174,7 +189,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// This operation amounts to an expensive no-op if the summary is identical to the
     /// one that is already in the cache. Avoiding this is the caller's responsibility.
     pub fn set_summary_for(&mut self, def_id: DefId, summary: Summary) -> &Vec<DefId> {
-        let persistent_key = summary_key_str(self.type_context, self.crate_name, def_id);
+        let persistent_key = summary_key_str(self.type_context, def_id);
         let serialized_summary = bincode::serialize(&summary).unwrap();
         self.db
             .put(persistent_key.as_bytes(), &serialized_summary)

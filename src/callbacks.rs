@@ -116,15 +116,14 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
 /// interpretation of all of the functions that will end up in the compiler output.
 fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathBuf) {
     let tcx = state.tcx.unwrap();
-    let crate_name: &str = state.crate_name.unwrap();
     output_directory.set_file_name(".summary_store");
     output_directory.set_extension("rocksdb");
     let summary_store_path = String::from(output_directory.to_str().unwrap());
     info!("storing summaries at {}", summary_store_path);
     let mut persistent_summary_cache =
-        summaries::PersistentSummaryCache::new(&tcx, crate_name, summary_store_path);
+        summaries::PersistentSummaryCache::new(&tcx, summary_store_path);
     for def_id in tcx.body_owners() {
-        let name = summaries::summary_key_str(&tcx, crate_name, def_id);
+        let name = summaries::summary_key_str(&tcx, def_id);
         info!("analyzing({:?})", name);
         // By this time all analyses have been carried out, so it should be safe to borrow this now.
         let mir = tcx.optimized_mir(def_id);
