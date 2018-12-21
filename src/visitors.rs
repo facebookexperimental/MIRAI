@@ -95,12 +95,7 @@ pub trait MirVisitor<'a, 'tcx> {
                 outputs,
                 inputs,
             } => self.visit_inline_asm(asm, outputs, inputs),
-            mir::StatementKind::Retag {
-                fn_entry,
-                two_phase,
-                place,
-            } => self.visit_retag(*fn_entry, *two_phase, place),
-            mir::StatementKind::EscapeToRaw(ref operands) => self.visit_escape_to_raw(operands),
+            mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
             mir::StatementKind::AscribeUserType(..) => unreachable!(),
             mir::StatementKind::Nop => return,
         }
@@ -155,20 +150,11 @@ pub trait MirVisitor<'a, 'tcx> {
     /// by miri and only generated when "-Z mir-emit-retag" is passed.
     /// See <https://internals.rust-lang.org/t/stacked-borrows-an-aliasing-model-for-rust/8153/>
     /// for more details.
-    fn visit_retag(&self, fn_entry: bool, two_phase: bool, place: &mir::Place) {
+    fn visit_retag(&self, retag_kind: mir::RetagKind, place: &mir::Place) {
         debug!(
-            "default visit_retag(fn_entry: {:?}, two_phase: {:?} place: {:?})",
-            fn_entry, two_phase, place
+            "default visit_retag(retag_kind: {:?}, place: {:?})",
+            retag_kind, place
         );
-    }
-
-    /// Escape the given reference to a raw pointer, so that it can be accessed
-    /// without precise provenance tracking. These statements are currently only interpreted
-    /// by miri and only generated when "-Z mir-emit-retag" is passed.
-    /// See <https://internals.rust-lang.org/t/stacked-borrows-an-aliasing-model-for-rust/8153/>
-    /// for more details.
-    fn visit_escape_to_raw(&self, operand: &mir::Operand) {
-        debug!("default visit_escape_to_raw(operand: {:?})", operand);
     }
 
     /// Calls a specialized visitor for each kind of terminator.
