@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 use abstract_domains::AbstractDomains;
-use rpds::List;
+use syntax_pos::Span;
 
 /// Mirai is an abstract interpreter and thus produces abstract values.
 /// In general, an abstract value is a value that is not fully known.
@@ -20,28 +20,14 @@ pub struct AbstractValue {
     /// The source location of that expression is stored in provenance.
     /// When an expression is stored somewhere and then retrieved via an accessor expression, a new
     /// abstract value is created (via refinement using the current path condition) with a provenance
-    /// that is the source location of accessor expression prepended to the provenance of the
-    /// refined expression.
-    pub provenance: List<Span>,
+    /// that is the source location of accessor expression. If refinement results in an existing
+    /// expression (i.e. one with a provenance of its own) then a copy expression is created with
+    /// the existing expression as argument, so that both locations are tracked.
+    #[serde(skip)]
+    pub provenance: Span,
     /// Various approximations of the actual value.
     /// See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
     pub value: AbstractDomains,
-}
-
-/// Identifies a region of source code that corresponds to a source construct that the
-/// analyzer tracks and about which it can generate diagnostic messages.
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Hash)]
-pub struct Span {
-    /// The absolute name of the file containing this source span.
-    pub filename: Name,
-    /// The number (starting at 1) of the line where this span starts.
-    pub start_line: u32,
-    /// The number (starting at 1) of the column where this span starts.
-    pub start_column: u32,
-    /// The number (starting at 1) of the line where this span ends.
-    pub end_line: u32,
-    /// The number (starting at 1) of the column where this span ends.
-    pub end_column: u32,
 }
 
 /// The name of a function or method, sufficiently qualified so that it uniquely identifies it

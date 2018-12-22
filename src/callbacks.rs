@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use abstract_value::{AbstractValue, Path};
+use constant_value::ConstantValueCache;
 use rpds::{HashTrieMap, List};
 use rustc::session::config::{self, ErrorOutputType, Input};
 use rustc::session::Session;
@@ -13,7 +14,7 @@ use rustc_metadata::cstore::CStore;
 use std::path::PathBuf;
 use summaries;
 use syntax::{ast, errors};
-use visitors;
+use syntax_pos;
 use visitors::MirVisitor;
 
 /// Private state used to implement the callbacks.
@@ -122,9 +123,12 @@ fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathB
     info!("storing summaries at {}", summary_store_path);
     let mut persistent_summary_cache =
         summaries::PersistentSummaryCache::new(&tcx, summary_store_path);
+    let mut constant_value_cache = ConstantValueCache::new();
     for def_id in tcx.body_owners() {
-        let name = summaries::summary_key_str(&tcx, def_id);
-        info!("analyzing({:?})", name);
+        {
+            let name = persistent_summary_cache.get_summary_key_for(def_id);
+            info!("analyzing({:?})", name);
+        }
         // By this time all analyses have been carried out, so it should be safe to borrow this now.
         let mir = tcx.optimized_mir(def_id);
         let mut environment: HashTrieMap<Path, AbstractValue> = HashTrieMap::new();
@@ -134,7 +138,7 @@ fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathB
         let mut post_conditions: List<AbstractValue> = List::new();
         let mut unwind_condition: Option<AbstractValue> = None;
         {
-            let mir_visitor = visitors::MirTestVisitor {
+            let mut mir_visitor = MirVisitor {
                 tcx,
                 def_id,
                 mir,
@@ -145,6 +149,8 @@ fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathB
                 post_conditions: &mut post_conditions,
                 unwind_condition: &mut unwind_condition,
                 summary_cache: &mut persistent_summary_cache,
+                constant_value_cache: &mut constant_value_cache,
+                current_span: syntax_pos::DUMMY_SP,
             };
             mir_visitor.visit_body();
         }

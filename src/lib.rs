@@ -20,6 +20,7 @@ extern crate rustc;
 extern crate rustc_codegen_utils;
 extern crate rustc_driver;
 extern crate rustc_metadata;
+extern crate rustc_target;
 extern crate syntax;
 extern crate syntax_pos;
 
@@ -36,6 +37,7 @@ extern crate serde;
 pub mod abstract_domains;
 pub mod abstract_value;
 pub mod callbacks;
+pub mod constant_value;
 pub mod summaries;
 pub mod utils;
 pub mod visitors;

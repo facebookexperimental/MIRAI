@@ -37,7 +37,7 @@ use std::ops::Deref;
 ///    desirable to havoc all static variables every time such a function is called. Consequently
 ///    sound analysis is only possible one can assume that all such functions have been provided
 ///    with explicit contract functions.
-#[derive(Serialize, Deserialize, Debug, Default, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Eq, PartialEq, Hash)]
 pub struct Summary {
     // Conditions that should hold prior to the call.
     // Callers should substitute parameter values with argument values and simplify the results
@@ -135,8 +135,9 @@ pub fn summary_key_str(tcx: &TyCtxt, def_id: DefId) -> String {
 /// Also tracks which definitions depend on (use) any particular Summary.
 pub struct PersistentSummaryCache<'a, 'tcx: 'a> {
     db: rocksdb::DB,
-    cache: HashTrieMap<DefId, Summary>,
+    cache: HashMap<DefId, Summary>,
     dependencies: HashMap<DefId, Vec<DefId>>,
+    key_cache: HashMap<DefId, String>,
     type_context: &'a TyCtxt<'a, 'tcx, 'tcx>,
 }
 
@@ -150,10 +151,18 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         PersistentSummaryCache {
             db: rocksdb::DB::open_default(summary_store_path)
                 .expect(".summary_store.rocksdb should be a database file"),
-            cache: HashTrieMap::new(),
+            cache: HashMap::new(),
+            key_cache: HashMap::new(),
             dependencies: HashMap::new(),
             type_context,
         }
+    }
+
+    pub fn get_summary_key_for(&mut self, def_id: DefId) -> &String {
+        let tcx = self.type_context;
+        self.key_cache
+            .entry(def_id)
+            .or_insert_with(|| summary_key_str(tcx, def_id))
     }
 
     /// Returns the cached summary corresponding to def_id, or creates a default for it.
@@ -161,16 +170,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// The cache tracks all such dependents so that they can be retrieved and re-analyzed
     /// if the cache is updated with a new summary for def_id.
     pub fn get_summary_for(&mut self, def_id: DefId, dependent_def_id: Option<DefId>) -> &Summary {
-        if !self.cache.contains_key(&def_id) {
-            let persistent_key = summary_key_str(self.type_context, def_id);
-            let summary = match self.db.get(persistent_key.as_bytes()) {
-                Ok(Some(serialized_summary)) => {
-                    bincode::deserialize(serialized_summary.deref()).unwrap()
-                }
-                _ => Summary::default(), // todo: look for a contract summary or construct from type
-            };
-            self.cache = self.cache.insert(def_id, summary);
-        };
         match dependent_def_id {
             None => {}
             Some(id) => {
@@ -179,8 +178,18 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
                     dependents.push(id);
                 }
             }
-        }
-        self.cache.get(&def_id).unwrap()
+        };
+        let tcx = self.type_context;
+        let db = &self.db;
+        self.cache.entry(def_id).or_insert_with(|| {
+            let persistent_key = summary_key_str(tcx, def_id);
+            match db.get(persistent_key.as_bytes()) {
+                Ok(Some(serialized_summary)) => {
+                    bincode::deserialize(serialized_summary.deref()).unwrap()
+                }
+                _ => Summary::default(), // todo: look for a contract summary or construct from type
+            }
+        })
     }
 
     /// Sets or updates the cache so that from now on def_id maps to summary.
@@ -194,7 +203,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         self.db
             .put(persistent_key.as_bytes(), &serialized_summary)
             .unwrap();
-        self.cache = self.cache.insert(def_id, summary);
+        self.cache.insert(def_id, summary);
         self.dependencies.entry(def_id).or_insert_with(Vec::new)
     }
 }
