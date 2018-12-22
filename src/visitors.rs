@@ -3,17 +3,19 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use abstract_domains::{AbstractDomains, ExpressionDomain};
 use abstract_value::{AbstractValue, Path};
+use constant_value::{ConstantValue, ConstantValueCache};
 use rpds::{HashTrieMap, List};
-use rustc::ty::TyCtxt;
+use rustc::ty::{Const, Ty, TyCtxt, TyKind};
 use rustc::{hir, mir};
 use std::borrow::Borrow;
 use summaries::PersistentSummaryCache;
 use syntax_pos;
 
 /// Holds the state for the MIR test visitor.
-pub struct MirTestVisitor<'a, 'tcx: 'a> {
-    pub tcx: TyCtxt<'a, 'tcx, 'tcx>,
+pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
+    pub tcx: TyCtxt<'b, 'tcx, 'tcx>,
     pub def_id: hir::def_id::DefId,
     pub mir: &'a mir::Mir<'tcx>,
     pub environment: &'a mut HashTrieMap<Path, AbstractValue>,
@@ -22,14 +24,16 @@ pub struct MirTestVisitor<'a, 'tcx: 'a> {
     pub preconditions: &'a mut List<AbstractValue>,
     pub post_conditions: &'a mut List<AbstractValue>,
     pub unwind_condition: &'a mut Option<AbstractValue>,
-    pub summary_cache: &'a PersistentSummaryCache<'a, 'tcx>,
+    pub summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
+    pub constant_value_cache: &'a mut ConstantValueCache,
+    pub current_span: syntax_pos::Span,
 }
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
 /// so that we can test a call to every default implementation of the MirVisitor trait.
-impl<'a, 'tcx: 'a> MirVisitor<'a, 'tcx> for MirTestVisitor<'a, 'tcx> {
+impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// Visits each basic block in order of occurrence.
-    fn visit_body(&self) {
+    pub fn visit_body(&mut self) {
         debug!("visit_body({:?})", self.def_id);
 
         for bb in self.mir.basic_blocks().indices() {
@@ -37,29 +41,15 @@ impl<'a, 'tcx: 'a> MirVisitor<'a, 'tcx> for MirTestVisitor<'a, 'tcx> {
         }
     }
 
-    /// Returns the collection of statements and the terminator corresponding to the given basic block.
-    fn basic_block_data(&self, bb: mir::BasicBlock) -> &mir::BasicBlockData {
-        &self.mir[bb]
-    }
-}
-
-/// Defines visitor methods for all of the things that constitute a MIR representation of a code body.
-pub trait MirVisitor<'a, 'tcx> {
-    /// Visits the basic blocks in the body in an order determined by the implementor of this trait.
-    fn visit_body(&self);
-
-    /// Returns the collection of statements and the terminator corresponding to the given basic block.
-    fn basic_block_data(&self, bb: mir::BasicBlock) -> &mir::BasicBlockData;
-
     /// Visit each statement in order and then visits the terminator.
-    fn visit_basic_block(&self, bb: mir::BasicBlock) {
+    fn visit_basic_block(&mut self, bb: mir::BasicBlock) {
         debug!("visit_basic_block({:?})", bb);
 
         let mir::BasicBlockData {
             ref statements,
             ref terminator,
             ..
-        } = self.basic_block_data(bb);
+        } = &self.mir[bb];
         let mut location = bb.start_location();
         let terminator_index = statements.len();
 
@@ -78,9 +68,10 @@ pub trait MirVisitor<'a, 'tcx> {
     }
 
     /// Calls a specialized visitor for each kind of statement.
-    fn visit_statement(&self, _location: mir::Location, statement: &mir::Statement) {
+    fn visit_statement(&mut self, _location: mir::Location, statement: &mir::Statement) {
         let mir::Statement { kind, source_info } = statement;
         debug!("{:?}", source_info);
+        self.current_span = source_info.span;
         match kind {
             mir::StatementKind::Assign(place, rvalue) => self.visit_assign(place, rvalue.borrow()),
             mir::StatementKind::FakeRead(..) => unreachable!(),
@@ -102,7 +93,7 @@ pub trait MirVisitor<'a, 'tcx> {
     }
 
     /// Write the RHS Rvalue to the LHS Place.
-    fn visit_assign(&self, place: &mir::Place, rvalue: &mir::Rvalue) {
+    fn visit_assign(&mut self, place: &mir::Place, rvalue: &mir::Rvalue) {
         debug!(
             "default visit_assign(place: {:?}, rvalue: {:?})",
             place, rvalue
@@ -158,8 +149,9 @@ pub trait MirVisitor<'a, 'tcx> {
     }
 
     /// Calls a specialized visitor for each kind of terminator.
-    fn visit_terminator(&self, source_info: mir::SourceInfo, kind: &mir::TerminatorKind) {
+    fn visit_terminator(&mut self, source_info: mir::SourceInfo, kind: &mir::TerminatorKind) {
         debug!("{:?}", source_info);
+        self.current_span = source_info.span;
         match kind {
             mir::TerminatorKind::Goto { target } => self.visit_goto(*target),
             mir::TerminatorKind::SwitchInt {
@@ -276,7 +268,7 @@ pub trait MirVisitor<'a, 'tcx> {
     /// * `from_hir_call` - Whether this is from a call in HIR, rather than from an overloaded
     /// operator. True for overloaded function call.
     fn visit_call(
-        &self,
+        &mut self,
         func: &mir::Operand,
         args: &[mir::Operand],
         destination: &Option<(mir::Place, mir::BasicBlock)>,
@@ -284,6 +276,7 @@ pub trait MirVisitor<'a, 'tcx> {
         from_hir_call: bool,
     ) {
         debug!("default visit_call(func: {:?}, args: {:?}, destination: {:?}, cleanup: {:?}, from_hir_call: {:?})", func, args, destination, cleanup, from_hir_call);
+        self.visit_operand(func);
     }
 
     /// Jump to the target if the condition has the expected value,
@@ -300,7 +293,7 @@ pub trait MirVisitor<'a, 'tcx> {
     }
 
     /// Calls a specialized visitor for each kind of Rvalue
-    fn visit_rvalue(&self, rvalue: &mir::Rvalue) {
+    fn visit_rvalue(&mut self, rvalue: &mir::Rvalue) {
         match rvalue {
             mir::Rvalue::Use(operand) => self.visit_use(operand),
             mir::Rvalue::Repeat(operand, count) => self.visit_repeat(operand, *count),
@@ -325,13 +318,13 @@ pub trait MirVisitor<'a, 'tcx> {
     }
 
     /// x (either a move or copy, depending on type of x)
-    fn visit_use(&self, operand: &mir::Operand) {
+    fn visit_use(&mut self, operand: &mir::Operand) {
         debug!("default visit_use(operand: {:?})", operand);
         self.visit_operand(operand);
     }
 
     /// [x; 32]
-    fn visit_repeat(&self, operand: &mir::Operand, count: u64) {
+    fn visit_repeat(&mut self, operand: &mir::Operand, count: u64) {
         debug!(
             "default visit_repeat(operand: {:?}, count: {:?})",
             operand, count
@@ -358,7 +351,7 @@ pub trait MirVisitor<'a, 'tcx> {
     }
 
     /// cast converts the operand to the given ty.
-    fn visit_cast(&self, cast_kind: mir::CastKind, operand: &mir::Operand, ty: rustc::ty::Ty) {
+    fn visit_cast(&mut self, cast_kind: mir::CastKind, operand: &mir::Operand, ty: rustc::ty::Ty) {
         debug!(
             "default visit_cast(cast_kind: {:?}, operand: {:?}, ty: {:?})",
             cast_kind, operand, ty
@@ -368,7 +361,7 @@ pub trait MirVisitor<'a, 'tcx> {
 
     /// Apply the given binary operator to the two operands.
     fn visit_binary_op(
-        &self,
+        &mut self,
         bin_op: mir::BinOp,
         left_operand: &mir::Operand,
         right_operand: &mir::Operand,
@@ -383,7 +376,7 @@ pub trait MirVisitor<'a, 'tcx> {
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate.
     fn visit_checked_binary_op(
-        &self,
+        &mut self,
         bin_op: mir::BinOp,
         left_operand: &mir::Operand,
         right_operand: &mir::Operand,
@@ -402,7 +395,7 @@ pub trait MirVisitor<'a, 'tcx> {
     }
 
     /// Apply the given unary operator to the operand.
-    fn visit_unary_op(&self, un_op: mir::UnOp, operand: &mir::Operand) {
+    fn visit_unary_op(&mut self, un_op: mir::UnOp, operand: &mir::Operand) {
         debug!(
             "default visit_unary_op(un_op: {:?}, operand: {:?})",
             un_op, operand
@@ -432,11 +425,31 @@ pub trait MirVisitor<'a, 'tcx> {
 
     /// These are values that can appear inside an rvalue. They are intentionally
     /// limited to prevent rvalues from being nested in one another.
-    fn visit_operand(&self, operand: &mir::Operand) {
-        match operand {
-            mir::Operand::Copy(place) => self.visit_copy(place),
-            mir::Operand::Move(place) => self.visit_move(place),
-            mir::Operand::Constant(constant) => self.visit_constant(constant),
+    fn visit_operand(&mut self, operand: &mir::Operand) -> AbstractValue {
+        let span = self.current_span;
+        let (expression_domain, span) = match operand {
+            mir::Operand::Copy(place) => {
+                self.visit_copy(place);
+                (ExpressionDomain::Top, span)
+            }
+            mir::Operand::Move(place) => {
+                self.visit_move(place);
+                (ExpressionDomain::Top, span)
+            }
+            mir::Operand::Constant(constant) => {
+                let mir::Constant {
+                    span,
+                    ty,
+                    user_ty,
+                    literal,
+                } = constant.borrow();
+                let const_value = self.visit_constant(ty, *user_ty, literal).clone();
+                (ExpressionDomain::CompileTimeConstant(const_value), *span)
+            }
+        };
+        AbstractValue {
+            provenance: span,
+            value: AbstractDomains { expression_domain },
         }
     }
 
@@ -458,7 +471,35 @@ pub trait MirVisitor<'a, 'tcx> {
     }
 
     /// Synthesizes a constant value.
-    fn visit_constant(&self, constant: &mir::Constant) {
-        debug!("default visit_constant(constant: {:?})", constant);
+    fn visit_constant(
+        &mut self,
+        ty: Ty,
+        user_ty: Option<mir::UserTypeAnnotation>,
+        literal: &Const,
+    ) -> &ConstantValue {
+        debug!(
+            "default visit_constant(ty: {:?}, user_ty: {:?}, literal: {:?})",
+            ty, user_ty, literal
+        );
+        match ty.sty {
+            TyKind::FnDef(def_id, ..) => self.visit_function_reference(def_id),
+            _ => &ConstantValue::Unimplemented,
+        }
+    }
+
+    /// The anonymous type of a function declaration/definition. Each
+    /// function has a unique type, which is output (for a function
+    /// named `foo` returning an `i32`) as `fn() -> i32 {foo}`.
+    ///
+    /// For example the type of `bar` here:
+    ///
+    /// ```rust
+    /// fn foo() -> i32 { 1 }
+    /// let bar = foo; // bar: fn() -> i32 {foo}
+    /// ```
+    fn visit_function_reference(&mut self, def_id: hir::def_id::DefId) -> &ConstantValue {
+        &mut self
+            .constant_value_cache
+            .get_function_constant_for(def_id, &mut self.summary_cache)
     }
 }

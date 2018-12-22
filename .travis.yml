@@ -36,6 +36,7 @@ script:
 - cargo clean -p mirai
 - RUSTC_WRAPPER=mirai cargo build
 - cargo uninstall mirai
-- cargo clean -p mirai
-- cargo tarpaulin -v --skip-clean --out Xml
-- bash <(curl -s https://codecov.io/bash)
+# disable tarpaulin until it no longer crashes
+#- cargo clean -p mirai
+#- cargo tarpaulin -v --skip-clean --out Xml
+#- bash <(curl -s https://codecov.io/bash)
