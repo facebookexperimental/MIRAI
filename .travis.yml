@@ -12,31 +12,9 @@ rust:
 cache: cargo
 
 before_script:
-# install formatter
-- rustup component add rustfmt-preview
-# install linter
-- rustup component add clippy-preview
 # install code coverage tool
-- RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-tarpaulin || true
+- RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install --force cargo-tarpaulin
 
 script:
-# Exit immediately if a command exits with a non-zero status.
-- set -e
-# Run format checks
-- cargo fmt --all -- --check
-# Run lint checks
-- cargo clippy -- -D warnings
-# Build
-- cargo build
-# Run unit and integration tests
-- cargo test
-# Run mirai on itself
-- cargo uninstall mirai || true
-- cargo install --debug --path .
-- cargo clean -p mirai
-- RUSTC_WRAPPER=mirai cargo build
-- cargo uninstall mirai
-# disable tarpaulin until it no longer crashes
-#- cargo clean -p mirai
-#- cargo tarpaulin -v --skip-clean --out Xml
-#- bash <(curl -s https://codecov.io/bash)
+- cargo test --release
+- RUST_BACKTRACE=1 cargo tarpaulin -v --out Xml
