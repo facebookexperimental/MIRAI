@@ -73,22 +73,19 @@ impl ConstantValueCache {
             Some(std_fun) => Some(*std_fun == *fun),
             _ => None,
         };
-        match result {
-            Some(r) => r,
-            None => {
-                let result = match fun {
-                    ConstantValue::Function {
-                        is_intrinsic,
-                        summary_cache_key,
-                    } => *is_intrinsic && summary_cache_key.ends_with("unreachable"),
-                    _ => false,
-                };
-                if result {
-                    self.std_intrinsics_unreachable_function = Some(fun.clone());
-                };
-                true
-            }
-        }
+        result.unwrap_or_else(|| {
+            let result = match fun {
+                ConstantValue::Function {
+                    is_intrinsic,
+                    summary_cache_key,
+                } => *is_intrinsic && summary_cache_key.ends_with("unreachable"),
+                _ => false,
+            };
+            if result {
+                self.std_intrinsics_unreachable_function = Some(fun.clone());
+            };
+            true
+        })
     }
 }
 
