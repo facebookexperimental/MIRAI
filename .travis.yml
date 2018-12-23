@@ -17,7 +17,7 @@ before_script:
 # install linter
 - rustup component add clippy-preview
 # install code coverage tool
-- RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install --force cargo-tarpaulin || true
+#- RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install --force cargo-tarpaulin || true
 
 script:
 # Exit immediately if a command exits with a non-zero status.
@@ -35,7 +35,7 @@ script:
 - cargo install --debug --path .
 - cargo clean -p mirai
 - RUSTC_WRAPPER=mirai cargo build
-- cargo uninstall mirai
-- cargo clean -p mirai
-- cargo tarpaulin -v --skip-clean --out Xml
-- bash <(curl -s https://codecov.io/bash)
+#- cargo uninstall mirai
+#- cargo clean -p mirai
+#- cargo tarpaulin -v --skip-clean --out Xml
+#- bash <(curl -s https://codecov.io/bash)
