@@ -116,6 +116,7 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
 /// At this point the compiler is ready to tell us all it knows and we can proceed to do abstract
 /// interpretation of all of the functions that will end up in the compiler output.
 fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathBuf) {
+    let session = state.session;
     let tcx = state.tcx.unwrap();
     output_directory.set_file_name(".summary_store");
     output_directory.set_extension("rocksdb");
@@ -123,7 +124,7 @@ fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathB
     info!("storing summaries at {}", summary_store_path);
     let mut persistent_summary_cache =
         summaries::PersistentSummaryCache::new(&tcx, summary_store_path);
-    let mut constant_value_cache = ConstantValueCache::new();
+    let mut constant_value_cache = ConstantValueCache::default();
     for def_id in tcx.body_owners() {
         {
             let name = persistent_summary_cache.get_summary_key_for(def_id);
@@ -139,6 +140,7 @@ fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathB
         let mut unwind_condition: Option<AbstractValue> = None;
         {
             let mut mir_visitor = MirVisitor {
+                session,
                 tcx,
                 def_id,
                 mir,
