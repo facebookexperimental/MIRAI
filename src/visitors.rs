@@ -7,7 +7,8 @@ use abstract_domains::{AbstractDomains, ExpressionDomain};
 use abstract_value::{AbstractValue, Path};
 use constant_value::{ConstantValue, ConstantValueCache};
 use rpds::{HashTrieMap, List};
-use rustc::ty::{Const, Ty, TyCtxt, TyKind};
+use rustc::session::Session;
+use rustc::ty::{Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use std::borrow::Borrow;
 use summaries::PersistentSummaryCache;
@@ -15,6 +16,7 @@ use syntax_pos;
 
 /// Holds the state for the MIR test visitor.
 pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
+    pub session: &'tcx Session,
     pub tcx: TyCtxt<'b, 'tcx, 'tcx>,
     pub def_id: hir::def_id::DefId,
     pub mir: &'a mir::Mir<'tcx>,
@@ -276,7 +278,20 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         from_hir_call: bool,
     ) {
         debug!("default visit_call(func: {:?}, args: {:?}, destination: {:?}, cleanup: {:?}, from_hir_call: {:?})", func, args, destination, cleanup, from_hir_call);
-        self.visit_operand(func);
+        let func_to_call = self.visit_operand(func);
+        if let ExpressionDomain::CompileTimeConstant(fun) = func_to_call.value.expression_domain {
+            if self
+                .constant_value_cache
+                .check_if_std_intrinsics_unreachable_function(&fun)
+            {
+                let span = self.current_span;
+                let mut err = self.session.struct_span_warn(
+                    span,
+                    "Control might reach a call to std::intrinsics::unreachable",
+                );
+                err.emit();
+            }
+        }
     }
 
     /// Jump to the target if the condition has the expected value,
@@ -474,7 +489,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     fn visit_constant(
         &mut self,
         ty: Ty,
-        user_ty: Option<mir::UserTypeAnnotation>,
+        user_ty: Option<UserTypeAnnotationIndex>,
         literal: &Const,
     ) -> &ConstantValue {
         debug!(
@@ -498,8 +513,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// let bar = foo; // bar: fn() -> i32 {foo}
     /// ```
     fn visit_function_reference(&mut self, def_id: hir::def_id::DefId) -> &ConstantValue {
-        &mut self
-            .constant_value_cache
-            .get_function_constant_for(def_id, &mut self.summary_cache)
+        &mut self.constant_value_cache.get_function_constant_for(
+            def_id,
+            &self.tcx,
+            &mut self.summary_cache,
+        )
     }
 }

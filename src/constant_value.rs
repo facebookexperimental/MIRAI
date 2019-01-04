@@ -4,8 +4,10 @@
 // LICENSE file in the root directory of this source tree.
 
 use rustc::hir::def_id::DefId;
+use rustc::ty::TyCtxt;
 use std::collections::HashMap;
 use summaries::PersistentSummaryCache;
+use utils::is_rust_intrinsic;
 
 /// Abstracts over constant values referenced in MIR and adds information
 /// that is useful for the abstract interpreter. More importantly, this
@@ -29,12 +31,13 @@ impl ConstantValue {
     /// Returns a constant value that is a reference to a function
     pub fn for_function(
         def_id: DefId,
+        tcx: &TyCtxt,
         summary_cache: &mut PersistentSummaryCache,
     ) -> ConstantValue {
         let summary_cache_key = summary_cache.get_summary_key_for(def_id);
         // todo: include the def_id in the result
         ConstantValue::Function {
-            is_intrinsic: false,
+            is_intrinsic: is_rust_intrinsic(def_id, tcx),
             summary_cache_key: summary_cache_key.to_owned(),
         }
     }
@@ -59,11 +62,12 @@ impl ConstantValueCache {
     pub fn get_function_constant_for(
         &mut self,
         def_id: DefId,
+        tcx: &TyCtxt,
         summary_cache: &mut PersistentSummaryCache,
     ) -> &ConstantValue {
         self.cache
             .entry(def_id)
-            .or_insert_with(|| ConstantValue::for_function(def_id, summary_cache))
+            .or_insert_with(|| ConstantValue::for_function(def_id, tcx, summary_cache))
     }
 
     /// Does an expensive check to see if the given function is std::intrinsics::unreachable.
@@ -84,7 +88,7 @@ impl ConstantValueCache {
             if result {
                 self.std_intrinsics_unreachable_function = Some(fun.clone());
             };
-            true
+            result
         })
     }
 }
