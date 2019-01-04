@@ -13,22 +13,45 @@ use rustc_driver::{driver, Compilation, CompilerCalls, RustcDefaultCalls};
 use rustc_metadata::cstore::CStore;
 use std::path::PathBuf;
 use summaries;
+use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax::{ast, errors};
 use syntax_pos;
 use visitors::MirVisitor;
 
 /// Private state used to implement the callbacks.
 pub struct MiraiCallbacks {
+    /// Called after static analysis is complete.
+    /// Gives test harness a way to process intercepted diagnostics.
+    consume_buffered_diagnostics: Box<Fn(&Vec<Diagnostic>) -> ()>,
     /// Use these to just defer to the Rust compiler's implementations.
     default_calls: RustcDefaultCalls,
+    /// Called when static analysis reports a diagnostic message.
+    /// By default, this just emits the message. When overridden it can
+    /// intercept and buffer the diagnostics, which is used by the test harness.
+    emit_diagnostic: fn(&mut DiagnosticBuilder, &mut Vec<Diagnostic>) -> (),
+    /// A path to the directory where analysis output, such as the summary cache, should be stored.
     output_directory: PathBuf,
 }
 
-/// Provides a default constructor
+/// Constructors
 impl MiraiCallbacks {
     pub fn new() -> MiraiCallbacks {
         MiraiCallbacks {
+            consume_buffered_diagnostics: box |_bd: &Vec<Diagnostic>| {},
             default_calls: RustcDefaultCalls,
+            emit_diagnostic: |db: &mut DiagnosticBuilder, _buf: &mut Vec<Diagnostic>| db.emit(),
+            output_directory: PathBuf::default(),
+        }
+    }
+
+    pub fn with_buffered_diagnostics(
+        consume_buffered_diagnostics: Box<Fn(&Vec<Diagnostic>) -> ()>,
+        emit_diagnostic: fn(&mut DiagnosticBuilder, &mut Vec<Diagnostic>) -> (),
+    ) -> MiraiCallbacks {
+        MiraiCallbacks {
+            consume_buffered_diagnostics,
+            default_calls: RustcDefaultCalls,
+            emit_diagnostic,
             output_directory: PathBuf::default(),
         }
     }
@@ -105,8 +128,14 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
         _matches: &::getopts::Matches,
     ) -> driver::CompileController<'a> {
         let mut controller = driver::CompileController::basic();
-        controller.after_analysis.callback =
-            Box::new(move |state| after_analysis(state, &mut self.output_directory.clone()));
+        controller.after_analysis.callback = Box::new(move |state| {
+            after_analysis(
+                state,
+                &self.consume_buffered_diagnostics,
+                self.emit_diagnostic,
+                &mut self.output_directory.clone(),
+            )
+        });
         // Note: the callback is only invoked if the compiler discovers no errors beforehand.
         controller
     }
@@ -115,7 +144,13 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
 /// Called after the compiler has completed all analysis passes and before it lowers MIR to LLVM IR.
 /// At this point the compiler is ready to tell us all it knows and we can proceed to do abstract
 /// interpretation of all of the functions that will end up in the compiler output.
-fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathBuf) {
+fn after_analysis(
+    state: &mut driver::CompileState,
+    consume_buffered_diagnostics: &Box<Fn(&Vec<Diagnostic>) -> ()>,
+    emit_error: fn(&mut DiagnosticBuilder, &mut Vec<Diagnostic>) -> (),
+    output_directory: &mut PathBuf,
+) {
+    let mut buffered_diagnostics: Vec<Diagnostic> = vec![];
     let session = state.session;
     let tcx = state.tcx.unwrap();
     output_directory.set_file_name(".summary_store");
@@ -140,6 +175,8 @@ fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathB
         let mut unwind_condition: Option<AbstractValue> = None;
         {
             let mut mir_visitor = MirVisitor {
+                buffered_diagnostics: &mut buffered_diagnostics,
+                emit_diagnostic: emit_error,
                 session,
                 tcx,
                 def_id,
@@ -166,5 +203,6 @@ fn after_analysis(state: &mut driver::CompileState, output_directory: &mut PathB
         );
         persistent_summary_cache.set_summary_for(def_id, summary);
     }
+    consume_buffered_diagnostics(&buffered_diagnostics);
     info!("done with analysis");
 }

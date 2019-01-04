@@ -12,10 +12,16 @@ use rustc::ty::{Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use std::borrow::Borrow;
 use summaries::PersistentSummaryCache;
+use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax_pos;
 
 /// Holds the state for the MIR test visitor.
 pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
+    /// A place where diagnostic messages can be buffered by the test harness.
+    pub buffered_diagnostics: &'a mut Vec<Diagnostic>,
+    /// A call back that the test harness can use to buffer the diagnostic message.
+    /// By default this just calls emit on the diagnostic.
+    pub emit_diagnostic: fn(&mut DiagnosticBuilder, buf: &mut Vec<Diagnostic>) -> (),
     pub session: &'tcx Session,
     pub tcx: TyCtxt<'b, 'tcx, 'tcx>,
     pub def_id: hir::def_id::DefId,
@@ -289,7 +295,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     span,
                     "Control might reach a call to std::intrinsics::unreachable",
                 );
-                err.emit();
+                (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
             }
         }
     }
