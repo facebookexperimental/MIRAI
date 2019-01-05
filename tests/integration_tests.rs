@@ -16,8 +16,10 @@
 #![feature(box_syntax)]
 
 extern crate mirai;
+extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_rayon;
+extern crate syntax;
 extern crate tempdir;
 
 use mirai::callbacks;
@@ -25,9 +27,13 @@ use mirai::utils;
 use rustc_rayon::iter::IntoParallelIterator;
 use rustc_rayon::iter::ParallelIterator;
 use std::fs;
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
-
+use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use tempdir::TempDir;
 
 // Run the tests in the tests/run-pass directory.
@@ -71,6 +77,7 @@ fn run_directory(directory_path: PathBuf) {
 // to put compiler output, which for Mirai includes the persistent summary store.
 fn invoke_driver(file_name: String, temp_dir_path: String, sys_root: String) {
     rustc_driver::run(|| {
+        let f_name = file_name.clone();
         let command_line_arguments: Vec<String> = vec![
             String::from("--crate-name mirai"),
             file_name,
@@ -90,11 +97,75 @@ fn invoke_driver(file_name: String, temp_dir_path: String, sys_root: String) {
             String::from("mir-opt-level=0"),
         ];
 
+        let call_backs = callbacks::MiraiCallbacks::with_buffered_diagnostics(
+            box move |diagnostics| {
+                let mut expected_errors = ExpectedErrors::new(&f_name);
+                expected_errors.check_messages(diagnostics)
+            },
+            |db: &mut DiagnosticBuilder, buf: &mut Vec<Diagnostic>| {
+                db.cancel();
+                db.clone().buffer(buf);
+            },
+        );
+
         rustc_driver::run_compiler(
             &command_line_arguments,
-            box callbacks::MiraiCallbacks::default(),
+            box call_backs,
             None, // use default file loader
             None, // emit output to default destination
         )
     });
+}
+
+/// A collection of error strings that are expected for a test case.
+struct ExpectedErrors {
+    messages: Vec<String>,
+}
+
+impl ExpectedErrors {
+    /// Reads the file at the given path and scans it for instances of "//~ message".
+    /// Each message becomes an element of ExpectedErrors.messages.
+    pub fn new(path: &str) -> ExpectedErrors {
+        let exp = load_errors(&PathBuf::from_str(&path).unwrap());
+        ExpectedErrors { messages: exp }
+    }
+
+    /// Checks if the given set of diagnostics matches the expected diagnostics.
+    pub fn check_messages(&mut self, diagnostics: &Vec<Diagnostic>) {
+        diagnostics.iter().for_each(|diag| {
+            self.remove_message(&diag.message());
+            for child in &diag.children {
+                self.remove_message(&child.message());
+            }
+        });
+        if self.messages.len() > 0 {
+            panic!("Expected errors not reported: {:?}", self.messages);
+        }
+    }
+
+    /// Removes the first element of self.messages and checks if it matches msg.
+    fn remove_message(&mut self, msg: &str) {
+        if self.messages.len() > 0 && msg.eq(&self.messages[0]) {
+            self.messages.remove(0);
+        } else {
+            panic!("Unexpected error: {} Expected: {:?}", msg, self.messages);
+        }
+    }
+}
+
+/// Scans the contents of test file for patterns of the form "//~ message"
+/// and returns a vector of the matching messages.
+fn load_errors(testfile: &Path) -> Vec<String> {
+    let rdr = BufReader::new(File::open(testfile).unwrap());
+    let tag = "//~";
+    rdr.lines()
+        .enumerate()
+        .filter_map(|(_line_num, line)| parse_expected(&line.unwrap(), &tag))
+        .collect()
+}
+
+/// Returns the message part of the pattern "//~ message" if there is a match, otherwise None.
+fn parse_expected(line: &str, tag: &str) -> Option<String> {
+    let start = line.find(tag)? + tag.len();
+    Some(String::from(line[start..].trim()))
 }
