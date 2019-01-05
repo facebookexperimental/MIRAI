@@ -8,7 +8,7 @@ use abstract_value::{AbstractValue, Path};
 use constant_value::{ConstantValue, ConstantValueCache};
 use rpds::{HashTrieMap, List};
 use rustc::session::Session;
-use rustc::ty::{Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
+use rustc::ty::{LazyConst, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use std::borrow::Borrow;
 use summaries::PersistentSummaryCache;
@@ -496,7 +496,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         &mut self,
         ty: Ty,
         user_ty: Option<UserTypeAnnotationIndex>,
-        literal: &Const,
+        literal: &LazyConst,
     ) -> &ConstantValue {
         debug!(
             "default visit_constant(ty: {:?}, user_ty: {:?}, literal: {:?})",
