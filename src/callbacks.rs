@@ -2,10 +2,9 @@
 //
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
+#![allow(clippy::borrowed_box)]
 
-use abstract_value::{AbstractValue, Path};
 use constant_value::ConstantValueCache;
-use rpds::{HashTrieMap, List};
 use rustc::session::config::{self, ErrorOutputType, Input};
 use rustc::session::Session;
 use rustc_codegen_utils::codegen_backend::CodegenBackend;
@@ -15,8 +14,7 @@ use std::path::PathBuf;
 use summaries;
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax::{ast, errors};
-use syntax_pos;
-use visitors::MirVisitor;
+use visitors::{MirVisitor, MirVisitorCrateContext};
 
 /// Private state used to implement the callbacks.
 pub struct MiraiCallbacks {
@@ -147,7 +145,7 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
 fn after_analysis(
     state: &mut driver::CompileState,
     consume_buffered_diagnostics: &Box<Fn(&Vec<Diagnostic>) -> ()>,
-    emit_error: fn(&mut DiagnosticBuilder, &mut Vec<Diagnostic>) -> (),
+    emit_diagnostic: fn(&mut DiagnosticBuilder, &mut Vec<Diagnostic>) -> (),
     output_directory: &mut PathBuf,
 ) {
     let mut buffered_diagnostics: Vec<Diagnostic> = vec![];
@@ -167,41 +165,17 @@ fn after_analysis(
         }
         // By this time all analyses have been carried out, so it should be safe to borrow this now.
         let mir = tcx.optimized_mir(def_id);
-        let mut environment: HashTrieMap<Path, AbstractValue> = HashTrieMap::new();
-        let mut inferred_preconditions: List<AbstractValue> = List::new();
-        let mut path_conditions: List<AbstractValue> = List::new();
-        let mut preconditions: List<AbstractValue> = List::new();
-        let mut post_conditions: List<AbstractValue> = List::new();
-        let mut unwind_condition: Option<AbstractValue> = None;
-        {
-            let mut mir_visitor = MirVisitor {
-                buffered_diagnostics: &mut buffered_diagnostics,
-                emit_diagnostic: emit_error,
-                session,
-                tcx,
-                def_id,
-                mir,
-                environment: &mut environment,
-                inferred_preconditions: &mut inferred_preconditions,
-                path_conditions: &mut path_conditions,
-                preconditions: &mut preconditions,
-                post_conditions: &mut post_conditions,
-                unwind_condition: &mut unwind_condition,
-                summary_cache: &mut persistent_summary_cache,
-                constant_value_cache: &mut constant_value_cache,
-                current_span: syntax_pos::DUMMY_SP,
-            };
-            mir_visitor.visit_body();
-        }
-        let summary = summaries::summarize(
-            environment,
-            inferred_preconditions,
-            path_conditions,
-            preconditions,
-            post_conditions,
-            unwind_condition,
-        );
-        persistent_summary_cache.set_summary_for(def_id, summary);
+        let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
+            buffered_diagnostics: &mut buffered_diagnostics,
+            emit_diagnostic,
+            session,
+            tcx,
+            def_id,
+            mir,
+            summary_cache: &mut persistent_summary_cache,
+            constant_value_cache: &mut constant_value_cache,
+        });
+        mir_visitor.visit_body();
     }
     consume_buffered_diagnostics(&buffered_diagnostics);
     info!("done with analysis");

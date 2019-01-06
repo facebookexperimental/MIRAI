@@ -4,7 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 
 use abstract_value::{AbstractValue, Path};
-use rpds::{HashTrieMap, List};
+use environment::Environment;
+use rpds::List;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use std::collections::HashMap;
@@ -70,27 +71,37 @@ pub struct Summary {
     // Callers should substitute parameter values with argument values and simplify the result
     // under the current path condition. If the simplified value is statically known to be true
     // then the normal destination of the call should be treated as unreachable.
-    pub unwind_condition: Option<AbstractValue>,
+    pub unwind_condition: List<AbstractValue>,
+
+    // Modifications the function makes to mutable state external to the function.
+    // Every path will be rooted in a static or in a mutable parameter.
+    // No two paths in this collection will lead to the same place in memory.
+    // Callers should substitute parameter values with argument values and simplify the results
+    // under the current path condition. They should then update their current state to reflect the
+    // side-effects of the call for the unwind control paths, following the call.
+    pub unwind_side_effects: List<(Path, AbstractValue)>,
 }
 
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
 pub fn summarize(
-    _environment: HashTrieMap<Path, AbstractValue>,
-    _inferred_preconditions: List<AbstractValue>,
-    _path_conditions: List<AbstractValue>,
-    preconditions: List<AbstractValue>,
-    post_conditions: List<AbstractValue>,
-    unwind_condition: Option<AbstractValue>,
+    _environment: &Environment,
+    _inferred_preconditions: &List<AbstractValue>,
+    _path_conditions: &List<AbstractValue>,
+    preconditions: &List<AbstractValue>,
+    post_conditions: &List<AbstractValue>,
+    unwind_condition: &List<AbstractValue>,
 ) -> Summary {
-    let result = None; // todo: extract from environment
+    let result = None; // todo: extract from exit environment
     let side_effects: List<(Path, AbstractValue)> = List::new(); // todo: extract from environment
+    let unwind_side_effects: List<(Path, AbstractValue)> = List::new(); // todo: extract from environment
     Summary {
-        preconditions,
+        preconditions: preconditions.clone(),
         result,
         side_effects,
-        post_conditions,
-        unwind_condition,
+        post_conditions: post_conditions.clone(),
+        unwind_condition: unwind_condition.clone(),
+        unwind_side_effects,
     }
 }
 
