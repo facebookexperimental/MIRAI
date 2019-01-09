@@ -5,8 +5,6 @@
 
 use abstract_value::{self, AbstractValue, Path};
 use rpds::HashTrieMap;
-use rustc::hir::def_id::DefId;
-use rustc::ty::{self, Ty, TyCtxt};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Environment {
@@ -18,21 +16,13 @@ pub struct Environment {
 impl Environment {
     /// Returns an environment that has a path for every parameter of the given function,
     /// initialized with abstract_values::Top
-    pub fn with_parameters(def_id: DefId, tcx: TyCtxt) -> Environment {
+    pub fn with_parameters(num_args: usize) -> Environment {
         let value_map = HashTrieMap::default();
-        let func_ty: Ty = tcx.type_of(def_id);
-        match func_ty.sty {
-            ty::FnDef(..) | ty::FnPtr(_) => {
-                let sig = func_ty.fn_sig(tcx);
-                let len = sig.inputs().skip_binder().len();
-                for i in 0..len {
-                    let par_i = Path::Parameter { index: i };
-                    // todo: figure out how to get a source span for each parameter definition
-                    value_map.insert(par_i, abstract_value::TOP);
-                }
-            }
-            _ => {}
-        };
+        for i in 1..num_args + 1 {
+            let par_i = Path::LocalVariable { ordinal: i };
+            // todo: figure out how to get a source span for each parameter definition
+            value_map.insert(par_i, abstract_value::TOP);
+        }
         Environment { value_map }
     }
 }
@@ -43,6 +33,15 @@ impl Environment {
     /// If no such value exists, &abstract_value::Bottom is returned.
     pub fn value_at(&self, path: &Path) -> &AbstractValue {
         self.value_map.get(path).unwrap_or(&abstract_value::BOTTOM)
+    }
+
+    /// Updates the path to value map so that the given path now points to the given value.
+    pub fn update_value_at(&mut self, path: Path, value: AbstractValue) {
+        if value.is_bottom() {
+            self.value_map = self.value_map.remove(&path);
+        } else {
+            self.value_map = self.value_map.insert(path, value);
+        }
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated

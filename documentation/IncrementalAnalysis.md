@@ -9,11 +9,11 @@ The caching will be provided by a persistent key-value store that is associated 
 into memory on demand. Assume for the moment that a prior analysis has already been done and that the code is being 
 recompiled after a relatively small number of changes.
 
-If the source of a function has changed, it to be re-analyzed. If the resulting summary is the same as the one already
+If the source of a function has changed, it is to be re-analyzed. If the resulting summary is the same as the one already
 in the cache, no further action is required. If not, however, every function that used the old summary must be
 re-analyzed and if any of those functions now have new summaries, any of the functions that depended on them must be
 re-analyzed and so on. In principle this can lead to exponential blow-up of the analysis, but assuming that head of
-the programmer making the change did not blow up first, it is more likely that effects of the source changes will be
+the programmer making the change did not blow up, it is more likely that effects of the source changes will be
 much more localized.
  
 It is important, however, to reason precisely and not to introduce dependencies where there are none. A typical trap
