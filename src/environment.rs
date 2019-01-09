@@ -84,18 +84,13 @@ impl Environment {
             }
         }
         for (path, val2) in value_map2.iter() {
-            match value_map1.get(path) {
-                Some(_) => {
-                    // Already joined in previous loop
-                }
-                None => {
-                    debug_assert!(!val2.is_bottom());
-                    let p = path.clone();
-                    value_map = value_map.insert(
-                        p,
-                        join_or_widen(&abstract_value::BOTTOM, &val2, &join_condition),
-                    );
-                }
+            if !value_map1.contains_key(path) {
+                debug_assert!(!val2.is_bottom());
+                let p = path.clone();
+                value_map = value_map.insert(
+                    p,
+                    join_or_widen(&abstract_value::BOTTOM, &val2, &join_condition),
+                );
             }
         }
         Environment { value_map }

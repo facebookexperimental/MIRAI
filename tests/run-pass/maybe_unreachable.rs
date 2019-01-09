@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that calls std::intrinsics::unreachable unconditionally.
+// A test that calls std::intrinsics::unreachable conditionally.
 
 #![feature(core_intrinsics)]
 #![allow(unused)]

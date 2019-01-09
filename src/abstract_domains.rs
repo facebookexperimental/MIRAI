@@ -115,10 +115,10 @@ pub enum ExpressionDomain {
     /// An expression that is a compile time constant value, such as a numeric literal or a function.
     CompileTimeConstant(ConstantValue),
 
-    /// An expression that is either if_true or if_false, depending on the value of join_condition.
-    JoinedExpression {
+    /// An expression that is either if_true or if_false, depending on the value of condition.
+    ConditionalExpression {
         // A condition that results in a Boolean value
-        join_condition: Box<AbstractDomains>,
+        condition: Box<AbstractDomains>,
         // The value of this expression if join_condition is true.
         if_true: Box<ExpressionDomain>,
         // The value of this expression if join_condition is false.
@@ -148,20 +148,11 @@ impl AbstractDomain for ExpressionDomain {
     /// In a context where the join condition is known to be true, the result can be refined to be
     /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
     fn join(&self, other: &ExpressionDomain, join_condition: &AbstractDomains) -> ExpressionDomain {
-        ExpressionDomain::JoinedExpression {
-            join_condition: box join_condition.clone(),
+        ExpressionDomain::ConditionalExpression {
+            condition: box join_condition.clone(),
             if_true: box self.clone(),
             if_false: box other.clone(),
         }
-    }
-
-    /// Returns a domain whose corresponding set of concrete values include all of the values
-    /// corresponding to self and other.The set of values may be less precise (more inclusive) than
-    /// the set returned by join. The chief requirement is that a small number of widen calls
-    /// deterministically lead to Top.
-    fn widen(&self, _other: &Self, _join_condition: &AbstractDomains) -> ExpressionDomain {
-        //todo: don't get to top quite this quickly.
-        ExpressionDomain::Top
     }
 
     /// True if all of the concrete values that correspond to self also correspond to other.
@@ -177,7 +168,7 @@ impl AbstractDomain for ExpressionDomain {
             // The universal set is not a subset of any set other than the universal set
             (ExpressionDomain::Top, _) => false,
             (
-                ExpressionDomain::JoinedExpression {
+                ExpressionDomain::ConditionalExpression {
                     if_true, if_false, ..
                 },
                 _,
@@ -187,7 +178,7 @@ impl AbstractDomain for ExpressionDomain {
             }
             (
                 _,
-                ExpressionDomain::JoinedExpression {
+                ExpressionDomain::ConditionalExpression {
                     if_true, if_false, ..
                 },
             ) => {
@@ -200,5 +191,14 @@ impl AbstractDomain for ExpressionDomain {
                 ExpressionDomain::CompileTimeConstant(cv2),
             ) => cv1 == cv2,
         }
+    }
+
+    /// Returns a domain whose corresponding set of concrete values include all of the values
+    /// corresponding to self and other.The set of values may be less precise (more inclusive) than
+    /// the set returned by join. The chief requirement is that a small number of widen calls
+    /// deterministically lead to Top.
+    fn widen(&self, _other: &Self, _join_condition: &AbstractDomains) -> ExpressionDomain {
+        //todo: don't get to top quite this quickly.
+        ExpressionDomain::Top
     }
 }

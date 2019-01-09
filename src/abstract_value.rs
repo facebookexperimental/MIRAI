@@ -51,7 +51,7 @@ impl AbstractValue {
 
     /// True if all possible concrete values are elements of the set corresponding to this abstract value.
     pub fn is_top(&self) -> bool {
-        self.value.is_bottom()
+        self.value.is_top()
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the values
