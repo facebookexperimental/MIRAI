@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-use abstract_domains::AbstractDomains;
+use abstract_domains::{self, AbstractDomains};
 use syntax_pos::Span;
 
 /// Mirai is an abstract interpreter and thus produces abstract values.
@@ -14,7 +14,7 @@ use syntax_pos::Span;
 /// When we do know everything about a value, it is concrete rather than
 /// abstract, but is convenient to just use this structure for concrete values
 /// as well, since all operations can be uniform.
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AbstractValue {
     /// An abstract value is the result of some expression.
     /// The source location of that expression is stored in provenance.
@@ -24,15 +24,67 @@ pub struct AbstractValue {
     /// expression (i.e. one with a provenance of its own) then a copy expression is created with
     /// the existing expression as argument, so that both locations are tracked.
     #[serde(skip)]
-    pub provenance: Span,
+    pub provenance: Span, //todo: perhaps this should be a list of spans
     /// Various approximations of the actual value.
     /// See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
     pub value: AbstractDomains,
 }
 
+/// An abstract value that can be used as the value for an operation that has no normal result.
+pub const BOTTOM: AbstractValue = AbstractValue {
+    provenance: syntax_pos::DUMMY_SP,
+    value: abstract_domains::BOTTOM,
+};
+
+/// An abstract value to use when nothing is known about the value. All possible concrete values
+/// are members of the concrete set of values corresponding to this abstract value.
+pub const TOP: AbstractValue = AbstractValue {
+    provenance: syntax_pos::DUMMY_SP,
+    value: abstract_domains::TOP,
+};
+
+impl AbstractValue {
+    /// True if the set of concrete values that correspond to this abstract value is empty.
+    pub fn is_bottom(&self) -> bool {
+        self.value.is_bottom()
+    }
+
+    /// True if all possible concrete values are elements of the set corresponding to this abstract value.
+    pub fn is_top(&self) -> bool {
+        self.value.is_top()
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the values
+    /// corresponding to self and other.
+    /// In a context where the join condition is known to be true, the result can be refined to be
+    /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
+    pub fn join(&self, other: &AbstractValue, join_condition: &AbstractValue) -> AbstractValue {
+        AbstractValue {
+            provenance: syntax_pos::DUMMY_SP,
+            value: self.value.join(&other.value, &join_condition.value),
+        }
+    }
+
+    /// True if all of the concrete values that correspond to self also correspond to other.
+    pub fn subset(&self, other: &AbstractValue) -> bool {
+        self.value.subset(&other.value)
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the values
+    /// corresponding to self and other. The set of values may be less precise (more inclusive) than
+    /// the set returned by join. The chief requirement is that a small number of widen calls
+    /// deterministically lead to Top.
+    pub fn widen(&self, other: &AbstractValue, join_condition: &AbstractValue) -> AbstractValue {
+        AbstractValue {
+            provenance: syntax_pos::DUMMY_SP,
+            value: self.value.widen(&other.value, &join_condition.value),
+        }
+    }
+}
+
 /// The name of a function or method, sufficiently qualified so that it uniquely identifies it
 /// among all functions and methods defined in the project corresponding to a summary store.
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Name {
     /// A root name in the current name space. Typically the name of a crate, used module, or
     /// used function or struct/trait/enum/type.
@@ -49,20 +101,20 @@ pub enum Name {
 /// A path represents a left hand side expression.
 /// When the actual expression is evaluated at runtime it will resolve to a particular memory
 /// location. During analysis it is used to keep track of state changes.
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Path {
     /// The ordinal specifies a local variable or compiler temporary of the current function
     /// For example, in fn foo() { x: i32 = 0; x} we identify variable x with:
     /// Path::LocalVariable { ordinal: 0 }
     LocalVariable {
-        ordinal: u32,
+        ordinal: usize,
     },
 
     /// The index specifies the position of the parameter in the parameter list of the current function
     /// For example, in fn foo(x: int, y: int) {} we identify parameter x with:
     /// Path::Parameter { index: 0 }
     Parameter {
-        index: u32,
+        index: usize,
     },
 
     // The name uniquely identifies a static field within the current crate.
@@ -97,4 +149,5 @@ pub enum Path {
         qualifier: Box<Path>,
         index: Box<AbstractValue>,
     },
+    //todo: need a path for a conditional CFG link
 }

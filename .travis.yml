@@ -8,7 +8,7 @@ addons:
     - libssl-dev
 language: rust
 rust:
-- nightly
+- nightly-2019-01-07
 cache: cargo
 
 before_script:
@@ -29,7 +29,7 @@ script:
 # Build
 - cargo build
 # Run unit and integration tests
-- cargo test
+- RUST_BACKTRACE=1 cargo test
 # Run mirai on itself
 - cargo uninstall mirai || true
 - cargo install --debug --path .

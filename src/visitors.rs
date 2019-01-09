@@ -4,19 +4,21 @@
 // LICENSE file in the root directory of this source tree.
 
 use abstract_domains::{AbstractDomains, ExpressionDomain};
-use abstract_value::{AbstractValue, Path};
+use abstract_value::{self, AbstractValue};
 use constant_value::{ConstantValue, ConstantValueCache};
-use rpds::{HashTrieMap, List};
+use environment::Environment;
+use rpds::List;
 use rustc::session::Session;
 use rustc::ty::{LazyConst, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use std::borrow::Borrow;
+use std::collections::HashMap;
+use summaries;
 use summaries::PersistentSummaryCache;
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax_pos;
 
-/// Holds the state for the MIR test visitor.
-pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
+pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b> {
     /// A place where diagnostic messages can be buffered by the test harness.
     pub buffered_diagnostics: &'a mut Vec<Diagnostic>,
     /// A call back that the test harness can use to buffer the diagnostic message.
@@ -26,30 +28,139 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
     pub tcx: TyCtxt<'b, 'tcx, 'tcx>,
     pub def_id: hir::def_id::DefId,
     pub mir: &'a mir::Mir<'tcx>,
-    pub environment: &'a mut HashTrieMap<Path, AbstractValue>,
-    pub inferred_preconditions: &'a mut List<AbstractValue>,
-    pub path_conditions: &'a mut List<AbstractValue>,
-    pub preconditions: &'a mut List<AbstractValue>,
-    pub post_conditions: &'a mut List<AbstractValue>,
-    pub unwind_condition: &'a mut Option<AbstractValue>,
-    pub summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
     pub constant_value_cache: &'a mut ConstantValueCache,
-    pub current_span: syntax_pos::Span,
+    pub summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
+}
+
+/// Holds the state for the MIR test visitor.
+pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
+    buffered_diagnostics: &'a mut Vec<Diagnostic>,
+    emit_diagnostic: fn(&mut DiagnosticBuilder, buf: &mut Vec<Diagnostic>) -> (),
+    session: &'tcx Session,
+    tcx: TyCtxt<'b, 'tcx, 'tcx>,
+    def_id: hir::def_id::DefId,
+    mir: &'a mir::Mir<'tcx>,
+    constant_value_cache: &'a mut ConstantValueCache,
+    summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
+
+    check_for_errors: bool,
+    current_environment: Environment,
+    current_span: syntax_pos::Span,
+    exit_environment: Environment,
+    inferred_preconditions: List<AbstractValue>,
+    path_conditions: List<AbstractValue>,
+    post_conditions: List<AbstractValue>,
+    preconditions: List<AbstractValue>,
+    unwind_condition: List<AbstractValue>,
 }
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
 /// so that we can test a call to every default implementation of the MirVisitor trait.
 impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
-    /// Visits each basic block in order of occurrence.
-    pub fn visit_body(&mut self) {
-        debug!("visit_body({:?})", self.def_id);
+    pub fn new(crate_context: MirVisitorCrateContext<'a, 'b, 'tcx>) -> MirVisitor<'a, 'b, 'tcx> {
+        MirVisitor {
+            buffered_diagnostics: crate_context.buffered_diagnostics,
+            emit_diagnostic: crate_context.emit_diagnostic,
+            session: crate_context.session,
+            tcx: crate_context.tcx,
+            def_id: crate_context.def_id,
+            mir: crate_context.mir,
+            constant_value_cache: crate_context.constant_value_cache,
+            summary_cache: crate_context.summary_cache,
 
-        for bb in self.mir.basic_blocks().indices() {
-            self.visit_basic_block(bb);
+            check_for_errors: false,
+            current_environment: Environment::default(),
+            current_span: syntax_pos::DUMMY_SP,
+            exit_environment: Environment::default(),
+            inferred_preconditions: List::new(),
+            path_conditions: List::new(),
+            post_conditions: List::new(),
+            preconditions: List::new(),
+            unwind_condition: List::new(),
         }
     }
 
-    /// Visit each statement in order and then visits the terminator.
+    /// Analyze the body and store a summary of its behavior in self.summary_cache.
+    pub fn visit_body(&mut self) {
+        debug!("visit_body({:?})", self.def_id);
+        // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
+        let mut in_state: HashMap<rustc::mir::BasicBlock, Environment> = HashMap::new();
+        // out_state[bb] is the environment that results from analyzing block bb, given in_state[bb]
+        let mut out_state: HashMap<rustc::mir::BasicBlock, Environment> = HashMap::new();
+        // The entry block has no predecessors and its initial state is the function parameters.
+        let mut first_block = true;
+        for bb in self.mir.basic_blocks().indices() {
+            let i_state = if first_block {
+                first_block = false;
+                Environment::with_parameters(self.def_id, self.tcx)
+            } else {
+                Environment::default() // Will be joined with other states before analysis of bb
+            };
+            in_state.insert(bb, i_state);
+            out_state.insert(bb, Environment::default());
+        }
+
+        // Compute a fixed point, which is a value of out_state that will not grow with more iterations.
+        let mut changed = true;
+        let mut iteration_count = 0;
+        while changed {
+            changed = false;
+            for bb in self.mir.basic_blocks().indices() {
+                // Merge output states of predcessors of bb
+                let mut i_state = Environment::default();
+                for pred_bb in self.mir.predecessors_for(bb).iter() {
+                    // todo: obtain join condition from analysis of pred_bb
+                    let join_condition = &abstract_value::TOP;
+                    // Once all paths have already been analyzed for a second time (iteration_count >= 3)
+                    // we to abstract more aggressively in order to ensure reaching a fixed point.
+                    if iteration_count < 3 {
+                        i_state = i_state.join(&out_state[pred_bb], join_condition);
+                    } else {
+                        i_state = i_state.widen(&out_state[pred_bb], join_condition);
+                    }
+                }
+
+                // Analyze the basic block.
+                self.current_environment = i_state;
+                self.visit_basic_block(bb);
+
+                // Check for a fixed point.
+                if !self.current_environment.subset(&out_state[&bb]) {
+                    // There is some path for which self.current_environment.value_at(path) includes
+                    // a value this is not present in out_state[bb].value_at(path), so any block
+                    // that used out_state[bb] as part of its input state now needs to get reanalyzed.
+                    out_state.insert(bb, self.current_environment.clone());
+                    changed = true;
+                } else {
+                    // If the environment at the end of this block does not have any new values,
+                    // we have reached a fixed point for this block.
+                }
+            }
+            iteration_count += 1;
+        }
+
+        // Now traverse the blocks again, doing checks and emitting diagnostics.
+        // in_state[bb] is now complete for every basic block bb in the body.
+        self.check_for_errors = true;
+        for bb in self.mir.basic_blocks().indices() {
+            let i_state = (&in_state[&bb]).clone();
+            self.current_environment = i_state;
+            self.visit_basic_block(bb);
+        }
+
+        // Now create a summary of the body that can be in-lined into call sites.
+        let summary = summaries::summarize(
+            &self.exit_environment,
+            &self.inferred_preconditions,
+            &self.path_conditions,
+            &self.preconditions,
+            &self.post_conditions,
+            &self.unwind_condition,
+        );
+        self.summary_cache.set_summary_for(self.def_id, summary);
+    }
+
+    /// Visits each statement in order and then visits the terminator.
     fn visit_basic_block(&mut self, bb: mir::BasicBlock) {
         debug!("visit_basic_block({:?})", bb);
 
@@ -285,6 +396,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     ) {
         debug!("default visit_call(func: {:?}, args: {:?}, destination: {:?}, cleanup: {:?}, from_hir_call: {:?})", func, args, destination, cleanup, from_hir_call);
         let func_to_call = self.visit_operand(func);
+        if !self.check_for_errors {
+            return;
+        }
         if let ExpressionDomain::CompileTimeConstant(fun) = func_to_call.value.expression_domain {
             if self
                 .constant_value_cache

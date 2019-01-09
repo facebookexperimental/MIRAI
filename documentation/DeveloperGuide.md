@@ -5,7 +5,7 @@ The instructions assume that you've cloned the mirai repository into your home d
 ## Building
 
 You'll need to have Rust installed on your system. See 
-[here](https://doc.rust-lang.org/book/2018-edition/ch01-01-installation.html) for instructions.
+[here](https://doc.rust-lang.org/book/ch01-01-installation.html) for instructions.
 
 Mirai depends on unstable private APIs of the rust compiler to do things like parsing, type checking and
 lowering to MIR. These can only be accessed by using the nightly build of the compiler. So use rustup to set

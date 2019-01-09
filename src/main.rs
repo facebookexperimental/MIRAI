@@ -24,7 +24,6 @@ use mirai::utils;
 use std::env;
 use std::path::Path;
 
-#[cfg_attr(tarpaulin, skip)]
 fn main() {
     rustc_driver::run(|| {
         // Initialize loggers.
