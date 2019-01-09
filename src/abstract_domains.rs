@@ -23,7 +23,7 @@ pub const BOTTOM: AbstractDomains = AbstractDomains {
 };
 
 /// A collection of abstract domains that all represent the universal abstract value.
-/// I.e. the corresponding set of possible concrete values includes every possible concrete values.
+/// I.e. the corresponding set of possible concrete values includes every possible concrete value.
 pub const TOP: AbstractDomains = AbstractDomains {
     expression_domain: ExpressionDomain::Top,
 };
@@ -36,7 +36,7 @@ impl AbstractDomains {
 
     /// True if all of the abstract domains in this collection correspond to the set of all possible concrete values.
     pub fn is_top(&self) -> bool {
-        self.expression_domain.is_bottom()
+        self.expression_domain.is_top()
     }
 
     /// Joins all of the abstract domains in the two collections to form a single collection.
@@ -55,6 +55,8 @@ impl AbstractDomains {
     }
 
     /// Widen all of the abstract domains in the two collections to form a single collection.
+    /// The join condition is supplied to inform the widen operation, but the result is not
+    /// required to be in a form that can be refined using the join condition.
     pub fn widen(
         &self,
         other: &AbstractDomains,
@@ -120,9 +122,9 @@ pub enum ExpressionDomain {
         // A condition that results in a Boolean value
         condition: Box<AbstractDomains>,
         // The value of this expression if join_condition is true.
-        if_true: Box<ExpressionDomain>,
+        consequent: Box<ExpressionDomain>,
         // The value of this expression if join_condition is false.
-        if_false: Box<ExpressionDomain>,
+        alternate: Box<ExpressionDomain>,
     },
 }
 
@@ -150,8 +152,8 @@ impl AbstractDomain for ExpressionDomain {
     fn join(&self, other: &ExpressionDomain, join_condition: &AbstractDomains) -> ExpressionDomain {
         ExpressionDomain::ConditionalExpression {
             condition: box join_condition.clone(),
-            if_true: box self.clone(),
-            if_false: box other.clone(),
+            consequent: box self.clone(),
+            alternate: box other.clone(),
         }
     }
 
@@ -159,31 +161,35 @@ impl AbstractDomain for ExpressionDomain {
     /// Note: !x.subset(y) does not imply y.subset(x).
     fn subset(&self, other: &ExpressionDomain) -> bool {
         match (self, other) {
-            // The empty set is a subset of every other set
+            // The empty set is a subset of every other set.
             (ExpressionDomain::Bottom, _) => true,
-            // A non empty set if not a subset of the empty set
+            // A non empty set is not a subset of the empty set.
             (_, ExpressionDomain::Bottom) => false,
-            // Every set is a subset of the universal set
+            // Every set is a subset of the universal set.
             (_, ExpressionDomain::Top) => true,
-            // The universal set is not a subset of any set other than the universal set
+            // The universal set is not a subset of any set other than the universal set.
             (ExpressionDomain::Top, _) => false,
             (
                 ExpressionDomain::ConditionalExpression {
-                    if_true, if_false, ..
+                    consequent,
+                    alternate,
+                    ..
                 },
                 _,
             ) => {
                 // This is a conservative answer. False does not imply other.subset(self).
-                if_true.subset(other) && if_false.subset(other)
+                consequent.subset(other) && alternate.subset(other)
             }
             (
                 _,
                 ExpressionDomain::ConditionalExpression {
-                    if_true, if_false, ..
+                    consequent,
+                    alternate,
+                    ..
                 },
             ) => {
                 // This is a conservative answer. False does not imply other.subset(self).
-                self.subset(if_true) || self.subset(if_false)
+                self.subset(consequent) || self.subset(alternate)
             }
             // {x} subset {y} iff x = y
             (

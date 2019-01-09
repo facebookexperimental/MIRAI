@@ -109,13 +109,13 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 // Merge output states of predcessors of bb
                 let mut i_state = Environment::default();
                 for pred_bb in self.mir.predecessors_for(bb).iter() {
-                    // todo: obtain join condition from out_state[pred_bb]
+                    // todo: obtain join condition from analysis of pred_bb
                     let join_condition = &abstract_value::TOP;
+                    // Once all paths have already been analyzed for a second time (iteration_count >= 3)
+                    // we to abstract more aggressively in order to ensure reaching a fixed point.
                     if iteration_count < 3 {
                         i_state = i_state.join(&out_state[pred_bb], join_condition);
                     } else {
-                        // At this point, all paths have already been analyzed for a second time and it is
-                        // time to abstract more aggressively in order to ensure reaching a fixed point.
                         i_state = i_state.widen(&out_state[pred_bb], join_condition);
                     }
                 }
