@@ -21,8 +21,8 @@ pub struct AbstractValue {
     /// The source location of that expression is stored in provenance.
     /// When an expression value is stored somewhere and then retrieved via an accessor expression,
     /// a new abstract value is created (via refinement using the current path condition) with a
-    /// provenance that is the source location of accessor expression prepended to the provenance of
-    /// the stored value.
+    /// provenance that is the source location of the accessor expression prepended to the
+    /// provenance of the stored value.
     #[serde(skip)]
     pub provenance: Vec<Span>,
     /// Various approximations of the actual value.

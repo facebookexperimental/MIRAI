@@ -84,12 +84,11 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// For now, statics and promoted constants just return Top.
     /// If a local value cannot be found the result is Bottom.
     fn lookup_path_and_refine_result(&mut self, path: Path) -> AbstractValue {
-        let refined_val;
-        {
+        let refined_val = {
             let bottom = abstract_value::BOTTOM;
             let local_val = self.current_environment.value_at(&path).unwrap_or(&bottom);
-            refined_val = local_val.refine_with(&self.path_conditions, self.current_span);
-        }
+            local_val.refine_with(&self.path_conditions, self.current_span)
+        };
         if refined_val.is_bottom() {
             // Not found locally, so try statics and promoted constants
             let mut val: Option<AbstractValue> = None;
