@@ -158,6 +158,6 @@ pub enum PathSelector {
     Subslice { from: u32, to: u32 },
 
     /// "Downcast" to a variant of an ADT. Currently, MIR only introduces
-    /// this for ADTs with more than one variant.
+    /// this for ADTs with more than one variant. The value is the ordinal of the variant.
     Downcast(usize),
 }

@@ -200,13 +200,13 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
 
     /// Returns the summary corresponding to the persistent_key in the the summary database.
     /// The caller is expected to cache this.
-    pub fn get_persistent_summary_for(&self, persistent_key: &String) -> Summary {
+    pub fn get_persistent_summary_for(&self, persistent_key: &str) -> Summary {
         let db = &self.db;
         Self::get_persistent_summary_for_db(db, persistent_key)
     }
 
     /// Helper for get_summary_for and get_persistent_summary_for.
-    fn get_persistent_summary_for_db(db: &rocksdb::DB, persistent_key: &String) -> Summary {
+    fn get_persistent_summary_for_db(db: &rocksdb::DB, persistent_key: &str) -> Summary {
         match db.get(persistent_key.as_bytes()) {
             Ok(Some(serialized_summary)) => {
                 bincode::deserialize(serialized_summary.deref()).unwrap()

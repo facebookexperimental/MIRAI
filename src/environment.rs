@@ -18,7 +18,7 @@ impl Environment {
     /// initialized with abstract_values::Top
     pub fn with_parameters(num_args: usize) -> Environment {
         let value_map = HashTrieMap::default();
-        for i in 1..num_args + 1 {
+        for i in 1..=num_args {
             let par_i = Path::LocalVariable { ordinal: i };
             // todo: figure out how to get a source span for each parameter definition
             value_map.insert(par_i, abstract_value::TOP);
