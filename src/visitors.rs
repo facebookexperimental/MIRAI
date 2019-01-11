@@ -83,10 +83,14 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// Use the local and global environments to resolve Path to an abstract value.
     /// For now, statics and promoted constants just return Top.
     /// If a local value cannot be found the result is Bottom.
-    fn lookup_path(&mut self, path: Path) -> AbstractValue {
-        // todo: rather than simply clone the value, also specialize it with the current path condition
-        let local_val = self.current_environment.value_at(&path).clone();
-        if local_val.is_bottom() {
+    fn lookup_path_and_refine_result(&mut self, path: Path) -> AbstractValue {
+        let refined_val;
+        {
+            let bottom = abstract_value::BOTTOM;
+            let local_val = self.current_environment.value_at(&path).unwrap_or(&bottom);
+            refined_val = local_val.refine_with(&self.path_conditions, self.current_span);
+        }
+        if refined_val.is_bottom() {
             // Not found locally, so try statics and promoted constants
             let mut val: Option<AbstractValue> = None;
             if let Path::StaticVariable { ref name } = path {
@@ -94,7 +98,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 val = Some(summary.result.unwrap_or_else(|| abstract_value::TOP));
             }
             if let Path::PromotedConstant { .. } = path {
-                // todo: provide a crate level environment for storing promoted constants
+                // todo: #34 provide a crate level environment for storing promoted constants
                 val = Some(abstract_value::TOP);
             }
             // This bit of awkwardness is needed so that we can move path into the environment.
@@ -104,7 +108,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 return val;
             }
         }
-        local_val
+        refined_val
     }
 
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
@@ -509,7 +513,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             region, borrow_kind, place
         );
         let path = self.visit_place(place);
-        self.lookup_path(path)
+        self.lookup_path_and_refine_result(path)
     }
 
     /// length of a [X] or [X;n] value.
@@ -631,7 +635,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             }
         };
         AbstractValue {
-            provenance: span,
+            provenance: vec![span],
             value: AbstractDomains { expression_domain },
         }
     }

@@ -14,6 +14,7 @@
 // While pretty bad, it is a lot less bad than having to write our own compiler, so here goes.
 #![feature(rustc_private)]
 #![feature(box_syntax)]
+#![feature(const_vec_new)]
 
 extern crate getopts;
 extern crate rustc;

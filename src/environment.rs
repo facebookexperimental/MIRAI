@@ -29,10 +29,9 @@ impl Environment {
 
 /// Methods
 impl Environment {
-    /// Returns a reference to the value associated with the given path.
-    /// If no such value exists, &abstract_value::Bottom is returned.
-    pub fn value_at(&self, path: &Path) -> &AbstractValue {
-        self.value_map.get(path).unwrap_or(&abstract_value::BOTTOM)
+    /// Returns a reference to the value associated with the given path, if there is one.
+    pub fn value_at(&self, path: &Path) -> Option<&AbstractValue> {
+        self.value_map.get(path)
     }
 
     /// Updates the path to value map so that the given path now points to the given value.

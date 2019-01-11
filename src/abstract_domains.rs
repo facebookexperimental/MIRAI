@@ -13,7 +13,7 @@ use constant_value::ConstantValue;
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AbstractDomains {
     pub expression_domain: ExpressionDomain,
-    //todo: use cached getters to get other domains on demand
+    //todo: #30 use cached getters to get other domains on demand
 }
 
 /// A collection of abstract domains that all represent the impossible abstract value.
@@ -204,7 +204,7 @@ impl AbstractDomain for ExpressionDomain {
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to Top.
     fn widen(&self, _other: &Self, _join_condition: &AbstractDomains) -> ExpressionDomain {
-        //todo: don't get to top quite this quickly.
+        //todo: #30 don't get to top quite this quickly.
         ExpressionDomain::Top
     }
 }
