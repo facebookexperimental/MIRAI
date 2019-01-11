@@ -194,13 +194,25 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         let db = &self.db;
         self.cache.entry(def_id).or_insert_with(|| {
             let persistent_key = summary_key_str(tcx, def_id);
-            match db.get(persistent_key.as_bytes()) {
-                Ok(Some(serialized_summary)) => {
-                    bincode::deserialize(serialized_summary.deref()).unwrap()
-                }
-                _ => Summary::default(), // todo: look for a contract summary or construct from type
-            }
+            Self::get_persistent_summary_for_db(db, &persistent_key)
         })
+    }
+
+    /// Returns the summary corresponding to the persistent_key in the the summary database.
+    /// The caller is expected to cache this.
+    pub fn get_persistent_summary_for(&self, persistent_key: &str) -> Summary {
+        let db = &self.db;
+        Self::get_persistent_summary_for_db(db, persistent_key)
+    }
+
+    /// Helper for get_summary_for and get_persistent_summary_for.
+    fn get_persistent_summary_for_db(db: &rocksdb::DB, persistent_key: &str) -> Summary {
+        match db.get(persistent_key.as_bytes()) {
+            Ok(Some(serialized_summary)) => {
+                bincode::deserialize(serialized_summary.deref()).unwrap()
+            }
+            _ => Summary::default(), // todo: look for a contract summary or construct from type
+        }
     }
 
     /// Sets or updates the cache so that from now on def_id maps to summary.

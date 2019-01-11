@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use abstract_domains::{AbstractDomains, ExpressionDomain};
-use abstract_value::{self, AbstractValue};
+use abstract_value::{self, AbstractValue, Path, PathSelector};
 use constant_value::{ConstantValue, ConstantValueCache};
 use environment::Environment;
 use rpds::List;
@@ -80,6 +80,33 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         }
     }
 
+    /// Use the local and global environments to resolve Path to an abstract value.
+    /// For now, statics and promoted constants just return Top.
+    /// If a local value cannot be found the result is Bottom.
+    fn lookup_path(&mut self, path: Path) -> AbstractValue {
+        // todo: rather than simply clone the value, also specialize it with the current path condition
+        let local_val = self.current_environment.value_at(&path).clone();
+        if local_val.is_bottom() {
+            // Not found locally, so try statics and promoted constants
+            let mut val: Option<AbstractValue> = None;
+            if let Path::StaticVariable { ref name } = path {
+                let summary = self.summary_cache.get_persistent_summary_for(name);
+                val = Some(summary.result.unwrap_or_else(|| abstract_value::TOP));
+            }
+            if let Path::PromotedConstant { .. } = path {
+                // todo: provide a crate level environment for storing promoted constants
+                val = Some(abstract_value::TOP);
+            }
+            // This bit of awkwardness is needed so that we can move path into the environment.
+            // Hopefully LLVM will optimize this away.
+            if let Some(val) = val {
+                self.current_environment.update_value_at(path, val.clone());
+                return val;
+            }
+        }
+        local_val
+    }
+
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
     pub fn visit_body(&mut self) {
         debug!("visit_body({:?})", self.def_id);
@@ -92,7 +119,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         for bb in self.mir.basic_blocks().indices() {
             let i_state = if first_block {
                 first_block = false;
-                Environment::with_parameters(self.def_id, self.tcx)
+                Environment::with_parameters(self.mir.arg_count)
             } else {
                 Environment::default() // Will be joined with other states before analysis of bb
             };
@@ -217,7 +244,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_assign(place: {:?}, rvalue: {:?})",
             place, rvalue
         );
-        self.visit_rvalue(rvalue)
+        let path = self.visit_place(place);
+        let rvalue = self.visit_rvalue(rvalue);
+        self.current_environment.update_value_at(path, rvalue);
     }
 
     /// Write the discriminant for a variant to the enum Place.
@@ -428,7 +457,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Calls a specialized visitor for each kind of Rvalue
-    fn visit_rvalue(&mut self, rvalue: &mir::Rvalue) {
+    fn visit_rvalue(&mut self, rvalue: &mir::Rvalue) -> AbstractValue {
         match rvalue {
             mir::Rvalue::Use(operand) => self.visit_use(operand),
             mir::Rvalue::Repeat(operand, count) => self.visit_repeat(operand, *count),
@@ -453,45 +482,54 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// x (either a move or copy, depending on type of x)
-    fn visit_use(&mut self, operand: &mir::Operand) {
+    fn visit_use(&mut self, operand: &mir::Operand) -> AbstractValue {
         debug!("default visit_use(operand: {:?})", operand);
-        self.visit_operand(operand);
+        self.visit_operand(operand)
     }
 
     /// [x; 32]
-    fn visit_repeat(&mut self, operand: &mir::Operand, count: u64) {
+    fn visit_repeat(&mut self, operand: &mir::Operand, count: u64) -> AbstractValue {
         debug!(
             "default visit_repeat(operand: {:?}, count: {:?})",
             operand, count
         );
         self.visit_operand(operand);
+        abstract_value::TOP
     }
 
     /// &x or &mut x
     fn visit_ref(
-        &self,
+        &mut self,
         region: rustc::ty::Region,
         borrow_kind: mir::BorrowKind,
         place: &mir::Place,
-    ) {
+    ) -> AbstractValue {
         debug!(
             "default visit_ref(region: {:?}, borrow_kind: {:?}, place: {:?})",
             region, borrow_kind, place
         );
+        let path = self.visit_place(place);
+        self.lookup_path(path)
     }
 
     /// length of a [X] or [X;n] value.
-    fn visit_len(&self, place: &mir::Place) {
+    fn visit_len(&self, place: &mir::Place) -> AbstractValue {
         debug!("default visit_len(place: {:?})", place);
+        abstract_value::TOP
     }
 
     /// cast converts the operand to the given ty.
-    fn visit_cast(&mut self, cast_kind: mir::CastKind, operand: &mir::Operand, ty: rustc::ty::Ty) {
+    fn visit_cast(
+        &mut self,
+        cast_kind: mir::CastKind,
+        operand: &mir::Operand,
+        ty: rustc::ty::Ty,
+    ) -> AbstractValue {
         debug!(
             "default visit_cast(cast_kind: {:?}, operand: {:?}, ty: {:?})",
             cast_kind, operand, ty
         );
-        self.visit_operand(operand);
+        self.visit_operand(operand)
     }
 
     /// Apply the given binary operator to the two operands.
@@ -500,13 +538,14 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         bin_op: mir::BinOp,
         left_operand: &mir::Operand,
         right_operand: &mir::Operand,
-    ) {
+    ) -> AbstractValue {
         debug!(
             "default visit_binary_op(bin_op: {:?}, left_operand: {:?}, right_operand: {:?})",
             bin_op, left_operand, right_operand
         );
         self.visit_operand(left_operand);
         self.visit_operand(right_operand);
+        abstract_value::TOP
     }
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate.
@@ -515,35 +554,39 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         bin_op: mir::BinOp,
         left_operand: &mir::Operand,
         right_operand: &mir::Operand,
-    ) {
+    ) -> AbstractValue {
         debug!("default visit_checked_binary_op(bin_op: {:?}, left_operand: {:?}, right_operand: {:?})", bin_op, left_operand, right_operand);
         self.visit_operand(left_operand);
         self.visit_operand(right_operand);
+        abstract_value::TOP
     }
 
     /// Create a value based on the given type.
-    fn visit_nullary_op(&self, null_op: mir::NullOp, ty: rustc::ty::Ty) {
+    fn visit_nullary_op(&self, null_op: mir::NullOp, ty: rustc::ty::Ty) -> AbstractValue {
         debug!(
             "default visit_nullary_op(null_op: {:?}, ty: {:?})",
             null_op, ty
         );
+        abstract_value::TOP
     }
 
     /// Apply the given unary operator to the operand.
-    fn visit_unary_op(&mut self, un_op: mir::UnOp, operand: &mir::Operand) {
+    fn visit_unary_op(&mut self, un_op: mir::UnOp, operand: &mir::Operand) -> AbstractValue {
         debug!(
             "default visit_unary_op(un_op: {:?}, operand: {:?})",
             un_op, operand
         );
         self.visit_operand(operand);
+        abstract_value::TOP
     }
 
     /// Read the discriminant of an ADT.
     ///
     /// Undefined (i.e. no effort is made to make it defined, but there’s no reason why it cannot
     /// be defined to return, say, a 0) if ADT is not an enum.
-    fn visit_discriminant(&self, place: &mir::Place) {
+    fn visit_discriminant(&self, place: &mir::Place) -> AbstractValue {
         debug!("default visit_discriminant(place: {:?})", place);
+        abstract_value::TOP
     }
 
     /// Create an aggregate value, like a tuple or struct.  This is
@@ -551,11 +594,16 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// ..., y: ... }` from `dest.x = ...; dest.y = ...;` in the case
     /// that `Foo` has a destructor. These rvalues can be optimized
     /// away after type-checking and before lowering.
-    fn visit_aggregate(&self, aggregate_kinds: &mir::AggregateKind, operands: &[mir::Operand]) {
+    fn visit_aggregate(
+        &self,
+        aggregate_kinds: &mir::AggregateKind,
+        operands: &[mir::Operand],
+    ) -> AbstractValue {
         debug!(
             "default visit_aggregate(aggregate_kinds: {:?}, operands: {:?})",
             aggregate_kinds, operands
         );
+        abstract_value::TOP
     }
 
     /// These are values that can appear inside an rvalue. They are intentionally
@@ -601,8 +649,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// Safe for values of all types (modulo future developments towards `?Move`).
     /// Correct usage patterns are enforced by the borrow checker for safe code.
     /// `Copy` may be converted to `Move` to enable "last-use" optimizations.
-    fn visit_move(&self, place: &mir::Place) {
+    fn visit_move(&mut self, place: &mir::Place) {
         debug!("default visit_move(place: {:?})", place);
+        self.visit_place(place);
     }
 
     /// Synthesizes a constant value.
@@ -638,5 +687,66 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             &self.tcx,
             &mut self.summary_cache,
         )
+    }
+
+    /// Returns a Path instance that is the essentially the same as the Place instance, but which
+    /// can be serialized and used as a cache key.
+    fn visit_place(&mut self, place: &mir::Place) -> Path {
+        debug!("default visit_place(place: {:?})", place);
+        match place {
+            mir::Place::Local(local) => Path::LocalVariable {
+                ordinal: local.as_usize(),
+            },
+            mir::Place::Static(boxed_static) => {
+                let def_id = boxed_static.def_id;
+                let name = summaries::summary_key_str(&self.tcx, def_id);
+                Path::StaticVariable { name }
+            }
+            mir::Place::Promoted(boxed_promoted) => {
+                let index = boxed_promoted.0;
+                Path::PromotedConstant {
+                    ordinal: index.as_usize(),
+                }
+            }
+            mir::Place::Projection(boxed_place_projection) => {
+                let base = self.visit_place(&boxed_place_projection.base);
+                let selector = self.visit_projection_elem(&boxed_place_projection.elem);
+                Path::QualifiedPath {
+                    qualifier: box base,
+                    selector: box selector,
+                }
+            }
+        }
+    }
+
+    /// Returns a PathSelector instance that is essentially the same as the ProjectionElem instance
+    /// but which can be serialized.
+    fn visit_projection_elem(
+        &mut self,
+        projection_elem: &mir::ProjectionElem<mir::Local, &rustc::ty::TyS>,
+    ) -> PathSelector {
+        debug!(
+            "visit_projection_elem(projection_elem: {:?})",
+            projection_elem
+        );
+        match projection_elem {
+            mir::ProjectionElem::Deref => PathSelector::Deref,
+            mir::ProjectionElem::Field(field, _) => PathSelector::Field(field.index()),
+            mir::ProjectionElem::Index(local) => PathSelector::Index(local.as_usize()),
+            mir::ProjectionElem::ConstantIndex {
+                offset,
+                min_length,
+                from_end,
+            } => PathSelector::ConstantIndex {
+                offset: *offset,
+                min_length: *min_length,
+                from_end: *from_end,
+            },
+            mir::ProjectionElem::Subslice { from, to } => PathSelector::Subslice {
+                from: *from,
+                to: *to,
+            },
+            mir::ProjectionElem::Downcast(_, index) => PathSelector::Downcast(index.as_usize()),
+        }
     }
 }
