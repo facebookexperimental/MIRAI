@@ -29,4 +29,7 @@ implement trait methods will have to honor the post conditions of the trait meth
 preconditions. This does have the implication that trait methods have to be annotated somehow to provide useful
 summaries to their callers.
 
-todo: write stuff about fixed points
+When a function recursively calls itself, directly or indirectly, it will be scheduled for re-analysis when its analysis
+completes, if the resulting summary is different from its previous summary. The code that responds to an incremental
+change should therefore be a loop that iterates until a fixed point, and the summaries that result from later iterations
+of the fixed point loop should be widened in order to ensure that the fixed point is reached.

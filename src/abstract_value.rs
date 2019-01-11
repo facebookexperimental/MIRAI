@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 use abstract_domains::{self, AbstractDomains};
+use rpds::List;
 use syntax_pos::Span;
 
 /// Mirai is an abstract interpreter and thus produces abstract values.
@@ -18,13 +19,12 @@ use syntax_pos::Span;
 pub struct AbstractValue {
     /// An abstract value is the result of some expression.
     /// The source location of that expression is stored in provenance.
-    /// When an expression is stored somewhere and then retrieved via an accessor expression, a new
-    /// abstract value is created (via refinement using the current path condition) with a provenance
-    /// that is the source location of accessor expression. If refinement results in an existing
-    /// expression (i.e. one with a provenance of its own) then a copy expression is created with
-    /// the existing expression as argument, so that both locations are tracked.
+    /// When an expression value is stored somewhere and then retrieved via an accessor expression,
+    /// a new abstract value is created (via refinement using the current path condition) with a
+    /// provenance that is the source location of the accessor expression prepended to the
+    /// provenance of the stored value.
     #[serde(skip)]
-    pub provenance: Span, //todo: perhaps this should be a list of spans
+    pub provenance: Vec<Span>,
     /// Various approximations of the actual value.
     /// See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
     pub value: AbstractDomains,
@@ -32,14 +32,14 @@ pub struct AbstractValue {
 
 /// An abstract value that can be used as the value for an operation that has no normal result.
 pub const BOTTOM: AbstractValue = AbstractValue {
-    provenance: syntax_pos::DUMMY_SP,
+    provenance: Vec::new(),
     value: abstract_domains::BOTTOM,
 };
 
 /// An abstract value to use when nothing is known about the value. All possible concrete values
 /// are members of the concrete set of values corresponding to this abstract value.
 pub const TOP: AbstractValue = AbstractValue {
-    provenance: syntax_pos::DUMMY_SP,
+    provenance: Vec::new(),
     value: abstract_domains::TOP,
 };
 
@@ -59,9 +59,31 @@ impl AbstractValue {
     /// In a context where the join condition is known to be true, the result can be refined to be
     /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
     pub fn join(&self, other: &AbstractValue, join_condition: &AbstractValue) -> AbstractValue {
+        let mut provenance = Vec::new();
+        provenance.extend_from_slice(&join_condition.provenance);
+        provenance.extend_from_slice(&self.provenance);
+        provenance.extend_from_slice(&other.provenance);
         AbstractValue {
-            provenance: syntax_pos::DUMMY_SP,
+            provenance,
             value: self.value.join(&other.value, &join_condition.value),
+        }
+    }
+
+    /// Returns a value that could be simplified (refined) by using the current path conditions
+    /// (conditions known to be true in the current context). If no refinement is possible
+    /// the result is simply a clone of this value, but with its provenance updated by
+    /// pre-pending the given span.
+    pub fn refine_with(
+        &self,
+        _path_condtions: &List<AbstractValue>,
+        provenance: Span,
+    ) -> AbstractValue {
+        //todo: #32 simplify this value using the path conditions
+        let mut provenance = vec![provenance];
+        provenance.extend_from_slice(&self.provenance);
+        AbstractValue {
+            provenance,
+            value: self.value.clone(),
         }
     }
 
@@ -76,7 +98,7 @@ impl AbstractValue {
     /// deterministically lead to Top.
     pub fn widen(&self, other: &AbstractValue, join_condition: &AbstractValue) -> AbstractValue {
         AbstractValue {
-            provenance: syntax_pos::DUMMY_SP,
+            provenance: other.provenance.clone(),
             value: self.value.widen(&other.value, &join_condition.value),
         }
     }

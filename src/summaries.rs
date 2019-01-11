@@ -92,9 +92,9 @@ pub fn summarize(
     post_conditions: &List<AbstractValue>,
     unwind_condition: &List<AbstractValue>,
 ) -> Summary {
-    let result = None; // todo: extract from exit environment
-    let side_effects: List<(Path, AbstractValue)> = List::new(); // todo: extract from environment
-    let unwind_side_effects: List<(Path, AbstractValue)> = List::new(); // todo: extract from environment
+    let result = None; // todo: #31 extract from exit environment
+    let side_effects: List<(Path, AbstractValue)> = List::new(); // todo: #31  extract from environment
+    let unwind_side_effects: List<(Path, AbstractValue)> = List::new(); // todo: #31  extract from environment
     Summary {
         preconditions: preconditions.clone(),
         result,
@@ -211,7 +211,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             Ok(Some(serialized_summary)) => {
                 bincode::deserialize(serialized_summary.deref()).unwrap()
             }
-            _ => Summary::default(), // todo: look for a contract summary or construct from type
+            _ => Summary::default(), // todo: #33 look for a contract summary or construct from type
         }
     }
 
