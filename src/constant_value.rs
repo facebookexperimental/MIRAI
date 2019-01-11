@@ -3,6 +3,8 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use abstract_domains::{AbstractDomains, ExpressionDomain};
+use abstract_value::AbstractValue;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use std::collections::HashMap;
@@ -14,6 +16,8 @@ use utils::is_rust_intrinsic;
 /// value can be serialized to the persistent summary cache.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ConstantValue {
+    /// The Boolean value false.
+    False,
     /// A reference to a function
     Function {
         /// Indicates if the function is known to be treated specially by the Rust compiler
@@ -23,8 +27,23 @@ pub enum ConstantValue {
         // todo: is there some way store the def_id here if available?
         // this would not be serialized/deserialized.
     },
-    // A place holder for other kinds of constants. Eventually this goes away.
+    /// Unsigned 16 byte integer.
+    U128(u128),
+    /// The Boolean true value.
+    True,
+    /// A place holder for other kinds of constants. Eventually this goes away.
     Unimplemented,
+}
+
+impl Into<AbstractValue> for ConstantValue {
+    fn into(self) -> AbstractValue {
+        AbstractValue {
+            provenance: vec![],
+            value: AbstractDomains {
+                expression_domain: ExpressionDomain::CompileTimeConstant(self),
+            },
+        }
+    }
 }
 
 impl ConstantValue {

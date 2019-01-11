@@ -5,11 +5,28 @@
 
 use abstract_value::{self, AbstractValue, Path};
 use rpds::HashTrieMap;
+use rustc::mir::BasicBlock;
+use std::collections::HashMap;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Environment {
+    /// The disjunction of all the exit conditions from the predecessors of this block.
+    pub entry_condition: AbstractValue,
+    /// The conditions that guard exit from this block to successor blocks
+    pub exit_conditions: HashMap<BasicBlock, AbstractValue>,
     /// Does not include any entries where the value is abstract_value::Bottom
     value_map: HashTrieMap<Path, AbstractValue>,
+}
+
+/// Default
+impl Environment {
+    pub fn default() -> Environment {
+        Environment {
+            entry_condition: abstract_value::TRUE,
+            exit_conditions: HashMap::default(),
+            value_map: HashTrieMap::default(),
+        }
+    }
 }
 
 /// Constructor
@@ -20,10 +37,13 @@ impl Environment {
         let value_map = HashTrieMap::default();
         for i in 1..=num_args {
             let par_i = Path::LocalVariable { ordinal: i };
-            // todo: figure out how to get a source span for each parameter definition
             value_map.insert(par_i, abstract_value::TOP);
         }
-        Environment { value_map }
+        Environment {
+            value_map,
+            entry_condition: abstract_value::TRUE,
+            exit_conditions: HashMap::default(),
+        }
     }
 }
 
@@ -91,7 +111,11 @@ impl Environment {
                 );
             }
         }
-        Environment { value_map }
+        Environment {
+            value_map,
+            entry_condition: abstract_value::TRUE,
+            exit_conditions: HashMap::default(),
+        }
     }
 
     /// Returns true if for every path, self.value_at(path).subset(other.value_at(path))

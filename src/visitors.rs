@@ -14,7 +14,7 @@ use rustc::{hir, mir};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use summaries;
-use summaries::PersistentSummaryCache;
+use summaries::{PersistentSummaryCache, Summary};
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax_pos;
 
@@ -48,7 +48,6 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
     current_span: syntax_pos::Span,
     exit_environment: Environment,
     inferred_preconditions: List<AbstractValue>,
-    path_conditions: List<AbstractValue>,
     post_conditions: List<AbstractValue>,
     preconditions: List<AbstractValue>,
     unwind_condition: List<AbstractValue>,
@@ -73,7 +72,6 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             current_span: syntax_pos::DUMMY_SP,
             exit_environment: Environment::default(),
             inferred_preconditions: List::new(),
-            path_conditions: List::new(),
             post_conditions: List::new(),
             preconditions: List::new(),
             unwind_condition: List::new(),
@@ -87,7 +85,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         let refined_val = {
             let bottom = abstract_value::BOTTOM;
             let local_val = self.current_environment.value_at(&path).unwrap_or(&bottom);
-            local_val.refine_with(&self.path_conditions, self.current_span)
+            local_val.refine_with(&self.current_environment.entry_condition, self.current_span)
         };
         if refined_val.is_bottom() {
             // Not found locally, so try statics and promoted constants
@@ -114,21 +112,15 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     pub fn visit_body(&mut self) {
         debug!("visit_body({:?})", self.def_id);
         // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
-        let mut in_state: HashMap<rustc::mir::BasicBlock, Environment> = HashMap::new();
+        let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
         // out_state[bb] is the environment that results from analyzing block bb, given in_state[bb]
-        let mut out_state: HashMap<rustc::mir::BasicBlock, Environment> = HashMap::new();
-        // The entry block has no predecessors and its initial state is the function parameters.
-        let mut first_block = true;
+        let mut out_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
         for bb in self.mir.basic_blocks().indices() {
-            let i_state = if first_block {
-                first_block = false;
-                Environment::with_parameters(self.mir.arg_count)
-            } else {
-                Environment::default() // Will be joined with other states before analysis of bb
-            };
-            in_state.insert(bb, i_state);
+            in_state.insert(bb, Environment::default());
             out_state.insert(bb, Environment::default());
         }
+        // The entry block has no predecessors and its initial state is the function parameters.
+        let first_state = Environment::with_parameters(self.mir.arg_count);
 
         // Compute a fixed point, which is a value of out_state that will not grow with more iterations.
         let mut changed = true;
@@ -136,20 +128,56 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         while changed {
             changed = false;
             for bb in self.mir.basic_blocks().indices() {
-                // Merge output states of predcessors of bb
-                let mut i_state = Environment::default();
-                for pred_bb in self.mir.predecessors_for(bb).iter() {
-                    // todo: obtain join condition from analysis of pred_bb
-                    let join_condition = &abstract_value::TOP;
-                    // Once all paths have already been analyzed for a second time (iteration_count >= 3)
-                    // we to abstract more aggressively in order to ensure reaching a fixed point.
-                    if iteration_count < 3 {
-                        i_state = i_state.join(&out_state[pred_bb], join_condition);
+                // Merge output states of predecessors of bb
+                let i_state = if bb.index() == 0 {
+                    first_state.clone()
+                } else {
+                    let mut predecessor_states_and_conditions: Vec<(
+                        &Environment,
+                        Option<&AbstractValue>,
+                    )> = self
+                        .mir
+                        .predecessors_for(bb)
+                        .iter()
+                        .map(|pred_bb| {
+                            let pred_state = &out_state[pred_bb];
+                            let pred_exit_condition = pred_state.exit_conditions.get(&bb);
+                            (pred_state, pred_exit_condition)
+                        })
+                        .filter(|(_, pred_exit_condition)| pred_exit_condition.is_some())
+                        .collect();
+                    let len = predecessor_states_and_conditions.len();
+                    if len == 0 {
+                        // unreachable block
+                        let mut i_state = in_state[&bb].clone();
+                        i_state.entry_condition = abstract_value::FALSE;
+                        i_state
                     } else {
-                        i_state = i_state.widen(&out_state[pred_bb], join_condition);
+                        // We want to do right associative operations and that is easier if we reverse.
+                        predecessor_states_and_conditions.reverse();
+                        let (p_state, pred_exit_condition) = predecessor_states_and_conditions[0];
+                        let mut i_state = p_state.clone();
+                        i_state.entry_condition = pred_exit_condition
+                            .unwrap()
+                            .with_provenance(self.current_span);
+                        for (p_state, pred_exit_condition) in
+                            predecessor_states_and_conditions.iter().skip(1)
+                        {
+                            let join_condition = pred_exit_condition.unwrap();
+                            // Once all paths have already been analyzed for a second time (iteration_count >= 3)
+                            // we to abstract more aggressively in order to ensure reaching a fixed point.
+                            let mut j_state = if iteration_count < 3 {
+                                p_state.join(&i_state, join_condition)
+                            } else {
+                                p_state.widen(&i_state, join_condition)
+                            };
+                            j_state.entry_condition = join_condition
+                                .or(&i_state.entry_condition, Some(self.current_span));
+                            i_state = j_state;
+                        }
+                        i_state
                     }
-                }
-
+                };
                 // Analyze the basic block.
                 self.current_environment = i_state;
                 self.visit_basic_block(bb);
@@ -182,7 +210,6 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         let summary = summaries::summarize(
             &self.exit_environment,
             &self.inferred_preconditions,
-            &self.path_conditions,
             &self.preconditions,
             &self.post_conditions,
             &self.unwind_condition,
@@ -343,8 +370,12 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// block should have one successor in the graph; we jump there
-    fn visit_goto(&self, target: mir::BasicBlock) {
+    fn visit_goto(&mut self, target: mir::BasicBlock) {
         debug!("default visit_goto(local: {:?})", target);
+        // Propagate the entry condition to the successor block.
+        self.current_environment
+            .exit_conditions
+            .insert(target, self.current_environment.entry_condition.clone());
     }
 
     /// `discr` evaluates to an integer; jump depending on its value
@@ -358,7 +389,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// * `targets` - Possible branch sites. The last element of this vector is used
     /// for the otherwise branch, so targets.len() == values.len() + 1 should hold.
     fn visit_switch_int(
-        &self,
+        &mut self,
         discr: &mir::Operand,
         switch_ty: rustc::ty::Ty,
         values: &[u128],
@@ -368,6 +399,21 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_switch_int(discr: {:?}, switch_ty: {:?}, values: {:?}, targets: {:?})",
             discr, switch_ty, values, targets
         );
+        let mut default_exit_condition = self.current_environment.entry_condition.clone();
+        let discr = self.visit_operand(discr);
+        for i in 0..values.len() {
+            let val: AbstractValue = ConstantValue::U128(values[i]).into();
+            let cond = discr.equals(&val, None);
+            let not_cond = cond.not(None);
+            default_exit_condition = default_exit_condition.and(&not_cond, None);
+            let target = targets[i];
+            self.current_environment
+                .exit_conditions
+                .insert(target, cond);
+        }
+        self.current_environment
+            .exit_conditions
+            .insert(targets[values.len()], default_exit_condition);
     }
 
     /// Indicates that the landing pad is finished and unwinding should
@@ -395,7 +441,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
 
     /// Drop the Place
     fn visit_drop(
-        &self,
+        &mut self,
         location: &mir::Place,
         target: mir::BasicBlock,
         unwind: Option<mir::BasicBlock>,
@@ -404,6 +450,16 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_drop(location: {:?}, target: {:?}, unwind: {:?})",
             location, target, unwind
         );
+        // Propagate the entry condition to the successor blocks.
+        self.current_environment
+            .exit_conditions
+            .insert(target, self.current_environment.entry_condition.clone());
+        if let Some(unwind_target) = unwind {
+            self.current_environment.exit_conditions.insert(
+                unwind_target,
+                self.current_environment.entry_condition.clone(),
+            );
+        }
     }
 
     /// Block ends with a call of a converging function
@@ -428,6 +484,24 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     ) {
         debug!("default visit_call(func: {:?}, args: {:?}, destination: {:?}, cleanup: {:?}, from_hir_call: {:?})", func, args, destination, cleanup, from_hir_call);
         let func_to_call = self.visit_operand(func);
+        let function_summary = Summary::default(); //todo: lookup summary for function
+        if let Some((place, target)) = destination {
+            // Assign function result to place
+            let return_value_path = self.visit_place(place);
+            let return_value = function_summary.result.unwrap_or(abstract_value::TOP);
+            self.current_environment
+                .update_value_at(return_value_path, return_value);
+            // Propagate the entry condition to the successor blocks.
+            self.current_environment
+                .exit_conditions
+                .insert(*target, self.current_environment.entry_condition.clone());
+        }
+        if let Some(cleanup_target) = cleanup {
+            self.current_environment.exit_conditions.insert(
+                cleanup_target,
+                self.current_environment.entry_condition.clone(),
+            );
+        }
         if !self.check_for_errors {
             return;
         }
@@ -449,7 +523,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// Jump to the target if the condition has the expected value,
     /// otherwise panic with a message and a cleanup target.
     fn visit_assert(
-        &self,
+        &mut self,
         cond: &mir::Operand,
         expected: bool,
         msg: &mir::AssertMessage,
@@ -457,6 +531,21 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         cleanup: Option<mir::BasicBlock>,
     ) {
         debug!("default visit_assert(cond: {:?}, expected: {:?}, msg: {:?}, target: {:?}, cleanup: {:?})", cond, expected, msg, target, cleanup);
+        let cond = self.visit_operand(cond);
+        // Propagate the entry condition to the successor blocks, conjoined with cond (or !cond).
+        let exit_condition = self.current_environment.entry_condition.and(&cond, None);
+        self.current_environment
+            .exit_conditions
+            .insert(target, exit_condition);
+        if let Some(cleanup_target) = cleanup {
+            let cleanup_condition = self
+                .current_environment
+                .entry_condition
+                .and(&cond.not(None), None);
+            self.current_environment
+                .exit_conditions
+                .insert(cleanup_target, cleanup_condition);
+        }
     }
 
     /// Calls a specialized visitor for each kind of Rvalue
