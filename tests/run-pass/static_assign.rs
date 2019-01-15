@@ -11,3 +11,7 @@ pub static mut A: isize = 3;
 pub fn main() {
     unsafe { A = 4; }
 }
+
+pub fn foo() -> isize {
+    unsafe { A.clone() }
+}
