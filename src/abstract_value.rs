@@ -215,6 +215,9 @@ pub enum Name {
 /// location. During analysis it is used to keep track of state changes.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Path {
+    /// A dynamically allocated memory block.
+    HeapAddress { address: usize },
+
     /// 0 is the return value temporary
     /// [1 ... arg_count] are the parameters
     /// [arg_count ... ] are the local variables and compiler temporaries

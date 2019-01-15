@@ -25,10 +25,12 @@ pub enum ConstantValue {
         // todo: is there some way store the def_id here if available?
         // this would not be serialized/deserialized.
     },
-    /// Unsigned 16 byte integer.
-    U128(u128),
+    /// A unique counter value providing a logical address for a region of memory holding a struct or enum.
+    HeapAddress(usize),
     /// The Boolean true value.
     True,
+    /// Unsigned 16 byte integer.
+    U128(u128),
     /// A place holder for other kinds of constants. Eventually this goes away.
     Unimplemented,
 }
@@ -53,6 +55,7 @@ impl ConstantValue {
 pub struct ConstantValueCache {
     cache: HashMap<DefId, ConstantValue>,
     std_intrinsics_unreachable_function: Option<ConstantValue>,
+    heap_address_counter: usize,
 }
 
 impl ConstantValueCache {
@@ -60,7 +63,15 @@ impl ConstantValueCache {
         ConstantValueCache {
             cache: HashMap::default(),
             std_intrinsics_unreachable_function: None,
+            heap_address_counter: 0,
         }
+    }
+
+    /// Returns a ConstantValue with a unique heap address value.
+    pub fn get_new_heap_address(&mut self) -> ConstantValue {
+        let heap_address = self.heap_address_counter;
+        self.heap_address_counter += 1;
+        ConstantValue::HeapAddress(heap_address)
     }
 
     /// Given the MIR DefId of a function return the unique ConstantValue that corresponds to
