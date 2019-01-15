@@ -87,7 +87,6 @@ pub struct Summary {
 pub fn summarize(
     _environment: &Environment,
     _inferred_preconditions: &List<AbstractValue>,
-    _path_conditions: &List<AbstractValue>,
     preconditions: &List<AbstractValue>,
     post_conditions: &List<AbstractValue>,
     unwind_condition: &List<AbstractValue>,

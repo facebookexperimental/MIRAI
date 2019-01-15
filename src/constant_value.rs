@@ -14,6 +14,8 @@ use utils::is_rust_intrinsic;
 /// value can be serialized to the persistent summary cache.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ConstantValue {
+    /// The Boolean value false.
+    False,
     /// A reference to a function
     Function {
         /// Indicates if the function is known to be treated specially by the Rust compiler
@@ -23,7 +25,11 @@ pub enum ConstantValue {
         // todo: is there some way store the def_id here if available?
         // this would not be serialized/deserialized.
     },
-    // A place holder for other kinds of constants. Eventually this goes away.
+    /// Unsigned 16 byte integer.
+    U128(u128),
+    /// The Boolean true value.
+    True,
+    /// A place holder for other kinds of constants. Eventually this goes away.
     Unimplemented,
 }
 

@@ -3,8 +3,8 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-use abstract_domains::{self, AbstractDomains};
-use rpds::List;
+use abstract_domains::{self, AbstractDomains, ExpressionDomain};
+use constant_value::ConstantValue;
 use syntax_pos::Span;
 
 /// Mirai is an abstract interpreter and thus produces abstract values.
@@ -36,6 +36,12 @@ pub const BOTTOM: AbstractValue = AbstractValue {
     value: abstract_domains::BOTTOM,
 };
 
+/// An abstract value that is corresponds to the single concrete value, true.
+pub const FALSE: AbstractValue = AbstractValue {
+    provenance: Vec::new(),
+    value: abstract_domains::FALSE,
+};
+
 /// An abstract value to use when nothing is known about the value. All possible concrete values
 /// are members of the concrete set of values corresponding to this abstract value.
 pub const TOP: AbstractValue = AbstractValue {
@@ -43,7 +49,60 @@ pub const TOP: AbstractValue = AbstractValue {
     value: abstract_domains::TOP,
 };
 
+/// An abstract value that is corresponds to the single concrete value, true.
+pub const TRUE: AbstractValue = AbstractValue {
+    provenance: Vec::new(),
+    value: abstract_domains::TRUE,
+};
+
+impl From<ConstantValue> for AbstractValue {
+    fn from(cv: ConstantValue) -> AbstractValue {
+        AbstractValue {
+            provenance: vec![],
+            value: AbstractDomains {
+                expression_domain: ExpressionDomain::CompileTimeConstant(cv),
+            },
+        }
+    }
+}
+
 impl AbstractValue {
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "and" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn and(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        let mut provenance = Vec::new();
+        if expression_provenance.is_some() {
+            provenance.push(expression_provenance.unwrap())
+        }
+        provenance.extend_from_slice(&self.provenance);
+        provenance.extend_from_slice(&other.provenance);
+        AbstractValue {
+            provenance,
+            value: self.value.and(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "equals" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn equals(
+        &self,
+        other: &AbstractValue,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        let mut provenance = Vec::new();
+        if expression_provenance.is_some() {
+            provenance.push(expression_provenance.unwrap())
+        }
+        provenance.extend_from_slice(&self.provenance);
+        provenance.extend_from_slice(&other.provenance);
+        AbstractValue {
+            provenance,
+            value: self.value.equals(&other.value),
+        }
+    }
+
     /// True if the set of concrete values that correspond to this abstract value is empty.
     pub fn is_bottom(&self) -> bool {
         self.value.is_bottom()
@@ -69,16 +128,40 @@ impl AbstractValue {
         }
     }
 
+    pub fn not(&self, expression_provenance: Option<Span>) -> AbstractValue {
+        let mut provenance = Vec::new();
+        if expression_provenance.is_some() {
+            provenance.push(expression_provenance.unwrap())
+        }
+        provenance.extend_from_slice(&self.provenance);
+        AbstractValue {
+            provenance,
+            value: self.value.not(),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "or" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn or(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        let mut provenance = Vec::new();
+        if expression_provenance.is_some() {
+            provenance.push(expression_provenance.unwrap())
+        }
+        provenance.extend_from_slice(&self.provenance);
+        provenance.extend_from_slice(&other.provenance);
+        AbstractValue {
+            provenance,
+            value: self.value.or(&other.value),
+        }
+    }
+
     /// Returns a value that could be simplified (refined) by using the current path conditions
     /// (conditions known to be true in the current context). If no refinement is possible
     /// the result is simply a clone of this value, but with its provenance updated by
     /// pre-pending the given span.
-    pub fn refine_with(
-        &self,
-        _path_condtions: &List<AbstractValue>,
-        provenance: Span,
-    ) -> AbstractValue {
-        //todo: #32 simplify this value using the path conditions
+    pub fn refine_with(&self, _path_condtion: &AbstractValue, provenance: Span) -> AbstractValue {
+        //todo: #32 simplify this value using the path condition
         let mut provenance = vec![provenance];
         provenance.extend_from_slice(&self.provenance);
         AbstractValue {
@@ -101,6 +184,13 @@ impl AbstractValue {
             provenance: other.provenance.clone(),
             value: self.value.widen(&other.value, &join_condition.value),
         }
+    }
+
+    /// Returns a clone of the value with the given span prepended to its provence.
+    pub fn with_provenance(&self, provenance: Span) -> AbstractValue {
+        let mut result = self.clone();
+        result.provenance.insert(0, provenance);
+        result
     }
 }
 
