@@ -3,8 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use abstract_domains::{AbstractDomains, ExpressionDomain};
-use abstract_value::AbstractValue;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use std::collections::HashMap;
@@ -33,17 +31,6 @@ pub enum ConstantValue {
     True,
     /// A place holder for other kinds of constants. Eventually this goes away.
     Unimplemented,
-}
-
-impl Into<AbstractValue> for ConstantValue {
-    fn into(self) -> AbstractValue {
-        AbstractValue {
-            provenance: vec![],
-            value: AbstractDomains {
-                expression_domain: ExpressionDomain::CompileTimeConstant(self),
-            },
-        }
-    }
 }
 
 impl ConstantValue {

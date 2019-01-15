@@ -3,7 +3,8 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-use abstract_domains::{self, AbstractDomains};
+use abstract_domains::{self, AbstractDomains, ExpressionDomain};
+use constant_value::ConstantValue;
 use syntax_pos::Span;
 
 /// Mirai is an abstract interpreter and thus produces abstract values.
@@ -53,6 +54,17 @@ pub const TRUE: AbstractValue = AbstractValue {
     provenance: Vec::new(),
     value: abstract_domains::TRUE,
 };
+
+impl From<ConstantValue> for AbstractValue {
+    fn from(cv: ConstantValue) -> AbstractValue {
+        AbstractValue {
+            provenance: vec![],
+            value: AbstractDomains {
+                expression_domain: ExpressionDomain::CompileTimeConstant(cv),
+            },
+        }
+    }
+}
 
 impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the

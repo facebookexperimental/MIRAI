@@ -146,8 +146,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                         })
                         .filter(|(_, pred_exit_condition)| pred_exit_condition.is_some())
                         .collect();
-                    let len = predecessor_states_and_conditions.len();
-                    if len == 0 {
+                    if predecessor_states_and_conditions.is_empty() {
                         // unreachable block
                         let mut i_state = in_state[&bb].clone();
                         i_state.entry_condition = abstract_value::FALSE;
