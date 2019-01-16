@@ -823,7 +823,13 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         match projection_elem {
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, _) => PathSelector::Field(field.index()),
-            mir::ProjectionElem::Index(local) => PathSelector::Index(local.as_usize()),
+            mir::ProjectionElem::Index(local) => {
+                let local_path = Path::LocalVariable {
+                    ordinal: local.as_usize(),
+                };
+                let index_value = self.lookup_path_and_refine_result(local_path);
+                PathSelector::Index(box index_value)
+            }
             mir::ProjectionElem::ConstantIndex {
                 offset,
                 min_length,
