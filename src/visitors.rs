@@ -9,7 +9,7 @@ use constant_value::{ConstantValue, ConstantValueCache};
 use environment::Environment;
 use rpds::List;
 use rustc::session::Session;
-use rustc::ty::{LazyConst, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
+use rustc::ty::{Const, LazyConst, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -905,12 +905,46 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         user_ty: Option<UserTypeAnnotationIndex>,
         literal: &LazyConst,
     ) -> &ConstantValue {
+        use rustc::mir::interpret::ConstValue;
+        use rustc::mir::interpret::Scalar;
         debug!(
             "default visit_constant(ty: {:?}, user_ty: {:?}, literal: {:?})",
             ty, user_ty, literal
         );
-        match ty.sty {
-            TyKind::FnDef(def_id, ..) => self.visit_function_reference(def_id),
+        match literal {
+            LazyConst::Evaluated(Const { ty, val }) => match ty.sty {
+                TyKind::FnDef(def_id, ..) => self.visit_function_reference(def_id),
+                TyKind::Int(..) => match val {
+                    ConstValue::Scalar(Scalar::Bits { bits, size }) => {
+                        let mut value: i128 = match *size {
+                            1 => (*bits as i8) as i128,
+                            2 => (*bits as i16) as i128,
+                            4 => (*bits as i32) as i128,
+                            8 => (*bits as i64) as i128,
+                            _ => *bits as i128,
+                        };
+                        &mut self.constant_value_cache.get_i128_for(value)
+                    }
+                    _ => unreachable!(),
+                },
+                TyKind::Uint(..) => match val {
+                    ConstValue::Scalar(Scalar::Bits { bits, .. }) => {
+                        &mut self.constant_value_cache.get_u128_for(*bits)
+                    }
+                    _ => unreachable!(),
+                },
+                TyKind::Float(..) => match val {
+                    ConstValue::Scalar(Scalar::Bits { bits, size }) => {
+                        let mut value: u64 = match *size {
+                            4 => (*bits as u32) as u64,
+                            _ => *bits as u64,
+                        };
+                        &mut self.constant_value_cache.get_f64_for(value)
+                    }
+                    _ => unreachable!(),
+                },
+                _ => &ConstantValue::Unimplemented,
+            },
             _ => &ConstantValue::Unimplemented,
         }
     }
