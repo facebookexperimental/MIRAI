@@ -66,6 +66,15 @@ impl From<ConstantValue> for AbstractValue {
     }
 }
 
+impl From<ExpressionDomain> for AbstractValue {
+    fn from(expression_domain: ExpressionDomain) -> AbstractValue {
+        AbstractValue {
+            provenance: vec![],
+            value: AbstractDomains { expression_domain },
+        }
+    }
+}
+
 impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "and" to each element of the cross product of the concrete
@@ -215,6 +224,9 @@ pub enum Name {
 /// location. During analysis it is used to keep track of state changes.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Path {
+    /// A dynamically allocated memory block.
+    AbstractHeapAddress { ordinal: usize },
+
     /// 0 is the return value temporary
     /// [1 ... arg_count] are the parameters
     /// [arg_count ... ] are the local variables and compiler temporaries

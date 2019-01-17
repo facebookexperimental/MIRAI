@@ -15,7 +15,7 @@ pub struct Environment {
     /// The conditions that guard exit from this block to successor blocks
     pub exit_conditions: HashMap<BasicBlock, AbstractValue>,
     /// Does not include any entries where the value is abstract_value::Bottom
-    value_map: HashTrieMap<Path, AbstractValue>,
+    pub value_map: HashTrieMap<Path, AbstractValue>,
 }
 
 /// Default
@@ -56,6 +56,7 @@ impl Environment {
 
     /// Updates the path to value map so that the given path now points to the given value.
     pub fn update_value_at(&mut self, path: Path, value: AbstractValue) {
+        debug!("updating value of {:?} to {:?}", path, value);
         if value.is_bottom() {
             self.value_map = self.value_map.remove(&path);
         } else {

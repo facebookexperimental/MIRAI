@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use abstract_domains::ExpressionDomain;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use std::collections::HashMap;
@@ -25,10 +26,10 @@ pub enum ConstantValue {
         // todo: is there some way store the def_id here if available?
         // this would not be serialized/deserialized.
     },
-    /// Unsigned 16 byte integer.
-    U128(u128),
     /// The Boolean true value.
     True,
+    /// Unsigned 16 byte integer.
+    U128(u128),
     /// A place holder for other kinds of constants. Eventually this goes away.
     Unimplemented,
 }
@@ -53,6 +54,7 @@ impl ConstantValue {
 pub struct ConstantValueCache {
     cache: HashMap<DefId, ConstantValue>,
     std_intrinsics_unreachable_function: Option<ConstantValue>,
+    heap_address_counter: usize,
 }
 
 impl ConstantValueCache {
@@ -60,7 +62,15 @@ impl ConstantValueCache {
         ConstantValueCache {
             cache: HashMap::default(),
             std_intrinsics_unreachable_function: None,
+            heap_address_counter: 0,
         }
+    }
+
+    /// Returns a ExpressionDomain::AbstractHeapAddress with a unique counter value.
+    pub fn get_new_heap_address(&mut self) -> ExpressionDomain {
+        let heap_address_counter = self.heap_address_counter;
+        self.heap_address_counter += 1;
+        ExpressionDomain::AbstractHeapAddress(heap_address_counter)
     }
 
     /// Given the MIR DefId of a function return the unique ConstantValue that corresponds to

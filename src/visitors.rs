@@ -45,8 +45,10 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
 
     check_for_errors: bool,
     current_environment: Environment,
+    current_location: mir::Location,
     current_span: syntax_pos::Span,
     exit_environment: Environment,
+    heap_addresses: HashMap<mir::Location, AbstractValue>,
     inferred_preconditions: List<AbstractValue>,
     post_conditions: List<AbstractValue>,
     preconditions: List<AbstractValue>,
@@ -69,8 +71,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
 
             check_for_errors: false,
             current_environment: Environment::default(),
+            current_location: mir::Location::START,
             current_span: syntax_pos::DUMMY_SP,
             exit_environment: Environment::default(),
+            heap_addresses: HashMap::default(),
             inferred_preconditions: List::new(),
             post_conditions: List::new(),
             preconditions: List::new(),
@@ -198,6 +202,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
 
         // Now traverse the blocks again, doing checks and emitting diagnostics.
         // in_state[bb] is now complete for every basic block bb in the body.
+        debug!(
+            "Fixed point loop took {} iterations, now checking for errors.",
+            iteration_count
+        );
         self.check_for_errors = true;
         for bb in self.mir.basic_blocks().indices() {
             let i_state = (&in_state[&bb]).clone();
@@ -243,7 +251,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Calls a specialized visitor for each kind of statement.
-    fn visit_statement(&mut self, _location: mir::Location, statement: &mir::Statement) {
+    fn visit_statement(&mut self, location: mir::Location, statement: &mir::Statement) {
+        self.current_location = location;
         let mir::Statement { kind, source_info } = statement;
         debug!("{:?}", source_info);
         self.current_span = source_info.span;
@@ -274,8 +283,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             place, rvalue
         );
         let path = self.visit_place(place);
-        let rvalue = self.visit_rvalue(rvalue);
-        self.current_environment.update_value_at(path, rvalue);
+        self.visit_rvalue(path, rvalue);
     }
 
     /// Write the discriminant for a variant to the enum Place.
@@ -548,153 +556,298 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Calls a specialized visitor for each kind of Rvalue
-    fn visit_rvalue(&mut self, rvalue: &mir::Rvalue) -> AbstractValue {
+    fn visit_rvalue(&mut self, path: Path, rvalue: &mir::Rvalue) {
         match rvalue {
-            mir::Rvalue::Use(operand) => self.visit_use(operand),
-            mir::Rvalue::Repeat(operand, count) => self.visit_repeat(operand, *count),
-            mir::Rvalue::Ref(region, borrow_kind, place) => {
-                self.visit_ref(region, *borrow_kind, place)
+            mir::Rvalue::Use(operand) => {
+                self.visit_use(path, operand);
             }
-            mir::Rvalue::Len(place) => self.visit_len(place),
-            mir::Rvalue::Cast(cast_kind, operand, ty) => self.visit_cast(*cast_kind, operand, ty),
+            mir::Rvalue::Repeat(operand, count) => {
+                self.visit_repeat(path, operand, *count);
+            }
+            mir::Rvalue::Ref(region, borrow_kind, place) => {
+                self.visit_ref(path, region, *borrow_kind, place);
+            }
+            mir::Rvalue::Len(place) => {
+                self.visit_len(path, place);
+            }
+            mir::Rvalue::Cast(cast_kind, operand, ty) => {
+                self.visit_cast(path, *cast_kind, operand, ty);
+            }
             mir::Rvalue::BinaryOp(bin_op, left_operand, right_operand) => {
-                self.visit_binary_op(*bin_op, left_operand, right_operand)
+                self.visit_binary_op(path, *bin_op, left_operand, right_operand);
             }
             mir::Rvalue::CheckedBinaryOp(bin_op, left_operand, right_operand) => {
-                self.visit_checked_binary_op(*bin_op, left_operand, right_operand)
+                self.visit_checked_binary_op(path, *bin_op, left_operand, right_operand);
             }
-            mir::Rvalue::NullaryOp(null_op, ty) => self.visit_nullary_op(*null_op, ty),
-            mir::Rvalue::UnaryOp(unary_op, operand) => self.visit_unary_op(*unary_op, operand),
-            mir::Rvalue::Discriminant(place) => self.visit_discriminant(place),
+            mir::Rvalue::NullaryOp(null_op, ty) => {
+                self.visit_nullary_op(path, *null_op, ty);
+            }
+            mir::Rvalue::UnaryOp(unary_op, operand) => {
+                self.visit_unary_op(path, *unary_op, operand);
+            }
+            mir::Rvalue::Discriminant(place) => {
+                self.visit_discriminant(path, place);
+            }
             mir::Rvalue::Aggregate(aggregate_kinds, operands) => {
-                self.visit_aggregate(aggregate_kinds, operands)
+                self.visit_aggregate(path, aggregate_kinds, operands);
             }
         }
     }
 
-    /// x (either a move or copy, depending on type of x)
-    fn visit_use(&mut self, operand: &mir::Operand) -> AbstractValue {
-        debug!("default visit_use(operand: {:?})", operand);
-        self.visit_operand(operand)
+    /// path = x (either a move or copy, depending on type of x), or path = constant.
+    fn visit_use(&mut self, path: Path, operand: &mir::Operand) {
+        debug!(
+            "default visit_use(path: {:?}, operand: {:?})",
+            path, operand
+        );
+        match operand {
+            mir::Operand::Copy(place) => {
+                self.visit_used_copy(path, place);
+            }
+            mir::Operand::Move(place) => {
+                self.visit_used_move(path, place);
+            }
+            mir::Operand::Constant(constant) => {
+                let mir::Constant {
+                    span,
+                    ty,
+                    user_ty,
+                    literal,
+                } = constant.borrow();
+                let const_value: AbstractValue =
+                    self.visit_constant(ty, *user_ty, literal).clone().into();
+                self.current_environment
+                    .update_value_at(path, const_value.with_provenance(*span));
+            }
+        };
     }
 
-    /// [x; 32]
-    fn visit_repeat(&mut self, operand: &mir::Operand, count: u64) -> AbstractValue {
+    /// For each (path', value) pair in the environment where path' is rooted in place,
+    /// add a (path'', value) pair to the environment where path'' is a copy of path re-rooted
+    /// with place.
+    fn visit_used_copy(&mut self, target_path: Path, place: &mir::Place) {
+        let rpath = self.visit_place(place);
+        let value_map = &self.current_environment.value_map;
+        for (path, value) in value_map
+            .iter()
+            .filter(|(p, _)| Self::path_is_rooted_by(*p, &rpath))
+        {
+            let qualified_path = Self::replace_root(&path, target_path.clone());
+            debug!("copying {:?} to {:?}", value, qualified_path);
+            value_map.insert(qualified_path, value.with_provenance(self.current_span));
+        }
+    }
+
+    /// For each (path', value) pair in the environment where path' is rooted in place,
+    /// add a (path'', value) pair to the environment where path'' is a copy of path re-rooted
+    /// with place, and also remove the (path', value) pair from the environment.
+    fn visit_used_move(&mut self, target_path: Path, place: &mir::Place) {
+        let rpath = self.visit_place(place);
+        let value_map = &self.current_environment.value_map;
+        for (path, value) in value_map
+            .iter()
+            .filter(|(p, _)| Self::path_is_rooted_by(*p, &rpath))
+        {
+            let qualified_path = Self::replace_root(&path, target_path.clone());
+            debug!("moving {:?} to {:?}", value, qualified_path);
+            value_map.remove(&path);
+            value_map.insert(qualified_path, value.with_provenance(self.current_span));
+        }
+    }
+
+    /// True if path qualifies root, or another qualified path rooted by root.
+    fn path_is_rooted_by(path: &Path, root: &Path) -> bool {
+        match path {
+            Path::QualifiedPath { qualifier, .. } => Self::path_is_rooted_by(qualifier, root),
+            _ => *path == *root,
+        }
+    }
+
+    /// Returns a copy path with the root replaced by new_root.
+    fn replace_root(path: &Path, new_root: Path) -> Path {
+        match path {
+            Path::QualifiedPath {
+                qualifier,
+                selector,
+            } => {
+                let new_qualifier = Self::replace_root(qualifier, new_root);
+                Path::QualifiedPath {
+                    qualifier: box new_qualifier,
+                    selector: selector.clone(),
+                }
+            }
+            _ => new_root,
+        }
+    }
+
+    /// path = [x; 32]
+    fn visit_repeat(&mut self, path: Path, operand: &mir::Operand, count: u64) {
         debug!(
-            "default visit_repeat(operand: {:?}, count: {:?})",
-            operand, count
+            "default visit_repeat(path: {:?}, operand: {:?}, count: {:?})",
+            path, operand, count
         );
         self.visit_operand(operand);
-        abstract_value::TOP
+        //todo: create an array of the given length and initialize each element to x
+        self.current_environment
+            .update_value_at(path, abstract_value::TOP);
     }
 
-    /// &x or &mut x
+    /// path = &x or &mut x
     fn visit_ref(
         &mut self,
+        path: Path,
         region: rustc::ty::Region,
         borrow_kind: mir::BorrowKind,
         place: &mir::Place,
-    ) -> AbstractValue {
+    ) {
         debug!(
-            "default visit_ref(region: {:?}, borrow_kind: {:?}, place: {:?})",
-            region, borrow_kind, place
+            "default visit_ref(path: {:?}, region: {:?}, borrow_kind: {:?}, place: {:?})",
+            path, region, borrow_kind, place
         );
-        let path = self.visit_place(place);
-        self.lookup_path_and_refine_result(path)
+        let value_path = self.visit_place(place);
+        let _value = self.lookup_path_and_refine_result(value_path);
+        //todo: get a value that is the address of _value.
+        self.current_environment
+            .update_value_at(path, abstract_value::TOP);
     }
 
-    /// length of a [X] or [X;n] value.
-    fn visit_len(&self, place: &mir::Place) -> AbstractValue {
-        debug!("default visit_len(place: {:?})", place);
-        abstract_value::TOP
+    /// path = length of a [X] or [X;n] value.
+    fn visit_len(&mut self, path: Path, place: &mir::Place) {
+        debug!("default visit_len(path: {:?}, place: {:?})", path, place);
+        let value_path = self.visit_place(place);
+        let _value = self.lookup_path_and_refine_result(value_path);
+        //todo: get a value that is the length of _value.
+        self.current_environment
+            .update_value_at(path, abstract_value::TOP);
     }
 
-    /// cast converts the operand to the given ty.
+    /// path = operand. The cast is a no-op for the interpreter.
     fn visit_cast(
         &mut self,
+        path: Path,
         cast_kind: mir::CastKind,
         operand: &mir::Operand,
         ty: rustc::ty::Ty,
-    ) -> AbstractValue {
+    ) {
         debug!(
-            "default visit_cast(cast_kind: {:?}, operand: {:?}, ty: {:?})",
-            cast_kind, operand, ty
+            "default visit_cast(path: {:?}, cast_kind: {:?}, operand: {:?}, ty: {:?})",
+            path, cast_kind, operand, ty
         );
-        self.visit_operand(operand)
+        let value = self.visit_operand(operand);
+        self.current_environment.update_value_at(path, value);
     }
 
-    /// Apply the given binary operator to the two operands.
+    /// Apply the given binary operator to the two operands and assign result to path.
     fn visit_binary_op(
         &mut self,
+        path: Path,
         bin_op: mir::BinOp,
         left_operand: &mir::Operand,
         right_operand: &mir::Operand,
-    ) -> AbstractValue {
+    ) {
         debug!(
-            "default visit_binary_op(bin_op: {:?}, left_operand: {:?}, right_operand: {:?})",
-            bin_op, left_operand, right_operand
+            "default visit_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})",
+            path, bin_op, left_operand, right_operand
         );
-        self.visit_operand(left_operand);
-        self.visit_operand(right_operand);
-        abstract_value::TOP
+        let _left = self.visit_operand(left_operand);
+        let _right = self.visit_operand(right_operand);
+        //todo: get a value that is the bin_op of _left and _right.
+        self.current_environment
+            .update_value_at(path, abstract_value::TOP);
     }
 
-    /// Apply the given binary operator to the two operands, with overflow checking where appropriate.
+    /// Apply the given binary operator to the two operands, with overflow checking where appropriate
+    /// and assign the result to path.
     fn visit_checked_binary_op(
         &mut self,
+        path: Path,
         bin_op: mir::BinOp,
         left_operand: &mir::Operand,
         right_operand: &mir::Operand,
-    ) -> AbstractValue {
-        debug!("default visit_checked_binary_op(bin_op: {:?}, left_operand: {:?}, right_operand: {:?})", bin_op, left_operand, right_operand);
-        self.visit_operand(left_operand);
-        self.visit_operand(right_operand);
-        abstract_value::TOP
+    ) {
+        debug!("default visit_checked_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})", path, bin_op, left_operand, right_operand);
+        let _left = self.visit_operand(left_operand);
+        let _right = self.visit_operand(right_operand);
+        //todo: get a value that is the checked bin_op of _left and _right.
+        //todo: what should happen if the operation overflows?
+        self.current_environment
+            .update_value_at(path, abstract_value::TOP);
     }
 
-    /// Create a value based on the given type.
-    fn visit_nullary_op(&self, null_op: mir::NullOp, ty: rustc::ty::Ty) -> AbstractValue {
+    /// Create a value based on the given type and assign it to path.
+    fn visit_nullary_op(&mut self, path: Path, null_op: mir::NullOp, ty: rustc::ty::Ty) {
         debug!(
-            "default visit_nullary_op(null_op: {:?}, ty: {:?})",
-            null_op, ty
+            "default visit_nullary_op(path: {:?}, null_op: {:?}, ty: {:?})",
+            path, null_op, ty
         );
-        abstract_value::TOP
+        let value = match null_op {
+            mir::NullOp::Box => self.get_new_heap_address(),
+            mir::NullOp::SizeOf => {
+                //todo: figure out how to get the size from ty.
+                abstract_value::TOP
+            }
+        };
+        self.current_environment.update_value_at(path, value);
     }
 
-    /// Apply the given unary operator to the operand.
-    fn visit_unary_op(&mut self, un_op: mir::UnOp, operand: &mir::Operand) -> AbstractValue {
+    /// Allocates a new heap address and caches it, keyed with the current location
+    /// so that subsequent visits deterministically use the same address when processing
+    /// the instruction at this location. If we don't do this the fixed point loop wont converge.
+    fn get_new_heap_address(&mut self) -> AbstractValue {
+        let addresses = &mut self.heap_addresses;
+        let constants = &mut self.constant_value_cache;
+        addresses
+            .entry(self.current_location)
+            .or_insert_with(|| constants.get_new_heap_address().into())
+            .clone()
+    }
+
+    /// Apply the given unary operator to the operand and assign to path.
+    fn visit_unary_op(&mut self, path: Path, un_op: mir::UnOp, operand: &mir::Operand) {
         debug!(
-            "default visit_unary_op(un_op: {:?}, operand: {:?})",
-            un_op, operand
+            "default visit_unary_op(path: {:?}, un_op: {:?}, operand: {:?})",
+            path, un_op, operand
         );
-        self.visit_operand(operand);
-        abstract_value::TOP
+        let _operand = self.visit_operand(operand);
+        //todo: get a value that is the un_op of _operand.
+        self.current_environment
+            .update_value_at(path, abstract_value::TOP);
     }
 
-    /// Read the discriminant of an ADT.
+    /// Read the discriminant of an ADT and assign to path.
     ///
     /// Undefined (i.e. no effort is made to make it defined, but there’s no reason why it cannot
     /// be defined to return, say, a 0) if ADT is not an enum.
-    fn visit_discriminant(&self, place: &mir::Place) -> AbstractValue {
-        debug!("default visit_discriminant(place: {:?})", place);
-        abstract_value::TOP
+    fn visit_discriminant(&mut self, path: Path, place: &mir::Place) {
+        debug!(
+            "default visit_discriminant(path: {:?}, place: {:?})",
+            path, place
+        );
+        let _value_path = self.visit_place(place);
+        //todo: modify _value_path to get the discriminant and look it up in the environment
+        self.current_environment
+            .update_value_at(path, abstract_value::TOP);
     }
 
-    /// Create an aggregate value, like a tuple or struct.  This is
+    /// Create an aggregate value, like a tuple or struct and assign it to path.  This is
     /// only needed because we want to distinguish `dest = Foo { x:
     /// ..., y: ... }` from `dest.x = ...; dest.y = ...;` in the case
     /// that `Foo` has a destructor. These rvalues can be optimized
     /// away after type-checking and before lowering.
     fn visit_aggregate(
-        &self,
+        &mut self,
+        path: Path,
         aggregate_kinds: &mir::AggregateKind,
         operands: &[mir::Operand],
-    ) -> AbstractValue {
+    ) {
         debug!(
-            "default visit_aggregate(aggregate_kinds: {:?}, operands: {:?})",
-            aggregate_kinds, operands
+            "default visit_aggregate(path: {:?}, aggregate_kinds: {:?}, operands: {:?})",
+            path, aggregate_kinds, operands
         );
-        abstract_value::TOP
+        let aggregate_value = self.get_new_heap_address();
+        self.current_environment
+            .update_value_at(path, aggregate_value);
+        //todo: an assignment for each operand.
     }
 
     /// These are values that can appear inside an rvalue. They are intentionally

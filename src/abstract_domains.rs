@@ -174,6 +174,12 @@ pub enum ExpressionDomain {
     /// that always panics.
     Bottom,
 
+    /// An expression that represents a block of memory allocated from the heap.
+    /// The value of expression is an ordinal used to distinguish this allocation from
+    /// other allocations. Because this is static analysis, a given allocation site will
+    /// always result in the same ordinal.
+    AbstractHeapAddress(usize),
+
     // An expression that is true if both left and right are true.
     And {
         // The value of the left operand.
@@ -370,6 +376,10 @@ impl AbstractDomain for ExpressionDomain {
                 ExpressionDomain::CompileTimeConstant(cv1),
                 ExpressionDomain::CompileTimeConstant(cv2),
             ) => cv1 == cv2,
+            (
+                ExpressionDomain::AbstractHeapAddress(a1),
+                ExpressionDomain::AbstractHeapAddress(a2),
+            ) => a1 == a2,
             // in all other cases we conservatively answer false
             _ => false,
         }
