@@ -600,7 +600,6 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_use(path: {:?}, operand: {:?})",
             path, operand
         );
-        //let span = self.current_span;
         match operand {
             mir::Operand::Copy(place) => {
                 self.visit_used_copy(path, place);
@@ -635,7 +634,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         {
             let qualified_path = Self::replace_root(&path, target_path.clone());
             debug!("copying {:?} to {:?}", value, qualified_path);
-            value_map.insert(qualified_path, value.clone());
+            value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
     }
 
@@ -652,7 +651,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             let qualified_path = Self::replace_root(&path, target_path.clone());
             debug!("moving {:?} to {:?}", value, qualified_path);
             value_map.remove(&path);
-            value_map.insert(qualified_path, value.clone());
+            value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
     }
 
