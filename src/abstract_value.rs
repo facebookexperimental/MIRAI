@@ -5,6 +5,8 @@
 //
 use abstract_domains::{self, AbstractDomains, ExpressionDomain};
 use constant_value::ConstantValue;
+use std::fmt::{Debug, Formatter, Result};
+use std::hash::{Hash, Hasher};
 use syntax_pos::Span;
 
 /// Mirai is an abstract interpreter and thus produces abstract values.
@@ -15,7 +17,7 @@ use syntax_pos::Span;
 /// When we do know everything about a value, it is concrete rather than
 /// abstract, but is convenient to just use this structure for concrete values
 /// as well, since all operations can be uniform.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AbstractValue {
     /// An abstract value is the result of some expression.
     /// The source location of that expression is stored in provenance.
@@ -54,6 +56,26 @@ pub const TRUE: AbstractValue = AbstractValue {
     provenance: Vec::new(),
     value: abstract_domains::TRUE,
 };
+
+impl Debug for AbstractValue {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        self.value.fmt(f)
+    }
+}
+
+impl Eq for AbstractValue {}
+
+impl PartialEq for AbstractValue {
+    fn eq(&self, other: &AbstractValue) -> bool {
+        self.value.eq(&other.value)
+    }
+}
+
+impl Hash for AbstractValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.hash(state)
+    }
+}
 
 impl From<ConstantValue> for AbstractValue {
     fn from(cv: ConstantValue) -> AbstractValue {

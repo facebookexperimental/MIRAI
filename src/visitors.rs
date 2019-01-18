@@ -216,6 +216,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     }
                 };
                 // Analyze the basic block.
+                in_state.insert(bb, i_state.clone());
                 self.current_environment = i_state;
                 self.visit_basic_block(bb);
 
@@ -687,6 +688,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// add a (path'', value) pair to the environment where path'' is a copy of path re-rooted
     /// with place.
     fn visit_used_copy(&mut self, target_path: Path, place: &mir::Place) {
+        debug!(
+            "default visit_used_copy(target_path: {:?}, place: {:?})",
+            target_path, place
+        );
         let rpath = self.visit_place(place);
         if let Some(value) = self.try_to_deref(&rpath) {
             debug!("copying {:?} to {:?}", value, target_path);
@@ -710,6 +715,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// add a (path'', value) pair to the environment where path'' is a copy of path re-rooted
     /// with place, and also remove the (path', value) pair from the environment.
     fn visit_used_move(&mut self, target_path: Path, place: &mir::Place) {
+        debug!(
+            "default visit_used_move(target_path: {:?}, place: {:?})",
+            target_path, place
+        );
         let rpath = self.visit_place(place);
         let value_map = &self.current_environment.value_map;
         for (path, value) in value_map
@@ -725,10 +734,11 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
 
     /// True if path qualifies root, or another qualified path rooted by root.
     fn path_is_rooted_by(path: &Path, root: &Path) -> bool {
-        match path {
-            Path::QualifiedPath { qualifier, .. } => Self::path_is_rooted_by(qualifier, root),
-            _ => *path == *root,
-        }
+        *path == *root
+            || match path {
+                Path::QualifiedPath { qualifier, .. } => Self::path_is_rooted_by(qualifier, root),
+                _ => false,
+            }
     }
 
     /// Returns a copy path with the root replaced by new_root.

@@ -7,8 +7,9 @@ use abstract_value::{self, AbstractValue, Path};
 use rpds::HashTrieMap;
 use rustc::mir::BasicBlock;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter, Result};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Environment {
     /// The disjunction of all the exit conditions from the predecessors of this block.
     pub entry_condition: AbstractValue,
@@ -26,6 +27,12 @@ impl Environment {
             exit_conditions: HashMap::default(),
             value_map: HashTrieMap::default(),
         }
+    }
+}
+
+impl Debug for Environment {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        self.value_map.fmt(f)
     }
 }
 
