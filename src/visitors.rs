@@ -917,10 +917,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 TyKind::Int(..) => match val {
                     ConstValue::Scalar(Scalar::Bits { bits, size }) => {
                         let mut value: i128 = match *size {
-                            1 => (*bits as i8) as i128,
-                            2 => (*bits as i16) as i128,
-                            4 => (*bits as i32) as i128,
-                            8 => (*bits as i64) as i128,
+                            1 => i128::from(*bits as i8),
+                            2 => i128::from(*bits as i16),
+                            4 => i128::from(*bits as i32),
+                            8 => i128::from(*bits as i64),
                             _ => *bits as i128,
                         };
                         &mut self.constant_value_cache.get_i128_for(value)
@@ -936,7 +936,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 TyKind::Float(..) => match val {
                     ConstValue::Scalar(Scalar::Bits { bits, size }) => {
                         let mut value: u64 = match *size {
-                            4 => (*bits as u32) as u64,
+                            4 => u64::from(*bits as u32),
                             _ => *bits as u64,
                         };
                         &mut self.constant_value_cache.get_f64_for(value)

@@ -92,6 +92,11 @@ impl AbstractValue {
         }
     }
 
+    /// The concrete Boolean value of this abstract value, if known, otherwise None.
+    pub fn as_bool_if_known(&self) -> Option<bool> {
+        self.value.as_bool_if_known()
+    }
+
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "equals" to each element of the cross product of the concrete
     /// values or self and other.
