@@ -230,13 +230,21 @@ pub enum ExpressionDomain {
 impl AbstractDomain for ExpressionDomain {
     /// Returns an expression that is "self && other".
     fn and(&self, other: &Self) -> Self {
-        if self.as_bool_if_known().unwrap_or(false) {
-            if other.as_bool_if_known().unwrap_or(false) {
+        let self_bool = self.as_bool_if_known();
+        if let Some(false) = self_bool {
+            return ExpressionDomain::CompileTimeConstant(ConstantValue::False);
+        };
+        let other_bool = other.as_bool_if_known();
+        if let Some(false) = other_bool {
+            return ExpressionDomain::CompileTimeConstant(ConstantValue::False);
+        };
+        if self_bool.unwrap_or(false) {
+            if other_bool.unwrap_or(false) {
                 ExpressionDomain::CompileTimeConstant(ConstantValue::True)
             } else {
                 other.clone()
             }
-        } else if other.as_bool_if_known().unwrap_or(false)
+        } else if other_bool.unwrap_or(false)
             || self.is_top()
             || self.is_bottom() && other.is_bottom()
         {

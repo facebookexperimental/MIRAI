@@ -958,11 +958,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             .update_value_at(path, abstract_value::TOP);
     }
 
-    /// Create an aggregate value, like a tuple or struct and assign it to path.  This is
-    /// only needed because we want to distinguish `dest = Foo { x:
-    /// ..., y: ... }` from `dest.x = ...; dest.y = ...;` in the case
-    /// that `Foo` has a destructor. These rvalues can be optimized
-    /// away after type-checking and before lowering.
+    /// Currently only survives in the MIR that MIRAI sees if the aggregate is an array.
+    /// See https://github.com/rust-lang/rust/issues/48193.
     fn visit_aggregate(
         &mut self,
         path: Path,
@@ -973,10 +970,28 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_aggregate(path: {:?}, aggregate_kinds: {:?}, operands: {:?})",
             path, aggregate_kinds, operands
         );
+        debug_assert!(match *aggregate_kinds {
+            mir::AggregateKind::Array(..) => true,
+            _ => false,
+        });
         let aggregate_value = self.get_new_heap_address();
         self.current_environment
-            .update_value_at(path, aggregate_value);
-        //todo: an assignment for each operand.
+            .update_value_at(path.clone(), aggregate_value);
+        for (i, operand) in operands.iter().enumerate() {
+            let element = self.visit_operand(operand);
+            let index_value = self
+                .constant_value_cache
+                .get_u128_for(i as u128)
+                .clone()
+                .into();
+            let selector = box PathSelector::Index(box index_value);
+            let index_path = Path::QualifiedPath {
+                qualifier: box path.clone(),
+                selector,
+            };
+            self.current_environment
+                .update_value_at(index_path, element);
+        }
     }
 
     /// These are values that can appear inside an rvalue. They are intentionally
