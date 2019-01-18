@@ -15,4 +15,4 @@ RUST_BACKTRACE=1 cargo test
 cargo uninstall mirai || true
 cargo install --debug --path .
 cargo clean -p mirai
-time RUSTC_WRAPPER=mirai cargo build
+time RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 cargo build
