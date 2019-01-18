@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use abstract_value::Path;
 use constant_value::ConstantValue;
 
 // See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
@@ -182,7 +183,7 @@ pub enum ExpressionDomain {
     /// always result in the same ordinal.
     AbstractHeapAddress(usize),
 
-    // An expression that is true if both left and right are true.
+    /// An expression that is true if both left and right are true.
     And {
         // The value of the left operand.
         left: Box<ExpressionDomain>,
@@ -203,7 +204,7 @@ pub enum ExpressionDomain {
         alternate: Box<ExpressionDomain>,
     },
 
-    // An expression that is true if left and right are equal.
+    /// An expression that is true if left and right are equal.
     Equals {
         // The value of the left operand.
         left: Box<ExpressionDomain>,
@@ -214,25 +215,19 @@ pub enum ExpressionDomain {
     /// An expression that is true if the operand is false.
     Not { operand: Box<ExpressionDomain> },
 
-    // An expression that is true if either one of left or right are true.
+    /// An expression that is true if either one of left or right are true.
     Or {
         // The value of the left operand.
         left: Box<ExpressionDomain>,
         // The value of the right operand.
         right: Box<ExpressionDomain>,
     },
+
+    /// The corresponding concrete value is the runtime address of location identified by the path.
+    Reference(Path),
 }
 
 impl AbstractDomain for ExpressionDomain {
-    /// The Boolean value of this expression, if known, otherwise None.
-    fn as_bool_if_known(&self) -> Option<bool> {
-        match self {
-            ExpressionDomain::CompileTimeConstant(ConstantValue::True) => Some(true),
-            ExpressionDomain::CompileTimeConstant(ConstantValue::False) => Some(false),
-            _ => None,
-        }
-    }
-
     /// Returns an expression that is "self && other".
     fn and(&self, other: &Self) -> Self {
         if self.as_bool_if_known().unwrap_or(false) {
@@ -249,6 +244,15 @@ impl AbstractDomain for ExpressionDomain {
                 left: box self.clone(),
                 right: box other.clone(),
             }
+        }
+    }
+
+    /// The Boolean value of this expression, if known, otherwise None.
+    fn as_bool_if_known(&self) -> Option<bool> {
+        match self {
+            ExpressionDomain::CompileTimeConstant(ConstantValue::True) => Some(true),
+            ExpressionDomain::CompileTimeConstant(ConstantValue::False) => Some(false),
+            _ => None,
         }
     }
 
@@ -368,13 +372,14 @@ impl AbstractDomain for ExpressionDomain {
             }
             // {x} subset {y} iff x = y
             (
-                ExpressionDomain::CompileTimeConstant(cv1),
-                ExpressionDomain::CompileTimeConstant(cv2),
-            ) => cv1 == cv2,
-            (
                 ExpressionDomain::AbstractHeapAddress(a1),
                 ExpressionDomain::AbstractHeapAddress(a2),
             ) => a1 == a2,
+            (
+                ExpressionDomain::CompileTimeConstant(cv1),
+                ExpressionDomain::CompileTimeConstant(cv2),
+            ) => cv1 == cv2,
+            (ExpressionDomain::Reference(p1), ExpressionDomain::Reference(p2)) => p1 == p2,
             // in all other cases we conservatively answer false
             _ => false,
         }

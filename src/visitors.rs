@@ -87,9 +87,18 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// If a local value cannot be found the result is Bottom.
     fn lookup_path_and_refine_result(&mut self, path: Path) -> AbstractValue {
         let refined_val = {
-            let bottom = abstract_value::BOTTOM;
-            let local_val = self.current_environment.value_at(&path).unwrap_or(&bottom);
-            local_val.refine_with(&self.current_environment.entry_condition, self.current_span)
+            let val_at_ref = self.try_to_deref(&path);
+            match val_at_ref {
+                Some(val) => {
+                    val.refine_with(&self.current_environment.entry_condition, self.current_span)
+                }
+                None => {
+                    let bottom = abstract_value::BOTTOM;
+                    let local_val = self.current_environment.value_at(&path).unwrap_or(&bottom);
+                    local_val
+                        .refine_with(&self.current_environment.entry_condition, self.current_span)
+                }
+            }
         };
         if refined_val.is_bottom() {
             // Not found locally, so try statics and promoted constants
@@ -110,6 +119,33 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             }
         }
         refined_val
+    }
+
+    /// For PathSelector::Deref, lookup the reference value using the qualifier, and then dereference that.
+    /// Otherwise return None.
+    fn try_to_deref(&mut self, path: &Path) -> Option<AbstractValue> {
+        match path {
+            Path::QualifiedPath {
+                ref qualifier,
+                ref selector,
+            } => match **selector {
+                PathSelector::Deref => {
+                    let ref_val = self.lookup_path_and_refine_result((**qualifier).clone());
+                    Some(self.dereference(ref_val))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Given a value that is known to be of the form &path, return the value of path.
+    /// Otherwise just return TOP.
+    fn dereference(&mut self, reference: AbstractValue) -> AbstractValue {
+        match reference.value.expression_domain {
+            ExpressionDomain::Reference(path) => self.lookup_path_and_refine_result(path.clone()),
+            _ => abstract_value::TOP,
+        }
     }
 
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
@@ -654,6 +690,13 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// with place.
     fn visit_used_copy(&mut self, target_path: Path, place: &mir::Place) {
         let rpath = self.visit_place(place);
+        if let Some(value) = self.try_to_deref(&rpath) {
+            debug!("copying {:?} to {:?}", value, target_path);
+            self.current_environment
+                .value_map
+                .insert(target_path, value.with_provenance(self.current_span));
+            return;
+        }
         let value_map = &self.current_environment.value_map;
         for (path, value) in value_map
             .iter()
@@ -714,7 +757,11 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             path, operand, count
         );
         self.visit_operand(operand);
-        //todo: create an array of the given length and initialize each element to x
+        //todo:
+        // get a heap address and put it in Path::AbstractHeapAddress
+        // get an abs value for x
+        // create a PathSelector::Index paths where the value is the range 0..count
+        // add qualified path to the environment with value x.
         self.current_environment
             .update_value_at(path, abstract_value::TOP);
     }
@@ -732,10 +779,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             path, region, borrow_kind, place
         );
         let value_path = self.visit_place(place);
-        let _value = self.lookup_path_and_refine_result(value_path);
-        //todo: get a value that is the address of _value.
-        self.current_environment
-            .update_value_at(path, abstract_value::TOP);
+        let value = ExpressionDomain::Reference(value_path).into();
+        self.current_environment.update_value_at(path, value);
     }
 
     /// path = length of a [X] or [X;n] value.
