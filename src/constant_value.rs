@@ -26,6 +26,10 @@ pub enum ConstantValue {
         // todo: is there some way store the def_id here if available?
         // this would not be serialized/deserialized.
     },
+    /// Signed 16 byte integer.
+    I128(i128),
+    /// 64 bit floating point, stored as a u64 to make it comparable.
+    F64(u64),
     /// The Boolean true value.
     True,
     /// Unsigned 16 byte integer.
@@ -52,7 +56,10 @@ impl ConstantValue {
 
 /// Keeps track of MIR constants that have already been mapped onto ConstantValue instances.
 pub struct ConstantValueCache {
-    cache: HashMap<DefId, ConstantValue>,
+    function_cache: HashMap<DefId, ConstantValue>,
+    f64_cache: HashMap<u64, ConstantValue>,
+    i128_cache: HashMap<i128, ConstantValue>,
+    u128_cache: HashMap<u128, ConstantValue>,
     std_intrinsics_unreachable_function: Option<ConstantValue>,
     heap_address_counter: usize,
 }
@@ -60,7 +67,10 @@ pub struct ConstantValueCache {
 impl ConstantValueCache {
     pub fn new() -> ConstantValueCache {
         ConstantValueCache {
-            cache: HashMap::default(),
+            function_cache: HashMap::default(),
+            f64_cache: HashMap::default(),
+            i128_cache: HashMap::default(),
+            u128_cache: HashMap::default(),
             std_intrinsics_unreachable_function: None,
             heap_address_counter: 0,
         }
@@ -73,15 +83,36 @@ impl ConstantValueCache {
         ExpressionDomain::AbstractHeapAddress(heap_address_counter)
     }
 
-    /// Given the MIR DefId of a function return the unique ConstantValue that corresponds to
-    /// the function identified by that DefId.
+    /// Returns a reference to a cached ExpressionDomain::F64(value).
+    pub fn get_f64_for(&mut self, value: u64) -> &ConstantValue {
+        self.f64_cache
+            .entry(value)
+            .or_insert_with(|| ConstantValue::F64(value))
+    }
+
+    /// Returns a reference to a cached ExpressionDomain::I128(value).
+    pub fn get_i128_for(&mut self, value: i128) -> &ConstantValue {
+        self.i128_cache
+            .entry(value)
+            .or_insert_with(|| ConstantValue::I128(value))
+    }
+
+    /// Returns a reference to a cached ExpressionDomain::U128(value).
+    pub fn get_u128_for(&mut self, value: u128) -> &ConstantValue {
+        self.u128_cache
+            .entry(value)
+            .or_insert_with(|| ConstantValue::U128(value))
+    }
+
+    /// Given the MIR DefId of a function return the unique (cached) ConstantValue that corresponds
+    /// to the function identified by that DefId.
     pub fn get_function_constant_for(
         &mut self,
         def_id: DefId,
         tcx: &TyCtxt,
         summary_cache: &mut PersistentSummaryCache,
     ) -> &ConstantValue {
-        self.cache
+        self.function_cache
             .entry(def_id)
             .or_insert_with(|| ConstantValue::for_function(def_id, tcx, summary_cache))
     }
