@@ -39,6 +39,11 @@ pub const TRUE: AbstractDomains = AbstractDomains {
 };
 
 impl AbstractDomains {
+    /// The Boolean value of this expression, if known, otherwise None.
+    pub fn as_bool_if_known(&self) -> Option<bool> {
+        self.expression_domain.as_bool_if_known()
+    }
+
     /// Applies "and" to every pair of domain elements and returns the collection of results.
     pub fn and(&self, other: &AbstractDomains) -> AbstractDomains {
         AbstractDomains {
@@ -120,6 +125,9 @@ pub trait AbstractDomain {
     /// mapping the concrete "and" operation over the elements of the cross product of self and other.
     fn and(&self, other: &Self) -> Self;
 
+    /// The Boolean value of this expression, if known, otherwise None.
+    fn as_bool_if_known(&self) -> Option<bool>;
+
     /// Returns a domain whose concrete set is a superset of the set of values resulting from
     /// mapping the concrete "equals" operation over the elements of the cross product of self and other.
     fn equals(&self, other: &Self) -> Self;
@@ -135,12 +143,6 @@ pub trait AbstractDomain {
     /// In a context where the join condition is known to be true, the result can be refined to be
     /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
     fn join(&self, other: &Self, join_condition: &AbstractDomains) -> Self;
-
-    /// True if the domain corresponds to the concrete set { false }
-    fn must_be_false(&self) -> bool;
-
-    /// True if the domain corresponds to the concrete set { true }
-    fn must_be_true(&self) -> bool;
 
     /// Returns a domain whose concrete set is a superset of the set of values resulting from
     /// mapping the concrete "not" operation over the elements of self.
@@ -222,15 +224,24 @@ pub enum ExpressionDomain {
 }
 
 impl AbstractDomain for ExpressionDomain {
+    /// The Boolean value of this expression, if known, otherwise None.
+    fn as_bool_if_known(&self) -> Option<bool> {
+        match self {
+            ExpressionDomain::CompileTimeConstant(ConstantValue::True) => Some(true),
+            ExpressionDomain::CompileTimeConstant(ConstantValue::False) => Some(false),
+            _ => None,
+        }
+    }
+
     /// Returns an expression that is "self && other".
     fn and(&self, other: &Self) -> Self {
-        if self.must_be_true() {
-            if other.must_be_true() {
+        if self.as_bool_if_known().unwrap_or(false) {
+            if other.as_bool_if_known().unwrap_or(false) {
                 ExpressionDomain::CompileTimeConstant(ConstantValue::True)
             } else {
                 other.clone()
             }
-        } else if other.must_be_true() {
+        } else if other.as_bool_if_known().unwrap_or(false) {
             self.clone()
         } else {
             // todo: #32 more simplifications
@@ -289,22 +300,6 @@ impl AbstractDomain for ExpressionDomain {
         }
     }
 
-    /// True if this expression is known at compile time to be false.
-    fn must_be_false(&self) -> bool {
-        match self {
-            ExpressionDomain::CompileTimeConstant(ConstantValue::False) => true,
-            _ => false,
-        }
-    }
-
-    /// True if this expression is known at compile time to be true.
-    fn must_be_true(&self) -> bool {
-        match self {
-            ExpressionDomain::CompileTimeConstant(ConstantValue::True) => true,
-            _ => false,
-        }
-    }
-
     /// Returns an expression that is "!self".
     fn not(&self) -> Self {
         match self {
@@ -322,11 +317,11 @@ impl AbstractDomain for ExpressionDomain {
 
     /// Returns an expression that is "self || other".
     fn or(&self, other: &ExpressionDomain) -> ExpressionDomain {
-        if self.must_be_true() || other.must_be_true() {
+        if self.as_bool_if_known().unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
             ExpressionDomain::CompileTimeConstant(ConstantValue::True)
-        } else if self.must_be_false() {
+        } else if !self.as_bool_if_known().unwrap_or(true) {
             other.clone()
-        } else if other.must_be_false() {
+        } else if !other.as_bool_if_known().unwrap_or(true) {
             self.clone()
         } else {
             // todo: #32 more simplifications
