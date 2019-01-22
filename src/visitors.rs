@@ -437,8 +437,20 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
 
     /// Indicates a normal return. The return place should have
     /// been filled in by now. This should occur at most once.
-    fn visit_return(&self) {
+    fn visit_return(&mut self) {
         debug!("default visit_return()");
+        if self.check_for_errors {
+            // Done with fixed point, so prepare to summarize.
+            let return_guard = self.current_environment.entry_condition.as_bool_if_known();
+            if return_guard.unwrap_or(false) {
+                self.exit_environment = self.current_environment.clone();
+            } else if return_guard.unwrap_or(true) {
+                self.exit_environment = self.current_environment.join(
+                    &self.exit_environment,
+                    &self.current_environment.entry_condition,
+                );
+            }
+        }
     }
 
     /// Indicates a terminator that can never be reached.
@@ -491,7 +503,22 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     ) {
         debug!("default visit_call(func: {:?}, args: {:?}, destination: {:?}, cleanup: {:?}, from_hir_call: {:?})", func, args, destination, cleanup, from_hir_call);
         let func_to_call = self.visit_operand(func);
-        let function_summary = Summary::default(); //todo: lookup summary for function
+        let function_summary = match func_to_call.value.expression_domain {
+            ExpressionDomain::CompileTimeConstant(ConstantValue::Function {
+                def_id: Some(def_id),
+                ..
+            }) => self
+                .summary_cache
+                .get_summary_for(def_id, Some(self.def_id))
+                .clone(),
+            ExpressionDomain::CompileTimeConstant(ConstantValue::Function {
+                ref summary_cache_key,
+                ..
+            }) => self
+                .summary_cache
+                .get_persistent_summary_for(summary_cache_key),
+            _ => Summary::default(),
+        };
         if let Some((place, target)) = destination {
             // Assign function result to place
             let return_value_path = self.visit_place(place);

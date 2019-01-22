@@ -19,12 +19,12 @@ pub enum ConstantValue {
     False,
     /// A reference to a function
     Function {
+        #[serde(skip)]
+        def_id: Option<DefId>,
         /// Indicates if the function is known to be treated specially by the Rust compiler
         is_intrinsic: bool,
         /// The key to use when retrieving a summary for the function from the summary cache
         summary_cache_key: String,
-        // todo: is there some way store the def_id here if available?
-        // this would not be serialized/deserialized.
     },
     /// Signed 16 byte integer.
     I128(i128),
@@ -46,8 +46,8 @@ impl ConstantValue {
         summary_cache: &mut PersistentSummaryCache,
     ) -> ConstantValue {
         let summary_cache_key = summary_cache.get_summary_key_for(def_id);
-        // todo: include the def_id in the result
         ConstantValue::Function {
+            def_id: Some(def_id),
             is_intrinsic: is_rust_intrinsic(def_id, tcx),
             summary_cache_key: summary_cache_key.to_owned(),
         }
@@ -129,6 +129,7 @@ impl ConstantValueCache {
                 ConstantValue::Function {
                     is_intrinsic,
                     summary_cache_key,
+                    ..
                 } => *is_intrinsic && summary_cache_key.ends_with("unreachable"),
                 _ => false,
             };

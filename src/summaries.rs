@@ -38,7 +38,7 @@ use std::ops::Deref;
 ///    desirable to havoc all static variables every time such a function is called. Consequently
 ///    sound analysis is only possible one can assume that all such functions have been provided
 ///    with explicit contract functions.
-#[derive(Serialize, Deserialize, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct Summary {
     // Conditions that should hold prior to the call.
     // Callers should substitute parameter values with argument values and simplify the results
@@ -85,18 +85,21 @@ pub struct Summary {
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
 pub fn summarize(
-    _environment: &Environment,
+    environment: &Environment,
     _inferred_preconditions: &List<AbstractValue>,
     preconditions: &List<AbstractValue>,
     post_conditions: &List<AbstractValue>,
     unwind_condition: &List<AbstractValue>,
 ) -> Summary {
-    let result = None; // todo: #31 extract from exit environment
+    let result = environment.value_at(&Path::LocalVariable { ordinal: 0 });
     let side_effects: List<(Path, AbstractValue)> = List::new(); // todo: #31  extract from environment
     let unwind_side_effects: List<(Path, AbstractValue)> = List::new(); // todo: #31  extract from environment
     Summary {
         preconditions: preconditions.clone(),
-        result,
+        result: match result {
+            Some(v) => Some(v.clone()),
+            None => None,
+        },
         side_effects,
         post_conditions: post_conditions.clone(),
         unwind_condition: unwind_condition.clone(),
