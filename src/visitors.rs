@@ -124,19 +124,17 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// For PathSelector::Deref, lookup the reference value using the qualifier, and then dereference that.
     /// Otherwise return None.
     fn try_to_deref(&mut self, path: &Path) -> Option<AbstractValue> {
-        match path {
-            Path::QualifiedPath {
-                ref qualifier,
-                ref selector,
-            } => match **selector {
-                PathSelector::Deref => {
-                    let ref_val = self.lookup_path_and_refine_result((**qualifier).clone());
-                    Some(self.dereference(ref_val))
-                }
-                _ => None,
-            },
-            _ => None,
+        if let Path::QualifiedPath {
+            ref qualifier,
+            ref selector,
+        } = path
+        {
+            if let PathSelector::Deref = **selector {
+                let ref_val = self.lookup_path_and_refine_result((**qualifier).clone());
+                return Some(self.dereference(ref_val));
+            }
         }
+        None
     }
 
     /// Given a value that is known to be of the form &path, return the value of path.

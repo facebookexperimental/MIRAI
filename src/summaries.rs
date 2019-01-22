@@ -96,10 +96,7 @@ pub fn summarize(
     let unwind_side_effects: List<(Path, AbstractValue)> = List::new(); // todo: #31  extract from environment
     Summary {
         preconditions: preconditions.clone(),
-        result: match result {
-            Some(v) => Some(v.clone()),
-            None => None,
-        },
+        result: result.cloned(),
         side_effects,
         post_conditions: post_conditions.clone(),
         unwind_condition: unwind_condition.clone(),
