@@ -236,8 +236,13 @@ impl AbstractDomain for ExpressionDomain {
             } else {
                 other.clone()
             }
-        } else if other.as_bool_if_known().unwrap_or(false) {
+        } else if other.as_bool_if_known().unwrap_or(false)
+            || self.is_top()
+            || self.is_bottom() && other.is_bottom()
+        {
             self.clone()
+        } else if other.is_top() {
+            other.clone()
         } else {
             // todo: #32 more simplifications
             ExpressionDomain::And {
@@ -297,6 +302,12 @@ impl AbstractDomain for ExpressionDomain {
     /// In a context where the join condition is known to be true, the result can be refined to be
     /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
     fn join(&self, other: &ExpressionDomain, join_condition: &AbstractDomains) -> ExpressionDomain {
+        if self == other {
+            return self.clone();
+        };
+        if join_condition.is_bottom() {
+            return ExpressionDomain::Bottom;
+        };
         ExpressionDomain::ConditionalExpression {
             condition: box join_condition.clone(),
             consequent: box self.clone(),
@@ -313,6 +324,7 @@ impl AbstractDomain for ExpressionDomain {
             ExpressionDomain::CompileTimeConstant(ConstantValue::True) => {
                 ExpressionDomain::CompileTimeConstant(ConstantValue::False)
             }
+            ExpressionDomain::Top | ExpressionDomain::Bottom => self.clone(),
             _ => ExpressionDomain::Not {
                 operand: box self.clone(),
             },
@@ -323,9 +335,9 @@ impl AbstractDomain for ExpressionDomain {
     fn or(&self, other: &ExpressionDomain) -> ExpressionDomain {
         if self.as_bool_if_known().unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
             ExpressionDomain::CompileTimeConstant(ConstantValue::True)
-        } else if !self.as_bool_if_known().unwrap_or(true) {
+        } else if other.is_top() || self.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
             other.clone()
-        } else if !other.as_bool_if_known().unwrap_or(true) {
+        } else if self.is_top() || other.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
             self.clone()
         } else {
             // todo: #32 more simplifications
@@ -339,6 +351,9 @@ impl AbstractDomain for ExpressionDomain {
     /// True if all of the concrete values that correspond to self also correspond to other.
     /// Note: !x.subset(y) does not imply y.subset(x).
     fn subset(&self, other: &ExpressionDomain) -> bool {
+        if self == other {
+            return true;
+        };
         match (self, other) {
             // The empty set is a subset of every other set.
             (ExpressionDomain::Bottom, _) => true,
@@ -359,6 +374,7 @@ impl AbstractDomain for ExpressionDomain {
                 // This is a conservative answer. False does not imply other.subset(self).
                 consequent.subset(other) && alternate.subset(other)
             }
+            // x is a subset of (condition ? consequent : alternate) x is a subset of both consequent and alternate.
             (
                 _,
                 ExpressionDomain::ConditionalExpression {
@@ -368,7 +384,7 @@ impl AbstractDomain for ExpressionDomain {
                 },
             ) => {
                 // This is a conservative answer. False does not imply other.subset(self).
-                self.subset(consequent) || self.subset(alternate)
+                self.subset(consequent) && self.subset(alternate)
             }
             // {x} subset {y} iff x = y
             (
@@ -389,7 +405,10 @@ impl AbstractDomain for ExpressionDomain {
     /// corresponding to self and other.The set of values may be less precise (more inclusive) than
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to Top.
-    fn widen(&self, _other: &Self, _join_condition: &AbstractDomains) -> ExpressionDomain {
+    fn widen(&self, other: &Self, _join_condition: &AbstractDomains) -> ExpressionDomain {
+        if self == other {
+            return self.clone();
+        };
         //todo: #30 don't get to top quite this quickly.
         ExpressionDomain::Top
     }
