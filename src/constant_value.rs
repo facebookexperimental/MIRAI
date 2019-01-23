@@ -15,9 +15,11 @@ use utils::is_rust_intrinsic;
 /// value can be serialized to the persistent summary cache.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ConstantValue {
+    /// The primitive character type; holds a Unicode scalar value (a non-surrogate code point).
+    Char(char),
     /// The Boolean value false.
     False,
-    /// A reference to a function
+    /// A reference to a function.
     Function {
         #[serde(skip)]
         def_id: Option<DefId>,
@@ -30,6 +32,8 @@ pub enum ConstantValue {
     I128(i128),
     /// 64 bit floating point, stored as a u64 to make it comparable.
     F64(u64),
+    /// A string literal.
+    Str(String),
     /// The Boolean true value.
     True,
     /// Unsigned 16 byte integer.
@@ -56,10 +60,12 @@ impl ConstantValue {
 
 /// Keeps track of MIR constants that have already been mapped onto ConstantValue instances.
 pub struct ConstantValueCache {
+    char_cache: HashMap<char, ConstantValue>,
     function_cache: HashMap<DefId, ConstantValue>,
     f64_cache: HashMap<u64, ConstantValue>,
     i128_cache: HashMap<i128, ConstantValue>,
     u128_cache: HashMap<u128, ConstantValue>,
+    str_cache: HashMap<String, ConstantValue>,
     std_intrinsics_unreachable_function: Option<ConstantValue>,
     heap_address_counter: usize,
 }
@@ -67,10 +73,12 @@ pub struct ConstantValueCache {
 impl ConstantValueCache {
     pub fn new() -> ConstantValueCache {
         ConstantValueCache {
+            char_cache: HashMap::default(),
             function_cache: HashMap::default(),
             f64_cache: HashMap::default(),
             i128_cache: HashMap::default(),
             u128_cache: HashMap::default(),
+            str_cache: HashMap::default(),
             std_intrinsics_unreachable_function: None,
             heap_address_counter: 0,
         }
@@ -81,6 +89,13 @@ impl ConstantValueCache {
         let heap_address_counter = self.heap_address_counter;
         self.heap_address_counter += 1;
         ExpressionDomain::AbstractHeapAddress(heap_address_counter)
+    }
+
+    /// Returns a reference to a cached ExpressionDomain::Char(value).
+    pub fn get_char_for(&mut self, value: char) -> &ConstantValue {
+        self.char_cache
+            .entry(value)
+            .or_insert_with(|| ConstantValue::Char(value))
     }
 
     /// Returns a reference to a cached ExpressionDomain::F64(value).
@@ -95,6 +110,13 @@ impl ConstantValueCache {
         self.i128_cache
             .entry(value)
             .or_insert_with(|| ConstantValue::I128(value))
+    }
+
+    pub fn get_string_for(&mut self, value: &str) -> &ConstantValue {
+        let str_value = String::from(value);
+        self.str_cache
+            .entry(str_value)
+            .or_insert_with(|| ConstantValue::Str(String::from(value)))
     }
 
     /// Returns a reference to a cached ExpressionDomain::U128(value).

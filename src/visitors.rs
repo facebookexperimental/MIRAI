@@ -13,6 +13,7 @@ use rustc::ty::{Const, LazyConst, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use summaries;
 use summaries::{PersistentSummaryCache, Summary};
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
@@ -992,39 +993,85 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             ty, user_ty, literal
         );
         match literal {
-            LazyConst::Evaluated(Const { ty, val }) => match ty.sty {
-                TyKind::FnDef(def_id, ..) => self.visit_function_reference(def_id),
-                TyKind::Int(..) => match val {
-                    ConstValue::Scalar(Scalar::Bits { bits, size }) => {
-                        let mut value: i128 = match *size {
-                            1 => i128::from(*bits as i8),
-                            2 => i128::from(*bits as i16),
-                            4 => i128::from(*bits as i32),
-                            8 => i128::from(*bits as i64),
-                            _ => *bits as i128,
+            LazyConst::Evaluated(Const { val, .. }) => {
+                debug!("sty: {:?}", ty.sty);
+                match ty.sty {
+                    TyKind::Bool => match val {
+                        ConstValue::Scalar(Scalar::Bits { bits, .. }) => {
+                            if *bits == 0 {
+                                &ConstantValue::False
+                            } else {
+                                &ConstantValue::True
+                            }
+                        }
+                        _ => unreachable!(),
+                    },
+                    TyKind::Char => {
+                        if let ConstValue::Scalar(Scalar::Bits { bits, .. }) = val {
+                            &mut self
+                                .constant_value_cache
+                                .get_char_for(char::try_from(*bits as u32).unwrap())
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                    TyKind::Float(..) => match val {
+                        ConstValue::Scalar(Scalar::Bits { bits, size }) => {
+                            let mut value: u64 = match *size {
+                                4 => u64::from(*bits as u32),
+                                _ => *bits as u64,
+                            };
+                            &mut self.constant_value_cache.get_f64_for(value)
+                        }
+                        _ => unreachable!(),
+                    },
+                    TyKind::FnDef(def_id, ..) => self.visit_function_reference(def_id),
+                    TyKind::Int(..) => match val {
+                        ConstValue::Scalar(Scalar::Bits { bits, size }) => {
+                            let mut value: i128 = match *size {
+                                1 => i128::from(*bits as i8),
+                                2 => i128::from(*bits as i16),
+                                4 => i128::from(*bits as i32),
+                                8 => i128::from(*bits as i64),
+                                _ => *bits as i128,
+                            };
+                            &mut self.constant_value_cache.get_i128_for(value)
+                        }
+                        _ => unreachable!(),
+                    },
+                    TyKind::Ref(
+                        _,
+                        &rustc::ty::TyS {
+                            sty: TyKind::Str, ..
+                        },
+                        _,
+                    ) => {
+                        if let ConstValue::ScalarPair(ptr, len) = val {
+                            if let Scalar::Ptr(ptr) = ptr {
+                                if let Scalar::Bits { bits: len, .. } = len {
+                                    let alloc = self.tcx.alloc_map.lock().get(ptr.alloc_id);
+                                    if let Some(mir::interpret::AllocKind::Memory(alloc)) = alloc {
+                                        let slice = &alloc.bytes[(ptr.offset.bytes() as usize)..]
+                                            [..(*len as usize)];
+                                        let s = std::str::from_utf8(slice).expect("non utf8 str");
+                                        return &mut self.constant_value_cache.get_string_for(s);
+                                    } else {
+                                        panic!("pointer to erroneous constant {:?}, {:?}", ptr, len)
+                                    }
+                                }
+                            }
                         };
-                        &mut self.constant_value_cache.get_i128_for(value)
+                        unreachable!()
                     }
-                    _ => unreachable!(),
-                },
-                TyKind::Uint(..) => match val {
-                    ConstValue::Scalar(Scalar::Bits { bits, .. }) => {
-                        &mut self.constant_value_cache.get_u128_for(*bits)
-                    }
-                    _ => unreachable!(),
-                },
-                TyKind::Float(..) => match val {
-                    ConstValue::Scalar(Scalar::Bits { bits, size }) => {
-                        let mut value: u64 = match *size {
-                            4 => u64::from(*bits as u32),
-                            _ => *bits as u64,
-                        };
-                        &mut self.constant_value_cache.get_f64_for(value)
-                    }
-                    _ => unreachable!(),
-                },
-                _ => &ConstantValue::Unimplemented,
-            },
+                    TyKind::Uint(..) => match val {
+                        ConstValue::Scalar(Scalar::Bits { bits, .. }) => {
+                            &mut self.constant_value_cache.get_u128_for(*bits)
+                        }
+                        _ => unreachable!(),
+                    },
+                    _ => &ConstantValue::Unimplemented,
+                }
+            }
             _ => &ConstantValue::Unimplemented,
         }
     }
