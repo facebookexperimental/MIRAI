@@ -10,5 +10,7 @@
 pub struct Foo { pub x: i32, pub y: i64 }
 pub fn f() -> Box<Foo> {
     let foo = Foo { x: 1, y: 1111111111111111111 };
+    debug_assert!(foo.x == 1);
+    debug_assert!(foo.y == 1111111111111111111);
     box foo
 }

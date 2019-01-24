@@ -41,13 +41,13 @@ use tempdir::TempDir;
 #[test]
 fn run_pass() {
     let run_pass_path = PathBuf::from_str("tests/run-pass").unwrap();
-    run_directory(run_pass_path);
+    assert_eq!(run_directory(run_pass_path), 0);
 }
 
 // Iterates through the files in the directory at the given path and runs each as a separate test
 // case. For each case, a temporary output directory is created. The cases are then iterated in
 // parallel and run via invoke_driver.
-fn run_directory(directory_path: PathBuf) {
+fn run_directory(directory_path: PathBuf) -> usize {
     let sys_root = utils::find_sysroot();
     let mut files_and_temp_dirs = Vec::new();
     for entry in fs::read_dir(directory_path).expect("failed to read run-pass dir") {
@@ -68,53 +68,68 @@ fn run_directory(directory_path: PathBuf) {
     }
     files_and_temp_dirs
         .into_par_iter()
-        .for_each(|(file_name, temp_dir_path)| {
-            self::invoke_driver(file_name, temp_dir_path, sys_root.clone());
-        });
+        .fold(
+            || 0,
+            |acc, (file_name, temp_dir_path)| {
+                acc + self::invoke_driver(file_name, temp_dir_path, sys_root.clone())
+            },
+        )
+        .reduce(|| 0, |acc, code| acc + code)
 }
 
 // Runs the single test case found in file_name, using temp_dir_path as the place
 // to put compiler output, which for Mirai includes the persistent summary store.
-fn invoke_driver(file_name: String, temp_dir_path: String, sys_root: String) {
-    rustc_driver::run(|| {
-        let f_name = file_name.clone();
-        let command_line_arguments: Vec<String> = vec![
-            String::from("--crate-name mirai"),
-            file_name,
-            String::from("--crate-type"),
-            String::from("lib"),
-            String::from("-C"),
-            String::from("debuginfo=2"),
-            String::from("--out-dir"),
-            temp_dir_path,
-            String::from("--sysroot"),
-            sys_root,
-            String::from("-Z"),
-            String::from("span_free_formats"),
-            String::from("-Z"),
-            String::from("mir-emit-retag"),
-            String::from("-Z"),
-            String::from("mir-opt-level=0"),
-        ];
+fn invoke_driver(file_name: String, temp_dir_path: String, sys_root: String) -> usize {
+    let f_name = file_name.clone();
+    let result = std::panic::catch_unwind(|| {
+        rustc_driver::run(|| {
+            let f_name = file_name.clone();
+            let command_line_arguments: Vec<String> = vec![
+                String::from("--crate-name mirai"),
+                file_name,
+                String::from("--crate-type"),
+                String::from("lib"),
+                String::from("-C"),
+                String::from("debuginfo=2"),
+                String::from("--out-dir"),
+                temp_dir_path,
+                String::from("--sysroot"),
+                sys_root,
+                String::from("-Z"),
+                String::from("span_free_formats"),
+                String::from("-Z"),
+                String::from("mir-emit-retag"),
+                String::from("-Z"),
+                String::from("mir-opt-level=0"),
+            ];
 
-        let call_backs = callbacks::MiraiCallbacks::with_buffered_diagnostics(
-            box move |diagnostics| {
-                let mut expected_errors = ExpectedErrors::new(&f_name);
-                expected_errors.check_messages(diagnostics)
-            },
-            |db: &mut DiagnosticBuilder, buf: &mut Vec<Diagnostic>| {
-                db.cancel();
-                db.clone().buffer(buf);
-            },
-        );
+            let call_backs = callbacks::MiraiCallbacks::with_buffered_diagnostics(
+                box move |diagnostics| {
+                    let mut expected_errors = ExpectedErrors::new(&f_name);
+                    expected_errors.check_messages(diagnostics)
+                },
+                |db: &mut DiagnosticBuilder, buf: &mut Vec<Diagnostic>| {
+                    db.cancel();
+                    db.clone().buffer(buf);
+                },
+            );
 
-        rustc_driver::run_compiler(
-            &command_line_arguments,
-            box call_backs,
-            None, // use default file loader
-            None, // emit output to default destination
-        )
+            rustc_driver::run_compiler(
+                &command_line_arguments,
+                box call_backs,
+                None, // use default file loader
+                None, // emit output to default destination
+            )
+        })
     });
+
+    match result {
+        Ok(_) => 0,
+        Err(_) => {
+            println!("{} failed", f_name);
+            1
+        }
+    }
 }
 
 /// A collection of error strings that are expected for a test case.

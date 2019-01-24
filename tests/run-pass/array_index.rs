@@ -9,4 +9,5 @@
 
 pub fn foo(arr: &mut [i32], i: usize) {
     arr[i] = 123;
+    debug_assert!(arr[i] == 123);
 }
