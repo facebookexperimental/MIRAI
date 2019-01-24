@@ -119,6 +119,15 @@ impl AbstractValue {
         self.value.as_bool_if_known()
     }
 
+    /// If the concrete Boolean value of this abstract value is known, return it as a UI28 constant,
+    /// otherwise return None.
+    pub fn as_int_if_known(&self) -> Option<AbstractValue> {
+        match self.as_bool_if_known() {
+            Some(b) => Some(ConstantValue::U128(b as u128).into()),
+            None => None,
+        }
+    }
+
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "equals" to each element of the cross product of the concrete
     /// values or self and other.

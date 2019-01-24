@@ -67,6 +67,7 @@ pub struct ConstantValueCache {
     u128_cache: HashMap<u128, ConstantValue>,
     str_cache: HashMap<String, ConstantValue>,
     std_intrinsics_unreachable_function: Option<ConstantValue>,
+    std_panicking_panic_function: Option<ConstantValue>,
     heap_address_counter: usize,
 }
 
@@ -80,6 +81,7 @@ impl ConstantValueCache {
             u128_cache: HashMap::default(),
             str_cache: HashMap::default(),
             std_intrinsics_unreachable_function: None,
+            std_panicking_panic_function: None,
             heap_address_counter: 0,
         }
     }
@@ -157,6 +159,27 @@ impl ConstantValueCache {
             };
             if result {
                 self.std_intrinsics_unreachable_function = Some(fun.clone());
+            };
+            result
+        })
+    }
+
+    /// Does an expensive check to see if the given function is std.panicking.begin_panic.
+    /// Once it finds the function it caches it so that subsequent checks are cheaper.
+    pub fn check_if_std_panicking_begin_panic_function(&mut self, fun: &ConstantValue) -> bool {
+        let result = match &self.std_panicking_panic_function {
+            Some(std_fun) => Some(*std_fun == *fun),
+            _ => None,
+        };
+        result.unwrap_or_else(|| {
+            let result = match fun {
+                ConstantValue::Function {
+                    summary_cache_key, ..
+                } => summary_cache_key == "std.panicking.begin_panic",
+                _ => false,
+            };
+            if result {
+                self.std_panicking_panic_function = Some(fun.clone());
             };
             result
         })

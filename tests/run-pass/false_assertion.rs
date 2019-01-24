@@ -4,10 +4,9 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that calls Visitor::visit_abort
+// A test that uses a false assertion
 
-use std::{panic};
-
-pub extern "C" fn panic_in_ffi() {
-    panic!("Test");  //~ Execution might panic
+pub fn test_assert() {
+    let i = 1;
+    debug_assert!(i == 2);  //~ Execution might panic
 }

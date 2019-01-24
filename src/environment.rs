@@ -41,10 +41,10 @@ impl Environment {
     /// Returns an environment that has a path for every parameter of the given function,
     /// initialized with abstract_values::Top
     pub fn with_parameters(num_args: usize) -> Environment {
-        let value_map = HashTrieMap::default();
+        let mut value_map = HashTrieMap::default();
         for i in 1..=num_args {
             let par_i = Path::LocalVariable { ordinal: i };
-            value_map.insert(par_i, abstract_value::TOP);
+            value_map = value_map.insert(par_i, abstract_value::TOP);
         }
         Environment {
             value_map,
