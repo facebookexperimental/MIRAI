@@ -6,9 +6,10 @@
 
 // A test that uses PathSelector::Deref and ExpressionDomain::Reference
 
-pub fn foo(a: &[i32]) {
+pub fn main() {
+    let a: &[i32] = &[10, 20];
     let n = 1;
     let m = &n;
-    let _k = *m;
-    let _e = a[*m];
+    debug_assert_eq!(*m, 1);
+    debug_assert_eq!(a[*m], 20);
 }
