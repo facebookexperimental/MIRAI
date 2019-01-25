@@ -14,7 +14,7 @@ use std::intrinsics;
 fn foo(flag: bool) {
     if flag {
         unsafe {
-            intrinsics::unreachable(); //~ Control might reach a call to std::intrinsics::unreachable
+            intrinsics::unreachable(); //~ Control might reach a call to std::intrinsics::unreachable.
         }
     }
 }

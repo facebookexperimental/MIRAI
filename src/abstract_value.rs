@@ -171,6 +171,24 @@ impl AbstractValue {
         }
     }
 
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "lt" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn lt(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        let mut provenance = Vec::new();
+        if expression_provenance.is_some() {
+            provenance.push(expression_provenance.unwrap())
+        }
+        provenance.extend_from_slice(&self.provenance);
+        provenance.extend_from_slice(&other.provenance);
+        AbstractValue {
+            provenance,
+            value: self.value.lt(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "not" to each element of the concrete values of self.
     pub fn not(&self, expression_provenance: Option<Span>) -> AbstractValue {
         let mut provenance = Vec::new();
         if expression_provenance.is_some() {

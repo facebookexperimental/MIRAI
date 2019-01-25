@@ -13,6 +13,6 @@ use std::intrinsics;
 
 fn foo() {
     unsafe {
-        intrinsics::unreachable(); //~ Control might reach a call to std::intrinsics::unreachable
+        intrinsics::unreachable(); //~ Control might reach a call to std::intrinsics::unreachable.
     }
 }

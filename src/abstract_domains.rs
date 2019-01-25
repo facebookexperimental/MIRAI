@@ -84,6 +84,13 @@ impl AbstractDomains {
         }
     }
 
+    /// Applies "<" to every pair of domain elements and returns the collection of results.
+    pub fn lt(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.lt(&other.expression_domain),
+        }
+    }
+
     /// Applies "not" to every domain element and returns the collection of results.
     pub fn not(&self) -> AbstractDomains {
         AbstractDomains {
@@ -146,6 +153,10 @@ pub trait AbstractDomain {
     fn join(&self, other: &Self, join_condition: &AbstractDomains) -> Self;
 
     /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "<" operation over the elements of the cross product of self and other.
+    fn lt(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
     /// mapping the concrete "not" operation over the elements of self.
     fn not(&self) -> Self;
 
@@ -206,6 +217,14 @@ pub enum ExpressionDomain {
 
     /// An expression that is true if left and right are equal.
     Equals {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is true if left is less than right.
+    LessThan {
         // The value of the left operand.
         left: Box<ExpressionDomain>,
         // The value of the right operand.
@@ -320,6 +339,26 @@ impl AbstractDomain for ExpressionDomain {
             condition: box join_condition.clone(),
             consequent: box self.clone(),
             alternate: box other.clone(),
+        }
+    }
+
+    /// Returns an expression that is self < other
+    fn lt(&self, other: &ExpressionDomain) -> ExpressionDomain {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(cv1),
+                ExpressionDomain::CompileTimeConstant(cv2),
+            ) => {
+                if cv1 < cv2 {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::True)
+                } else {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::False)
+                }
+            }
+            _ => ExpressionDomain::LessThan {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
         }
     }
 

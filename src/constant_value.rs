@@ -13,7 +13,7 @@ use utils::is_rust_intrinsic;
 /// Abstracts over constant values referenced in MIR and adds information
 /// that is useful for the abstract interpreter. More importantly, this
 /// value can be serialized to the persistent summary cache.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash)]
 pub enum ConstantValue {
     /// The primitive character type; holds a Unicode scalar value (a non-surrogate code point).
     Char(char),

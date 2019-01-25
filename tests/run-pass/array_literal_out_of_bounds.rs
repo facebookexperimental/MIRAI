@@ -4,10 +4,9 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that calls Visitor::visit_abort
+// A test that calls visit_aggregate
 
-use std::{panic};
-
-pub extern "C" fn panic_in_ffi() {
-    panic!("Test");  //~ Execution might panic.
+pub fn main() {
+    let x = [1, 2];
+    let _y = x[2]; //~ Control might reach this expression with operand values that cause a panic.
 }
