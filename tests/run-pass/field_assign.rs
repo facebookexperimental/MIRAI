@@ -12,4 +12,5 @@ pub struct Test {
 
 pub fn foo(t: &mut Test) {
     t.field = 123;
+    debug_assert!(t.field == 123);
 }

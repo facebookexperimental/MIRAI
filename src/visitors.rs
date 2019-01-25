@@ -84,8 +84,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Use the local and global environments to resolve Path to an abstract value.
-    /// For now, statics and promoted constants just return Top.
-    /// If a local value cannot be found the result is Bottom.
+    /// For now, promoted constants just return Top.
     fn lookup_path_and_refine_result(&mut self, path: Path) -> AbstractValue {
         let refined_val = {
             let val_at_ref = self.try_to_deref(&path);
@@ -103,23 +102,18 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         };
         if refined_val.is_bottom() {
             // Not found locally, so try statics and promoted constants
-            let mut val: Option<AbstractValue> = None;
             if let Path::StaticVariable { ref name } = path {
                 let summary = self.summary_cache.get_persistent_summary_for(name);
-                val = Some(summary.result.unwrap_or_else(|| abstract_value::TOP));
-            }
-            if let Path::PromotedConstant { .. } = path {
+                summary.result.unwrap_or_else(|| abstract_value::TOP)
+            } else if let Path::PromotedConstant { .. } = path {
                 // todo: #34 provide a crate level environment for storing promoted constants
-                val = Some(abstract_value::TOP);
+                abstract_value::TOP
+            } else {
+                abstract_value::TOP
             }
-            // This bit of awkwardness is needed so that we can move path into the environment.
-            // Hopefully LLVM will optimize this away.
-            if let Some(val) = val {
-                self.current_environment.update_value_at(path, val.clone());
-                return val;
-            }
+        } else {
+            refined_val
         }
-        refined_val
     }
 
     /// For PathSelector::Deref, lookup the reference value using the qualifier, and then dereference that.
@@ -732,8 +726,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
         if !structured_value {
-            let top = abstract_value::TOP;
-            let value = self.current_environment.value_at(&rpath).unwrap_or(&top);
+            let value = self.lookup_path_and_refine_result(rpath);
             debug!("copying {:?} to {:?}", value, target_path);
             value_map = value_map.insert(target_path, value.with_provenance(self.current_span));
         }
@@ -773,8 +766,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
         if !structured_value {
-            let top = abstract_value::TOP;
-            let value = self.current_environment.value_at(&rpath).unwrap_or(&top);
+            let value = self.lookup_path_and_refine_result(rpath.clone());
             debug!("moving {:?} to {:?}", value, target_path);
             value_map = value_map.remove(&rpath);
             value_map = value_map.insert(target_path, value.with_provenance(self.current_span));
@@ -1186,6 +1178,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             mir::Place::Static(boxed_static) => {
                 let def_id = boxed_static.def_id;
                 let name = summaries::summary_key_str(&self.tcx, def_id);
+                //todo: add def_id
                 Path::StaticVariable { name }
             }
             mir::Place::Promoted(boxed_promoted) => {
