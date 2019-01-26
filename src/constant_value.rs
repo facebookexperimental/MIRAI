@@ -144,10 +144,10 @@ impl ConstantValueCache {
     /// Does an expensive check to see if the given function is std::intrinsics::unreachable.
     /// Once it finds the function it caches it so that subsequent checks are cheaper.
     pub fn check_if_std_intrinsics_unreachable_function(&mut self, fun: &ConstantValue) -> bool {
-        let result = match &self.std_intrinsics_unreachable_function {
-            Some(std_fun) => Some(*std_fun == *fun),
-            _ => None,
-        };
+        let result = self
+            .std_intrinsics_unreachable_function
+            .as_ref()
+            .map(|std_fun| *std_fun == *fun);
         result.unwrap_or_else(|| {
             let result = match fun {
                 ConstantValue::Function {
@@ -167,10 +167,10 @@ impl ConstantValueCache {
     /// Does an expensive check to see if the given function is std.panicking.begin_panic.
     /// Once it finds the function it caches it so that subsequent checks are cheaper.
     pub fn check_if_std_panicking_begin_panic_function(&mut self, fun: &ConstantValue) -> bool {
-        let result = match &self.std_panicking_panic_function {
-            Some(std_fun) => Some(*std_fun == *fun),
-            _ => None,
-        };
+        let result = self
+            .std_panicking_panic_function
+            .as_ref()
+            .map(|std_fun| *std_fun == *fun);
         result.unwrap_or_else(|| {
             let result = match fun {
                 ConstantValue::Function {

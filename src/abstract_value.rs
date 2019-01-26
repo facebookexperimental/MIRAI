@@ -122,10 +122,8 @@ impl AbstractValue {
     /// If the concrete Boolean value of this abstract value is known, return it as a UI28 constant,
     /// otherwise return None.
     pub fn as_int_if_known(&self) -> Option<AbstractValue> {
-        match self.as_bool_if_known() {
-            Some(b) => Some(ConstantValue::U128(b as u128).into()),
-            None => None,
-        }
+        self.as_bool_if_known()
+            .map(|b| ConstantValue::U128(b as u128).into())
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
