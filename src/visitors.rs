@@ -245,8 +245,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         self.check_for_errors = true;
         for bb in self.mir.basic_blocks().indices() {
             let i_state = (&in_state[&bb]).clone();
-            self.current_environment = i_state;
-            self.visit_basic_block(bb);
+            if i_state.entry_condition.as_bool_if_known().unwrap_or(true) {
+                self.current_environment = i_state;
+                self.visit_basic_block(bb);
+            }
         }
 
         // Now create a summary of the body that can be in-lined into call sites.
@@ -444,6 +446,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         );
         let mut default_exit_condition = self.current_environment.entry_condition.clone();
         let discr = self.visit_operand(discr);
+        let discr = discr.as_int_if_known().unwrap_or(discr);
         for i in 0..values.len() {
             let val: AbstractValue = ConstantValue::U128(values[i]).into();
             let cond = discr.equals(&val, None);
@@ -586,6 +589,13 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     "Control might reach a call to std::intrinsics::unreachable",
                 );
                 (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+            } else if self
+                .constant_value_cache
+                .check_if_std_panicking_begin_panic_function(&fun)
+            {
+                let span = self.current_span;
+                let mut err = self.session.struct_span_warn(span, "Execution might panic");
+                (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
             }
         }
     }
@@ -693,23 +703,33 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_used_copy(target_path: {:?}, place: {:?})",
             target_path, place
         );
+        let mut value_map = self.current_environment.value_map.clone();
         let rpath = self.visit_place(place);
         if let Some(value) = self.try_to_deref(&rpath) {
             debug!("copying {:?} to {:?}", value, target_path);
-            self.current_environment
-                .value_map
-                .insert(target_path, value.with_provenance(self.current_span));
+            value_map = value_map.insert(target_path, value.with_provenance(self.current_span));
+            self.current_environment.value_map = value_map;
             return;
         }
-        let value_map = &self.current_environment.value_map;
-        for (path, value) in value_map
+        let mut structured_value = false;
+        for (path, value) in self
+            .current_environment
+            .value_map
             .iter()
             .filter(|(p, _)| Self::path_is_rooted_by(*p, &rpath))
         {
+            structured_value = true;
             let qualified_path = Self::replace_root(&path, target_path.clone());
             debug!("copying {:?} to {:?}", value, qualified_path);
-            value_map.insert(qualified_path, value.with_provenance(self.current_span));
+            value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
+        if !structured_value {
+            let top = abstract_value::TOP;
+            let value = self.current_environment.value_at(&rpath).unwrap_or(&top);
+            debug!("copying {:?} to {:?}", value, target_path);
+            value_map = value_map.insert(target_path, value.with_provenance(self.current_span));
+        }
+        self.current_environment.value_map = value_map;
     }
 
     /// For each (path', value) pair in the environment where path' is rooted in place,
@@ -721,25 +741,47 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             target_path, place
         );
         let rpath = self.visit_place(place);
-        let value_map = &self.current_environment.value_map;
-        for (path, value) in value_map
+        if let Path::QualifiedPath { ref selector, .. } = rpath {
+            match **selector {
+                PathSelector::ConstantIndex { .. } | PathSelector::Subslice { .. } => {
+                    // todo: deal with slices
+                    return;
+                }
+                _ => (),
+            }
+        };
+        let mut value_map = self.current_environment.value_map.clone();
+        let mut structured_value = false;
+        for (path, value) in self
+            .current_environment
+            .value_map
             .iter()
             .filter(|(p, _)| Self::path_is_rooted_by(*p, &rpath))
         {
+            structured_value = true;
             let qualified_path = Self::replace_root(&path, target_path.clone());
             debug!("moving {:?} to {:?}", value, qualified_path);
-            value_map.remove(&path);
-            value_map.insert(qualified_path, value.with_provenance(self.current_span));
+            value_map = value_map.remove(&path);
+            value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
+        if !structured_value {
+            let top = abstract_value::TOP;
+            let value = self.current_environment.value_at(&rpath).unwrap_or(&top);
+            debug!("moving {:?} to {:?}", value, target_path);
+            value_map = value_map.remove(&rpath);
+            value_map = value_map.insert(target_path, value.with_provenance(self.current_span));
+        }
+        self.current_environment.value_map = value_map;
     }
 
     /// True if path qualifies root, or another qualified path rooted by root.
     fn path_is_rooted_by(path: &Path, root: &Path) -> bool {
-        *path == *root
-            || match path {
-                Path::QualifiedPath { qualifier, .. } => Self::path_is_rooted_by(qualifier, root),
-                _ => false,
+        match path {
+            Path::QualifiedPath { qualifier, .. } => {
+                **qualifier == *root || Self::path_is_rooted_by(qualifier, root)
             }
+            _ => false,
+        }
     }
 
     /// Returns a copy path with the root replaced by new_root.
@@ -830,11 +872,14 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})",
             path, bin_op, left_operand, right_operand
         );
-        let _left = self.visit_operand(left_operand);
-        let _right = self.visit_operand(right_operand);
-        //todo: get a value that is the bin_op of _left and _right.
-        self.current_environment
-            .update_value_at(path, abstract_value::TOP);
+        let left = self.visit_operand(left_operand);
+        let right = self.visit_operand(right_operand);
+        let result = match bin_op {
+            mir::BinOp::Eq => left.equals(&right, Some(self.current_span)),
+            // todo: other operators
+            _ => abstract_value::TOP,
+        };
+        self.current_environment.update_value_at(path, result);
     }
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate
@@ -889,10 +934,13 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_unary_op(path: {:?}, un_op: {:?}, operand: {:?})",
             path, un_op, operand
         );
-        let _operand = self.visit_operand(operand);
-        //todo: get a value that is the un_op of _operand.
-        self.current_environment
-            .update_value_at(path, abstract_value::TOP);
+        let operand = self.visit_operand(operand);
+        let result = match un_op {
+            mir::UnOp::Not => operand.not(Some(self.current_span)),
+            //todo: other operations
+            _ => abstract_value::TOP,
+        };
+        self.current_environment.update_value_at(path, result);
     }
 
     /// Read the discriminant of an ADT and assign to path.
@@ -936,14 +984,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     fn visit_operand(&mut self, operand: &mir::Operand) -> AbstractValue {
         let span = self.current_span;
         let (expression_domain, span) = match operand {
-            mir::Operand::Copy(place) => {
-                self.visit_copy(place);
-                (ExpressionDomain::Top, span)
-            }
-            mir::Operand::Move(place) => {
-                self.visit_move(place);
-                (ExpressionDomain::Top, span)
-            }
+            mir::Operand::Copy(place) => (self.visit_copy(place).value.expression_domain, span),
+            mir::Operand::Move(place) => (self.visit_move(place).value.expression_domain, span),
             mir::Operand::Constant(constant) => {
                 let mir::Constant {
                     span,
@@ -965,8 +1007,14 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     ///
     /// This implies that the type of the place must be `Copy`; this is true
     /// by construction during build, but also checked by the MIR type checker.
-    fn visit_copy(&self, place: &mir::Place) {
+    fn visit_copy(&mut self, place: &mir::Place) -> AbstractValue {
         debug!("default visit_copy(place: {:?})", place);
+        let path = self.visit_place(place);
+        // todo: special handling for qualified paths
+        match self.current_environment.value_at(&path) {
+            Some(v) => v.clone(),
+            None => abstract_value::TOP,
+        }
     }
 
     /// Move: The value (including old borrows of it) will not be used again.
@@ -974,9 +1022,14 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// Safe for values of all types (modulo future developments towards `?Move`).
     /// Correct usage patterns are enforced by the borrow checker for safe code.
     /// `Copy` may be converted to `Move` to enable "last-use" optimizations.
-    fn visit_move(&mut self, place: &mir::Place) {
+    fn visit_move(&mut self, place: &mir::Place) -> AbstractValue {
         debug!("default visit_move(place: {:?})", place);
-        self.visit_place(place);
+        let path = self.visit_place(place);
+        // todo: special handling for qualified paths
+        match self.current_environment.value_at(&path) {
+            Some(v) => v.clone(),
+            None => abstract_value::TOP,
+        }
     }
 
     /// Synthesizes a constant value.
@@ -1116,6 +1169,19 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             mir::Place::Projection(boxed_place_projection) => {
                 let base = self.visit_place(&boxed_place_projection.base);
                 let selector = self.visit_projection_elem(&boxed_place_projection.elem);
+                if let PathSelector::Deref = selector {
+                    // Strip the Deref in order to canonicalize paths
+                    let base_val = self.lookup_path_and_refine_result(base.clone());
+                    return match base_val.value.expression_domain {
+                        ExpressionDomain::Reference(dereferenced_path) => dereferenced_path,
+                        _ => {
+                            // If we are dereferencing a path whose value if not known to be a
+                            // reference, we just drop the deref so that the path can be found
+                            // in the environment.
+                            base.clone()
+                        }
+                    };
+                }
                 Path::QualifiedPath {
                     qualifier: box base,
                     selector: box selector,
