@@ -326,7 +326,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
 
     /// Write the discriminant for a variant to the enum Place.
     fn visit_set_discriminant(
-        &self,
+        &mut self,
         place: &mir::Place,
         variant_index: rustc::ty::layout::VariantIdx,
     ) {
@@ -334,6 +334,14 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_set_discriminant(place: {:?}, variant_index: {:?})",
             place, variant_index
         );
+        let target_path = self.visit_place(place);
+        let index_val = self
+            .constant_value_cache
+            .get_u128_for(variant_index.as_usize() as u128)
+            .clone()
+            .into();
+        self.current_environment
+            .update_value_at(target_path, index_val);
     }
 
     /// Start a live range for the storage of the local.
@@ -952,10 +960,15 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_discriminant(path: {:?}, place: {:?})",
             path, place
         );
-        let _value_path = self.visit_place(place);
-        //todo: modify _value_path to get the discriminant and look it up in the environment
+        let adt_path = self.visit_place(place);
+        let top = abstract_value::TOP;
+        let adt_discriminant_value = self
+            .current_environment
+            .value_at(&adt_path)
+            .unwrap_or(&top)
+            .clone();
         self.current_environment
-            .update_value_at(path, abstract_value::TOP);
+            .update_value_at(path, adt_discriminant_value);
     }
 
     /// Currently only survives in the MIR that MIRAI sees if the aggregate is an array.

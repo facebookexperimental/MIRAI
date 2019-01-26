@@ -11,6 +11,10 @@ pub enum Foo {
     Bar2(i32),
 }
 
-pub fn g() -> Foo {
-    Foo::Bar1(2)
+pub fn main() {
+    let foo = Foo::Bar1(2);
+    match foo {
+        Foo::Bar1(x) => { debug_assert!(x == 2); }
+        _ => unreachable!()
+    }
 }
