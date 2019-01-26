@@ -8,5 +8,5 @@
 
 fn foo() -> i32 { 123 }
 pub fn main() {
-    let _x = foo();
+    debug_assert!(foo() == 123);
 }

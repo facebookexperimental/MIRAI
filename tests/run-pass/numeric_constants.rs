@@ -22,3 +22,22 @@ pub static M: i128 = -13;
 pub static N: u128 = 14;
 pub static O:f32 = 15.6;
 pub static P:f64 = 15.6666666666666666666666;
+
+pub fn main() {
+    debug_assert!(A == -1);
+    debug_assert!(B == 2);
+    debug_assert!(C == -3);
+    debug_assert!(D == 4);
+    debug_assert!(E == -5);
+    debug_assert!(F == 6);
+    debug_assert!(G == -7);
+    debug_assert!(H == 8);
+    debug_assert!(I == -9);
+    debug_assert!(J == 10);
+    debug_assert!(K == -11);
+    debug_assert!(L == 12);
+    debug_assert!(M == -13);
+    debug_assert!(N == 14);
+    debug_assert!(O == 15.6);
+    debug_assert!(P == 15.6666666666666666666666);
+}
