@@ -35,7 +35,7 @@ pub unsafe fn test1() {
     enum Void {}
     union A { a: (), v: Void }
     let a = A { a: () };
-    match a.v {
+    match a.v { //~  Execution might panic.
     }
 }
 
@@ -73,7 +73,7 @@ fn test4() {
 }
 
 unsafe fn test5() {
-    asm!("NOP")
+    asm!("NOP") //~ Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.
 }
 
 fn test6() {
