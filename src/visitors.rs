@@ -249,7 +249,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Calls a specialized visitor for each kind of statement.
-    fn visit_statement(&mut self, location: mir::Location, statement: &mir::Statement) {
+    fn visit_statement(&mut self, location: mir::Location, statement: &mir::Statement<'tcx>) {
         self.current_location = location;
         let mir::Statement { kind, source_info } = statement;
         debug!("{:?}", source_info);
@@ -275,7 +275,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Write the RHS Rvalue to the LHS Place.
-    fn visit_assign(&mut self, place: &mir::Place, rvalue: &mir::Rvalue) {
+    fn visit_assign(&mut self, place: &mir::Place, rvalue: &mir::Rvalue<'tcx>) {
         debug!(
             "default visit_assign(place: {:?}, rvalue: {:?})",
             place, rvalue
@@ -591,7 +591,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 let span = self.current_span;
                 let mut err = self.session.struct_span_warn(
                     span,
-                    "Control might reach a call to std::intrinsics::unreachable",
+                    "Control might reach a call to std::intrinsics::unreachable.",
                 );
                 (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
             } else if self
@@ -599,7 +599,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 .check_if_std_panicking_begin_panic_function(&fun)
             {
                 let span = self.current_span;
-                let mut err = self.session.struct_span_warn(span, "Execution might panic");
+                let mut err = self
+                    .session
+                    .struct_span_warn(span, "Execution might panic.");
                 (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
             }
         }
@@ -616,9 +618,12 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         cleanup: Option<mir::BasicBlock>,
     ) {
         debug!("default visit_assert(cond: {:?}, expected: {:?}, msg: {:?}, target: {:?}, cleanup: {:?})", cond, expected, msg, target, cleanup);
-        let cond = self.visit_operand(cond);
+        let cond_val = self.visit_operand(cond);
         // Propagate the entry condition to the successor blocks, conjoined with cond (or !cond).
-        let exit_condition = self.current_environment.entry_condition.and(&cond, None);
+        let exit_condition = self
+            .current_environment
+            .entry_condition
+            .and(&cond_val, None);
         self.current_environment
             .exit_conditions
             .insert(target, exit_condition);
@@ -626,15 +631,32 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             let cleanup_condition = self
                 .current_environment
                 .entry_condition
-                .and(&cond.not(None), None);
+                .and(&cond_val.not(None), None);
             self.current_environment
                 .exit_conditions
                 .insert(cleanup_target, cleanup_condition);
-        }
+        };
+        if self.check_for_errors {
+            if let mir::Operand::Constant(..) = cond {
+                // Do not complain about compile time constants known to the compiler.
+                // Leave that to the compiler.
+            } else {
+                // Only give an error if we are positive that the condition is false.
+                // Otherwise this diagnostic is too noisy, particular when yield enters the picture.
+                if !cond_val.as_bool_if_known().unwrap_or(true) {
+                    let span = self.current_span;
+                    let mut err = self.session.struct_span_warn(
+                        span,
+                        "Control might reach this expression with operand values that cause a panic.",
+                    );
+                    (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+                }
+            }
+        };
     }
 
     /// Calls a specialized visitor for each kind of Rvalue
-    fn visit_rvalue(&mut self, path: Path, rvalue: &mir::Rvalue) {
+    fn visit_rvalue(&mut self, path: Path, rvalue: &mir::Rvalue<'tcx>) {
         match rvalue {
             mir::Rvalue::Use(operand) => {
                 self.visit_use(path, operand);
@@ -832,13 +854,25 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// path = length of a [X] or [X;n] value.
-    fn visit_len(&mut self, path: Path, place: &mir::Place) {
+    fn visit_len(&mut self, path: Path, place: &mir::Place<'tcx>) {
         debug!("default visit_len(path: {:?}, place: {:?})", path, place);
-        let value_path = self.visit_place(place);
-        let _value = self.lookup_path_and_refine_result(value_path);
-        //todo: get a value that is the length of _value.
-        self.current_environment
-            .update_value_at(path, abstract_value::TOP);
+        let place_ty = place.ty(&self.mir.local_decls, self.tcx).to_ty(self.tcx);
+        if let TyKind::Array(_, len) = place_ty.sty {
+            // We only get here if "-Z mir-opt-level=0" was specified.
+            // todo: #52 Add a way to run an integration test with a non default compiler option.
+            let usize_type = self.tcx.types.usize;
+            let len = self.visit_constant(usize_type, None, len).clone().into();
+            self.current_environment.update_value_at(path, len);
+        } else {
+            let value_path = self.visit_place(place);
+            let _value = self.lookup_path_and_refine_result(value_path);
+            //todo: get a value that is the length of _value.
+            // perhaps store the length of fixed length array values as a special path.
+            // do this for array literals and repeats.
+            // perhaps implement repeats naively while we don't have range values.
+            self.current_environment
+                .update_value_at(path, abstract_value::TOP);
+        }
     }
 
     /// path = operand. The cast is a no-op for the interpreter.
@@ -873,6 +907,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         let right = self.visit_operand(right_operand);
         let result = match bin_op {
             mir::BinOp::Eq => left.equals(&right, Some(self.current_span)),
+            mir::BinOp::Lt => left.lt(&right, Some(self.current_span)),
             // todo: other operators
             _ => abstract_value::TOP,
         };

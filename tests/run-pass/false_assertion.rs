@@ -8,5 +8,5 @@
 
 pub fn test_assert() {
     let i = 1;
-    debug_assert!(i == 2);  //~ Execution might panic
+    debug_assert!(i == 2);  //~ Execution might panic.
 }
