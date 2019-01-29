@@ -10,3 +10,10 @@ pub static A: bool = true;
 pub static B: bool = false;
 pub static C: char = 'A';
 pub static D: &str = "foo";
+
+pub fn main() {
+    debug_assert!(A == true);
+    debug_assert!(B == false);
+    debug_assert!(C == 'A');
+    //debug_assert!(D == "foo"); //todo: #2 enable this when we have summaries for the standard library
+}
