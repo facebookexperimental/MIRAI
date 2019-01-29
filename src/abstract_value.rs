@@ -102,16 +102,26 @@ impl AbstractValue {
     /// values resulting from applying "and" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn and(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
-        let mut provenance = Vec::new();
-        if expression_provenance.is_some() {
-            provenance.push(expression_provenance.unwrap())
-        }
-        provenance.extend_from_slice(&self.provenance);
-        provenance.extend_from_slice(&other.provenance);
         AbstractValue {
-            provenance,
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
             value: self.value.and(&other.value),
         }
+    }
+
+    /// Returns a list of spans which is the overall span prepended to the concatenation of
+    /// the left spans and the right spans.
+    fn binary_provenance(overall: Option<Span>, left: &[Span], right: &[Span]) -> Vec<Span> {
+        let mut provenance = Vec::new();
+        if let Some(expr) = overall {
+            provenance.push(expr)
+        }
+        provenance.extend_from_slice(left);
+        provenance.extend_from_slice(right);
+        provenance
     }
 
     /// The concrete Boolean value of this abstract value, if known, otherwise None.
@@ -134,14 +144,12 @@ impl AbstractValue {
         other: &AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
-        let mut provenance = Vec::new();
-        if expression_provenance.is_some() {
-            provenance.push(expression_provenance.unwrap())
-        }
-        provenance.extend_from_slice(&self.provenance);
-        provenance.extend_from_slice(&other.provenance);
         AbstractValue {
-            provenance,
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
             value: self.value.equals(&other.value),
         }
     }
@@ -175,14 +183,12 @@ impl AbstractValue {
     /// values resulting from applying "lt" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn lt(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
-        let mut provenance = Vec::new();
-        if expression_provenance.is_some() {
-            provenance.push(expression_provenance.unwrap())
-        }
-        provenance.extend_from_slice(&self.provenance);
-        provenance.extend_from_slice(&other.provenance);
         AbstractValue {
-            provenance,
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
             value: self.value.lt(&other.value),
         }
     }
@@ -205,14 +211,12 @@ impl AbstractValue {
     /// values resulting from applying "or" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn or(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
-        let mut provenance = Vec::new();
-        if expression_provenance.is_some() {
-            provenance.push(expression_provenance.unwrap())
-        }
-        provenance.extend_from_slice(&self.provenance);
-        provenance.extend_from_slice(&other.provenance);
         AbstractValue {
-            provenance,
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
             value: self.value.or(&other.value),
         }
     }
