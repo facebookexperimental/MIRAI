@@ -87,18 +87,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// For now, promoted constants just return Top.
     fn lookup_path_and_refine_result(&mut self, path: Path) -> AbstractValue {
         let refined_val = {
-            let val_at_ref = self.try_to_deref(&path);
-            match val_at_ref {
-                Some(val) => {
-                    val.refine_with(&self.current_environment.entry_condition, self.current_span)
-                }
-                None => {
-                    let bottom = abstract_value::BOTTOM;
-                    let local_val = self.current_environment.value_at(&path).unwrap_or(&bottom);
-                    local_val
-                        .refine_with(&self.current_environment.entry_condition, self.current_span)
-                }
-            }
+            let bottom = abstract_value::BOTTOM;
+            let local_val = self.current_environment.value_at(&path).unwrap_or(&bottom);
+            local_val.refine_with(&self.current_environment.entry_condition, self.current_span)
         };
         if refined_val.is_bottom() {
             // Not found locally, so try statics and promoted constants
@@ -113,31 +104,6 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             }
         } else {
             refined_val
-        }
-    }
-
-    /// For PathSelector::Deref, lookup the reference value using the qualifier, and then dereference that.
-    /// Otherwise return None.
-    fn try_to_deref(&mut self, path: &Path) -> Option<AbstractValue> {
-        if let Path::QualifiedPath {
-            ref qualifier,
-            ref selector,
-        } = path
-        {
-            if let PathSelector::Deref = **selector {
-                let ref_val = self.lookup_path_and_refine_result((**qualifier).clone());
-                return Some(self.dereference(ref_val));
-            }
-        }
-        None
-    }
-
-    /// Given a value that is known to be of the form &path, return the value of path.
-    /// Otherwise just return TOP.
-    fn dereference(&mut self, reference: AbstractValue) -> AbstractValue {
-        match reference.value.expression_domain {
-            ExpressionDomain::Reference(path) => self.lookup_path_and_refine_result(path.clone()),
-            _ => abstract_value::TOP,
         }
     }
 
@@ -707,12 +673,6 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         );
         let mut value_map = self.current_environment.value_map.clone();
         let rpath = self.visit_place(place);
-        if let Some(value) = self.try_to_deref(&rpath) {
-            debug!("copying {:?} to {:?}", value, target_path);
-            value_map = value_map.insert(target_path, value.with_provenance(self.current_span));
-            self.current_environment.value_map = value_map;
-            return;
-        }
         let mut structured_value = false;
         for (path, value) in self
             .current_environment
@@ -1196,7 +1156,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     return match base_val.value.expression_domain {
                         ExpressionDomain::Reference(dereferenced_path) => dereferenced_path,
                         _ => {
-                            // If we are dereferencing a path whose value if not known to be a
+                            // If we are dereferencing a path whose value is not known to be a
                             // reference, we just drop the deref so that the path can be found
                             // in the environment.
                             base.clone()
