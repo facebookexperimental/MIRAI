@@ -305,6 +305,9 @@ pub enum Path {
 /// The selector denotes a de-referenced item, field, or element, or slice.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum PathSelector {
+    /// The length of an array.
+    ArrayLength,
+
     /// Given a path that denotes a reference, select the thing the reference points to.
     Deref,
 

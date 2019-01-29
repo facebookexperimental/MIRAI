@@ -730,25 +730,121 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_used_copy(target_path: {:?}, place: {:?})",
             target_path, place
         );
-        let mut value_map = self.current_environment.value_map.clone();
         let rpath = self.visit_place(place);
-        let mut structured_value = false;
+        debug!("rpath: {:?}", rpath);
+        self.copy_or_move_elements(target_path, rpath, false);
+    }
+
+    fn copy_or_move_elements(&mut self, target_path: Path, rpath: Path, move_elements: bool) {
+        let mut value_map = self.current_environment.value_map.clone();
+        if let Path::QualifiedPath {
+            ref qualifier,
+            ref selector,
+        } = rpath
+        {
+            match **selector {
+                PathSelector::ConstantIndex {
+                    offset, from_end, ..
+                } => {
+                    let index = if from_end {
+                        let len_value = self.get_len((**qualifier).clone());
+                        if let AbstractValue {
+                            value:
+                                AbstractDomains {
+                                    expression_domain:
+                                        ExpressionDomain::CompileTimeConstant(ConstantValue::U128(len)),
+                                },
+                            ..
+                        } = len_value
+                        {
+                            len - u128::from(offset)
+                        } else {
+                            panic!("PathSelector::ConstantIndex implies the length of the value is known")
+                        }
+                    } else {
+                        u128::from(offset)
+                    };
+                    let index_val = self.constant_value_cache.get_u128_for(index).clone().into();
+                    let index_path = Path::QualifiedPath {
+                        qualifier: (*qualifier).clone(),
+                        selector: box PathSelector::Index(box index_val),
+                    };
+                    self.copy_or_move_elements(target_path, index_path, move_elements);
+                    return;
+                }
+                PathSelector::Subslice { from, to } => {
+                    //slice[from:-to] in Python terms.
+                    let len = {
+                        let len_value = self.get_len((**qualifier).clone());
+                        if let AbstractValue {
+                            value:
+                                AbstractDomains {
+                                    expression_domain:
+                                        ExpressionDomain::CompileTimeConstant(ConstantValue::U128(len)),
+                                },
+                            ..
+                        } = len_value
+                        {
+                            u32::try_from(len).unwrap() - to
+                        } else {
+                            panic!(
+                                "PathSelector::Subslice implies the length of the value is known"
+                            )
+                        }
+                    };
+                    let slice_value = self.get_new_heap_address();
+                    self.current_environment
+                        .update_value_at(target_path.clone(), slice_value);
+                    for i in from..len {
+                        let index_val = self
+                            .constant_value_cache
+                            .get_u128_for(u128::from(i))
+                            .clone()
+                            .into();
+                        let index_path = Path::QualifiedPath {
+                            qualifier: (*qualifier).clone(),
+                            selector: box PathSelector::Index(box index_val),
+                        };
+                        let target_index_val = self
+                            .constant_value_cache
+                            .get_u128_for(u128::try_from(i - from).unwrap())
+                            .clone()
+                            .into();
+                        let indexed_target = Path::QualifiedPath {
+                            qualifier: box target_path.clone(),
+                            selector: box PathSelector::Index(box target_index_val),
+                        };
+                        self.copy_or_move_elements(indexed_target, index_path, move_elements);
+                    }
+                    return;
+                }
+                _ => (),
+            }
+        };
         for (path, value) in self
             .current_environment
             .value_map
             .iter()
             .filter(|(p, _)| Self::path_is_rooted_by(*p, &rpath))
         {
-            structured_value = true;
-            let qualified_path = Self::replace_root(&path, target_path.clone());
-            debug!("copying {:?} to {:?}", value, qualified_path);
+            let qualified_path = Self::replace_root(&path, &rpath, target_path.clone());
+            if move_elements {
+                debug!("moving {:?} to {:?}", value, qualified_path);
+                value_map = value_map.remove(&path);
+            } else {
+                debug!("copying {:?} to {:?}", value, qualified_path);
+            };
             value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
-        if !structured_value {
-            let value = self.lookup_path_and_refine_result(rpath);
+        let value = self.lookup_path_and_refine_result(rpath.clone());
+        debug!("copying {:?} to {:?}", value, target_path);
+        if move_elements {
+            debug!("moving {:?} to {:?}", value, target_path);
+            value_map = value_map.remove(&rpath);
+        } else {
             debug!("copying {:?} to {:?}", value, target_path);
-            value_map = value_map.insert(target_path, value.with_provenance(self.current_span));
-        }
+        };
+        value_map = value_map.insert(target_path, value.with_provenance(self.current_span));
         self.current_environment.value_map = value_map;
     }
 
@@ -761,36 +857,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             target_path, place
         );
         let rpath = self.visit_place(place);
-        if let Path::QualifiedPath { ref selector, .. } = rpath {
-            match **selector {
-                PathSelector::ConstantIndex { .. } | PathSelector::Subslice { .. } => {
-                    // todo: deal with slices
-                    return;
-                }
-                _ => (),
-            }
-        };
-        let mut value_map = self.current_environment.value_map.clone();
-        let mut structured_value = false;
-        for (path, value) in self
-            .current_environment
-            .value_map
-            .iter()
-            .filter(|(p, _)| Self::path_is_rooted_by(*p, &rpath))
-        {
-            structured_value = true;
-            let qualified_path = Self::replace_root(&path, target_path.clone());
-            debug!("moving {:?} to {:?}", value, qualified_path);
-            value_map = value_map.remove(&path);
-            value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
-        }
-        if !structured_value {
-            let value = self.lookup_path_and_refine_result(rpath.clone());
-            debug!("moving {:?} to {:?}", value, target_path);
-            value_map = value_map.remove(&rpath);
-            value_map = value_map.insert(target_path, value.with_provenance(self.current_span));
-        }
-        self.current_environment.value_map = value_map;
+        self.copy_or_move_elements(target_path, rpath, true);
     }
 
     /// True if path qualifies root, or another qualified path rooted by root.
@@ -804,13 +871,17 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Returns a copy path with the root replaced by new_root.
-    fn replace_root(path: &Path, new_root: Path) -> Path {
+    fn replace_root(path: &Path, old_root: &Path, new_root: Path) -> Path {
         match path {
             Path::QualifiedPath {
                 qualifier,
                 selector,
             } => {
-                let new_qualifier = Self::replace_root(qualifier, new_root);
+                let new_qualifier = if **qualifier == *old_root {
+                    new_root
+                } else {
+                    Self::replace_root(qualifier, old_root, new_root)
+                };
                 Path::QualifiedPath {
                     qualifier: box new_qualifier,
                     selector: selector.clone(),
@@ -857,22 +928,25 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     fn visit_len(&mut self, path: Path, place: &mir::Place<'tcx>) {
         debug!("default visit_len(path: {:?}, place: {:?})", path, place);
         let place_ty = place.ty(&self.mir.local_decls, self.tcx).to_ty(self.tcx);
-        if let TyKind::Array(_, len) = place_ty.sty {
+        let len_value = if let TyKind::Array(_, len) = place_ty.sty {
             // We only get here if "-Z mir-opt-level=0" was specified.
             // todo: #52 Add a way to run an integration test with a non default compiler option.
             let usize_type = self.tcx.types.usize;
-            let len = self.visit_constant(usize_type, None, len).clone().into();
-            self.current_environment.update_value_at(path, len);
+            self.visit_constant(usize_type, None, len).clone().into()
         } else {
             let value_path = self.visit_place(place);
-            let _value = self.lookup_path_and_refine_result(value_path);
-            //todo: get a value that is the length of _value.
-            // perhaps store the length of fixed length array values as a special path.
-            // do this for array literals and repeats.
-            // perhaps implement repeats naively while we don't have range values.
-            self.current_environment
-                .update_value_at(path, abstract_value::TOP);
-        }
+            self.get_len(value_path)
+        };
+        self.current_environment.update_value_at(path, len_value);
+    }
+
+    /// Get the length of an array. Will be a compile time constant if the array length is known.
+    fn get_len(&mut self, path: Path) -> AbstractValue {
+        let length_path = Path::QualifiedPath {
+            qualifier: box path,
+            selector: box PathSelector::ArrayLength,
+        };
+        self.lookup_path_and_refine_result(length_path)
     }
 
     /// path = operand. The cast is a no-op for the interpreter.
@@ -995,7 +1069,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             .update_value_at(path, adt_discriminant_value);
     }
 
-    /// Currently only survives in the MIR that MIRAI sees if the aggregate is an array.
+    /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.
     /// See https://github.com/rust-lang/rust/issues/48193.
     fn visit_aggregate(
         &mut self,
@@ -1015,7 +1089,6 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         self.current_environment
             .update_value_at(path.clone(), aggregate_value);
         for (i, operand) in operands.iter().enumerate() {
-            let element = self.visit_operand(operand);
             let index_value = self
                 .constant_value_cache
                 .get_u128_for(i as u128)
@@ -1026,12 +1099,48 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 qualifier: box path.clone(),
                 selector,
             };
-            self.current_environment
-                .update_value_at(index_path, element);
+            self.visit_used_operand(index_path, operand);
         }
+        let length_path = Path::QualifiedPath {
+            qualifier: box path.clone(),
+            selector: box PathSelector::ArrayLength,
+        };
+        let length_value = self
+            .constant_value_cache
+            .get_u128_for(operands.len() as u128)
+            .clone()
+            .into();
+        self.current_environment
+            .update_value_at(length_path, length_value);
     }
 
-    /// These are values that can appear inside an rvalue. They are intentionally
+    /// Operand defines the values that can appear inside an rvalue. They are intentionally
+    /// limited to prevent rvalues from being nested in one another.
+    /// A used operand must move or copy values to a target path.
+    fn visit_used_operand(&mut self, target_path: Path, operand: &mir::Operand) {
+        match operand {
+            mir::Operand::Copy(place) => {
+                self.visit_used_copy(target_path, place);
+            }
+            mir::Operand::Move(place) => {
+                self.visit_used_move(target_path, place);
+            }
+            mir::Operand::Constant(constant) => {
+                let mir::Constant {
+                    span,
+                    ty,
+                    user_ty,
+                    literal,
+                } = constant.borrow();
+                let const_value: AbstractValue =
+                    self.visit_constant(ty, *user_ty, literal).clone().into();
+                self.current_environment
+                    .update_value_at(target_path, const_value.with_provenance(*span));
+            }
+        };
+    }
+
+    /// Operand defines the values that can appear inside an rvalue. They are intentionally
     /// limited to prevent rvalues from being nested in one another.
     fn visit_operand(&mut self, operand: &mir::Operand) -> AbstractValue {
         let span = self.current_span;
@@ -1062,11 +1171,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     fn visit_copy(&mut self, place: &mir::Place) -> AbstractValue {
         debug!("default visit_copy(place: {:?})", place);
         let path = self.visit_place(place);
-        // todo: special handling for qualified paths
-        match self.current_environment.value_at(&path) {
-            Some(v) => v.clone(),
-            None => abstract_value::TOP,
-        }
+        self.lookup_path_and_refine_result(path)
     }
 
     /// Move: The value (including old borrows of it) will not be used again.
@@ -1077,11 +1182,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     fn visit_move(&mut self, place: &mir::Place) -> AbstractValue {
         debug!("default visit_move(place: {:?})", place);
         let path = self.visit_place(place);
-        // todo: special handling for qualified paths
-        match self.current_environment.value_at(&path) {
-            Some(v) => v.clone(),
-            None => abstract_value::TOP,
-        }
+        self.lookup_path_and_refine_result(path)
     }
 
     /// Synthesizes a constant value.
