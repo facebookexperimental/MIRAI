@@ -305,18 +305,28 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Start a live range for the storage of the local.
-    fn visit_storage_live(&self, local: mir::Local) {
+    fn visit_storage_live(&mut self, local: mir::Local) {
         debug!("default visit_storage_live(local: {:?})", local);
+        let path = Path::LocalVariable {
+            ordinal: local.as_usize(),
+        };
+        self.current_environment
+            .update_value_at(path, abstract_value::TOP.clone());
     }
 
     /// End the current live range for the storage of the local.
-    fn visit_storage_dead(&self, local: mir::Local) {
+    fn visit_storage_dead(&mut self, local: mir::Local) {
         debug!("default visit_storage_dead(local: {:?})", local);
+        let path = Path::LocalVariable {
+            ordinal: local.as_usize(),
+        };
+        self.current_environment
+            .update_value_at(path, abstract_value::BOTTOM.clone());
     }
 
     /// Execute a piece of inline Assembly.
     fn visit_inline_asm(
-        &self,
+        &mut self,
         asm: &hir::InlineAsm,
         outputs: &[mir::Place],
         inputs: &[(syntax_pos::Span, mir::Operand)],
@@ -325,6 +335,14 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_inline_asm(asm: {:?}, outputs: {:?}, inputs: {:?})",
             asm, outputs, inputs
         );
+        if self.check_for_errors {
+            let span = self.current_span;
+            let mut err = self.session.struct_span_warn(
+                span,
+                "Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
+            );
+            (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+        }
     }
 
     /// Retag references in the given place, ensuring they got fresh tags.  This is
@@ -337,6 +355,11 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_retag(retag_kind: {:?}, place: {:?})",
             retag_kind, place
         );
+        // This seems to be an intermediate artifact of MIR generation and is related to aliasing.
+        // We assume (and will attempt to enforce) that no aliasing of mutable pointers are present
+        // in the programs we check.
+        //
+        // Therefore we simply ignore this.
     }
 
     /// Calls a specialized visitor for each kind of terminator.
@@ -461,8 +484,22 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Indicates a terminator that can never be reached.
-    fn visit_unreachable(&self) {
+    fn visit_unreachable(&mut self) {
         debug!("default visit_unreachable()");
+        // Complain if we are quite sure control gets here.
+        if self.check_for_errors
+            && self
+                .current_environment
+                .entry_condition
+                .as_bool_if_known()
+                .unwrap_or(false)
+        {
+            let span = self.current_span;
+            let mut err = self
+                .session
+                .struct_span_warn(span, "Execution might panic.");
+            (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+        }
     }
 
     /// Drop the Place
