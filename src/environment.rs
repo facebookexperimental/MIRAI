@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use abstract_domains::{AbstractDomains, ExpressionDomain};
 use abstract_value::{self, AbstractValue, Path};
 use rpds::HashTrieMap;
 use rustc::mir::BasicBlock;
@@ -64,10 +65,99 @@ impl Environment {
     /// Updates the path to value map so that the given path now points to the given value.
     pub fn update_value_at(&mut self, path: Path, value: AbstractValue) {
         debug!("updating value of {:?} to {:?}", path, value);
+        if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
+            // If path is an abstraction that can match more than one path, we need to do weak updates.
+            let top = abstract_value::TOP;
+            let true_val = value.join(self.value_at(&true_path).unwrap_or(&top), &join_condition);;
+            let false_val = self
+                .value_at(&false_path)
+                .unwrap_or(&top)
+                .join(&value, &join_condition);
+            self.update_value_at(true_path, true_val);
+            self.update_value_at(false_path, false_val);
+        }
         if value.is_bottom() {
             self.value_map = self.value_map.remove(&path);
         } else {
             self.value_map = self.value_map.insert(path, value);
+        }
+        //todo: deep updates: if the path is the root of a another path, remove that path from the env.
+    }
+
+    /// If the path contains an abstract value that was constructed with a join, the path is
+    /// concretized into two paths where the abstract value is replaced by the consequent
+    /// and alternate, respectively. These paths can then be weakly updated to reflect the
+    /// lack of precise knowledge at compile time.
+    fn try_to_split(&mut self, path: &Path) -> Option<(AbstractValue, Path, Path)> {
+        match path {
+            Path::LocalVariable { .. } => {
+                let val_opt = self.value_at(path);
+                if let Some(val) = val_opt {
+                    if let AbstractValue {
+                        value:
+                            AbstractDomains {
+                                expression_domain:
+                                    ExpressionDomain::ConditionalExpression {
+                                        condition,
+                                        consequent,
+                                        alternate,
+                                    },
+                            },
+                        provenance,
+                    } = val
+                    {
+                        match ((**consequent).clone(), (**alternate).clone()) {
+                            (
+                                ExpressionDomain::AbstractHeapAddress(addr1),
+                                ExpressionDomain::AbstractHeapAddress(addr2),
+                            ) => {
+                                return Some((
+                                    AbstractValue {
+                                        provenance: provenance.clone(),
+                                        value: (**condition).clone(),
+                                    },
+                                    Path::AbstractHeapAddress { ordinal: addr1 },
+                                    Path::AbstractHeapAddress { ordinal: addr2 },
+                                ));
+                            }
+                            (
+                                ExpressionDomain::Reference(path1),
+                                ExpressionDomain::Reference(path2),
+                            ) => {
+                                return Some((
+                                    AbstractValue {
+                                        provenance: provenance.clone(),
+                                        value: (**condition).clone(),
+                                    },
+                                    path1,
+                                    path2,
+                                ));
+                            }
+                            _ => (),
+                        }
+                    }
+                };
+                None
+            }
+            Path::QualifiedPath {
+                ref qualifier,
+                ref selector,
+            } => {
+                if let Some((join_condition, true_path, false_path)) = self.try_to_split(qualifier)
+                {
+                    let true_path = Path::QualifiedPath {
+                        qualifier: box true_path,
+                        selector: selector.clone(),
+                    };
+                    let false_path = Path::QualifiedPath {
+                        qualifier: box false_path,
+                        selector: selector.clone(),
+                    };
+                    return Some((join_condition, true_path, false_path));
+                }
+                None
+            }
+            _ => None,
         }
     }
 
