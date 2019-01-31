@@ -21,6 +21,9 @@ pub enum ConstantValue {
     False,
     /// A reference to a function.
     Function {
+        /// The crate specific key that is used to identify the function in the current crate.
+        /// This is not available for functions returned by calls to functions from other crates,
+        /// since the def id the other crates use have no meaning for the current crate.
         #[serde(skip)]
         def_id: Option<DefId>,
         /// Indicates if the function is known to be treated specially by the Rust compiler

@@ -81,7 +81,6 @@ impl Environment {
         } else {
             self.value_map = self.value_map.insert(path, value);
         }
-        //todo: deep updates: if the path is the root of a another path, remove that path from the env.
     }
 
     /// If the path contains an abstract value that was constructed with a join, the path is
