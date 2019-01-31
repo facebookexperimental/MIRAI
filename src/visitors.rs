@@ -83,6 +83,20 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         }
     }
 
+    /// Restores the method only state to its initial state.
+    fn reset_visitor_state(&mut self) {
+        self.check_for_errors = false;
+        self.current_environment = Environment::default();
+        self.current_location = mir::Location::START;
+        self.current_span = syntax_pos::DUMMY_SP;
+        self.exit_environment = Environment::default();
+        self.heap_addresses = HashMap::default();
+        self.inferred_preconditions = List::new();
+        self.post_conditions = List::new();
+        self.preconditions = List::new();
+        self.unwind_condition = List::new();
+    }
+
     /// Use the local and global environments to resolve Path to an abstract value.
     /// For now, promoted constants just return Top.
     fn lookup_path_and_refine_result(&mut self, path: Path) -> AbstractValue {
@@ -92,7 +106,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             local_val.refine_with(&self.current_environment.entry_condition, self.current_span)
         };
         if refined_val.is_bottom() {
-            // Not found locally, so try statics and promoted constants
+            // Not found locally, so try statics.
             if let Path::StaticVariable {
                 def_id,
                 ref summary_cache_key,
@@ -109,9 +123,6 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     &summary
                 };
                 summary.result.clone().unwrap_or(abstract_value::TOP)
-            } else if let Path::PromotedConstant { .. } = path {
-                // todo: #34 provide a crate level environment for storing promoted constants
-                abstract_value::TOP
             } else {
                 abstract_value::TOP
             }
@@ -131,8 +142,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             in_state.insert(bb, Environment::default());
             out_state.insert(bb, Environment::default());
         }
-        // The entry block has no predecessors and its initial state is the function parameters.
-        let first_state = Environment::with_parameters(self.mir.arg_count);
+        // The entry block has no predecessors and its initial state is the function parameters
+        // as well any promoted constants.
+        let state_with_parameters = Environment::with_parameters(self.mir.arg_count);
+        let first_state = self.promote_constants(state_with_parameters);
 
         // Compute a fixed point, which is a value of out_state that will not grow with more iterations.
         let mut changed = true;
@@ -233,6 +246,33 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             &self.unwind_condition,
         );
         self.summary_cache.set_summary_for(self.def_id, summary);
+    }
+
+    /// Use the visitor to compute the state corresponding to promoted constants.
+    fn promote_constants(&mut self, mut state_with_parameters: Environment) -> Environment {
+        let saved_mir = self.mir;
+        let result_root = Path::LocalVariable { ordinal: 0 };
+        let mut ordinal = 0;
+        for constant_mir in self.mir.promoted.iter() {
+            self.mir = constant_mir;
+            self.visit_body();
+            let promoted_root = Path::PromotedConstant { ordinal };
+            let value = self.lookup_path_and_refine_result(result_root.clone());
+            state_with_parameters.update_value_at(promoted_root.clone(), value);
+            for (path, value) in self
+                .exit_environment
+                .value_map
+                .iter()
+                .filter(|(p, _)| Self::path_is_rooted_by(*p, &result_root))
+            {
+                let promoted_path = Self::replace_root(&path, &result_root, promoted_root.clone());
+                state_with_parameters.update_value_at(promoted_path, value.clone());
+            }
+            self.reset_visitor_state();
+            ordinal += 1;
+        }
+        self.mir = saved_mir;
+        state_with_parameters
     }
 
     /// Visits each statement in order and then visits the terminator.
@@ -478,8 +518,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         debug!("default visit_abort()");
     }
 
-    /// Indicates a normal return. The return place should have
-    /// been filled in by now. This should occur at most once.
+    /// Indicates a normal return. The return place should have been filled in by now.
     fn visit_return(&mut self) {
         debug!("default visit_return()");
         if self.check_for_errors {

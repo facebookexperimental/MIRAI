@@ -300,7 +300,8 @@ pub enum Path {
         summary_cache_key: String,
     },
 
-    /// The ordinal is an index into a crate level constant table.
+    /// The ordinal is an index into a method level table of MIR bodies.
+    /// This should not be serialized into a summary since it is function private local state.
     PromotedConstant { ordinal: usize },
 
     /// The qualifier denotes some reference, struct, or collection.
