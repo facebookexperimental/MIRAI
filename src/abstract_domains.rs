@@ -183,6 +183,13 @@ impl AbstractDomains {
         }
     }
 
+    /// Applies "neg" to every domain element and returns the collection of results.
+    pub fn neg(&self) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.neg(),
+        }
+    }
+
     /// Applies "not_equals" to every pair of domain elements and returns the collection of results.
     pub fn not_equals(&self, other: &AbstractDomains) -> AbstractDomains {
         AbstractDomains {
@@ -372,6 +379,10 @@ pub trait AbstractDomain {
     /// Returns a domain whose concrete set is a superset of the set of values resulting from
     /// mapping the concrete mul_overflows operation over the elements of the cross product of self and other.
     fn mul_overflows(&self, other: &Self, target_type: ExpressionType) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "-" operation over the elements of self.
+    fn neg(&self) -> Self;
 
     /// Returns a domain whose concrete set is a superset of the set of values resulting from
     /// mapping the concrete "!=" operation over the elements of the cross product of self and other.
@@ -583,6 +594,9 @@ pub enum ExpressionDomain {
         // The value of the right operand.
         right: Box<ExpressionDomain>,
     },
+
+    /// An expression that is the arithmetic negation of its parameter. -x
+    Neg { operand: Box<ExpressionDomain> },
 
     /// An expression that is true if the operand is false.
     Not { operand: Box<ExpressionDomain> },
@@ -1241,6 +1255,29 @@ impl AbstractDomain for ExpressionDomain {
                 left: box self.clone(),
                 right: box other.clone(),
                 result_type: target_type,
+            },
+        }
+    }
+
+    /// Returns an expression that is "-self".
+    fn neg(&self) -> Self {
+        match self {
+            ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val)) => {
+                let result = -f32::from_bits(*val);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(result.to_bits()))
+            }
+            ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val)) => {
+                let result = -f64::from_bits(*val);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(result.to_bits()))
+            }
+            ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val)) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val.wrapping_neg()))
+            }
+            ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val)) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val.wrapping_neg()))
+            }
+            _ => ExpressionDomain::Neg {
+                operand: box self.clone(),
             },
         }
     }

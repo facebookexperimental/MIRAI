@@ -371,6 +371,20 @@ impl AbstractValue {
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "neg" to each element of the concrete values of self.
+    pub fn neg(&self, expression_provenance: Option<Span>) -> AbstractValue {
+        let mut provenance = Vec::new();
+        if expression_provenance.is_some() {
+            provenance.push(expression_provenance.unwrap())
+        }
+        provenance.extend_from_slice(&self.provenance);
+        AbstractValue {
+            provenance,
+            value: self.value.neg(),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "!=" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn not_equals(
