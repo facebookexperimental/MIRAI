@@ -30,12 +30,7 @@ script:
 - cargo build
 # Run unit and integration tests
 - RUST_BACKTRACE=1 cargo test
-# Run mirai on itself
-- cargo uninstall mirai || true
-- cargo install --debug --path .
-- cargo clean -p mirai
-- RUSTC_WRAPPER=mirai cargo build
-- cargo uninstall mirai
+# Run code coverage tests
 - cargo clean -p mirai
 - cargo tarpaulin -v --out Xml || true
 - bash <(curl -s https://codecov.io/bash)
