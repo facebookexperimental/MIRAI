@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use abstract_domains::{AbstractDomains, ExpressionDomain};
+use abstract_domains::{AbstractDomains, ExpressionDomain, ExpressionType};
 use abstract_value::{self, AbstractValue, Path, PathSelector};
 use constant_value::{ConstantValue, ConstantValueCache};
 use environment::Environment;
@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use summaries;
 use summaries::{PersistentSummaryCache, Summary};
+use syntax::ast;
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax_pos;
 
@@ -122,11 +123,42 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     &summary
                 };
                 summary.result.clone().unwrap_or(abstract_value::TOP)
+            } else if let Path::LocalVariable { ordinal } = path {
+                ExpressionDomain::Variable {
+                    path: box path.clone(),
+                    var_type: self.get_type_for_local(ordinal),
+                }
+                .into()
             } else {
                 abstract_value::TOP
             }
         } else {
             refined_val
+        }
+    }
+
+    /// Lookups up the local definition for this ordinal and maps the type information
+    /// onto ExpressionType.
+    fn get_type_for_local(&self, ordinal: usize) -> ExpressionType {
+        let loc = &self.mir.local_decls[mir::Local::from(ordinal)];
+        match loc.ty.sty {
+            TyKind::Bool => ExpressionType::Bool,
+            TyKind::Char => ExpressionType::Char,
+            TyKind::Int(ast::IntTy::Isize) => ExpressionType::Isize,
+            TyKind::Int(ast::IntTy::I8) => ExpressionType::I8,
+            TyKind::Int(ast::IntTy::I16) => ExpressionType::I16,
+            TyKind::Int(ast::IntTy::I32) => ExpressionType::I32,
+            TyKind::Int(ast::IntTy::I64) => ExpressionType::I64,
+            TyKind::Int(ast::IntTy::I128) => ExpressionType::I128,
+            TyKind::Uint(ast::UintTy::Usize) => ExpressionType::Usize,
+            TyKind::Uint(ast::UintTy::U8) => ExpressionType::U8,
+            TyKind::Uint(ast::UintTy::U16) => ExpressionType::U16,
+            TyKind::Uint(ast::UintTy::U32) => ExpressionType::U32,
+            TyKind::Uint(ast::UintTy::U64) => ExpressionType::U64,
+            TyKind::Uint(ast::UintTy::U128) => ExpressionType::U128,
+            TyKind::Float(ast::FloatTy::F32) => ExpressionType::F32,
+            TyKind::Float(ast::FloatTy::F64) => ExpressionType::F64,
+            _ => ExpressionType::NonPrimitive,
         }
     }
 
@@ -143,8 +175,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         }
         // The entry block has no predecessors and its initial state is the function parameters
         // as well any promoted constants.
-        let state_with_parameters = Environment::with_parameters(self.mir.arg_count);
-        let first_state = self.promote_constants(state_with_parameters);
+        let first_state = self.promote_constants();
 
         // Compute a fixed point, which is a value of out_state that will not grow with more iterations.
         let mut changed = true;
@@ -249,7 +280,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Use the visitor to compute the state corresponding to promoted constants.
-    fn promote_constants(&mut self, mut state_with_parameters: Environment) -> Environment {
+    fn promote_constants(&mut self) -> Environment {
+        let mut state_with_parameters = Environment::default();
         let saved_mir = self.mir;
         let result_root = Path::LocalVariable { ordinal: 0 };
         for (ordinal, constant_mir) in self.mir.promoted.iter().enumerate() {
