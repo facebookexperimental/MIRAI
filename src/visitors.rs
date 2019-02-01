@@ -50,10 +50,10 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
     current_span: syntax_pos::Span,
     exit_environment: Environment,
     heap_addresses: HashMap<mir::Location, AbstractValue>,
-    inferred_preconditions: List<AbstractValue>,
     post_conditions: List<AbstractValue>,
     preconditions: List<AbstractValue>,
     unwind_condition: List<AbstractValue>,
+    unwind_environment: Environment,
 }
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
@@ -76,10 +76,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             current_span: syntax_pos::DUMMY_SP,
             exit_environment: Environment::default(),
             heap_addresses: HashMap::default(),
-            inferred_preconditions: List::new(),
             post_conditions: List::new(),
             preconditions: List::new(),
             unwind_condition: List::new(),
+            unwind_environment: Environment::default(),
         }
     }
 
@@ -91,10 +91,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         self.current_span = syntax_pos::DUMMY_SP;
         self.exit_environment = Environment::default();
         self.heap_addresses = HashMap::default();
-        self.inferred_preconditions = List::new();
         self.post_conditions = List::new();
         self.preconditions = List::new();
         self.unwind_condition = List::new();
+        self.unwind_environment = Environment::default();
     }
 
     /// Use the local and global environments to resolve Path to an abstract value.
@@ -239,11 +239,12 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
 
         // Now create a summary of the body that can be in-lined into call sites.
         let summary = summaries::summarize(
+            self.mir.arg_count,
             &self.exit_environment,
-            &self.inferred_preconditions,
             &self.preconditions,
             &self.post_conditions,
             &self.unwind_condition,
+            &self.unwind_environment,
         );
         self.summary_cache.set_summary_for(self.def_id, summary);
     }
@@ -263,9 +264,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 .exit_environment
                 .value_map
                 .iter()
-                .filter(|(p, _)| Self::path_is_rooted_by(*p, &result_root))
+                .filter(|(p, _)| p.is_rooted_by(&result_root))
             {
-                let promoted_path = Self::replace_root(&path, &result_root, promoted_root.clone());
+                let promoted_path = path.replace_root(&result_root, promoted_root.clone());
                 state_with_parameters.update_value_at(promoted_path, value.clone());
             }
 
@@ -599,6 +600,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     ) {
         debug!("default visit_call(func: {:?}, args: {:?}, destination: {:?}, cleanup: {:?}, from_hir_call: {:?})", func, args, destination, cleanup, from_hir_call);
         let func_to_call = self.visit_operand(func);
+        let actual_args: Vec<AbstractValue> =
+            args.iter().map(|arg| self.visit_operand(arg)).collect();
         let function_summary = match func_to_call.value.expression_domain {
             ExpressionDomain::CompileTimeConstant(ConstantValue::Function {
                 def_id: Some(def_id),
@@ -617,10 +620,33 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         };
         if let Some((place, target)) = destination {
             // Assign function result to place
-            let return_value_path = self.visit_place(place);
-            let return_value = function_summary.result.unwrap_or(abstract_value::TOP);
-            self.current_environment
-                .update_value_at(return_value_path, return_value);
+            let target_path = self.visit_place(place);
+            let return_value_path = Path::LocalVariable { ordinal: 0 };
+            // Transfer side effects
+            self.transfer_and_refine(
+                &function_summary.side_effects,
+                &target_path,
+                return_value_path,
+                &actual_args,
+            );
+            for (i, arg) in actual_args.iter().enumerate() {
+                if let AbstractValue {
+                    value:
+                        AbstractDomains {
+                            expression_domain: ExpressionDomain::Reference(target_path),
+                        },
+                    ..
+                } = arg
+                {
+                    let parameter_path = Path::LocalVariable { ordinal: i + 1 };
+                    self.transfer_and_refine(
+                        &function_summary.side_effects,
+                        target_path,
+                        parameter_path,
+                        &actual_args,
+                    );
+                }
+            }
             // Propagate the entry condition to the successor blocks.
             self.current_environment
                 .exit_conditions
@@ -656,6 +682,27 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     .struct_span_warn(span, "Execution might panic.");
                 (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
             }
+        }
+    }
+
+    /// Adds a (rpath, rvalue) pair to the current environment for every pair in effects
+    /// for which the path is rooted by source_path and where rpath is path re-rooted with
+    /// target_path and rvalue is value refined by replacing all occurrences of parameter values
+    /// with the corresponding actual values.
+    fn transfer_and_refine(
+        &mut self,
+        effects: &List<(Path, AbstractValue)>,
+        target_path: &Path,
+        source_path: Path,
+        arguments: &[AbstractValue],
+    ) {
+        for (path, value) in effects
+            .iter()
+            .filter(|(p, _)| (*p) == source_path || p.is_rooted_by(&source_path))
+        {
+            let tpath = path.replace_root(&source_path, target_path.clone());
+            let rvalue = value.refine_parameters(arguments);
+            self.current_environment.update_value_at(tpath, rvalue);
         }
     }
 
@@ -877,9 +924,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             .current_environment
             .value_map
             .iter()
-            .filter(|(p, _)| Self::path_is_rooted_by(*p, &rpath))
+            .filter(|(p, _)| p.is_rooted_by(&rpath))
         {
-            let qualified_path = Self::replace_root(&path, &rpath, target_path.clone());
+            let qualified_path = path.replace_root(&rpath, target_path.clone());
             if move_elements {
                 debug!("moving {:?} to {:?}", value, qualified_path);
                 value_map = value_map.remove(&path);
@@ -910,37 +957,6 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         );
         let rpath = self.visit_place(place);
         self.copy_or_move_elements(target_path, rpath, true);
-    }
-
-    /// True if path qualifies root, or another qualified path rooted by root.
-    fn path_is_rooted_by(path: &Path, root: &Path) -> bool {
-        match path {
-            Path::QualifiedPath { qualifier, .. } => {
-                **qualifier == *root || Self::path_is_rooted_by(qualifier, root)
-            }
-            _ => false,
-        }
-    }
-
-    /// Returns a copy path with the root replaced by new_root.
-    fn replace_root(path: &Path, old_root: &Path, new_root: Path) -> Path {
-        match path {
-            Path::QualifiedPath {
-                qualifier,
-                selector,
-            } => {
-                let new_qualifier = if **qualifier == *old_root {
-                    new_root
-                } else {
-                    Self::replace_root(qualifier, old_root, new_root)
-                };
-                Path::QualifiedPath {
-                    qualifier: box new_qualifier,
-                    selector: selector.clone(),
-                }
-            }
-            _ => new_root,
-        }
     }
 
     /// path = [x; 32]

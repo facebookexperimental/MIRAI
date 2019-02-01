@@ -85,15 +85,18 @@ pub struct Summary {
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
 pub fn summarize(
-    environment: &Environment,
-    _inferred_preconditions: &List<AbstractValue>,
+    argument_count: usize,
+    exit_environment: &Environment,
     preconditions: &List<AbstractValue>,
     post_conditions: &List<AbstractValue>,
     unwind_condition: &List<AbstractValue>,
+    unwind_environment: &Environment,
 ) -> Summary {
-    let result = environment.value_at(&Path::LocalVariable { ordinal: 0 });
-    let side_effects: List<(Path, AbstractValue)> = List::new(); // todo: #31  extract from environment
-    let unwind_side_effects: List<(Path, AbstractValue)> = List::new(); // todo: #31  extract from environment
+    let result = exit_environment.value_at(&Path::LocalVariable { ordinal: 0 });
+    let side_effects: List<(Path, AbstractValue)> =
+        extract_side_effects(exit_environment, argument_count);
+    let unwind_side_effects: List<(Path, AbstractValue)> =
+        extract_side_effects(unwind_environment, argument_count);
     Summary {
         preconditions: preconditions.clone(),
         result: result.cloned(),
@@ -102,6 +105,26 @@ pub fn summarize(
         unwind_condition: unwind_condition.clone(),
         unwind_side_effects,
     }
+}
+
+/// Returns a list of (path, value) pairs where each path is rooted by an argument.
+/// Since paths are created by writes, these are side-effects when the root is a parameter
+/// rather than the return result.
+fn extract_side_effects(env: &Environment, argument_count: usize) -> List<(Path, AbstractValue)> {
+    let mut result = List::new();
+    for ordinal in 0..=argument_count {
+        let root = Path::LocalVariable { ordinal };
+        for (path, value) in env
+            .value_map
+            .iter()
+            .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
+        {
+            result = result.push_front((path.clone(), value.clone()));
+        }
+    }
+    //todo: what about paths rooted by heap allocated (i.e. boxed) objects that are referenced by
+    //the values of the arguments?
+    result
 }
 
 /// Constructs a string that uniquely identifies a definition to serve as a key to
