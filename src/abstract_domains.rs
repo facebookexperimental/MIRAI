@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 #![allow(clippy::float_cmp)]
 
-use abstract_value::Path;
+use abstract_value::{AbstractValue, Path};
 use constant_value::ConstantValue;
 use rustc::ty::TyKind;
 use syntax::ast;
@@ -215,6 +215,13 @@ impl AbstractDomains {
     pub fn or(&self, other: &AbstractDomains) -> AbstractDomains {
         AbstractDomains {
             expression_domain: self.expression_domain.or(&other.expression_domain),
+        }
+    }
+
+    /// Applies refine_parameters to every domain element and returns the collection of results.
+    pub fn refine_parameters(&self, arguments: &[AbstractValue]) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.refine_parameters(arguments),
         }
     }
 
@@ -430,6 +437,9 @@ pub trait AbstractDomain {
 
     /// True if all of the concrete values that correspond to self also correspond to other.
     fn subset(&self, other: &Self) -> bool;
+
+    /// Applies refine_parameters to every domain element and returns the collection of results.
+    fn refine_parameters(&self, arguments: &[AbstractValue]) -> Self;
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
     /// corresponding to self and other.The set of values may be less precise (more inclusive) than
@@ -1641,6 +1651,125 @@ impl AbstractDomain for ExpressionDomain {
             (ExpressionDomain::Reference(p1), ExpressionDomain::Reference(p2)) => p1 == p2,
             // in all other cases we conservatively answer false
             _ => false,
+        }
+    }
+
+    /// Applies refine_parameters to every domain element and returns the collection of results.
+    fn refine_parameters(&self, arguments: &[AbstractValue]) -> ExpressionDomain {
+        match self {
+            ExpressionDomain::Top
+            | ExpressionDomain::Bottom
+            | ExpressionDomain::AbstractHeapAddress(..) => self.clone(),
+            ExpressionDomain::Add { left, right } => left
+                .refine_parameters(arguments)
+                .add(&right.refine_parameters(arguments)),
+            ExpressionDomain::AddOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments)
+                .add_overflows(&right.refine_parameters(arguments), result_type.clone()),
+            ExpressionDomain::And { left, right } => left
+                .refine_parameters(arguments)
+                .and(&right.refine_parameters(arguments)),
+            ExpressionDomain::BitAnd { left, right } => left
+                .refine_parameters(arguments)
+                .bit_and(&right.refine_parameters(arguments)),
+            ExpressionDomain::BitOr { left, right } => left
+                .refine_parameters(arguments)
+                .bit_or(&right.refine_parameters(arguments)),
+            ExpressionDomain::BitXor { left, right } => left
+                .refine_parameters(arguments)
+                .bit_xor(&right.refine_parameters(arguments)),
+            ExpressionDomain::CompileTimeConstant(..) => self.clone(),
+            ExpressionDomain::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => consequent.refine_parameters(arguments).join(
+                &alternate.refine_parameters(arguments),
+                &condition.refine_parameters(arguments),
+            ),
+            ExpressionDomain::Div { left, right } => left
+                .refine_parameters(arguments)
+                .div(&right.refine_parameters(arguments)),
+            ExpressionDomain::Equals { left, right } => left
+                .refine_parameters(arguments)
+                .equals(&right.refine_parameters(arguments)),
+            ExpressionDomain::GreaterOrEqual { left, right } => left
+                .refine_parameters(arguments)
+                .ge(&right.refine_parameters(arguments)),
+            ExpressionDomain::GreaterThan { left, right } => left
+                .refine_parameters(arguments)
+                .gt(&right.refine_parameters(arguments)),
+            ExpressionDomain::LessOrEqual { left, right } => left
+                .refine_parameters(arguments)
+                .le(&right.refine_parameters(arguments)),
+            ExpressionDomain::LessThan { left, right } => left
+                .refine_parameters(arguments)
+                .lt(&right.refine_parameters(arguments)),
+            ExpressionDomain::Mul { left, right } => left
+                .refine_parameters(arguments)
+                .mul(&right.refine_parameters(arguments)),
+            ExpressionDomain::MulOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments)
+                .mul_overflows(&right.refine_parameters(arguments), result_type.clone()),
+            ExpressionDomain::Ne { left, right } => left
+                .refine_parameters(arguments)
+                .not_equals(&right.refine_parameters(arguments)),
+            ExpressionDomain::Neg { operand } => operand.refine_parameters(arguments).neg(),
+            ExpressionDomain::Not { operand } => operand.refine_parameters(arguments).not(),
+            ExpressionDomain::Offset { left, right } => left
+                .refine_parameters(arguments)
+                .offset(&right.refine_parameters(arguments)),
+            ExpressionDomain::Or { left, right } => left
+                .refine_parameters(arguments)
+                .or(&right.refine_parameters(arguments)),
+            ExpressionDomain::Reference(..) => self.clone(),
+            ExpressionDomain::Rem { left, right } => left
+                .refine_parameters(arguments)
+                .rem(&right.refine_parameters(arguments)),
+            ExpressionDomain::Shl { left, right } => left
+                .refine_parameters(arguments)
+                .shl(&right.refine_parameters(arguments)),
+            ExpressionDomain::ShlOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments)
+                .shl_overflows(&right.refine_parameters(arguments), result_type.clone()),
+            ExpressionDomain::Shr { left, right } => left
+                .refine_parameters(arguments)
+                .shr(&right.refine_parameters(arguments)),
+            ExpressionDomain::ShrOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments)
+                .shr_overflows(&right.refine_parameters(arguments), result_type.clone()),
+            ExpressionDomain::Sub { left, right } => left
+                .refine_parameters(arguments)
+                .sub(&right.refine_parameters(arguments)),
+            ExpressionDomain::SubOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments)
+                .sub_overflows(&right.refine_parameters(arguments), result_type.clone()),
+            ExpressionDomain::Variable { path, .. } => match **path {
+                Path::LocalVariable { ordinal } if 0 < ordinal && ordinal <= arguments.len() => {
+                    arguments[ordinal - 1].value.expression_domain.clone()
+                }
+                _ => self.clone(),
+            },
         }
     }
 

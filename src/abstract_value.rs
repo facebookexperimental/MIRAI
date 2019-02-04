@@ -465,9 +465,11 @@ impl AbstractValue {
     /// Returns a value that is simplified (refined) by replacing parameter values
     /// with their corresponding argument values. If no refinement is possible
     /// the result is simply a clone of this value.
-    pub fn refine_parameters(&self, _arguments: &[AbstractValue]) -> AbstractValue {
-        //todo: #60 actually refine this value when values identify parameters.
-        self.clone()
+    pub fn refine_parameters(&self, arguments: &[AbstractValue]) -> AbstractValue {
+        AbstractValue {
+            provenance: self.provenance.clone(),
+            value: self.value.refine_parameters(arguments),
+        }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
