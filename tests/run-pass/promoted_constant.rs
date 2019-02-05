@@ -9,5 +9,5 @@
 pub fn main() {
     let x = &1;
     let y = *x;
-    debug_assert_eq!(y, 1);
+    debug_assert!(y == 1);
 }

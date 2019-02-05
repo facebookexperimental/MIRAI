@@ -2,9 +2,12 @@
 //
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
+#![allow(clippy::float_cmp)]
 
 use abstract_value::Path;
 use constant_value::ConstantValue;
+use rustc::ty::TyKind;
+use syntax::ast;
 
 // See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
 
@@ -45,6 +48,26 @@ impl AbstractDomains {
         self.expression_domain.as_bool_if_known()
     }
 
+    /// Applies "add_overflows" to every pair of domain elements and returns the collection of results.
+    pub fn add_overflows(
+        &self,
+        other: &AbstractDomains,
+        target_type: ExpressionType,
+    ) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self
+                .expression_domain
+                .add_overflows(&other.expression_domain, target_type),
+        }
+    }
+
+    /// Applies "add" to every pair of domain elements and returns the collection of results.
+    pub fn add(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.add(&other.expression_domain),
+        }
+    }
+
     /// Applies "and" to every pair of domain elements and returns the collection of results.
     pub fn and(&self, other: &AbstractDomains) -> AbstractDomains {
         AbstractDomains {
@@ -52,10 +75,52 @@ impl AbstractDomains {
         }
     }
 
+    /// Applies "bit_and" to every pair of domain elements and returns the collection of results.
+    pub fn bit_and(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.bit_and(&other.expression_domain),
+        }
+    }
+
+    /// Applies "bit_or" to every pair of domain elements and returns the collection of results.
+    pub fn bit_or(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.bit_or(&other.expression_domain),
+        }
+    }
+
+    /// Applies "bit_xor" to every pair of domain elements and returns the collection of results.
+    pub fn bit_xor(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.bit_xor(&other.expression_domain),
+        }
+    }
+
+    /// Applies "div" to every pair of domain elements and returns the collection of results.
+    pub fn div(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.div(&other.expression_domain),
+        }
+    }
+
     /// Applies "equals" to every pair of domain elements and returns the collection of results.
     pub fn equals(&self, other: &AbstractDomains) -> AbstractDomains {
         AbstractDomains {
             expression_domain: self.expression_domain.equals(&other.expression_domain),
+        }
+    }
+
+    /// Applies "ge" to every pair of domain elements and returns the collection of results.
+    pub fn ge(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.ge(&other.expression_domain),
+        }
+    }
+
+    /// Applies "gt" to every pair of domain elements and returns the collection of results.
+    pub fn gt(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.gt(&other.expression_domain),
         }
     }
 
@@ -84,10 +149,44 @@ impl AbstractDomains {
         }
     }
 
-    /// Applies "<" to every pair of domain elements and returns the collection of results.
+    /// Applies "le" to every pair of domain elements and returns the collection of results.
+    pub fn le(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.le(&other.expression_domain),
+        }
+    }
+
+    /// Applies "lt" to every pair of domain elements and returns the collection of results.
     pub fn lt(&self, other: &AbstractDomains) -> AbstractDomains {
         AbstractDomains {
             expression_domain: self.expression_domain.lt(&other.expression_domain),
+        }
+    }
+
+    /// Applies "mul" to every pair of domain elements and returns the collection of results.
+    pub fn mul(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.mul(&other.expression_domain),
+        }
+    }
+
+    /// Applies "mul_overflows" to every pair of domain elements and returns the collection of results.
+    pub fn mul_overflows(
+        &self,
+        other: &AbstractDomains,
+        target_type: ExpressionType,
+    ) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self
+                .expression_domain
+                .mul_overflows(&other.expression_domain, target_type),
+        }
+    }
+
+    /// Applies "not_equals" to every pair of domain elements and returns the collection of results.
+    pub fn not_equals(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.not_equals(&other.expression_domain),
         }
     }
 
@@ -98,10 +197,84 @@ impl AbstractDomains {
         }
     }
 
+    /// Applies "offset" to every pair of domain elements and returns the collection of results.
+    pub fn offset(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.offset(&other.expression_domain),
+        }
+    }
+
     /// Applies "or" to every pair of domain elements and returns the collection of results.
     pub fn or(&self, other: &AbstractDomains) -> AbstractDomains {
         AbstractDomains {
             expression_domain: self.expression_domain.or(&other.expression_domain),
+        }
+    }
+
+    /// Applies "rem" to every pair of domain elements and returns the collection of results.
+    pub fn rem(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.rem(&other.expression_domain),
+        }
+    }
+
+    /// Applies "shl" to every pair of domain elements and returns the collection of results.
+    pub fn shl(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.shl(&other.expression_domain),
+        }
+    }
+
+    /// Applies "shl_overflows" to every pair of domain elements and returns the collection of results.
+    pub fn shl_overflows(
+        &self,
+        other: &AbstractDomains,
+        target_type: ExpressionType,
+    ) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self
+                .expression_domain
+                .shl_overflows(&other.expression_domain, target_type),
+        }
+    }
+
+    /// Applies "shr" to every pair of domain elements and returns the collection of results.
+    pub fn shr(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.shr(&other.expression_domain),
+        }
+    }
+
+    /// Applies "shr_overflows" to every pair of domain elements and returns the collection of results.
+    pub fn shr_overflows(
+        &self,
+        other: &AbstractDomains,
+        target_type: ExpressionType,
+    ) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self
+                .expression_domain
+                .shr_overflows(&other.expression_domain, target_type),
+        }
+    }
+
+    /// Applies "sub" to every pair of domain elements and returns the collection of results.
+    pub fn sub(&self, other: &AbstractDomains) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self.expression_domain.sub(&other.expression_domain),
+        }
+    }
+
+    /// Applies "sub_overflows" to every pair of domain elements and returns the collection of results.
+    pub fn sub_overflows(
+        &self,
+        other: &AbstractDomains,
+        target_type: ExpressionType,
+    ) -> AbstractDomains {
+        AbstractDomains {
+            expression_domain: self
+                .expression_domain
+                .sub_overflows(&other.expression_domain, target_type),
         }
     }
 
@@ -130,15 +303,47 @@ impl AbstractDomains {
 /// An abstract domain defines a set of concrete values in some way.
 pub trait AbstractDomain {
     /// Returns a domain whose concrete set is a superset of the set of values resulting from
-    /// mapping the concrete "and" operation over the elements of the cross product of self and other.
+    /// mapping the concrete "+" operation over the elements of the cross product of self and other.
+    fn add(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete add_overflows operation over the elements of the cross product of self and other.
+    fn add_overflows(&self, other: &Self, target_type: ExpressionType) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "&&" operation over the elements of the cross product of self and other.
     fn and(&self, other: &Self) -> Self;
 
     /// The Boolean value of this expression, if known, otherwise None.
     fn as_bool_if_known(&self) -> Option<bool>;
 
     /// Returns a domain whose concrete set is a superset of the set of values resulting from
-    /// mapping the concrete "equals" operation over the elements of the cross product of self and other.
+    /// mapping the concrete "&" operation over the elements of the cross product of self and other.
+    fn bit_and(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "|" operation over the elements of the cross product of self and other.
+    fn bit_or(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "^" operation over the elements of the cross product of self and other.
+    fn bit_xor(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "/" operation over the elements of the cross product of self and other.
+    fn div(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "==" operation over the elements of the cross product of self and other.
     fn equals(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete ">=" operation over the elements of the cross product of self and other.
+    fn ge(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete ">" operation over the elements of the cross product of self and other.
+    fn gt(&self, other: &Self) -> Self;
 
     /// True if the set of concrete values that correspond to this domain is empty.
     fn is_bottom(&self) -> bool;
@@ -153,16 +358,64 @@ pub trait AbstractDomain {
     fn join(&self, other: &Self, join_condition: &AbstractDomains) -> Self;
 
     /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "<=" operation over the elements of the cross product of self and other.
+    fn le(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
     /// mapping the concrete "<" operation over the elements of the cross product of self and other.
     fn lt(&self, other: &Self) -> Self;
 
     /// Returns a domain whose concrete set is a superset of the set of values resulting from
-    /// mapping the concrete "not" operation over the elements of self.
+    /// mapping the concrete "*" operation over the elements of the cross product of self and other.
+    fn mul(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete mul_overflows operation over the elements of the cross product of self and other.
+    fn mul_overflows(&self, other: &Self, target_type: ExpressionType) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "!=" operation over the elements of the cross product of self and other.
+    fn not_equals(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "!" operation over the elements of self.
     fn not(&self) -> Self;
 
     /// Returns a domain whose concrete set is a superset of the set of values resulting from
-    /// mapping the concrete "or" operation over the elements of the cross product of self and other.
+    /// mapping the concrete "ptr.offset" operation over the elements of the cross product of self and other.
+    fn offset(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "||" operation over the elements of the cross product of self and other.
     fn or(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "%" operation over the elements of the cross product of self and other.
+    fn rem(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "<<" operation over the elements of the cross product of self and other.
+    fn shl(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete shl_overflows operation over the elements of the cross product of self and other.
+    fn shl_overflows(&self, other: &Self, target_type: ExpressionType) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete ">>" operation over the elements of the cross product of self and other.
+    fn shr(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete shr_overflows operation over the elements of the cross product of self and other.
+    fn shr_overflows(&self, other: &Self, target_type: ExpressionType) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete "-" operation over the elements of the cross product of self and other.
+    fn sub(&self, other: &Self) -> Self;
+
+    /// Returns a domain whose concrete set is a superset of the set of values resulting from
+    /// mapping the concrete sub_overflows operation over the elements of the cross product of self and other.
+    fn sub_overflows(&self, other: &Self, target_type: ExpressionType) -> Self;
 
     /// True if all of the concrete values that correspond to self also correspond to other.
     fn subset(&self, other: &Self) -> bool;
@@ -194,8 +447,50 @@ pub enum ExpressionDomain {
     /// always result in the same ordinal.
     AbstractHeapAddress(usize),
 
-    /// An expression that is true if both left and right are true.
+    /// An expression that is the sum of left and right. +
+    Add {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is false if left + right overflows.
+    AddOverflows {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+        // The type of the result of left + right.
+        result_type: ExpressionType,
+    },
+
+    /// An expression that is true if both left and right are true. &&
     And {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is the bitwise and of left and right. &
+    BitAnd {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is the bitwise or of left and right. |
+    BitOr {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is the bitwise xor of left and right. ^
+    BitXor {
         // The value of the left operand.
         left: Box<ExpressionDomain>,
         // The value of the right operand.
@@ -215,7 +510,15 @@ pub enum ExpressionDomain {
         alternate: Box<ExpressionDomain>,
     },
 
-    /// An expression that is true if left and right are equal.
+    /// An expression that is the left value divided by the right value. /
+    Div {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is true if left and right are equal. ==
     Equals {
         // The value of the left operand.
         left: Box<ExpressionDomain>,
@@ -223,8 +526,58 @@ pub enum ExpressionDomain {
         right: Box<ExpressionDomain>,
     },
 
-    /// An expression that is true if left is less than right.
+    /// An expression that is true if left is greater than or equal to right. >=
+    GreaterOrEqual {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is true if left is greater than right. >
+    GreaterThan {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is true if left is less than or equal to right. <=
+    LessOrEqual {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is true if left is less than right. <
     LessThan {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is left multiplied by right. *
+    Mul {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is false if left multiplied by right overflows.
+    MulOverflows {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+        // The type of the result of left * right.
+        result_type: ExpressionType,
+    },
+
+    /// An expression that is true if left and right are not equal. !=
+    Ne {
         // The value of the left operand.
         left: Box<ExpressionDomain>,
         // The value of the right operand.
@@ -234,8 +587,16 @@ pub enum ExpressionDomain {
     /// An expression that is true if the operand is false.
     Not { operand: Box<ExpressionDomain> },
 
-    /// An expression that is true if either one of left or right are true.
+    /// An expression that is true if either one of left or right are true. ||
     Or {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is left offset with right. ptr.offset
+    Offset {
         // The value of the left operand.
         left: Box<ExpressionDomain>,
         // The value of the right operand.
@@ -244,6 +605,68 @@ pub enum ExpressionDomain {
 
     /// The corresponding concrete value is the runtime address of location identified by the path.
     Reference(Path),
+
+    /// An expression that is the remainder of left divided by right. %
+    Rem {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is the result of left shifted left by right bits. <<
+    Shl {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is false if left shifted left by right bits would shift way all bits. <<
+    ShlOverflows {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+        // The type of the result of left << right.
+        result_type: ExpressionType,
+    },
+
+    /// An expression that is the result of left shifted right by right bits. >>
+    Shr {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is false if left shifted right by right bits would shift way all bits. >>
+    ShrOverflows {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+        // The type of the result of left >> right.
+        result_type: ExpressionType,
+    },
+
+    /// An expression that is the right subtracted from left. -
+    Sub {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+    },
+
+    /// An expression that is false if right subtracted from left overflows. -
+    SubOverflows {
+        // The value of the left operand.
+        left: Box<ExpressionDomain>,
+        // The value of the right operand.
+        right: Box<ExpressionDomain>,
+        // The type of the result of left - right.
+        result_type: ExpressionType,
+    },
 
     /// The unknown value of a place in memory.
     /// This is distinct from Top in that we known something: the place and the type.
@@ -281,7 +704,128 @@ pub enum ExpressionType {
     Usize,
 }
 
+impl<'a> From<&TyKind<'a>> for ExpressionType {
+    fn from(ty_kind: &TyKind) -> ExpressionType {
+        match ty_kind {
+            TyKind::Bool => ExpressionType::Bool,
+            TyKind::Char => ExpressionType::Char,
+            TyKind::Int(ast::IntTy::Isize) => ExpressionType::Isize,
+            TyKind::Int(ast::IntTy::I8) => ExpressionType::I8,
+            TyKind::Int(ast::IntTy::I16) => ExpressionType::I16,
+            TyKind::Int(ast::IntTy::I32) => ExpressionType::I32,
+            TyKind::Int(ast::IntTy::I64) => ExpressionType::I64,
+            TyKind::Int(ast::IntTy::I128) => ExpressionType::I128,
+            TyKind::Uint(ast::UintTy::Usize) => ExpressionType::Usize,
+            TyKind::Uint(ast::UintTy::U8) => ExpressionType::U8,
+            TyKind::Uint(ast::UintTy::U16) => ExpressionType::U16,
+            TyKind::Uint(ast::UintTy::U32) => ExpressionType::U32,
+            TyKind::Uint(ast::UintTy::U64) => ExpressionType::U64,
+            TyKind::Uint(ast::UintTy::U128) => ExpressionType::U128,
+            TyKind::Float(ast::FloatTy::F32) => ExpressionType::F32,
+            TyKind::Float(ast::FloatTy::F64) => ExpressionType::F64,
+            _ => ExpressionType::NonPrimitive,
+        }
+    }
+}
+
+impl From<bool> for ExpressionDomain {
+    fn from(b: bool) -> ExpressionDomain {
+        if b {
+            ExpressionDomain::CompileTimeConstant(ConstantValue::True)
+        } else {
+            ExpressionDomain::CompileTimeConstant(ConstantValue::False)
+        }
+    }
+}
+
 impl AbstractDomain for ExpressionDomain {
+    /// Returns an expression that is "self + other".
+    fn add(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val2)),
+            ) => {
+                let result = f32::from_bits(*val1) + f32::from_bits(*val2);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(result.to_bits()))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val2)),
+            ) => {
+                let result = f64::from_bits(*val1) + f64::from_bits(*val2);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(result.to_bits()))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1.wrapping_add(*val2)))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1.wrapping_add(*val2)))
+            }
+            _ => ExpressionDomain::Add {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
+    /// Returns an expression that is true if "self + other" is not in range of target_type.
+    fn add_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => {
+                let result = match target_type {
+                    ExpressionType::Isize => {
+                        isize::overflowing_add(*val1 as isize, *val2 as isize).1
+                    }
+                    ExpressionType::I128 => i128::overflowing_add(*val1, *val2).1,
+                    ExpressionType::I64 => i64::overflowing_add(*val1 as i64, *val2 as i64).1,
+                    ExpressionType::I32 => i32::overflowing_add(*val1 as i32, *val2 as i32).1,
+                    ExpressionType::I16 => i16::overflowing_add(*val1 as i16, *val2 as i16).1,
+                    ExpressionType::I8 => i8::overflowing_add(*val1 as i8, *val2 as i8).1,
+                    _ => {
+                        println!("{:?}", target_type);
+                        unreachable!()
+                    }
+                };
+                result.into()
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => {
+                let result = match target_type {
+                    ExpressionType::Usize => {
+                        usize::overflowing_add(*val1 as usize, *val2 as usize).1
+                    }
+                    ExpressionType::U128 => u128::overflowing_add(*val1, *val2).1,
+                    ExpressionType::U64 => u64::overflowing_add(*val1 as u64, *val2 as u64).1,
+                    ExpressionType::U32 => u32::overflowing_add(*val1 as u32, *val2 as u32).1,
+                    ExpressionType::U16 => u16::overflowing_add(*val1 as u16, *val2 as u16).1,
+                    ExpressionType::U8 => u8::overflowing_add(*val1 as u8, *val2 as u8).1,
+                    _ => {
+                        println!("{:?}", target_type);
+                        unreachable!()
+                    }
+                };
+                result.into()
+            }
+            _ => ExpressionDomain::AddOverflows {
+                left: box self.clone(),
+                right: box other.clone(),
+                result_type: target_type,
+            },
+        }
+    }
+
     /// Returns an expression that is "self && other".
     fn and(&self, other: &Self) -> Self {
         let self_bool = self.as_bool_if_known();
@@ -323,10 +867,153 @@ impl AbstractDomain for ExpressionDomain {
         }
     }
 
+    /// Returns an expression that is "self & other".
+    fn bit_and(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1 & val2)),
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1 & val2)),
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::True),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::True),
+            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::True),
+            (ExpressionDomain::CompileTimeConstant(ConstantValue::False), _)
+            | (_, ExpressionDomain::CompileTimeConstant(ConstantValue::False)) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::False)
+            }
+            _ => ExpressionDomain::BitAnd {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
+    /// Returns an expression that is "self | other".
+    fn bit_or(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1 | val2)),
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1 | val2)),
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::False),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::False),
+            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::False),
+            (ExpressionDomain::CompileTimeConstant(ConstantValue::True), _)
+            | (_, ExpressionDomain::CompileTimeConstant(ConstantValue::True)) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::True)
+            }
+            _ => ExpressionDomain::BitOr {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
+    /// Returns an expression that is "self ^ other".
+    fn bit_xor(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1 ^ val2)),
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1 ^ val2)),
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::False),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::False),
+            )
+            | (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::True),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::True),
+            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::False),
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::True),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::False),
+            )
+            | (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::False),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::True),
+            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::True),
+            _ => ExpressionDomain::BitXor {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
+    /// Returns an expression that is "self / other".
+    fn div(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val2)),
+            ) => {
+                let result = f32::from_bits(*val1) / f32::from_bits(*val2);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(result.to_bits()))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val2)),
+            ) => {
+                let result = f64::from_bits(*val1) / f64::from_bits(*val2);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(result.to_bits()))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => {
+                if *val2 == 0 {
+                    ExpressionDomain::Bottom
+                } else {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::I128(*val1 / *val2))
+                }
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => {
+                if *val2 == 0 {
+                    ExpressionDomain::Bottom
+                } else {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::U128(*val1 / *val2))
+                }
+            }
+            _ => ExpressionDomain::Div {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
     /// Returns an expression that is "self == other".
     fn equals(&self, other: &Self) -> Self {
         match (self, other) {
-            // If self and other are constant values, just compare them with ==.
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val2)),
+            ) => {
+                let result = f32::from_bits(*val1) == f32::from_bits(*val2);
+                return result.into();
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val2)),
+            ) => {
+                let result = f64::from_bits(*val1) == f64::from_bits(*val2);
+                return result.into();
+            }
             (
                 ExpressionDomain::CompileTimeConstant(cv1),
                 ExpressionDomain::CompileTimeConstant(cv2),
@@ -369,6 +1056,46 @@ impl AbstractDomain for ExpressionDomain {
         }
     }
 
+    /// Returns an expression that is "self >= other".
+    fn ge(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(cv1),
+                ExpressionDomain::CompileTimeConstant(cv2),
+            ) => {
+                if cv1 >= cv2 {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::True)
+                } else {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::False)
+                }
+            }
+            _ => ExpressionDomain::GreaterOrEqual {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
+    /// Returns an expression that is "self > other".
+    fn gt(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(cv1),
+                ExpressionDomain::CompileTimeConstant(cv2),
+            ) => {
+                if cv1 > cv2 {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::True)
+                } else {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::False)
+                }
+            }
+            _ => ExpressionDomain::GreaterThan {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
     /// True if the set of concrete values that correspond to this domain is empty.
     fn is_bottom(&self) -> bool {
         match self {
@@ -389,7 +1116,7 @@ impl AbstractDomain for ExpressionDomain {
     /// corresponding to self and other.
     /// In a context where the join condition is known to be true, the result can be refined to be
     /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
-    fn join(&self, other: &ExpressionDomain, join_condition: &AbstractDomains) -> ExpressionDomain {
+    fn join(&self, other: &Self, join_condition: &AbstractDomains) -> Self {
         if self == other {
             return self.clone();
         };
@@ -403,8 +1130,28 @@ impl AbstractDomain for ExpressionDomain {
         }
     }
 
+    /// Returns an expression that is "self <= other".
+    fn le(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(cv1),
+                ExpressionDomain::CompileTimeConstant(cv2),
+            ) => {
+                if cv1 <= cv2 {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::True)
+                } else {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::False)
+                }
+            }
+            _ => ExpressionDomain::LessOrEqual {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
     /// Returns an expression that is self < other
-    fn lt(&self, other: &ExpressionDomain) -> ExpressionDomain {
+    fn lt(&self, other: &Self) -> Self {
         match (self, other) {
             (
                 ExpressionDomain::CompileTimeConstant(cv1),
@@ -423,6 +1170,113 @@ impl AbstractDomain for ExpressionDomain {
         }
     }
 
+    /// Returns an expression that is "self * other".
+    fn mul(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val2)),
+            ) => {
+                let result = f32::from_bits(*val1) * f32::from_bits(*val2);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(result.to_bits()))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val2)),
+            ) => {
+                let result = f64::from_bits(*val1) * f64::from_bits(*val2);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(result.to_bits()))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1.wrapping_mul(*val2)))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1.wrapping_mul(*val2)))
+            }
+            _ => ExpressionDomain::Mul {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
+    /// Returns an expression that is true if "self * other" is not in range of target_type.
+    fn mul_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => {
+                let result = match target_type {
+                    ExpressionType::I128 => i128::overflowing_mul(*val1, *val2).1,
+                    ExpressionType::I64 => i64::overflowing_mul(*val1 as i64, *val2 as i64).1,
+                    ExpressionType::I32 => i32::overflowing_mul(*val1 as i32, *val2 as i32).1,
+                    ExpressionType::I16 => i16::overflowing_mul(*val1 as i16, *val2 as i16).1,
+                    ExpressionType::I8 => i8::overflowing_mul(*val1 as i8, *val2 as i8).1,
+                    _ => unreachable!(),
+                };
+                result.into()
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => {
+                let result = match target_type {
+                    ExpressionType::U128 => u128::overflowing_mul(*val1, *val2).1,
+                    ExpressionType::U64 => u64::overflowing_mul(*val1 as u64, *val2 as u64).1,
+                    ExpressionType::U32 => u32::overflowing_mul(*val1 as u32, *val2 as u32).1,
+                    ExpressionType::U16 => u16::overflowing_mul(*val1 as u16, *val2 as u16).1,
+                    ExpressionType::U8 => u8::overflowing_mul(*val1 as u8, *val2 as u8).1,
+                    _ => unreachable!(),
+                };
+                result.into()
+            }
+            _ => ExpressionDomain::MulOverflows {
+                left: box self.clone(),
+                right: box other.clone(),
+                result_type: target_type,
+            },
+        }
+    }
+
+    /// Returns an expression that is "self != other".
+    fn not_equals(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val2)),
+            ) => {
+                let result = f32::from_bits(*val1) != f32::from_bits(*val2);
+                result.into()
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val2)),
+            ) => {
+                let result = f64::from_bits(*val1) != f64::from_bits(*val2);
+                result.into()
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => (val1 != val2).into(),
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => (val1 != val2).into(),
+            _ => ExpressionDomain::Ne {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
     /// Returns an expression that is "!self".
     fn not(&self) -> Self {
         match self {
@@ -432,23 +1286,30 @@ impl AbstractDomain for ExpressionDomain {
             ExpressionDomain::CompileTimeConstant(ConstantValue::True) => {
                 ExpressionDomain::CompileTimeConstant(ConstantValue::False)
             }
-            ExpressionDomain::Top | ExpressionDomain::Bottom => self.clone(),
+            ExpressionDomain::Bottom => self.clone(),
             _ => ExpressionDomain::Not {
                 operand: box self.clone(),
             },
         }
     }
 
+    /// Returns an expression that is "self.other".
+    fn offset(&self, other: &Self) -> Self {
+        ExpressionDomain::Offset {
+            left: box self.clone(),
+            right: box other.clone(),
+        }
+    }
+
     /// Returns an expression that is "self || other".
-    fn or(&self, other: &ExpressionDomain) -> ExpressionDomain {
+    fn or(&self, other: &Self) -> Self {
         if self.as_bool_if_known().unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
             ExpressionDomain::CompileTimeConstant(ConstantValue::True)
-        } else if other.is_top() || self.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
+        } else if self.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
             other.clone()
-        } else if self.is_top() || other.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
+        } else if other.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
             self.clone()
         } else {
-            // todo: #32 more simplifications
             ExpressionDomain::Or {
                 left: box self.clone(),
                 right: box other.clone(),
@@ -456,9 +1317,246 @@ impl AbstractDomain for ExpressionDomain {
         }
     }
 
+    /// Returns an expression that is "self % other".
+    fn rem(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val2)),
+            ) => {
+                let result = f32::from_bits(*val1) % f32::from_bits(*val2);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(result.to_bits()))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val2)),
+            ) => {
+                let result = f64::from_bits(*val1) % f64::from_bits(*val2);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(result.to_bits()))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => {
+                if *val2 == 0 {
+                    ExpressionDomain::Bottom
+                } else {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::I128(*val1 % *val2))
+                }
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => {
+                if *val2 == 0 {
+                    ExpressionDomain::Bottom
+                } else {
+                    ExpressionDomain::CompileTimeConstant(ConstantValue::U128(*val1 % *val2))
+                }
+            }
+            _ => ExpressionDomain::Rem {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
+    /// Returns an expression that is "self << other".
+    fn shl(&self, other: &Self) -> Self {
+        let other_as_u32 = match other {
+            ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)) => Some(*val2 as u32),
+            ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)) => Some(*val2 as u32),
+            _ => None,
+        };
+        match (self, other_as_u32) {
+            (ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)), Some(val2)) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1.wrapping_shl(val2)))
+            }
+            (ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)), Some(val2)) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1.wrapping_shl(val2)))
+            }
+            _ => ExpressionDomain::Shl {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
+    /// Returns an expression that is true if "self << other" is not in range of target_type.
+    fn shl_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
+        let other_as_u32 = match other {
+            ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)) => Some(*val2 as u32),
+            ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)) => Some(*val2 as u32),
+            _ => None,
+        };
+        match (self, other_as_u32) {
+            (ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)), Some(val2)) => {
+                let result = match target_type {
+                    ExpressionType::I128 => i128::overflowing_shl(*val1, val2).1,
+                    ExpressionType::I64 => i64::overflowing_shl(*val1 as i64, val2).1,
+                    ExpressionType::I32 => i32::overflowing_shl(*val1 as i32, val2).1,
+                    ExpressionType::I16 => i16::overflowing_shl(*val1 as i16, val2).1,
+                    ExpressionType::I8 => i8::overflowing_shl(*val1 as i8, val2).1,
+                    _ => unreachable!(),
+                };
+                result.into()
+            }
+            (ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)), Some(val2)) => {
+                let result = match target_type {
+                    ExpressionType::U128 => u128::overflowing_shl(*val1, val2).1,
+                    ExpressionType::U64 => u64::overflowing_shl(*val1 as u64, val2).1,
+                    ExpressionType::U32 => u32::overflowing_shl(*val1 as u32, val2).1,
+                    ExpressionType::U16 => u16::overflowing_shl(*val1 as u16, val2).1,
+                    ExpressionType::U8 => u8::overflowing_shl(*val1 as u8, val2).1,
+                    _ => unreachable!(),
+                };
+                result.into()
+            }
+            _ => ExpressionDomain::ShlOverflows {
+                left: box self.clone(),
+                right: box other.clone(),
+                result_type: target_type,
+            },
+        }
+    }
+
+    /// Returns an expression that is "self >> other".
+    fn shr(&self, other: &Self) -> Self {
+        let other_as_u32 = match other {
+            ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)) => Some(*val2 as u32),
+            ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)) => Some(*val2 as u32),
+            _ => None,
+        };
+        match (self, other_as_u32) {
+            (ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)), Some(val2)) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1.wrapping_shr(val2)))
+            }
+            (ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)), Some(val2)) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1.wrapping_shr(val2)))
+            }
+            _ => ExpressionDomain::Shr {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
+    /// Returns an expression that is true if "self >> other" is not in range of target_type.
+    fn shr_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
+        let other_as_u32 = match other {
+            ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)) => Some(*val2 as u32),
+            ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)) => Some(*val2 as u32),
+            _ => None,
+        };
+        match (self, other_as_u32) {
+            (ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)), Some(val2)) => {
+                let result = match target_type {
+                    ExpressionType::I128 => i128::overflowing_shr(*val1, val2).1,
+                    ExpressionType::I64 => i64::overflowing_shr(*val1 as i64, val2).1,
+                    ExpressionType::I32 => i32::overflowing_shr(*val1 as i32, val2).1,
+                    ExpressionType::I16 => i16::overflowing_shr(*val1 as i16, val2).1,
+                    ExpressionType::I8 => i8::overflowing_shr(*val1 as i8, val2).1,
+                    _ => unreachable!(),
+                };
+                result.into()
+            }
+            (ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)), Some(val2)) => {
+                let result = match target_type {
+                    ExpressionType::U128 => u128::overflowing_shr(*val1, val2).1,
+                    ExpressionType::U64 => u64::overflowing_shr(*val1 as u64, val2).1,
+                    ExpressionType::U32 => u32::overflowing_shr(*val1 as u32, val2).1,
+                    ExpressionType::U16 => u16::overflowing_shr(*val1 as u16, val2).1,
+                    ExpressionType::U8 => u8::overflowing_shr(*val1 as u8, val2).1,
+                    _ => unreachable!(),
+                };
+                result.into()
+            }
+            _ => ExpressionDomain::ShrOverflows {
+                left: box self.clone(),
+                right: box other.clone(),
+                result_type: target_type,
+            },
+        }
+    }
+
+    /// Returns an expression that is "self - other".
+    fn sub(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(val2)),
+            ) => {
+                let result = f32::from_bits(*val1) - f32::from_bits(*val2);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F32(result.to_bits()))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(val2)),
+            ) => {
+                let result = f64::from_bits(*val1) - f64::from_bits(*val2);
+                ExpressionDomain::CompileTimeConstant(ConstantValue::F64(result.to_bits()))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1.wrapping_sub(*val2)))
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => {
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1.wrapping_sub(*val2)))
+            }
+            _ => ExpressionDomain::Sub {
+                left: box self.clone(),
+                right: box other.clone(),
+            },
+        }
+    }
+
+    /// Returns an expression that is true if "self - other" is not in range of target_type.
+    fn sub_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
+        match (self, other) {
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::I128(val2)),
+            ) => {
+                let result = match target_type {
+                    ExpressionType::I128 => i128::overflowing_add(*val1, *val2).1,
+                    ExpressionType::I64 => i64::overflowing_add(*val1 as i64, *val2 as i64).1,
+                    ExpressionType::I32 => i32::overflowing_add(*val1 as i32, *val2 as i32).1,
+                    ExpressionType::I16 => i16::overflowing_add(*val1 as i16, *val2 as i16).1,
+                    ExpressionType::I8 => i8::overflowing_add(*val1 as i8, *val2 as i8).1,
+                    _ => unreachable!(),
+                };
+                result.into()
+            }
+            (
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val1)),
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val2)),
+            ) => {
+                let result = match target_type {
+                    ExpressionType::U128 => u128::overflowing_add(*val1, *val2).1,
+                    ExpressionType::U64 => u64::overflowing_add(*val1 as u64, *val2 as u64).1,
+                    ExpressionType::U32 => u32::overflowing_add(*val1 as u32, *val2 as u32).1,
+                    ExpressionType::U16 => u16::overflowing_add(*val1 as u16, *val2 as u16).1,
+                    ExpressionType::U8 => u8::overflowing_add(*val1 as u8, *val2 as u8).1,
+                    _ => unreachable!(),
+                };
+                result.into()
+            }
+            _ => ExpressionDomain::SubOverflows {
+                left: box self.clone(),
+                right: box other.clone(),
+                result_type: target_type,
+            },
+        }
+    }
+
     /// True if all of the concrete values that correspond to self also correspond to other.
     /// Note: !x.subset(y) does not imply y.subset(x).
-    fn subset(&self, other: &ExpressionDomain) -> bool {
+    fn subset(&self, other: &Self) -> bool {
         if self == other {
             return true;
         };
@@ -513,7 +1611,7 @@ impl AbstractDomain for ExpressionDomain {
     /// corresponding to self and other.The set of values may be less precise (more inclusive) than
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to Top.
-    fn widen(&self, other: &Self, _join_condition: &AbstractDomains) -> ExpressionDomain {
+    fn widen(&self, other: &Self, _join_condition: &AbstractDomains) -> Self {
         if self == other {
             return self.clone();
         };

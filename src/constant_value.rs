@@ -35,6 +35,8 @@ pub enum ConstantValue {
     I128(i128),
     /// 64 bit floating point, stored as a u64 to make it comparable.
     F64(u64),
+    /// 32 bit floating point, stored as a u32 to make it comparable.
+    F32(u32),
     /// A string literal.
     Str(String),
     /// The Boolean true value.
@@ -65,6 +67,7 @@ impl ConstantValue {
 pub struct ConstantValueCache {
     char_cache: HashMap<char, ConstantValue>,
     function_cache: HashMap<DefId, ConstantValue>,
+    f32_cache: HashMap<u32, ConstantValue>,
     f64_cache: HashMap<u64, ConstantValue>,
     i128_cache: HashMap<i128, ConstantValue>,
     u128_cache: HashMap<u128, ConstantValue>,
@@ -79,6 +82,7 @@ impl ConstantValueCache {
         ConstantValueCache {
             char_cache: HashMap::default(),
             function_cache: HashMap::default(),
+            f32_cache: HashMap::default(),
             f64_cache: HashMap::default(),
             i128_cache: HashMap::default(),
             u128_cache: HashMap::default(),
@@ -101,6 +105,13 @@ impl ConstantValueCache {
         self.char_cache
             .entry(value)
             .or_insert_with(|| ConstantValue::Char(value))
+    }
+
+    /// Returns a reference to a cached ExpressionDomain::F32(value).
+    pub fn get_f32_for(&mut self, value: u32) -> &ConstantValue {
+        self.f32_cache
+            .entry(value)
+            .or_insert_with(|| ConstantValue::F32(value))
     }
 
     /// Returns a reference to a cached ExpressionDomain::F64(value).
