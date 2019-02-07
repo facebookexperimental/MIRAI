@@ -8,5 +8,6 @@
 
 pub fn main() {
     let x = [1, 2];
-    let _y = x[2]; //~ Control might reach this expression with operand values that cause a panic.
+    let _y = x[2]; //~ array index out of bounds
 }
+
