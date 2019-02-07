@@ -5,6 +5,7 @@
 //
 use abstract_domains::{self, AbstractDomains, ExpressionDomain};
 use constant_value::ConstantValue;
+use rustc::hir::def_id::DefId;
 use std::fmt::{Debug, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use syntax_pos::Span;
@@ -285,11 +286,19 @@ pub enum Path {
 
     /// 0 is the return value temporary
     /// [1 ... arg_count] are the parameters
-    /// [arg_count ... ] are the local variables and compiler temporaries
+    /// [arg_count ... ] are the local variables and compiler temporaries.
     LocalVariable { ordinal: usize },
 
     /// The name is a summary cache key string.
-    StaticVariable { name: String },
+    StaticVariable {
+        /// The crate specific key that is used to identify the function in the current crate.
+        /// This is not available for functions returned by calls to functions from other crates,
+        /// since the def id the other crates use have no meaning for the current crate.
+        #[serde(skip)]
+        def_id: Option<DefId>,
+        /// The key to use when retrieving a summary for the static variable from the summary cache.
+        summary_cache_key: String,
+    },
 
     /// The ordinal is an index into a crate level constant table.
     PromotedConstant { ordinal: usize },

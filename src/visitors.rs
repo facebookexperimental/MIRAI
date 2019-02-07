@@ -93,9 +93,22 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         };
         if refined_val.is_bottom() {
             // Not found locally, so try statics and promoted constants
-            if let Path::StaticVariable { ref name } = path {
-                let summary = self.summary_cache.get_persistent_summary_for(name);
-                summary.result.unwrap_or_else(|| abstract_value::TOP)
+            if let Path::StaticVariable {
+                def_id,
+                ref summary_cache_key,
+            } = path
+            {
+                let mut summary;
+                let summary = if let Some(def_id) = def_id {
+                    self.summary_cache
+                        .get_summary_for(def_id, Some(self.def_id))
+                } else {
+                    summary = self
+                        .summary_cache
+                        .get_persistent_summary_for(summary_cache_key);
+                    &summary
+                };
+                summary.result.clone().unwrap_or(abstract_value::TOP)
             } else if let Path::PromotedConstant { .. } = path {
                 // todo: #34 provide a crate level environment for storing promoted constants
                 abstract_value::TOP
@@ -898,7 +911,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             path, operand, count
         );
         self.visit_operand(operand);
-        //todo:
+        //todo: needs #62
         // get a heap address and put it in Path::AbstractHeapAddress
         // get an abs value for x
         // create a PathSelector::Index paths where the value is the range 0..count
@@ -1311,8 +1324,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             mir::Place::Static(boxed_static) => {
                 let def_id = boxed_static.def_id;
                 let name = summaries::summary_key_str(&self.tcx, def_id);
-                //todo: add def_id
-                Path::StaticVariable { name }
+                Path::StaticVariable {
+                    def_id: Some(def_id),
+                    summary_cache_key: name,
+                }
             }
             mir::Place::Promoted(boxed_promoted) => {
                 let index = boxed_promoted.0;

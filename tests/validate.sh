@@ -9,8 +9,6 @@ cargo fmt --all
 cargo clippy -- -D warnings
 # Build
 time cargo build
-# Run unit and integration tests
-RUST_BACKTRACE=1 cargo test
 # Run mirai on itself
 cargo uninstall mirai || true
 cargo install --debug --path .
