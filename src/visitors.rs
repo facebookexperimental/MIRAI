@@ -7,7 +7,6 @@ use abstract_domains::{AbstractDomains, ExpressionDomain};
 use abstract_value::{self, AbstractValue, Path, PathSelector};
 use constant_value::{ConstantValue, ConstantValueCache};
 use environment::Environment;
-use rpds::List;
 use rustc::session::Session;
 use rustc::ty::{Const, LazyConst, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
@@ -50,9 +49,9 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
     current_span: syntax_pos::Span,
     exit_environment: Environment,
     heap_addresses: HashMap<mir::Location, AbstractValue>,
-    post_conditions: List<AbstractValue>,
-    preconditions: List<AbstractValue>,
-    unwind_condition: List<AbstractValue>,
+    post_conditions: Vec<AbstractValue>,
+    preconditions: Vec<AbstractValue>,
+    unwind_condition: Vec<AbstractValue>,
     unwind_environment: Environment,
 }
 
@@ -76,9 +75,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             current_span: syntax_pos::DUMMY_SP,
             exit_environment: Environment::default(),
             heap_addresses: HashMap::default(),
-            post_conditions: List::new(),
-            preconditions: List::new(),
-            unwind_condition: List::new(),
+            post_conditions: Vec::new(),
+            preconditions: Vec::new(),
+            unwind_condition: Vec::new(),
             unwind_environment: Environment::default(),
         }
     }
@@ -91,9 +90,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         self.current_span = syntax_pos::DUMMY_SP;
         self.exit_environment = Environment::default();
         self.heap_addresses = HashMap::default();
-        self.post_conditions = List::new();
-        self.preconditions = List::new();
-        self.unwind_condition = List::new();
+        self.post_conditions = Vec::new();
+        self.preconditions = Vec::new();
+        self.unwind_condition = Vec::new();
         self.unwind_environment = Environment::default();
     }
 
@@ -691,7 +690,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// with the corresponding actual values.
     fn transfer_and_refine(
         &mut self,
-        effects: &List<(Path, AbstractValue)>,
+        effects: &[(Path, AbstractValue)],
         target_path: &Path,
         source_path: Path,
         arguments: &[AbstractValue],

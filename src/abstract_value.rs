@@ -236,7 +236,7 @@ impl AbstractValue {
         }
     }
 
-    /// Returns a value that is simplified (refined) by using replacing parameter values
+    /// Returns a value that is simplified (refined) by replacing parameter values
     /// with their corresponding argument values. If no refinement is possible
     /// the result is simply a clone of this value.
     pub fn refine_parameters(&self, _arguments: &[AbstractValue]) -> AbstractValue {
