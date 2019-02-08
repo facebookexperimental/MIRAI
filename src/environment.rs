@@ -37,24 +37,6 @@ impl Debug for Environment {
     }
 }
 
-/// Constructor
-impl Environment {
-    /// Returns an environment that has a path for every parameter of the given function,
-    /// initialized with abstract_values::Top
-    pub fn with_parameters(num_args: usize) -> Environment {
-        let mut value_map = HashTrieMap::default();
-        for i in 1..=num_args {
-            let par_i = Path::LocalVariable { ordinal: i };
-            value_map = value_map.insert(par_i, abstract_value::TOP);
-        }
-        Environment {
-            value_map,
-            entry_condition: abstract_value::TRUE,
-            exit_conditions: HashMap::default(),
-        }
-    }
-}
-
 /// Methods
 impl Environment {
     /// Returns a reference to the value associated with the given path, if there is one.

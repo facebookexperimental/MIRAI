@@ -244,6 +244,41 @@ pub enum ExpressionDomain {
 
     /// The corresponding concrete value is the runtime address of location identified by the path.
     Reference(Path),
+
+    /// The unknown value of a place in memory.
+    /// This is distinct from Top in that we known something: the place and the type.
+    /// This is a useful distinction because it allows us to simplify some expressions
+    /// like x == x. The type is needed to prevent this particular optimization if
+    /// the variable is a floating point number that could be NaN.
+    Variable {
+        path: Box<Path>,
+        var_type: ExpressionType,
+    },
+}
+
+/// The type of a place in memory, as understood by MIR.
+/// For now, we are only really interested to distinguish between
+/// floating point values and other values, because NaN != NaN.
+/// In the future the other distinctions may be helpful to SMT solvers.
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ExpressionType {
+    Bool,
+    Char,
+    F32,
+    F64,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    Isize,
+    NonPrimitive,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    Usize,
 }
 
 impl AbstractDomain for ExpressionDomain {
@@ -291,20 +326,46 @@ impl AbstractDomain for ExpressionDomain {
     /// Returns an expression that is "self == other".
     fn equals(&self, other: &Self) -> Self {
         match (self, other) {
+            // If self and other are constant values, just compare them with ==.
             (
                 ExpressionDomain::CompileTimeConstant(cv1),
                 ExpressionDomain::CompileTimeConstant(cv2),
             ) => {
-                if cv1 == cv2 {
+                return if cv1 == cv2 {
                     ExpressionDomain::CompileTimeConstant(ConstantValue::True)
                 } else {
                     ExpressionDomain::CompileTimeConstant(ConstantValue::False)
+                };
+            }
+            // If self and other are the same location in memory, return true unless the value might be NaN.
+            (
+                ExpressionDomain::Variable {
+                    path: p1,
+                    var_type: t1,
+                },
+                ExpressionDomain::Variable {
+                    path: p2,
+                    var_type: t2,
+                },
+            ) => {
+                if **p1 == **p2 {
+                    match (t1, t2) {
+                        (ExpressionType::F32, _)
+                        | (ExpressionType::F64, _)
+                        | (_, ExpressionType::F32)
+                        | (_, ExpressionType::F64) => (),
+                        _ => {
+                            return ExpressionDomain::CompileTimeConstant(ConstantValue::True);
+                        }
+                    }
                 }
             }
-            _ => ExpressionDomain::Equals {
-                left: box self.clone(),
-                right: box other.clone(),
-            },
+            _ => (),
+        }
+        // Return an equals expression rather than a constant expression.
+        ExpressionDomain::Equals {
+            left: box self.clone(),
+            right: box other.clone(),
         }
     }
 
