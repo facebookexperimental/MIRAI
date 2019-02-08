@@ -252,10 +252,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     fn promote_constants(&mut self, mut state_with_parameters: Environment) -> Environment {
         let saved_mir = self.mir;
         let result_root = Path::LocalVariable { ordinal: 0 };
-        let mut ordinal = 0;
-        for constant_mir in self.mir.promoted.iter() {
+        for (ordinal, constant_mir) in self.mir.promoted.iter().enumerate() {
             self.mir = constant_mir;
             self.visit_body();
+
             let promoted_root = Path::PromotedConstant { ordinal };
             let value = self.lookup_path_and_refine_result(result_root.clone());
             state_with_parameters.update_value_at(promoted_root.clone(), value);
@@ -268,8 +268,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 let promoted_path = Self::replace_root(&path, &result_root, promoted_root.clone());
                 state_with_parameters.update_value_at(promoted_path, value.clone());
             }
+
             self.reset_visitor_state();
-            ordinal += 1;
         }
         self.mir = saved_mir;
         state_with_parameters
