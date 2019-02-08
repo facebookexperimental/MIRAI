@@ -947,7 +947,6 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
         let value = self.lookup_path_and_refine_result(rpath.clone());
-        debug!("copying {:?} to {:?}", value, target_path);
         if move_elements {
             debug!("moving {:?} to {:?}", value, target_path);
             value_map = value_map.remove(&rpath);
