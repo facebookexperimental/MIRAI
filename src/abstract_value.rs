@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-use abstract_domains::{self, AbstractDomains, ExpressionDomain};
+use abstract_domains::{self, AbstractDomains, ExpressionDomain, ExpressionType};
 use constant_value::ConstantValue;
 use rustc::hir::def_id::DefId;
 use std::fmt::{Debug, Formatter, Result};
@@ -100,7 +100,40 @@ impl From<ExpressionDomain> for AbstractValue {
 
 impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the
-    /// values resulting from applying "and" to each element of the cross product of the concrete
+    /// values resulting from applying "+" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn add(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.add(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying add_overflows to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn add_overflows(
+        &self,
+        other: &AbstractValue,
+        target_type: ExpressionType,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.add_overflows(&other.value, target_type),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "&&" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn and(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
         AbstractValue {
@@ -111,18 +144,6 @@ impl AbstractValue {
             ),
             value: self.value.and(&other.value),
         }
-    }
-
-    /// Returns a list of spans which is the overall span prepended to the concatenation of
-    /// the left spans and the right spans.
-    fn binary_provenance(overall: Option<Span>, left: &[Span], right: &[Span]) -> Vec<Span> {
-        let mut provenance = Vec::new();
-        if let Some(expr) = overall {
-            provenance.push(expr)
-        }
-        provenance.extend_from_slice(left);
-        provenance.extend_from_slice(right);
-        provenance
     }
 
     /// The concrete Boolean value of this abstract value, if known, otherwise None.
@@ -137,8 +158,88 @@ impl AbstractValue {
             .map(|b| ConstantValue::U128(b as u128).into())
     }
 
+    /// Returns a list of spans which is the overall span prepended to the concatenation of
+    /// the left spans and the right spans.
+    fn binary_provenance(overall: Option<Span>, left: &[Span], right: &[Span]) -> Vec<Span> {
+        let mut provenance = Vec::new();
+        if let Some(expr) = overall {
+            provenance.push(expr)
+        }
+        provenance.extend_from_slice(left);
+        provenance.extend_from_slice(right);
+        provenance
+    }
+
     /// Returns an abstract value whose corresponding set of concrete values include all of the
-    /// values resulting from applying "equals" to each element of the cross product of the concrete
+    /// values resulting from applying "&" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn bit_and(
+        &self,
+        other: &AbstractValue,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.bit_and(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "|" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn bit_or(
+        &self,
+        other: &AbstractValue,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.bit_or(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "^" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn bit_xor(
+        &self,
+        other: &AbstractValue,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.bit_xor(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "/" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn div(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.div(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "==" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn equals(
         &self,
@@ -152,6 +253,34 @@ impl AbstractValue {
                 &other.provenance,
             ),
             value: self.value.equals(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying ">=" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn ge(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.ge(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying ">" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn gt(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.gt(&other.value),
         }
     }
 
@@ -181,6 +310,20 @@ impl AbstractValue {
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "<=" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn le(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.le(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "lt" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn lt(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
@@ -195,6 +338,57 @@ impl AbstractValue {
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "*" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn mul(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.mul(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying mul_overflows to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn mul_overflows(
+        &self,
+        other: &AbstractValue,
+        target_type: ExpressionType,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.mul_overflows(&other.value, target_type),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "!=" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn not_equals(
+        &self,
+        other: &AbstractValue,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.not_equals(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "not" to each element of the concrete values of self.
     pub fn not(&self, expression_provenance: Option<Span>) -> AbstractValue {
         let mut provenance = Vec::new();
@@ -205,6 +399,24 @@ impl AbstractValue {
         AbstractValue {
             provenance,
             value: self.value.not(),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "ptr.offset" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn offset(
+        &self,
+        other: &AbstractValue,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.offset(&other.value),
         }
     }
 
@@ -242,6 +454,119 @@ impl AbstractValue {
     pub fn refine_parameters(&self, _arguments: &[AbstractValue]) -> AbstractValue {
         //todo: #60 actually refine this value when values identify parameters.
         self.clone()
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "%" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn rem(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.rem(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "<<" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn shl(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.shl(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying shl_overflows to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn shl_overflows(
+        &self,
+        other: &AbstractValue,
+        target_type: ExpressionType,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.shl_overflows(&other.value, target_type),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying ">>" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn shr(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.shr(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying shr_overflows to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn shr_overflows(
+        &self,
+        other: &AbstractValue,
+        target_type: ExpressionType,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.shr_overflows(&other.value, target_type),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "-" to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn sub(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.sub(&other.value),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying sub_overflows to each element of the cross product of the concrete
+    /// values or self and other.
+    pub fn sub_overflows(
+        &self,
+        other: &AbstractValue,
+        target_type: ExpressionType,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
+        AbstractValue {
+            provenance: Self::binary_provenance(
+                expression_provenance,
+                &self.provenance,
+                &other.provenance,
+            ),
+            value: self.value.sub_overflows(&other.value, target_type),
+        }
     }
 
     /// True if all of the concrete values that correspond to self also correspond to other.

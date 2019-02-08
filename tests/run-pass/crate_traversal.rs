@@ -151,7 +151,7 @@ fn test11(arr: &[String]){
 
 fn test12() {
     let x = 200u8 * 4;
-}
+} //~ Control might reach this expression with operand values that cause a panic.
 
 fn test13(i: i64) {
     let x = box -i;

@@ -15,7 +15,6 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use summaries;
 use summaries::{PersistentSummaryCache, Summary};
-use syntax::ast;
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax_pos;
 
@@ -141,25 +140,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// onto ExpressionType.
     fn get_type_for_local(&self, ordinal: usize) -> ExpressionType {
         let loc = &self.mir.local_decls[mir::Local::from(ordinal)];
-        match loc.ty.sty {
-            TyKind::Bool => ExpressionType::Bool,
-            TyKind::Char => ExpressionType::Char,
-            TyKind::Int(ast::IntTy::Isize) => ExpressionType::Isize,
-            TyKind::Int(ast::IntTy::I8) => ExpressionType::I8,
-            TyKind::Int(ast::IntTy::I16) => ExpressionType::I16,
-            TyKind::Int(ast::IntTy::I32) => ExpressionType::I32,
-            TyKind::Int(ast::IntTy::I64) => ExpressionType::I64,
-            TyKind::Int(ast::IntTy::I128) => ExpressionType::I128,
-            TyKind::Uint(ast::UintTy::Usize) => ExpressionType::Usize,
-            TyKind::Uint(ast::UintTy::U8) => ExpressionType::U8,
-            TyKind::Uint(ast::UintTy::U16) => ExpressionType::U16,
-            TyKind::Uint(ast::UintTy::U32) => ExpressionType::U32,
-            TyKind::Uint(ast::UintTy::U64) => ExpressionType::U64,
-            TyKind::Uint(ast::UintTy::U128) => ExpressionType::U128,
-            TyKind::Float(ast::FloatTy::F32) => ExpressionType::F32,
-            TyKind::Float(ast::FloatTy::F64) => ExpressionType::F64,
-            _ => ExpressionType::NonPrimitive,
-        }
+        (&loc.ty.sty).into()
     }
 
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
@@ -749,11 +730,12 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     ) {
         debug!("default visit_assert(cond: {:?}, expected: {:?}, msg: {:?}, target: {:?}, cleanup: {:?})", cond, expected, msg, target, cleanup);
         let cond_val = self.visit_operand(cond);
+        let not_cond_val = cond_val.not(None);
         // Propagate the entry condition to the successor blocks, conjoined with cond (or !cond).
         let exit_condition = self
             .current_environment
             .entry_condition
-            .and(&cond_val, None);
+            .and(if expected { &cond_val } else { &not_cond_val }, None);
         self.current_environment
             .exit_conditions
             .insert(target, exit_condition);
@@ -761,7 +743,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             let cleanup_condition = self
                 .current_environment
                 .entry_condition
-                .and(&cond_val.not(None), None);
+                .and(if expected { &not_cond_val } else { &cond_val }, None);
             self.current_environment
                 .exit_conditions
                 .insert(cleanup_target, cleanup_condition);
@@ -771,9 +753,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 // Do not complain about compile time constants known to the compiler.
                 // Leave that to the compiler.
             } else {
-                // Only give an error if we are positive that the condition is false.
+                // Only give an error if we are positive that the condition is not as expected.
                 // Otherwise this diagnostic is too noisy, particular when yield enters the picture.
-                if !cond_val.as_bool_if_known().unwrap_or(true) {
+                if expected != cond_val.as_bool_if_known().unwrap_or(expected) {
                     let span = self.current_span;
                     let mut err = self.session.struct_span_warn(
                         span,
@@ -1079,10 +1061,23 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let result = match bin_op {
+            mir::BinOp::Add => left.add(&right, Some(self.current_span)),
+            mir::BinOp::BitAnd => left.bit_and(&right, Some(self.current_span)),
+            mir::BinOp::BitOr => left.bit_or(&right, Some(self.current_span)),
+            mir::BinOp::BitXor => left.bit_xor(&right, Some(self.current_span)),
+            mir::BinOp::Div => left.div(&right, Some(self.current_span)),
             mir::BinOp::Eq => left.equals(&right, Some(self.current_span)),
+            mir::BinOp::Ge => left.ge(&right, Some(self.current_span)),
+            mir::BinOp::Gt => left.gt(&right, Some(self.current_span)),
+            mir::BinOp::Le => left.le(&right, Some(self.current_span)),
             mir::BinOp::Lt => left.lt(&right, Some(self.current_span)),
-            // todo: other operators
-            _ => abstract_value::TOP,
+            mir::BinOp::Mul => left.mul(&right, Some(self.current_span)),
+            mir::BinOp::Ne => left.not_equals(&right, Some(self.current_span)),
+            mir::BinOp::Offset => left.offset(&right, Some(self.current_span)),
+            mir::BinOp::Rem => left.rem(&right, Some(self.current_span)),
+            mir::BinOp::Shl => left.shl(&right, Some(self.current_span)),
+            mir::BinOp::Shr => left.shr(&right, Some(self.current_span)),
+            mir::BinOp::Sub => left.sub(&right, Some(self.current_span)),
         };
         self.current_environment.update_value_at(path, result);
     }
@@ -1097,12 +1092,54 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         right_operand: &mir::Operand,
     ) {
         debug!("default visit_checked_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})", path, bin_op, left_operand, right_operand);
-        let _left = self.visit_operand(left_operand);
-        let _right = self.visit_operand(right_operand);
-        //todo: get a value that is the checked bin_op of _left and _right.
-        //todo: what should happen if the operation overflows?
+        // We assume that path is a temporary used to track the operation result and its overflow status.
+        let target_type = match path {
+            Path::LocalVariable { ordinal } => {
+                let loc = &self.mir.local_decls[mir::Local::from(ordinal)];
+                match loc.ty.sty {
+                    TyKind::Tuple(types) => (&types[0].sty).into(),
+                    _ => unreachable!(),
+                }
+            }
+            _ => unreachable!(),
+        };
+        debug!("target_type = {:?}", target_type);
+        let left = self.visit_operand(left_operand);
+        let right = self.visit_operand(right_operand);
+        let (result, overflow_flag) = match bin_op {
+            mir::BinOp::Add => (
+                left.add(&right, Some(self.current_span)),
+                left.add_overflows(&right, target_type, Some(self.current_span)),
+            ),
+            mir::BinOp::Mul => (
+                left.mul(&right, Some(self.current_span)),
+                left.mul_overflows(&right, target_type, Some(self.current_span)),
+            ),
+            mir::BinOp::Shl => (
+                left.shl(&right, Some(self.current_span)),
+                left.shl_overflows(&right, target_type, Some(self.current_span)),
+            ),
+            mir::BinOp::Shr => (
+                left.shr(&right, Some(self.current_span)),
+                left.shr_overflows(&right, target_type, Some(self.current_span)),
+            ),
+            mir::BinOp::Sub => (
+                left.sub(&right, Some(self.current_span)),
+                left.sub_overflows(&right, target_type, Some(self.current_span)),
+            ),
+            _ => unreachable!(),
+        };
+        let path0 = Path::QualifiedPath {
+            qualifier: box path.clone(),
+            selector: box PathSelector::Field(0),
+        };
+        self.current_environment.update_value_at(path0, result);
+        let path1 = Path::QualifiedPath {
+            qualifier: box path.clone(),
+            selector: box PathSelector::Field(1),
+        };
         self.current_environment
-            .update_value_at(path, abstract_value::TOP);
+            .update_value_at(path1, overflow_flag);
     }
 
     /// Create a value based on the given type and assign it to path.
@@ -1321,13 +1358,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                         }
                     }
                     TyKind::Float(..) => match val {
-                        ConstValue::Scalar(Scalar::Bits { bits, size }) => {
-                            let mut value: u64 = match *size {
-                                4 => u64::from(*bits as u32),
-                                _ => *bits as u64,
-                            };
-                            &mut self.constant_value_cache.get_f64_for(value)
-                        }
+                        ConstValue::Scalar(Scalar::Bits { bits, size }) => match *size {
+                            4 => &mut self.constant_value_cache.get_f32_for(*bits as u32),
+                            _ => &mut self.constant_value_cache.get_f64_for(*bits as u64),
+                        },
                         _ => unreachable!(),
                     },
                     TyKind::FnDef(def_id, ..) => self.visit_function_reference(def_id),

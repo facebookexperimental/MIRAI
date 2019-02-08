@@ -10,6 +10,6 @@ pub fn main() {
     let a: &[i32] = &[10, 20];
     let n = 1;
     let m = &n;
-    debug_assert_eq!(*m, 1);
-    debug_assert_eq!(a[*m], 20);
+    debug_assert!(*m == 1);
+    debug_assert!(a[*m] == 20);
 }
