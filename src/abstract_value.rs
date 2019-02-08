@@ -455,13 +455,12 @@ impl AbstractValue {
     /// (conditions known to be true in the current context). If no refinement is possible
     /// the result is simply a clone of this value, but with its provenance updated by
     /// pre-pending the given span.
-    pub fn refine_with(&self, _path_condtion: &AbstractValue, provenance: Span) -> AbstractValue {
-        //todo: #32 simplify this value using the path condition
+    pub fn refine_with(&self, path_condition: &AbstractValue, provenance: Span) -> AbstractValue {
         let mut provenance = vec![provenance];
         provenance.extend_from_slice(&self.provenance);
         AbstractValue {
             provenance,
-            domain: self.domain.clone(),
+            domain: self.domain.refine_with(&path_condition.domain),
         }
     }
 
