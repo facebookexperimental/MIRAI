@@ -20,7 +20,6 @@ fn do_join(cond: bool) {
     }
     debug_assert!(a[0] == if cond { 3 } else { 1 });
     debug_assert!(b[0] == if cond { 2 } else { 3 });
-//    todo: #32 enable this when the simplifier gets better
-//    debug_assert!(if cond { a[0] == 3 } else { b[0] == 3 });
-//    debug_assert!(if !cond { a[0] == 1 } else { b[0] == 2 });
+    debug_assert!(if cond { a[0] == 3 } else { b[0] == 3 });
+    debug_assert!(if !cond { a[0] == 1 } else { b[0] == 2 });
 }
