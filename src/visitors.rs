@@ -757,10 +757,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 // Otherwise this diagnostic is too noisy, particular when yield enters the picture.
                 if expected != cond_val.as_bool_if_known().unwrap_or(expected) {
                     let span = self.current_span;
-                    let mut err = self.session.struct_span_warn(
-                        span,
-                        "Control might reach this expression with operand values that cause a panic.",
-                    );
+                    let mut err = self.session.struct_span_warn(span, msg.description());
                     (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
                 }
             }
