@@ -222,7 +222,7 @@ impl AbstractValue {
         }
     }
 
-    /// Returns a value that could be simplified (refined) by using the current path conditions
+    /// Returns a value that is simplified (refined) by using the current path conditions
     /// (conditions known to be true in the current context). If no refinement is possible
     /// the result is simply a clone of this value, but with its provenance updated by
     /// pre-pending the given span.
@@ -234,6 +234,14 @@ impl AbstractValue {
             provenance,
             value: self.value.clone(),
         }
+    }
+
+    /// Returns a value that is simplified (refined) by replacing parameter values
+    /// with their corresponding argument values. If no refinement is possible
+    /// the result is simply a clone of this value.
+    pub fn refine_parameters(&self, _arguments: &[AbstractValue]) -> AbstractValue {
+        //todo: #60 actually refine this value when values identify parameters.
+        self.clone()
     }
 
     /// True if all of the concrete values that correspond to self also correspond to other.
@@ -310,6 +318,39 @@ pub enum Path {
         qualifier: Box<Path>,
         selector: Box<PathSelector>,
     },
+}
+
+impl Path {
+    /// True if path qualifies root, or another qualified path rooted by root.
+    pub fn is_rooted_by(&self, root: &Path) -> bool {
+        match self {
+            Path::QualifiedPath { qualifier, .. } => {
+                **qualifier == *root || qualifier.is_rooted_by(root)
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns a copy path with the root replaced by new_root.
+    pub fn replace_root(&self, old_root: &Path, new_root: Path) -> Path {
+        match self {
+            Path::QualifiedPath {
+                qualifier,
+                selector,
+            } => {
+                let new_qualifier = if **qualifier == *old_root {
+                    new_root
+                } else {
+                    qualifier.replace_root(old_root, new_root)
+                };
+                Path::QualifiedPath {
+                    qualifier: box new_qualifier,
+                    selector: selector.clone(),
+                }
+            }
+            _ => new_root,
+        }
+    }
 }
 
 /// The selector denotes a de-referenced item, field, or element, or slice.

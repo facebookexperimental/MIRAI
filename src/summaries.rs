@@ -5,7 +5,6 @@
 
 use abstract_value::{AbstractValue, Path};
 use environment::Environment;
-use rpds::List;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use std::collections::HashMap;
@@ -45,7 +44,7 @@ pub struct Summary {
     // under the current path condition. Any values that do not simplify to true will require the
     // caller to either generate an error message or to add a precondition to its own summary that
     // will be sufficient to ensure that all of the preconditions in this summary are met.
-    pub preconditions: List<AbstractValue>,
+    pub preconditions: Vec<AbstractValue>,
 
     // If the function returns a value, this summarizes what is known statically of the return value.
     // Callers should substitute parameter values with argument values and simplify the result
@@ -58,20 +57,20 @@ pub struct Summary {
     // Callers should substitute parameter values with argument values and simplify the results
     // under the current path condition. They should then update their current state to reflect the
     // side-effects of the call.
-    pub side_effects: List<(Path, AbstractValue)>,
+    pub side_effects: Vec<(Path, AbstractValue)>,
 
     // Conditions that should hold subsequent to the call.
     // Callers should substitute parameter values with argument values and simplify the results
     // under the current path condition. The resulting values should be treated as true, so any
     // value that is not the actual value true, should be added to the current path conditions.
-    pub post_conditions: List<AbstractValue>,
+    pub post_conditions: Vec<AbstractValue>,
 
     // Condition that if true implies that the call to the function will not complete normally
     // and thus cause the cleanup block of the call to execute (unwinding).
     // Callers should substitute parameter values with argument values and simplify the result
     // under the current path condition. If the simplified value is statically known to be true
     // then the normal destination of the call should be treated as unreachable.
-    pub unwind_condition: List<AbstractValue>,
+    pub unwind_condition: Vec<AbstractValue>,
 
     // Modifications the function makes to mutable state external to the function.
     // Every path will be rooted in a static or in a mutable parameter.
@@ -79,29 +78,50 @@ pub struct Summary {
     // Callers should substitute parameter values with argument values and simplify the results
     // under the current path condition. They should then update their current state to reflect the
     // side-effects of the call for the unwind control paths, following the call.
-    pub unwind_side_effects: List<(Path, AbstractValue)>,
+    pub unwind_side_effects: Vec<(Path, AbstractValue)>,
 }
 
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
 pub fn summarize(
-    environment: &Environment,
-    _inferred_preconditions: &List<AbstractValue>,
-    preconditions: &List<AbstractValue>,
-    post_conditions: &List<AbstractValue>,
-    unwind_condition: &List<AbstractValue>,
+    argument_count: usize,
+    exit_environment: &Environment,
+    preconditions: &[AbstractValue],
+    post_conditions: &[AbstractValue],
+    unwind_condition: &[AbstractValue],
+    unwind_environment: &Environment,
 ) -> Summary {
-    let result = environment.value_at(&Path::LocalVariable { ordinal: 0 });
-    let side_effects: List<(Path, AbstractValue)> = List::new(); // todo: #31  extract from environment
-    let unwind_side_effects: List<(Path, AbstractValue)> = List::new(); // todo: #31  extract from environment
+    let result = exit_environment.value_at(&Path::LocalVariable { ordinal: 0 });
+    let side_effects = extract_side_effects(exit_environment, argument_count);
+    let unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
     Summary {
-        preconditions: preconditions.clone(),
+        preconditions: preconditions.to_owned(),
         result: result.cloned(),
         side_effects,
-        post_conditions: post_conditions.clone(),
-        unwind_condition: unwind_condition.clone(),
+        post_conditions: post_conditions.to_owned(),
+        unwind_condition: unwind_condition.to_owned(),
         unwind_side_effects,
     }
+}
+
+/// Returns a list of (path, value) pairs where each path is rooted by an argument.
+/// Since paths are created by writes, these are side-effects when the root is a parameter
+/// rather than the return result.
+fn extract_side_effects(env: &Environment, argument_count: usize) -> Vec<(Path, AbstractValue)> {
+    let mut result = Vec::new();
+    for ordinal in 0..=argument_count {
+        let root = Path::LocalVariable { ordinal };
+        for (path, value) in env
+            .value_map
+            .iter()
+            .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
+        {
+            result.push((path.clone(), value.clone()));
+        }
+    }
+    //todo: what about paths rooted by heap allocated (i.e. boxed) objects that are referenced by
+    //the values of the arguments?
+    result
 }
 
 /// Constructs a string that uniquely identifies a definition to serve as a key to
