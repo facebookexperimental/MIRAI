@@ -854,11 +854,11 @@ impl AbstractDomain for ExpressionDomain {
     fn and(&self, other: &Self) -> Self {
         let self_bool = self.as_bool_if_known();
         if let Some(false) = self_bool {
-            return ExpressionDomain::CompileTimeConstant(ConstantValue::False);
+            return false.into();
         };
         let other_bool = other.as_bool_if_known();
         if let Some(false) = other_bool {
-            return ExpressionDomain::CompileTimeConstant(ConstantValue::False);
+            return false.into();
         };
         if self_bool.unwrap_or(false) {
             if other_bool.unwrap_or(false) {
@@ -905,11 +905,9 @@ impl AbstractDomain for ExpressionDomain {
             (
                 ExpressionDomain::CompileTimeConstant(ConstantValue::True),
                 ExpressionDomain::CompileTimeConstant(ConstantValue::True),
-            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::True),
+            ) => true.into(),
             (ExpressionDomain::CompileTimeConstant(ConstantValue::False), _)
-            | (_, ExpressionDomain::CompileTimeConstant(ConstantValue::False)) => {
-                ExpressionDomain::CompileTimeConstant(ConstantValue::False)
-            }
+            | (_, ExpressionDomain::CompileTimeConstant(ConstantValue::False)) => false.into(),
             _ => ExpressionDomain::BitAnd {
                 left: box self.clone(),
                 right: box other.clone(),
@@ -931,11 +929,9 @@ impl AbstractDomain for ExpressionDomain {
             (
                 ExpressionDomain::CompileTimeConstant(ConstantValue::False),
                 ExpressionDomain::CompileTimeConstant(ConstantValue::False),
-            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::False),
+            ) => false.into(),
             (ExpressionDomain::CompileTimeConstant(ConstantValue::True), _)
-            | (_, ExpressionDomain::CompileTimeConstant(ConstantValue::True)) => {
-                ExpressionDomain::CompileTimeConstant(ConstantValue::True)
-            }
+            | (_, ExpressionDomain::CompileTimeConstant(ConstantValue::True)) => true.into(),
             _ => ExpressionDomain::BitOr {
                 left: box self.clone(),
                 right: box other.clone(),
@@ -961,7 +957,7 @@ impl AbstractDomain for ExpressionDomain {
             | (
                 ExpressionDomain::CompileTimeConstant(ConstantValue::True),
                 ExpressionDomain::CompileTimeConstant(ConstantValue::True),
-            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::False),
+            ) => false.into(),
             (
                 ExpressionDomain::CompileTimeConstant(ConstantValue::True),
                 ExpressionDomain::CompileTimeConstant(ConstantValue::False),
@@ -969,7 +965,7 @@ impl AbstractDomain for ExpressionDomain {
             | (
                 ExpressionDomain::CompileTimeConstant(ConstantValue::False),
                 ExpressionDomain::CompileTimeConstant(ConstantValue::True),
-            ) => ExpressionDomain::CompileTimeConstant(ConstantValue::True),
+            ) => true.into(),
             _ => ExpressionDomain::BitXor {
                 left: box self.clone(),
                 right: box other.clone(),
@@ -1042,11 +1038,7 @@ impl AbstractDomain for ExpressionDomain {
                 ExpressionDomain::CompileTimeConstant(cv1),
                 ExpressionDomain::CompileTimeConstant(cv2),
             ) => {
-                return if cv1 == cv2 {
-                    ExpressionDomain::CompileTimeConstant(ConstantValue::True)
-                } else {
-                    ExpressionDomain::CompileTimeConstant(ConstantValue::False)
-                };
+                return (cv1 == cv2).into();
             }
             // If self and other are the same location in memory, return true unless the value might be NaN.
             (
@@ -1066,12 +1058,56 @@ impl AbstractDomain for ExpressionDomain {
                         | (_, ExpressionType::F32)
                         | (_, ExpressionType::F64) => (),
                         _ => {
-                            return ExpressionDomain::CompileTimeConstant(ConstantValue::True);
+                            return true.into();
                         }
                     }
                 }
             }
-            _ => (),
+            // x == 0 is the same as !x when x is Boolean variable. Canonicalize it to the latter.
+            (
+                ExpressionDomain::Variable { var_type, .. },
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val)),
+            ) => {
+                if *var_type == ExpressionType::Bool && *val == 0 {
+                    return self.not();
+                }
+            }
+            // !x == 0 is the same as x when x is Boolean variable. Canonicalize it to the latter.
+            (
+                ExpressionDomain::Not { operand },
+                ExpressionDomain::CompileTimeConstant(ConstantValue::U128(val)),
+            ) => {
+                if let ExpressionDomain::Variable { ref var_type, .. } = **operand {
+                    if *var_type == ExpressionType::Bool && *val == 0 {
+                        return (**operand).clone();
+                    }
+                }
+            }
+            _ => {
+                // If self and other are the same expression and the expression could not result in NaN
+                // and the expression represents exactly one value, we can simplify this to true.
+                if self == other {
+                    match self {
+                        ExpressionDomain::Top
+                        | ExpressionDomain::Bottom
+                        | ExpressionDomain::Add { .. }
+                        | ExpressionDomain::Div { .. }
+                        | ExpressionDomain::Mul { .. }
+                        | ExpressionDomain::Neg { .. }
+                        | ExpressionDomain::Rem { .. }
+                        | ExpressionDomain::Sub { .. } => {
+                            // Could be NaN, because we don't know the type.
+                            // todo: infer it from the operands
+                        }
+                        ExpressionDomain::CompileTimeConstant(..)
+                        | ExpressionDomain::Variable { .. } => unreachable!(), // handled above
+                        _ => {
+                            // Result is a boolean or integer and the expression domain is a singleton set.
+                            return true.into();
+                        }
+                    }
+                }
+            }
         }
         // Return an equals expression rather than a constant expression.
         ExpressionDomain::Equals {
@@ -1086,13 +1122,7 @@ impl AbstractDomain for ExpressionDomain {
             (
                 ExpressionDomain::CompileTimeConstant(cv1),
                 ExpressionDomain::CompileTimeConstant(cv2),
-            ) => {
-                if cv1 >= cv2 {
-                    ExpressionDomain::CompileTimeConstant(ConstantValue::True)
-                } else {
-                    ExpressionDomain::CompileTimeConstant(ConstantValue::False)
-                }
-            }
+            ) => (cv1 >= cv2).into(),
             _ => ExpressionDomain::GreaterOrEqual {
                 left: box self.clone(),
                 right: box other.clone(),
@@ -1106,13 +1136,7 @@ impl AbstractDomain for ExpressionDomain {
             (
                 ExpressionDomain::CompileTimeConstant(cv1),
                 ExpressionDomain::CompileTimeConstant(cv2),
-            ) => {
-                if cv1 > cv2 {
-                    ExpressionDomain::CompileTimeConstant(ConstantValue::True)
-                } else {
-                    ExpressionDomain::CompileTimeConstant(ConstantValue::False)
-                }
-            }
+            ) => (cv1 > cv2).into(),
             _ => ExpressionDomain::GreaterThan {
                 left: box self.clone(),
                 right: box other.clone(),
@@ -1141,16 +1165,29 @@ impl AbstractDomain for ExpressionDomain {
     /// In a context where the join condition is known to be true, the result can be refined to be
     /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
     fn join(&self, other: &Self, join_condition: &AbstractDomains) -> Self {
-        if self == other {
-            return self.clone();
-        };
+        // If the condition is impossible so is the expression.
         if join_condition.is_bottom() {
-            return ExpressionDomain::Bottom;
-        };
-        ExpressionDomain::ConditionalExpression {
-            condition: box join_condition.clone(),
-            consequent: box self.clone(),
-            alternate: box other.clone(),
+            ExpressionDomain::Bottom
+        }
+        // c ? x : x is just x, as is true ? x : y
+        else if (*self) == *other || join_condition.as_bool_if_known().unwrap_or(false) {
+            self.clone()
+        }
+        // false ? x : y is just y
+        else if !join_condition.as_bool_if_known().unwrap_or(true) {
+            other.clone()
+        }
+        // c ? true : !c is just c
+        else if self.as_bool_if_known().unwrap_or(false)
+            && join_condition.expression_domain.not() == *other
+        {
+            true.into()
+        } else {
+            ExpressionDomain::ConditionalExpression {
+                condition: box join_condition.clone(),
+                consequent: box self.clone(),
+                alternate: box other.clone(),
+            }
         }
     }
 
@@ -1160,13 +1197,7 @@ impl AbstractDomain for ExpressionDomain {
             (
                 ExpressionDomain::CompileTimeConstant(cv1),
                 ExpressionDomain::CompileTimeConstant(cv2),
-            ) => {
-                if cv1 <= cv2 {
-                    ExpressionDomain::CompileTimeConstant(ConstantValue::True)
-                } else {
-                    ExpressionDomain::CompileTimeConstant(ConstantValue::False)
-                }
-            }
+            ) => (cv1 <= cv2).into(),
             _ => ExpressionDomain::LessOrEqual {
                 left: box self.clone(),
                 right: box other.clone(),
@@ -1180,13 +1211,7 @@ impl AbstractDomain for ExpressionDomain {
             (
                 ExpressionDomain::CompileTimeConstant(cv1),
                 ExpressionDomain::CompileTimeConstant(cv2),
-            ) => {
-                if cv1 < cv2 {
-                    ExpressionDomain::CompileTimeConstant(ConstantValue::True)
-                } else {
-                    ExpressionDomain::CompileTimeConstant(ConstantValue::False)
-                }
-            }
+            ) => (cv1 < cv2).into(),
             _ => ExpressionDomain::LessThan {
                 left: box self.clone(),
                 right: box other.clone(),
@@ -1327,13 +1352,10 @@ impl AbstractDomain for ExpressionDomain {
     /// Returns an expression that is "!self".
     fn not(&self) -> Self {
         match self {
-            ExpressionDomain::CompileTimeConstant(ConstantValue::False) => {
-                ExpressionDomain::CompileTimeConstant(ConstantValue::True)
-            }
-            ExpressionDomain::CompileTimeConstant(ConstantValue::True) => {
-                ExpressionDomain::CompileTimeConstant(ConstantValue::False)
-            }
+            ExpressionDomain::CompileTimeConstant(ConstantValue::False) => true.into(),
+            ExpressionDomain::CompileTimeConstant(ConstantValue::True) => false.into(),
             ExpressionDomain::Bottom => self.clone(),
+            ExpressionDomain::Not { operand } => (**operand).clone(),
             _ => ExpressionDomain::Not {
                 operand: box self.clone(),
             },
@@ -1351,15 +1373,27 @@ impl AbstractDomain for ExpressionDomain {
     /// Returns an expression that is "self || other".
     fn or(&self, other: &Self) -> Self {
         if self.as_bool_if_known().unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
-            ExpressionDomain::CompileTimeConstant(ConstantValue::True)
+            true.into()
         } else if self.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
             other.clone()
         } else if other.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
             self.clone()
         } else {
-            ExpressionDomain::Or {
-                left: box self.clone(),
-                right: box other.clone(),
+            match (self, other) {
+                (ExpressionDomain::Not { operand }, _)
+                    if operand.equals(other).as_bool_if_known().unwrap_or(false) =>
+                {
+                    true.into()
+                }
+                (_, ExpressionDomain::Not { operand })
+                    if operand.equals(self).as_bool_if_known().unwrap_or(false) =>
+                {
+                    true.into()
+                }
+                _ => ExpressionDomain::Or {
+                    left: box self.clone(),
+                    right: box other.clone(),
+                },
             }
         }
     }
