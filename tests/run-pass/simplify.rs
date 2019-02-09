@@ -4,11 +4,13 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that uses a function summary.
+// A test that checks various simplifications
 
-fn foo() -> i32 { 123 }
-fn bar(x: f32) -> f32 { x + 1.0 }
 pub fn main() {
-    debug_assert!(foo() == 123);
-    debug_assert!(bar(1.0) == 2.0);
+    foo(true);
+}
+
+fn foo(b: bool) {
+    debug_assert!(b || !b);
+    debug_assert!(!b || b);
 }

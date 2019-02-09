@@ -1175,9 +1175,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         );
         let operand = self.visit_operand(operand);
         let result = match un_op {
+            mir::UnOp::Neg => operand.neg(Some(self.current_span)),
             mir::UnOp::Not => operand.not(Some(self.current_span)),
-            //todo: other operations
-            _ => abstract_value::TOP,
         };
         self.current_environment.update_value_at(path, result);
     }

@@ -47,6 +47,10 @@ impl Environment {
     /// Updates the path to value map so that the given path now points to the given value.
     pub fn update_value_at(&mut self, path: Path, value: AbstractValue) {
         debug!("updating value of {:?} to {:?}", path, value);
+        if value.is_bottom() {
+            self.value_map = self.value_map.remove(&path);
+            return;
+        }
         if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
             // If path is an abstraction that can match more than one path, we need to do weak updates.
             let top = abstract_value::TOP;
@@ -58,11 +62,7 @@ impl Environment {
             self.update_value_at(true_path, true_val);
             self.update_value_at(false_path, false_val);
         }
-        if value.is_bottom() {
-            self.value_map = self.value_map.remove(&path);
-        } else {
-            self.value_map = self.value_map.insert(path, value);
-        }
+        self.value_map = self.value_map.insert(path, value);
     }
 
     /// If the path contains an abstract value that was constructed with a join, the path is
@@ -173,10 +173,10 @@ impl Environment {
                 }
                 None => {
                     debug_assert!(!val1.is_bottom());
-                    value_map = value_map.insert(
-                        p,
-                        join_or_widen(&val1, &abstract_value::BOTTOM, &join_condition),
-                    );
+                    let val = join_or_widen(&val1, &abstract_value::BOTTOM, &join_condition);
+                    if !val.is_bottom() {
+                        value_map = value_map.insert(p, val);
+                    }
                 }
             }
         }
@@ -184,10 +184,10 @@ impl Environment {
             if !value_map1.contains_key(path) {
                 debug_assert!(!val2.is_bottom());
                 let p = path.clone();
-                value_map = value_map.insert(
-                    p,
-                    join_or_widen(&abstract_value::BOTTOM, &val2, &join_condition),
-                );
+                let val = join_or_widen(&abstract_value::BOTTOM, &val2, &join_condition);
+                if !val.is_bottom() {
+                    value_map = value_map.insert(p, val);
+                }
             }
         }
         Environment {
