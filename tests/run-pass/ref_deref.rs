@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that uses PathSelector::Deref and ExpressionDomain::Reference
+// A test that uses PathSelector::Deref and Expression::Reference
 
 pub fn main() {
     let a: &[i32] = &[10, 20];

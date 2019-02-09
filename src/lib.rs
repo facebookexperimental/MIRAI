@@ -42,6 +42,7 @@ pub mod abstract_value;
 pub mod callbacks;
 pub mod constant_value;
 pub mod environment;
+pub mod expression;
 pub mod summaries;
 pub mod utils;
 pub mod visitors;

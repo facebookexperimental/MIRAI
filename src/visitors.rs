@@ -3,10 +3,11 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use abstract_domains::{AbstractDomains, ExpressionDomain, ExpressionType};
+use abstract_domains::AbstractDomain;
 use abstract_value::{self, AbstractValue, Path, PathSelector};
 use constant_value::{ConstantValue, ConstantValueCache};
 use environment::Environment;
+use expression::{Expression, ExpressionType};
 use rustc::session::Session;
 use rustc::ty::{Const, LazyConst, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
@@ -123,7 +124,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 };
                 summary.result.clone().unwrap_or(abstract_value::TOP)
             } else if let Path::LocalVariable { ordinal } = path {
-                ExpressionDomain::Variable {
+                Expression::Variable {
                     path: box path.clone(),
                     var_type: self.get_type_for_local(ordinal),
                 }
@@ -614,15 +615,15 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         let func_to_call = self.visit_operand(func);
         let actual_args: Vec<AbstractValue> =
             args.iter().map(|arg| self.visit_operand(arg)).collect();
-        let function_summary = match func_to_call.value.expression_domain {
-            ExpressionDomain::CompileTimeConstant(ConstantValue::Function {
+        let function_summary = match func_to_call.domain.expression {
+            Expression::CompileTimeConstant(ConstantValue::Function {
                 def_id: Some(def_id),
                 ..
             }) => self
                 .summary_cache
                 .get_summary_for(def_id, Some(self.def_id))
                 .clone(),
-            ExpressionDomain::CompileTimeConstant(ConstantValue::Function {
+            Expression::CompileTimeConstant(ConstantValue::Function {
                 ref summary_cache_key,
                 ..
             }) => self
@@ -643,9 +644,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             );
             for (i, arg) in actual_args.iter().enumerate() {
                 if let AbstractValue {
-                    value:
-                        AbstractDomains {
-                            expression_domain: ExpressionDomain::Reference(target_path),
+                    domain:
+                        AbstractDomain {
+                            expression: Expression::Reference(target_path),
                         },
                     ..
                 } = arg
@@ -673,7 +674,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         if !self.check_for_errors {
             return;
         }
-        if let ExpressionDomain::CompileTimeConstant(fun) = func_to_call.value.expression_domain {
+        if let Expression::CompileTimeConstant(fun) = func_to_call.domain.expression {
             if self
                 .constant_value_cache
                 .check_if_std_intrinsics_unreachable_function(&fun)
@@ -858,10 +859,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     let index = if from_end {
                         let len_value = self.get_len((**qualifier).clone());
                         if let AbstractValue {
-                            value:
-                                AbstractDomains {
-                                    expression_domain:
-                                        ExpressionDomain::CompileTimeConstant(ConstantValue::U128(len)),
+                            domain:
+                                AbstractDomain {
+                                    expression:
+                                        Expression::CompileTimeConstant(ConstantValue::U128(len)),
                                 },
                             ..
                         } = len_value
@@ -886,10 +887,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     let len = {
                         let len_value = self.get_len((**qualifier).clone());
                         if let AbstractValue {
-                            value:
-                                AbstractDomains {
-                                    expression_domain:
-                                        ExpressionDomain::CompileTimeConstant(ConstantValue::U128(len)),
+                            domain:
+                                AbstractDomain {
+                                    expression:
+                                        Expression::CompileTimeConstant(ConstantValue::U128(len)),
                                 },
                             ..
                         } = len_value
@@ -998,7 +999,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             path, region, borrow_kind, place
         );
         let value_path = self.visit_place(place);
-        let value = ExpressionDomain::Reference(value_path).into();
+        let value = Expression::Reference(value_path).into();
         self.current_environment.update_value_at(path, value);
     }
 
@@ -1277,8 +1278,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     fn visit_operand(&mut self, operand: &mir::Operand) -> AbstractValue {
         let span = self.current_span;
         let (expression_domain, span) = match operand {
-            mir::Operand::Copy(place) => (self.visit_copy(place).value.expression_domain, span),
-            mir::Operand::Move(place) => (self.visit_move(place).value.expression_domain, span),
+            mir::Operand::Copy(place) => (self.visit_copy(place).domain.expression, span),
+            mir::Operand::Move(place) => (self.visit_move(place).domain.expression, span),
             mir::Operand::Constant(constant) => {
                 let mir::Constant {
                     span,
@@ -1287,12 +1288,14 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     literal,
                 } = constant.borrow();
                 let const_value = self.visit_constant(ty, *user_ty, literal).clone();
-                (ExpressionDomain::CompileTimeConstant(const_value), *span)
+                (Expression::CompileTimeConstant(const_value), *span)
             }
         };
         AbstractValue {
             provenance: vec![span],
-            value: AbstractDomains { expression_domain },
+            domain: AbstractDomain {
+                expression: expression_domain,
+            },
         }
     }
 
@@ -1457,8 +1460,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 if let PathSelector::Deref = selector {
                     // Strip the Deref in order to canonicalize paths
                     let base_val = self.lookup_path_and_refine_result(base.clone());
-                    return match base_val.value.expression_domain {
-                        ExpressionDomain::Reference(dereferenced_path) => dereferenced_path,
+                    return match base_val.domain.expression {
+                        Expression::Reference(dereferenced_path) => dereferenced_path,
                         _ => {
                             // If we are dereferencing a path whose value is not known to be a
                             // reference, we just drop the deref so that the path can be found
