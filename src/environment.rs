@@ -3,8 +3,9 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use abstract_domains::{AbstractDomains, ExpressionDomain};
+use abstract_domains::AbstractDomain;
 use abstract_value::{self, AbstractValue, Path};
+use expression::Expression;
 use rpds::HashTrieMap;
 use rustc::mir::BasicBlock;
 use std::collections::HashMap;
@@ -75,10 +76,10 @@ impl Environment {
                 let val_opt = self.value_at(path);
                 if let Some(val) = val_opt {
                     if let AbstractValue {
-                        value:
-                            AbstractDomains {
-                                expression_domain:
-                                    ExpressionDomain::ConditionalExpression {
+                        domain:
+                            AbstractDomain {
+                                expression:
+                                    Expression::ConditionalExpression {
                                         condition,
                                         consequent,
                                         alternate,
@@ -87,31 +88,28 @@ impl Environment {
                         provenance,
                     } = val
                     {
-                        match ((**consequent).clone(), (**alternate).clone()) {
+                        match (&consequent.expression, &alternate.expression) {
                             (
-                                ExpressionDomain::AbstractHeapAddress(addr1),
-                                ExpressionDomain::AbstractHeapAddress(addr2),
+                                Expression::AbstractHeapAddress(addr1),
+                                Expression::AbstractHeapAddress(addr2),
                             ) => {
                                 return Some((
                                     AbstractValue {
                                         provenance: provenance.clone(),
-                                        value: (**condition).clone(),
+                                        domain: (**condition).clone(),
                                     },
-                                    Path::AbstractHeapAddress { ordinal: addr1 },
-                                    Path::AbstractHeapAddress { ordinal: addr2 },
+                                    Path::AbstractHeapAddress { ordinal: *addr1 },
+                                    Path::AbstractHeapAddress { ordinal: *addr2 },
                                 ));
                             }
-                            (
-                                ExpressionDomain::Reference(path1),
-                                ExpressionDomain::Reference(path2),
-                            ) => {
+                            (Expression::Reference(path1), Expression::Reference(path2)) => {
                                 return Some((
                                     AbstractValue {
                                         provenance: provenance.clone(),
-                                        value: (**condition).clone(),
+                                        domain: (**condition).clone(),
                                     },
-                                    path1,
-                                    path2,
+                                    path1.clone(),
+                                    path2.clone(),
                                 ));
                             }
                             _ => (),

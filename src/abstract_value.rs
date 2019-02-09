@@ -3,8 +3,9 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-use abstract_domains::{self, AbstractDomains, ExpressionDomain, ExpressionType};
+use abstract_domains::{self, AbstractDomain};
 use constant_value::ConstantValue;
+use expression::{Expression, ExpressionType};
 use rustc::hir::def_id::DefId;
 use std::fmt::{Debug, Formatter, Result};
 use std::hash::{Hash, Hasher};
@@ -30,37 +31,37 @@ pub struct AbstractValue {
     pub provenance: Vec<Span>,
     /// Various approximations of the actual value.
     /// See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
-    pub value: AbstractDomains,
+    pub domain: AbstractDomain,
 }
 
 /// An abstract value that can be used as the value for an operation that has no normal result.
 pub const BOTTOM: AbstractValue = AbstractValue {
     provenance: Vec::new(),
-    value: abstract_domains::BOTTOM,
+    domain: abstract_domains::BOTTOM,
 };
 
 /// An abstract value that is corresponds to the single concrete value, true.
 pub const FALSE: AbstractValue = AbstractValue {
     provenance: Vec::new(),
-    value: abstract_domains::FALSE,
+    domain: abstract_domains::FALSE,
 };
 
 /// An abstract value to use when nothing is known about the value. All possible concrete values
 /// are members of the concrete set of values corresponding to this abstract value.
 pub const TOP: AbstractValue = AbstractValue {
     provenance: Vec::new(),
-    value: abstract_domains::TOP,
+    domain: abstract_domains::TOP,
 };
 
 /// An abstract value that is corresponds to the single concrete value, true.
 pub const TRUE: AbstractValue = AbstractValue {
     provenance: Vec::new(),
-    value: abstract_domains::TRUE,
+    domain: abstract_domains::TRUE,
 };
 
 impl Debug for AbstractValue {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        self.value.fmt(f)
+        self.domain.fmt(f)
     }
 }
 
@@ -68,13 +69,13 @@ impl Eq for AbstractValue {}
 
 impl PartialEq for AbstractValue {
     fn eq(&self, other: &AbstractValue) -> bool {
-        self.value.eq(&other.value)
+        self.domain.eq(&other.domain)
     }
 }
 
 impl Hash for AbstractValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.value.hash(state)
+        self.domain.hash(state)
     }
 }
 
@@ -82,18 +83,20 @@ impl From<ConstantValue> for AbstractValue {
     fn from(cv: ConstantValue) -> AbstractValue {
         AbstractValue {
             provenance: vec![],
-            value: AbstractDomains {
-                expression_domain: ExpressionDomain::CompileTimeConstant(cv),
+            domain: AbstractDomain {
+                expression: Expression::CompileTimeConstant(cv),
             },
         }
     }
 }
 
-impl From<ExpressionDomain> for AbstractValue {
-    fn from(expression_domain: ExpressionDomain) -> AbstractValue {
+impl From<Expression> for AbstractValue {
+    fn from(expression_domain: Expression) -> AbstractValue {
         AbstractValue {
             provenance: vec![],
-            value: AbstractDomains { expression_domain },
+            domain: AbstractDomain {
+                expression: expression_domain,
+            },
         }
     }
 }
@@ -109,7 +112,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.add(&other.value),
+            domain: self.domain.add(&other.domain),
         }
     }
 
@@ -128,7 +131,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.add_overflows(&other.value, target_type),
+            domain: self.domain.add_overflows(&other.domain, target_type),
         }
     }
 
@@ -142,13 +145,13 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.and(&other.value),
+            domain: self.domain.and(&other.domain),
         }
     }
 
     /// The concrete Boolean value of this abstract value, if known, otherwise None.
     pub fn as_bool_if_known(&self) -> Option<bool> {
-        self.value.as_bool_if_known()
+        self.domain.as_bool_if_known()
     }
 
     /// If the concrete Boolean value of this abstract value is known, return it as a UI28 constant,
@@ -184,7 +187,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.bit_and(&other.value),
+            domain: self.domain.bit_and(&other.domain),
         }
     }
 
@@ -202,7 +205,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.bit_or(&other.value),
+            domain: self.domain.bit_or(&other.domain),
         }
     }
 
@@ -220,7 +223,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.bit_xor(&other.value),
+            domain: self.domain.bit_xor(&other.domain),
         }
     }
 
@@ -234,7 +237,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.div(&other.value),
+            domain: self.domain.div(&other.domain),
         }
     }
 
@@ -252,7 +255,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.equals(&other.value),
+            domain: self.domain.equals(&other.domain),
         }
     }
 
@@ -266,7 +269,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.ge(&other.value),
+            domain: self.domain.ge(&other.domain),
         }
     }
 
@@ -280,18 +283,18 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.gt(&other.value),
+            domain: self.domain.gt(&other.domain),
         }
     }
 
     /// True if the set of concrete values that correspond to this abstract value is empty.
     pub fn is_bottom(&self) -> bool {
-        self.value.is_bottom()
+        self.domain.is_bottom()
     }
 
     /// True if all possible concrete values are elements of the set corresponding to this abstract value.
     pub fn is_top(&self) -> bool {
-        self.value.is_top()
+        self.domain.is_top()
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the values
@@ -305,7 +308,7 @@ impl AbstractValue {
         provenance.extend_from_slice(&other.provenance);
         AbstractValue {
             provenance,
-            value: self.value.join(&other.value, &join_condition.value),
+            domain: self.domain.join(&other.domain, &join_condition.domain),
         }
     }
 
@@ -319,7 +322,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.le(&other.value),
+            domain: self.domain.le(&other.domain),
         }
     }
 
@@ -333,7 +336,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.lt(&other.value),
+            domain: self.domain.lt(&other.domain),
         }
     }
 
@@ -347,7 +350,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.mul(&other.value),
+            domain: self.domain.mul(&other.domain),
         }
     }
 
@@ -366,7 +369,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.mul_overflows(&other.value, target_type),
+            domain: self.domain.mul_overflows(&other.domain, target_type),
         }
     }
 
@@ -380,7 +383,7 @@ impl AbstractValue {
         provenance.extend_from_slice(&self.provenance);
         AbstractValue {
             provenance,
-            value: self.value.neg(),
+            domain: self.domain.neg(),
         }
     }
 
@@ -398,7 +401,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.not_equals(&other.value),
+            domain: self.domain.not_equals(&other.domain),
         }
     }
 
@@ -412,7 +415,7 @@ impl AbstractValue {
         provenance.extend_from_slice(&self.provenance);
         AbstractValue {
             provenance,
-            value: self.value.not(),
+            domain: self.domain.not(),
         }
     }
 
@@ -430,7 +433,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.offset(&other.value),
+            domain: self.domain.offset(&other.domain),
         }
     }
 
@@ -444,7 +447,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.or(&other.value),
+            domain: self.domain.or(&other.domain),
         }
     }
 
@@ -458,7 +461,7 @@ impl AbstractValue {
         provenance.extend_from_slice(&self.provenance);
         AbstractValue {
             provenance,
-            value: self.value.clone(),
+            domain: self.domain.clone(),
         }
     }
 
@@ -468,7 +471,7 @@ impl AbstractValue {
     pub fn refine_parameters(&self, arguments: &[AbstractValue]) -> AbstractValue {
         AbstractValue {
             provenance: self.provenance.clone(),
-            value: self.value.refine_parameters(arguments),
+            domain: self.domain.refine_parameters(arguments),
         }
     }
 
@@ -482,7 +485,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.rem(&other.value),
+            domain: self.domain.rem(&other.domain),
         }
     }
 
@@ -496,7 +499,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.shl(&other.value),
+            domain: self.domain.shl(&other.domain),
         }
     }
 
@@ -515,7 +518,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.shl_overflows(&other.value, target_type),
+            domain: self.domain.shl_overflows(&other.domain, target_type),
         }
     }
 
@@ -529,7 +532,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.shr(&other.value),
+            domain: self.domain.shr(&other.domain),
         }
     }
 
@@ -548,7 +551,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.shr_overflows(&other.value, target_type),
+            domain: self.domain.shr_overflows(&other.domain, target_type),
         }
     }
 
@@ -562,7 +565,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.sub(&other.value),
+            domain: self.domain.sub(&other.domain),
         }
     }
 
@@ -581,13 +584,13 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            value: self.value.sub_overflows(&other.value, target_type),
+            domain: self.domain.sub_overflows(&other.domain, target_type),
         }
     }
 
     /// True if all of the concrete values that correspond to self also correspond to other.
     pub fn subset(&self, other: &AbstractValue) -> bool {
-        self.value.subset(&other.value)
+        self.domain.subset(&other.domain)
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the values
@@ -597,7 +600,7 @@ impl AbstractValue {
     pub fn widen(&self, other: &AbstractValue, join_condition: &AbstractValue) -> AbstractValue {
         AbstractValue {
             provenance: other.provenance.clone(),
-            value: self.value.widen(&other.value, &join_condition.value),
+            domain: self.domain.widen(&other.domain, &join_condition.domain),
         }
     }
 

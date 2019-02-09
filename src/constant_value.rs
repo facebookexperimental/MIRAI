@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use abstract_domains::ExpressionDomain;
+use expression::Expression;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use std::collections::HashMap;
@@ -13,6 +13,7 @@ use utils::is_rust_intrinsic;
 /// Abstracts over constant values referenced in MIR and adds information
 /// that is useful for the abstract interpreter. More importantly, this
 /// value can be serialized to the persistent summary cache.
+
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash)]
 pub enum ConstantValue {
     /// The primitive character type; holds a Unicode scalar value (a non-surrogate code point).
@@ -63,6 +64,9 @@ impl ConstantValue {
     }
 }
 
+//todo: make ConstantValue into a domain and implement transfer functions.
+//Do this by factoring out all constant related logic from AbstractDomain.
+
 /// Keeps track of MIR constants that have already been mapped onto ConstantValue instances.
 pub struct ConstantValueCache {
     char_cache: HashMap<char, ConstantValue>,
@@ -93,35 +97,35 @@ impl ConstantValueCache {
         }
     }
 
-    /// Returns a ExpressionDomain::AbstractHeapAddress with a unique counter value.
-    pub fn get_new_heap_address(&mut self) -> ExpressionDomain {
+    /// Returns a Expression::AbstractHeapAddress with a unique counter value.
+    pub fn get_new_heap_address(&mut self) -> Expression {
         let heap_address_counter = self.heap_address_counter;
         self.heap_address_counter += 1;
-        ExpressionDomain::AbstractHeapAddress(heap_address_counter)
+        Expression::AbstractHeapAddress(heap_address_counter)
     }
 
-    /// Returns a reference to a cached ExpressionDomain::Char(value).
+    /// Returns a reference to a cached Expression::Char(value).
     pub fn get_char_for(&mut self, value: char) -> &ConstantValue {
         self.char_cache
             .entry(value)
             .or_insert_with(|| ConstantValue::Char(value))
     }
 
-    /// Returns a reference to a cached ExpressionDomain::F32(value).
+    /// Returns a reference to a cached Expression::F32(value).
     pub fn get_f32_for(&mut self, value: u32) -> &ConstantValue {
         self.f32_cache
             .entry(value)
             .or_insert_with(|| ConstantValue::F32(value))
     }
 
-    /// Returns a reference to a cached ExpressionDomain::F64(value).
+    /// Returns a reference to a cached Expression::F64(value).
     pub fn get_f64_for(&mut self, value: u64) -> &ConstantValue {
         self.f64_cache
             .entry(value)
             .or_insert_with(|| ConstantValue::F64(value))
     }
 
-    /// Returns a reference to a cached ExpressionDomain::I128(value).
+    /// Returns a reference to a cached Expression::I128(value).
     pub fn get_i128_for(&mut self, value: i128) -> &ConstantValue {
         self.i128_cache
             .entry(value)
@@ -135,7 +139,7 @@ impl ConstantValueCache {
             .or_insert_with(|| ConstantValue::Str(String::from(value)))
     }
 
-    /// Returns a reference to a cached ExpressionDomain::U128(value).
+    /// Returns a reference to a cached Expression::U128(value).
     pub fn get_u128_for(&mut self, value: u128) -> &ConstantValue {
         self.u128_cache
             .entry(value)
