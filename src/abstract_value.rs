@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 use abstract_domains::{self, AbstractDomain};
-use constant_value::ConstantValue;
+use constant_domain::ConstantDomain;
 use expression::{Expression, ExpressionType};
 use rustc::hir::def_id::DefId;
 use std::fmt::{Debug, Formatter, Result};
@@ -79,8 +79,8 @@ impl Hash for AbstractValue {
     }
 }
 
-impl From<ConstantValue> for AbstractValue {
-    fn from(cv: ConstantValue) -> AbstractValue {
+impl From<ConstantDomain> for AbstractValue {
+    fn from(cv: ConstantDomain) -> AbstractValue {
         AbstractValue {
             provenance: vec![],
             domain: AbstractDomain {
@@ -158,7 +158,7 @@ impl AbstractValue {
     /// otherwise return None.
     pub fn as_int_if_known(&self) -> Option<AbstractValue> {
         self.as_bool_if_known()
-            .map(|b| ConstantValue::U128(b as u128).into())
+            .map(|b| ConstantDomain::U128(b as u128).into())
     }
 
     /// Returns a list of spans which is the overall span prepended to the concatenation of
