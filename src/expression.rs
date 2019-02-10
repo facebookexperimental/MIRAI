@@ -5,7 +5,7 @@
 
 use abstract_domains::AbstractDomain;
 use abstract_value::Path;
-use constant_value::ConstantValue;
+use constant_domain::ConstantDomain;
 
 /// Closely based on the expressions found in MIR.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
@@ -74,7 +74,7 @@ pub enum Expression {
     },
 
     /// An expression that is a compile time constant value, such as a numeric literal or a function.
-    CompileTimeConstant(ConstantValue),
+    CompileTimeConstant(ConstantDomain),
 
     /// An expression that is either if_true or if_false, depending on the value of condition.
     ConditionalExpression {

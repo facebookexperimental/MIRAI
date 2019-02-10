@@ -2,10 +2,9 @@
 //
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
-#![allow(clippy::float_cmp)]
 
 use abstract_value::{AbstractValue, Path};
-use constant_value::ConstantValue;
+use constant_domain::ConstantDomain;
 use expression::{Expression, ExpressionType};
 use rustc::ty::TyKind;
 use syntax::ast;
@@ -32,7 +31,7 @@ pub const BOTTOM: AbstractDomain = AbstractDomain {
 
 /// An abstract domain element that all represent the single concrete value, false.
 pub const FALSE: AbstractDomain = AbstractDomain {
-    expression: Expression::CompileTimeConstant(ConstantValue::False),
+    expression: Expression::CompileTimeConstant(ConstantDomain::False),
 };
 
 /// An abstract domain element that all represents all possible concrete values.
@@ -42,7 +41,7 @@ pub const TOP: AbstractDomain = AbstractDomain {
 
 /// An abstract domain element that all represent the single concrete value, true.
 pub const TRUE: AbstractDomain = AbstractDomain {
-    expression: Expression::CompileTimeConstant(ConstantValue::True),
+    expression: Expression::CompileTimeConstant(ConstantDomain::True),
 };
 
 impl<'a> From<&TyKind<'a>> for ExpressionType {
@@ -73,12 +72,20 @@ impl From<bool> for AbstractDomain {
     fn from(b: bool) -> AbstractDomain {
         if b {
             AbstractDomain {
-                expression: Expression::CompileTimeConstant(ConstantValue::True),
+                expression: Expression::CompileTimeConstant(ConstantDomain::True),
             }
         } else {
             AbstractDomain {
-                expression: Expression::CompileTimeConstant(ConstantValue::False),
+                expression: Expression::CompileTimeConstant(ConstantDomain::False),
             }
+        }
+    }
+}
+
+impl From<ConstantDomain> for AbstractDomain {
+    fn from(cv: ConstantDomain) -> AbstractDomain {
+        AbstractDomain {
+            expression: Expression::CompileTimeConstant(cv),
         }
     }
 }
@@ -90,94 +97,42 @@ impl From<Expression> for AbstractDomain {
 }
 
 impl AbstractDomain {
-    /// Returns an expression that is "self + other".
+    /// Returns an element that is "self + other".
     pub fn add(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::F32(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F32(val2)),
-            ) => {
-                let result = f32::from_bits(*val1) + f32::from_bits(*val2);
-                Expression::CompileTimeConstant(ConstantValue::F32(result.to_bits())).into()
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.add(v2);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            (
-                Expression::CompileTimeConstant(ConstantValue::F64(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F64(val2)),
-            ) => {
-                let result = f64::from_bits(*val1) + f64::from_bits(*val2);
-                Expression::CompileTimeConstant(ConstantValue::F64(result.to_bits())).into()
-            }
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::I128(val1.wrapping_add(*val2)))
-                .into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::U128(val1.wrapping_add(*val2)))
-                .into(),
-            _ => Expression::Add {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        };
+        Expression::Add {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is true if "self + other" is not in range of target_type.
+    /// Returns an element that is true if "self + other" is not in range of target_type.
     pub fn add_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => {
-                let result = match target_type {
-                    ExpressionType::Isize => {
-                        isize::overflowing_add(*val1 as isize, *val2 as isize).1
-                    }
-                    ExpressionType::I128 => i128::overflowing_add(*val1, *val2).1,
-                    ExpressionType::I64 => i64::overflowing_add(*val1 as i64, *val2 as i64).1,
-                    ExpressionType::I32 => i32::overflowing_add(*val1 as i32, *val2 as i32).1,
-                    ExpressionType::I16 => i16::overflowing_add(*val1 as i16, *val2 as i16).1,
-                    ExpressionType::I8 => i8::overflowing_add(*val1 as i8, *val2 as i8).1,
-                    _ => {
-                        println!("{:?}", target_type);
-                        unreachable!()
-                    }
-                };
-                result.into()
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.add_overflows(v2, &target_type);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => {
-                let result = match target_type {
-                    ExpressionType::Usize => {
-                        usize::overflowing_add(*val1 as usize, *val2 as usize).1
-                    }
-                    ExpressionType::U128 => u128::overflowing_add(*val1, *val2).1,
-                    ExpressionType::U64 => u64::overflowing_add(*val1 as u64, *val2 as u64).1,
-                    ExpressionType::U32 => u32::overflowing_add(*val1 as u32, *val2 as u32).1,
-                    ExpressionType::U16 => u16::overflowing_add(*val1 as u16, *val2 as u16).1,
-                    ExpressionType::U8 => u8::overflowing_add(*val1 as u8, *val2 as u8).1,
-                    _ => {
-                        println!("{:?}", target_type);
-                        unreachable!()
-                    }
-                };
-                result.into()
-            }
-            _ => Expression::AddOverflows {
-                left: box self.clone(),
-                right: box other.clone(),
-                result_type: target_type,
-            }
-            .into(),
+        };
+        Expression::AddOverflows {
+            left: box self.clone(),
+            right: box other.clone(),
+            result_type: target_type,
         }
+        .into()
     }
 
-    /// Returns an expression that is "self && other".
+    /// Returns an element that is "self && other".
     pub fn and(&self, other: &Self) -> Self {
         let self_bool = self.as_bool_if_known();
         if let Some(false) = self_bool {
@@ -213,8 +168,8 @@ impl AbstractDomain {
     /// The Boolean value of this expression, if known, otherwise None.
     pub fn as_bool_if_known(&self) -> Option<bool> {
         match self.expression {
-            Expression::CompileTimeConstant(ConstantValue::True) => Some(true),
-            Expression::CompileTimeConstant(ConstantValue::False) => Some(false),
+            Expression::CompileTimeConstant(ConstantDomain::True) => Some(true),
+            Expression::CompileTimeConstant(ConstantDomain::False) => Some(false),
             _ => {
                 // todo: ask other domains about this (construct some if need be).
                 None
@@ -222,156 +177,82 @@ impl AbstractDomain {
         }
     }
 
-    /// Returns an expression that is "self & other".
+    /// Returns an element that is "self & other".
     pub fn bit_and(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::I128(val1 & val2)).into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::U128(val1 & val2)).into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::True),
-                Expression::CompileTimeConstant(ConstantValue::True),
-            ) => true.into(),
-            (Expression::CompileTimeConstant(ConstantValue::False), _)
-            | (_, Expression::CompileTimeConstant(ConstantValue::False)) => false.into(),
-            _ => Expression::BitAnd {
-                left: box self.clone(),
-                right: box other.clone(),
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.bit_and(v2);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            .into(),
+        };
+        Expression::BitAnd {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is "self | other".
+    /// Returns an element that is "self | other".
     pub fn bit_or(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::I128(val1 | val2)).into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::U128(val1 | val2)).into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::False),
-                Expression::CompileTimeConstant(ConstantValue::False),
-            ) => false.into(),
-            (Expression::CompileTimeConstant(ConstantValue::True), _)
-            | (_, Expression::CompileTimeConstant(ConstantValue::True)) => true.into(),
-            _ => Expression::BitOr {
-                left: box self.clone(),
-                right: box other.clone(),
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.bit_or(v2);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            .into(),
+        };
+        Expression::BitOr {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is "self ^ other".
+    /// Returns an element that is "self ^ other".
     pub fn bit_xor(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::I128(val1 ^ val2)).into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::U128(val1 ^ val2)).into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::False),
-                Expression::CompileTimeConstant(ConstantValue::False),
-            )
-            | (
-                Expression::CompileTimeConstant(ConstantValue::True),
-                Expression::CompileTimeConstant(ConstantValue::True),
-            ) => false.into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::True),
-                Expression::CompileTimeConstant(ConstantValue::False),
-            )
-            | (
-                Expression::CompileTimeConstant(ConstantValue::False),
-                Expression::CompileTimeConstant(ConstantValue::True),
-            ) => true.into(),
-            _ => Expression::BitXor {
-                left: box self.clone(),
-                right: box other.clone(),
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.bit_xor(v2);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            .into(),
+        };
+        Expression::BitXor {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is "self / other".
+    /// Returns an element that is "self / other".
     pub fn div(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::F32(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F32(val2)),
-            ) => {
-                let result = f32::from_bits(*val1) / f32::from_bits(*val2);
-                Expression::CompileTimeConstant(ConstantValue::F32(result.to_bits())).into()
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.div(v2);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            (
-                Expression::CompileTimeConstant(ConstantValue::F64(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F64(val2)),
-            ) => {
-                let result = f64::from_bits(*val1) / f64::from_bits(*val2);
-                Expression::CompileTimeConstant(ConstantValue::F64(result.to_bits())).into()
-            }
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => {
-                if *val2 == 0 {
-                    Expression::Bottom.into()
-                } else {
-                    Expression::CompileTimeConstant(ConstantValue::I128(*val1 / *val2)).into()
-                }
-            }
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => {
-                if *val2 == 0 {
-                    Expression::Bottom.into()
-                } else {
-                    Expression::CompileTimeConstant(ConstantValue::U128(*val1 / *val2)).into()
-                }
-            }
-            _ => Expression::Div {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        };
+        Expression::Div {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is "self == other".
+    /// Returns an element that is "self == other".
     pub fn equals(&self, other: &Self) -> Self {
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            return v1.equals(v2).into();
+        };
         match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::F32(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F32(val2)),
-            ) => {
-                let result = f32::from_bits(*val1) == f32::from_bits(*val2);
-                return result.into();
-            }
-            (
-                Expression::CompileTimeConstant(ConstantValue::F64(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F64(val2)),
-            ) => {
-                let result = f64::from_bits(*val1) == f64::from_bits(*val2);
-                return result.into();
-            }
-            (Expression::CompileTimeConstant(cv1), Expression::CompileTimeConstant(cv2)) => {
-                return (cv1 == cv2).into();
-            }
             // If self and other are the same location in memory, return true unless the value might be NaN.
             (
                 Expression::Variable {
@@ -398,7 +279,7 @@ impl AbstractDomain {
             // x == 0 is the same as !x when x is Boolean variable. Canonicalize it to the latter.
             (
                 Expression::Variable { var_type, .. },
-                Expression::CompileTimeConstant(ConstantValue::U128(val)),
+                Expression::CompileTimeConstant(ConstantDomain::U128(val)),
             ) => {
                 if *var_type == ExpressionType::Bool && *val == 0 {
                     return self.not();
@@ -407,7 +288,7 @@ impl AbstractDomain {
             // !x == 0 is the same as x when x is Boolean variable. Canonicalize it to the latter.
             (
                 Expression::Not { operand },
-                Expression::CompileTimeConstant(ConstantValue::U128(val)),
+                Expression::CompileTimeConstant(ConstantDomain::U128(val)),
             ) => {
                 if let Expression::Variable { var_type, .. } = &operand.expression {
                     if *var_type == ExpressionType::Bool && *val == 0 {
@@ -450,32 +331,32 @@ impl AbstractDomain {
         .into()
     }
 
-    /// Returns an expression that is "self >= other".
+    /// Returns an element that is "self >= other".
     pub fn ge(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (Expression::CompileTimeConstant(cv1), Expression::CompileTimeConstant(cv2)) => {
-                (*cv1 >= *cv2).into()
-            }
-            _ => Expression::GreaterOrEqual {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            return v1.ge(v2).into();
+        };
+        Expression::GreaterOrEqual {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is "self > other".
+    /// Returns an element that is "self > other".
     pub fn gt(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (Expression::CompileTimeConstant(cv1), Expression::CompileTimeConstant(cv2)) => {
-                (*cv1 > *cv2).into()
-            }
-            _ => Expression::GreaterThan {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            return v1.gt(v2).into();
+        };
+        Expression::GreaterThan {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
     /// True if the set of concrete values that correspond to this domain is empty.
@@ -526,171 +407,106 @@ impl AbstractDomain {
         }
     }
 
-    /// Returns an expression that is "self <= other".
+    /// Returns an element that is "self <= other".
     pub fn le(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (Expression::CompileTimeConstant(cv1), Expression::CompileTimeConstant(cv2)) => {
-                (cv1 <= cv2).into()
-            }
-            _ => Expression::LessOrEqual {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            return v1.le(v2).into();
+        };
+        Expression::LessOrEqual {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is self < other
+    /// Returns an element that is self < other
     pub fn lt(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (Expression::CompileTimeConstant(cv1), Expression::CompileTimeConstant(cv2)) => {
-                (cv1 < cv2).into()
-            }
-            _ => Expression::LessThan {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            return v1.lt(v2).into();
+        };
+        Expression::LessThan {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is "self * other".
+    /// Returns an element that is "self * other".
     pub fn mul(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::F32(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F32(val2)),
-            ) => {
-                let result = f32::from_bits(*val1) * f32::from_bits(*val2);
-                Expression::CompileTimeConstant(ConstantValue::F32(result.to_bits())).into()
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.mul(v2);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            (
-                Expression::CompileTimeConstant(ConstantValue::F64(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F64(val2)),
-            ) => {
-                let result = f64::from_bits(*val1) * f64::from_bits(*val2);
-                Expression::CompileTimeConstant(ConstantValue::F64(result.to_bits())).into()
-            }
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::I128(val1.wrapping_mul(*val2)))
-                .into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::U128(val1.wrapping_mul(*val2)))
-                .into(),
-            _ => Expression::Mul {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        };
+        Expression::Mul {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is true if "self * other" is not in range of target_type.
+    /// Returns an element that is true if "self * other" is not in range of target_type.
     pub fn mul_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => {
-                let result = match target_type {
-                    ExpressionType::I128 => i128::overflowing_mul(*val1, *val2).1,
-                    ExpressionType::I64 => i64::overflowing_mul(*val1 as i64, *val2 as i64).1,
-                    ExpressionType::I32 => i32::overflowing_mul(*val1 as i32, *val2 as i32).1,
-                    ExpressionType::I16 => i16::overflowing_mul(*val1 as i16, *val2 as i16).1,
-                    ExpressionType::I8 => i8::overflowing_mul(*val1 as i8, *val2 as i8).1,
-                    _ => unreachable!(),
-                };
-                result.into()
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.mul_overflows(v2, &target_type);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => {
-                let result = match target_type {
-                    ExpressionType::U128 => u128::overflowing_mul(*val1, *val2).1,
-                    ExpressionType::U64 => u64::overflowing_mul(*val1 as u64, *val2 as u64).1,
-                    ExpressionType::U32 => u32::overflowing_mul(*val1 as u32, *val2 as u32).1,
-                    ExpressionType::U16 => u16::overflowing_mul(*val1 as u16, *val2 as u16).1,
-                    ExpressionType::U8 => u8::overflowing_mul(*val1 as u8, *val2 as u8).1,
-                    _ => unreachable!(),
-                };
-                result.into()
-            }
-            _ => Expression::MulOverflows {
-                left: box self.clone(),
-                right: box other.clone(),
-                result_type: target_type,
-            }
-            .into(),
+        };
+        Expression::MulOverflows {
+            left: box self.clone(),
+            right: box other.clone(),
+            result_type: target_type,
         }
+        .into()
     }
 
-    /// Returns an expression that is "-self".
+    /// Returns an element that is "-self".
     pub fn neg(&self) -> Self {
-        match self.expression {
-            Expression::CompileTimeConstant(ConstantValue::F32(val)) => {
-                let result = -f32::from_bits(val);
-                Expression::CompileTimeConstant(ConstantValue::F32(result.to_bits())).into()
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = v1.neg();
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            Expression::CompileTimeConstant(ConstantValue::F64(val)) => {
-                let result = -f64::from_bits(val);
-                Expression::CompileTimeConstant(ConstantValue::F64(result.to_bits())).into()
-            }
-            Expression::CompileTimeConstant(ConstantValue::I128(val)) => {
-                Expression::CompileTimeConstant(ConstantValue::I128(val.wrapping_neg())).into()
-            }
-            Expression::CompileTimeConstant(ConstantValue::U128(val)) => {
-                Expression::CompileTimeConstant(ConstantValue::U128(val.wrapping_neg())).into()
-            }
-            _ => Expression::Neg {
-                operand: box self.clone(),
-            }
-            .into(),
+        };
+        Expression::Neg {
+            operand: box self.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is "self != other".
+    /// Returns an element that is "self != other".
     pub fn not_equals(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::F32(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F32(val2)),
-            ) => {
-                let result = f32::from_bits(*val1) != f32::from_bits(*val2);
-                result.into()
-            }
-            (
-                Expression::CompileTimeConstant(ConstantValue::F64(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F64(val2)),
-            ) => {
-                let result = f64::from_bits(*val1) != f64::from_bits(*val2);
-                result.into()
-            }
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => (val1 != val2).into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => (val1 != val2).into(),
-            _ => Expression::Ne {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            return v1.not_equals(v2).into();
+        };
+        Expression::Ne {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is "!self".
+    /// Returns an element that is "!self".
     pub fn not(&self) -> Self {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = v1.not();
+            if result != ConstantDomain::Bottom {
+                return result.into();
+            }
+        };
         match &self.expression {
-            Expression::CompileTimeConstant(ConstantValue::False) => true.into(),
-            Expression::CompileTimeConstant(ConstantValue::True) => false.into(),
             Expression::Bottom => self.clone(),
             Expression::Not { operand } => (**operand).clone(),
             _ => Expression::Not {
@@ -700,7 +516,7 @@ impl AbstractDomain {
         }
     }
 
-    /// Returns an expression that is "self.other".
+    /// Returns an element that is "self.other".
     pub fn offset(&self, other: &Self) -> Self {
         Expression::Offset {
             left: box self.clone(),
@@ -709,7 +525,7 @@ impl AbstractDomain {
         .into()
     }
 
-    /// Returns an expression that is "self || other".
+    /// Returns an element that is "self || other".
     pub fn or(&self, other: &Self) -> Self {
         if self.as_bool_if_known().unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
             true.into()
@@ -738,246 +554,126 @@ impl AbstractDomain {
         }
     }
 
-    /// Returns an expression that is "self % other".
+    /// Returns an element that is "self % other".
     pub fn rem(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::F32(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F32(val2)),
-            ) => {
-                let result = f32::from_bits(*val1) % f32::from_bits(*val2);
-                Expression::CompileTimeConstant(ConstantValue::F32(result.to_bits())).into()
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.rem(v2);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            (
-                Expression::CompileTimeConstant(ConstantValue::F64(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F64(val2)),
-            ) => {
-                let result = f64::from_bits(*val1) % f64::from_bits(*val2);
-                Expression::CompileTimeConstant(ConstantValue::F64(result.to_bits())).into()
-            }
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => {
-                if *val2 == 0 {
-                    Expression::Bottom.into()
-                } else {
-                    Expression::CompileTimeConstant(ConstantValue::I128(val1 % val2)).into()
-                }
-            }
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => {
-                if *val2 == 0 {
-                    Expression::Bottom.into()
-                } else {
-                    Expression::CompileTimeConstant(ConstantValue::U128(val1 % val2)).into()
-                }
-            }
-            _ => Expression::Rem {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        };
+        Expression::Rem {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is "self << other".
+    /// Returns an element that is "self << other".
     pub fn shl(&self, other: &Self) -> Self {
-        let other_as_u32 = match &other.expression {
-            Expression::CompileTimeConstant(ConstantValue::I128(val2)) => Some(*val2 as u32),
-            Expression::CompileTimeConstant(ConstantValue::U128(val2)) => Some(*val2 as u32),
-            _ => None,
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.shl(v2);
+            if result != ConstantDomain::Bottom {
+                return result.into();
+            }
         };
-        match (&self.expression, other_as_u32) {
-            (Expression::CompileTimeConstant(ConstantValue::I128(val1)), Some(val2)) => {
-                Expression::CompileTimeConstant(ConstantValue::I128(val1.wrapping_shl(val2))).into()
-            }
-            (Expression::CompileTimeConstant(ConstantValue::U128(val1)), Some(val2)) => {
-                Expression::CompileTimeConstant(ConstantValue::U128(val1.wrapping_shl(val2))).into()
-            }
-            _ => Expression::Shl {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        Expression::Shl {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is true if "self << other" is not in range of target_type.
+    /// Returns an element that is true if "self << other" shifts away all bits.
     pub fn shl_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
-        let other_as_u32 = match &other.expression {
-            Expression::CompileTimeConstant(ConstantValue::I128(val2)) => Some(*val2 as u32),
-            Expression::CompileTimeConstant(ConstantValue::U128(val2)) => Some(*val2 as u32),
-            _ => None,
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.shl_overflows(v2, &target_type);
+            if result != ConstantDomain::Bottom {
+                return result.into();
+            }
         };
-        match (&self.expression, other_as_u32) {
-            (Expression::CompileTimeConstant(ConstantValue::I128(val1)), Some(val2)) => {
-                let result = match target_type {
-                    ExpressionType::I128 => i128::overflowing_shl(*val1, val2).1,
-                    ExpressionType::I64 => i64::overflowing_shl(*val1 as i64, val2).1,
-                    ExpressionType::I32 => i32::overflowing_shl(*val1 as i32, val2).1,
-                    ExpressionType::I16 => i16::overflowing_shl(*val1 as i16, val2).1,
-                    ExpressionType::I8 => i8::overflowing_shl(*val1 as i8, val2).1,
-                    _ => unreachable!(),
-                };
-                result.into()
-            }
-            (Expression::CompileTimeConstant(ConstantValue::U128(val1)), Some(val2)) => {
-                let result = match target_type {
-                    ExpressionType::U128 => u128::overflowing_shl(*val1, val2).1,
-                    ExpressionType::U64 => u64::overflowing_shl(*val1 as u64, val2).1,
-                    ExpressionType::U32 => u32::overflowing_shl(*val1 as u32, val2).1,
-                    ExpressionType::U16 => u16::overflowing_shl(*val1 as u16, val2).1,
-                    ExpressionType::U8 => u8::overflowing_shl(*val1 as u8, val2).1,
-                    _ => unreachable!(),
-                };
-                result.into()
-            }
-            _ => Expression::ShlOverflows {
-                left: box self.clone(),
-                right: box other.clone(),
-                result_type: target_type,
-            }
-            .into(),
+        Expression::ShlOverflows {
+            left: box self.clone(),
+            right: box other.clone(),
+            result_type: target_type,
         }
+        .into()
     }
 
-    /// Returns an expression that is "self >> other".
+    /// Returns an element that is "self >> other".
     pub fn shr(&self, other: &Self) -> Self {
-        let other_as_u32 = match other.expression {
-            Expression::CompileTimeConstant(ConstantValue::I128(val2)) => Some(val2 as u32),
-            Expression::CompileTimeConstant(ConstantValue::U128(val2)) => Some(val2 as u32),
-            _ => None,
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.shr(v2);
+            if result != ConstantDomain::Bottom {
+                return result.into();
+            }
         };
-        match (&self.expression, other_as_u32) {
-            (Expression::CompileTimeConstant(ConstantValue::I128(val1)), Some(val2)) => {
-                Expression::CompileTimeConstant(ConstantValue::I128(val1.wrapping_shr(val2))).into()
-            }
-            (Expression::CompileTimeConstant(ConstantValue::U128(val1)), Some(val2)) => {
-                Expression::CompileTimeConstant(ConstantValue::U128(val1.wrapping_shr(val2))).into()
-            }
-            _ => Expression::Shr {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        Expression::Shr {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is true if "self >> other" is not in range of target_type.
+    /// Returns an element that is true if "self >> other" shifts away all bits.
     pub fn shr_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
-        let other_as_u32 = match &other.expression {
-            Expression::CompileTimeConstant(ConstantValue::I128(val2)) => Some(*val2 as u32),
-            Expression::CompileTimeConstant(ConstantValue::U128(val2)) => Some(*val2 as u32),
-            _ => None,
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.shr_overflows(v2, &target_type);
+            if result != ConstantDomain::Bottom {
+                return result.into();
+            }
         };
-        match (&self.expression, other_as_u32) {
-            (Expression::CompileTimeConstant(ConstantValue::I128(val1)), Some(val2)) => {
-                let result = match target_type {
-                    ExpressionType::I128 => i128::overflowing_shr(*val1, val2).1,
-                    ExpressionType::I64 => i64::overflowing_shr(*val1 as i64, val2).1,
-                    ExpressionType::I32 => i32::overflowing_shr(*val1 as i32, val2).1,
-                    ExpressionType::I16 => i16::overflowing_shr(*val1 as i16, val2).1,
-                    ExpressionType::I8 => i8::overflowing_shr(*val1 as i8, val2).1,
-                    _ => unreachable!(),
-                };
-                result.into()
-            }
-            (Expression::CompileTimeConstant(ConstantValue::U128(val1)), Some(val2)) => {
-                let result = match target_type {
-                    ExpressionType::U128 => u128::overflowing_shr(*val1, val2).1,
-                    ExpressionType::U64 => u64::overflowing_shr(*val1 as u64, val2).1,
-                    ExpressionType::U32 => u32::overflowing_shr(*val1 as u32, val2).1,
-                    ExpressionType::U16 => u16::overflowing_shr(*val1 as u16, val2).1,
-                    ExpressionType::U8 => u8::overflowing_shr(*val1 as u8, val2).1,
-                    _ => unreachable!(),
-                };
-                result.into()
-            }
-            _ => Expression::ShrOverflows {
-                left: box self.clone(),
-                right: box other.clone(),
-                result_type: target_type,
-            }
-            .into(),
+        Expression::ShrOverflows {
+            left: box self.clone(),
+            right: box other.clone(),
+            result_type: target_type,
         }
+        .into()
     }
 
-    /// Returns an expression that is "self - other".
+    /// Returns an element that is "self - other".
     pub fn sub(&self, other: &Self) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::F32(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F32(val2)),
-            ) => {
-                let result = f32::from_bits(*val1) - f32::from_bits(*val2);
-                Expression::CompileTimeConstant(ConstantValue::F32(result.to_bits())).into()
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.sub(v2);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            (
-                Expression::CompileTimeConstant(ConstantValue::F64(val1)),
-                Expression::CompileTimeConstant(ConstantValue::F64(val2)),
-            ) => {
-                let result = f64::from_bits(*val1) - f64::from_bits(*val2);
-                Expression::CompileTimeConstant(ConstantValue::F64(result.to_bits())).into()
-            }
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::I128(val1.wrapping_sub(*val2)))
-                .into(),
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => Expression::CompileTimeConstant(ConstantValue::U128(val1.wrapping_sub(*val2)))
-                .into(),
-            _ => Expression::Sub {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into(),
+        };
+        Expression::Sub {
+            left: box self.clone(),
+            right: box other.clone(),
         }
+        .into()
     }
 
-    /// Returns an expression that is true if "self - other" is not in range of target_type.
+    /// Returns an element that is true if "self - other" is not in range of target_type.
     pub fn sub_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::CompileTimeConstant(ConstantValue::I128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::I128(val2)),
-            ) => {
-                let result = match target_type {
-                    ExpressionType::I128 => i128::overflowing_add(*val1, *val2).1,
-                    ExpressionType::I64 => i64::overflowing_add(*val1 as i64, *val2 as i64).1,
-                    ExpressionType::I32 => i32::overflowing_add(*val1 as i32, *val2 as i32).1,
-                    ExpressionType::I16 => i16::overflowing_add(*val1 as i16, *val2 as i16).1,
-                    ExpressionType::I8 => i8::overflowing_add(*val1 as i8, *val2 as i8).1,
-                    _ => unreachable!(),
-                };
-                result.into()
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            let result = v1.sub_overflows(v2, &target_type);
+            if result != ConstantDomain::Bottom {
+                return result.into();
             }
-            (
-                Expression::CompileTimeConstant(ConstantValue::U128(val1)),
-                Expression::CompileTimeConstant(ConstantValue::U128(val2)),
-            ) => {
-                let result = match target_type {
-                    ExpressionType::U128 => u128::overflowing_add(*val1, *val2).1,
-                    ExpressionType::U64 => u64::overflowing_add(*val1 as u64, *val2 as u64).1,
-                    ExpressionType::U32 => u32::overflowing_add(*val1 as u32, *val2 as u32).1,
-                    ExpressionType::U16 => u16::overflowing_add(*val1 as u16, *val2 as u16).1,
-                    ExpressionType::U8 => u8::overflowing_add(*val1 as u8, *val2 as u8).1,
-                    _ => unreachable!(),
-                };
-                result.into()
-            }
-            _ => Expression::SubOverflows {
-                left: box self.clone(),
-                right: box other.clone(),
-                result_type: target_type,
-            }
-            .into(),
+        };
+        Expression::SubOverflows {
+            left: box self.clone(),
+            right: box other.clone(),
+            result_type: target_type,
         }
+        .into()
     }
 
     /// True if all of the concrete values that correspond to self also correspond to other.

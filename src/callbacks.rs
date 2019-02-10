@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 #![allow(clippy::borrowed_box)]
 
-use constant_value::ConstantValueCache;
+use constant_domain::ConstantValueCache;
 use rustc::session::config::{self, ErrorOutputType, Input};
 use rustc::session::Session;
 use rustc_codegen_utils::codegen_backend::CodegenBackend;
