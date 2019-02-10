@@ -5,7 +5,7 @@
 
 use abstract_domains::AbstractDomain;
 use abstract_value::{self, AbstractValue, Path, PathSelector};
-use constant_value::{ConstantValue, ConstantValueCache};
+use constant_domain::{ConstantDomain, ConstantValueCache};
 use environment::Environment;
 use expression::{Expression, ExpressionType};
 use rustc::session::Session;
@@ -506,7 +506,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         let discr = self.visit_operand(discr);
         let discr = discr.as_int_if_known().unwrap_or(discr);
         for i in 0..values.len() {
-            let val: AbstractValue = ConstantValue::U128(values[i]).into();
+            let val: AbstractValue = ConstantDomain::U128(values[i]).into();
             let cond = discr.equals(&val, None);
             let not_cond = cond.not(None);
             default_exit_condition = default_exit_condition.and(&not_cond, None);
@@ -616,14 +616,14 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         let actual_args: Vec<AbstractValue> =
             args.iter().map(|arg| self.visit_operand(arg)).collect();
         let function_summary = match func_to_call.domain.expression {
-            Expression::CompileTimeConstant(ConstantValue::Function {
+            Expression::CompileTimeConstant(ConstantDomain::Function {
                 def_id: Some(def_id),
                 ..
             }) => self
                 .summary_cache
                 .get_summary_for(def_id, Some(self.def_id))
                 .clone(),
-            Expression::CompileTimeConstant(ConstantValue::Function {
+            Expression::CompileTimeConstant(ConstantDomain::Function {
                 ref summary_cache_key,
                 ..
             }) => self
@@ -862,7 +862,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                             domain:
                                 AbstractDomain {
                                     expression:
-                                        Expression::CompileTimeConstant(ConstantValue::U128(len)),
+                                        Expression::CompileTimeConstant(ConstantDomain::U128(len)),
                                 },
                             ..
                         } = len_value
@@ -890,7 +890,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                             domain:
                                 AbstractDomain {
                                     expression:
-                                        Expression::CompileTimeConstant(ConstantValue::U128(len)),
+                                        Expression::CompileTimeConstant(ConstantDomain::U128(len)),
                                 },
                             ..
                         } = len_value
@@ -1326,7 +1326,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         ty: Ty,
         user_ty: Option<UserTypeAnnotationIndex>,
         literal: &LazyConst,
-    ) -> &ConstantValue {
+    ) -> &ConstantDomain {
         use rustc::mir::interpret::ConstValue;
         use rustc::mir::interpret::Scalar;
         debug!(
@@ -1340,9 +1340,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     TyKind::Bool => match val {
                         ConstValue::Scalar(Scalar::Bits { bits, .. }) => {
                             if *bits == 0 {
-                                &ConstantValue::False
+                                &ConstantDomain::False
                             } else {
-                                &ConstantValue::True
+                                &ConstantDomain::True
                             }
                         }
                         _ => unreachable!(),
@@ -1407,10 +1407,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                         }
                         _ => unreachable!(),
                     },
-                    _ => &ConstantValue::Unimplemented,
+                    _ => &ConstantDomain::Unimplemented,
                 }
             }
-            _ => &ConstantValue::Unimplemented,
+            _ => &ConstantDomain::Unimplemented,
         }
     }
 
@@ -1424,7 +1424,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// fn foo() -> i32 { 1 }
     /// let bar = foo; // bar: fn() -> i32 {foo}
     /// ```
-    fn visit_function_reference(&mut self, def_id: hir::def_id::DefId) -> &ConstantValue {
+    fn visit_function_reference(&mut self, def_id: hir::def_id::DefId) -> &ConstantDomain {
         &mut self.constant_value_cache.get_function_constant_for(
             def_id,
             &self.tcx,
