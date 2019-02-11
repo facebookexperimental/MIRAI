@@ -9,5 +9,5 @@
 use std::{panic};
 
 pub extern "C" fn panic_in_ffi() {
-    panic!("Test");  //~ Execution might panic.
+    panic!("Test");  //~ Test
 }
