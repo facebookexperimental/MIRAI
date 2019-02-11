@@ -560,11 +560,25 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 .as_bool_if_known()
                 .unwrap_or(false)
         {
-            let span = self.current_span;
-            let mut err = self
-                .session
-                .struct_span_warn(span, "Execution might panic.");
-            (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+            //todo: use theorem prover to make sure that the entry condition is not known to be false.
+            if self
+                .current_environment
+                .entry_condition
+                .as_bool_if_known()
+                .unwrap_or(false)
+            {
+                let span = self.current_span;
+                let mut err = self
+                    .session
+                    .struct_span_warn(span, "Execution might panic.");
+                (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+            } else {
+                self.preconditions.push(
+                    self.current_environment
+                        .entry_condition
+                        .not(Some(self.current_span)),
+                );
+            }
         }
     }
 
@@ -679,21 +693,65 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 .constant_value_cache
                 .check_if_std_intrinsics_unreachable_function(&fun)
             {
-                let span = self.current_span;
-                let mut err = self.session.struct_span_warn(
-                    span,
-                    "Control might reach a call to std::intrinsics::unreachable.",
-                );
-                (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+                //todo: use theorem prover to make sure that the entry condition is not known to be false.
+                if self
+                    .current_environment
+                    .entry_condition
+                    .as_bool_if_known()
+                    .unwrap_or(false)
+                {
+                    let span = self.current_span;
+                    let mut err = self.session.struct_span_warn(
+                        span,
+                        "Control reaches a call to std::intrinsics::unreachable.",
+                    );
+                    (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+                } else {
+                    self.preconditions.push(
+                        self.current_environment
+                            .entry_condition
+                            .not(Some(self.current_span)),
+                    );
+                }
             } else if self
                 .constant_value_cache
                 .check_if_std_panicking_begin_panic_function(&fun)
             {
-                let span = self.current_span;
-                let mut err = self
-                    .session
-                    .struct_span_warn(span, "Execution might panic.");
-                (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+                let mut msg = {
+                    if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
+                        actual_args[0].domain.expression
+                    {
+                        msg.as_str()
+                    } else {
+                        "Execution might panic."
+                    }
+                };
+                // Since the assertion was conjoined into the entry condition because of the logic
+                // of debug_assert!, and this condition was simplified, we cannot distinguish
+                // between the case of maybe reaching a definitely false assertion from the case of
+                // definitely reaching a maybe false assertion.
+                // We therefore report both cases, even though the first would be a candidate for being
+                // an inferred precondition, rather than a diagnostic.
+                //todo: we need our own library for contract assertions so that we can distinguish
+                // such cases.
+                if msg.starts_with("assertion failed:")
+                    || self
+                        .current_environment
+                        .entry_condition
+                        .as_bool_if_known()
+                        .unwrap_or(false)
+                {
+                    let msg = msg.replace("assertion failed:", "could not prove assertion:");
+                    let span = self.current_span;
+                    let mut err = self.session.struct_span_warn(span, &msg);
+                    (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+                } else {
+                    self.preconditions.push(
+                        self.current_environment
+                            .entry_condition
+                            .not(Some(self.current_span)),
+                    );
+                }
             }
         }
     }
@@ -754,12 +812,28 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 // Do not complain about compile time constants known to the compiler.
                 // Leave that to the compiler.
             } else {
+                //todo: use a theorem prover to make doubly sure that the entry condition is not known to be false.
+                //likewise use it to check the condition.
                 // Only give an error if we are positive that the condition is not as expected.
                 // Otherwise this diagnostic is too noisy, particular when yield enters the picture.
+                //todo: introduce a flag that requires public functions to have programmer
+                // supplied preconditions that will prevent us from getting here in the first place.
                 if expected != cond_val.as_bool_if_known().unwrap_or(expected) {
                     let span = self.current_span;
                     let mut err = self.session.struct_span_warn(span, msg.description());
                     (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+                } else {
+                    // Make it the caller's problem.
+                    let pre_cond = if expected {
+                        cond_val
+                    } else {
+                        cond_val.not(Some(self.current_span))
+                    };
+                    let path_cond = self
+                        .current_environment
+                        .entry_condition
+                        .and(&pre_cond, Some(self.current_span));
+                    self.preconditions.push(path_cond);
                 }
             }
         };
@@ -1213,7 +1287,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_aggregate(path: {:?}, aggregate_kinds: {:?}, operands: {:?})",
             path, aggregate_kinds, operands
         );
-        debug_assert!(match *aggregate_kinds {
+        assert!(match *aggregate_kinds {
             mir::AggregateKind::Array(..) => true,
             _ => false,
         });
