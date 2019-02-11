@@ -19,6 +19,6 @@ fn foo (x: i32, y: f32) {
     if y == y {
         debug_assert!(true);
     } else {
-        debug_assert!(false);  //~ Execution might panic.
+        debug_assert!(false);  //~ could not prove assertion: false
     }
 }
