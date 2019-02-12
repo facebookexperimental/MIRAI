@@ -14,6 +14,7 @@
 // While pretty bad, it is a lot less bad than having to write our own compiler, so here goes.
 #![feature(rustc_private)]
 #![feature(box_syntax)]
+#![feature(vec_remove_item)]
 
 extern crate mirai;
 extern crate rustc_data_structures;
@@ -160,9 +161,7 @@ impl ExpectedErrors {
 
     /// Removes the first element of self.messages and checks if it matches msg.
     fn remove_message(&mut self, msg: &str) {
-        if self.messages.len() > 0 && msg.eq(&self.messages[0]) {
-            self.messages.remove(0);
-        } else {
+        if self.messages.remove_item(&String::from(msg)).is_none() {
             panic!("Unexpected error: {} Expected: {:?}", msg, self.messages);
         }
     }

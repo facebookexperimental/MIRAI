@@ -13,8 +13,9 @@ use rustc::session::Session;
 use rustc::ty::{Const, LazyConst, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use std::borrow::Borrow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
+use std::iter::FromIterator;
 use summaries;
 use summaries::{PersistentSummaryCache, Summary};
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
@@ -52,8 +53,8 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
     exit_environment: Environment,
     heap_addresses: HashMap<mir::Location, AbstractValue>,
     post_conditions: Vec<AbstractValue>,
-    preconditions: Vec<AbstractValue>,
-    unwind_condition: Vec<AbstractValue>,
+    preconditions: Vec<(AbstractValue, String)>,
+    unwind_condition: Option<AbstractValue>,
     unwind_environment: Environment,
 }
 
@@ -79,7 +80,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             heap_addresses: HashMap::default(),
             post_conditions: Vec::new(),
             preconditions: Vec::new(),
-            unwind_condition: Vec::new(),
+            unwind_condition: None,
             unwind_environment: Environment::default(),
         }
     }
@@ -94,7 +95,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         self.heap_addresses = HashMap::default();
         self.post_conditions = Vec::new();
         self.preconditions = Vec::new();
-        self.unwind_condition = Vec::new();
+        self.unwind_condition = None;
         self.unwind_environment = Environment::default();
     }
 
@@ -260,7 +261,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             &self.exit_environment,
             &self.preconditions,
             &self.post_conditions,
-            &self.unwind_condition,
+            self.unwind_condition.clone(),
             &self.unwind_environment,
         );
         self.summary_cache.set_summary_for(self.def_id, summary);
@@ -579,11 +580,12 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     .struct_span_warn(span, "Execution might panic.");
                 (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
             } else {
-                self.preconditions.push(
+                self.preconditions.push((
                     self.current_environment
                         .entry_condition
                         .not(Some(self.current_span)),
-                );
+                    String::from("Execution might panic."),
+                ));
             }
         }
     }
@@ -611,7 +613,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         }
     }
 
-    /// Block ends with a call of a converging function
+    /// Block ends with the call of a function.
     ///
     /// #Arguments
     /// * `func` - The function that’s being called
@@ -619,7 +621,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// These are owned by the callee, which is free to modify them.
     /// This allows the memory occupied by "by-value" arguments to be
     /// reused across function calls without duplicating the contents.
-    /// * `destination` - Destination for the return value. If some, the call is converging.
+    /// * `destination` - Destination for the return value. If some, the call returns a value.
     /// * `cleanup` - Cleanups to be done if the call unwinds.
     /// * `from_hir_call` - Whether this is from a call in HIR, rather than from an overloaded
     /// operator. True for overloaded function call.
@@ -635,22 +637,84 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         let func_to_call = self.visit_operand(func);
         let actual_args: Vec<AbstractValue> =
             args.iter().map(|arg| self.visit_operand(arg)).collect();
-        let function_summary = match func_to_call.domain.expression {
-            Expression::CompileTimeConstant(ConstantDomain::Function {
-                def_id: Some(def_id),
-                ..
-            }) => self
-                .summary_cache
+        let function_summary = self.get_function_summary(&func_to_call);
+        if self.check_for_errors {
+            self.check_function_preconditions(&actual_args, &function_summary);
+        }
+        self.transfer_and_refine_normal_return_state(destination, &actual_args, &function_summary);
+        self.transfer_and_refine_cleanup_state(cleanup);
+        if self.check_for_errors {
+            self.report_calls_to_special_functions(func_to_call, actual_args)
+        }
+    }
+
+    /// Returns a summary of the function to call, obtained from the summary cache.
+    fn get_function_summary(&mut self, func_to_call: &AbstractValue) -> Summary {
+        if let Expression::CompileTimeConstant(ConstantDomain::Function {
+            def_id: Some(def_id),
+            ..
+        }) = func_to_call.domain.expression
+        {
+            self.summary_cache
                 .get_summary_for(def_id, Some(self.def_id))
-                .clone(),
-            Expression::CompileTimeConstant(ConstantDomain::Function {
-                ref summary_cache_key,
-                ..
-            }) => self
-                .summary_cache
-                .get_persistent_summary_for(summary_cache_key),
-            _ => Summary::default(),
-        };
+                .clone()
+        } else {
+            Summary::default()
+        }
+    }
+
+    /// Checks if the preconditions obtained from the summary of the function being called
+    /// are met by the current state and arguments of the calling function.
+    /// Preconditions that are definitely false generate diagnostic messages.
+    /// Preconditions that are maybe false become preconditions of the calling function.
+    fn check_function_preconditions(
+        &mut self,
+        actual_args: &[AbstractValue],
+        function_summary: &Summary,
+    ) {
+        debug_assert!(self.check_for_errors);
+        for (precondition, message) in &function_summary.preconditions {
+            let refined_precondition = precondition
+                .refine_parameters(actual_args)
+                .refine_paths(&mut self.current_environment)
+                .refine_with(&self.current_environment.entry_condition, self.current_span);
+            if refined_precondition.as_bool_if_known().unwrap_or(false) {
+                // The precondition is definitely true.
+                continue;
+            };
+            if !refined_precondition.as_bool_if_known().unwrap_or(true) {
+                // The precondition is definitely false
+                if self
+                    .current_environment
+                    .entry_condition
+                    .as_bool_if_known()
+                    .unwrap_or(false)
+                {
+                    // This call is definitely going to be reached
+                    let span = self.current_span;
+                    let mut err = self.session.struct_span_warn(span, message.as_str());
+                    let related_spans: HashSet<&syntax_pos::Span> =
+                        HashSet::from_iter(precondition.provenance.iter());
+                    for related_span in related_spans.iter() {
+                        err.span_note(**related_span, "related location");
+                    }
+                    (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+                }
+            } else {
+                // Promote the precondition to a precondition of the current function.
+                self.preconditions
+                    .push((refined_precondition, message.clone()));
+            }
+        }
+    }
+
+    /// Updates the current state to reflect the effects of a normal return from the function call.
+    fn transfer_and_refine_normal_return_state(
+        &mut self,
+        destination: &Option<(mir::Place, mir::BasicBlock)>,
+        actual_args: &[AbstractValue],
+        function_summary: &Summary,
+    ) {
         if let Some((place, target)) = destination {
             // Assign function result to place
             let target_path = self.visit_place(place);
@@ -680,49 +744,62 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     );
                 }
             }
-            // Propagate the entry condition to the successor blocks.
+            let mut exit_condition = self.exit_environment.entry_condition.clone();
+            if let Some(unwind_condition) = &function_summary.unwind_condition {
+                exit_condition =
+                    exit_condition.and(&unwind_condition.not(None), Some(self.current_span));
+            }
             self.current_environment
                 .exit_conditions
-                .insert(*target, self.current_environment.entry_condition.clone());
+                .insert(*target, exit_condition);
         }
+    }
+
+    /// Handle the case where the called function does not complete normally.
+    fn transfer_and_refine_cleanup_state(&mut self, cleanup: Option<mir::BasicBlock>) {
         if let Some(cleanup_target) = cleanup {
+            //todo: transfer and refine the actual cleanup state (once summaries actually include it)
+            // this will also require the addition of something like self.current_unwind_environment.
             self.current_environment.exit_conditions.insert(
                 cleanup_target,
                 self.current_environment.entry_condition.clone(),
             );
         }
-        if !self.check_for_errors {
-            return;
-        }
+    }
+
+    /// If the function being called is a special function like unreachable or panic,
+    /// then report a diagnostic if the call is definitely reachable.
+    /// If the call might be reached then add a precondition that requires the caller of this
+    /// function to ensure that the call to the special function will never be reached at runtime.
+    fn report_calls_to_special_functions(
+        &mut self,
+        func_to_call: AbstractValue,
+        actual_args: Vec<AbstractValue>,
+    ) {
+        debug_assert!(self.check_for_errors);
+        let cache = &mut self.constant_value_cache;
         if let Expression::CompileTimeConstant(fun) = func_to_call.domain.expression {
-            if self
-                .constant_value_cache
-                .check_if_std_intrinsics_unreachable_function(&fun)
-            {
+            if cache.check_if_std_intrinsics_unreachable_function(&fun) {
                 //todo: use theorem prover to make sure that the entry condition is not known to be false.
-                if self
-                    .current_environment
-                    .entry_condition
-                    .as_bool_if_known()
-                    .unwrap_or(false)
-                {
+                let path_cond = self.current_environment.entry_condition.as_bool_if_known();
+                if path_cond.unwrap_or(false) {
                     let span = self.current_span;
                     let mut err = self.session.struct_span_warn(
                         span,
                         "Control reaches a call to std::intrinsics::unreachable.",
                     );
                     (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
-                } else {
-                    self.preconditions.push(
+                } else if path_cond.is_none() {
+                    self.preconditions.push((
                         self.current_environment
                             .entry_condition
                             .not(Some(self.current_span)),
-                    );
+                        String::from("Control reaches a call to std::intrinsics::unreachable."),
+                    ));
                 }
-            } else if self
-                .constant_value_cache
-                .check_if_std_panicking_begin_panic_function(&fun)
-            {
+            } else if cache.check_if_std_panicking_begin_panic_function(&fun) {
+                //todo: use theorem prover to make sure that the entry condition is not known to be false.
+                let path_cond = self.current_environment.entry_condition.as_bool_if_known();
                 let mut msg = {
                     if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
                         actual_args[0].domain.expression
@@ -740,23 +817,18 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 // an inferred precondition, rather than a diagnostic.
                 //todo: we need our own library for contract assertions so that we can distinguish
                 // such cases.
-                if msg.starts_with("assertion failed:")
-                    || self
-                        .current_environment
-                        .entry_condition
-                        .as_bool_if_known()
-                        .unwrap_or(false)
-                {
+                if msg.starts_with("assertion failed:") || path_cond.unwrap_or(false) {
                     let msg = msg.replace("assertion failed:", "could not prove assertion:");
                     let span = self.current_span;
                     let mut err = self.session.struct_span_warn(span, &msg);
                     (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
-                } else {
-                    self.preconditions.push(
+                } else if path_cond.is_none() {
+                    self.preconditions.push((
                         self.current_environment
                             .entry_condition
                             .not(Some(self.current_span)),
-                    );
+                        String::from(msg),
+                    ));
                 }
             }
         }
@@ -839,7 +911,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                         .current_environment
                         .entry_condition
                         .and(&pre_cond, Some(self.current_span));
-                    self.preconditions.push(path_cond);
+                    self.preconditions
+                        .push((path_cond, String::from(msg.description())));
                 }
             }
         };

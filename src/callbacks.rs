@@ -29,6 +29,8 @@ pub struct MiraiCallbacks {
     emit_diagnostic: fn(&mut DiagnosticBuilder, &mut Vec<Diagnostic>) -> (),
     /// A path to the directory where analysis output, such as the summary cache, should be stored.
     output_directory: PathBuf,
+    /// True if this run is done via cargo test
+    test_run: bool,
 }
 
 /// Constructors
@@ -39,6 +41,7 @@ impl MiraiCallbacks {
             default_calls: RustcDefaultCalls,
             emit_diagnostic: |db: &mut DiagnosticBuilder, _buf: &mut Vec<Diagnostic>| db.emit(),
             output_directory: PathBuf::default(),
+            test_run: false,
         }
     }
 
@@ -51,6 +54,7 @@ impl MiraiCallbacks {
             default_calls: RustcDefaultCalls,
             emit_diagnostic,
             output_directory: PathBuf::default(),
+            test_run: true,
         }
     }
 }
@@ -125,6 +129,7 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
         _session: &Session,
         _matches: &::getopts::Matches,
     ) -> driver::CompileController<'a> {
+        let test_run = self.test_run;
         let mut controller = driver::CompileController::basic();
         controller.after_analysis.callback = Box::new(move |state| {
             after_analysis(
@@ -134,6 +139,11 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
                 &mut self.output_directory.clone(),
             )
         });
+        if test_run {
+            // Don't generate code and bring LLVM into play.
+            // We don't need the code and LLVM does not seem to be as thread safe as we need it to be.
+            controller.after_analysis.stop = Compilation::Stop;
+        }
         // Note: the callback is only invoked if the compiler discovers no errors beforehand.
         controller
     }
