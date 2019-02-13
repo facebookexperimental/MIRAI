@@ -121,14 +121,17 @@ impl Environment {
             Path::QualifiedPath {
                 ref qualifier,
                 ref selector,
+                ..
             } => {
                 if let Some((join_condition, true_path, false_path)) = self.try_to_split(qualifier)
                 {
                     let true_path = Path::QualifiedPath {
+                        length: true_path.path_length() + 1,
                         qualifier: box true_path,
                         selector: selector.clone(),
                     };
                     let false_path = Path::QualifiedPath {
+                        length: false_path.path_length() + 1,
                         qualifier: box false_path,
                         selector: selector.clone(),
                     };
