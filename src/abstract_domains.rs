@@ -5,6 +5,7 @@
 
 use abstract_value::{AbstractValue, Path};
 use constant_domain::ConstantDomain;
+use environment::Environment;
 use expression::{Expression, ExpressionType};
 use rustc::ty::TyKind;
 use syntax::ast;
@@ -754,7 +755,129 @@ impl AbstractDomain {
         }
     }
 
-    /// Applies refine_parameters to every domain element and returns the collection of results.
+    /// Recursively applies refine_paths to every sub expression of self.
+    /// Replaces occurrencs of Expression::Variable(path) with the value at that path
+    /// in the given environment (if there is such a value).
+    pub fn refine_paths(&self, environment: &mut Environment) -> Self {
+        match &self.expression {
+            Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
+                self.clone()
+            }
+            Expression::Add { left, right } => left
+                .refine_paths(environment)
+                .add(&right.refine_paths(environment)),
+            Expression::AddOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment)
+                .add_overflows(&right.refine_paths(environment), result_type.clone()),
+            Expression::And { left, right } => left
+                .refine_paths(environment)
+                .and(&right.refine_paths(environment)),
+            Expression::BitAnd { left, right } => left
+                .refine_paths(environment)
+                .bit_and(&right.refine_paths(environment)),
+            Expression::BitOr { left, right } => left
+                .refine_paths(environment)
+                .bit_or(&right.refine_paths(environment)),
+            Expression::BitXor { left, right } => left
+                .refine_paths(environment)
+                .bit_xor(&right.refine_paths(environment)),
+            Expression::CompileTimeConstant(..) => self.clone(),
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => consequent.refine_paths(environment).join(
+                &alternate.refine_paths(environment),
+                &condition.refine_paths(environment),
+            ),
+            Expression::Div { left, right } => left
+                .refine_paths(environment)
+                .div(&right.refine_paths(environment)),
+            Expression::Equals { left, right } => left
+                .refine_paths(environment)
+                .equals(&right.refine_paths(environment)),
+            Expression::GreaterOrEqual { left, right } => left
+                .refine_paths(environment)
+                .ge(&right.refine_paths(environment)),
+            Expression::GreaterThan { left, right } => left
+                .refine_paths(environment)
+                .gt(&right.refine_paths(environment)),
+            Expression::LessOrEqual { left, right } => left
+                .refine_paths(environment)
+                .le(&right.refine_paths(environment)),
+            Expression::LessThan { left, right } => left
+                .refine_paths(environment)
+                .lt(&right.refine_paths(environment)),
+            Expression::Mul { left, right } => left
+                .refine_paths(environment)
+                .mul(&right.refine_paths(environment)),
+            Expression::MulOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment)
+                .mul_overflows(&right.refine_paths(environment), result_type.clone()),
+            Expression::Ne { left, right } => left
+                .refine_paths(environment)
+                .not_equals(&right.refine_paths(environment)),
+            Expression::Neg { operand } => operand.refine_paths(environment).neg(),
+            Expression::Not { operand } => operand.refine_paths(environment).not(),
+            Expression::Offset { left, right } => left
+                .refine_paths(environment)
+                .offset(&right.refine_paths(environment)),
+            Expression::Or { left, right } => left
+                .refine_paths(environment)
+                .or(&right.refine_paths(environment)),
+            Expression::Reference(..) => self.clone(),
+            Expression::Rem { left, right } => left
+                .refine_paths(environment)
+                .rem(&right.refine_paths(environment)),
+            Expression::Shl { left, right } => left
+                .refine_paths(environment)
+                .shl(&right.refine_paths(environment)),
+            Expression::ShlOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment)
+                .shl_overflows(&right.refine_paths(environment), result_type.clone()),
+            Expression::Shr { left, right } => left
+                .refine_paths(environment)
+                .shr(&right.refine_paths(environment)),
+            Expression::ShrOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment)
+                .shr_overflows(&right.refine_paths(environment), result_type.clone()),
+            Expression::Sub { left, right } => left
+                .refine_paths(environment)
+                .sub(&right.refine_paths(environment)),
+            Expression::SubOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment)
+                .sub_overflows(&right.refine_paths(environment), result_type.clone()),
+            Expression::Variable { path, .. } => {
+                if let Some(val) = environment.value_at(path) {
+                    val.domain.clone()
+                } else {
+                    self.clone()
+                }
+            }
+        }
+    }
+
+    /// Recursively applies refine_parameters to every sub expression of self.
     pub fn refine_parameters(&self, arguments: &[AbstractValue]) -> Self {
         match &self.expression {
             Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {

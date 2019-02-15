@@ -5,6 +5,7 @@
 //
 use abstract_domains::{self, AbstractDomain};
 use constant_domain::ConstantDomain;
+use environment::Environment;
 use expression::{Expression, ExpressionType};
 use rustc::hir::def_id::DefId;
 use std::fmt::{Debug, Formatter, Result};
@@ -461,6 +462,17 @@ impl AbstractValue {
         AbstractValue {
             provenance,
             domain: self.domain.refine_with(&path_condition.domain),
+        }
+    }
+
+    /// Returns a value that is simplified (refined) by replacing values with Variable(path) expressions
+    /// with the value at that path (if there is one). If no refinement is possible
+    /// the result is simply a clone of this value. This refinement only makes sense
+    /// following a call to refine_parameters.
+    pub fn refine_paths(&self, environment: &mut Environment) -> AbstractValue {
+        AbstractValue {
+            provenance: self.provenance.clone(),
+            domain: self.domain.refine_paths(environment),
         }
     }
 

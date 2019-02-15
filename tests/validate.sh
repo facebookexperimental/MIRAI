@@ -3,6 +3,7 @@
 set -e
 # start clean
 cargo clean -p mirai
+rm -rf target/debug/.summary_store.rocksdb
 # Run format checks
 cargo fmt --all
 # Run lint checks

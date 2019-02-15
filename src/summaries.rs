@@ -44,7 +44,9 @@ pub struct Summary {
     // under the current path condition. Any values that do not simplify to true will require the
     // caller to either generate an error message or to add a precondition to its own summary that
     // will be sufficient to ensure that all of the preconditions in this summary are met.
-    pub preconditions: Vec<AbstractValue>,
+    // The string value bundled with the condition is the message that details what would go
+    // wrong at runtime if the precondition is not satisfied by the caller.
+    pub preconditions: Vec<(AbstractValue, String)>,
 
     // If the function returns a value, this summarizes what is known statically of the return value.
     // Callers should substitute parameter values with argument values and simplify the result
@@ -70,7 +72,7 @@ pub struct Summary {
     // Callers should substitute parameter values with argument values and simplify the result
     // under the current path condition. If the simplified value is statically known to be true
     // then the normal destination of the call should be treated as unreachable.
-    pub unwind_condition: Vec<AbstractValue>,
+    pub unwind_condition: Option<AbstractValue>,
 
     // Modifications the function makes to mutable state external to the function.
     // Every path will be rooted in a static or in a mutable parameter.
@@ -86,9 +88,9 @@ pub struct Summary {
 pub fn summarize(
     argument_count: usize,
     exit_environment: &Environment,
-    preconditions: &[AbstractValue],
+    preconditions: &[(AbstractValue, String)],
     post_conditions: &[AbstractValue],
-    unwind_condition: &[AbstractValue],
+    unwind_condition: Option<AbstractValue>,
     unwind_environment: &Environment,
 ) -> Summary {
     let result = exit_environment.value_at(&Path::LocalVariable { ordinal: 0 });
@@ -99,7 +101,7 @@ pub fn summarize(
         result: result.cloned(),
         side_effects,
         post_conditions: post_conditions.to_owned(),
-        unwind_condition: unwind_condition.to_owned(),
+        unwind_condition,
         unwind_side_effects,
     }
 }
