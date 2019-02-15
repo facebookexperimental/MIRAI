@@ -658,6 +658,7 @@ pub enum Path {
     /// The qualifier denotes some reference, struct, or collection.
     /// The selector denotes a de-referenced item, field, or element, or slice.
     QualifiedPath {
+        length: usize,
         qualifier: Box<Path>,
         selector: Box<PathSelector>,
     },
@@ -674,12 +675,21 @@ impl Path {
         }
     }
 
+    // Returns the length of the path.
+    pub fn path_length(&self) -> usize {
+        match self {
+            Path::QualifiedPath { length, .. } => *length,
+            _ => 1,
+        }
+    }
+
     /// Returns a copy path with the root replaced by new_root.
     pub fn replace_root(&self, old_root: &Path, new_root: Path) -> Path {
         match self {
             Path::QualifiedPath {
                 qualifier,
                 selector,
+                ..
             } => {
                 let new_qualifier = if **qualifier == *old_root {
                     new_root
@@ -687,6 +697,7 @@ impl Path {
                     qualifier.replace_root(old_root, new_root)
                 };
                 Path::QualifiedPath {
+                    length: new_qualifier.path_length() + 1,
                     qualifier: box new_qualifier,
                     selector: selector.clone(),
                 }
