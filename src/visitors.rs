@@ -20,6 +20,7 @@ use summaries;
 use summaries::{PersistentSummaryCache, Summary};
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax_pos;
+use utils::is_public;
 
 pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b> {
     /// A place where diagnostic messages can be buffered by the test harness.
@@ -683,29 +684,57 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 continue;
             };
             if !refined_precondition.as_bool_if_known().unwrap_or(true) {
-                // The precondition is definitely false
+                // The precondition is definitely false, if we ever get to this call site.
                 if self
                     .current_environment
                     .entry_condition
                     .as_bool_if_known()
                     .unwrap_or(false)
                 {
-                    // This call is definitely going to be reached
-                    let span = self.current_span;
-                    let mut err = self.session.struct_span_warn(span, message.as_str());
-                    let related_spans: HashSet<&syntax_pos::Span> =
-                        HashSet::from_iter(precondition.provenance.iter());
-                    for related_span in related_spans.iter() {
-                        err.span_note(**related_span, "related location");
+                    // We always get here if the function is called, and the precondition is always
+                    // false, so complain loudly.
+                    self.emit_diagnostic_for_precondition(precondition, &message);
+                    // Don't promote a false precondition. The callers cannot possibly satisfy it,
+                    // so there is no point in complaining at call sites.
+                    continue;
+                } else {
+                    // We might never get here since it depends on the parameter values used to call
+                    // this function. If the function is public, let's warn that we might get here.
+                    if is_public(self.def_id, &self.tcx) {
+                        let warning = format!("possible {}", message.as_str());
+                        self.emit_diagnostic_for_precondition(precondition, &warning);
+                    } else {
+                        // Since the function is not public, we assume that we get to see
+                        // every call to this function, so just rely on the inferred precondition.
                     }
-                    (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
-                }
-            } else {
-                // Promote the precondition to a precondition of the current function.
-                self.preconditions
-                    .push((refined_precondition, message.clone()));
+                };
+                // Fall through and promote the precondition.
+                // It does not matter that refined_precondition itself is known to be false,
+                // since we add the current entry condition to the promoted precondition.
             }
+            // Promote the precondition to a precondition of the current function.
+            let promoted_precondition = self
+                .current_environment
+                .entry_condition
+                .not(Some(self.current_span))
+                .or(&refined_precondition, Some(self.current_span));
+            self.preconditions
+                .push((promoted_precondition, message.clone()));
         }
+    }
+
+    /// Emit a diagnostic to the effect that the current call might violate a the given precondition
+    /// of the called function. Use the provenance of the precondition to point out related locations.
+    fn emit_diagnostic_for_precondition(&mut self, precondition: &AbstractValue, diagnostic: &str) {
+        // This call is definitely going to be reached
+        let span = self.current_span;
+        let mut err = self.session.struct_span_warn(span, diagnostic);
+        let related_spans: HashSet<&syntax_pos::Span> =
+            HashSet::from_iter(precondition.provenance.iter());
+        for related_span in related_spans.iter() {
+            err.span_note(**related_span, "related location");
+        }
+        (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
     }
 
     /// Updates the current state to reflect the effects of a normal return from the function call.
@@ -890,30 +919,51 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 // Do not complain about compile time constants known to the compiler.
                 // Leave that to the compiler.
             } else {
-                //todo: use a theorem prover to make doubly sure that the entry condition is not known to be false.
-                //likewise use it to check the condition.
-                // Only give an error if we are positive that the condition is not as expected.
-                // Otherwise this diagnostic is too noisy, particular when yield enters the picture.
-                //todo: introduce a flag that requires public functions to have programmer
-                // supplied preconditions that will prevent us from getting here in the first place.
-                if expected != cond_val.as_bool_if_known().unwrap_or(expected) {
-                    let span = self.current_span;
-                    let mut err = self.session.struct_span_warn(span, msg.description());
-                    (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
-                } else {
-                    // Make it the caller's problem.
-                    let pre_cond = if expected {
-                        cond_val
-                    } else {
-                        cond_val.not(Some(self.current_span))
-                    };
-                    let path_cond = self
-                        .current_environment
-                        .entry_condition
-                        .and(&pre_cond, Some(self.current_span));
-                    self.preconditions
-                        .push((path_cond, String::from(msg.description())));
+                let cond_as_bool = cond_val.as_bool_if_known();
+                if cond_as_bool.is_some() {
+                    if expected == cond_as_bool.unwrap() {
+                        // If the condition is as expected regardless of whether we can get here or not,
+                        // there is nothing to do here.
+                        return;
+                    }
+                    // The condition is not as expected. If we always get here if called, give an error.
+                    let entry_cond_as_bool =
+                        self.current_environment.entry_condition.as_bool_if_known();
+                    if entry_cond_as_bool.is_some() && entry_cond_as_bool.unwrap() {
+                        let error = msg.description();
+                        let span = self.current_span;
+                        let mut error = self.session.struct_span_err(span, error);
+                        (self.emit_diagnostic)(&mut error, &mut self.buffered_diagnostics);
+                        // No need to push a precondition, the caller can never satisfy it.
+                        return;
+                    }
                 }
+                // If we get here, we don't know that this assert is unreachable and we don't know
+                // that the condition is as expected, so we need to warn about it somewhere.
+                if is_public(self.def_id, &self.tcx) {
+                    // We expect public functions to have programmer supplied preconditions
+                    // that preclude any assertions from failing. So, if at this stage we get to
+                    // complain a bit.
+                    let warning = format!("possible {}", msg.description());
+                    let span = self.current_span;
+                    let mut warning = self.session.struct_span_warn(span, warning.as_str());
+                    (self.emit_diagnostic)(&mut warning, &mut self.buffered_diagnostics);
+                }
+                // Regardless, it is still the caller's problem, so push a precondition.
+                let expected_cond = if expected {
+                    cond_val
+                } else {
+                    cond_val.not(Some(self.current_span))
+                };
+                // To make sure that this assertion never fails, we should either never
+                // get here (!entry_condition) or expected_cond should be true.
+                let pre_cond = self
+                    .current_environment
+                    .entry_condition
+                    .not(None)
+                    .or(&expected_cond, Some(self.current_span));
+                self.preconditions
+                    .push((pre_cond, String::from(msg.description())));
             }
         };
     }
