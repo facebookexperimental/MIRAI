@@ -20,7 +20,7 @@ pub fn t2(cond: bool) {
     let raw = &cond as *const _;
     let bottom = interval - (raw as usize); //~ possible attempt to subtract with overflow
     debug_assert!((interval as isize) > -2);
-    debug_assert!(top < 3); //~ could not prove assertion: top < 3
-    debug_assert!(bottom <= bottom); //~ could not prove assertion: bottom <= bottom
+    debug_assert!(top < 3); //~ possible error: assertion failed: top < 3
+    debug_assert!(bottom <= bottom); //~ possible error: assertion failed: bottom <= bottom
 }
 

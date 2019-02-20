@@ -8,5 +8,5 @@
 
 pub fn test_assert() {
     let i = 1;
-    debug_assert!(i == 2);  //~ could not prove assertion: i == 2
+    debug_assert!(i == 2);  //~ assertion failed: i == 2
 }

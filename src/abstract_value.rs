@@ -548,14 +548,19 @@ impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying ">>" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn shr(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn shr(
+        &self,
+        other: &AbstractValue,
+        expression_type: ExpressionType,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.shr(&other.domain),
+            domain: self.domain.shr(&other.domain, expression_type),
         }
     }
 

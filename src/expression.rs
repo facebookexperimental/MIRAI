@@ -217,6 +217,8 @@ pub enum Expression {
         left: Box<AbstractDomain>,
         // The value of the right operand.
         right: Box<AbstractDomain>,
+        // The type of the left argument and the result
+        result_type: ExpressionType,
     },
 
     /// An expression that is false if left shifted right by right bits would shift way all bits. >>
@@ -281,4 +283,40 @@ pub enum ExpressionType {
     U64,
     U128,
     Usize,
+}
+
+impl ExpressionType {
+    /// Returns true if this type is one of the signed integer types.
+    pub fn is_signed_integer(&self) -> bool {
+        use self::ExpressionType::*;
+        match self {
+            I8 | I16 | I32 | I64 | I128 | Isize => true,
+            _ => false,
+        }
+    }
+
+    /// Returns the number of bits used to represent the given type, if primitive.
+    /// For non primitive types the result is just 0.
+    pub fn bit_length(&self) -> u8 {
+        use self::ExpressionType::*;
+        match self {
+            Bool => 1,
+            Char => 16,
+            F32 => 32,
+            F64 => 64,
+            I8 => 8,
+            I16 => 16,
+            I32 => 32,
+            I64 => 64,
+            I128 => 128,
+            Isize => 64,
+            NonPrimitive => 0,
+            U8 => 8,
+            U16 => 16,
+            U32 => 32,
+            U64 => 64,
+            U128 => 128,
+            Usize => 64,
+        }
+    }
 }
