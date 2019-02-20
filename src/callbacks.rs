@@ -10,6 +10,7 @@ use rustc::session::Session;
 use rustc_codegen_utils::codegen_backend::CodegenBackend;
 use rustc_driver::{driver, Compilation, CompilerCalls, RustcDefaultCalls};
 use rustc_metadata::cstore::CStore;
+use smt_solver::SolverStub;
 use std::path::PathBuf;
 use summaries;
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
@@ -175,6 +176,8 @@ fn after_analysis(
         }
         // By this time all analyses have been carried out, so it should be safe to borrow this now.
         let mir = tcx.optimized_mir(def_id);
+        // todo: #3 provide a helper that returns the solver as specified by a compiler switch.
+        let mut smt_solver = SolverStub::default();
         let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
             buffered_diagnostics: &mut buffered_diagnostics,
             emit_diagnostic,
@@ -184,6 +187,7 @@ fn after_analysis(
             mir,
             summary_cache: &mut persistent_summary_cache,
             constant_value_cache: &mut constant_value_cache,
+            smt_solver: &mut smt_solver,
         });
         mir_visitor.visit_body();
     }

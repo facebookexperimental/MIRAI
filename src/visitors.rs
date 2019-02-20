@@ -12,6 +12,7 @@ use k_limits;
 use rustc::session::Session;
 use rustc::ty::{Const, LazyConst, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
+use smt_solver::{SmtResult, SmtSolver};
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -22,7 +23,7 @@ use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax_pos;
 use utils::{self, is_public};
 
-pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b> {
+pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b, E> {
     /// A place where diagnostic messages can be buffered by the test harness.
     pub buffered_diagnostics: &'a mut Vec<Diagnostic>,
     /// A call back that the test harness can use to buffer the diagnostic message.
@@ -34,10 +35,11 @@ pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b> {
     pub mir: &'a mir::Mir<'tcx>,
     pub constant_value_cache: &'a mut ConstantValueCache,
     pub summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
+    pub smt_solver: &'a mut SmtSolver<E>,
 }
 
 /// Holds the state for the MIR test visitor.
-pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
+pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
     buffered_diagnostics: &'a mut Vec<Diagnostic>,
     emit_diagnostic: fn(&mut DiagnosticBuilder, buf: &mut Vec<Diagnostic>) -> (),
     session: &'tcx Session,
@@ -46,6 +48,7 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
     mir: &'a mir::Mir<'tcx>,
     constant_value_cache: &'a mut ConstantValueCache,
     summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
+    smt_solver: &'a mut SmtSolver<E>,
 
     check_for_errors: bool,
     current_environment: Environment,
@@ -61,8 +64,10 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b> {
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
 /// so that we can test a call to every default implementation of the MirVisitor trait.
-impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
-    pub fn new(crate_context: MirVisitorCrateContext<'a, 'b, 'tcx>) -> MirVisitor<'a, 'b, 'tcx> {
+impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
+    pub fn new(
+        crate_context: MirVisitorCrateContext<'a, 'b, 'tcx, E>,
+    ) -> MirVisitor<'a, 'b, 'tcx, E> {
         MirVisitor {
             buffered_diagnostics: crate_context.buffered_diagnostics,
             emit_diagnostic: crate_context.emit_diagnostic,
@@ -72,6 +77,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             mir: crate_context.mir,
             constant_value_cache: crate_context.constant_value_cache,
             summary_cache: crate_context.summary_cache,
+            smt_solver: crate_context.smt_solver,
 
             check_for_errors: false,
             current_environment: Environment::default(),
@@ -141,6 +147,20 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             }
         } else {
             refined_val
+        }
+    }
+
+    // Path is required to be a temporary used to track an operation result.
+    fn get_target_path_type(&mut self, path: &Path) -> ExpressionType {
+        match path {
+            Path::LocalVariable { ordinal } => {
+                let loc = &self.mir.local_decls[mir::Local::from(*ordinal)];
+                match loc.ty.sty {
+                    TyKind::Tuple(types) => (&types[0].sty).into(),
+                    _ => unreachable!(),
+                }
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -350,7 +370,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Write the RHS Rvalue to the LHS Place.
-    fn visit_assign(&mut self, place: &mir::Place, rvalue: &mir::Rvalue<'tcx>) {
+    fn visit_assign(&mut self, place: &mir::Place<'tcx>, rvalue: &mir::Rvalue<'tcx>) {
         debug!(
             "default visit_assign(place: {:?}, rvalue: {:?})",
             place, rvalue
@@ -362,7 +382,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// Write the discriminant for a variant to the enum Place.
     fn visit_set_discriminant(
         &mut self,
-        place: &mir::Place,
+        place: &mir::Place<'tcx>,
         variant_index: rustc::ty::layout::VariantIdx,
     ) {
         debug!(
@@ -403,7 +423,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     fn visit_inline_asm(
         &mut self,
         asm: &hir::InlineAsm,
-        outputs: &[mir::Place],
+        outputs: &[mir::Place<'tcx>],
         inputs: &[(syntax_pos::Span, mir::Operand)],
     ) {
         debug!(
@@ -425,7 +445,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// by miri and only generated when "-Z mir-emit-retag" is passed.
     /// See <https://internals.rust-lang.org/t/stacked-borrows-an-aliasing-model-for-rust/8153/>
     /// for more details.
-    fn visit_retag(&self, retag_kind: mir::RetagKind, place: &mir::Place) {
+    fn visit_retag(&self, retag_kind: mir::RetagKind, place: &mir::Place<'tcx>) {
         debug!(
             "default visit_retag(retag_kind: {:?}, place: {:?})",
             retag_kind, place
@@ -438,7 +458,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Calls a specialized visitor for each kind of terminator.
-    fn visit_terminator(&mut self, source_info: mir::SourceInfo, kind: &mir::TerminatorKind) {
+    fn visit_terminator(&mut self, source_info: mir::SourceInfo, kind: &mir::TerminatorKind<'tcx>) {
         debug!("{:?}", source_info);
         self.current_span = source_info.span;
         match kind {
@@ -501,7 +521,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// for the otherwise branch, so targets.len() == values.len() + 1 should hold.
     fn visit_switch_int(
         &mut self,
-        discr: &mir::Operand,
+        discr: &mir::Operand<'tcx>,
         switch_ty: rustc::ty::Ty,
         values: &[u128],
         targets: &[mir::BasicBlock],
@@ -561,20 +581,14 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     fn visit_unreachable(&mut self) {
         debug!("default visit_unreachable()");
         // Complain if we are quite sure control gets here.
-        if self.check_for_errors
-            && self
-                .current_environment
-                .entry_condition
-                .as_bool_if_known()
-                .unwrap_or(false)
-        {
-            //todo: use theorem prover to make sure that the entry condition is not known to be false.
-            if self
-                .current_environment
-                .entry_condition
-                .as_bool_if_known()
-                .unwrap_or(false)
-            {
+        if self.check_for_errors {
+            let mut entry_cond_as_bool =
+                self.current_environment.entry_condition.as_bool_if_known();
+            if entry_cond_as_bool.is_none() {
+                let entry_cond_val = &self.current_environment.entry_condition.clone();
+                entry_cond_as_bool = self.solve_condition(entry_cond_val);
+            }
+            if entry_cond_as_bool.unwrap_or(false) {
                 let span = self.current_span;
                 let mut err = self
                     .session
@@ -594,7 +608,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// Drop the Place
     fn visit_drop(
         &mut self,
-        location: &mir::Place,
+        location: &mir::Place<'tcx>,
         target: mir::BasicBlock,
         unwind: Option<mir::BasicBlock>,
     ) {
@@ -628,9 +642,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// operator. True for overloaded function call.
     fn visit_call(
         &mut self,
-        func: &mir::Operand,
-        args: &[mir::Operand],
-        destination: &Option<(mir::Place, mir::BasicBlock)>,
+        func: &mir::Operand<'tcx>,
+        args: &[mir::Operand<'tcx>],
+        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
         from_hir_call: bool,
     ) {
@@ -679,18 +693,16 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 .refine_parameters(actual_args)
                 .refine_paths(&mut self.current_environment)
                 .refine_with(&self.current_environment.entry_condition, self.current_span);
-            if refined_precondition.as_bool_if_known().unwrap_or(false) {
+            let (refined_precondition_as_bool, entry_cond_as_bool) =
+                self.check_condition_value_and_reachability(&refined_precondition);
+
+            if refined_precondition_as_bool.unwrap_or(false) {
                 // The precondition is definitely true.
                 continue;
             };
-            if !refined_precondition.as_bool_if_known().unwrap_or(true) {
+            if !refined_precondition_as_bool.unwrap_or(true) {
                 // The precondition is definitely false, if we ever get to this call site.
-                if self
-                    .current_environment
-                    .entry_condition
-                    .as_bool_if_known()
-                    .unwrap_or(false)
-                {
+                if entry_cond_as_bool.unwrap_or(false) {
                     // We always get here if the function is called, and the precondition is always
                     // false, so complain loudly.
                     self.emit_diagnostic_for_precondition(precondition, &message);
@@ -701,7 +713,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     // We might never get here since it depends on the parameter values used to call
                     // this function. If the function is public, let's warn that we might get here.
                     if is_public(self.def_id, &self.tcx) {
-                        let warning = format!("possible {}", message.as_str());
+                        let warning = format!("possible error: {}", message.as_str());
                         self.emit_diagnostic_for_precondition(precondition, &warning);
                     } else {
                         // Since the function is not public, we assume that we get to see
@@ -712,6 +724,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 // It does not matter that refined_precondition itself is known to be false,
                 // since we add the current entry condition to the promoted precondition.
             }
+
             // Promote the precondition to a precondition of the current function.
             let promoted_precondition = self
                 .current_environment
@@ -740,7 +753,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// Updates the current state to reflect the effects of a normal return from the function call.
     fn transfer_and_refine_normal_return_state(
         &mut self,
-        destination: &Option<(mir::Place, mir::BasicBlock)>,
+        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         actual_args: &[AbstractValue],
         function_summary: &Summary,
     ) {
@@ -809,55 +822,63 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         debug_assert!(self.check_for_errors);
         let cache = &mut self.constant_value_cache;
         if let Expression::CompileTimeConstant(fun) = func_to_call.domain.expression {
-            if cache.check_if_std_intrinsics_unreachable_function(&fun) {
-                //todo: use theorem prover to make sure that the entry condition is not known to be false.
-                let path_cond = self.current_environment.entry_condition.as_bool_if_known();
-                if path_cond.unwrap_or(false) {
-                    let span = self.current_span;
-                    let mut err = self.session.struct_span_warn(
-                        span,
-                        "Control reaches a call to std::intrinsics::unreachable.",
-                    );
-                    (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
-                } else if path_cond.is_none() {
-                    self.preconditions.push((
-                        self.current_environment
-                            .entry_condition
-                            .not(Some(self.current_span)),
-                        String::from("Control reaches a call to std::intrinsics::unreachable."),
-                    ));
-                }
-            } else if cache.check_if_std_panicking_begin_panic_function(&fun) {
-                //todo: use theorem prover to make sure that the entry condition is not known to be false.
-                let path_cond = self.current_environment.entry_condition.as_bool_if_known();
-                let mut msg = {
-                    if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
-                        actual_args[0].domain.expression
-                    {
-                        msg.as_str()
-                    } else {
-                        "Execution might panic."
+            if cache.check_if_std_panicking_begin_panic_function(&fun) {
+                let mut path_cond = self.current_environment.entry_condition.as_bool_if_known();
+                if path_cond.is_none() {
+                    // Try the SMT solver
+                    let path_expr = &self.current_environment.entry_condition.domain.expression;
+                    let path_smt = self.smt_solver.get_as_smt_predicate(path_expr);
+                    if self.smt_solver.solve_expression(&path_smt) == SmtResult::Unsatisfiable {
+                        path_cond = Some(false)
                     }
+                }
+                if !path_cond.unwrap_or(true) {
+                    // We never get to this call, so nothing to report.
+                    return;
+                }
+
+                let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
+                    actual_args[0].domain.expression
+                {
+                    if msg.contains("entered unreachable code") {
+                        // We tread unreachable!() as an assumption rather than an assertion to prove.
+                        return;
+                    } else {
+                        msg.clone()
+                    }
+                } else {
+                    String::from("execution panic")
                 };
-                // Since the assertion was conjoined into the entry condition because of the logic
-                // of debug_assert!, and this condition was simplified, we cannot distinguish
-                // between the case of maybe reaching a definitely false assertion from the case of
-                // definitely reaching a maybe false assertion.
-                // We therefore report both cases, even though the first would be a candidate for being
-                // an inferred precondition, rather than a diagnostic.
-                //todo: we need our own library for contract assertions so that we can distinguish
-                // such cases.
-                if msg.starts_with("assertion failed:") || path_cond.unwrap_or(false) {
-                    let msg = msg.replace("assertion failed:", "could not prove assertion:");
-                    let span = self.current_span;
-                    let mut err = self.session.struct_span_warn(span, &msg);
+                let span = self.current_span;
+
+                if path_cond.unwrap_or(false) && is_public(self.def_id, &self.tcx) {
+                    // We always get to this call and we have to assume that the function will
+                    // get called, so keep the message certain.
+                    let mut err = self.session.struct_span_warn(span, msg.as_str());
                     (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
-                } else if path_cond.is_none() {
+                } else {
+                    // We might get to this call, depending on the state at the call site.
+
+                    // In the case when an assert macro has been called, the inverse of the assertion
+                    // was conjoined into the entry condition and this condition was simplified.
+                    // We therefore cannot distinguish between the case of maybe reaching a definitely
+                    // false assertion from the case of definitely reaching a maybe false assertion.
+                    // We therefore report both cases, even though the first would be a candidate for being
+                    // an inferred precondition, rather than a diagnostic.
+                    //todo: we need our own library for contract assertions so that we can distinguish
+                    // such cases.
+
+                    let mut maybe_message = String::from("possible error: ");
+                    maybe_message.push_str(msg.as_str());
+                    let mut err = self.session.struct_span_warn(span, maybe_message.as_str());
+                    (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+
+                    // We also push a precondition in both cases.
                     self.preconditions.push((
                         self.current_environment
                             .entry_condition
                             .not(Some(self.current_span)),
-                        String::from(msg),
+                        maybe_message,
                     ));
                 }
             }
@@ -889,7 +910,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// otherwise panic with a message and a cleanup target.
     fn visit_assert(
         &mut self,
-        cond: &mir::Operand,
+        cond: &mir::Operand<'tcx>,
         expected: bool,
         msg: &mir::AssertMessage,
         target: mir::BasicBlock,
@@ -920,16 +941,16 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 // Do not complain about compile time constants known to the compiler.
                 // Leave that to the compiler.
             } else {
-                let cond_as_bool = cond_val.as_bool_if_known();
+                let (cond_as_bool, entry_cond_as_bool) =
+                    self.check_condition_value_and_reachability(&cond_val);
+
+                // Quick exit if things are known.
                 if cond_as_bool.is_some() {
                     if expected == cond_as_bool.unwrap() {
-                        // If the condition is as expected regardless of whether we can get here or not,
-                        // there is nothing to do here.
+                        // If the condition is always as expected when we get here, so there is nothing to report.
                         return;
                     }
-                    // The condition is not as expected. If we always get here if called, give an error.
-                    let entry_cond_as_bool =
-                        self.current_environment.entry_condition.as_bool_if_known();
+                    // If we always get here if called, give an error.
                     if entry_cond_as_bool.is_some() && entry_cond_as_bool.unwrap() {
                         let error = msg.description();
                         let span = self.current_span;
@@ -939,7 +960,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                         return;
                     }
                 }
-                // If we get here, we don't know that this assert is unreachable and we don't know
+
+                // At this point, we don't know that this assert is unreachable and we don't know
                 // that the condition is as expected, so we need to warn about it somewhere.
                 if is_public(self.def_id, &self.tcx) {
                     // We expect public functions to have programmer supplied preconditions
@@ -950,6 +972,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     let mut warning = self.session.struct_span_warn(span, warning.as_str());
                     (self.emit_diagnostic)(&mut warning, &mut self.buffered_diagnostics);
                 }
+
                 // Regardless, it is still the caller's problem, so push a precondition.
                 let expected_cond = if expected {
                     cond_val
@@ -967,6 +990,65 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     .push((pre_cond, String::from(msg.description())));
             }
         };
+    }
+
+    /// Checks the given condition value and also checks if the current entry condition can be true.
+    /// If the abstract domains are undecided, resort to using the SMT solver.
+    /// Only call this when doing actual error checking, since this is expensive.
+    fn check_condition_value_and_reachability(
+        &mut self,
+        cond_val: &AbstractValue,
+    ) -> (Option<bool>, Option<bool>) {
+        // Check if the condition is always true (or false) if we get here.
+        let mut cond_as_bool = cond_val.as_bool_if_known();
+        // Check if we can prove that every call to the current function will reach this call site.
+        let mut entry_cond_as_bool = self.current_environment.entry_condition.as_bool_if_known();
+        // Use SMT solver if need be.
+        if entry_cond_as_bool.is_none() {
+            // The abstract domains are unable to decide if the entry condition is always true.
+            // (If it could decide that the condition is always false, we wouldn't be here.)
+            // See if the SMT solver can prove that the entry condition is always true.
+            let smt_expr = {
+                let ec = &self.current_environment.entry_condition.domain.expression;
+                self.smt_solver.get_as_smt_predicate(ec)
+            };
+            self.smt_solver.set_backtrack_position();
+            self.smt_solver.assert(&smt_expr);
+            if self.smt_solver.solve() == SmtResult::Unsatisfiable {
+                // The solver can prove that the entry condition is always false.
+                entry_cond_as_bool = Some(false);
+            }
+            if cond_as_bool.is_none() && entry_cond_as_bool.unwrap_or(true) {
+                // The abstract domains are unable to decide what the value of cond is.
+                cond_as_bool = self.solve_condition(cond_val)
+            }
+            self.smt_solver.backtrack();
+        }
+        (cond_as_bool, entry_cond_as_bool)
+    }
+
+    fn solve_condition(&mut self, cond_val: &AbstractValue) -> Option<bool> {
+        let ce = &cond_val.domain.expression;
+        let cond_smt_expr = self.smt_solver.get_as_smt_predicate(ce);
+        match self.smt_solver.solve_expression(&cond_smt_expr) {
+            SmtResult::Unsatisfiable => {
+                // If we get here, the solver can prove that cond_val is always false.
+                Some(false)
+            }
+            SmtResult::Satisfiable => {
+                // We could get here with cond_val being true. Or perhaps not.
+                // So lets see if !cond_val is provably false.
+                let not_cond_expr = cond_val.not(None).domain.expression;
+                let smt_expr = self.smt_solver.get_as_smt_predicate(&not_cond_expr);
+                if self.smt_solver.solve_expression(&smt_expr) == SmtResult::Unsatisfiable {
+                    // The solver can prove that !cond_val is always false.
+                    Some(true)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
     }
 
     /// Calls a specialized visitor for each kind of Rvalue
@@ -1009,7 +1091,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// path = x (either a move or copy, depending on type of x), or path = constant.
-    fn visit_use(&mut self, path: Path, operand: &mir::Operand) {
+    fn visit_use(&mut self, path: Path, operand: &mir::Operand<'tcx>) {
         debug!(
             "default visit_use(path: {:?}, operand: {:?})",
             path, operand
@@ -1039,7 +1121,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// For each (path', value) pair in the environment where path' is rooted in place,
     /// add a (path'', value) pair to the environment where path'' is a copy of path re-rooted
     /// with place.
-    fn visit_used_copy(&mut self, target_path: Path, place: &mir::Place) {
+    fn visit_used_copy(&mut self, target_path: Path, place: &mir::Place<'tcx>) {
         debug!(
             "default visit_used_copy(target_path: {:?}, place: {:?})",
             target_path, place
@@ -1192,7 +1274,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// For each (path', value) pair in the environment where path' is rooted in place,
     /// add a (path'', value) pair to the environment where path'' is a copy of path re-rooted
     /// with place, and also remove the (path', value) pair from the environment.
-    fn visit_used_move(&mut self, target_path: Path, place: &mir::Place) {
+    fn visit_used_move(&mut self, target_path: Path, place: &mir::Place<'tcx>) {
         debug!(
             "default visit_used_move(target_path: {:?}, place: {:?})",
             target_path, place
@@ -1203,7 +1285,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// path = [x; 32]
-    fn visit_repeat(&mut self, path: Path, operand: &mir::Operand, count: u64) {
+    fn visit_repeat(&mut self, path: Path, operand: &mir::Operand<'tcx>, count: u64) {
         debug!(
             "default visit_repeat(path: {:?}, operand: {:?}, count: {:?})",
             path, operand, count
@@ -1224,7 +1306,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         path: Path,
         region: rustc::ty::Region,
         borrow_kind: mir::BorrowKind,
-        place: &mir::Place,
+        place: &mir::Place<'tcx>,
     ) {
         debug!(
             "default visit_ref(path: {:?}, region: {:?}, borrow_kind: {:?}, place: {:?})",
@@ -1266,7 +1348,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         &mut self,
         path: Path,
         cast_kind: mir::CastKind,
-        operand: &mir::Operand,
+        operand: &mir::Operand<'tcx>,
         ty: rustc::ty::Ty,
     ) {
         debug!(
@@ -1282,8 +1364,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         &mut self,
         path: Path,
         bin_op: mir::BinOp,
-        left_operand: &mir::Operand,
-        right_operand: &mir::Operand,
+        left_operand: &mir::Operand<'tcx>,
+        right_operand: &mir::Operand<'tcx>,
     ) {
         debug!(
             "default visit_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})",
@@ -1307,7 +1389,11 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             mir::BinOp::Offset => left.offset(&right, Some(self.current_span)),
             mir::BinOp::Rem => left.rem(&right, Some(self.current_span)),
             mir::BinOp::Shl => left.shl(&right, Some(self.current_span)),
-            mir::BinOp::Shr => left.shr(&right, Some(self.current_span)),
+            mir::BinOp::Shr => {
+                // We assume that path is a temporary used to track the operation result.
+                let target_type = self.get_target_path_type(&path);
+                left.shr(&right, target_type, Some(self.current_span))
+            }
             mir::BinOp::Sub => left.sub(&right, Some(self.current_span)),
         };
         self.current_environment.update_value_at(path, result);
@@ -1319,22 +1405,12 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         &mut self,
         path: Path,
         bin_op: mir::BinOp,
-        left_operand: &mir::Operand,
-        right_operand: &mir::Operand,
+        left_operand: &mir::Operand<'tcx>,
+        right_operand: &mir::Operand<'tcx>,
     ) {
         debug!("default visit_checked_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})", path, bin_op, left_operand, right_operand);
         // We assume that path is a temporary used to track the operation result and its overflow status.
-        let target_type = match path {
-            Path::LocalVariable { ordinal } => {
-                let loc = &self.mir.local_decls[mir::Local::from(ordinal)];
-                match loc.ty.sty {
-                    TyKind::Tuple(types) => (&types[0].sty).into(),
-                    _ => unreachable!(),
-                }
-            }
-            _ => unreachable!(),
-        };
-        debug!("target_type = {:?}", target_type);
+        let target_type = self.get_target_path_type(&path);
         let mut left = self.visit_operand(left_operand);
         let mut right = self.visit_operand(right_operand);
         let (result, overflow_flag) = match bin_op {
@@ -1351,7 +1427,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                 left.shl_overflows(&mut right, target_type, Some(self.current_span)),
             ),
             mir::BinOp::Shr => (
-                left.shr(&right, Some(self.current_span)),
+                left.shr(&right, target_type.clone(), Some(self.current_span)),
                 left.shr_overflows(&mut right, target_type, Some(self.current_span)),
             ),
             mir::BinOp::Sub => (
@@ -1404,7 +1480,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Apply the given unary operator to the operand and assign to path.
-    fn visit_unary_op(&mut self, path: Path, un_op: mir::UnOp, operand: &mir::Operand) {
+    fn visit_unary_op(&mut self, path: Path, un_op: mir::UnOp, operand: &mir::Operand<'tcx>) {
         debug!(
             "default visit_unary_op(path: {:?}, un_op: {:?}, operand: {:?})",
             path, un_op, operand
@@ -1421,7 +1497,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     ///
     /// Undefined (i.e. no effort is made to make it defined, but there’s no reason why it cannot
     /// be defined to return, say, a 0) if ADT is not an enum.
-    fn visit_discriminant(&mut self, path: Path, place: &mir::Place) {
+    fn visit_discriminant(&mut self, path: Path, place: &mir::Place<'tcx>) {
         debug!(
             "default visit_discriminant(path: {:?}, place: {:?})",
             path, place
@@ -1443,7 +1519,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         &mut self,
         path: Path,
         aggregate_kinds: &mir::AggregateKind,
-        operands: &[mir::Operand],
+        operands: &[mir::Operand<'tcx>],
     ) {
         debug!(
             "default visit_aggregate(path: {:?}, aggregate_kinds: {:?}, operands: {:?})",
@@ -1487,7 +1563,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// Operand defines the values that can appear inside an rvalue. They are intentionally
     /// limited to prevent rvalues from being nested in one another.
     /// A used operand must move or copy values to a target path.
-    fn visit_used_operand(&mut self, target_path: Path, operand: &mir::Operand) {
+    fn visit_used_operand(&mut self, target_path: Path, operand: &mir::Operand<'tcx>) {
         match operand {
             mir::Operand::Copy(place) => {
                 self.visit_used_copy(target_path, place);
@@ -1512,7 +1588,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
 
     /// Operand defines the values that can appear inside an rvalue. They are intentionally
     /// limited to prevent rvalues from being nested in one another.
-    fn visit_operand(&mut self, operand: &mir::Operand) -> AbstractValue {
+    fn visit_operand(&mut self, operand: &mir::Operand<'tcx>) -> AbstractValue {
         let span = self.current_span;
         let (expression_domain, span) = match operand {
             mir::Operand::Copy(place) => (self.visit_copy(place).domain.expression, span),
@@ -1538,7 +1614,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     ///
     /// This implies that the type of the place must be `Copy`; this is true
     /// by construction during build, but also checked by the MIR type checker.
-    fn visit_copy(&mut self, place: &mir::Place) -> AbstractValue {
+    fn visit_copy(&mut self, place: &mir::Place<'tcx>) -> AbstractValue {
         debug!("default visit_copy(place: {:?})", place);
         let path = self.visit_place(place);
         let place_type = self.get_place_type(place);
@@ -1550,7 +1626,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     /// Safe for values of all types (modulo future developments towards `?Move`).
     /// Correct usage patterns are enforced by the borrow checker for safe code.
     /// `Copy` may be converted to `Move` to enable "last-use" optimizations.
-    fn visit_move(&mut self, place: &mir::Place) -> AbstractValue {
+    fn visit_move(&mut self, place: &mir::Place<'tcx>) -> AbstractValue {
         debug!("default visit_move(place: {:?})", place);
         let path = self.visit_place(place);
         let place_type = self.get_place_type(place);
@@ -1669,7 +1745,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
 
     /// Returns a Path instance that is the essentially the same as the Place instance, but which
     /// can be serialized and used as a cache key.
-    fn visit_place(&mut self, place: &mir::Place) -> Path {
+    fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Path {
         debug!("default visit_place(place: {:?})", place);
         match place {
             mir::Place::Local(local) => Path::LocalVariable {
@@ -1754,12 +1830,12 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Returns an ExpressionType value corresponding to the Rustc type of the place.
-    fn get_place_type(&mut self, place: &mir::Place) -> ExpressionType {
+    fn get_place_type(&mut self, place: &mir::Place<'tcx>) -> ExpressionType {
         (self.get_rustc_place_type(place)).into()
     }
 
     /// Returns the rustc TyKind of the given place in memory.
-    fn get_rustc_place_type(&self, place: &mir::Place<'a>) -> &TyKind<'a> {
+    fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> &TyKind<'a> {
         match place {
             mir::Place::Local(local) => {
                 let loc = &self.mir.local_decls[mir::Local::from(local.as_usize())];
@@ -1774,7 +1850,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
     }
 
     /// Returns the rustc TyKind of the element selected by projection_elem.
-    fn get_type_for_projection_element(&self, place: &mir::Place<'a>) -> &TyKind<'a> {
+    fn get_type_for_projection_element(&self, place: &mir::Place<'tcx>) -> &TyKind<'a> {
         if let mir::Place::Projection(boxed_place_projection) = place {
             let base_ty = self.get_rustc_place_type(&boxed_place_projection.base);
             match boxed_place_projection.elem {

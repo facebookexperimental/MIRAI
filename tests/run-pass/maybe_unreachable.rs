@@ -11,7 +11,7 @@
 
 use std::intrinsics;
 
-fn foo(flag: bool) {
+pub fn foo(flag: bool) {
     if flag {
         unsafe {
             intrinsics::unreachable();

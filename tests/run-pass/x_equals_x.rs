@@ -10,6 +10,14 @@ pub fn main() {
     foo(1, 2.0);
 }
 
+pub fn bar(y: f32) {
+    if y == y {
+        debug_assert!(true);
+    } else {
+        debug_assert!(false);  //~  possible error: assertion failed: false
+    }
+}
+
 fn foo (x: i32, y: f32) {
     if x == x {
         debug_assert!(true);
@@ -19,6 +27,6 @@ fn foo (x: i32, y: f32) {
     if y == y {
         debug_assert!(true);
     } else {
-        debug_assert!(false);  //~ could not prove assertion: false
+        debug_assert!(false);  //~ possible error: assertion failed: false
     }
 }
