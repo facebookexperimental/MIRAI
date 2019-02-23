@@ -43,6 +43,7 @@ pub mod callbacks;
 pub mod constant_domain;
 pub mod environment;
 pub mod expression;
+pub mod interval_domain;
 pub mod k_limits;
 pub mod summaries;
 pub mod utils;

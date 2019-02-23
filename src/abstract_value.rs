@@ -84,9 +84,7 @@ impl From<ConstantDomain> for AbstractValue {
     fn from(cv: ConstantDomain) -> AbstractValue {
         AbstractValue {
             provenance: vec![],
-            domain: AbstractDomain {
-                expression: Expression::CompileTimeConstant(cv),
-            },
+            domain: Expression::CompileTimeConstant(cv).into(),
         }
     }
 }
@@ -95,9 +93,7 @@ impl From<Expression> for AbstractValue {
     fn from(expression_domain: Expression) -> AbstractValue {
         AbstractValue {
             provenance: vec![],
-            domain: AbstractDomain {
-                expression: expression_domain,
-            },
+            domain: expression_domain.into(),
         }
     }
 }
@@ -121,8 +117,8 @@ impl AbstractValue {
     /// values resulting from applying add_overflows to each element of the cross product of the concrete
     /// values or self and other.
     pub fn add_overflows(
-        &self,
-        other: &AbstractValue,
+        &mut self,
+        other: &mut AbstractValue,
         target_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -132,7 +128,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.add_overflows(&other.domain, target_type),
+            domain: (&mut self.domain).add_overflows(&mut other.domain, target_type),
         }
     }
 
@@ -263,28 +259,36 @@ impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying ">=" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn ge(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn ge(
+        &mut self,
+        other: &mut AbstractValue,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.ge(&other.domain),
+            domain: self.domain.ge(&mut other.domain),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying ">" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn gt(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn gt(
+        &mut self,
+        other: &mut AbstractValue,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.gt(&other.domain),
+            domain: self.domain.gt(&mut other.domain),
         }
     }
 
@@ -316,28 +320,36 @@ impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "<=" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn le(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn le(
+        &mut self,
+        other: &mut AbstractValue,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.le(&other.domain),
+            domain: self.domain.le(&mut other.domain),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "lt" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn lt(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn lt(
+        &mut self,
+        other: &mut AbstractValue,
+        expression_provenance: Option<Span>,
+    ) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.lt(&other.domain),
+            domain: self.domain.lt(&mut other.domain),
         }
     }
 
@@ -359,8 +371,8 @@ impl AbstractValue {
     /// values resulting from applying mul_overflows to each element of the cross product of the concrete
     /// values or self and other.
     pub fn mul_overflows(
-        &self,
-        other: &AbstractValue,
+        &mut self,
+        other: &mut AbstractValue,
         target_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -370,7 +382,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.mul_overflows(&other.domain, target_type),
+            domain: self.domain.mul_overflows(&mut other.domain, target_type),
         }
     }
 
@@ -519,7 +531,7 @@ impl AbstractValue {
     /// values or self and other.
     pub fn shl_overflows(
         &self,
-        other: &AbstractValue,
+        other: &mut AbstractValue,
         target_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -529,7 +541,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.shl_overflows(&other.domain, target_type),
+            domain: self.domain.shl_overflows(&mut other.domain, target_type),
         }
     }
 
@@ -552,7 +564,7 @@ impl AbstractValue {
     /// values or self and other.
     pub fn shr_overflows(
         &self,
-        other: &AbstractValue,
+        other: &mut AbstractValue,
         target_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -562,7 +574,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.shr_overflows(&other.domain, target_type),
+            domain: self.domain.shr_overflows(&mut other.domain, target_type),
         }
     }
 
@@ -584,8 +596,8 @@ impl AbstractValue {
     /// values resulting from applying sub_overflows to each element of the cross product of the concrete
     /// values or self and other.
     pub fn sub_overflows(
-        &self,
-        other: &AbstractValue,
+        &mut self,
+        other: &mut AbstractValue,
         target_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -595,7 +607,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.sub_overflows(&other.domain, target_type),
+            domain: self.domain.sub_overflows(&mut other.domain, target_type),
         }
     }
 

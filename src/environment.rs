@@ -84,6 +84,7 @@ impl Environment {
                                         consequent,
                                         alternate,
                                     },
+                                ..
                             },
                         provenance,
                     } = val
