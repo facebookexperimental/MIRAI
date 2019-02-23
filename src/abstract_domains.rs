@@ -7,42 +7,63 @@ use abstract_value::{AbstractValue, Path};
 use constant_domain::ConstantDomain;
 use environment::Environment;
 use expression::{Expression, ExpressionType};
+use interval_domain::{self, IntervalDomain};
 use rustc::ty::TyKind;
+use std::hash::Hash;
+use std::hash::Hasher;
 use syntax::ast;
 
 // See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
 
 /// Basically, this domain is a structured container for other domains. It is also the only
 /// client for the other domains.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq)]
 pub struct AbstractDomain {
     // todo: make this private
     // This is not a domain element, but a representation of how this instance has been constructed.
     // It is used to refine the instance with respect to path conditions and actual arguments.
     // It is also used to construct corresponding elements from other domains, when needed.
     pub expression: Expression,
-    //todo: #30 use cached getters to get specialized domains on demand
+    /// Cached interval computed on demand by get_as_interval.
+    #[serde(skip)]
+    interval: Option<IntervalDomain>,
+}
+
+impl Hash for AbstractDomain {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.expression.hash(state);
+    }
+}
+
+impl PartialEq for AbstractDomain {
+    fn eq(&self, other: &Self) -> bool {
+        self.expression.eq(&other.expression)
+    }
 }
 
 /// An abstract domain element that all represent the impossible concrete value.
 /// I.e. the corresponding set of possible concrete values is empty.
 pub const BOTTOM: AbstractDomain = AbstractDomain {
     expression: Expression::Bottom,
+    interval: None,
 };
 
 /// An abstract domain element that all represent the single concrete value, false.
 pub const FALSE: AbstractDomain = AbstractDomain {
     expression: Expression::CompileTimeConstant(ConstantDomain::False),
+    interval: None,
 };
 
 /// An abstract domain element that all represents all possible concrete values.
 pub const TOP: AbstractDomain = AbstractDomain {
     expression: Expression::Top,
+    interval: None,
 };
 
 /// An abstract domain element that all represent the single concrete value, true.
 pub const TRUE: AbstractDomain = AbstractDomain {
     expression: Expression::CompileTimeConstant(ConstantDomain::True),
+    interval: None,
 };
 
 impl<'a> From<&TyKind<'a>> for ExpressionType {
@@ -74,10 +95,12 @@ impl From<bool> for AbstractDomain {
         if b {
             AbstractDomain {
                 expression: Expression::CompileTimeConstant(ConstantDomain::True),
+                interval: None,
             }
         } else {
             AbstractDomain {
                 expression: Expression::CompileTimeConstant(ConstantDomain::False),
+                interval: None,
             }
         }
     }
@@ -87,13 +110,17 @@ impl From<ConstantDomain> for AbstractDomain {
     fn from(cv: ConstantDomain) -> AbstractDomain {
         AbstractDomain {
             expression: Expression::CompileTimeConstant(cv),
+            interval: None,
         }
     }
 }
 
 impl From<Expression> for AbstractDomain {
     fn from(expr: Expression) -> AbstractDomain {
-        AbstractDomain { expression: expr }
+        AbstractDomain {
+            expression: expr,
+            interval: None,
+        }
     }
 }
 
@@ -116,7 +143,7 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is true if "self + other" is not in range of target_type.
-    pub fn add_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
+    pub fn add_overflows(&mut self, other: &mut Self, target_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -125,6 +152,10 @@ impl AbstractDomain {
                 return result.into();
             }
         };
+        let interval = self.get_cached_interval().add(&other.get_cached_interval());
+        if interval.is_contained_in(&target_type) {
+            return false.into();
+        }
         Expression::AddOverflows {
             left: box self.clone(),
             right: box other.clone(),
@@ -333,12 +364,15 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is "self >= other".
-    pub fn ge(&self, other: &Self) -> Self {
+    pub fn ge(&mut self, other: &mut Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
             return v1.ge(v2).into();
         };
+        if let Some(result) = self.get_cached_interval().ge(&other.get_cached_interval()) {
+            return result.into();
+        }
         Expression::GreaterOrEqual {
             left: box self.clone(),
             right: box other.clone(),
@@ -347,12 +381,15 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is "self > other".
-    pub fn gt(&self, other: &Self) -> Self {
+    pub fn gt(&mut self, other: &mut Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
             return v1.gt(v2).into();
         };
+        if let Some(result) = self.get_cached_interval().gt(&other.get_cached_interval()) {
+            return result.into();
+        }
         Expression::GreaterThan {
             left: box self.clone(),
             right: box other.clone(),
@@ -438,12 +475,15 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is "self <= other".
-    pub fn le(&self, other: &Self) -> Self {
+    pub fn le(&mut self, other: &mut Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
             return v1.le(v2).into();
         };
+        if let Some(result) = self.get_cached_interval().le(&other.get_cached_interval()) {
+            return result.into();
+        }
         Expression::LessOrEqual {
             left: box self.clone(),
             right: box other.clone(),
@@ -452,12 +492,15 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is self < other
-    pub fn lt(&self, other: &Self) -> Self {
+    pub fn lt(&mut self, other: &mut Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
             return v1.lt(v2).into();
         };
+        if let Some(result) = self.get_cached_interval().lt(&other.get_cached_interval()) {
+            return result.into();
+        }
         Expression::LessThan {
             left: box self.clone(),
             right: box other.clone(),
@@ -483,7 +526,7 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is true if "self * other" is not in range of target_type.
-    pub fn mul_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
+    pub fn mul_overflows(&mut self, other: &mut Self, target_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -492,6 +535,10 @@ impl AbstractDomain {
                 return result.into();
             }
         };
+        let interval = self.get_cached_interval().mul(&other.get_cached_interval());
+        if interval.is_contained_in(&target_type) {
+            return false.into();
+        }
         Expression::MulOverflows {
             left: box self.clone(),
             right: box other.clone(),
@@ -619,7 +666,7 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is true if "self << other" shifts away all bits.
-    pub fn shl_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
+    pub fn shl_overflows(&self, other: &mut Self, target_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -628,6 +675,10 @@ impl AbstractDomain {
                 return result.into();
             }
         };
+        let interval = &mut other.get_cached_interval();
+        if interval.is_contained_in_width_of(&target_type) {
+            return false.into();
+        }
         Expression::ShlOverflows {
             left: box self.clone(),
             right: box other.clone(),
@@ -654,7 +705,7 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is true if "self >> other" shifts away all bits.
-    pub fn shr_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
+    pub fn shr_overflows(&self, other: &mut Self, target_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -663,6 +714,10 @@ impl AbstractDomain {
                 return result.into();
             }
         };
+        let interval = &mut other.get_cached_interval();
+        if interval.is_contained_in_width_of(&target_type) {
+            return false.into();
+        }
         Expression::ShrOverflows {
             left: box self.clone(),
             right: box other.clone(),
@@ -689,7 +744,7 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is true if "self - other" is not in range of target_type.
-    pub fn sub_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
+    pub fn sub_overflows(&mut self, other: &mut Self, target_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -698,6 +753,10 @@ impl AbstractDomain {
                 return result.into();
             }
         };
+        let interval = self.get_cached_interval().sub(&other.get_cached_interval());
+        if interval.is_contained_in(&target_type) {
+            return false.into();
+        }
         Expression::SubOverflows {
             left: box self.clone(),
             right: box other.clone(),
@@ -755,8 +814,40 @@ impl AbstractDomain {
         }
     }
 
+    /// Gets or constructs an interval that is cached.
+    pub fn get_cached_interval(&mut self) -> IntervalDomain {
+        if let Some(result) = &self.interval {
+            return result.clone();
+        };
+        let interval = self.get_as_interval();
+        self.interval = Some(interval.clone());
+        interval
+    }
+
+    /// Constructs an element of the Interval domain for simple expressions.
+    pub fn get_as_interval(&self) -> IntervalDomain {
+        match &self.expression {
+            Expression::Top => interval_domain::TOP,
+            Expression::Add { left, right } => left.get_as_interval().add(&right.get_as_interval()),
+            Expression::CompileTimeConstant(ConstantDomain::I128(val)) => (*val).into(),
+            Expression::CompileTimeConstant(ConstantDomain::U128(val)) => (*val).into(),
+            Expression::ConditionalExpression {
+                consequent,
+                alternate,
+                ..
+            } => consequent
+                .get_as_interval()
+                .widen(&alternate.get_as_interval()),
+            Expression::Mul { left, right } => left.get_as_interval().mul(&right.get_as_interval()),
+            Expression::Neg { operand } => operand.get_as_interval().neg(),
+            Expression::Sub { left, right } => left.get_as_interval().sub(&right.get_as_interval()),
+            Expression::Variable { .. } => interval_domain::TOP,
+            _ => interval_domain::BOTTOM,
+        }
+    }
+
     /// Recursively applies refine_paths to every sub expression of self.
-    /// Replaces occurrencs of Expression::Variable(path) with the value at that path
+    /// Replaces occurrences of Expression::Variable(path) with the value at that path
     /// in the given environment (if there is such a value).
     pub fn refine_paths(&self, environment: &mut Environment) -> Self {
         match &self.expression {
@@ -772,7 +863,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_paths(environment)
-                .add_overflows(&right.refine_paths(environment), result_type.clone()),
+                .add_overflows(&mut right.refine_paths(environment), result_type.clone()),
             Expression::And { left, right } => left
                 .refine_paths(environment)
                 .and(&right.refine_paths(environment)),
@@ -802,16 +893,16 @@ impl AbstractDomain {
                 .equals(&right.refine_paths(environment)),
             Expression::GreaterOrEqual { left, right } => left
                 .refine_paths(environment)
-                .ge(&right.refine_paths(environment)),
+                .ge(&mut right.refine_paths(environment)),
             Expression::GreaterThan { left, right } => left
                 .refine_paths(environment)
-                .gt(&right.refine_paths(environment)),
+                .gt(&mut right.refine_paths(environment)),
             Expression::LessOrEqual { left, right } => left
                 .refine_paths(environment)
-                .le(&right.refine_paths(environment)),
+                .le(&mut right.refine_paths(environment)),
             Expression::LessThan { left, right } => left
                 .refine_paths(environment)
-                .lt(&right.refine_paths(environment)),
+                .lt(&mut right.refine_paths(environment)),
             Expression::Mul { left, right } => left
                 .refine_paths(environment)
                 .mul(&right.refine_paths(environment)),
@@ -821,7 +912,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_paths(environment)
-                .mul_overflows(&right.refine_paths(environment), result_type.clone()),
+                .mul_overflows(&mut right.refine_paths(environment), result_type.clone()),
             Expression::Ne { left, right } => left
                 .refine_paths(environment)
                 .not_equals(&right.refine_paths(environment)),
@@ -846,7 +937,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_paths(environment)
-                .shl_overflows(&right.refine_paths(environment), result_type.clone()),
+                .shl_overflows(&mut right.refine_paths(environment), result_type.clone()),
             Expression::Shr { left, right } => left
                 .refine_paths(environment)
                 .shr(&right.refine_paths(environment)),
@@ -856,7 +947,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_paths(environment)
-                .shr_overflows(&right.refine_paths(environment), result_type.clone()),
+                .shr_overflows(&mut right.refine_paths(environment), result_type.clone()),
             Expression::Sub { left, right } => left
                 .refine_paths(environment)
                 .sub(&right.refine_paths(environment)),
@@ -866,7 +957,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_paths(environment)
-                .sub_overflows(&right.refine_paths(environment), result_type.clone()),
+                .sub_overflows(&mut right.refine_paths(environment), result_type.clone()),
             Expression::Variable { path, .. } => {
                 if let Some(val) = environment.value_at(path) {
                     val.domain.clone()
@@ -892,7 +983,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .add_overflows(&right.refine_parameters(arguments), result_type.clone()),
+                .add_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
             Expression::And { left, right } => left
                 .refine_parameters(arguments)
                 .and(&right.refine_parameters(arguments)),
@@ -922,16 +1013,16 @@ impl AbstractDomain {
                 .equals(&right.refine_parameters(arguments)),
             Expression::GreaterOrEqual { left, right } => left
                 .refine_parameters(arguments)
-                .ge(&right.refine_parameters(arguments)),
+                .ge(&mut right.refine_parameters(arguments)),
             Expression::GreaterThan { left, right } => left
                 .refine_parameters(arguments)
-                .gt(&right.refine_parameters(arguments)),
+                .gt(&mut right.refine_parameters(arguments)),
             Expression::LessOrEqual { left, right } => left
                 .refine_parameters(arguments)
-                .le(&right.refine_parameters(arguments)),
+                .le(&mut right.refine_parameters(arguments)),
             Expression::LessThan { left, right } => left
                 .refine_parameters(arguments)
-                .lt(&right.refine_parameters(arguments)),
+                .lt(&mut right.refine_parameters(arguments)),
             Expression::Mul { left, right } => left
                 .refine_parameters(arguments)
                 .mul(&right.refine_parameters(arguments)),
@@ -941,7 +1032,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .mul_overflows(&right.refine_parameters(arguments), result_type.clone()),
+                .mul_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
             Expression::Ne { left, right } => left
                 .refine_parameters(arguments)
                 .not_equals(&right.refine_parameters(arguments)),
@@ -966,7 +1057,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .shl_overflows(&right.refine_parameters(arguments), result_type.clone()),
+                .shl_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
             Expression::Shr { left, right } => left
                 .refine_parameters(arguments)
                 .shr(&right.refine_parameters(arguments)),
@@ -976,7 +1067,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .shr_overflows(&right.refine_parameters(arguments), result_type.clone()),
+                .shr_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
             Expression::Sub { left, right } => left
                 .refine_parameters(arguments)
                 .sub(&right.refine_parameters(arguments)),
@@ -986,7 +1077,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .sub_overflows(&right.refine_parameters(arguments), result_type.clone()),
+                .sub_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
             Expression::Variable { path, .. } => match **path {
                 Path::LocalVariable { ordinal } if 0 < ordinal && ordinal <= arguments.len() => {
                     arguments[ordinal - 1].domain.clone()
@@ -1011,7 +1102,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_with(path_condition)
-                .add_overflows(&right.refine_with(path_condition), result_type.clone()),
+                .add_overflows(&mut right.refine_with(path_condition), result_type.clone()),
             Expression::And { left, right } => {
                 if path_condition.implies(&**left) && path_condition.implies(&**right) {
                     true.into()
@@ -1065,16 +1156,16 @@ impl AbstractDomain {
                 .equals(&right.refine_with(path_condition)),
             Expression::GreaterOrEqual { left, right } => left
                 .refine_with(path_condition)
-                .ge(&right.refine_with(path_condition)),
+                .ge(&mut right.refine_with(path_condition)),
             Expression::GreaterThan { left, right } => left
                 .refine_with(path_condition)
-                .gt(&right.refine_with(path_condition)),
+                .gt(&mut right.refine_with(path_condition)),
             Expression::LessOrEqual { left, right } => left
                 .refine_with(path_condition)
-                .le(&right.refine_with(path_condition)),
+                .le(&mut right.refine_with(path_condition)),
             Expression::LessThan { left, right } => left
                 .refine_with(path_condition)
-                .lt(&right.refine_with(path_condition)),
+                .lt(&mut right.refine_with(path_condition)),
             Expression::Mul { left, right } => left
                 .refine_with(path_condition)
                 .mul(&right.refine_with(path_condition)),
@@ -1084,7 +1175,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_with(path_condition)
-                .mul_overflows(&right.refine_with(path_condition), result_type.clone()),
+                .mul_overflows(&mut right.refine_with(path_condition), result_type.clone()),
             Expression::Ne { left, right } => left
                 .refine_with(path_condition)
                 .not_equals(&right.refine_with(path_condition)),
@@ -1126,7 +1217,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_with(path_condition)
-                .shl_overflows(&right.refine_with(path_condition), result_type.clone()),
+                .shl_overflows(&mut right.refine_with(path_condition), result_type.clone()),
             Expression::Shr { left, right } => left
                 .refine_with(path_condition)
                 .shr(&right.refine_with(path_condition)),
@@ -1136,7 +1227,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_with(path_condition)
-                .shr_overflows(&right.refine_with(path_condition), result_type.clone()),
+                .shr_overflows(&mut right.refine_with(path_condition), result_type.clone()),
             Expression::Sub { left, right } => left
                 .refine_with(path_condition)
                 .sub(&right.refine_with(path_condition)),
@@ -1146,7 +1237,7 @@ impl AbstractDomain {
                 result_type,
             } => left
                 .refine_with(path_condition)
-                .sub_overflows(&right.refine_with(path_condition), result_type.clone()),
+                .sub_overflows(&mut right.refine_with(path_condition), result_type.clone()),
             Expression::Variable { .. } => {
                 if path_condition.implies(&self) {
                     true.into()

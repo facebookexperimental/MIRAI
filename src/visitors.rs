@@ -760,6 +760,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                     domain:
                         AbstractDomain {
                             expression: Expression::Reference(target_path),
+                            ..
                         },
                     ..
                 } = arg
@@ -1076,6 +1077,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                                 AbstractDomain {
                                     expression:
                                         Expression::CompileTimeConstant(ConstantDomain::U128(len)),
+                                    ..
                                 },
                             ..
                         } = len_value
@@ -1110,6 +1112,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                                 AbstractDomain {
                                     expression:
                                         Expression::CompileTimeConstant(ConstantDomain::U128(len)),
+                                    ..
                                 },
                             ..
                         } = len_value
@@ -1286,8 +1289,8 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             "default visit_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})",
             path, bin_op, left_operand, right_operand
         );
-        let left = self.visit_operand(left_operand);
-        let right = self.visit_operand(right_operand);
+        let mut left = self.visit_operand(left_operand);
+        let mut right = self.visit_operand(right_operand);
         let result = match bin_op {
             mir::BinOp::Add => left.add(&right, Some(self.current_span)),
             mir::BinOp::BitAnd => left.bit_and(&right, Some(self.current_span)),
@@ -1295,10 +1298,10 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             mir::BinOp::BitXor => left.bit_xor(&right, Some(self.current_span)),
             mir::BinOp::Div => left.div(&right, Some(self.current_span)),
             mir::BinOp::Eq => left.equals(&right, Some(self.current_span)),
-            mir::BinOp::Ge => left.ge(&right, Some(self.current_span)),
-            mir::BinOp::Gt => left.gt(&right, Some(self.current_span)),
-            mir::BinOp::Le => left.le(&right, Some(self.current_span)),
-            mir::BinOp::Lt => left.lt(&right, Some(self.current_span)),
+            mir::BinOp::Ge => left.ge(&mut right, Some(self.current_span)),
+            mir::BinOp::Gt => left.gt(&mut right, Some(self.current_span)),
+            mir::BinOp::Le => left.le(&mut right, Some(self.current_span)),
+            mir::BinOp::Lt => left.lt(&mut right, Some(self.current_span)),
             mir::BinOp::Mul => left.mul(&right, Some(self.current_span)),
             mir::BinOp::Ne => left.not_equals(&right, Some(self.current_span)),
             mir::BinOp::Offset => left.offset(&right, Some(self.current_span)),
@@ -1332,28 +1335,28 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             _ => unreachable!(),
         };
         debug!("target_type = {:?}", target_type);
-        let left = self.visit_operand(left_operand);
-        let right = self.visit_operand(right_operand);
+        let mut left = self.visit_operand(left_operand);
+        let mut right = self.visit_operand(right_operand);
         let (result, overflow_flag) = match bin_op {
             mir::BinOp::Add => (
                 left.add(&right, Some(self.current_span)),
-                left.add_overflows(&right, target_type, Some(self.current_span)),
+                left.add_overflows(&mut right, target_type, Some(self.current_span)),
             ),
             mir::BinOp::Mul => (
                 left.mul(&right, Some(self.current_span)),
-                left.mul_overflows(&right, target_type, Some(self.current_span)),
+                (&mut left).mul_overflows(&mut right, target_type, Some(self.current_span)),
             ),
             mir::BinOp::Shl => (
                 left.shl(&right, Some(self.current_span)),
-                left.shl_overflows(&right, target_type, Some(self.current_span)),
+                left.shl_overflows(&mut right, target_type, Some(self.current_span)),
             ),
             mir::BinOp::Shr => (
                 left.shr(&right, Some(self.current_span)),
-                left.shr_overflows(&right, target_type, Some(self.current_span)),
+                left.shr_overflows(&mut right, target_type, Some(self.current_span)),
             ),
             mir::BinOp::Sub => (
                 left.sub(&right, Some(self.current_span)),
-                left.sub_overflows(&right, target_type, Some(self.current_span)),
+                left.sub_overflows(&mut right, target_type, Some(self.current_span)),
             ),
             _ => unreachable!(),
         };
@@ -1527,9 +1530,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
         };
         AbstractValue {
             provenance: vec![span],
-            domain: AbstractDomain {
-                expression: expression_domain,
-            },
+            domain: expression_domain.into(),
         }
     }
 
