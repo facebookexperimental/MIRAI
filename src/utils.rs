@@ -38,3 +38,16 @@ pub fn is_rust_intrinsic(def_id: DefId, tcx: &TyCtxt) -> bool {
         _ => false,
     }
 }
+
+/// Returns true if the function identified by def_id is a public function.
+pub fn is_public(def_id: DefId, tcx: &TyCtxt) -> bool {
+    let this_crate = tcx.hir().krate();
+    let node_id = tcx.hir().def_index_to_node_id(def_id.index);
+    let items = &this_crate.items;
+    //todo: quite a few functions have bodies with DefIds that do not match an item.
+    // this function needs fixing.
+    match items.get(&node_id) {
+        Some(item) => item.vis.node.is_pub(),
+        None => false,
+    }
+}

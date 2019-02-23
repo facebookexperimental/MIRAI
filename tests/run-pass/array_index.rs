@@ -8,6 +8,12 @@
 // and the ProjectionElem::Index case of Visitor::visit_projection_elem.
 
 pub fn foo(arr: &mut [i32], i: usize) {
+    arr[i] = 123; //~ possible array index out of bounds
+    // If we get here i is known to be within bounds, so no warning below.
+    bar(arr, i);
+}
+
+fn bar(arr: &mut [i32], i: usize) {
     arr[i] = 123;
     debug_assert!(arr[i] == 123);
 }

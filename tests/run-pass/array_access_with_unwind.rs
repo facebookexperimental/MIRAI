@@ -7,8 +7,8 @@
 // A test that needs to do cleanup if an array access is out of bounds.
 
 pub fn foo(arr: &mut [i32], i: usize) -> String {
-    arr[i] = 123;
+    arr[i] = 123; //~ possible array index out of bounds
     let result = String::from("foo");
-    let _e = arr[i];
+    let _e = arr[i]; //~ possible array index out of bounds
     result
 }
