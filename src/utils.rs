@@ -4,6 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 
 use rustc::hir::def_id::DefId;
+use rustc::hir::ItemKind;
+use rustc::hir::Node;
 use rustc::ty::TyCtxt;
 use rustc_target::spec::abi::Abi;
 
@@ -41,13 +43,65 @@ pub fn is_rust_intrinsic(def_id: DefId, tcx: &TyCtxt) -> bool {
 
 /// Returns true if the function identified by def_id is a public function.
 pub fn is_public(def_id: DefId, tcx: &TyCtxt) -> bool {
-    let this_crate = tcx.hir().krate();
-    let node_id = tcx.hir().def_index_to_node_id(def_id.index);
-    let items = &this_crate.items;
-    //todo: quite a few functions have bodies with DefIds that do not match an item.
-    // this function needs fixing.
-    match items.get(&node_id) {
-        Some(item) => item.vis.node.is_pub(),
-        None => false,
+    if let Some(node) = tcx.hir().get_if_local(def_id) {
+        match node {
+            Node::Item(item) => {
+                if let ItemKind::Fn(..) = item.node {
+                    return item.vis.node.is_pub();
+                }
+                debug!("def_id is not a function item {:?}", item.node);
+                return false;
+            }
+            Node::ImplItem(item) => {
+                return item.vis.node.is_pub();
+            }
+            Node::TraitItem(..) => {
+                return true;
+            }
+            _ => {
+                debug!("def_id is not an item {:?}", node);
+                return false;
+            }
+        }
+    } else {
+        debug!("def_id is not local {}", summary_key_str(tcx, def_id));
+        false
     }
+}
+
+/// Constructs a string that uniquely identifies a definition to serve as a key to
+/// the summary cache, which is a key value store. The string will always be the same as
+/// long as the definition does not change its name or location, so it can be used to
+/// transfer information from one compilation to the next, making incremental analysis possible.
+pub fn summary_key_str(tcx: &TyCtxt, def_id: DefId) -> String {
+    let crate_name = if def_id.is_local() {
+        tcx.crate_name.as_interned_str().as_str().get()
+    } else {
+        // This is both ugly and probably brittle, but I can't find any other
+        // way to retrieve the crate name from a def_id that is not local.
+        // tcx.crate_data_as_rc_any returns an untracked value, which is potentially problematic
+        // as per the comments on the function:
+        // "Note that this is *untracked* and should only be used within the query
+        // system if the result is otherwise tracked through queries"
+        // For now, this seems OK since we are only using the crate name.
+        // Of course, should a crate name change in an incremental scenario this
+        // is going to be the least of our worries.
+        let cdata = tcx.crate_data_as_rc_any(def_id.krate);
+        let cdata = cdata
+            .downcast_ref::<rustc_metadata::cstore::CrateMetadata>()
+            .unwrap();
+        cdata.name.as_str().get()
+    };
+    let mut name = String::from(crate_name);
+    for component in &tcx.def_path(def_id).data {
+        name.push('.');
+        let cn = component.data.as_interned_str().as_str().get();
+        name.push_str(cn);
+        if component.disambiguator != 0 {
+            name.push(':');
+            let da = component.disambiguator.to_string();
+            name.push_str(da.as_str());
+        }
+    }
+    name
 }
