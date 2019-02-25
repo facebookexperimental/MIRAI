@@ -1621,18 +1621,16 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
                         },
                         _,
                     ) => {
-                        if let ConstValue::ScalarPair(ptr, len) = val {
+                        if let ConstValue::Slice(ptr, len) = val {
                             if let Scalar::Ptr(ptr) = ptr {
-                                if let Scalar::Bits { bits: len, .. } = len {
-                                    let alloc = self.tcx.alloc_map.lock().get(ptr.alloc_id);
-                                    if let Some(mir::interpret::AllocKind::Memory(alloc)) = alloc {
-                                        let slice = &alloc.bytes[(ptr.offset.bytes() as usize)..]
-                                            [..(*len as usize)];
-                                        let s = std::str::from_utf8(slice).expect("non utf8 str");
-                                        return &mut self.constant_value_cache.get_string_for(s);
-                                    } else {
-                                        panic!("pointer to erroneous constant {:?}, {:?}", ptr, len)
-                                    }
+                                let alloc = self.tcx.alloc_map.lock().get(ptr.alloc_id);
+                                if let Some(mir::interpret::AllocKind::Memory(alloc)) = alloc {
+                                    let slice = &alloc.bytes[(ptr.offset.bytes() as usize)..]
+                                        [..(*len as usize)];
+                                    let s = std::str::from_utf8(slice).expect("non utf8 str");
+                                    return &mut self.constant_value_cache.get_string_for(s);
+                                } else {
+                                    panic!("pointer to erroneous constant {:?}, {:?}", ptr, len)
                                 }
                             }
                         };
