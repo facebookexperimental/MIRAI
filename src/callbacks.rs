@@ -22,7 +22,7 @@ pub struct MiraiCallbacks {
     /// Gives test harness a way to process intercepted diagnostics.
     consume_buffered_diagnostics: Box<Fn(&Vec<Diagnostic>) -> ()>,
     /// Use these to just defer to the Rust compiler's implementations.
-    default_calls: RustcDefaultCalls,
+    default_calls: Box<RustcDefaultCalls>,
     /// Called when static analysis reports a diagnostic message.
     /// By default, this just emits the message. When overridden it can
     /// intercept and buffer the diagnostics, which is used by the test harness.
@@ -38,7 +38,7 @@ impl MiraiCallbacks {
     pub fn new() -> MiraiCallbacks {
         MiraiCallbacks {
             consume_buffered_diagnostics: box |_bd: &Vec<Diagnostic>| {},
-            default_calls: RustcDefaultCalls,
+            default_calls: box RustcDefaultCalls,
             emit_diagnostic: |db: &mut DiagnosticBuilder, _buf: &mut Vec<Diagnostic>| db.emit(),
             output_directory: PathBuf::default(),
             test_run: false,
@@ -51,7 +51,7 @@ impl MiraiCallbacks {
     ) -> MiraiCallbacks {
         MiraiCallbacks {
             consume_buffered_diagnostics,
-            default_calls: RustcDefaultCalls,
+            default_calls: box RustcDefaultCalls,
             emit_diagnostic,
             output_directory: PathBuf::default(),
             test_run: true,
@@ -162,7 +162,7 @@ fn after_analysis(
     let session = state.session;
     let tcx = state.tcx.unwrap();
     output_directory.set_file_name(".summary_store");
-    output_directory.set_extension("rocksdb");
+    output_directory.set_extension("sled");
     let summary_store_path = String::from(output_directory.to_str().unwrap());
     info!("storing summaries at {}", summary_store_path);
     let mut persistent_summary_cache =
