@@ -13,7 +13,7 @@ use std::convert::TryFrom;
 /// std::i128::MAX denotes +infinity.
 /// Interval domain elements are constructed on demand from AbstractDomain expressions.
 /// They are most useful for checking if an array index is within bounds.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash, Ord)]
 pub struct IntervalDomain {
     lower_bound: i128,
     upper_bound: i128,
@@ -68,7 +68,7 @@ impl IntervalDomain {
 
     // [x...y] >= [a...b] = x >= b
     // !([x...y] >= [a...b]) = [a...b] > [x...y] = a > y
-    pub fn ge(&self, other: &Self) -> Option<bool> {
+    pub fn greater_or_equal(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
             None
         } else if self.lower_bound >= other.upper_bound {
@@ -82,7 +82,7 @@ impl IntervalDomain {
 
     // [x...y] > [a...b] = x > b
     // !([x...y] > [a...b]) = [a...b] >= [x...y] = a >= y
-    pub fn gt(&self, other: &Self) -> Option<bool> {
+    pub fn greater_than(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
             None
         } else if self.lower_bound > other.upper_bound {
@@ -183,7 +183,7 @@ impl IntervalDomain {
 
     // [x...y] <= [a...b] = y <= a
     // !([x...y] <= [a...b]) = [a...b] < [x...y] = b < x
-    pub fn le(&self, other: &Self) -> Option<bool> {
+    pub fn less_equal(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
             None
         } else if self.upper_bound <= other.lower_bound {
@@ -197,7 +197,7 @@ impl IntervalDomain {
 
     // [x...y] < [a...b] = y < a
     // !([x...y] < [a...b]) = [a...b] <= [x...y] = b <= x
-    pub fn lt(&self, other: &Self) -> Option<bool> {
+    pub fn less_than(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
             None
         } else if self.upper_bound < other.lower_bound {

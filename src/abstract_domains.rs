@@ -18,7 +18,7 @@ use syntax::ast;
 
 /// Basically, this domain is a structured container for other domains. It is also the only
 /// client for the other domains.
-#[derive(Serialize, Deserialize, Clone, Eq)]
+#[derive(Serialize, Deserialize, Clone, Eq, Ord, PartialOrd)]
 pub struct AbstractDomain {
     // todo: make this private
     // This is not a domain element, but a representation of how this instance has been constructed.
@@ -371,13 +371,16 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is "self >= other".
-    pub fn ge(&mut self, other: &mut Self) -> Self {
+    pub fn greater_or_equal(&mut self, other: &mut Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
-            return v1.ge(v2).into();
+            return v1.greater_or_equal(v2).into();
         };
-        if let Some(result) = self.get_cached_interval().ge(&other.get_cached_interval()) {
+        if let Some(result) = self
+            .get_cached_interval()
+            .greater_or_equal(&other.get_cached_interval())
+        {
             return result.into();
         }
         Expression::GreaterOrEqual {
@@ -388,13 +391,16 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is "self > other".
-    pub fn gt(&mut self, other: &mut Self) -> Self {
+    pub fn greater_than(&mut self, other: &mut Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
-            return v1.gt(v2).into();
+            return v1.greater_than(v2).into();
         };
-        if let Some(result) = self.get_cached_interval().gt(&other.get_cached_interval()) {
+        if let Some(result) = self
+            .get_cached_interval()
+            .greater_than(&other.get_cached_interval())
+        {
             return result.into();
         }
         Expression::GreaterThan {
@@ -482,13 +488,16 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is "self <= other".
-    pub fn le(&mut self, other: &mut Self) -> Self {
+    pub fn less_or_equal(&mut self, other: &mut Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
-            return v1.le(v2).into();
+            return v1.less_or_equal(v2).into();
         };
-        if let Some(result) = self.get_cached_interval().le(&other.get_cached_interval()) {
+        if let Some(result) = self
+            .get_cached_interval()
+            .less_equal(&other.get_cached_interval())
+        {
             return result.into();
         }
         Expression::LessOrEqual {
@@ -499,13 +508,16 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is self < other
-    pub fn lt(&mut self, other: &mut Self) -> Self {
+    pub fn less_than(&mut self, other: &mut Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
-            return v1.lt(v2).into();
+            return v1.less_than(v2).into();
         };
-        if let Some(result) = self.get_cached_interval().lt(&other.get_cached_interval()) {
+        if let Some(result) = self
+            .get_cached_interval()
+            .less_than(&other.get_cached_interval())
+        {
             return result.into();
         }
         Expression::LessThan {
@@ -901,16 +913,16 @@ impl AbstractDomain {
                 .equals(&right.refine_paths(environment)),
             Expression::GreaterOrEqual { left, right } => left
                 .refine_paths(environment)
-                .ge(&mut right.refine_paths(environment)),
+                .greater_or_equal(&mut right.refine_paths(environment)),
             Expression::GreaterThan { left, right } => left
                 .refine_paths(environment)
-                .gt(&mut right.refine_paths(environment)),
+                .greater_than(&mut right.refine_paths(environment)),
             Expression::LessOrEqual { left, right } => left
                 .refine_paths(environment)
-                .le(&mut right.refine_paths(environment)),
+                .less_or_equal(&mut right.refine_paths(environment)),
             Expression::LessThan { left, right } => left
                 .refine_paths(environment)
-                .lt(&mut right.refine_paths(environment)),
+                .less_than(&mut right.refine_paths(environment)),
             Expression::Mul { left, right } => left
                 .refine_paths(environment)
                 .mul(&right.refine_paths(environment)),
@@ -1025,16 +1037,16 @@ impl AbstractDomain {
                 .equals(&right.refine_parameters(arguments)),
             Expression::GreaterOrEqual { left, right } => left
                 .refine_parameters(arguments)
-                .ge(&mut right.refine_parameters(arguments)),
+                .greater_or_equal(&mut right.refine_parameters(arguments)),
             Expression::GreaterThan { left, right } => left
                 .refine_parameters(arguments)
-                .gt(&mut right.refine_parameters(arguments)),
+                .greater_than(&mut right.refine_parameters(arguments)),
             Expression::LessOrEqual { left, right } => left
                 .refine_parameters(arguments)
-                .le(&mut right.refine_parameters(arguments)),
+                .less_or_equal(&mut right.refine_parameters(arguments)),
             Expression::LessThan { left, right } => left
                 .refine_parameters(arguments)
-                .lt(&mut right.refine_parameters(arguments)),
+                .less_than(&mut right.refine_parameters(arguments)),
             Expression::Mul { left, right } => left
                 .refine_parameters(arguments)
                 .mul(&right.refine_parameters(arguments)),
@@ -1172,16 +1184,16 @@ impl AbstractDomain {
                 .equals(&right.refine_with(path_condition)),
             Expression::GreaterOrEqual { left, right } => left
                 .refine_with(path_condition)
-                .ge(&mut right.refine_with(path_condition)),
+                .greater_or_equal(&mut right.refine_with(path_condition)),
             Expression::GreaterThan { left, right } => left
                 .refine_with(path_condition)
-                .gt(&mut right.refine_with(path_condition)),
+                .greater_than(&mut right.refine_with(path_condition)),
             Expression::LessOrEqual { left, right } => left
                 .refine_with(path_condition)
-                .le(&mut right.refine_with(path_condition)),
+                .less_or_equal(&mut right.refine_with(path_condition)),
             Expression::LessThan { left, right } => left
                 .refine_with(path_condition)
-                .lt(&mut right.refine_with(path_condition)),
+                .less_than(&mut right.refine_with(path_condition)),
             Expression::Mul { left, right } => left
                 .refine_with(path_condition)
                 .mul(&right.refine_with(path_condition)),

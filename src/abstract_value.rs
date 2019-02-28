@@ -20,7 +20,7 @@ use syntax_pos::Span;
 /// When we do know everything about a value, it is concrete rather than
 /// abstract, but is convenient to just use this structure for concrete values
 /// as well, since all operations can be uniform.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Ord, PartialOrd)]
 pub struct AbstractValue {
     /// An abstract value is the result of some expression.
     /// The source location of that expression is stored in provenance.
@@ -259,7 +259,7 @@ impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying ">=" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn ge(
+    pub fn greater_or_equal(
         &mut self,
         other: &mut AbstractValue,
         expression_provenance: Option<Span>,
@@ -270,14 +270,14 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.ge(&mut other.domain),
+            domain: self.domain.greater_or_equal(&mut other.domain),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying ">" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn gt(
+    pub fn greater_than(
         &mut self,
         other: &mut AbstractValue,
         expression_provenance: Option<Span>,
@@ -288,7 +288,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.gt(&mut other.domain),
+            domain: self.domain.greater_than(&mut other.domain),
         }
     }
 
@@ -320,7 +320,7 @@ impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "<=" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn le(
+    pub fn less_or_equal(
         &mut self,
         other: &mut AbstractValue,
         expression_provenance: Option<Span>,
@@ -331,14 +331,14 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.le(&mut other.domain),
+            domain: self.domain.less_or_equal(&mut other.domain),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "lt" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn lt(
+    pub fn less_than(
         &mut self,
         other: &mut AbstractValue,
         expression_provenance: Option<Span>,
@@ -349,7 +349,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.lt(&mut other.domain),
+            domain: self.domain.less_than(&mut other.domain),
         }
     }
 
@@ -659,7 +659,7 @@ pub enum Name {
 /// A path represents a left hand side expression.
 /// When the actual expression is evaluated at runtime it will resolve to a particular memory
 /// location. During analysis it is used to keep track of state changes.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Path {
     /// A dynamically allocated memory block.
     AbstractHeapAddress { ordinal: usize },
@@ -737,7 +737,7 @@ impl Path {
 }
 
 /// The selector denotes a de-referenced item, field, or element, or slice.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PathSelector {
     /// The length of an array.
     ArrayLength,

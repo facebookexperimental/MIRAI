@@ -15,7 +15,7 @@ use utils::is_rust_intrinsic;
 /// that is useful for the abstract interpreter. More importantly, this
 /// value can be serialized to the persistent summary cache.
 
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash, Ord)]
 pub enum ConstantDomain {
     /// The impossible constant. Use this as the result of a partial transfer function.
     Bottom,
@@ -223,7 +223,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self >= other".
-    pub fn ge(&self, other: &Self) -> Self {
+    pub fn greater_or_equal(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
                 f32::from_bits(*val1) >= f32::from_bits(*val2)
@@ -237,7 +237,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self > other".
-    pub fn gt(&self, other: &Self) -> Self {
+    pub fn greater_than(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
                 f32::from_bits(*val1) > f32::from_bits(*val2)
@@ -251,7 +251,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self <= other".
-    pub fn le(&self, other: &Self) -> Self {
+    pub fn less_or_equal(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
                 f32::from_bits(*val1) <= f32::from_bits(*val2)
@@ -265,7 +265,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self < other".
-    pub fn lt(&self, other: &Self) -> Self {
+    pub fn less_than(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
                 f32::from_bits(*val1) < f32::from_bits(*val2)

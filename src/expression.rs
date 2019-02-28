@@ -8,7 +8,7 @@ use abstract_value::Path;
 use constant_domain::ConstantDomain;
 
 /// Closely based on the expressions found in MIR.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Expression {
     /// An expression that represents any possible value
     Top,
@@ -264,7 +264,7 @@ pub enum Expression {
 /// For now, we are only really interested to distinguish between
 /// floating point values and other values, because NaN != NaN.
 /// In the future the other distinctions may be helpful to SMT solvers.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ExpressionType {
     Bool,
     Char,

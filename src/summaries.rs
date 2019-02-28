@@ -95,14 +95,22 @@ pub fn summarize(
     unwind_condition: Option<AbstractValue>,
     unwind_environment: &Environment,
 ) -> Summary {
+    let mut preconditions: Vec<(AbstractValue, String)> = preconditions.to_owned();
     let result = exit_environment.value_at(&Path::LocalVariable { ordinal: 0 });
-    let side_effects = extract_side_effects(exit_environment, argument_count);
-    let unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
+    let mut side_effects = extract_side_effects(exit_environment, argument_count);
+    let mut post_conditions: Vec<AbstractValue> = post_conditions.to_owned();
+    let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
+
+    preconditions.sort();
+    side_effects.sort();
+    post_conditions.sort();
+    unwind_side_effects.sort();
+
     Summary {
-        preconditions: preconditions.to_owned(),
+        preconditions,
         result: result.cloned(),
         side_effects,
-        post_conditions: post_conditions.to_owned(),
+        post_conditions,
         unwind_condition,
         unwind_side_effects,
     }
@@ -155,6 +163,19 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         }
     }
 
+    /// Returns a list of DefIds for all functions in the current crate that are known
+    /// to have used the summary of the function identified by def_id.
+    /// Use this after all functions in a crate have been analyzed.
+    pub fn get_dependents(&mut self, def_id: &DefId) -> &Vec<DefId> {
+        self.dependencies
+            .entry(def_id.clone())
+            .or_insert_with(Vec::new)
+    }
+
+    /// Returns (and caches) a string that uniquely identifies a definition to serve as a key to
+    /// the summary cache, which is a key value store. The string will always be the same as
+    /// long as the definition does not change its name or location, so it can be used to
+    /// transfer information from one compilation to the next, making incremental analysis possible.
     pub fn get_summary_key_for(&mut self, def_id: DefId) -> &String {
         let tcx = self.type_context;
         self.key_cache
@@ -171,7 +192,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             None => {}
             Some(id) => {
                 let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
-                if dependents.contains(&id) {
+                if !dependents.contains(&id) {
                     dependents.push(id);
                 }
             }
@@ -199,19 +220,14 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         }
     }
 
-    /// Sets or updates the cache so that from now on def_id maps to summary.
-    /// Returns a list of DefIds that need to be re-analyzed because they used
-    /// the previous summary corresponding to def_id.
-    /// This operation amounts to an expensive no-op if the summary is identical to the
-    /// one that is already in the cache. Avoiding this is the caller's responsibility.
-    pub fn set_summary_for(&mut self, def_id: DefId, summary: Summary) -> &Vec<DefId> {
+    /// Sets or updates the cache so that from now on def_id maps to the given summary.
+    pub fn set_summary_for(&mut self, def_id: DefId, summary: Summary) -> Option<Summary> {
         let persistent_key = utils::summary_key_str(self.type_context, def_id);
         let serialized_summary = bincode::serialize(&summary).unwrap();
         let result = self.db.set(persistent_key.as_bytes(), serialized_summary);
         if result.is_err() {
             println!("unable to set key in summary database: {:?}", result);
         }
-        self.cache.insert(def_id, summary);
-        self.dependencies.entry(def_id).or_insert_with(Vec::new)
+        self.cache.insert(def_id, summary)
     }
 }
