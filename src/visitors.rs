@@ -172,7 +172,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
-    pub fn visit_body(&mut self) {
+    /// Returns true if the newly computed summary is different from the summary (if any)
+    /// that is already in the cache.
+    pub fn visit_body(&mut self) -> Option<Summary> {
         debug!("visit_body({:?})", self.def_id);
         // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
         let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
@@ -259,6 +261,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
             }
             iteration_count += 1;
+            if iteration_count > 50 {
+                println!("fixed point loop diverged");
+                break;
+            }
         }
 
         // Now traverse the blocks again, doing checks and emitting diagnostics.
@@ -285,7 +291,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             self.unwind_condition.clone(),
             &self.unwind_environment,
         );
-        self.summary_cache.set_summary_for(self.def_id, summary);
+        let changed = {
+            let old_summary = self.summary_cache.get_summary_for(self.def_id, None);
+            summary != *old_summary
+        };
+        if changed {
+            self.summary_cache.set_summary_for(self.def_id, summary)
+        } else {
+            None
+        }
     }
 
     /// Use the visitor to compute the state corresponding to promoted constants.
@@ -1380,10 +1394,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::BinOp::BitXor => left.bit_xor(&right, Some(self.current_span)),
             mir::BinOp::Div => left.div(&right, Some(self.current_span)),
             mir::BinOp::Eq => left.equals(&right, Some(self.current_span)),
-            mir::BinOp::Ge => left.ge(&mut right, Some(self.current_span)),
-            mir::BinOp::Gt => left.gt(&mut right, Some(self.current_span)),
-            mir::BinOp::Le => left.le(&mut right, Some(self.current_span)),
-            mir::BinOp::Lt => left.lt(&mut right, Some(self.current_span)),
+            mir::BinOp::Ge => left.greater_or_equal(&mut right, Some(self.current_span)),
+            mir::BinOp::Gt => left.greater_than(&mut right, Some(self.current_span)),
+            mir::BinOp::Le => left.less_or_equal(&mut right, Some(self.current_span)),
+            mir::BinOp::Lt => left.less_than(&mut right, Some(self.current_span)),
             mir::BinOp::Mul => left.mul(&right, Some(self.current_span)),
             mir::BinOp::Ne => left.not_equals(&right, Some(self.current_span)),
             mir::BinOp::Offset => left.offset(&right, Some(self.current_span)),
@@ -1718,10 +1732,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         }
                         _ => unreachable!(),
                     },
-                    _ => &ConstantDomain::Unimplemented,
+                    _ => {
+                        info!("unimplemented constant {:?}", val);
+                        &ConstantDomain::Unimplemented
+                    }
                 }
             }
-            _ => &ConstantDomain::Unimplemented,
+            _ => {
+                info!("unimplemented literal {:?}", literal);
+                &ConstantDomain::Unimplemented
+            }
         }
     }
 

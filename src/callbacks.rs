@@ -5,12 +5,16 @@
 #![allow(clippy::borrowed_box)]
 
 use constant_domain::ConstantValueCache;
+use k_limits;
+use rustc::hir::def_id::DefId;
 use rustc::session::config::{self, ErrorOutputType, Input};
 use rustc::session::Session;
 use rustc_codegen_utils::codegen_backend::CodegenBackend;
 use rustc_driver::{driver, Compilation, CompilerCalls, RustcDefaultCalls};
 use rustc_metadata::cstore::CStore;
 use smt_solver::SolverStub;
+use std::collections::{HashMap, HashSet};
+use std::iter::FromIterator;
 use std::path::PathBuf;
 use summaries;
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
@@ -159,7 +163,6 @@ fn after_analysis(
     emit_diagnostic: fn(&mut DiagnosticBuilder, &mut Vec<Diagnostic>) -> (),
     output_directory: &mut PathBuf,
 ) {
-    let mut buffered_diagnostics: Vec<Diagnostic> = vec![];
     let session = state.session;
     let tcx = state.tcx.unwrap();
     output_directory.set_file_name(".summary_store");
@@ -169,28 +172,78 @@ fn after_analysis(
     let mut persistent_summary_cache =
         summaries::PersistentSummaryCache::new(&tcx, summary_store_path);
     let mut constant_value_cache = ConstantValueCache::default();
-    for def_id in tcx.body_owners() {
-        {
-            let name = persistent_summary_cache.get_summary_key_for(def_id);
-            info!("analyzing({:?})", name);
+    let mut defs_to_analyze: HashSet<DefId> = HashSet::from_iter(tcx.body_owners());
+    let mut defs_to_reanalyze: HashSet<DefId> = HashSet::new();
+    let mut defs_to_check: HashSet<DefId> = HashSet::new();
+    let mut diagnostics_for: HashMap<DefId, Vec<Diagnostic>> = HashMap::new();
+    let mut not_done = true;
+    let mut iteration_count = 0;
+    while not_done && iteration_count < k_limits::MAX_OUTER_FIXPOINT_ITERATIONS {
+        for def_id in tcx.body_owners() {
+            let analyze_it = defs_to_analyze.contains(&def_id);
+            let check_it = !analyze_it && defs_to_check.contains(&def_id);
+            if !analyze_it && !check_it {
+                continue;
+            }
+            not_done = true;
+            {
+                let name = persistent_summary_cache.get_summary_key_for(def_id);
+                if check_it {
+                    info!("checking({:?})", name)
+                } else if iteration_count == 0 {
+                    info!("analyzing({:?})", name);
+                } else {
+                    info!("reanalyzing({:?})", name);
+                }
+            }
+            // By this time all analyses have been carried out, so it should be safe to borrow this now.
+            let mut buffered_diagnostics: Vec<Diagnostic> = vec![];
+            let old_summary_if_changed = {
+                let mir = tcx.optimized_mir(def_id);
+                // todo: #3 provide a helper that returns the solver as specified by a compiler switch.
+                let mut smt_solver = SolverStub::default();
+                let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
+                    buffered_diagnostics: &mut buffered_diagnostics,
+                    emit_diagnostic,
+                    session,
+                    tcx,
+                    def_id,
+                    mir,
+                    summary_cache: &mut persistent_summary_cache,
+                    constant_value_cache: &mut constant_value_cache,
+                    smt_solver: &mut smt_solver,
+                });
+                mir_visitor.visit_body()
+            };
+            diagnostics_for.insert(def_id, buffered_diagnostics);
+            if let Some(old_summary) = old_summary_if_changed {
+                // Bodies should not get checked before their summaries have reached a fixed point.
+                if check_it {
+                    info!("body summary changed after it supposedly reached a fixed point");
+                    info!("*********** old summary: {:?}", old_summary);
+                    info!(
+                        "*********** new summary: {:?}",
+                        persistent_summary_cache.get_summary_for(def_id, None)
+                    );
+                }
+                for dep_id in persistent_summary_cache.get_dependents(&def_id).iter() {
+                    defs_to_reanalyze.insert(dep_id.clone());
+                }
+            } else {
+                // Provided that no other body that def_id depends on has changed in this round,
+                // the summary for def_id should now be at a fixed point.
+                defs_to_check.insert(def_id);
+            }
         }
-        // By this time all analyses have been carried out, so it should be safe to borrow this now.
-        let mir = tcx.optimized_mir(def_id);
-        // todo: #3 provide a helper that returns the solver as specified by a compiler switch.
-        let mut smt_solver = SolverStub::default();
-        let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
-            buffered_diagnostics: &mut buffered_diagnostics,
-            emit_diagnostic,
-            session,
-            tcx,
-            def_id,
-            mir,
-            summary_cache: &mut persistent_summary_cache,
-            constant_value_cache: &mut constant_value_cache,
-            smt_solver: &mut smt_solver,
-        });
-        mir_visitor.visit_body();
+        defs_to_analyze = defs_to_reanalyze;
+        defs_to_reanalyze = HashSet::new();
+        iteration_count += 1;
+        info!("outer fixed point iterations {}", iteration_count);
     }
-    consume_buffered_diagnostics(&buffered_diagnostics);
+    let mut all_diagnostics: Vec<Diagnostic> = vec![];
+    for (_, mut diagnostics) in diagnostics_for.drain() {
+        all_diagnostics.append(&mut diagnostics);
+    }
+    consume_buffered_diagnostics(&all_diagnostics);
     info!("done with analysis");
 }

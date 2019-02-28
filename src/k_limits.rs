@@ -8,3 +8,6 @@
 
 /// Prevents the fixed point loop from creating ever more new abstract values of type Expression::Variable.
 pub const MAX_PATH_LENGTH: usize = 10;
+
+/// The point at which diverging summaries experience exponential blowup right now.
+pub const MAX_OUTER_FIXPOINT_ITERATIONS: usize = 3;
