@@ -10,6 +10,7 @@ use rustc::ty::TyCtxt;
 use sled::Db;
 use std::collections::HashMap;
 use std::ops::Deref;
+use utils;
 
 /// A summary is a declarative abstract specification of what a function does.
 /// This is calculated once per function and is used by callers of the function.
@@ -127,43 +128,6 @@ fn extract_side_effects(env: &Environment, argument_count: usize) -> Vec<(Path, 
     result
 }
 
-/// Constructs a string that uniquely identifies a definition to serve as a key to
-/// the summary cache, which is a key value store. The string will always be the same as
-/// long as the definition does not change its name or location, so it can be used to
-/// transfer information from one compilation to the next, making incremental analysis possible.
-pub fn summary_key_str(tcx: &TyCtxt, def_id: DefId) -> String {
-    let crate_name = if def_id.is_local() {
-        tcx.crate_name.as_interned_str().as_str().get()
-    } else {
-        // This is both ugly and probably brittle, but I can't find any other
-        // way to retrieve the crate name from a def_id that is not local.
-        // tcx.crate_data_as_rc_any returns an untracked value, which is potentially problematic
-        // as per the comments on the function:
-        // "Note that this is *untracked* and should only be used within the query
-        // system if the result is otherwise tracked through queries"
-        // For now, this seems OK since we are only using the crate name.
-        // Of course, should a crate name change in an incremental scenario this
-        // is going to be the least of our worries.
-        let cdata = tcx.crate_data_as_rc_any(def_id.krate);
-        let cdata = cdata
-            .downcast_ref::<rustc_metadata::cstore::CrateMetadata>()
-            .unwrap();
-        cdata.name.as_str().get()
-    };
-    let mut name = String::from(crate_name);
-    for component in &tcx.def_path(def_id).data {
-        name.push('.');
-        let cn = component.data.as_interned_str().as_str().get();
-        name.push_str(cn);
-        if component.disambiguator != 0 {
-            name.push(':');
-            let da = component.disambiguator.to_string();
-            name.push_str(da.as_str());
-        }
-    }
-    name
-}
-
 /// A persistent map from DefId to Summary.
 /// Also tracks which definitions depend on (use) any particular Summary.
 pub struct PersistentSummaryCache<'a, 'tcx: 'a> {
@@ -195,7 +159,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         let tcx = self.type_context;
         self.key_cache
             .entry(def_id)
-            .or_insert_with(|| summary_key_str(tcx, def_id))
+            .or_insert_with(|| utils::summary_key_str(tcx, def_id))
     }
 
     /// Returns the cached summary corresponding to def_id, or creates a default for it.
@@ -215,7 +179,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         let tcx = self.type_context;
         let db = &self.db;
         self.cache.entry(def_id).or_insert_with(|| {
-            let persistent_key = summary_key_str(tcx, def_id);
+            let persistent_key = utils::summary_key_str(tcx, def_id);
             Self::get_persistent_summary_for_db(db, &persistent_key)
         })
     }
@@ -241,7 +205,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// This operation amounts to an expensive no-op if the summary is identical to the
     /// one that is already in the cache. Avoiding this is the caller's responsibility.
     pub fn set_summary_for(&mut self, def_id: DefId, summary: Summary) -> &Vec<DefId> {
-        let persistent_key = summary_key_str(self.type_context, def_id);
+        let persistent_key = utils::summary_key_str(self.type_context, def_id);
         let serialized_summary = bincode::serialize(&summary).unwrap();
         let result = self.db.set(persistent_key.as_bytes(), serialized_summary);
         if result.is_err() {

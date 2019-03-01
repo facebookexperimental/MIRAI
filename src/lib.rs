@@ -15,7 +15,6 @@
 #![feature(rustc_private)]
 #![feature(box_syntax)]
 #![feature(const_vec_new)]
-#![feature(try_from)]
 
 extern crate getopts;
 extern crate rustc;

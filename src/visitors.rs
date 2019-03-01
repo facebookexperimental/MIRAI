@@ -20,7 +20,7 @@ use summaries;
 use summaries::{PersistentSummaryCache, Summary};
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax_pos;
-use utils::is_public;
+use utils::{self, is_public};
 
 pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b> {
     /// A place where diagnostic messages can be buffered by the test harness.
@@ -1677,7 +1677,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> MirVisitor<'a, 'b, 'tcx> {
             },
             mir::Place::Static(boxed_static) => {
                 let def_id = boxed_static.def_id;
-                let name = summaries::summary_key_str(&self.tcx, def_id);
+                let name = utils::summary_key_str(&self.tcx, def_id);
                 Path::StaticVariable {
                     def_id: Some(def_id),
                     summary_cache_key: name,

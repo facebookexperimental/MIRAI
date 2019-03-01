@@ -15,7 +15,7 @@ before_script:
 # install formatter
 - rustup component add rustfmt-preview
 # install linter
- rustup component add clippy-preview
+- rustup component add clippy-preview
 # install code coverage tool
 - RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install --force cargo-tarpaulin || true
 
