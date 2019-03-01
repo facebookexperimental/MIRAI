@@ -679,6 +679,8 @@ pub enum Path {
         def_id: Option<DefId>,
         /// The key to use when retrieving a summary for the static variable from the summary cache.
         summary_cache_key: String,
+        /// The type to use when the static variable value is not yet available.
+        expression_type: ExpressionType,
     },
 
     /// The ordinal is an index into a method level table of MIR bodies.

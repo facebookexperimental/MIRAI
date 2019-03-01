@@ -124,6 +124,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             if let Path::StaticVariable {
                 def_id,
                 ref summary_cache_key,
+                ref expression_type,
             } = path
             {
                 let mut summary;
@@ -136,7 +137,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         .get_persistent_summary_for(summary_cache_key);
                     &summary
                 };
-                summary.result.clone().unwrap_or(abstract_value::TOP)
+                summary.result.clone().unwrap_or_else(|| {
+                    Expression::Variable {
+                        path: box path.clone(),
+                        var_type: expression_type.clone(),
+                    }
+                    .into()
+                })
             } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
                 Expression::Variable {
                     path: box path.clone(),
@@ -1517,15 +1524,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             "default visit_discriminant(path: {:?}, place: {:?})",
             path, place
         );
-        let adt_path = self.visit_place(place);
-        let top = abstract_value::TOP;
-        let adt_discriminant_value = self
-            .current_environment
-            .value_at(&adt_path)
-            .unwrap_or(&top)
-            .clone();
-        self.current_environment
-            .update_value_at(path, adt_discriminant_value);
+        let adtd_path = self.visit_place(place);
+        let adtd_type = self.get_place_type(place);
+        let adtd_value = self.lookup_path_and_refine_result(adtd_path, adtd_type);
+        self.current_environment.update_value_at(path, adtd_value);
     }
 
     /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.
@@ -1779,6 +1781,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     Path::StaticVariable {
                         def_id: Some(def_id),
                         summary_cache_key: name,
+                        expression_type: self.get_place_type(place),
                     }
                 }
                 mir::PlaceBase::Promoted(boxed_promoted) => {
