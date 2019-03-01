@@ -3,14 +3,15 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use abstract_value::{AbstractValue, Path};
-use environment::Environment;
+use crate::abstract_value::{AbstractValue, Path};
+use crate::environment::Environment;
+use crate::utils;
+
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use sled::Db;
 use std::collections::HashMap;
 use std::ops::Deref;
-use utils;
 
 /// A summary is a declarative abstract specification of what a function does.
 /// This is calculated once per function and is used by callers of the function.

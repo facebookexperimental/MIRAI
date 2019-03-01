@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use expression::Expression;
+use crate::expression::Expression;
 
 /// The result of using the solver to solve an expression.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
@@ -19,10 +19,10 @@ pub enum SmtResult {
 /// The functionality that a solver must expose in order for MIRAI to use it.
 pub trait SmtSolver<SmtExpressionType> {
     /// Returns a string representation of the given expression for use in debugging.
-    fn as_debug_string(&self, &SmtExpressionType) -> String;
+    fn as_debug_string(&self, expression: &SmtExpressionType) -> String;
 
     /// Adds the given expression to the current context.
-    fn assert(&mut self, &SmtExpressionType);
+    fn assert(&mut self, expression: &SmtExpressionType);
 
     /// Destroy the current context and restore the containing context as current.
     fn backtrack(&mut self);

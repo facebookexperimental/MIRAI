@@ -3,10 +3,11 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-use abstract_domains::{self, AbstractDomain};
-use constant_domain::ConstantDomain;
-use environment::Environment;
-use expression::{Expression, ExpressionType};
+use crate::abstract_domains::{self, AbstractDomain};
+use crate::constant_domain::ConstantDomain;
+use crate::environment::Environment;
+use crate::expression::{Expression, ExpressionType};
+
 use rustc::hir::def_id::DefId;
 use std::fmt::{Debug, Formatter, Result};
 use std::hash::{Hash, Hasher};
