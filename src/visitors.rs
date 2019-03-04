@@ -715,6 +715,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .refine_parameters(actual_args)
                 .refine_paths(&mut self.current_environment)
                 .refine_with(&self.current_environment.entry_condition, self.current_span);
+            //todo: if refined_precondition is a Variable, look it up
+            // or perhaps pass in &mut self.current_environment
             let (refined_precondition_as_bool, entry_cond_as_bool) =
                 self.check_condition_value_and_reachability(&refined_precondition);
 
@@ -924,6 +926,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         {
             let tpath = path.replace_root(&source_path, target_path.clone());
             let rvalue = value.refine_parameters(arguments);
+            //todo: if refined_precondition is a Variable, look it up
             self.current_environment.update_value_at(tpath, rvalue);
         }
     }
@@ -1132,10 +1135,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     user_ty,
                     literal,
                 } = constant.borrow();
-                let const_value: AbstractValue =
-                    self.visit_constant(ty, *user_ty, literal).clone().into();
-                self.current_environment
-                    .update_value_at(path, const_value.with_provenance(*span));
+                let const_value: AbstractValue = self.visit_constant(ty, *user_ty, literal);
+                if let Expression::AbstractHeapAddress(ordinal) = const_value.domain.expression {
+                    let rtype = ExpressionType::NonPrimitive;
+                    let rpath = Path::AbstractHeapAddress { ordinal };
+                    self.copy_or_move_elements(path, rpath, rtype, false);
+                } else {
+                    self.current_environment
+                        .update_value_at(path, const_value.with_provenance(*span));
+                }
             }
         };
     }
@@ -1347,7 +1355,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             // We only get here if "-Z mir-opt-level=0" was specified.
             // todo: #52 Add a way to run an integration test with a non default compiler option.
             let usize_type = self.tcx.types.usize;
-            self.visit_constant(usize_type, None, len).clone().into()
+            self.visit_constant(usize_type, None, len)
         } else {
             let value_path = self.visit_place(place);
             self.get_len(value_path)
@@ -1377,8 +1385,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             "default visit_cast(path: {:?}, cast_kind: {:?}, operand: {:?}, ty: {:?})",
             path, cast_kind, operand, ty
         );
-        let value = self.visit_operand(operand);
-        self.current_environment.update_value_at(path, value);
+        self.visit_use(path, operand)
     }
 
     /// Apply the given binary operator to the two operands and assign result to path.
@@ -1595,8 +1602,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     user_ty,
                     literal,
                 } = constant.borrow();
-                let const_value: AbstractValue =
-                    self.visit_constant(ty, *user_ty, literal).clone().into();
+                let const_value: AbstractValue = self.visit_constant(ty, *user_ty, literal);
                 self.current_environment
                     .update_value_at(target_path, const_value.with_provenance(*span));
             }
@@ -1617,8 +1623,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     user_ty,
                     literal,
                 } = constant.borrow();
-                let const_value = self.visit_constant(ty, *user_ty, literal).clone();
-                (Expression::CompileTimeConstant(const_value), *span)
+                let const_value = self.visit_constant(ty, *user_ty, literal);
+                (const_value.domain.expression, *span)
             }
         };
         AbstractValue {
@@ -1656,57 +1662,74 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         ty: Ty,
         user_ty: Option<UserTypeAnnotationIndex>,
         literal: &LazyConst,
-    ) -> &ConstantDomain {
-        use rustc::mir::interpret::ConstValue;
-        use rustc::mir::interpret::Scalar;
+    ) -> AbstractValue {
+        use rustc::mir::interpret::{AllocKind, ConstValue, Scalar};
         debug!(
             "default visit_constant(ty: {:?}, user_ty: {:?}, literal: {:?})",
             ty, user_ty, literal
         );
         match literal {
-            LazyConst::Evaluated(Const { val, .. }) => {
-                debug!("sty: {:?}", ty.sty);
+            LazyConst::Unevaluated(def_id, ..) => {
+                let name = utils::summary_key_str(&self.tcx, *def_id);
+                let expression_type: ExpressionType = ExpressionType::from(&ty.sty);
+                let path = Path::StaticVariable {
+                    def_id: Some(*def_id),
+                    summary_cache_key: name,
+                    expression_type: expression_type.clone(),
+                };
+                self.lookup_path_and_refine_result(path, expression_type)
+            }
+            LazyConst::Evaluated(Const { val, ty }) => {
+                let result;
                 match ty.sty {
-                    TyKind::Bool => match val {
-                        ConstValue::Scalar(Scalar::Bits { bits, .. }) => {
-                            if *bits == 0 {
-                                &ConstantDomain::False
-                            } else {
-                                &ConstantDomain::True
+                    TyKind::Bool => {
+                        result = match val {
+                            ConstValue::Scalar(Scalar::Bits { bits, .. }) => {
+                                if *bits == 0 {
+                                    &ConstantDomain::False
+                                } else {
+                                    &ConstantDomain::True
+                                }
                             }
-                        }
-                        _ => unreachable!(),
-                    },
+                            _ => unreachable!(),
+                        };
+                    }
                     TyKind::Char => {
-                        if let ConstValue::Scalar(Scalar::Bits { bits, .. }) = val {
+                        result = if let ConstValue::Scalar(Scalar::Bits { bits, .. }) = val {
                             &mut self
                                 .constant_value_cache
                                 .get_char_for(char::try_from(*bits as u32).unwrap())
                         } else {
                             unreachable!()
-                        }
+                        };
                     }
-                    TyKind::Float(..) => match val {
-                        ConstValue::Scalar(Scalar::Bits { bits, size }) => match *size {
-                            4 => &mut self.constant_value_cache.get_f32_for(*bits as u32),
-                            _ => &mut self.constant_value_cache.get_f64_for(*bits as u64),
-                        },
-                        _ => unreachable!(),
-                    },
-                    TyKind::FnDef(def_id, ..) => self.visit_function_reference(def_id),
-                    TyKind::Int(..) => match val {
-                        ConstValue::Scalar(Scalar::Bits { bits, size }) => {
-                            let value: i128 = match *size {
-                                1 => i128::from(*bits as i8),
-                                2 => i128::from(*bits as i16),
-                                4 => i128::from(*bits as i32),
-                                8 => i128::from(*bits as i64),
-                                _ => *bits as i128,
-                            };
-                            &mut self.constant_value_cache.get_i128_for(value)
-                        }
-                        _ => unreachable!(),
-                    },
+                    TyKind::Float(..) => {
+                        result = match val {
+                            ConstValue::Scalar(Scalar::Bits { bits, size }) => match *size {
+                                4 => &mut self.constant_value_cache.get_f32_for(*bits as u32),
+                                _ => &mut self.constant_value_cache.get_f64_for(*bits as u64),
+                            },
+                            _ => unreachable!(),
+                        };
+                    }
+                    TyKind::FnDef(def_id, ..) => {
+                        result = self.visit_function_reference(def_id);
+                    }
+                    TyKind::Int(..) => {
+                        result = match val {
+                            ConstValue::Scalar(Scalar::Bits { bits, size }) => {
+                                let value: i128 = match *size {
+                                    1 => i128::from(*bits as i8),
+                                    2 => i128::from(*bits as i16),
+                                    4 => i128::from(*bits as i32),
+                                    8 => i128::from(*bits as i64),
+                                    _ => *bits as i128,
+                                };
+                                &mut self.constant_value_cache.get_i128_for(value)
+                            }
+                            _ => unreachable!(),
+                        };
+                    }
                     TyKind::Ref(
                         _,
                         &rustc::ty::TyS {
@@ -1714,38 +1737,297 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         },
                         _,
                     ) => {
-                        if let ConstValue::Slice(ptr, len) = val {
+                        result = if let ConstValue::Slice(ptr, len) = val {
                             if let Scalar::Ptr(ptr) = ptr {
                                 let alloc = self.tcx.alloc_map.lock().get(ptr.alloc_id);
-                                if let Some(mir::interpret::AllocKind::Memory(alloc)) = alloc {
+                                if let Some(AllocKind::Memory(alloc)) = alloc {
                                     let slice = &alloc.bytes[(ptr.offset.bytes() as usize)..]
                                         [..(*len as usize)];
                                     let s = std::str::from_utf8(slice).expect("non utf8 str");
-                                    return &mut self.constant_value_cache.get_string_for(s);
+                                    &mut self.constant_value_cache.get_string_for(s)
                                 } else {
-                                    panic!("pointer to erroneous constant {:?}, {:?}", ptr, len)
+                                    panic!("pointer to erroneous constant {:?}, {:?}", ptr, len);
                                 }
+                            } else {
+                                unimplemented!("unsupported ConstValue::Slice(ptr, ..): {:?}", ptr);
                             }
+                        } else {
+                            unimplemented!("unsupported val of type Ref: {:?}", val);
                         };
-                        unreachable!()
                     }
-                    TyKind::Uint(..) => match val {
-                        ConstValue::Scalar(Scalar::Bits { bits, .. }) => {
-                            &mut self.constant_value_cache.get_u128_for(*bits)
-                        }
-                        _ => unreachable!(),
-                    },
+                    TyKind::Ref(
+                        _,
+                        &rustc::ty::TyS {
+                            sty: TyKind::Array(elem_type, length),
+                            ..
+                        },
+                        _,
+                    ) => {
+                        if let LazyConst::Evaluated(Const {
+                            val: ConstValue::Scalar(Scalar::Bits { bits, .. }, ..),
+                            ..
+                        }) = length
+                        {
+                            let len = *bits;
+                            if let ConstValue::Scalar(sc) = val {
+                                if let Scalar::Ptr(ptr) = sc {
+                                    let alloc = self.tcx.alloc_map.lock().get(ptr.alloc_id);
+                                    if let Some(AllocKind::Memory(alloc)) = alloc {
+                                        let e_type = ExpressionType::from(&elem_type.sty);
+                                        if e_type != ExpressionType::U8 {
+                                            info!(
+                                                "Untested case of ConstValue::Scalar found at {:?}",
+                                                self.current_span
+                                            );
+                                        }
+                                        return self.deconstruct_constant_array(
+                                            &alloc.bytes,
+                                            e_type,
+                                            Some(len),
+                                        );
+                                    } else {
+                                        unimplemented!(
+                                            "unsupported alloc_id {:?} returned: {:?}",
+                                            ptr.alloc_id,
+                                            alloc
+                                        );
+                                    }
+                                } else {
+                                    unimplemented!("unsupported Scalar: {:?}", sc);
+                                }
+                            } else {
+                                unimplemented!("unsupported constant value: {:?}", val);
+                            }
+                        } else {
+                            unimplemented!("unsupported array length: {:?}", length);
+                        };
+                    }
+                    TyKind::Ref(
+                        _,
+                        &rustc::ty::TyS {
+                            sty: TyKind::Slice(elem_type),
+                            ..
+                        },
+                        _,
+                    ) => {
+                        if let ConstValue::Slice(ptr, len) = val {
+                            if let Scalar::Ptr(ptr) = ptr {
+                                let alloc = self.tcx.alloc_map.lock().get(ptr.alloc_id);
+                                if let Some(AllocKind::Memory(alloc)) = alloc {
+                                    let e_type = ExpressionType::from(&elem_type.sty);
+                                    return self.deconstruct_constant_array(
+                                        &alloc.bytes,
+                                        e_type,
+                                        None,
+                                    );
+                                } else {
+                                    panic!("pointer to erroneous constant {:?}, {:?}", ptr, len);
+                                }
+                            } else {
+                                unimplemented!("unsupported ConstValue::Slice(ptr, ..): {:?}", ptr);
+                            }
+                        } else {
+                            unimplemented!("unsupported val of type Ref: {:?}", val);
+                        };
+                    }
+                    TyKind::Uint(..) => {
+                        result = match val {
+                            ConstValue::Scalar(Scalar::Bits { bits, .. }) => {
+                                &mut self.constant_value_cache.get_u128_for(*bits)
+                            }
+                            _ => unreachable!(),
+                        };
+                    }
                     _ => {
-                        info!("unimplemented constant {:?}", val);
-                        &ConstantDomain::Unimplemented
+                        println!("span: {:?}", self.current_span);
+                        println!("unimplemented constant {:?} of type {:?}", val, ty.sty);
+                        result = &ConstantDomain::Unimplemented;
                     }
-                }
-            }
-            _ => {
-                info!("unimplemented literal {:?}", literal);
-                &ConstantDomain::Unimplemented
+                };
+                result.clone().into()
             }
         }
+    }
+
+    /// Deserializes the given bytes into a constant array of the given element type and then
+    /// stores the array elements in the environment with a path for each element, rooted
+    /// in a new abstract heap address that represents the array itself and which is returned
+    /// as the result of this function. The caller should then copy the path tree to the target
+    /// root known to the caller. Since the array is a compile time constant, there is no storage
+    /// that needs to get freed or moved.
+    ///
+    /// The optional length is available as a separate compile time constant in the case of byte string
+    /// constants. It is passed in here to check against the length of the bytes array as a safety check.
+    fn deconstruct_constant_array(
+        &mut self,
+        bytes: &[u8],
+        elem_type: ExpressionType,
+        len: Option<u128>,
+    ) -> AbstractValue {
+        let array_value = self.get_new_heap_address();
+        let ordinal =
+            if let Expression::AbstractHeapAddress(ordinal) = array_value.domain.expression {
+                ordinal
+            } else {
+                unreachable!()
+            };
+        let array_path = Path::AbstractHeapAddress { ordinal };
+        let mut last_index: u128 = 0;
+        for (i, operand) in self
+            .get_element_values(bytes, elem_type, len)
+            .into_iter()
+            .enumerate()
+        {
+            last_index = i as u128;
+            let index_value = self
+                .constant_value_cache
+                .get_u128_for(last_index)
+                .clone()
+                .into();
+            let selector = box PathSelector::Index(box index_value);
+            let index_path = Path::QualifiedPath {
+                qualifier: box array_path.clone(),
+                selector,
+                length: array_path.path_length() + 1,
+            };
+            self.current_environment
+                .update_value_at(index_path, operand);
+        }
+        let length_path = Path::QualifiedPath {
+            qualifier: box array_path.clone(),
+            selector: box PathSelector::ArrayLength,
+            length: array_path.path_length() + 1,
+        };
+        let length_value = self
+            .constant_value_cache
+            .get_u128_for(last_index + 1)
+            .clone()
+            .into();
+        self.current_environment
+            .update_value_at(length_path, length_value);
+        array_value
+    }
+
+    /// A helper for deconstruct_constant_array. See its comments.
+    /// This does the deserialization part, whereas deconstruct_constant_array does the environment
+    /// updates.
+    fn get_element_values(
+        &mut self,
+        bytes: &[u8],
+        elem_type: ExpressionType,
+        len: Option<u128>,
+    ) -> Vec<AbstractValue> {
+        let is_signed_type = elem_type.is_signed_integer();
+        let bytes_per_elem = (elem_type.bit_length() / 8) as usize;
+        debug_assert!(
+            bytes_per_elem == 1
+                || bytes_per_elem == 2
+                || bytes_per_elem == 4
+                || bytes_per_elem == 8
+                || bytes_per_elem == 16
+        );
+        if let Some(len) = len {
+            if (len * (bytes_per_elem as u128)) != u128::try_from(bytes.len()).unwrap() {
+                unimplemented!()
+            }
+        }
+        let mut result = vec![];
+        for i in 0..bytes.len() / bytes_per_elem {
+            let j = i * bytes_per_elem;
+            if is_signed_type {
+                result.push(
+                    self.constant_value_cache
+                        .get_i128_for(match bytes_per_elem {
+                            1 => i128::from(i8::from_le_bytes([bytes[j]])),
+                            2 => i128::from(i16::from_le_bytes([bytes[j], bytes[j + 1]])),
+                            4 => i128::from(i32::from_le_bytes([
+                                bytes[j],
+                                bytes[j + 1],
+                                bytes[j + 2],
+                                bytes[j + 3],
+                            ])),
+                            8 => i128::from(i64::from_le_bytes([
+                                bytes[j],
+                                bytes[j + 1],
+                                bytes[j + 2],
+                                bytes[j + 3],
+                                bytes[j + 4],
+                                bytes[j + 5],
+                                bytes[j + 6],
+                                bytes[j + 7],
+                            ])),
+                            16 => i128::from_le_bytes([
+                                bytes[j],
+                                bytes[j + 1],
+                                bytes[j + 2],
+                                bytes[j + 3],
+                                bytes[j + 4],
+                                bytes[j + 5],
+                                bytes[j + 6],
+                                bytes[j + 7],
+                                bytes[j + 8],
+                                bytes[j + 9],
+                                bytes[j + 10],
+                                bytes[j + 11],
+                                bytes[j + 12],
+                                bytes[j + 13],
+                                bytes[j + 14],
+                                bytes[j + 15],
+                            ]),
+                            _ => unreachable!(),
+                        })
+                        .clone()
+                        .into(),
+                );
+            } else {
+                result.push(
+                    self.constant_value_cache
+                        .get_u128_for(match bytes_per_elem {
+                            1 => u128::from(u8::from_le_bytes([bytes[j]])),
+                            2 => u128::from(u16::from_le_bytes([bytes[j], bytes[j + 1]])),
+                            4 => u128::from(u32::from_le_bytes([
+                                bytes[j],
+                                bytes[j + 1],
+                                bytes[j + 2],
+                                bytes[j + 3],
+                            ])),
+                            8 => u128::from(u64::from_le_bytes([
+                                bytes[j],
+                                bytes[j + 1],
+                                bytes[j + 2],
+                                bytes[j + 3],
+                                bytes[j + 4],
+                                bytes[j + 5],
+                                bytes[j + 6],
+                                bytes[j + 7],
+                            ])),
+                            16 => u128::from_le_bytes([
+                                bytes[j],
+                                bytes[j + 1],
+                                bytes[j + 2],
+                                bytes[j + 3],
+                                bytes[j + 4],
+                                bytes[j + 5],
+                                bytes[j + 6],
+                                bytes[j + 7],
+                                bytes[j + 8],
+                                bytes[j + 9],
+                                bytes[j + 10],
+                                bytes[j + 11],
+                                bytes[j + 12],
+                                bytes[j + 13],
+                                bytes[j + 14],
+                                bytes[j + 15],
+                            ]),
+                            _ => unreachable!(),
+                        })
+                        .clone()
+                        .into(),
+                );
+            }
+        }
+        debug!("{:?}", result);
+        result
     }
 
     /// The anonymous type of a function declaration/definition. Each
@@ -1882,26 +2164,36 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if let mir::Place::Projection(boxed_place_projection) = place {
             let base_ty = self.get_rustc_place_type(&boxed_place_projection.base);
             match boxed_place_projection.elem {
-                mir::ProjectionElem::Deref => {
-                    debug!("base_ty: {:?}", base_ty);
-                    match base_ty {
-                        TyKind::Adt(..) => base_ty,
-                        TyKind::RawPtr(ty_and_mut) => &ty_and_mut.ty.sty,
-                        TyKind::Ref(_, ty, _) => &ty.sty,
-                        _ => unreachable!(),
+                mir::ProjectionElem::Deref => match base_ty {
+                    TyKind::Adt(..) => base_ty,
+                    TyKind::RawPtr(ty_and_mut) => &ty_and_mut.ty.sty,
+                    TyKind::Ref(_, ty, _) => &ty.sty,
+                    _ => {
+                        println!("span: {:?}", self.current_span);
+                        println!("elem: {:?}", boxed_place_projection.elem);
+                        println!("base_ty: {:?}", base_ty);
+                        unreachable!()
                     }
-                }
+                },
                 mir::ProjectionElem::Field(_, ty) => &ty.sty,
                 mir::ProjectionElem::Index(_)
                 | mir::ProjectionElem::ConstantIndex { .. }
                 | mir::ProjectionElem::Subslice { .. } => match base_ty {
+                    TyKind::Adt(..) => base_ty,
                     TyKind::Array(ty, _) => &ty.sty,
                     TyKind::Slice(ty) => &ty.sty,
-                    _ => unreachable!(),
+                    _ => {
+                        println!("span: {:?}", self.current_span);
+                        println!("elem: {:?}", boxed_place_projection.elem);
+                        println!("base_ty: {:?}", base_ty);
+                        unreachable!()
+                    }
                 },
                 mir::ProjectionElem::Downcast(..) => base_ty,
             }
         } else {
+            println!("span: {:?}", self.current_span);
+            println!("place: {:?}", place);
             unreachable!()
         }
     }
