@@ -44,6 +44,7 @@ pub mod environment;
 pub mod expression;
 pub mod interval_domain;
 pub mod k_limits;
+pub mod smt_solver;
 pub mod summaries;
 pub mod utils;
 pub mod visitors;

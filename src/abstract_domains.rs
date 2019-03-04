@@ -9,6 +9,7 @@ use environment::Environment;
 use expression::{Expression, ExpressionType};
 use interval_domain::{self, IntervalDomain};
 use rustc::ty::TyKind;
+use std::fmt::{Debug, Formatter, Result};
 use std::hash::Hash;
 use std::hash::Hasher;
 use syntax::ast;
@@ -17,7 +18,7 @@ use syntax::ast;
 
 /// Basically, this domain is a structured container for other domains. It is also the only
 /// client for the other domains.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq)]
+#[derive(Serialize, Deserialize, Clone, Eq)]
 pub struct AbstractDomain {
     // todo: make this private
     // This is not a domain element, but a representation of how this instance has been constructed.
@@ -27,6 +28,12 @@ pub struct AbstractDomain {
     /// Cached interval computed on demand by get_as_interval.
     #[serde(skip)]
     interval: Option<IntervalDomain>,
+}
+
+impl Debug for AbstractDomain {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        self.expression.fmt(f)
+    }
 }
 
 impl Hash for AbstractDomain {
@@ -688,7 +695,7 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is "self >> other".
-    pub fn shr(&self, other: &Self) -> Self {
+    pub fn shr(&self, other: &Self, expression_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -700,6 +707,7 @@ impl AbstractDomain {
         Expression::Shr {
             left: box self.clone(),
             right: box other.clone(),
+            result_type: expression_type,
         }
         .into()
     }
@@ -938,9 +946,13 @@ impl AbstractDomain {
             } => left
                 .refine_paths(environment)
                 .shl_overflows(&mut right.refine_paths(environment), result_type.clone()),
-            Expression::Shr { left, right } => left
+            Expression::Shr {
+                left,
+                right,
+                result_type,
+            } => left
                 .refine_paths(environment)
-                .shr(&right.refine_paths(environment)),
+                .shr(&right.refine_paths(environment), result_type.clone()),
             Expression::ShrOverflows {
                 left,
                 right,
@@ -1058,9 +1070,13 @@ impl AbstractDomain {
             } => left
                 .refine_parameters(arguments)
                 .shl_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
-            Expression::Shr { left, right } => left
+            Expression::Shr {
+                left,
+                right,
+                result_type,
+            } => left
                 .refine_parameters(arguments)
-                .shr(&right.refine_parameters(arguments)),
+                .shr(&right.refine_parameters(arguments), result_type.clone()),
             Expression::ShrOverflows {
                 left,
                 right,
@@ -1218,9 +1234,13 @@ impl AbstractDomain {
             } => left
                 .refine_with(path_condition)
                 .shl_overflows(&mut right.refine_with(path_condition), result_type.clone()),
-            Expression::Shr { left, right } => left
+            Expression::Shr {
+                left,
+                right,
+                result_type,
+            } => left
                 .refine_with(path_condition)
-                .shr(&right.refine_with(path_condition)),
+                .shr(&right.refine_with(path_condition), result_type.clone()),
             Expression::ShrOverflows {
                 left,
                 right,
