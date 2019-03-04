@@ -982,15 +982,22 @@ impl AbstractDomain {
             } => left
                 .refine_paths(environment)
                 .sub_overflows(&mut right.refine_paths(environment), result_type.clone()),
-            Expression::Variable { path, .. } => {
+            Expression::Variable { path, var_type } => {
                 if let Some(val) = environment.value_at(path) {
                     val.domain.clone()
                 } else {
                     let refined_path = path.refine_paths(environment);
+                    if refined_path == **path {
+                        return self.clone();
+                    }
                     if let Some(val) = environment.value_at(&refined_path) {
                         val.domain.clone()
                     } else {
-                        self.clone()
+                        Expression::Variable {
+                            path: box refined_path,
+                            var_type: var_type.clone(),
+                        }
+                        .into()
                     }
                 }
             }

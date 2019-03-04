@@ -9,15 +9,15 @@
 //todo: This is the only way I can find to generate such literals.
 // Find out for sure if there is no other way.
 
-pub fn main() {
-    let _x = f(b"x");
-//    debug_assert!(f(b"x")); //todo: enable this once path refinement has been implemented
+fn g(x: &[u8], y: &[u8]) -> bool {
+    x[0] == y[0]
 }
 
 fn f(value: &[u8]) -> bool {
     g(b"x", value)
 }
 
-fn g(x: &[u8], y: &[u8]) -> bool {
-    x[0] == y[0]
+pub fn main() {
+    assert!(f(b"x"));
 }
+

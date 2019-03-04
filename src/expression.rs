@@ -7,6 +7,8 @@ use crate::abstract_domains::AbstractDomain;
 use crate::abstract_value::Path;
 use crate::constant_domain::ConstantDomain;
 
+use std::collections::HashSet;
+
 /// Closely based on the expressions found in MIR.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Expression {
@@ -258,6 +260,54 @@ pub enum Expression {
         path: Box<Path>,
         var_type: ExpressionType,
     },
+}
+
+impl Expression {
+    /// Adds any abstract heap addresses found in the associated expression to the given set.
+    pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
+        match &self {
+            Expression::AbstractHeapAddress(ordinal) => {
+                result.insert(*ordinal);
+            }
+            Expression::Add { left, right }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::Ne { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Or { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::Shr { left, right, .. }
+            | Expression::Sub { left, right } => {
+                left.expression.record_heap_addresses(result);
+                right.expression.record_heap_addresses(result);
+            }
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                condition.expression.record_heap_addresses(result);
+                consequent.expression.record_heap_addresses(result);
+                alternate.expression.record_heap_addresses(result);
+            }
+            Expression::Neg { operand } | Expression::Not { operand } => {
+                operand.expression.record_heap_addresses(result);
+            }
+            Expression::Reference(path) => path.record_heap_addresses(result),
+            Expression::Variable { path, .. } => path.record_heap_addresses(result),
+            _ => (),
+        }
+    }
 }
 
 /// The type of a place in memory, as understood by MIR.

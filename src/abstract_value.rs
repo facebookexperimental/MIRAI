@@ -9,6 +9,7 @@ use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 
 use rustc::hir::def_id::DefId;
+use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use syntax_pos::Span;
@@ -465,6 +466,11 @@ impl AbstractValue {
         }
     }
 
+    /// Adds any abstract heap addresses found in the associated expression to the given set.
+    pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
+        self.domain.expression.record_heap_addresses(result);
+    }
+
     /// Returns a value that is simplified (refined) by using the current path conditions
     /// (conditions known to be true in the current context). If no refinement is possible
     /// the result is simply a clone of this value, but with its provenance updated by
@@ -719,6 +725,19 @@ impl Path {
         }
     }
 
+    /// Adds any abstract heap addresses found in embedded index values to the given set.
+    pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
+        if let Path::QualifiedPath {
+            qualifier,
+            selector,
+            ..
+        } = self
+        {
+            (**qualifier).record_heap_addresses(result);
+            selector.record_heap_addresses(result);
+        }
+    }
+
     /// Refine parameters inside embedded index values with the given arguments.
     pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Path {
         match self {
@@ -881,6 +900,13 @@ pub enum PathSelector {
 }
 
 impl PathSelector {
+    /// Adds any abstract heap addresses found in embedded index values to the given set.
+    pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
+        if let PathSelector::Index(boxed_abstract_value) = self {
+            boxed_abstract_value.record_heap_addresses(result);
+        }
+    }
+
     /// Refine parameters inside embedded index values with the given arguments.
     pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Self {
         if let PathSelector::Index(boxed_abstract_value) = self {
