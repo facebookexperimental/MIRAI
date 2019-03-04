@@ -10,7 +10,7 @@ use crate::utils;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use sled::Db;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 
 /// A summary is a declarative abstract specification of what a function does.
@@ -117,23 +117,46 @@ pub fn summarize(
     }
 }
 
-/// Returns a list of (path, value) pairs where each path is rooted by an argument.
-/// Since paths are created by writes, these are side-effects when the root is a parameter
-/// rather than the return result.
+/// Returns a list of (path, value) pairs where each path is rooted by an argument(or the result)
+/// or where the path root is a heap address reachable from an argument (or the result).
+/// Since paths are created by writes, these are side-effects.
+/// Since these values are reachable from arguments or the result, they are visible to the caller
+/// and must be included in the summary.
 fn extract_side_effects(env: &Environment, argument_count: usize) -> Vec<(Path, AbstractValue)> {
+    let mut heap_roots: HashSet<usize> = HashSet::new();
     let mut result = Vec::new();
     for ordinal in 0..=argument_count {
+        // remember that 0 is the result
         let root = Path::LocalVariable { ordinal };
         for (path, value) in env
             .value_map
             .iter()
             .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
         {
+            path.record_heap_addresses(&mut heap_roots);
+            value.record_heap_addresses(&mut heap_roots);
             result.push((path.clone(), value.clone()));
         }
     }
-    //todo: what about paths rooted by heap allocated (i.e. boxed) objects that are referenced by
-    //the values of the arguments?
+    let mut visited_heap_roots: HashSet<usize> = HashSet::new();
+    while heap_roots.len() > visited_heap_roots.len() {
+        let mut new_roots: HashSet<usize> = HashSet::new();
+        for ordinal in heap_roots.iter() {
+            if visited_heap_roots.insert(*ordinal) {
+                let root = Path::AbstractHeapAddress { ordinal: *ordinal };
+                for (path, value) in env
+                    .value_map
+                    .iter()
+                    .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
+                {
+                    path.record_heap_addresses(&mut new_roots);
+                    value.record_heap_addresses(&mut new_roots);
+                    result.push((path.clone(), value.clone()));
+                }
+            }
+        }
+        heap_roots.extend(new_roots.into_iter());
+    }
     result
 }
 
