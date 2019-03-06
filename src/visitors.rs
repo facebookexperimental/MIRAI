@@ -1748,23 +1748,25 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Path {
         debug!("default visit_place(place: {:?})", place);
         match place {
-            mir::Place::Local(local) => Path::LocalVariable {
-                ordinal: local.as_usize(),
+            mir::Place::Base(base_place) => match base_place {
+                mir::PlaceBase::Local(local) => Path::LocalVariable {
+                    ordinal: local.as_usize(),
+                },
+                mir::PlaceBase::Static(boxed_static) => {
+                    let def_id = boxed_static.def_id;
+                    let name = utils::summary_key_str(&self.tcx, def_id);
+                    Path::StaticVariable {
+                        def_id: Some(def_id),
+                        summary_cache_key: name,
+                    }
+                }
+                mir::PlaceBase::Promoted(boxed_promoted) => {
+                    let index = boxed_promoted.0;
+                    Path::PromotedConstant {
+                        ordinal: index.as_usize(),
+                    }
+                }
             },
-            mir::Place::Static(boxed_static) => {
-                let def_id = boxed_static.def_id;
-                let name = utils::summary_key_str(&self.tcx, def_id);
-                Path::StaticVariable {
-                    def_id: Some(def_id),
-                    summary_cache_key: name,
-                }
-            }
-            mir::Place::Promoted(boxed_promoted) => {
-                let index = boxed_promoted.0;
-                Path::PromotedConstant {
-                    ordinal: index.as_usize(),
-                }
-            }
             mir::Place::Projection(boxed_place_projection) => {
                 let base = self.visit_place(&boxed_place_projection.base);
                 let base_type = self.get_place_type(&boxed_place_projection.base);
@@ -1837,12 +1839,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Returns the rustc TyKind of the given place in memory.
     fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> &TyKind<'a> {
         match place {
-            mir::Place::Local(local) => {
-                let loc = &self.mir.local_decls[mir::Local::from(local.as_usize())];
-                &loc.ty.sty
-            }
-            mir::Place::Static(boxed_static) => &boxed_static.ty.sty,
-            mir::Place::Promoted(boxed_promoted) => &boxed_promoted.1.sty,
+            mir::Place::Base(base_place) => match base_place {
+                mir::PlaceBase::Local(local) => {
+                    let loc = &self.mir.local_decls[mir::Local::from(local.as_usize())];
+                    &loc.ty.sty
+                }
+                mir::PlaceBase::Static(boxed_static) => &boxed_static.ty.sty,
+                mir::PlaceBase::Promoted(boxed_promoted) => &boxed_promoted.1.sty,
+            },
             mir::Place::Projection(_boxed_place_projection) => {
                 self.get_type_for_projection_element(place)
             }
