@@ -4,22 +4,23 @@
 // LICENSE file in the root directory of this source tree.
 #![allow(clippy::borrowed_box)]
 
-use constant_domain::ConstantValueCache;
-use k_limits;
+use crate::constant_domain::ConstantValueCache;
+use crate::k_limits;
+use crate::smt_solver::SolverStub;
+use crate::summaries;
+use crate::visitors::{MirVisitor, MirVisitorCrateContext};
+
 use rustc::hir::def_id::DefId;
 use rustc::session::config::{self, ErrorOutputType, Input};
 use rustc::session::Session;
 use rustc_codegen_utils::codegen_backend::CodegenBackend;
 use rustc_driver::{driver, Compilation, CompilerCalls, RustcDefaultCalls};
 use rustc_metadata::cstore::CStore;
-use smt_solver::SolverStub;
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use std::path::PathBuf;
-use summaries;
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax::{ast, errors};
-use visitors::{MirVisitor, MirVisitorCrateContext};
 
 /// Private state used to implement the callbacks.
 pub struct MiraiCallbacks {

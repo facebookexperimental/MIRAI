@@ -4,7 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-use expression::ExpressionType::{self, *};
+use crate::expression::ExpressionType::{self, *};
+
 use std::cmp;
 use std::convert::TryFrom;
 

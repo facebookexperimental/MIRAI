@@ -3,11 +3,12 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use abstract_value::{AbstractValue, Path};
-use constant_domain::ConstantDomain;
-use environment::Environment;
-use expression::{Expression, ExpressionType};
-use interval_domain::{self, IntervalDomain};
+use crate::abstract_value::{AbstractValue, Path};
+use crate::constant_domain::ConstantDomain;
+use crate::environment::Environment;
+use crate::expression::{Expression, ExpressionType};
+use crate::interval_domain::{self, IntervalDomain};
+
 use rustc::ty::TyKind;
 use std::fmt::{Debug, Formatter, Result};
 use std::hash::Hash;

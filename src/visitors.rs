@@ -3,25 +3,26 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use abstract_domains::AbstractDomain;
-use abstract_value::{self, AbstractValue, Path, PathSelector};
-use constant_domain::{ConstantDomain, ConstantValueCache};
-use environment::Environment;
-use expression::{Expression, ExpressionType};
-use k_limits;
+use crate::abstract_domains::AbstractDomain;
+use crate::abstract_value::{self, AbstractValue, Path, PathSelector};
+use crate::constant_domain::{ConstantDomain, ConstantValueCache};
+use crate::environment::Environment;
+use crate::expression::{Expression, ExpressionType};
+use crate::k_limits;
+use crate::smt_solver::{SmtResult, SmtSolver};
+use crate::summaries;
+use crate::summaries::{PersistentSummaryCache, Summary};
+use crate::utils::{self, is_public};
+
 use rustc::session::Session;
 use rustc::ty::{Const, LazyConst, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
-use smt_solver::{SmtResult, SmtSolver};
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::iter::FromIterator;
-use summaries;
-use summaries::{PersistentSummaryCache, Summary};
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use syntax_pos;
-use utils::{self, is_public};
 
 pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b, E> {
     /// A place where diagnostic messages can be buffered by the test harness.
@@ -1693,7 +1694,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     TyKind::FnDef(def_id, ..) => self.visit_function_reference(def_id),
                     TyKind::Int(..) => match val {
                         ConstValue::Scalar(Scalar::Bits { bits, size }) => {
-                            let mut value: i128 = match *size {
+                            let value: i128 = match *size {
                                 1 => i128::from(*bits as i8),
                                 2 => i128::from(*bits as i16),
                                 4 => i128::from(*bits as i32),

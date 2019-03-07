@@ -4,12 +4,13 @@
 // LICENSE file in the root directory of this source tree.
 #![allow(clippy::float_cmp)]
 
-use expression::{Expression, ExpressionType};
+use crate::expression::{Expression, ExpressionType};
+use crate::summaries::PersistentSummaryCache;
+use crate::utils::is_rust_intrinsic;
+
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use std::collections::HashMap;
-use summaries::PersistentSummaryCache;
-use utils::is_rust_intrinsic;
 
 /// Abstracts over constant values referenced in MIR and adds information
 /// that is useful for the abstract interpreter. More importantly, this

@@ -3,9 +3,9 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use abstract_domains::AbstractDomain;
-use abstract_value::Path;
-use constant_domain::ConstantDomain;
+use crate::abstract_domains::AbstractDomain;
+use crate::abstract_value::Path;
+use crate::constant_domain::ConstantDomain;
 
 /// Closely based on the expressions found in MIR.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
