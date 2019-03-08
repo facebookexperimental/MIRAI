@@ -32,7 +32,7 @@ pub fn find_sysroot() -> String {
 
 /// Returns true if the function identified by def_id is a Rust intrinsic function.
 /// Warning: it is not clear what will happen if def_id does not identify a function.
-pub fn is_rust_intrinsic(def_id: DefId, tcx: &TyCtxt) -> bool {
+pub fn is_rust_intrinsic(def_id: DefId, tcx: &TyCtxt<'_, '_, '_>) -> bool {
     let binder = tcx.fn_sig(def_id);
     let sig = binder.skip_binder();
     match sig.abi {
@@ -42,7 +42,7 @@ pub fn is_rust_intrinsic(def_id: DefId, tcx: &TyCtxt) -> bool {
 }
 
 /// Returns true if the function identified by def_id is a public function.
-pub fn is_public(def_id: DefId, tcx: &TyCtxt) -> bool {
+pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_, '_, '_>) -> bool {
     if let Some(node) = tcx.hir().get_if_local(def_id) {
         match node {
             Node::Item(item) => {
@@ -73,7 +73,7 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt) -> bool {
 /// the summary cache, which is a key value store. The string will always be the same as
 /// long as the definition does not change its name or location, so it can be used to
 /// transfer information from one compilation to the next, making incremental analysis possible.
-pub fn summary_key_str(tcx: &TyCtxt, def_id: DefId) -> String {
+pub fn summary_key_str(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> String {
     let crate_name = if def_id.is_local() {
         tcx.crate_name.as_interned_str().as_str().get()
     } else {

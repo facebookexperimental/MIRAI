@@ -34,7 +34,7 @@ impl Environment {
 }
 
 impl Debug for Environment {
-    fn fmt(&self, f: &mut Formatter) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         self.value_map.fmt(f)
     }
 }

@@ -9,7 +9,8 @@ cargo fmt --all
 # Run lint checks
 cargo clippy -- -D warnings
 # Build
-time cargo build
+cargo rustc --lib -- -D rust-2018-idioms
+cargo build
 # Run mirai on itself
 cargo uninstall mirai || true
 cargo install --debug --path .

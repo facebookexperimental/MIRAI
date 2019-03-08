@@ -29,27 +29,27 @@ pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b, E> {
     pub buffered_diagnostics: &'a mut Vec<Diagnostic>,
     /// A call back that the test harness can use to buffer the diagnostic message.
     /// By default this just calls emit on the diagnostic.
-    pub emit_diagnostic: fn(&mut DiagnosticBuilder, buf: &mut Vec<Diagnostic>) -> (),
+    pub emit_diagnostic: fn(&mut DiagnosticBuilder<'_>, buf: &mut Vec<Diagnostic>) -> (),
     pub session: &'tcx Session,
     pub tcx: TyCtxt<'b, 'tcx, 'tcx>,
     pub def_id: hir::def_id::DefId,
     pub mir: &'a mir::Mir<'tcx>,
     pub constant_value_cache: &'a mut ConstantValueCache,
     pub summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
-    pub smt_solver: &'a mut SmtSolver<E>,
+    pub smt_solver: &'a mut dyn SmtSolver<E>,
 }
 
 /// Holds the state for the MIR test visitor.
 pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
     buffered_diagnostics: &'a mut Vec<Diagnostic>,
-    emit_diagnostic: fn(&mut DiagnosticBuilder, buf: &mut Vec<Diagnostic>) -> (),
+    emit_diagnostic: fn(&mut DiagnosticBuilder<'_>, buf: &mut Vec<Diagnostic>) -> (),
     session: &'tcx Session,
     tcx: TyCtxt<'b, 'tcx, 'tcx>,
     def_id: hir::def_id::DefId,
     mir: &'a mir::Mir<'tcx>,
     constant_value_cache: &'a mut ConstantValueCache,
     summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
-    smt_solver: &'a mut SmtSolver<E>,
+    smt_solver: &'a mut dyn SmtSolver<E>,
 
     check_for_errors: bool,
     current_environment: Environment,
@@ -446,7 +446,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         &mut self,
         asm: &hir::InlineAsm,
         outputs: &[mir::Place<'tcx>],
-        inputs: &[(syntax_pos::Span, mir::Operand)],
+        inputs: &[(syntax_pos::Span, mir::Operand<'tcx>)],
     ) {
         debug!(
             "default visit_inline_asm(asm: {:?}, outputs: {:?}, inputs: {:?})",
@@ -544,7 +544,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn visit_switch_int(
         &mut self,
         discr: &mir::Operand<'tcx>,
-        switch_ty: rustc::ty::Ty,
+        switch_ty: rustc::ty::Ty<'tcx>,
         values: &[u128],
         targets: &[mir::BasicBlock],
     ) {
@@ -937,7 +937,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         &mut self,
         cond: &mir::Operand<'tcx>,
         expected: bool,
-        msg: &mir::AssertMessage,
+        msg: &mir::AssertMessage<'tcx>,
         target: mir::BasicBlock,
         cleanup: Option<mir::BasicBlock>,
     ) {
@@ -1334,7 +1334,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn visit_ref(
         &mut self,
         path: Path,
-        region: rustc::ty::Region,
+        region: rustc::ty::Region<'tcx>,
         borrow_kind: mir::BorrowKind,
         place: &mir::Place<'tcx>,
     ) {
@@ -1379,7 +1379,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         path: Path,
         cast_kind: mir::CastKind,
         operand: &mir::Operand<'tcx>,
-        ty: rustc::ty::Ty,
+        ty: rustc::ty::Ty<'tcx>,
     ) {
         debug!(
             "default visit_cast(path: {:?}, cast_kind: {:?}, operand: {:?}, ty: {:?})",
@@ -1481,7 +1481,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Create a value based on the given type and assign it to path.
-    fn visit_nullary_op(&mut self, path: Path, null_op: mir::NullOp, ty: rustc::ty::Ty) {
+    fn visit_nullary_op(&mut self, path: Path, null_op: mir::NullOp, ty: rustc::ty::Ty<'tcx>) {
         debug!(
             "default visit_nullary_op(path: {:?}, null_op: {:?}, ty: {:?})",
             path, null_op, ty
@@ -1542,7 +1542,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn visit_aggregate(
         &mut self,
         path: Path,
-        aggregate_kinds: &mir::AggregateKind,
+        aggregate_kinds: &mir::AggregateKind<'tcx>,
         operands: &[mir::Operand<'tcx>],
     ) {
         debug!(
@@ -1659,9 +1659,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Synthesizes a constant value.
     fn visit_constant(
         &mut self,
-        ty: Ty,
+        ty: Ty<'tcx>,
         user_ty: Option<UserTypeAnnotationIndex>,
-        literal: &LazyConst,
+        literal: &LazyConst<'tcx>,
     ) -> AbstractValue {
         use rustc::mir::interpret::{AllocKind, ConstValue, Scalar};
         debug!(
@@ -2103,7 +2103,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// but which can be serialized.
     fn visit_projection_elem(
         &mut self,
-        projection_elem: &mir::ProjectionElem<mir::Local, &rustc::ty::TyS>,
+        projection_elem: &mir::ProjectionElem<'tcx, mir::Local, &rustc::ty::TyS<'tcx>>,
     ) -> PathSelector {
         debug!(
             "visit_projection_elem(projection_elem: {:?})",
@@ -2143,7 +2143,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns the rustc TyKind of the given place in memory.
-    fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> &TyKind<'a> {
+    fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> &TyKind<'tcx> {
         match place {
             mir::Place::Base(base_place) => match base_place {
                 mir::PlaceBase::Local(local) => {
@@ -2160,7 +2160,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns the rustc TyKind of the element selected by projection_elem.
-    fn get_type_for_projection_element(&self, place: &mir::Place<'tcx>) -> &TyKind<'a> {
+    fn get_type_for_projection_element(&self, place: &mir::Place<'tcx>) -> &TyKind<'tcx> {
         if let mir::Place::Projection(boxed_place_projection) = place {
             let base_ty = self.get_rustc_place_type(&boxed_place_projection.base);
             match boxed_place_projection.elem {
