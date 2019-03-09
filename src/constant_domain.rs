@@ -57,8 +57,8 @@ impl ConstantDomain {
     /// Returns a constant value that is a reference to a function
     pub fn for_function(
         def_id: DefId,
-        tcx: &TyCtxt,
-        summary_cache: &mut PersistentSummaryCache,
+        tcx: &TyCtxt<'_, '_, '_>,
+        summary_cache: &mut PersistentSummaryCache<'_, '_>,
     ) -> ConstantDomain {
         let summary_cache_key = summary_cache.get_summary_key_for(def_id);
         ConstantDomain::Function {
@@ -633,8 +633,8 @@ impl ConstantValueCache {
     pub fn get_function_constant_for(
         &mut self,
         def_id: DefId,
-        tcx: &TyCtxt,
-        summary_cache: &mut PersistentSummaryCache,
+        tcx: &TyCtxt<'_, '_, '_>,
+        summary_cache: &mut PersistentSummaryCache<'_, '_>,
     ) -> &ConstantDomain {
         self.function_cache
             .entry(def_id)

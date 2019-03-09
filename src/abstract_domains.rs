@@ -32,7 +32,7 @@ pub struct AbstractDomain {
 }
 
 impl Debug for AbstractDomain {
-    fn fmt(&self, f: &mut Formatter) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         self.expression.fmt(f)
     }
 }
@@ -75,7 +75,7 @@ pub const TRUE: AbstractDomain = AbstractDomain {
 };
 
 impl<'a> From<&TyKind<'a>> for ExpressionType {
-    fn from(ty_kind: &TyKind) -> ExpressionType {
+    fn from(ty_kind: &TyKind<'a>) -> ExpressionType {
         match ty_kind {
             TyKind::Bool => ExpressionType::Bool,
             TyKind::Char => ExpressionType::Char,

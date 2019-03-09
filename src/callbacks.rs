@@ -26,13 +26,13 @@ use syntax::{ast, errors};
 pub struct MiraiCallbacks {
     /// Called after static analysis is complete.
     /// Gives test harness a way to process intercepted diagnostics.
-    consume_buffered_diagnostics: Box<Fn(&Vec<Diagnostic>) -> ()>,
+    consume_buffered_diagnostics: Box<dyn Fn(&Vec<Diagnostic>) -> ()>,
     /// Use these to just defer to the Rust compiler's implementations.
     default_calls: Box<RustcDefaultCalls>,
     /// Called when static analysis reports a diagnostic message.
     /// By default, this just emits the message. When overridden it can
     /// intercept and buffer the diagnostics, which is used by the test harness.
-    emit_diagnostic: fn(&mut DiagnosticBuilder, &mut Vec<Diagnostic>) -> (),
+    emit_diagnostic: fn(&mut DiagnosticBuilder<'_>, &mut Vec<Diagnostic>) -> (),
     /// A path to the directory where analysis output, such as the summary cache, should be stored.
     output_directory: PathBuf,
     /// True if this run is done via cargo test
@@ -45,15 +45,15 @@ impl MiraiCallbacks {
         MiraiCallbacks {
             consume_buffered_diagnostics: box |_bd: &Vec<Diagnostic>| {},
             default_calls: box RustcDefaultCalls,
-            emit_diagnostic: |db: &mut DiagnosticBuilder, _buf: &mut Vec<Diagnostic>| db.emit(),
+            emit_diagnostic: |db: &mut DiagnosticBuilder<'_>, _buf: &mut Vec<Diagnostic>| db.emit(),
             output_directory: PathBuf::default(),
             test_run: false,
         }
     }
 
     pub fn with_buffered_diagnostics(
-        consume_buffered_diagnostics: Box<Fn(&Vec<Diagnostic>) -> ()>,
-        emit_diagnostic: fn(&mut DiagnosticBuilder, &mut Vec<Diagnostic>) -> (),
+        consume_buffered_diagnostics: Box<dyn Fn(&Vec<Diagnostic>) -> ()>,
+        emit_diagnostic: fn(&mut DiagnosticBuilder<'_>, &mut Vec<Diagnostic>) -> (),
     ) -> MiraiCallbacks {
         MiraiCallbacks {
             consume_buffered_diagnostics,
@@ -97,7 +97,7 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
     /// is called), after all arguments etc. have been completely handled.
     fn late_callback(
         &mut self,
-        codegen_backend: &CodegenBackend,
+        codegen_backend: &dyn CodegenBackend,
         matches: &::getopts::Matches,
         session: &Session,
         crate_store: &CStore,
@@ -159,9 +159,9 @@ impl<'a> CompilerCalls<'a> for MiraiCallbacks {
 /// At this point the compiler is ready to tell us all it knows and we can proceed to do abstract
 /// interpretation of all of the functions that will end up in the compiler output.
 fn after_analysis(
-    state: &mut driver::CompileState,
-    consume_buffered_diagnostics: &Box<Fn(&Vec<Diagnostic>) -> ()>,
-    emit_diagnostic: fn(&mut DiagnosticBuilder, &mut Vec<Diagnostic>) -> (),
+    state: &mut driver::CompileState<'_, '_>,
+    consume_buffered_diagnostics: &Box<dyn Fn(&Vec<Diagnostic>) -> ()>,
+    emit_diagnostic: fn(&mut DiagnosticBuilder<'_>, &mut Vec<Diagnostic>) -> (),
     output_directory: &mut PathBuf,
 ) {
     let session = state.session;

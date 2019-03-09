@@ -19,22 +19,16 @@
 extern crate getopts;
 extern crate rustc;
 extern crate rustc_codegen_utils;
-extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_metadata;
 extern crate rustc_target;
 extern crate syntax;
 extern crate syntax_pos;
 
-extern crate bincode;
 #[macro_use]
 extern crate log;
-//#[macro_use]
-extern crate rpds;
-extern crate sled;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde;
 
 pub mod abstract_domains;
 pub mod abstract_value;

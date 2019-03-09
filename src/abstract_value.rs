@@ -62,7 +62,7 @@ pub const TRUE: AbstractValue = AbstractValue {
 };
 
 impl Debug for AbstractValue {
-    fn fmt(&self, f: &mut Formatter) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         self.domain.fmt(f)
     }
 }
