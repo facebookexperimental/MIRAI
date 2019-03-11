@@ -17,3 +17,14 @@ fn bar(arr: &mut [i32], i: usize) {
     arr[i] = 123;
     debug_assert!(arr[i] == 123);
 }
+
+fn get_elem(arr: &[i32], i: usize) -> i32 {
+    arr[i]
+}
+
+pub fn main() {
+    let arr = [1, 2, 3];
+    let elem = get_elem(&arr, 1);
+    debug_assert!(elem == 2);
+}
+
