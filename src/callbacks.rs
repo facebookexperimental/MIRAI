@@ -5,34 +5,23 @@
 #![allow(clippy::borrowed_box)]
 
 use crate::constant_domain::ConstantValueCache;
+use crate::expected_errors;
 use crate::k_limits;
 use crate::smt_solver::SolverStub;
 use crate::summaries;
 use crate::visitors::{MirVisitor, MirVisitorCrateContext};
 
 use rustc::hir::def_id::DefId;
-use rustc::session::config::{self, ErrorOutputType, Input};
-use rustc::session::Session;
-use rustc_codegen_utils::codegen_backend::CodegenBackend;
-use rustc_driver::{driver, Compilation, CompilerCalls, RustcDefaultCalls};
-use rustc_metadata::cstore::CStore;
+use rustc_interface::interface;
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use std::path::PathBuf;
-use syntax::errors::{Diagnostic, DiagnosticBuilder};
-use syntax::{ast, errors};
+use syntax::errors::DiagnosticBuilder;
 
 /// Private state used to implement the callbacks.
 pub struct MiraiCallbacks {
-    /// Called after static analysis is complete.
-    /// Gives test harness a way to process intercepted diagnostics.
-    consume_buffered_diagnostics: Box<dyn Fn(&Vec<Diagnostic>) -> ()>,
-    /// Use these to just defer to the Rust compiler's implementations.
-    default_calls: Box<RustcDefaultCalls>,
-    /// Called when static analysis reports a diagnostic message.
-    /// By default, this just emits the message. When overridden it can
-    /// intercept and buffer the diagnostics, which is used by the test harness.
-    emit_diagnostic: fn(&mut DiagnosticBuilder<'_>, &mut Vec<Diagnostic>) -> (),
+    /// The relative path of the file being compiled.
+    file_name: String,
     /// A path to the directory where analysis output, such as the summary cache, should be stored.
     output_directory: PathBuf,
     /// True if this run is done via cargo test
@@ -43,22 +32,15 @@ pub struct MiraiCallbacks {
 impl MiraiCallbacks {
     pub fn new() -> MiraiCallbacks {
         MiraiCallbacks {
-            consume_buffered_diagnostics: box |_bd: &Vec<Diagnostic>| {},
-            default_calls: box RustcDefaultCalls,
-            emit_diagnostic: |db: &mut DiagnosticBuilder<'_>, _buf: &mut Vec<Diagnostic>| db.emit(),
+            file_name: String::new(),
             output_directory: PathBuf::default(),
             test_run: false,
         }
     }
 
-    pub fn with_buffered_diagnostics(
-        consume_buffered_diagnostics: Box<dyn Fn(&Vec<Diagnostic>) -> ()>,
-        emit_diagnostic: fn(&mut DiagnosticBuilder<'_>, &mut Vec<Diagnostic>) -> (),
-    ) -> MiraiCallbacks {
+    pub fn test_runner() -> MiraiCallbacks {
         MiraiCallbacks {
-            consume_buffered_diagnostics,
-            default_calls: box RustcDefaultCalls,
-            emit_diagnostic,
+            file_name: String::new(),
             output_directory: PathBuf::default(),
             test_run: true,
         }
@@ -70,181 +52,123 @@ impl Default for MiraiCallbacks {
     }
 }
 
-/// Implements a trait for customizing the compilation process. Implements a number of call backs
-/// for executing custom code or customizing input.
-impl<'a> CompilerCalls<'a> for MiraiCallbacks {
-    /// Called early in the process of handling arguments. This will
-    /// be called straight after options have been parsed but before anything
-    /// else (e.g., selecting input and output).
-    fn early_callback(
-        &mut self,
-        matches: &::getopts::Matches,
-        options: &config::Options,
-        config: &ast::CrateConfig,
-        descriptions: &errors::registry::Registry,
-        output: ErrorOutputType,
-    ) -> Compilation {
-        // todo: #3 extract options that are relevant to Mirai and store them in self
-        // also remove these arguments so that Rustc does not try to process them
-        // and possibly also add arguments here to make the compilation process more
-        // friendly to static analysis.
-        self.default_calls
-            .early_callback(matches, options, config, descriptions, output)
-    }
-
-    /// Called late in the process of handling arguments. This will
-    /// be called just before actual compilation starts (and before build_controller
-    /// is called), after all arguments etc. have been completely handled.
-    fn late_callback(
-        &mut self,
-        codegen_backend: &dyn CodegenBackend,
-        matches: &::getopts::Matches,
-        session: &Session,
-        crate_store: &CStore,
-        input: &Input,
-        output_directory: &Option<PathBuf>,
-        output_filename: &Option<PathBuf>,
-    ) -> Compilation {
-        match input {
-            Input::File(path_buf) => info!("Processing input file: {}", path_buf.display()),
-            Input::Str { input, .. } => info!("Processing input string: {}", input),
-        }
-        match output_directory {
+impl rustc_driver::Callbacks for MiraiCallbacks {
+    /// Called before creating the compiler instance
+    fn config(&mut self, config: &mut interface::Config) {
+        self.file_name = config.input.source_name().to_string();
+        info!("Processing input file: {}", self.file_name);
+        match &config.output_dir {
             None => self
                 .output_directory
                 .push(std::env::temp_dir().to_str().unwrap()),
             Some(path_buf) => self.output_directory.push(path_buf.as_path()),
-        }
-        self.default_calls.late_callback(
-            codegen_backend,
-            matches,
-            session,
-            crate_store,
-            input,
-            output_directory,
-            output_filename,
-        )
+        };
     }
 
-    /// Called when compilation starts and allows Mirai to supply the Rust compiler with a
-    /// customized controller for the phases of the compilation. The controller provides hooks
-    /// for further callbacks that can be used to obtain information from the
-    /// compiler's internal state and that present an opportunity to do analysis of the MIR.
-    fn build_controller(
-        self: Box<Self>,
-        _session: &Session,
-        _matches: &::getopts::Matches,
-    ) -> driver::CompileController<'a> {
-        let test_run = self.test_run;
-        let mut controller = driver::CompileController::basic();
-        controller.after_analysis.callback = Box::new(move |state| {
-            after_analysis(
-                state,
-                &self.consume_buffered_diagnostics,
-                self.emit_diagnostic,
-                &mut self.output_directory.clone(),
-            )
-        });
-        if test_run {
-            // Don't generate code and bring LLVM into play.
-            // We don't need the code and LLVM does not seem to be as thread safe as we need it to be.
-            controller.after_analysis.stop = Compilation::Stop;
-        }
-        // Note: the callback is only invoked if the compiler discovers no errors beforehand.
-        controller
-    }
-}
-
-/// Called after the compiler has completed all analysis passes and before it lowers MIR to LLVM IR.
-/// At this point the compiler is ready to tell us all it knows and we can proceed to do abstract
-/// interpretation of all of the functions that will end up in the compiler output.
-fn after_analysis(
-    state: &mut driver::CompileState<'_, '_>,
-    consume_buffered_diagnostics: &Box<dyn Fn(&Vec<Diagnostic>) -> ()>,
-    emit_diagnostic: fn(&mut DiagnosticBuilder<'_>, &mut Vec<Diagnostic>) -> (),
-    output_directory: &mut PathBuf,
-) {
-    let session = state.session;
-    let tcx = state.tcx.unwrap();
-    output_directory.set_file_name(".summary_store");
-    output_directory.set_extension("sled");
-    let summary_store_path = String::from(output_directory.to_str().unwrap());
-    info!("storing summaries at {}", summary_store_path);
-    let mut persistent_summary_cache =
-        summaries::PersistentSummaryCache::new(&tcx, summary_store_path);
-    let mut constant_value_cache = ConstantValueCache::default();
-    let mut defs_to_analyze: HashSet<DefId> = HashSet::from_iter(tcx.body_owners());
-    let mut defs_to_reanalyze: HashSet<DefId> = HashSet::new();
-    let mut defs_to_check: HashSet<DefId> = HashSet::new();
-    let mut diagnostics_for: HashMap<DefId, Vec<Diagnostic>> = HashMap::new();
-    let mut not_done = true;
-    let mut iteration_count = 0;
-    while not_done && iteration_count < k_limits::MAX_OUTER_FIXPOINT_ITERATIONS {
-        for def_id in tcx.body_owners() {
-            let analyze_it = defs_to_analyze.contains(&def_id);
-            let check_it = !analyze_it && defs_to_check.contains(&def_id);
-            if !analyze_it && !check_it {
-                continue;
-            }
-            not_done = true;
-            {
-                let name = persistent_summary_cache.get_summary_key_for(def_id);
-                if check_it {
-                    info!("checking({:?})", name)
-                } else if iteration_count == 0 {
-                    info!("analyzing({:?})", name);
-                } else {
-                    info!("reanalyzing({:?})", name);
+    /// Called after the compiler has completed all analysis passes and before it lowers MIR to LLVM IR.
+    /// At this point the compiler is ready to tell us all it knows and we can proceed to do abstract
+    /// interpretation of all of the functions that will end up in the compiler output.
+    /// If this method returns false, the compilation will stop.
+    fn after_analysis(&mut self, compiler: &interface::Compiler) -> bool {
+        compiler.session().abort_if_errors();
+        compiler.global_ctxt().unwrap().peek_mut().enter(|tcx| {
+            self.output_directory.set_file_name(".summary_store");
+            self.output_directory.set_extension("sled");
+            let summary_store_path = String::from(self.output_directory.to_str().unwrap());
+            info!("storing summaries at {}", summary_store_path);
+            let mut persistent_summary_cache =
+                summaries::PersistentSummaryCache::new(&tcx, summary_store_path);
+            let mut constant_value_cache = ConstantValueCache::default();
+            let mut defs_to_analyze: HashSet<DefId> = HashSet::from_iter(tcx.body_owners());
+            let mut defs_to_reanalyze: HashSet<DefId> = HashSet::new();
+            let mut defs_to_check: HashSet<DefId> = HashSet::new();
+            let mut diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'_>>> = HashMap::new();
+            let mut not_done = true;
+            let mut iteration_count = 0;
+            while not_done && iteration_count < k_limits::MAX_OUTER_FIXPOINT_ITERATIONS {
+                for def_id in tcx.body_owners() {
+                    let analyze_it = defs_to_analyze.contains(&def_id);
+                    let check_it = !analyze_it && defs_to_check.contains(&def_id);
+                    if !analyze_it && !check_it {
+                        continue;
+                    }
+                    not_done = true;
+                    {
+                        let name = persistent_summary_cache.get_summary_key_for(def_id);
+                        if check_it {
+                            info!("checking({:?})", name)
+                        } else if iteration_count == 0 {
+                            info!("analyzing({:?})", name);
+                        } else {
+                            info!("reanalyzing({:?})", name);
+                        }
+                    }
+                    // By this time all analyses have been carried out, so it should be safe to borrow this now.
+                    let old_summary_if_changed = {
+                        let mir = tcx.optimized_mir(def_id);
+                        // todo: #3 provide a helper that returns the solver as specified by a compiler switch.
+                        let mut smt_solver = SolverStub::default();
+                        let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
+                            session: compiler.session(),
+                            tcx,
+                            def_id,
+                            mir,
+                            summary_cache: &mut persistent_summary_cache,
+                            constant_value_cache: &mut constant_value_cache,
+                            smt_solver: &mut smt_solver,
+                        });
+                        let r = mir_visitor.visit_body();
+                        fn cancel(mut db: DiagnosticBuilder<'_>) {
+                            db.cancel();
+                        }
+                        if let Some(old_diags) =
+                            diagnostics_for.insert(def_id, mir_visitor.buffered_diagnostics)
+                        {
+                            old_diags.into_iter().for_each(cancel)
+                        }
+                        r
+                    };
+                    if let Some(old_summary) = old_summary_if_changed {
+                        // Bodies should not get checked before their summaries have reached a fixed point.
+                        if check_it {
+                            info!("body summary changed after it supposedly reached a fixed point");
+                            info!("*********** old summary: {:?}", old_summary);
+                            info!(
+                                "*********** new summary: {:?}",
+                                persistent_summary_cache.get_summary_for(def_id, None)
+                            );
+                        }
+                        for dep_id in persistent_summary_cache.get_dependents(&def_id).iter() {
+                            defs_to_reanalyze.insert(dep_id.clone());
+                        }
+                    } else {
+                        // Provided that no other body that def_id depends on has changed in this round,
+                        // the summary for def_id should now be at a fixed point.
+                        defs_to_check.insert(def_id);
+                    }
                 }
+                defs_to_analyze = defs_to_reanalyze;
+                defs_to_reanalyze = HashSet::new();
+                iteration_count += 1;
+                info!("outer fixed point iterations {}", iteration_count);
             }
-            // By this time all analyses have been carried out, so it should be safe to borrow this now.
-            let mut buffered_diagnostics: Vec<Diagnostic> = vec![];
-            let old_summary_if_changed = {
-                let mir = tcx.optimized_mir(def_id);
-                // todo: #3 provide a helper that returns the solver as specified by a compiler switch.
-                let mut smt_solver = SolverStub::default();
-                let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
-                    buffered_diagnostics: &mut buffered_diagnostics,
-                    emit_diagnostic,
-                    session,
-                    tcx,
-                    def_id,
-                    mir,
-                    summary_cache: &mut persistent_summary_cache,
-                    constant_value_cache: &mut constant_value_cache,
-                    smt_solver: &mut smt_solver,
+            if self.test_run {
+                let mut expected_errors =
+                    expected_errors::ExpectedErrors::new(self.file_name.as_str());
+                let mut diags = vec![];
+                diagnostics_for.values_mut().flatten().for_each(|db| {
+                    db.cancel();
+                    db.clone().buffer(&mut diags)
                 });
-                mir_visitor.visit_body()
-            };
-            diagnostics_for.insert(def_id, buffered_diagnostics);
-            if let Some(old_summary) = old_summary_if_changed {
-                // Bodies should not get checked before their summaries have reached a fixed point.
-                if check_it {
-                    info!("body summary changed after it supposedly reached a fixed point");
-                    info!("*********** old summary: {:?}", old_summary);
-                    info!(
-                        "*********** new summary: {:?}",
-                        persistent_summary_cache.get_summary_for(def_id, None)
-                    );
-                }
-                for dep_id in persistent_summary_cache.get_dependents(&def_id).iter() {
-                    defs_to_reanalyze.insert(dep_id.clone());
-                }
+                expected_errors.check_messages(diags);
             } else {
-                // Provided that no other body that def_id depends on has changed in this round,
-                // the summary for def_id should now be at a fixed point.
-                defs_to_check.insert(def_id);
+                fn emit(db: &mut DiagnosticBuilder<'_>) {
+                    db.emit();
+                }
+                diagnostics_for.values_mut().flatten().for_each(emit);
             }
-        }
-        defs_to_analyze = defs_to_reanalyze;
-        defs_to_reanalyze = HashSet::new();
-        iteration_count += 1;
-        info!("outer fixed point iterations {}", iteration_count);
+            info!("done with analysis");
+        });
+        !self.test_run //only continue the compilation if not testing
     }
-    let mut all_diagnostics: Vec<Diagnostic> = vec![];
-    for (_, mut diagnostics) in diagnostics_for.drain() {
-        all_diagnostics.append(&mut diagnostics);
-    }
-    consume_buffered_diagnostics(&all_diagnostics);
-    info!("done with analysis");
 }
