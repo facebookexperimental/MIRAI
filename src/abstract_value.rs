@@ -492,7 +492,7 @@ impl AbstractValue {
     /// Returns a value that is simplified (refined) by replacing parameter values
     /// with their corresponding argument values. If no refinement is possible
     /// the result is simply a clone of this value.
-    pub fn refine_parameters(&self, arguments: &[AbstractValue]) -> AbstractValue {
+    pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> AbstractValue {
         AbstractValue {
             provenance: self.provenance.clone(),
             domain: self.domain.refine_parameters(arguments),
@@ -665,6 +665,10 @@ pub enum Path {
     /// A dynamically allocated memory block.
     AbstractHeapAddress { ordinal: usize },
 
+    /// Sometimes a constant value needs to be treated as a path during refinement.
+    /// Don't use this unless you are really sure you know what you are doing.
+    Constant { value: Box<AbstractValue> },
+
     /// 0 is the return value temporary
     /// [1 ... arg_count] are the parameters
     /// [arg_count ... ] are the local variables and compiler temporaries.
@@ -713,6 +717,98 @@ impl Path {
             Path::QualifiedPath { length, .. } => *length,
             _ => 1,
         }
+    }
+
+    /// Refine parameters inside embedded index values with the given arguments.
+    pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Path {
+        match self {
+            Path::LocalVariable { ordinal } if 0 < *ordinal && *ordinal <= arguments.len() => {
+                arguments[ordinal - 1].0.clone()
+            }
+            Path::QualifiedPath {
+                ref qualifier,
+                ref selector,
+                ..
+            } => {
+                let refined_qualifier = qualifier.refine_parameters(arguments);
+                let refined_selector = selector.refine_parameters(arguments);
+                let refined_length = refined_qualifier.path_length() + 1;
+                Path::QualifiedPath {
+                    qualifier: box refined_qualifier,
+                    selector: box refined_selector,
+                    length: refined_length,
+                }
+            }
+            _ => self.clone(),
+        }
+    }
+
+    /// Refine paths that reference other paths.
+    /// I.e. when a reference is passed to a function that then returns
+    /// or leaks it back to the caller in the qualifier of a path then
+    /// we want to dereference the qualifier in order to normalize the path
+    /// and not have more than one path for the same location.
+    pub fn refine_paths(&self, environment: &mut Environment) -> Self {
+        if let Path::QualifiedPath {
+            qualifier,
+            selector,
+            ..
+        } = self
+        {
+            if let Some(val) = environment.value_at(&**qualifier) {
+                match &val.domain.expression {
+                    Expression::Reference(ref dereferenced_path) => {
+                        // The qualifier is being dereferenced, so if the value at qualifier
+                        // is a reference to another path, put the other path in the place
+                        // of qualifier since references do not own elements directly in
+                        // the environment.
+                        let path_len = dereferenced_path.path_length() + 1;
+                        let deref_path = Path::QualifiedPath {
+                            qualifier: box dereferenced_path.clone(),
+                            selector: selector.clone(),
+                            length: path_len,
+                        };
+                        return if environment.value_at(&deref_path).is_some() {
+                            deref_path
+                        } else {
+                            deref_path.refine_paths(environment)
+                        };
+                    }
+                    Expression::Variable { ref path, .. } => {
+                        // In this case the qualifier is not a reference, but an alias.
+                        // Normally, when local a is assigned to local b, all of the
+                        // paths rooted in a are copied or moved to paths rooted in b.
+                        // In the case of formal parameters, however, there are no paths to
+                        // copy of move and instead the target is assigned a value which is
+                        // in effect an aliases to the parameter. We de-alias here, which is
+                        // needed because ultimately the path has to get refined in a calling
+                        // context where the root has to be the parameter because temporary locals
+                        // in this function are not visible to its callers.
+                        let path_len = path.path_length() + 1;
+                        let de_aliased_path = Path::QualifiedPath {
+                            qualifier: path.clone(),
+                            selector: selector.clone(),
+                            length: path_len,
+                        };
+                        return if environment.value_at(&de_aliased_path).is_some() {
+                            de_aliased_path
+                        } else {
+                            de_aliased_path.refine_paths(environment)
+                        };
+                    }
+                    Expression::CompileTimeConstant(constant_value) => {
+                        debug!("constant qualifier with path selector that is not in the environment\n{:?}\n{:?}\n{:?}", constant_value, self, environment);
+                        //todo: at least some of these arise from qualifiers that are ADTs
+                    }
+                    _ => {
+                        // Although the qualifier matches an expression, that expression
+                        // is too abstract too qualify the path sufficiently that we
+                        // can refine this value.
+                    }
+                }
+            }
+        }
+        self.clone()
     }
 
     /// Returns a copy path with the root replaced by new_root.
@@ -783,8 +879,8 @@ pub enum PathSelector {
 }
 
 impl PathSelector {
-    /// Refine embedded index values with the given arguments and environment.
-    pub fn refine_parameters(&self, arguments: &[AbstractValue]) -> Self {
+    /// Refine parameters inside embedded index values with the given arguments.
+    pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Self {
         if let PathSelector::Index(boxed_abstract_value) = self {
             let refined_value = (**boxed_abstract_value).refine_parameters(arguments);
             PathSelector::Index(box refined_value)

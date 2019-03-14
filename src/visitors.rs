@@ -423,11 +423,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Start a live range for the storage of the local.
     fn visit_storage_live(&mut self, local: mir::Local) {
         debug!("default visit_storage_live(local: {:?})", local);
-        let path = Path::LocalVariable {
-            ordinal: local.as_usize(),
-        };
-        self.current_environment
-            .update_value_at(path, abstract_value::TOP.clone());
     }
 
     /// End the current live range for the storage of the local.
@@ -673,8 +668,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ) {
         debug!("default visit_call(func: {:?}, args: {:?}, destination: {:?}, cleanup: {:?}, from_hir_call: {:?})", func, args, destination, cleanup, from_hir_call);
         let func_to_call = self.visit_operand(func);
-        let actual_args: Vec<AbstractValue> =
-            args.iter().map(|arg| self.visit_operand(arg)).collect();
+        let actual_args: Vec<(Path, AbstractValue)> = args
+            .iter()
+            .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
+            .collect();
         let function_summary = self.get_function_summary(&func_to_call);
         if self.check_for_errors {
             self.check_function_preconditions(&actual_args, &function_summary);
@@ -682,7 +679,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.transfer_and_refine_normal_return_state(destination, &actual_args, &function_summary);
         self.transfer_and_refine_cleanup_state(cleanup);
         if self.check_for_errors {
-            self.report_calls_to_special_functions(func_to_call, actual_args)
+            self.report_calls_to_special_functions(func_to_call, &actual_args)
         }
     }
 
@@ -707,7 +704,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Preconditions that are maybe false become preconditions of the calling function.
     fn check_function_preconditions(
         &mut self,
-        actual_args: &[AbstractValue],
+        actual_args: &[(Path, AbstractValue)],
         function_summary: &Summary,
     ) {
         debug_assert!(self.check_for_errors);
@@ -783,7 +780,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn transfer_and_refine_normal_return_state(
         &mut self,
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
-        actual_args: &[AbstractValue],
+        actual_args: &[(Path, AbstractValue)],
         function_summary: &Summary,
     ) {
         if let Some((place, target)) = destination {
@@ -795,26 +792,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 &function_summary.side_effects,
                 &target_path,
                 return_value_path,
-                &actual_args,
+                actual_args,
             );
-            for (i, arg) in actual_args.iter().enumerate() {
-                if let AbstractValue {
-                    domain:
-                        AbstractDomain {
-                            expression: Expression::Reference(target_path),
-                            ..
-                        },
-                    ..
-                } = arg
-                {
-                    let parameter_path = Path::LocalVariable { ordinal: i + 1 };
-                    self.transfer_and_refine(
-                        &function_summary.side_effects,
-                        target_path,
-                        parameter_path,
-                        &actual_args,
-                    );
-                }
+            for (i, (target_path, _)) in actual_args.iter().enumerate() {
+                let parameter_path = Path::LocalVariable { ordinal: i + 1 };
+                self.transfer_and_refine(
+                    &function_summary.side_effects,
+                    target_path,
+                    parameter_path,
+                    actual_args,
+                );
             }
             let mut exit_condition = self.exit_environment.entry_condition.clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
@@ -846,7 +833,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn report_calls_to_special_functions(
         &mut self,
         func_to_call: AbstractValue,
-        actual_args: Vec<AbstractValue>,
+        actual_args: &[(Path, AbstractValue)],
     ) {
         debug_assert!(self.check_for_errors);
         let cache = &mut self.constant_value_cache;
@@ -867,10 +854,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
 
                 let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
-                    actual_args[0].domain.expression
+                    actual_args[0].1.domain.expression
                 {
                     if msg.contains("entered unreachable code") {
-                        // We tread unreachable!() as an assumption rather than an assertion to prove.
+                        // We treat unreachable!() as an assumption rather than an assertion to prove.
                         return;
                     } else {
                         msg.clone()
@@ -925,13 +912,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         effects: &[(Path, AbstractValue)],
         target_path: &Path,
         source_path: Path,
-        arguments: &[AbstractValue],
+        arguments: &[(Path, AbstractValue)],
     ) {
         for (path, value) in effects
             .iter()
             .filter(|(p, _)| (*p) == source_path || p.is_rooted_by(&source_path))
         {
-            let tpath = path.replace_root(&source_path, target_path.clone());
+            let tpath = path
+                .replace_root(&source_path, target_path.clone())
+                .refine_paths(&mut self.current_environment);
             let rvalue = value
                 .refine_parameters(arguments)
                 .refine_paths(&mut self.current_environment);
@@ -1619,6 +1608,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     .update_value_at(target_path, const_value.with_provenance(*span));
             }
         };
+    }
+
+    /// Returns the path (location/lh-value) of the given operand.
+    fn get_operand_path(&mut self, operand: &mir::Operand<'tcx>) -> Path {
+        match operand {
+            mir::Operand::Copy(place) | mir::Operand::Move(place) => self.visit_place(place),
+            mir::Operand::Constant(..) => Path::Constant {
+                value: box self.visit_operand(operand),
+            },
+        }
     }
 
     /// Operand defines the values that can appear inside an rvalue. They are intentionally
