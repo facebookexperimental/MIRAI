@@ -781,3 +781,15 @@ pub enum PathSelector {
     /// this for ADTs with more than one variant. The value is the ordinal of the variant.
     Downcast(usize),
 }
+
+impl PathSelector {
+    /// Refine embedded index values with the given arguments and environment.
+    pub fn refine_parameters(&self, arguments: &[AbstractValue]) -> Self {
+        if let PathSelector::Index(boxed_abstract_value) = self {
+            let refined_value = (**boxed_abstract_value).refine_parameters(arguments);
+            PathSelector::Index(box refined_value)
+        } else {
+            self.clone()
+        }
+    }
+}

@@ -716,8 +716,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .refine_parameters(actual_args)
                 .refine_paths(&mut self.current_environment)
                 .refine_with(&self.current_environment.entry_condition, self.current_span);
-            //todo: if refined_precondition is a Variable, look it up
-            // or perhaps pass in &mut self.current_environment
             let (refined_precondition_as_bool, entry_cond_as_bool) =
                 self.check_condition_value_and_reachability(&refined_precondition);
 
@@ -934,8 +932,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .filter(|(p, _)| (*p) == source_path || p.is_rooted_by(&source_path))
         {
             let tpath = path.replace_root(&source_path, target_path.clone());
-            let rvalue = value.refine_parameters(arguments);
-            //todo: if refined_precondition is a Variable, look it up
+            let rvalue = value
+                .refine_parameters(arguments)
+                .refine_paths(&mut self.current_environment);
             self.current_environment.update_value_at(tpath, rvalue);
         }
     }

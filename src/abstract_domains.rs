@@ -1107,11 +1107,31 @@ impl AbstractDomain {
             } => left
                 .refine_parameters(arguments)
                 .sub_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
-            Expression::Variable { path, .. } => match **path {
+            Expression::Variable { path, var_type } => match **path {
                 Path::LocalVariable { ordinal } if 0 < ordinal && ordinal <= arguments.len() => {
                     arguments[ordinal - 1].domain.clone()
                 }
-                _ => self.clone(),
+                Path::QualifiedPath {
+                    ref qualifier,
+                    ref selector,
+                    length,
+                } => {
+                    let refined_selector = selector.refine_parameters(arguments);
+                    let refined_path = Path::QualifiedPath {
+                        qualifier: qualifier.clone(),
+                        selector: box refined_selector,
+                        length,
+                    };
+                    Expression::Variable {
+                        path: box refined_path,
+                        var_type: var_type.clone(),
+                    }
+                    .into()
+                }
+                _ => {
+                    debug!("path: {:?}", path);
+                    self.clone()
+                }
             },
         }
     }
