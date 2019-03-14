@@ -6,6 +6,9 @@
 // Somewhat arbitrary constants used to limit things in the abstract interpreter that may
 // take too long or use too much memory.
 
+/// Helps to limit the size of summaries.
+pub const MAX_INFERRED_PRECONDITIONS: usize = 50;
+
 /// Prevents the fixed point loop from creating ever more new abstract values of type Expression::Variable.
 pub const MAX_PATH_LENGTH: usize = 10;
 

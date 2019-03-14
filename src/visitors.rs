@@ -610,7 +610,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 let entry_cond_val = &self.current_environment.entry_condition.clone();
                 entry_cond_as_bool = self.solve_condition(entry_cond_val);
             }
-            if entry_cond_as_bool.unwrap_or(false) {
+            if entry_cond_as_bool.unwrap_or(false)
+                || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+            {
                 let span = self.current_span;
                 let mut err = self
                     .session
@@ -724,9 +726,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 // The precondition is definitely true.
                 continue;
             };
-            if !refined_precondition_as_bool.unwrap_or(true) {
+            if !refined_precondition_as_bool.unwrap_or(true)
+                || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+            {
                 // The precondition is definitely false, if we ever get to this call site.
-                if entry_cond_as_bool.unwrap_or(false) {
+                if entry_cond_as_bool.unwrap_or(false)
+                    && !refined_precondition_as_bool.unwrap_or(true)
+                {
                     // We always get here if the function is called, and the precondition is always
                     // false, so complain loudly.
                     self.emit_diagnostic_for_precondition(precondition, &message);
@@ -749,14 +755,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 // since we add the current entry condition to the promoted precondition.
             }
 
-            // Promote the precondition to a precondition of the current function.
-            let promoted_precondition = self
-                .current_environment
-                .entry_condition
-                .not(Some(self.current_span))
-                .or(&refined_precondition, Some(self.current_span));
-            self.preconditions
-                .push((promoted_precondition, message.clone()));
+            if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                // Promote the precondition to a precondition of the current function.
+                let promoted_precondition = self
+                    .current_environment
+                    .entry_condition
+                    .not(Some(self.current_span))
+                    .or(&refined_precondition, Some(self.current_span));
+                self.preconditions
+                    .push((promoted_precondition, message.clone()));
+            }
         }
     }
 
@@ -898,12 +906,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
 
                     // We also push a precondition in both cases.
-                    self.preconditions.push((
-                        self.current_environment
-                            .entry_condition
-                            .not(Some(self.current_span)),
-                        maybe_message,
-                    ));
+                    if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                        self.preconditions.push((
+                            self.current_environment
+                                .entry_condition
+                                .not(Some(self.current_span)),
+                            maybe_message,
+                        ));
+                    }
                 }
             }
         }
@@ -988,7 +998,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
                 // At this point, we don't know that this assert is unreachable and we don't know
                 // that the condition is as expected, so we need to warn about it somewhere.
-                if is_public(self.def_id, &self.tcx) {
+                if is_public(self.def_id, &self.tcx)
+                    || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+                {
                     // We expect public functions to have programmer supplied preconditions
                     // that preclude any assertions from failing. So, if at this stage we get to
                     // complain a bit.
@@ -999,20 +1011,22 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
 
                 // Regardless, it is still the caller's problem, so push a precondition.
-                let expected_cond = if expected {
-                    cond_val
-                } else {
-                    cond_val.not(Some(self.current_span))
-                };
-                // To make sure that this assertion never fails, we should either never
-                // get here (!entry_condition) or expected_cond should be true.
-                let pre_cond = self
-                    .current_environment
-                    .entry_condition
-                    .not(None)
-                    .or(&expected_cond, Some(self.current_span));
-                self.preconditions
-                    .push((pre_cond, String::from(msg.description())));
+                if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                    let expected_cond = if expected {
+                        cond_val
+                    } else {
+                        cond_val.not(Some(self.current_span))
+                    };
+                    // To make sure that this assertion never fails, we should either never
+                    // get here (!entry_condition) or expected_cond should be true.
+                    let pre_cond = self
+                        .current_environment
+                        .entry_condition
+                        .not(None)
+                        .or(&expected_cond, Some(self.current_span));
+                    self.preconditions
+                        .push((pre_cond, String::from(msg.description())));
+                }
             }
         };
     }
