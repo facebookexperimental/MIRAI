@@ -21,16 +21,11 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::iter::FromIterator;
-use syntax::errors::{Diagnostic, DiagnosticBuilder};
+use syntax::errors::DiagnosticBuilder;
 use syntax_pos;
 
 pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b, E> {
-    /// A place where diagnostic messages can be buffered by the test harness.
-    pub buffered_diagnostics: &'a mut Vec<Diagnostic>,
-    /// A call back that the test harness can use to buffer the diagnostic message.
-    /// By default this just calls emit on the diagnostic.
-    pub emit_diagnostic: fn(&mut DiagnosticBuilder<'_>, buf: &mut Vec<Diagnostic>) -> (),
-    pub session: &'tcx Session,
+    pub session: &'b Session,
     pub tcx: TyCtxt<'b, 'tcx, 'tcx>,
     pub def_id: hir::def_id::DefId,
     pub mir: &'a mir::Mir<'tcx>,
@@ -41,9 +36,7 @@ pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b, E> {
 
 /// Holds the state for the MIR test visitor.
 pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
-    buffered_diagnostics: &'a mut Vec<Diagnostic>,
-    emit_diagnostic: fn(&mut DiagnosticBuilder<'_>, buf: &mut Vec<Diagnostic>) -> (),
-    session: &'tcx Session,
+    session: &'b Session,
     tcx: TyCtxt<'b, 'tcx, 'tcx>,
     def_id: hir::def_id::DefId,
     mir: &'a mir::Mir<'tcx>,
@@ -61,6 +54,8 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
     preconditions: Vec<(AbstractValue, String)>,
     unwind_condition: Option<AbstractValue>,
     unwind_environment: Environment,
+
+    pub buffered_diagnostics: Vec<DiagnosticBuilder<'b>>,
 }
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
@@ -70,8 +65,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         crate_context: MirVisitorCrateContext<'a, 'b, 'tcx, E>,
     ) -> MirVisitor<'a, 'b, 'tcx, E> {
         MirVisitor {
-            buffered_diagnostics: crate_context.buffered_diagnostics,
-            emit_diagnostic: crate_context.emit_diagnostic,
             session: crate_context.session,
             tcx: crate_context.tcx,
             def_id: crate_context.def_id,
@@ -90,6 +83,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             preconditions: Vec::new(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
+
+            buffered_diagnostics: vec![],
         }
     }
 
@@ -105,6 +100,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.preconditions = Vec::new();
         self.unwind_condition = None;
         self.unwind_environment = Environment::default();
+    }
+
+    fn emit_diagnostic(&mut self, diagnostic_builder: DiagnosticBuilder<'b>) {
+        self.buffered_diagnostics.push(diagnostic_builder);
     }
 
     /// Use the local and global environments to resolve Path to an abstract value.
@@ -454,11 +453,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         );
         if self.check_for_errors {
             let span = self.current_span;
-            let mut err = self.session.struct_span_warn(
+            let err = self.session.struct_span_warn(
                 span,
                 "Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
             );
-            (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+            self.emit_diagnostic(err);
         }
     }
 
@@ -614,10 +613,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
             {
                 let span = self.current_span;
-                let mut err = self
+                let err = self
                     .session
                     .struct_span_warn(span, "Execution might panic.");
-                (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+                self.emit_diagnostic(err);
             } else {
                 self.preconditions.push((
                     self.current_environment
@@ -779,7 +778,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         for related_span in related_spans.iter() {
             err.span_note(**related_span, "related location");
         }
-        (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+        self.emit_diagnostic(err);
     }
 
     /// Updates the current state to reflect the effects of a normal return from the function call.
@@ -886,8 +885,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 if path_cond.unwrap_or(false) && is_public(self.def_id, &self.tcx) {
                     // We always get to this call and we have to assume that the function will
                     // get called, so keep the message certain.
-                    let mut err = self.session.struct_span_warn(span, msg.as_str());
-                    (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+                    let err = self.session.struct_span_warn(span, msg.as_str());
+                    self.emit_diagnostic(err);
                 } else {
                     // We might get to this call, depending on the state at the call site.
 
@@ -902,8 +901,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
                     let mut maybe_message = String::from("possible error: ");
                     maybe_message.push_str(msg.as_str());
-                    let mut err = self.session.struct_span_warn(span, maybe_message.as_str());
-                    (self.emit_diagnostic)(&mut err, &mut self.buffered_diagnostics);
+                    let err = self.session.struct_span_warn(span, maybe_message.as_str());
+                    self.emit_diagnostic(err);
 
                     // We also push a precondition in both cases.
                     if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
@@ -989,8 +988,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     if entry_cond_as_bool.is_some() && entry_cond_as_bool.unwrap() {
                         let error = msg.description();
                         let span = self.current_span;
-                        let mut error = self.session.struct_span_err(span, error);
-                        (self.emit_diagnostic)(&mut error, &mut self.buffered_diagnostics);
+                        let error = self.session.struct_span_err(span, error);
+                        self.emit_diagnostic(error);
                         // No need to push a precondition, the caller can never satisfy it.
                         return;
                     }
@@ -1006,8 +1005,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     // complain a bit.
                     let warning = format!("possible {}", msg.description());
                     let span = self.current_span;
-                    let mut warning = self.session.struct_span_warn(span, warning.as_str());
-                    (self.emit_diagnostic)(&mut warning, &mut self.buffered_diagnostics);
+                    let warning = self.session.struct_span_warn(span, warning.as_str());
+                    self.emit_diagnostic(warning);
                 }
 
                 // Regardless, it is still the caller's problem, so push a precondition.

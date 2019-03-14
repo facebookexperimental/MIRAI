@@ -15,11 +15,11 @@
 #![feature(rustc_private)]
 #![feature(box_syntax)]
 #![feature(const_vec_new)]
+#![feature(vec_remove_item)]
 
-extern crate getopts;
 extern crate rustc;
-extern crate rustc_codegen_utils;
 extern crate rustc_driver;
+extern crate rustc_interface;
 extern crate rustc_metadata;
 extern crate rustc_target;
 extern crate syntax;
@@ -35,6 +35,7 @@ pub mod abstract_value;
 pub mod callbacks;
 pub mod constant_domain;
 pub mod environment;
+pub mod expected_errors;
 pub mod expression;
 pub mod interval_domain;
 pub mod k_limits;
