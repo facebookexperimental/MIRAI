@@ -23,6 +23,7 @@ fn get_elem(arr: &[i32], i: usize) -> i32 {
 }
 
 pub fn main() {
+    let _x = 123; // make sure arr is not local 1
     let arr = [1, 2, 3];
     let elem = get_elem(&arr, 1);
     debug_assert!(elem == 2);

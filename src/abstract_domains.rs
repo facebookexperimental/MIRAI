@@ -867,7 +867,6 @@ impl AbstractDomain {
         }
     }
 
-    /// Recursively applies refine_paths to every sub expression of self.
     /// Replaces occurrences of Expression::Variable(path) with the value at that path
     /// in the given environment (if there is such a value).
     pub fn refine_paths(&self, environment: &mut Environment) -> Self {
@@ -987,14 +986,21 @@ impl AbstractDomain {
                 if let Some(val) = environment.value_at(path) {
                     val.domain.clone()
                 } else {
-                    self.clone()
+                    let refined_path = path.refine_paths(environment);
+                    if let Some(val) = environment.value_at(&refined_path) {
+                        val.domain.clone()
+                    } else {
+                        self.clone()
+                    }
                 }
             }
         }
     }
 
-    /// Recursively applies refine_parameters to every sub expression of self.
-    pub fn refine_parameters(&self, arguments: &[AbstractValue]) -> Self {
+    /// Returns a value that is simplified (refined) by replacing parameter values
+    /// with their corresponding argument values. If no refinement is possible
+    /// the result is simply a clone of this value.
+    pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Self {
         match &self.expression {
             Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
                 self.clone()
@@ -1107,36 +1113,24 @@ impl AbstractDomain {
             } => left
                 .refine_parameters(arguments)
                 .sub_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
-            Expression::Variable { path, var_type } => match **path {
-                Path::LocalVariable { ordinal } if 0 < ordinal && ordinal <= arguments.len() => {
-                    arguments[ordinal - 1].domain.clone()
-                }
-                Path::QualifiedPath {
-                    ref qualifier,
-                    ref selector,
-                    length,
-                } => {
-                    let refined_selector = selector.refine_parameters(arguments);
-                    let refined_path = Path::QualifiedPath {
-                        qualifier: qualifier.clone(),
-                        selector: box refined_selector,
-                        length,
-                    };
+            Expression::Variable { path, var_type } => {
+                let refined_path = path.refine_parameters(arguments);
+                if let Path::Constant { value } = refined_path {
+                    value.domain.clone()
+                } else {
                     Expression::Variable {
                         path: box refined_path,
                         var_type: var_type.clone(),
                     }
                     .into()
                 }
-                _ => {
-                    debug!("path: {:?}", path);
-                    self.clone()
-                }
-            },
+            }
         }
     }
 
-    /// Recursively applies refine_with to every sub expression of self.
+    /// Returns a domain that is simplified (refined) by using the current path conditions
+    /// (conditions known to be true in the current context). If no refinement is possible
+    /// the result is simply a clone of this domain.
     pub fn refine_with(&self, path_condition: &Self) -> Self {
         match &self.expression {
             Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
