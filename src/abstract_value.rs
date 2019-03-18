@@ -759,7 +759,7 @@ impl Path {
                 match &val.domain.expression {
                     Expression::Reference(ref dereferenced_path) => {
                         // The qualifier is being dereferenced, so if the value at qualifier
-                        // is a reference to another path, put the other path in the place
+                        // is an explicit reference to another path, put the other path in the place
                         // of qualifier since references do not own elements directly in
                         // the environment.
                         let path_len = dereferenced_path.path_length() + 1;
@@ -774,16 +774,18 @@ impl Path {
                             deref_path.refine_paths(environment)
                         };
                     }
-                    Expression::Variable { ref path, .. } => {
-                        // In this case the qualifier is not a reference, but an alias.
+                    // if **path == **qualifier, this value came about as the result of a copy
+                    // sequence that started in a formal parameter.
+                    Expression::Variable { ref path, .. } if (**path != **qualifier) => {
+                        // In this case the qualifier is not a reference, but an alias created by
+                        // by a move instruction.
                         // Normally, when local a is assigned to local b, all of the
                         // paths rooted in a are copied or moved to paths rooted in b.
                         // In the case of formal parameters, however, there are no paths to
-                        // copy of move and instead the target is assigned a value which is
-                        // in effect an aliases to the parameter. We de-alias here, which is
-                        // needed because ultimately the path has to get refined in a calling
-                        // context where the root has to be the parameter because temporary locals
-                        // in this function are not visible to its callers.
+                        // copy or move and instead the target is assigned a value which, in the case
+                        // of a move is in an alias to the parameter. We de-alias here, which is
+                        // needed because ultimately the path has to get refined (again) in a calling
+                        // context where the root has to be the parameter.
                         let path_len = path.path_length() + 1;
                         let de_aliased_path = Path::QualifiedPath {
                             qualifier: path.clone(),
