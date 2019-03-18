@@ -1291,13 +1291,26 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
         // Now move (rpath, value) itself.
-        let value = self.lookup_path_and_refine_result(rpath.clone(), rtype);
+        let mut value = self.lookup_path_and_refine_result(rpath.clone(), rtype);
         if move_elements {
             debug!("moving {:?} to {:?}", value, target_path);
             value_map = value_map.remove(&rpath);
         } else {
             debug!("copying {:?} to {:?}", value, target_path);
-        };
+            // if the value is a non primitive and a path reference, update the reference to be the new target
+            if let Expression::Variable { var_type, .. } = &value.domain.expression {
+                if *var_type == ExpressionType::NonPrimitive {
+                    value = AbstractValue {
+                        provenance: value.provenance.clone(),
+                        domain: Expression::Variable {
+                            path: box target_path.clone(),
+                            var_type: var_type.clone(),
+                        }
+                        .into(),
+                    };
+                }
+            }
+        }
         value_map = value_map.insert(target_path, value.with_provenance(self.current_span));
         self.current_environment.value_map = value_map;
     }
