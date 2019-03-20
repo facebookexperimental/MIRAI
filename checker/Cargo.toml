@@ -1,0 +1,29 @@
+[package]
+
+name = "mirai"
+version = "0.0.1"
+authors = ["Herman Venter <hermanv@fb.com>"]
+description = "A static analysis tool for Rust, based on Abstract Interpretation of MIR"
+repository = "https://github.com/facebookexperimental/MIRAI"
+readme = "../README.md"
+license = "MIT"
+edition = "2018"
+
+[lib]
+test = false # we have no unit tests
+doctest = false # and no doc tests
+
+[[bin]]
+name = "mirai"
+path = "src/main.rs"
+
+[dependencies]
+bincode = { version = "*", features = ["i128"] }
+env_logger = "*"
+log = "*"
+mirai-annotations = { path = "../annotations" }
+rpds = { version = "*", features = ["serde"] }
+serde = "*"
+serde_derive = "*"
+sled = "*"
+tempdir = "*"

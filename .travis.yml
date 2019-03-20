@@ -12,6 +12,8 @@ rust:
 cache: cargo
 
 before_script:
+# install audit
+- cargo install --force cargo-audit || true
 # install formatter
 - rustup component add rustfmt-preview
 # install linter
@@ -22,6 +24,8 @@ before_script:
 script:
 # Exit immediately if a command exits with a non-zero status.
 - set -e
+# Audit dependencies
+- cargo audit
 # Run format checks
 - cargo fmt --all -- --check
 # Run lint checks

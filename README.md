@@ -1,5 +1,5 @@
-# Mirai  [![Build Status](https://travis-ci.com/facebookexperimental/MIRAI.svg?token=uaX9rExVwSVz5FfMFphz&branch=master)](https://travis-ci.com/facebookexperimental/MIRAI) [![codecov](https://codecov.io/gh/facebookexperimental/MIRAI/branch/master/graph/badge.svg?token=q4jzL09Ahl)](https://codecov.io/gh/facebookexperimental/MIRAI)
-Mirai is an abstract interpreter for the [Rust](https://www.rust-lang.org/) compiler's [mid-level intermediate
+# MIRAI  [![Build Status](https://travis-ci.com/facebookexperimental/MIRAI.svg?token=uaX9rExVwSVz5FfMFphz&branch=master)](https://travis-ci.com/facebookexperimental/MIRAI) [![codecov](https://codecov.io/gh/facebookexperimental/MIRAI/branch/master/graph/badge.svg?token=q4jzL09Ahl)](https://codecov.io/gh/facebookexperimental/MIRAI)
+MIRAI is an abstract interpreter for the [Rust](https://www.rust-lang.org/) compiler's [mid-level intermediate
 representation](https://github.com/rust-lang/rfcs/blob/master/text/1211-mir.md) (MIR).
 It is intended to become a widely used static analysis tool for Rust.
 The initial focus will be on taint analyis.
@@ -23,10 +23,10 @@ for instructions on how to build, run and debug MIRAI.
 * Expression simplifier
 * Hook up SMT solver
 * Work on scalability
-* Deploy Mirai in the build system of a large project
+* Deploy MIRAI in the build system of a large project
 * More domains and refined diagnostics
 
-## Join the Mirai community
+## Join the MIRAI community
 <!-- * Website:
 * Facebook page:
 * Mailing list
@@ -34,4 +34,4 @@ for instructions on how to build, run and debug MIRAI.
 See the [CONTRIBUTING](https://github.com/facebookexperimental/MIRAI/blob/master/CONTRIBUTING.md) file for how to help out.
 
 ## License
-Mirai is MIT licensed, as found in the [LICENSE](https://github.com/facebookexperimental/MIRAI/blob/master/LICENSE) file.
+MIRAI is MIT licensed, as found in the [LICENSE](https://github.com/facebookexperimental/MIRAI/blob/master/LICENSE) file.
