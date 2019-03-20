@@ -1,0 +1,16 @@
+[package]
+
+name = "mirai-annotations"
+version = "0.0.1"
+authors = ["Herman Venter <hermanv@fb.com>"]
+description = "Macros that provide source code annotations for MIRAI"
+repository = "https://github.com/facebookexperimental/MIRAI"
+readme = "README.md"
+license = "MIT"
+edition = "2018"
+
+[lib]
+test = false # we have no unit tests
+doctest = false # and no doc tests
+
+[dependencies]
