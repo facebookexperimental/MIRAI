@@ -7,6 +7,7 @@ use crate::abstract_domains::{self, AbstractDomain};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
+use crate::k_limits;
 
 use rustc::hir::def_id::DefId;
 use std::collections::HashSet;
@@ -762,7 +763,7 @@ impl Path {
     pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Path {
         match self {
             Path::LocalVariable { ordinal } if 0 < *ordinal && *ordinal <= arguments.len() => {
-                arguments[ordinal - 1].0.clone()
+                arguments[*ordinal - 1].0.clone()
             }
             Path::QualifiedPath {
                 ref qualifier,
@@ -771,11 +772,12 @@ impl Path {
             } => {
                 let refined_qualifier = qualifier.refine_parameters(arguments);
                 let refined_selector = selector.refine_parameters(arguments);
-                let refined_length = refined_qualifier.path_length() + 1;
+                let refined_length = refined_qualifier.path_length();
+                assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
                 Path::QualifiedPath {
                     qualifier: box refined_qualifier,
                     selector: box refined_selector,
-                    length: refined_length,
+                    length: refined_length + 1,
                 }
             }
             _ => self.clone(),
@@ -801,11 +803,12 @@ impl Path {
                         // is an explicit reference to another path, put the other path in the place
                         // of qualifier since references do not own elements directly in
                         // the environment.
-                        let path_len = dereferenced_path.path_length() + 1;
+                        let path_len = dereferenced_path.path_length();
+                        assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
                         let deref_path = Path::QualifiedPath {
                             qualifier: box dereferenced_path.clone(),
                             selector: selector.clone(),
-                            length: path_len,
+                            length: path_len + 1,
                         };
                         return if environment.value_at(&deref_path).is_some() {
                             deref_path
@@ -825,11 +828,12 @@ impl Path {
                         // of a move is in an alias to the parameter. We de-alias here, which is
                         // needed because ultimately the path has to get refined (again) in a calling
                         // context where the root has to be the parameter.
-                        let path_len = path.path_length() + 1;
+                        let path_len = path.path_length();
+                        assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
                         let de_aliased_path = Path::QualifiedPath {
                             qualifier: path.clone(),
                             selector: selector.clone(),
-                            length: path_len,
+                            length: path_len + 1,
                         };
                         return if environment.value_at(&de_aliased_path).is_some() {
                             de_aliased_path
@@ -853,11 +857,12 @@ impl Path {
                 // an unknown value, such as a parameter.
                 let refined_qualifier = qualifier.refine_paths(environment);
                 let refined_selector = selector.refine_paths(environment);
-                let refined_length = refined_qualifier.path_length() + 1;
+                let refined_length = refined_qualifier.path_length();
+                assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
                 return Path::QualifiedPath {
                     qualifier: box refined_qualifier,
                     selector: box refined_selector,
-                    length: refined_length,
+                    length: refined_length + 1,
                 };
             }
         }
@@ -877,6 +882,7 @@ impl Path {
                 } else {
                     qualifier.replace_root(old_root, new_root)
                 };
+                checked_assume!(new_qualifier.path_length() <= k_limits::MAX_PATH_LENGTH);
                 Path::QualifiedPath {
                     length: new_qualifier.path_length() + 1,
                     qualifier: box new_qualifier,

@@ -274,7 +274,9 @@ impl ConstantDomain {
                 if *val2 == 0 {
                     ConstantDomain::Bottom
                 } else {
-                    ConstantDomain::I128(*val1 / *val2)
+                    val1.checked_div(*val2)
+                        .map(ConstantDomain::I128)
+                        .unwrap_or(ConstantDomain::Bottom)
                 }
             }
             (ConstantDomain::U128(val1), ConstantDomain::U128(val2)) => {
@@ -463,14 +465,14 @@ impl ConstantDomain {
                 if *val2 == 0 {
                     ConstantDomain::Bottom
                 } else {
-                    ConstantDomain::I128(*val1 % *val2)
+                    ConstantDomain::I128(val1.wrapping_rem(*val2))
                 }
             }
             (ConstantDomain::U128(val1), ConstantDomain::U128(val2)) => {
                 if *val2 == 0 {
                     ConstantDomain::Bottom
                 } else {
-                    ConstantDomain::U128(*val1 % *val2)
+                    ConstantDomain::U128(val1.wrapping_rem(*val2))
                 }
             }
             _ => ConstantDomain::Bottom,
@@ -665,7 +667,7 @@ impl ConstantValueCache {
     /// Returns a Expression::AbstractHeapAddress with a unique counter value.
     pub fn get_new_heap_address(&mut self) -> Expression {
         let heap_address_counter = self.heap_address_counter;
-        self.heap_address_counter += 1;
+        self.heap_address_counter = self.heap_address_counter.wrapping_add(1);
         Expression::AbstractHeapAddress(heap_address_counter)
     }
 

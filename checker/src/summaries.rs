@@ -186,7 +186,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     ) -> PersistentSummaryCache<'a, 'tcx> {
         PersistentSummaryCache {
             db: Db::start_default(summary_store_path)
-                .unwrap_or_else(|err| panic!(format!("{} ", err))),
+                .unwrap_or_else(|err| unreachable!(format!("{} ", err))),
             cache: HashMap::new(),
             key_cache: HashMap::new(),
             dependencies: HashMap::new(),
