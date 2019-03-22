@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that generates a LazyConst::Unevaluated reference to a constant array
+// A test that generates a ConstValue::Unevaluated reference to a constant array
 // and that checks that MIRAI finds the constant in the summary cache via the def_id
 
 const FOO: [u8; 3] = [1, 2, 3];
