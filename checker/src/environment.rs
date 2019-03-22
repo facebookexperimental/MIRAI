@@ -175,7 +175,7 @@ impl Environment {
                     value_map = value_map.insert(p, join_or_widen(&val1, &val2, &join_condition));
                 }
                 None => {
-                    assert!(!val1.is_bottom());
+                    checked_assume!(!val1.is_bottom());
                     let val = join_or_widen(&val1, &abstract_value::BOTTOM, &join_condition);
                     if !val.is_bottom() {
                         value_map = value_map.insert(p, val);
@@ -185,7 +185,7 @@ impl Environment {
         }
         for (path, val2) in value_map2.iter() {
             if !value_map1.contains_key(path) {
-                assert!(!val2.is_bottom());
+                checked_assume!(!val2.is_bottom());
                 let p = path.clone();
                 let val = join_or_widen(&abstract_value::BOTTOM, &val2, &join_condition);
                 if !val.is_bottom() {
@@ -218,7 +218,7 @@ impl Environment {
                     }
                 }
                 None => {
-                    assert!(!val1.is_bottom());
+                    checked_assume!(!val1.is_bottom());
                     return false;
                 }
             }

@@ -181,7 +181,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             } else {
                 refined_val
             };
-        debug!("result {:?}", result);
         if result_type == ExpressionType::Bool
             && self.current_environment.entry_condition.implies(&result)
         {
@@ -316,11 +315,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
                 break;
             }
-            iteration_count += 1;
             if iteration_count > 50 {
                 println!("fixed point loop diverged");
                 break;
             }
+            iteration_count += 1;
         }
 
         // Now traverse the blocks again, doing checks and emitting diagnostics.
@@ -1407,7 +1406,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         {
                             len - u128::from(offset)
                         } else {
-                            panic!("PathSelector::ConstantIndex implies the length of the value is known")
+                            unreachable!("PathSelector::ConstantIndex implies the length of the value is known")
                         }
                     } else {
                         u128::from(offset)
@@ -1442,7 +1441,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         {
                             u32::try_from(len).unwrap() - to
                         } else {
-                            panic!(
+                            unreachable!(
                                 "PathSelector::Subslice implies the length of the value is known"
                             )
                         }
@@ -1695,16 +1694,18 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             ),
             _ => unreachable!(),
         };
+        let path_length = path.path_length();
+        assume!(path_length < 1_000_000_000); // We'll run out of memory long before this happens
         let path0 = Path::QualifiedPath {
             qualifier: box path.clone(),
             selector: box PathSelector::Field(0),
-            length: path.path_length() + 1,
+            length: path_length + 1,
         };
         self.current_environment.update_value_at(path0, result);
         let path1 = Path::QualifiedPath {
             qualifier: box path.clone(),
             selector: box PathSelector::Field(1),
-            length: path.path_length() + 1,
+            length: path_length + 1,
         };
         self.current_environment
             .update_value_at(path1, overflow_flag);
@@ -1779,10 +1780,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             "default visit_aggregate(path: {:?}, aggregate_kinds: {:?}, operands: {:?})",
             path, aggregate_kinds, operands
         );
-        assume!(match *aggregate_kinds {
+        checked_assume!(match *aggregate_kinds {
             mir::AggregateKind::Array(..) => true,
             _ => false,
         });
+        if path.path_length() >= k_limits::MAX_PATH_LENGTH {
+            // If we get to this limit we have a very weird array. Just use Top.
+            self.current_environment
+                .update_value_at(path, abstract_value::TOP);
+            return;
+        }
         let aggregate_value = self.get_new_heap_address();
         self.current_environment
             .update_value_at(path.clone(), aggregate_value);
@@ -2271,8 +2278,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         }
                     };
                 }
+                let base_path_length = base.path_length();
+                checked_assume!(base_path_length < std::usize::MAX);
                 Path::QualifiedPath {
-                    length: base.path_length() + 1,
+                    length: base_path_length + 1,
                     qualifier: box base,
                     selector: box selector,
                 }
