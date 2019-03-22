@@ -640,7 +640,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 self.preconditions.push((
                     self.current_environment
                         .entry_condition
-                        .not(Some(self.current_span)),
+                        .not(None)
+                        .replacing_provenance(self.current_span),
                     String::from("Execution might panic."),
                 ));
             }
@@ -796,11 +797,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
             if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
                 // Promote the precondition to a precondition of the current function.
-                let promoted_precondition = self
+                let mut promoted_precondition = self
                     .current_environment
                     .entry_condition
-                    .not(Some(self.current_span))
-                    .or(&refined_precondition, Some(self.current_span));
+                    .not(None)
+                    .or(&refined_precondition, None);
+                let mut stacked_provenance = vec![self.current_span];
+                stacked_provenance.append(&mut precondition.provenance.clone());
+                promoted_precondition.provenance = stacked_provenance;
                 self.preconditions
                     .push((promoted_precondition, message.clone()));
             }
@@ -910,10 +914,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let error = self.session.struct_span_err(span, "false assertion");
                     self.emit_diagnostic(error);
                     if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                        // promote the path as precondition. I.e. the program is only correct
+                        // if we never get here.
                         self.preconditions.push((
                             self.current_environment
                                 .entry_condition
-                                .not(Some(self.current_span)),
+                                .not(None)
+                                .replacing_provenance(self.current_span),
                             "will cause a false assertion".to_string(),
                         ));
                     }
@@ -940,7 +947,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     self.preconditions.push((
                         self.current_environment
                             .entry_condition
-                            .not(Some(self.current_span)),
+                            .not(None)
+                            .replacing_provenance(self.current_span),
                         "possibly false assertion".to_string(),
                     ));
                 }
@@ -1000,7 +1008,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         self.preconditions.push((
                             self.current_environment
                                 .entry_condition
-                                .not(Some(self.current_span)),
+                                .not(None)
+                                .replacing_provenance(self.current_span),
                             maybe_message,
                         ));
                     }
@@ -1116,7 +1125,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         .current_environment
                         .entry_condition
                         .not(None)
-                        .or(&expected_cond, Some(self.current_span));
+                        .or(&expected_cond, None)
+                        .replacing_provenance(self.current_span);
                     self.preconditions
                         .push((pre_cond, String::from(msg.description())));
                 }
