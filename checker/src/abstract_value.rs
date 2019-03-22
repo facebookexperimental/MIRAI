@@ -523,6 +523,13 @@ impl AbstractValue {
         }
     }
 
+    /// Returns a clone of the value with the given span replacing its provenance.
+    pub fn replacing_provenance(&self, provenance: Span) -> AbstractValue {
+        let mut result = self.clone();
+        result.provenance = vec![provenance];
+        result
+    }
+
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "<<" to each element of the cross product of the concrete
     /// values or self and other.
@@ -643,7 +650,7 @@ impl AbstractValue {
         }
     }
 
-    /// Returns a clone of the value with the given span prepended to its provence.
+    /// Returns a clone of the value with the given span prepended to its provenance.
     pub fn with_provenance(&self, provenance: Span) -> AbstractValue {
         let mut result = self.clone();
         result.provenance.insert(0, provenance);
