@@ -180,6 +180,85 @@ impl ConstantDomain {
         }
     }
 
+    /// Returns a constant that is "self as target_type"
+    #[allow(clippy::cast_lossless)]
+    pub fn cast(&self, target_type: ExpressionType) -> Self {
+        match self {
+            ConstantDomain::Bottom => self.clone(),
+            ConstantDomain::Char(ch) => {
+                let char_as_int_const = ConstantDomain::U128(u128::from(*ch as u32));
+                char_as_int_const.cast(target_type)
+            }
+            ConstantDomain::False => {
+                if target_type.is_signed_integer() {
+                    ConstantDomain::I128(0)
+                } else {
+                    ConstantDomain::U128(0)
+                }
+            }
+            ConstantDomain::True => {
+                if target_type.is_signed_integer() {
+                    ConstantDomain::I128(1)
+                } else {
+                    ConstantDomain::U128(1)
+                }
+            }
+            ConstantDomain::U128(val) => {
+                if target_type == ExpressionType::Char {
+                    ConstantDomain::Char((*val as u8) as char)
+                } else if target_type.is_signed_integer() {
+                    ConstantDomain::I128(*val as i128).cast(target_type)
+                } else {
+                    match target_type {
+                        ExpressionType::U8 => ConstantDomain::U128((*val as u8) as u128),
+                        ExpressionType::U16 => ConstantDomain::U128((*val as u16) as u128),
+                        ExpressionType::U32 => ConstantDomain::U128((*val as u32) as u128),
+                        ExpressionType::U64 => ConstantDomain::U128((*val as u64) as u128),
+                        _ => self.clone(),
+                    }
+                }
+            }
+            ConstantDomain::I128(val) => {
+                if target_type.is_unsigned_integer() {
+                    ConstantDomain::U128(*val as u128).cast(target_type)
+                } else {
+                    match target_type {
+                        ExpressionType::I8 => ConstantDomain::I128((*val as i8) as i128),
+                        ExpressionType::I16 => ConstantDomain::I128((*val as i16) as i128),
+                        ExpressionType::I32 => ConstantDomain::I128((*val as i32) as i128),
+                        ExpressionType::I64 => ConstantDomain::I128((*val as i64) as i128),
+                        _ => self.clone(),
+                    }
+                }
+            }
+            ConstantDomain::F32(val) => {
+                let f = f32::from_bits(*val);
+                if target_type == ExpressionType::F64 {
+                    ConstantDomain::F64((f as f64).to_bits())
+                } else if target_type.is_signed_integer() {
+                    ConstantDomain::I128(f as i128).cast(target_type)
+                } else if target_type.is_unsigned_integer() {
+                    ConstantDomain::U128(f as u128).cast(target_type)
+                } else {
+                    self.clone()
+                }
+            }
+            ConstantDomain::F64(val) => {
+                let f = f64::from_bits(*val);
+                if target_type == ExpressionType::F32 {
+                    ConstantDomain::F32((f as f32).to_bits())
+                } else if target_type.is_signed_integer() {
+                    ConstantDomain::I128(f as i128).cast(target_type)
+                } else if target_type.is_unsigned_integer() {
+                    ConstantDomain::U128(f as u128).cast(target_type)
+                } else {
+                    self.clone()
+                }
+            }
+            _ => self.clone(),
+        }
+    }
+
     /// Returns a constant that is "self / other".
     pub fn div(&self, other: &Self) -> Self {
         match (&self, &other) {

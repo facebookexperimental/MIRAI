@@ -9,6 +9,7 @@ use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::interval_domain::{self, IntervalDomain};
 
+use crate::expression::Expression::ConditionalExpression;
 use rustc::ty::TyKind;
 use std::fmt::{Debug, Formatter, Result};
 use std::hash::Hash;
@@ -266,6 +267,34 @@ impl AbstractDomain {
             right: box other.clone(),
         }
         .into()
+    }
+
+    /// Returns an element that is "self as target_type".
+    pub fn cast(&self, target_type: ExpressionType) -> Self {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = v1.cast(target_type.clone());
+            if result != ConstantDomain::Bottom {
+                return result.into();
+            }
+        };
+        match &self.expression {
+            Expression::Bottom => self.clone(),
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => ConditionalExpression {
+                condition: condition.clone(),
+                consequent: box consequent.cast(target_type.clone()),
+                alternate: box alternate.cast(target_type),
+            }
+            .into(),
+            _ => Expression::Cast {
+                operand: box self.clone(),
+                target_type,
+            }
+            .into(),
+        }
     }
 
     /// Returns an element that is "self / other".
@@ -906,6 +935,10 @@ impl AbstractDomain {
             Expression::BitXor { left, right } => left
                 .refine_paths(environment)
                 .bit_xor(&right.refine_paths(environment)),
+            Expression::Cast {
+                operand,
+                target_type,
+            } => operand.refine_paths(environment).cast(target_type.clone()),
             Expression::CompileTimeConstant(..) => self.clone(),
             Expression::ConditionalExpression {
                 condition,
@@ -1044,6 +1077,12 @@ impl AbstractDomain {
             Expression::BitXor { left, right } => left
                 .refine_parameters(arguments)
                 .bit_xor(&right.refine_parameters(arguments)),
+            Expression::Cast {
+                operand,
+                target_type,
+            } => operand
+                .refine_parameters(arguments)
+                .cast(target_type.clone()),
             Expression::CompileTimeConstant(..) => self.clone(),
             Expression::ConditionalExpression {
                 condition,
@@ -1184,6 +1223,12 @@ impl AbstractDomain {
             Expression::BitXor { left, right } => left
                 .refine_with(path_condition)
                 .bit_xor(&right.refine_with(path_condition)),
+            Expression::Cast {
+                operand,
+                target_type,
+            } => operand
+                .refine_with(path_condition)
+                .cast(target_type.clone()),
             Expression::CompileTimeConstant(..) => self.clone(),
             Expression::ConditionalExpression {
                 condition,

@@ -75,6 +75,12 @@ pub enum Expression {
         right: Box<AbstractDomain>,
     },
 
+    /// An expression that is the operand cast to the target_type. as
+    Cast {
+        operand: Box<AbstractDomain>,
+        target_type: ExpressionType,
+    },
+
     /// An expression that is a compile time constant value, such as a numeric literal or a function.
     CompileTimeConstant(ConstantDomain),
 
@@ -341,6 +347,15 @@ impl ExpressionType {
         use self::ExpressionType::*;
         match self {
             I8 | I16 | I32 | I64 | I128 | Isize => true,
+            _ => false,
+        }
+    }
+
+    /// Returns true if this type is one of the unsigned integer types.
+    pub fn is_unsigned_integer(&self) -> bool {
+        use self::ExpressionType::*;
+        match self {
+            U8 | U16 | U32 | U64 | U128 | Usize => true,
             _ => false,
         }
     }

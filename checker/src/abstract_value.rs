@@ -227,6 +227,15 @@ impl AbstractValue {
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
+    /// values resulting from applying "as target_type" to each element of the concrete values of self.
+    pub fn cast(&self, target_type: ExpressionType) -> AbstractValue {
+        AbstractValue {
+            provenance: self.provenance.clone(),
+            domain: self.domain.cast(target_type),
+        }
+    }
+
+    /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "/" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn div(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
