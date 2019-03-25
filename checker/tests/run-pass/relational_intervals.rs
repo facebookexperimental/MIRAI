@@ -27,3 +27,4 @@ pub fn t2(cond: bool) {
     verify!(bottom <= bottom); //~ possibly false assertion
 }
 
+pub fn main() {}

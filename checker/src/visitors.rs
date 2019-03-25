@@ -1503,7 +1503,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.lookup_path_and_refine_result(length_path, ExpressionType::Usize)
     }
 
-    /// path = operand. The cast is a no-op for the interpreter.
+    /// path = operand as ty.
     fn visit_cast(
         &mut self,
         path: Path,
@@ -1515,7 +1515,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             "default visit_cast(path: {:?}, cast_kind: {:?}, operand: {:?}, ty: {:?})",
             path, cast_kind, operand, ty
         );
-        self.visit_use(path, operand)
+        let operand = self.visit_operand(operand);
+        let result = if cast_kind == mir::CastKind::Misc {
+            operand.cast(ExpressionType::from(&ty.sty))
+        } else {
+            operand
+        };
+        self.current_environment.update_value_at(path, result);
     }
 
     /// Apply the given binary operator to the two operands and assign result to path.
