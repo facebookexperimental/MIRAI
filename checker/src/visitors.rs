@@ -244,9 +244,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         .filter(|(_, pred_exit_condition)| pred_exit_condition.is_some())
                         .collect();
                     if predecessor_states_and_conditions.is_empty() {
-                        // unreachable block
+                        // nothing is currently known about the predecessors
                         let mut i_state = in_state[&bb].clone();
-                        i_state.entry_condition = abstract_value::FALSE;
+                        i_state.entry_condition = abstract_value::TOP;
                         i_state
                     } else {
                         // We want to do right associative operations and that is easier if we reverse.
@@ -274,10 +274,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         i_state
                     }
                 };
-                // Analyze the basic block.
+                // Analyze the basic block
                 in_state.insert(bb, i_state.clone());
-                self.current_environment = i_state;
-                self.visit_basic_block(bb);
+                if i_state.entry_condition.as_bool_if_known().unwrap_or(true) {
+                    self.current_environment = i_state;
+                    self.visit_basic_block(bb);
+                }
 
                 // Check for a fixed point.
                 if !self.current_environment.subset(&out_state[&bb]) {
