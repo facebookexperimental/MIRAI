@@ -44,6 +44,7 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
     summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
     smt_solver: &'a mut dyn SmtSolver<E>,
 
+    already_report_errors_for_call_to: HashSet<AbstractValue>,
     check_for_errors: bool,
     current_environment: Environment,
     current_location: mir::Location,
@@ -73,6 +74,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             summary_cache: crate_context.summary_cache,
             smt_solver: crate_context.smt_solver,
 
+            already_report_errors_for_call_to: HashSet::new(),
             check_for_errors: false,
             current_environment: Environment::default(),
             current_location: mir::Location::START,
@@ -90,6 +92,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Restores the method only state to its initial state.
     fn reset_visitor_state(&mut self) {
+        self.already_report_errors_for_call_to = HashSet::new();
         self.check_for_errors = false;
         self.current_environment = Environment::default();
         self.current_location = mir::Location::START;
@@ -721,8 +724,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             }
         }
         let function_summary = self.get_function_summary(&func_to_call);
-        if self.check_for_errors {
-            self.check_function_preconditions(&actual_args, &function_summary);
+        if self.check_for_errors
+            && !self
+                .already_report_errors_for_call_to
+                .contains(&func_to_call)
+        {
+            self.check_function_preconditions(&actual_args, &function_summary, &func_to_call);
         }
         self.transfer_and_refine_normal_return_state(destination, &actual_args, &function_summary);
         self.transfer_and_refine_cleanup_state(cleanup);
@@ -754,6 +761,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         &mut self,
         actual_args: &[(Path, AbstractValue)],
         function_summary: &Summary,
+        func_to_call: &AbstractValue,
     ) {
         verify!(self.check_for_errors);
         for (precondition, message) in &function_summary.preconditions {
@@ -777,7 +785,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 {
                     // We always get here if the function is called, and the precondition is always
                     // false, so complain loudly.
-                    self.emit_diagnostic_for_precondition(precondition, &message);
+                    if !self
+                        .already_report_errors_for_call_to
+                        .contains(&func_to_call)
+                    {
+                        self.emit_diagnostic_for_precondition(precondition, &message);
+                        self.already_report_errors_for_call_to
+                            .insert(func_to_call.clone());
+                    }
                     // Don't promote a false precondition. The callers cannot possibly satisfy it,
                     // so there is no point in complaining at call sites.
                     continue;
@@ -785,8 +800,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     // We might never get here since it depends on the parameter values used to call
                     // this function. If the function is public, let's warn that we might get here.
                     if is_public(self.def_id, &self.tcx) {
-                        let warning = format!("possible error: {}", message.as_str());
-                        self.emit_diagnostic_for_precondition(precondition, &warning);
+                        if !self
+                            .already_report_errors_for_call_to
+                            .contains(&func_to_call)
+                        {
+                            let warning = format!("possible error: {}", message.as_str());
+                            self.emit_diagnostic_for_precondition(precondition, &warning);
+                            self.already_report_errors_for_call_to
+                                .insert(func_to_call.clone());
+                        }
                     } else {
                         // Since the function is not public, we assume that we get to see
                         // every call to this function, so just rely on the inferred precondition.
