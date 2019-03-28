@@ -26,13 +26,8 @@ fn do_join(cond: bool) {
         c.f = 3;
         verify!(c.f == 3);
     }
-//    todo: enable the next two asserts when the fixed point logic gets better
-//    (if there are two asserts the second shares the unwind block of the first and does
-//    a backwards branch to it, leading to a fixed point loop that widens and thus loses
-//    precision).
-//    verify!(a.f == if cond { 3 } else { 1 });
-//    verify!(b.f == if cond { 2 } else { 3 });
-//    todo: #32 enable this when the simplifier gets better
-//    verify!(if cond { a.f == 3 } else { b.f == 3 });
-//    verify!(if !cond { a.f == 1 } else { b.f == 2 });
+    verify!(a.f == if cond { 3 } else { 1 });
+    verify!(b.f == if cond { 2 } else { 3 });
+    verify!(if cond { a.f == 3 } else { b.f == 3 });
+    verify!(if !cond { a.f == 1 } else { b.f == 2 });
 }

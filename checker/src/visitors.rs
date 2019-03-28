@@ -20,6 +20,7 @@ use rustc::{hir, mir};
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::iter::FromIterator;
 use syntax::errors::DiagnosticBuilder;
 use syntax_pos;
@@ -263,9 +264,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             predecessor_states_and_conditions.iter().skip(1)
                         {
                             let join_condition = pred_exit_condition.unwrap();
-                            // Once all paths have already been analyzed for a second time (iteration_count >= 3)
-                            // we to abstract more aggressively in order to ensure reaching a fixed point.
-                            let mut j_state = if iteration_count < 3 {
+                            // Once all paths have already been analyzed for a second time (iteration_count == 2)
+                            // all blocks not involved in loops will have their final values.
+                            // If there are no loops, the next iteration will be a no-op, but since we
+                            // don't know if there are loops or not, we do iteration_count == 3 while still
+                            // joining. Once we get to iteration_count == 4, we start widening in
+                            // order to converge on a fixed point.
+                            let mut j_state = if iteration_count < 4 {
                                 p_state.join(&i_state, join_condition)
                             } else {
                                 p_state.widen(&i_state, join_condition)
@@ -2099,115 +2104,46 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ) -> Vec<AbstractValue> {
         let is_signed_type = elem_type.is_signed_integer();
         let bytes_per_elem = (elem_type.bit_length() / 8) as usize;
-        verify!(
-            bytes_per_elem == 1
-                || bytes_per_elem == 2
-                || bytes_per_elem == 4
-                || bytes_per_elem == 8
-                || bytes_per_elem == 16
-        );
         if let Some(len) = len {
-            if (len * (bytes_per_elem as u128)) != u128::try_from(bytes.len()).unwrap() {
-                unimplemented!()
-            }
+            checked_assume_eq!(
+                len * (bytes_per_elem as u128),
+                u128::try_from(bytes.len()).unwrap()
+            );
         }
-        let mut result = vec![];
-        for i in 0..bytes.len() / bytes_per_elem {
-            let j = i * bytes_per_elem;
-            if is_signed_type {
-                result.push(
-                    self.constant_value_cache
-                        .get_i128_for(match bytes_per_elem {
-                            1 => i128::from(i8::from_le_bytes([bytes[j]])),
-                            2 => i128::from(i16::from_le_bytes([bytes[j], bytes[j + 1]])),
-                            4 => i128::from(i32::from_le_bytes([
-                                bytes[j],
-                                bytes[j + 1],
-                                bytes[j + 2],
-                                bytes[j + 3],
-                            ])),
-                            8 => i128::from(i64::from_le_bytes([
-                                bytes[j],
-                                bytes[j + 1],
-                                bytes[j + 2],
-                                bytes[j + 3],
-                                bytes[j + 4],
-                                bytes[j + 5],
-                                bytes[j + 6],
-                                bytes[j + 7],
-                            ])),
-                            16 => i128::from_le_bytes([
-                                bytes[j],
-                                bytes[j + 1],
-                                bytes[j + 2],
-                                bytes[j + 3],
-                                bytes[j + 4],
-                                bytes[j + 5],
-                                bytes[j + 6],
-                                bytes[j + 7],
-                                bytes[j + 8],
-                                bytes[j + 9],
-                                bytes[j + 10],
-                                bytes[j + 11],
-                                bytes[j + 12],
-                                bytes[j + 13],
-                                bytes[j + 14],
-                                bytes[j + 15],
-                            ]),
-                            _ => unreachable!(),
-                        })
-                        .clone()
-                        .into(),
-                );
-            } else {
-                result.push(
-                    self.constant_value_cache
-                        .get_u128_for(match bytes_per_elem {
-                            1 => u128::from(u8::from_le_bytes([bytes[j]])),
-                            2 => u128::from(u16::from_le_bytes([bytes[j], bytes[j + 1]])),
-                            4 => u128::from(u32::from_le_bytes([
-                                bytes[j],
-                                bytes[j + 1],
-                                bytes[j + 2],
-                                bytes[j + 3],
-                            ])),
-                            8 => u128::from(u64::from_le_bytes([
-                                bytes[j],
-                                bytes[j + 1],
-                                bytes[j + 2],
-                                bytes[j + 3],
-                                bytes[j + 4],
-                                bytes[j + 5],
-                                bytes[j + 6],
-                                bytes[j + 7],
-                            ])),
-                            16 => u128::from_le_bytes([
-                                bytes[j],
-                                bytes[j + 1],
-                                bytes[j + 2],
-                                bytes[j + 3],
-                                bytes[j + 4],
-                                bytes[j + 5],
-                                bytes[j + 6],
-                                bytes[j + 7],
-                                bytes[j + 8],
-                                bytes[j + 9],
-                                bytes[j + 10],
-                                bytes[j + 11],
-                                bytes[j + 12],
-                                bytes[j + 13],
-                                bytes[j + 14],
-                                bytes[j + 15],
-                            ]),
-                            _ => unreachable!(),
-                        })
-                        .clone()
-                        .into(),
-                );
+        let chunks = bytes.chunks_exact(bytes_per_elem);
+        if is_signed_type {
+            fn get_signed_element_value(bytes: &[u8]) -> i128 {
+                match bytes.len() {
+                    1 => i128::from(bytes[0] as i8),
+                    2 => i128::from(i16::from_ne_bytes(bytes.try_into().unwrap())),
+                    4 => i128::from(i32::from_ne_bytes(bytes.try_into().unwrap())),
+                    8 => i128::from(i64::from_ne_bytes(bytes.try_into().unwrap())),
+                    16 => i128::from_ne_bytes(bytes.try_into().unwrap()),
+                    _ => unreachable!(),
+                }
             }
+
+            let signed_numbers = chunks.map(get_signed_element_value);
+            signed_numbers
+                .map(|n| ConstantDomain::I128(n).into())
+                .collect()
+        } else {
+            fn get_unsigned_element_value(bytes: &[u8]) -> u128 {
+                match bytes.len() {
+                    1 => u128::from(bytes[0]),
+                    2 => u128::from(u16::from_ne_bytes(bytes.try_into().unwrap())),
+                    4 => u128::from(u32::from_ne_bytes(bytes.try_into().unwrap())),
+                    8 => u128::from(u64::from_ne_bytes(bytes.try_into().unwrap())),
+                    16 => u128::from_ne_bytes(bytes.try_into().unwrap()),
+                    _ => unreachable!(),
+                }
+            }
+
+            let unsigned_numbers = chunks.map(get_unsigned_element_value);
+            unsigned_numbers
+                .map(|n| ConstantDomain::U128(n).into())
+                .collect()
         }
-        debug!("{:?}", result);
-        result
     }
 
     /// The anonymous type of a function declaration/definition. Each
