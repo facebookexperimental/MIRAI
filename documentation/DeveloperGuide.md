@@ -50,7 +50,40 @@ To run mirai via cargo, as if it were rustc, first do `cargo install --force --p
 
 ## Debugging
 
-VSCode gives a better experience than Clion at the moment. To use VSCode you'll need to add the following to the
+### Clion
+
+To debug MIRAI with CLion, edit the default configuration to provide some more information. For example here is
+my configuration for debugging a particular test case:
+
+```
+run --package mirai --bin mirai -- tests/run-pass/assume.rs 
+  --extern mirai_annotations=/Users/hermanv/projects/mirai/target/debug/deps/libmirai_annotations-1badff3b9dc95bd4.rlib
+```
+
+The `--extern` option is necessary for the Rust compiler to find the mirai_annotations library that is used to provide
+the assume and verify macros used in the test case. This is pretty annoying and to make matters even worse, the
+compiler complains if the compiler used to compile the annotations library does not match the compiler that is
+hosting MIRAI, so you have to update this frequently. If you have trouble identifying the matching version, just do
+cargo clean and then cargo build and look in the newly constructed target/debug/deps directory.
+
+You'll also have to set some environmental variables, for example:
+```
+DYLD_LIBRARY_PATH=/Users/hermanv/.rustup/toolchains/nightly-x86_64-apple-darwin/lib;
+MIRAI_LOG=debug
+```
+
+DYLD_LIBRARY_PATH allows the loader to find the rust runtime library. You need to set it explicitly because the path
+provided by cargo to the Rust compiler is a temporary one, so the path that ends up in the binary being debugged does
+not work.
+
+MIRAI_LOG allows you to set the logging level. Since the rust debugger does not allow you to see non primitive values,
+you'll have to sprinkle you code with lots of log statements.
+
+Finally, set the working directory to the checker directory, i.e. something like `/Users/hermanv/mirai/checker`.
+
+### VsCode
+
+To use VSCode you'll need to add the following to the
 configurations property of the content of the launch.json file in the .vscode directory of your project directory:
 ```    {
         "type": "lldb",
@@ -70,14 +103,60 @@ configurations property of the content of the launch.json file in the .vscode di
            "DYLD_LIBRARY_PATH": "${env:HOME}/.rustup/toolchains/nightly-x86_64-apple-darwin/lib",
         },
         "sourceLanguages": ["rust"],
-        "args": [<what you'll give to rustc, split into an array of strings using space as the delimiter>],
-        "cwd": "${workspaceFolder}",
+        "args": [<what you'll give to rustc, split into an array of strings using space as the delimiter,
+        remember to append the --extern option described in the CLion section>],
+        "cwd": "${workspaceFolder}/checker",
     },
 ```
 
 Note that VSCode runs cargo to build mirai (if necessary) and gets the location of the binary from cargo. When
 actually debugging, however, it runs the binary directly, so it is necessary to set DYLD_LIBRARY_PATH. VSCode config
 files don't support things like `$(rustc --print sysroot)`, hence the more brittle expression above.
+
+## Debugging the test framework
+
+If you are tweaking the test framework and need to debug your tweaks, you'll need a different configuration.
+
+### Clion
+
+Use this configuration:
+```
+test --package mirai --test integration_tests ""
+```
+
+### VsCode
+
+There does not seem to be a way to do this with a cargo configuration, so I first use cargo test to get the name of
+the generated binary and then debug that using a launch configuration along these lines:
+```
+{
+            "type": "lldb",
+            "request": "launch",
+            "name": "Launch",
+            "program": "${workspaceFolder}/target/debug/deps/integration_tests-0ca00d8d322a6adc",
+            "sourceLanguages": ["rust"],
+            "args": [],
+            "cwd": "${workspaceFolder}/checker",
+            "env": {
+                "DYLD_LIBRARY_PATH": "${env:HOME}/.rustup/toolchains/nightly-x86_64-apple-darwin/lib",
+                "MIRAI_LOG": "debug",
+            }
+        },        
+```
+
+## Debugging MIRAI analyzing MIRAI
+
+### Clion
+
+MIRAI has a lot of dependencies and all of these need to be specified explicitly when running mirai directly (i.e. not 
+via cargo). The way I do this is to first run "cargo clean -p mirai; cargo build -v" and then to copy and past all of
+the parameters given to rustc by cargo to the first configuration described above, replacing everything following the
+ `-- `option.
+
+### VsCode
+
+I don't use VsCode for this scenario. You'll probably want to write a script to parse the rustc command line and dump
+it into the JSON format needed by VSCode.
 
 ## Debugging rustc
 

@@ -56,7 +56,7 @@ build of rustc
         },
         "sourceLanguages": ["rust"],
         "args": [<what you'll give to rustc, split into an array of strings using space as the delimiter>],
-        "cwd": "${workspaceFolder}",
+        "cwd": "${workspaceFolder}/checker",
     },
 ```
 
