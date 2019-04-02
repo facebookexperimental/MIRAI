@@ -9,6 +9,6 @@
 pub fn foo(arr: &mut [i32], i: usize) -> String {
     arr[i] = 123; //~ possible array index out of bounds
     let result = String::from("foo");
-    let _e = arr[i]; //~ possible array index out of bounds
+    let _e = arr[i]; // no warning here because we can't get here unless line 10 succeeded
     result
 }
