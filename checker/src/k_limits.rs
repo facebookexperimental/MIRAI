@@ -14,3 +14,6 @@ pub const MAX_PATH_LENGTH: usize = 10;
 
 /// The point at which diverging summaries experience exponential blowup right now.
 pub const MAX_OUTER_FIXPOINT_ITERATIONS: usize = 3;
+
+/// The maximum number of seconds that MIRAI is willing to analyze a function body for.
+pub const MAX_ANALYSIS_TIME_FOR_BODY: u64 = 3;

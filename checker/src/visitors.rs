@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::iter::FromIterator;
+use std::time::Instant;
 use syntax::errors::DiagnosticBuilder;
 use syntax_pos;
 
@@ -209,8 +210,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
     /// Returns true if the newly computed summary is different from the summary (if any)
     /// that is already in the cache.
-    pub fn visit_body(&mut self) -> Option<Summary> {
+    pub fn visit_body(&mut self) -> (Option<Summary>, u64) {
         debug!("visit_body({:?})", self.def_id);
+        let start_instant = Instant::now();
+        let mut elapsed_time_in_seconds = 0;
         // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
         let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
         // out_state[bb] is the environment that results from analyzing block bb, given in_state[bb]
@@ -229,6 +232,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         while changed {
             changed = false;
             for bb in self.mir.basic_blocks().indices() {
+                elapsed_time_in_seconds = start_instant.elapsed().as_secs();
+                if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                    break;
+                }
+
                 // Merge output states of predecessors of bb
                 let i_state = if bb.index() == 0 {
                     first_state.clone()
@@ -301,6 +309,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     // we have reached a fixed point for this block.
                 }
             }
+            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                break;
+            }
             iteration_count += 1;
             if iteration_count > 50 {
                 println!("fixed point loop diverged");
@@ -325,6 +336,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
         // Now create a summary of the body that can be in-lined into call sites.
         let summary = summaries::summarize(
+            elapsed_time_in_seconds,
             self.mir.arg_count,
             &self.exit_environment,
             &self.preconditions,
@@ -336,10 +348,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             let old_summary = self.summary_cache.get_summary_for(self.def_id, None);
             summary != *old_summary
         };
-        if changed {
-            self.summary_cache.set_summary_for(self.def_id, summary)
+        if changed && elapsed_time_in_seconds < k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+            (
+                self.summary_cache.set_summary_for(self.def_id, summary),
+                elapsed_time_in_seconds,
+            )
         } else {
-            None
+            (None, elapsed_time_in_seconds)
         }
     }
 

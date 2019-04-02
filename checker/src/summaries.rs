@@ -42,6 +42,11 @@ use std::ops::Deref;
 ///    with explicit contract functions.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct Summary {
+    /// The number of seconds that the analyzer used to construct this summary.
+    /// If it is >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY then this summary is not definitive
+    /// because the analyzer will omit it from the outer fixed point loop.
+    pub analysis_time_in_seconds: u64,
+
     // Conditions that should hold prior to the call.
     // Callers should substitute parameter values with argument values and simplify the results
     // under the current path condition. Any values that do not simplify to true will require the
@@ -89,6 +94,7 @@ pub struct Summary {
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
 pub fn summarize(
+    analysis_time_in_seconds: u64,
     argument_count: usize,
     exit_environment: &Environment,
     preconditions: &[(AbstractValue, String)],
@@ -108,6 +114,7 @@ pub fn summarize(
     unwind_side_effects.sort();
 
     Summary {
+        analysis_time_in_seconds,
         preconditions,
         result: result.cloned(),
         side_effects,
