@@ -719,6 +719,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 } else {
                     unreachable!()
                 }
+                if let Some(cleanup_bb) = cleanup {
+                    self.current_environment
+                        .exit_conditions
+                        .insert(cleanup_bb, abstract_value::FALSE);
+                }
                 return;
             }
         }
@@ -731,7 +736,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             self.check_function_preconditions(&actual_args, &function_summary, &func_to_call);
         }
         self.transfer_and_refine_normal_return_state(destination, &actual_args, &function_summary);
-        self.transfer_and_refine_cleanup_state(cleanup);
+        self.transfer_and_refine_cleanup_state(cleanup, &actual_args, &function_summary);
         if self.check_for_errors {
             self.report_calls_to_special_functions(func_to_call, &actual_args)
         }
@@ -875,7 +880,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     actual_args,
                 );
             }
-            let mut exit_condition = self.exit_environment.entry_condition.clone();
+            let mut exit_condition = self.current_environment.entry_condition.clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
                 exit_condition =
                     exit_condition.and(&unwind_condition.not(None), Some(self.current_span));
@@ -887,14 +892,29 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Handle the case where the called function does not complete normally.
-    fn transfer_and_refine_cleanup_state(&mut self, cleanup: Option<mir::BasicBlock>) {
+    fn transfer_and_refine_cleanup_state(
+        &mut self,
+        cleanup: Option<mir::BasicBlock>,
+        actual_args: &[(Path, AbstractValue)],
+        function_summary: &Summary,
+    ) {
         if let Some(cleanup_target) = cleanup {
-            //todo: transfer and refine the actual cleanup state (once summaries actually include it)
-            // this will also require the addition of something like self.current_unwind_environment.
-            self.current_environment.exit_conditions.insert(
-                cleanup_target,
-                self.current_environment.entry_condition.clone(),
-            );
+            for (i, (target_path, _)) in actual_args.iter().enumerate() {
+                let parameter_path = Path::LocalVariable { ordinal: i + 1 };
+                self.transfer_and_refine(
+                    &function_summary.unwind_side_effects,
+                    target_path,
+                    parameter_path,
+                    actual_args,
+                );
+            }
+            let mut exit_condition = self.current_environment.entry_condition.clone();
+            if let Some(unwind_condition) = &function_summary.unwind_condition {
+                exit_condition = exit_condition.and(&unwind_condition, Some(self.current_span));
+            }
+            self.current_environment
+                .exit_conditions
+                .insert(cleanup_target, exit_condition);
         }
     }
 
@@ -1188,6 +1208,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 cond_as_bool = self.solve_condition(cond_val)
             }
             self.smt_solver.backtrack();
+        } else if entry_cond_as_bool.unwrap() && cond_as_bool.is_none() {
+            cond_as_bool = self.solve_condition(cond_val)
         }
         (cond_as_bool, entry_cond_as_bool)
     }

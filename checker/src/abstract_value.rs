@@ -847,6 +847,18 @@ impl Path {
                         // can refine this value.
                     }
                 }
+            } else {
+                // The qualifier does not match a value in the environment, but parts of it might.
+                // Reminder, a path that does not match a value in the environment is rooted in
+                // an unknown value, such as a parameter.
+                let refined_qualifier = qualifier.refine_paths(environment);
+                let refined_selector = selector.refine_paths(environment);
+                let refined_length = refined_qualifier.path_length() + 1;
+                return Path::QualifiedPath {
+                    qualifier: box refined_qualifier,
+                    selector: box refined_selector,
+                    length: refined_length,
+                };
             }
         }
         self.clone()
@@ -924,6 +936,19 @@ impl PathSelector {
     pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
         if let PathSelector::Index(boxed_abstract_value) = self {
             boxed_abstract_value.record_heap_addresses(result);
+        }
+    }
+
+    /// Returns a value that is simplified (refined) by replacing values with Variable(path) expressions
+    /// with the value at that path (if there is one). If no refinement is possible
+    /// the result is simply a clone of this value. This refinement only makes sense
+    /// following a call to refine_parameters.
+    pub fn refine_paths(&self, environment: &mut Environment) -> Self {
+        if let PathSelector::Index(boxed_abstract_value) = self {
+            let refined_value = (**boxed_abstract_value).refine_paths(environment);
+            PathSelector::Index(box refined_value)
+        } else {
+            self.clone()
         }
     }
 
