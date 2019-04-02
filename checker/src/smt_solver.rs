@@ -30,6 +30,14 @@ pub trait SmtSolver<SmtExpressionType> {
     /// Translate the MIRAI expression into a corresponding expression for the Solver.
     fn get_as_smt_predicate(&mut self, mirai_expression: &Expression) -> SmtExpressionType;
 
+    /// Provides a string that contains a set of variable assignments that satisfied the
+    /// assertions in the solver. Can only be called after self.solve return SmtResult::Satisfiable.
+    fn get_model_as_string(&self) -> String;
+
+    /// Provides a string that contains a listing of all of the definitions and assertions that
+    /// have been added to the solver.
+    fn get_solver_state_as_string(&self) -> String;
+
     /// Create a nested context. When a matching backtrack is called, the current context (state)
     /// of the solver will be restored to what it was when this was called.
     fn set_backtrack_position(&mut self);
@@ -62,6 +70,14 @@ impl SmtSolver<()> for SolverStub {
     fn backtrack(&mut self) {}
 
     fn get_as_smt_predicate(&mut self, _mirai_expression: &Expression) {}
+
+    fn get_model_as_string(&self) -> String {
+        String::from("not implemented")
+    }
+
+    fn get_solver_state_as_string(&self) -> String {
+        String::from("not implemented")
+    }
 
     fn set_backtrack_position(&mut self) {}
 
