@@ -83,19 +83,24 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
             let mut defs_to_analyze: HashSet<DefId> = HashSet::from_iter(tcx.body_owners());
             let mut defs_to_reanalyze: HashSet<DefId> = HashSet::new();
             let mut defs_to_check: HashSet<DefId> = HashSet::new();
+            let mut defs_to_not_reanalyze: HashSet<DefId> = HashSet::new();
             let mut diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'_>>> = HashMap::new();
             let mut not_done = true;
             let mut iteration_count = 0;
             while not_done && iteration_count < k_limits::MAX_OUTER_FIXPOINT_ITERATIONS {
                 for def_id in tcx.body_owners() {
+                    if defs_to_not_reanalyze.contains(&def_id) {
+                        continue;
+                    }
                     let analyze_it = defs_to_analyze.contains(&def_id);
                     let check_it = !analyze_it && defs_to_check.contains(&def_id);
                     if !analyze_it && !check_it {
                         continue;
                     }
                     not_done = true;
+                    let name: String;
                     {
-                        let name = persistent_summary_cache.get_summary_key_for(def_id);
+                        name = persistent_summary_cache.get_summary_key_for(def_id).clone();
                         if check_it {
                             info!("checking({:?})", name)
                         } else if iteration_count == 0 {
@@ -118,7 +123,15 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
                             constant_value_cache: &mut constant_value_cache,
                             smt_solver: &mut smt_solver,
                         });
-                        let r = mir_visitor.visit_body();
+                        let (r, analysis_time_in_seconds) = mir_visitor.visit_body();
+                        if analysis_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                            // This body is beyond MIRAI for now
+                            warn!(
+                                "analysis of {} timed out after {} seconds",
+                                name, analysis_time_in_seconds,
+                            );
+                            defs_to_not_reanalyze.insert(def_id);
+                        }
                         fn cancel(mut db: DiagnosticBuilder<'_>) {
                             db.cancel();
                         }
@@ -151,7 +164,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
                 defs_to_analyze = defs_to_reanalyze;
                 defs_to_reanalyze = HashSet::new();
                 iteration_count += 1;
-                info!("outer fixed point iterations {}", iteration_count);
+                info!("outer fixed point iteration {}", iteration_count);
             }
             if self.test_run {
                 let mut expected_errors =
