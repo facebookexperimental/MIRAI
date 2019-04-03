@@ -345,50 +345,28 @@ impl AbstractDomain {
                     }
                 }
             }
-            // x == 0 is the same as !x when x is Boolean variable. Canonicalize it to the latter.
-            (
-                Expression::Variable { var_type, .. },
-                Expression::CompileTimeConstant(ConstantDomain::U128(val)),
-            ) => {
-                if *var_type == ExpressionType::Bool && *val == 0 {
-                    return self.not();
-                }
-            }
-            // !x == 0 is the same as x when x is Boolean variable. Canonicalize it to the latter.
+            // !x == 0 is the same as x when x is Boolean. Canonicalize it to the latter.
             (
                 Expression::Not { operand },
                 Expression::CompileTimeConstant(ConstantDomain::U128(val)),
             ) => {
-                if let Expression::Variable { var_type, .. } = &operand.expression {
-                    if *var_type == ExpressionType::Bool && *val == 0 {
-                        return (**operand).clone();
-                    }
+                if *val == 0 && operand.expression.infer_type() == ExpressionType::Bool {
+                    return (**operand).clone();
+                }
+            }
+            // x == 0 is the same as !x when x is a Boolean. Canonicalize it to the latter.
+            (_, Expression::CompileTimeConstant(ConstantDomain::U128(val))) => {
+                if *val == 0 && (self.expression.infer_type() == ExpressionType::Bool) {
+                    return self.not();
                 }
             }
             _ => {
                 // If self and other are the same expression and the expression could not result in NaN
                 // and the expression represents exactly one value, we can simplify this to true.
-                if self.expression == other.expression {
-                    match self.expression {
-                        Expression::Top
-                        | Expression::Bottom
-                        | Expression::Add { .. }
-                        | Expression::Div { .. }
-                        | Expression::Mul { .. }
-                        | Expression::Neg { .. }
-                        | Expression::Rem { .. }
-                        | Expression::Sub { .. } => {
-                            // Could be NaN, because we don't know the type.
-                            // todo: infer it from the operands
-                        }
-                        Expression::CompileTimeConstant(..) | Expression::Variable { .. } => {
-                            unreachable!()
-                        } // handled above
-                        _ => {
-                            // Result is a boolean or integer and the expression domain is a singleton set.
-                            return true.into();
-                        }
-                    }
+                if self.expression == other.expression
+                    && !self.expression.infer_type().is_floating_point_number()
+                {
+                    return true.into();
                 }
             }
         }

@@ -269,6 +269,50 @@ pub enum Expression {
 }
 
 impl Expression {
+    /// Returns the type of value the expression should result in, if well formed.
+    /// (both operands are of the same type for binary operators, conditional branches match).
+    pub fn infer_type(&self) -> ExpressionType {
+        use self::ExpressionType::*;
+        match self {
+            Expression::Top => NonPrimitive,
+            Expression::Bottom => NonPrimitive,
+            Expression::AbstractHeapAddress(_) => NonPrimitive,
+            Expression::Add { left, .. } => left.expression.infer_type(),
+            Expression::AddOverflows { .. } => Bool,
+            Expression::And { .. } => Bool,
+            Expression::BitAnd { left, .. } => left.expression.infer_type(),
+            Expression::BitOr { left, .. } => left.expression.infer_type(),
+            Expression::BitXor { left, .. } => left.expression.infer_type(),
+            Expression::Cast { target_type, .. } => target_type.clone(),
+            Expression::CompileTimeConstant(c) => c.into(),
+            Expression::ConditionalExpression { consequent, .. } => {
+                consequent.expression.infer_type()
+            }
+            Expression::Div { left, .. } => left.expression.infer_type(),
+            Expression::Equals { .. } => Bool,
+            Expression::GreaterOrEqual { .. } => Bool,
+            Expression::GreaterThan { .. } => Bool,
+            Expression::LessOrEqual { .. } => Bool,
+            Expression::LessThan { .. } => Bool,
+            Expression::Mul { left, .. } => left.expression.infer_type(),
+            Expression::MulOverflows { .. } => Bool,
+            Expression::Ne { .. } => Bool,
+            Expression::Neg { operand } => operand.expression.infer_type(),
+            Expression::Not { .. } => Bool,
+            Expression::Or { .. } => Bool,
+            Expression::Offset { .. } => NonPrimitive,
+            Expression::Reference(_) => NonPrimitive,
+            Expression::Rem { left, .. } => left.expression.infer_type(),
+            Expression::Shl { left, .. } => left.expression.infer_type(),
+            Expression::ShlOverflows { .. } => Bool,
+            Expression::Shr { left, .. } => left.expression.infer_type(),
+            Expression::ShrOverflows { .. } => Bool,
+            Expression::Sub { left, .. } => left.expression.infer_type(),
+            Expression::SubOverflows { .. } => Bool,
+            Expression::Variable { var_type, .. } => var_type.clone(),
+        }
+    }
+
     /// Adds any abstract heap addresses found in the associated expression to the given set.
     pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
         match &self {
@@ -341,7 +385,35 @@ pub enum ExpressionType {
     Usize,
 }
 
+impl From<&ConstantDomain> for ExpressionType {
+    fn from(cv: &ConstantDomain) -> ExpressionType {
+        use self::ExpressionType::*;
+        match cv {
+            ConstantDomain::Bottom => NonPrimitive,
+            ConstantDomain::Char(..) => Char,
+            ConstantDomain::False => Bool,
+            ConstantDomain::Function { .. } => NonPrimitive,
+            ConstantDomain::I128(..) => I128,
+            ConstantDomain::F64(..) => F64,
+            ConstantDomain::F32(..) => F32,
+            ConstantDomain::Str(..) => NonPrimitive,
+            ConstantDomain::True => Bool,
+            ConstantDomain::U128(..) => U128,
+            ConstantDomain::Unimplemented => NonPrimitive,
+        }
+    }
+}
+
 impl ExpressionType {
+    /// Returns true if this type is one of the floating point number types.
+    pub fn is_floating_point_number(&self) -> bool {
+        use self::ExpressionType::*;
+        match self {
+            F32 | F64 => true,
+            _ => false,
+        }
+    }
+
     /// Returns true if this type is one of the signed integer types.
     pub fn is_signed_integer(&self) -> bool {
         use self::ExpressionType::*;
@@ -375,13 +447,65 @@ impl ExpressionType {
             I64 => 64,
             I128 => 128,
             Isize => 64,
-            NonPrimitive => 0,
             U8 => 8,
             U16 => 16,
             U32 => 32,
             U64 => 64,
             U128 => 128,
             Usize => 64,
+            _ => 64,
+        }
+    }
+
+    /// Returns the maximum value for this type, as a ConstantDomain element.
+    /// If the type is not a primitive value, the result is Bottom.
+    #[allow(clippy::cast_lossless)]
+    pub fn max_value(&self) -> ConstantDomain {
+        use self::ExpressionType::*;
+        match self {
+            Bool => ConstantDomain::U128(1 as u128),
+            Char => ConstantDomain::U128(std::char::MAX as u128),
+            F32 => ConstantDomain::F32(std::f32::MAX.to_bits()),
+            F64 => ConstantDomain::F64(std::f64::MAX.to_bits()),
+            I8 => ConstantDomain::I128(std::i8::MAX as i128),
+            I16 => ConstantDomain::I128(std::i16::MAX as i128),
+            I32 => ConstantDomain::I128(std::i32::MAX as i128),
+            I64 => ConstantDomain::I128(std::i64::MAX as i128),
+            I128 => ConstantDomain::I128(std::i128::MAX),
+            Isize => ConstantDomain::I128(std::isize::MAX as i128),
+            U8 => ConstantDomain::U128(std::u8::MAX as u128),
+            U16 => ConstantDomain::U128(std::u16::MAX as u128),
+            U32 => ConstantDomain::U128(std::u32::MAX as u128),
+            U64 => ConstantDomain::U128(std::u64::MAX as u128),
+            U128 => ConstantDomain::U128(std::u128::MAX),
+            Usize => ConstantDomain::U128(std::usize::MAX as u128),
+            _ => ConstantDomain::Bottom,
+        }
+    }
+
+    /// Returns the minimum value for this type, as a ConstantDomain element.
+    /// If the type is not a primitive value, the result is Bottom.
+    #[allow(clippy::cast_lossless)]
+    pub fn min_value(&self) -> ConstantDomain {
+        use self::ExpressionType::*;
+        match self {
+            Bool => ConstantDomain::U128(0 as u128),
+            Char => ConstantDomain::U128(0 as u128),
+            F32 => ConstantDomain::F32(std::f32::MIN.to_bits()),
+            F64 => ConstantDomain::F64(std::f64::MIN.to_bits()),
+            I8 => ConstantDomain::I128(std::i8::MIN as i128),
+            I16 => ConstantDomain::I128(std::i16::MIN as i128),
+            I32 => ConstantDomain::I128(std::i32::MIN as i128),
+            I64 => ConstantDomain::I128(std::i64::MIN as i128),
+            I128 => ConstantDomain::I128(std::i128::MIN),
+            Isize => ConstantDomain::I128(std::isize::MIN as i128),
+            U8 => ConstantDomain::U128(std::u8::MIN as u128),
+            U16 => ConstantDomain::U128(std::u16::MIN as u128),
+            U32 => ConstantDomain::U128(std::u32::MIN as u128),
+            U64 => ConstantDomain::U128(std::u64::MIN as u128),
+            U128 => ConstantDomain::U128(std::u128::MIN),
+            Usize => ConstantDomain::U128(std::usize::MIN as u128),
+            _ => ConstantDomain::Bottom,
         }
     }
 }
