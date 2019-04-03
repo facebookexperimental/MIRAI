@@ -706,7 +706,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .constant_value_cache
                 .check_if_mirai_assume_function(&fun)
             {
-                assume!(actual_args.len() == 1);
+                checked_assume!(actual_args.len() == 1);
                 let assumed_condition = &actual_args[0].1;
                 let exit_condition = self
                     .exit_environment
@@ -726,6 +726,19 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
                 return;
             }
+            let result: AbstractValue = self.try_to_inline_standard_ops_func(fun, &actual_args);
+            if !result.is_bottom() {
+                if let Some((place, target)) = destination {
+                    let target_path = self.visit_place(place);
+                    self.current_environment
+                        .update_value_at(target_path, result);
+                    let exit_condition = self.exit_environment.entry_condition.clone();
+                    self.current_environment
+                        .exit_conditions
+                        .insert(*target, exit_condition);
+                    return;
+                }
+            }
         }
         let function_summary = self.get_function_summary(&func_to_call);
         if self.check_for_errors
@@ -740,6 +753,37 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if self.check_for_errors {
             self.report_calls_to_special_functions(func_to_call, &actual_args)
         }
+    }
+
+    fn try_to_inline_standard_ops_func(
+        &mut self,
+        fun: &ConstantDomain,
+        args: &[(Path, AbstractValue)],
+    ) -> AbstractValue {
+        if self
+            .constant_value_cache
+            .check_if_core_slice_len_function(&fun)
+        {
+            checked_assume!(args.len() == 1);
+            let slice_val = &args[0].1;
+            let qualifier = match &slice_val.domain.expression {
+                Expression::Variable { path, .. } => Some(path.clone()),
+                Expression::AbstractHeapAddress(ordinal) => {
+                    Some(box Path::AbstractHeapAddress { ordinal: *ordinal })
+                }
+                _ => None,
+            };
+            if let Some(qualifier) = qualifier {
+                let selector = box PathSelector::ArrayLength;
+                let len_path = Path::QualifiedPath {
+                    length: 2,
+                    qualifier,
+                    selector,
+                };
+                return self.lookup_path_and_refine_result(len_path, ExpressionType::Usize);
+            }
+        }
+        abstract_value::BOTTOM
     }
 
     /// Returns a summary of the function to call, obtained from the summary cache.
