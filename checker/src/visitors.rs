@@ -645,32 +645,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Indicates a terminator that can never be reached.
     fn visit_unreachable(&mut self) {
         debug!("default visit_unreachable()");
-        // Complain if we are quite sure control gets here.
-        if self.check_for_errors {
-            let mut entry_cond_as_bool =
-                self.current_environment.entry_condition.as_bool_if_known();
-            if entry_cond_as_bool.is_none() {
-                let entry_cond_val = &self.current_environment.entry_condition.clone();
-                entry_cond_as_bool = self.solve_condition(entry_cond_val);
-            }
-            if entry_cond_as_bool.unwrap_or(false)
-                || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
-            {
-                let span = self.current_span;
-                let err = self
-                    .session
-                    .struct_span_warn(span, "Execution might panic.");
-                self.emit_diagnostic(err);
-            } else {
-                self.preconditions.push((
-                    self.current_environment
-                        .entry_condition
-                        .not(None)
-                        .replacing_provenance(self.current_span),
-                    String::from("Execution might panic."),
-                ));
-            }
-        }
+        // An unreachable terminator is the compiler's way to tell us that this block will
+        // actually never be reached because the type system says so.
+        // Why it is necessary in such a case to actually generate unreachable code is something
+        // to ponder, but it is not our concern.
+        // We don't have to do anything more here because this block precedes no other block.
     }
 
     /// Drop the Place
