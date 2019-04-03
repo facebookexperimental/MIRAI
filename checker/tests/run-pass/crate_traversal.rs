@@ -38,7 +38,7 @@ pub unsafe fn test1() {
     enum Void {}
     union A { a: (), v: Void }
     let a = A { a: () };
-    match a.v { //~  Execution might panic.
+    match a.v {
     }
 }
 
