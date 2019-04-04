@@ -94,6 +94,17 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
             TyKind::Uint(ast::UintTy::U128) => ExpressionType::U128,
             TyKind::Float(ast::FloatTy::F32) => ExpressionType::F32,
             TyKind::Float(ast::FloatTy::F64) => ExpressionType::F64,
+            TyKind::Closure(..)
+            | TyKind::Dynamic(..)
+            | TyKind::Foreign(..)
+            | TyKind::FnDef(..)
+            | TyKind::FnPtr(..)
+            | TyKind::Generator(..)
+            | TyKind::GeneratorWitness(..)
+            | TyKind::RawPtr(..)
+            | TyKind::Ref(..)
+            | TyKind::Slice(..)
+            | TyKind::Str => ExpressionType::Reference,
             _ => ExpressionType::NonPrimitive,
         }
     }
