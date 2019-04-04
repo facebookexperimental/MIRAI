@@ -166,11 +166,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         .into()
                     }
                 } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
-                    Expression::Variable {
-                        path: box path.clone(),
-                        var_type: result_type.clone(),
+                    if result_type == ExpressionType::Reference {
+                        Expression::Reference(path).into()
+                    } else {
+                        Expression::Variable {
+                            path: box path.clone(),
+                            var_type: result_type.clone(),
+                        }
+                        .into()
                     }
-                    .into()
                 } else {
                     abstract_value::TOP
                 }
@@ -767,6 +771,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             checked_assume!(args.len() == 1);
             let slice_val = &args[0].1;
             let qualifier = match &slice_val.domain.expression {
+                Expression::Reference(path) => Some(box path.clone()),
                 Expression::Variable { path, .. } => Some(path.clone()),
                 Expression::AbstractHeapAddress(ordinal) => {
                     Some(box Path::AbstractHeapAddress { ordinal: *ordinal })
@@ -1343,7 +1348,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 } = constant.borrow();
                 let const_value: AbstractValue = self.visit_constant(ty, *user_ty, &literal.val);
                 if let Expression::AbstractHeapAddress(ordinal) = const_value.domain.expression {
-                    let rtype = ExpressionType::NonPrimitive;
+                    let rtype = ExpressionType::Reference;
                     let rpath = Path::AbstractHeapAddress { ordinal };
                     self.copy_or_move_elements(path, rpath, rtype, false);
                 } else {

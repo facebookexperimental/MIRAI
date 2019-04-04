@@ -276,7 +276,7 @@ impl Expression {
         match self {
             Expression::Top => NonPrimitive,
             Expression::Bottom => NonPrimitive,
-            Expression::AbstractHeapAddress(_) => NonPrimitive,
+            Expression::AbstractHeapAddress(_) => Reference,
             Expression::Add { left, .. } => left.expression.infer_type(),
             Expression::AddOverflows { .. } => Bool,
             Expression::And { .. } => Bool,
@@ -300,8 +300,8 @@ impl Expression {
             Expression::Neg { operand } => operand.expression.infer_type(),
             Expression::Not { .. } => Bool,
             Expression::Or { .. } => Bool,
-            Expression::Offset { .. } => NonPrimitive,
-            Expression::Reference(_) => NonPrimitive,
+            Expression::Offset { .. } => Reference,
+            Expression::Reference(_) => Reference,
             Expression::Rem { left, .. } => left.expression.infer_type(),
             Expression::Shl { left, .. } => left.expression.infer_type(),
             Expression::ShlOverflows { .. } => Bool,
@@ -377,6 +377,7 @@ pub enum ExpressionType {
     I128,
     Isize,
     NonPrimitive,
+    Reference,
     U8,
     U16,
     U32,
@@ -392,14 +393,14 @@ impl From<&ConstantDomain> for ExpressionType {
             ConstantDomain::Bottom => NonPrimitive,
             ConstantDomain::Char(..) => Char,
             ConstantDomain::False => Bool,
-            ConstantDomain::Function { .. } => NonPrimitive,
+            ConstantDomain::Function { .. } => Reference,
             ConstantDomain::I128(..) => I128,
             ConstantDomain::F64(..) => F64,
             ConstantDomain::F32(..) => F32,
-            ConstantDomain::Str(..) => NonPrimitive,
+            ConstantDomain::Str(..) => Reference,
             ConstantDomain::True => Bool,
             ConstantDomain::U128(..) => U128,
-            ConstantDomain::Unimplemented => NonPrimitive,
+            ConstantDomain::Unimplemented => Reference,
         }
     }
 }
@@ -453,7 +454,8 @@ impl ExpressionType {
             U64 => 64,
             U128 => 128,
             Usize => 64,
-            _ => 64,
+            Reference => 128,
+            NonPrimitive => 128,
         }
     }
 
