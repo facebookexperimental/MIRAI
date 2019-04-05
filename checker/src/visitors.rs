@@ -882,18 +882,27 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     && !refined_precondition_as_bool.unwrap_or(true)
                 {
                     // We always get here if the function is called, and the precondition is always
-                    // false, so complain loudly.
-                    if !self
-                        .already_report_errors_for_call_to
-                        .contains(&func_to_call)
-                    {
-                        self.emit_diagnostic_for_precondition(precondition, &message);
-                        self.already_report_errors_for_call_to
-                            .insert(func_to_call.clone());
+                    // false, so it may seem to make sense to just complain loudly here and not
+                    // promote the precondition, which can never be satisfied by the caller.
+                    // It could, however, be the case that this function wraps the panic! macro
+                    // and that the way to shut MIRAI up about it is to never call it.
+                    if is_public(self.def_id, &self.tcx) {
+                        // If this is a public function and we assume that calling
+                        // panic! is a way of stating a precondition, then we'd also expect a public
+                        // caller to have a precondition that prevents us from reaching this call.
+                        // So, since we **do** reach this call, complain loudly.
+                        if !self
+                            .already_report_errors_for_call_to
+                            .contains(&func_to_call)
+                        {
+                            self.emit_diagnostic_for_precondition(precondition, &message);
+                            self.already_report_errors_for_call_to
+                                .insert(func_to_call.clone());
+                        }
+                    } else {
+                        // Since the function is not public, we assume that we get to see
+                        // every call to this function, so just rely on the inferred precondition.
                     }
-                    // Don't promote a false precondition. The callers cannot possibly satisfy it,
-                    // so there is no point in complaining at call sites.
-                    continue;
                 } else {
                     // We might never get here since it depends on the parameter values used to call
                     // this function. If the function is public, let's warn that we might get here.
@@ -1127,29 +1136,28 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     self.emit_diagnostic(err);
                 } else {
                     // We might get to this call, depending on the state at the call site.
-
+                    //
                     // In the case when an assert macro has been called, the inverse of the assertion
                     // was conjoined into the entry condition and this condition was simplified.
                     // We therefore cannot distinguish between the case of maybe reaching a definitely
                     // false assertion from the case of definitely reaching a maybe false assertion.
-                    // We therefore report both cases, even though the first would be a candidate for being
-                    // an inferred precondition, rather than a diagnostic.
-
+                    //
+                    // Since the assert and panic macros are commonly used to create preconditions
+                    // it would be very inconvenient if this possibly false assertion were reported
+                    // as a problem since there would be no way to shut it up. We therefore do not
+                    // report this and instead insist that anyone who wants to have MIRAI check
+                    // their assertions should use the mirai_annotations::verify! macro instead.
+                    //
+                    // We **do** have to push a precondition since this is the probable intent.
                     let mut maybe_message = String::from("possible error: ");
                     maybe_message.push_str(msg.as_str());
-                    let err = self.session.struct_span_warn(span, maybe_message.as_str());
-                    self.emit_diagnostic(err);
-
-                    // We also push a precondition in both cases.
-                    if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
-                        self.preconditions.push((
-                            self.current_environment
-                                .entry_condition
-                                .not(None)
-                                .replacing_provenance(self.current_span),
-                            maybe_message,
-                        ));
-                    }
+                    self.preconditions.push((
+                        self.current_environment
+                            .entry_condition
+                            .not(None)
+                            .replacing_provenance(self.current_span),
+                        maybe_message,
+                    ));
                 }
             }
         }

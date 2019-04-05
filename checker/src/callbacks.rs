@@ -183,6 +183,6 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
             }
             info!("done with analysis");
         });
-        false // Do not proceed to code generation. MIRAI is only a checker.
+        true // Although MIRAI is only a checker we still need code generation for build scripts.
     }
 }
