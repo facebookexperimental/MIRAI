@@ -222,7 +222,7 @@ dependencies = [
  "bincode 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.5.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "mirai-annotations 0.0.1",
+ "mirai-annotations 0.1.0",
  "rpds 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.81 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.81 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -232,7 +232,7 @@ dependencies = [
 
 [[package]]
 name = "mirai-annotations"
-version = "0.0.1"
+version = "0.1.0"
 
 [[package]]
 name = "nodrop"

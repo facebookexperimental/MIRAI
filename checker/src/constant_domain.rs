@@ -641,6 +641,7 @@ pub struct ConstantValueCache {
     str_cache: HashMap<String, ConstantDomain>,
     core_slice_len_function: Option<ConstantDomain>,
     mirai_assume_function: Option<ConstantDomain>,
+    mirai_precondition_function: Option<ConstantDomain>,
     mirai_verify_function: Option<ConstantDomain>,
     std_panicking_panic_function: Option<ConstantDomain>,
     heap_address_counter: usize,
@@ -658,6 +659,7 @@ impl ConstantValueCache {
             str_cache: HashMap::default(),
             core_slice_len_function: None,
             mirai_assume_function: None,
+            mirai_precondition_function: None,
             mirai_verify_function: None,
             std_panicking_panic_function: None,
             heap_address_counter: 0,
@@ -763,6 +765,27 @@ impl ConstantValueCache {
             };
             if result {
                 self.mirai_assume_function = Some(fun.clone());
+            };
+            result
+        })
+    }
+
+    /// Does an expensive check to see if the given function is mirai_annotations.mirai_precondition.
+    /// Once it finds the function it caches it so that subsequent checks are cheaper.
+    pub fn check_if_mirai_precondition_function(&mut self, fun: &ConstantDomain) -> bool {
+        let result = self
+            .mirai_precondition_function
+            .as_ref()
+            .map(|cached_fun| *cached_fun == *fun);
+        result.unwrap_or_else(|| {
+            let result = match fun {
+                ConstantDomain::Function {
+                    summary_cache_key, ..
+                } => summary_cache_key.ends_with("mirai_annotations.mirai_precondition"),
+                _ => false,
+            };
+            if result {
+                self.mirai_precondition_function = Some(fun.clone());
             };
             result
         })

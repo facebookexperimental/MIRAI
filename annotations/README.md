@@ -6,8 +6,9 @@ They add value by allowing [MIRAI](https://github.com/facebookexperimental/MIRAI
 * distinguish between conditions that it should assume as true and conditions that it should verify
 * check conditions at compile time that should not be checked at runtime because they are too expensive
  
-From this it follows that we have two families of macros:
+From this it follows that we have three families of macros:
 * assume macros
+* precondition macros (like assume where defined and like verify for callers)
 * verify macros
 
 Each of these has three kinds
@@ -23,6 +24,13 @@ Additionally, the runtime checked kinds provides eq and ne varieties, leaving us
 * debug_checked_assume!
 * debug_checked_assume_eq!
 * debug_checked_assume_ne!
+* precondition!
+* checked_precondition!
+* checked_precondition_eq!
+* checked_precondition_ne!
+* debug_checked_precondition!
+* debug_checked_precondition_eq!
+* debug_checked_precondition_ne!
 * verify!
 * checked_verify!
 * checked_verify_eq!
