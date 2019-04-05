@@ -55,6 +55,8 @@ pub struct Summary {
     // The string value bundled with the condition is the message that details what would go
     // wrong at runtime if the precondition is not satisfied by the caller.
     pub preconditions: Vec<(AbstractValue, String)>,
+    //todo: #124 add another string that provides provenance and or default documentation
+    // that can be used across crates.
 
     // If the function returns a value, this summarizes what is known statically of the return value.
     // Callers should substitute parameter values with argument values and simplify the result

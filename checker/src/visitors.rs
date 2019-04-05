@@ -357,6 +357,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 elapsed_time_in_seconds,
             )
         } else {
+            // Even if the summary has not changed from its previous version, we still
+            // update because summary equality ignores provenance (and it does that because
+            // we don't have a way to persist provenance across compilations).
+            self.summary_cache.set_summary_for(self.def_id, summary);
             (None, elapsed_time_in_seconds)
         }
     }
@@ -710,23 +714,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .check_if_mirai_assume_function(&fun)
             {
                 checked_assume!(actual_args.len() == 1);
-                let assumed_condition = &actual_args[0].1;
-                let exit_condition = self
-                    .exit_environment
-                    .entry_condition
-                    .and(assumed_condition, Some(self.current_span));
-                if let Some((_, target)) = destination {
-                    self.current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
-                } else {
-                    unreachable!()
-                }
-                if let Some(cleanup_bb) = cleanup {
-                    self.current_environment
-                        .exit_conditions
-                        .insert(cleanup_bb, abstract_value::FALSE);
-                }
+                self.handle_assume(destination, &actual_args);
+                return;
+            }
+            if self
+                .constant_value_cache
+                .check_if_mirai_precondition_function(&fun)
+            {
+                checked_assume!(actual_args.len() == 1);
+                self.handle_precondition(&actual_args);
+                self.handle_assume(destination, &actual_args);
                 return;
             }
             let result: AbstractValue = self.try_to_inline_standard_ops_func(fun, &actual_args);
@@ -758,6 +755,55 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         }
     }
 
+    /// Adds the first and only value in actual_args to the path condition of the destination.
+    /// No check is performed, since we get to assume this condition without proof.
+    fn handle_assume(
+        &mut self,
+        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+        actual_args: &[(Path, AbstractValue)],
+    ) {
+        precondition!(actual_args.len() == 1);
+        let assumed_condition = &actual_args[0].1;
+        let exit_condition = self
+            .exit_environment
+            .entry_condition
+            .and(assumed_condition, Some(self.current_span));
+        if let Some((_, target)) = destination {
+            self.current_environment
+                .exit_conditions
+                .insert(*target, exit_condition);
+        } else {
+            unreachable!();
+        }
+    }
+
+    /// Adds the first and only value in actual_args to the current list of preconditions.
+    /// No check is performed, since we get to assume the caller has verified this condition.
+    fn handle_precondition(&mut self, actual_args: &[(Path, AbstractValue)]) {
+        precondition!(actual_args.len() == 1);
+        if self.check_for_errors
+            && !self
+                .current_environment
+                .entry_condition
+                .as_bool_if_known()
+                .unwrap_or(false)
+        {
+            let span = self.current_span;
+            let warning = self
+                .session
+                .struct_span_warn(span, "preconditions should be reached unconditionally");
+            self.emit_diagnostic(warning);
+        }
+        let precondition = &actual_args[0].1;
+        self.preconditions
+            .push((precondition.clone(), "unsatisfied precondition".to_string()));
+    }
+
+    /// Standard functions that represent an alternative way to perform operations for which
+    /// there are MIR operations should be normalized into the corresponding MIR operations.
+    /// In some cases this can be done via a summary, but if not this is the place to do it.
+    /// Right now, that means core::slice::len becomes a path with the ArrayLength selector
+    /// since there is no way to write a summary to that effect in Rust itself.
     fn try_to_inline_standard_ops_func(
         &mut self,
         fun: &ConstantDomain,
