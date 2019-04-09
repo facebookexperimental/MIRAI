@@ -8,7 +8,7 @@ use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 
-use log::debug;
+use log::{debug, warn};
 use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
@@ -444,6 +444,14 @@ impl AbstractValue {
             provenance.push(expression_provenance.unwrap())
         }
         provenance.extend_from_slice(&self.provenance);
+        match self.domain.expression {
+            Expression::Reference(..) | Expression::Variable { .. } => (),
+            _ => {
+                if self.domain.expression.infer_type() != ExpressionType::Bool {
+                    warn!("bad not operand {:?} at {:?}", self, provenance);
+                }
+            }
+        }
         AbstractValue {
             provenance,
             domain: self.domain.not(),
@@ -655,10 +663,17 @@ impl AbstractValue {
     /// corresponding to self and other. The set of values may be less precise (more inclusive) than
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to Top.
-    pub fn widen(&self, other: &AbstractValue, join_condition: &AbstractValue) -> AbstractValue {
+    pub fn widen(
+        &self,
+        other: &AbstractValue,
+        join_condition: &AbstractValue,
+        path: &Path,
+    ) -> AbstractValue {
         AbstractValue {
             provenance: other.provenance.clone(),
-            domain: self.domain.widen(&other.domain, &join_condition.domain),
+            domain: self
+                .domain
+                .widen(&other.domain, &join_condition.domain, path),
         }
     }
 

@@ -6,7 +6,7 @@
 use crate::abstract_value::{AbstractValue, Path};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
-use crate::expression::Expression::{ConditionalExpression, Join};
+use crate::expression::Expression::{ConditionalExpression, Join, Widen};
 use crate::expression::{Expression, ExpressionType};
 use crate::interval_domain::{self, IntervalDomain};
 use crate::k_limits;
@@ -850,6 +850,8 @@ impl AbstractDomain {
                 // This is a conservative answer. False does not imply other.subset(self).
                 self.subset(&consequent) && self.subset(&alternate)
             }
+            // (x join y) subset widen { z } if (x join y) subset z
+            (Expression::Join { .. }, Expression::Widen { operand, .. }) => self.subset(&operand),
             // (left join right) is a subset of x if both left and right are subsets of x.
             (Expression::Join { left, right, .. }, _) => {
                 // This is a conservative answer. False does not imply other.subset(self).
@@ -866,6 +868,7 @@ impl AbstractDomain {
                 cv1 == cv2
             }
             (Expression::Reference(p1), Expression::Reference(p2)) => p1 == p2,
+            (Expression::Widen { path: p1, .. }, Expression::Widen { path: p2, .. }) => p1 == p2,
             // in all other cases we conservatively answer false
             _ => false,
         }
@@ -884,7 +887,7 @@ impl AbstractDomain {
     /// Constructs an element of the Interval domain for simple expressions.
     pub fn get_as_interval(&self) -> IntervalDomain {
         match &self.expression {
-            Expression::Top => interval_domain::TOP,
+            Expression::Top => interval_domain::BOTTOM,
             Expression::Add { left, right } => left.get_as_interval().add(&right.get_as_interval()),
             Expression::CompileTimeConstant(ConstantDomain::I128(val)) => (*val).into(),
             Expression::CompileTimeConstant(ConstantDomain::U128(val)) => (*val).into(),
@@ -901,7 +904,36 @@ impl AbstractDomain {
             Expression::Mul { left, right } => left.get_as_interval().mul(&right.get_as_interval()),
             Expression::Neg { operand } => operand.get_as_interval().neg(),
             Expression::Sub { left, right } => left.get_as_interval().sub(&right.get_as_interval()),
-            Expression::Variable { .. } => interval_domain::TOP,
+            Expression::Variable { .. } => interval_domain::BOTTOM,
+            Expression::Widen { operand, .. } => {
+                let interval = operand.get_as_interval();
+                if interval.is_bottom() {
+                    return interval;
+                }
+                if let Expression::Join { left, .. } = &operand.expression {
+                    let left_interval = left.get_as_interval();
+                    if left_interval.is_bottom() {
+                        return interval_domain::BOTTOM;
+                    }
+                    match (left_interval.lower_bound(), interval.lower_bound()) {
+                        (Some(llb), Some(lb)) if llb == lb => {
+                            // The lower bound is finite and does not change as a result of the fixed
+                            // point computation, so we can keep it, but we remove the upper bound.
+                            return interval.remove_upper_bound();
+                        }
+                        _ => (),
+                    }
+                    match (left_interval.upper_bound(), interval.upper_bound()) {
+                        (Some(lub), Some(ub)) if lub == ub => {
+                            // The upper bound is finite and does not change as a result of the fixed
+                            // point computation, so we can keep it, but we remove the lower bound.
+                            return interval.remove_lower_bound();
+                        }
+                        _ => (),
+                    }
+                }
+                interval
+            }
             _ => interval_domain::BOTTOM,
         }
     }
@@ -1047,6 +1079,14 @@ impl AbstractDomain {
                     }
                 }
             }
+            Expression::Widen { path, operand } => {
+                let refined_path = path.refine_paths(environment);
+                Expression::Widen {
+                    path: box refined_path,
+                    operand: box operand.refine_paths(environment),
+                }
+                .into()
+            }
         }
     }
 
@@ -1186,6 +1226,14 @@ impl AbstractDomain {
                     }
                     .into()
                 }
+            }
+            Expression::Widen { path, operand } => {
+                let refined_path = path.refine_parameters(arguments);
+                Expression::Widen {
+                    path: box refined_path,
+                    operand: box operand.refine_parameters(arguments),
+                }
+                .into()
             }
         }
     }
@@ -1376,6 +1424,11 @@ impl AbstractDomain {
                     self.clone()
                 }
             }
+            Expression::Widen { path, operand } => Expression::Widen {
+                path: path.clone(),
+                operand: box operand.refine_with(path_condition, depth + 1),
+            }
+            .into(),
         }
     }
 
@@ -1460,20 +1513,33 @@ impl AbstractDomain {
                 right: box operation(self, right),
             }
             .into(),
+            (Widen { .. }, _) => self.clone(),
+            (_, Widen { .. }) => other.clone(),
             _ => return None,
         };
         Some(result)
     }
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
-    /// corresponding to self and other.The set of values may be less precise (more inclusive) than
+    /// corresponding to self and other. The set of values may be less precise (more inclusive) than
     /// the set returned by join. The chief requirement is that a small number of widen calls
-    /// deterministically lead to Top.
-    pub fn widen(&self, other: &Self, _join_condition: &AbstractDomain) -> Self {
+    /// deterministically lead to a set of values that include of the values that could be stored
+    /// in memory at the given path.
+    pub fn widen(&self, other: &Self, join_condition: &AbstractDomain, path: &Path) -> Self {
         if self == other {
             return self.clone();
         };
-        //todo: #30 don't get to top quite this quickly.
-        Expression::Top.into()
+        if let Widen { .. } = self.expression {
+            return self.clone();
+        }
+        if let Widen { .. } = other.expression {
+            return other.clone();
+        }
+        let operand = self.join(other, join_condition);
+        Expression::Widen {
+            path: box path.clone(),
+            operand: box operand,
+        }
+        .into()
     }
 }
