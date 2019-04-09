@@ -6,7 +6,7 @@
 use crate::abstract_value::{AbstractValue, Path};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
-use crate::expression::Expression::ConditionalExpression;
+use crate::expression::Expression::{ConditionalExpression, Join};
 use crate::expression::{Expression, ExpressionType};
 use crate::interval_domain::{self, IntervalDomain};
 use crate::k_limits;
@@ -149,19 +149,14 @@ impl From<Expression> for AbstractDomain {
 impl AbstractDomain {
     /// Returns an element that is "self + other".
     pub fn add(&self, other: &Self) -> Self {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.add(v2);
-            if result != ConstantDomain::Bottom {
-                return result.into();
-            }
-        };
-        Expression::Add {
-            left: box self.clone(),
-            right: box other.clone(),
-        }
-        .into()
+        self.try_to_simplify_binary_op(other, ConstantDomain::add, AbstractDomain::add)
+            .unwrap_or_else(|| {
+                Expression::Add {
+                    left: box self.clone(),
+                    right: box other.clone(),
+                }
+                .into()
+            })
     }
 
     /// Returns an element that is true if "self + other" is not in range of target_type.
@@ -302,6 +297,11 @@ impl AbstractDomain {
                 alternate: box alternate.cast(target_type),
             }
             .into(),
+            Expression::Join { left, right } => Join {
+                left: box left.cast(target_type.clone()),
+                right: box right.cast(target_type),
+            }
+            .into(),
             _ => Expression::Cast {
                 operand: box self.clone(),
                 target_type,
@@ -312,19 +312,14 @@ impl AbstractDomain {
 
     /// Returns an element that is "self / other".
     pub fn div(&self, other: &Self) -> Self {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.div(v2);
-            if result != ConstantDomain::Bottom {
-                return result.into();
-            }
-        };
-        Expression::Div {
-            left: box self.clone(),
-            right: box other.clone(),
-        }
-        .into()
+        self.try_to_simplify_binary_op(other, ConstantDomain::div, AbstractDomain::div)
+            .unwrap_or_else(|| {
+                Expression::Div {
+                    left: box self.clone(),
+                    right: box other.clone(),
+                }
+                .into()
+            })
     }
 
     /// Returns an element that is "self == other".
@@ -485,27 +480,53 @@ impl AbstractDomain {
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
     /// corresponding to self and other.
-    /// In a context where the join condition is known to be true, the result can be refined to be
-    /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
     pub fn join(&self, other: &Self, join_condition: &AbstractDomain) -> Self {
-        // If the condition is impossible so is the expression.
         if join_condition.is_bottom() {
-            Expression::Bottom.into()
+            // If the condition is impossible so is the expression.
+            return Expression::Bottom.into();
+        } else if (*self).expression == (*other).expression {
+            // c ? x : x is just x
+            return self.clone();
+        } else if self.is_bottom() {
+            // {} join x is just x
+            return other.clone();
+        } else if other.is_bottom() {
+            // x join {} is just x
+            return self.clone();
         }
-        // c ? x : x is just x, as is true ? x : y
-        else if (*self).expression == (*other).expression
-            || join_condition.as_bool_if_known().unwrap_or(false)
-        {
-            self.clone()
+        let join_condition_as_bool = join_condition.as_bool_if_known();
+        // If the join condition is known to be false, the second branch is unreachable, so no join
+        if join_condition_as_bool == Some(false) {
+            return self.clone();
         }
-        // false ? x : y is just y
-        else if !join_condition.as_bool_if_known().unwrap_or(true) {
-            other.clone()
-        }
-        // c ? true : !c is just c
-        else if self.as_bool_if_known().unwrap_or(false) && join_condition.not() == *other {
-            true.into()
+        // If the join condition is known to be true, we have two unconditional branches joining
+        // up here and no way to tell which one brought us here. This can happen for an infinite
+        // loop, where the dominator of the loop anchor unconditionally branches to the anchor
+        // and the backward branch also unconditionally branches to the anchor.
+        // While such loops can be expected to be rare in source form, they do show up during
+        // abstract interpretation because the loop exit condition may evaluate to false
+        // for the first few iterations of the loop and thus the backwards branch only becomes
+        // conditional once widening kicks in.
+        if join_condition_as_bool == Some(true) {
+            Expression::Join {
+                left: box self.clone(),
+                right: box other.clone(),
+            }
+            .into()
         } else {
+            if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+                (&self.expression, &other.expression)
+            {
+                match (v1, v2) {
+                    (ConstantDomain::True, ConstantDomain::False) => {
+                        return join_condition.clone();
+                    }
+                    (ConstantDomain::False, ConstantDomain::True) => {
+                        return join_condition.not();
+                    }
+                    _ => (),
+                }
+            }
             Expression::ConditionalExpression {
                 condition: box join_condition.clone(),
                 consequent: box self.clone(),
@@ -557,19 +578,14 @@ impl AbstractDomain {
 
     /// Returns an element that is "self * other".
     pub fn mul(&self, other: &Self) -> Self {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.mul(v2);
-            if result != ConstantDomain::Bottom {
-                return result.into();
-            }
-        };
-        Expression::Mul {
-            left: box self.clone(),
-            right: box other.clone(),
-        }
-        .into()
+        self.try_to_simplify_binary_op(other, ConstantDomain::mul, AbstractDomain::mul)
+            .unwrap_or_else(|| {
+                Expression::Mul {
+                    left: box self.clone(),
+                    right: box other.clone(),
+                }
+                .into()
+            })
     }
 
     /// Returns an element that is true if "self * other" is not in range of target_type.
@@ -672,19 +688,14 @@ impl AbstractDomain {
 
     /// Returns an element that is "self % other".
     pub fn rem(&self, other: &Self) -> Self {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.rem(v2);
-            if result != ConstantDomain::Bottom {
-                return result.into();
-            }
-        };
-        Expression::Rem {
-            left: box self.clone(),
-            right: box other.clone(),
-        }
-        .into()
+        self.try_to_simplify_binary_op(other, ConstantDomain::rem, AbstractDomain::rem)
+            .unwrap_or_else(|| {
+                Expression::Rem {
+                    left: box self.clone(),
+                    right: box other.clone(),
+                }
+                .into()
+            })
     }
 
     /// Returns an element that is "self << other".
@@ -768,19 +779,14 @@ impl AbstractDomain {
 
     /// Returns an element that is "self - other".
     pub fn sub(&self, other: &Self) -> Self {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.sub(v2);
-            if result != ConstantDomain::Bottom {
-                return result.into();
-            }
-        };
-        Expression::Sub {
-            left: box self.clone(),
-            right: box other.clone(),
-        }
-        .into()
+        self.try_to_simplify_binary_op(other, ConstantDomain::sub, AbstractDomain::sub)
+            .unwrap_or_else(|| {
+                Expression::Sub {
+                    left: box self.clone(),
+                    right: box other.clone(),
+                }
+                .into()
+            })
     }
 
     /// Returns an element that is true if "self - other" is not in range of target_type.
@@ -820,6 +826,7 @@ impl AbstractDomain {
             (_, Expression::Top) => true,
             // The universal set is not a subset of any set other than the universal set.
             (Expression::Top, _) => false,
+            // (condition ? consequent : alternate) is a subset of x if both consequent and alternate are subsets of x.
             (
                 Expression::ConditionalExpression {
                     consequent,
@@ -831,7 +838,7 @@ impl AbstractDomain {
                 // This is a conservative answer. False does not imply other.subset(self).
                 consequent.subset(other) && alternate.subset(other)
             }
-            // x is a subset of (condition ? consequent : alternate) x is a subset of both consequent and alternate.
+            // x is a subset of (condition ? consequent : alternate) if x is a subset of both consequent and alternate.
             (
                 _,
                 Expression::ConditionalExpression {
@@ -842,6 +849,16 @@ impl AbstractDomain {
             ) => {
                 // This is a conservative answer. False does not imply other.subset(self).
                 self.subset(&consequent) && self.subset(&alternate)
+            }
+            // (left join right) is a subset of x if both left and right are subsets of x.
+            (Expression::Join { left, right, .. }, _) => {
+                // This is a conservative answer. False does not imply other.subset(self).
+                left.subset(other) && right.subset(other)
+            }
+            // x is a subset of (left join right) if x is a subset of both left and right.
+            (_, Expression::Join { left, right, .. }) => {
+                // This is a conservative answer. False does not imply other.subset(self).
+                self.subset(&left) && self.subset(&right)
             }
             // {x} subset {y} iff x = y
             (Expression::AbstractHeapAddress(a1), Expression::AbstractHeapAddress(a2)) => a1 == a2,
@@ -878,6 +895,9 @@ impl AbstractDomain {
             } => consequent
                 .get_as_interval()
                 .widen(&alternate.get_as_interval()),
+            Expression::Join { left, right, .. } => {
+                left.get_as_interval().widen(&right.get_as_interval())
+            }
             Expression::Mul { left, right } => left.get_as_interval().mul(&right.get_as_interval()),
             Expression::Neg { operand } => operand.get_as_interval().neg(),
             Expression::Sub { left, right } => left.get_as_interval().sub(&right.get_as_interval()),
@@ -940,6 +960,9 @@ impl AbstractDomain {
             Expression::GreaterThan { left, right } => left
                 .refine_paths(environment)
                 .greater_than(&mut right.refine_paths(environment)),
+            Expression::Join { left, right } => left
+                .refine_paths(environment)
+                .join(&right.refine_paths(environment), &TRUE),
             Expression::LessOrEqual { left, right } => left
                 .refine_paths(environment)
                 .less_or_equal(&mut right.refine_paths(environment)),
@@ -1084,6 +1107,9 @@ impl AbstractDomain {
             Expression::GreaterThan { left, right } => left
                 .refine_parameters(arguments)
                 .greater_than(&mut right.refine_parameters(arguments)),
+            Expression::Join { left, right } => left
+                .refine_parameters(arguments)
+                .join(&right.refine_parameters(arguments), &TRUE),
             Expression::LessOrEqual { left, right } => left
                 .refine_parameters(arguments)
                 .less_or_equal(&mut right.refine_parameters(arguments)),
@@ -1251,6 +1277,9 @@ impl AbstractDomain {
             Expression::GreaterThan { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .greater_than(&mut right.refine_with(path_condition, depth + 1)),
+            Expression::Join { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .join(&right.refine_with(path_condition, depth + 1), &TRUE),
             Expression::LessOrEqual { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .less_or_equal(&mut right.refine_with(path_condition, depth + 1)),
@@ -1348,6 +1377,92 @@ impl AbstractDomain {
                 }
             }
         }
+    }
+
+    /// Tries to simplify operation(self, other) by constant folding or by distribution
+    /// the operation over self and/or other.
+    /// Returns None if no simplification is possible.
+    fn try_to_simplify_binary_op(
+        &self,
+        other: &Self,
+        const_op: fn(&ConstantDomain, &ConstantDomain) -> ConstantDomain,
+        abs_op: fn(&Self, &Self) -> Self,
+    ) -> Option<Self> {
+        let result = self.try_to_fold_binary_op(other, const_op);
+        if result.is_none() {
+            self.try_to_distribute_binary_op(other, abs_op)
+        } else {
+            result
+        }
+    }
+
+    /// Tries to do constant folding for operation(self, other).
+    /// Returns None if folding is not possible.
+    fn try_to_fold_binary_op(
+        &self,
+        other: &Self,
+        operation: fn(&ConstantDomain, &ConstantDomain) -> ConstantDomain,
+    ) -> Option<Self> {
+        match (&self.expression, &other.expression) {
+            (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) => {
+                let result = operation(&v1, &v2);
+                if result == ConstantDomain::Bottom {
+                    None
+                } else {
+                    Some(result.into())
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Tries to distribute the operation over self and/or other.
+    /// Return None if no simplification is possible.
+    fn try_to_distribute_binary_op(
+        &self,
+        other: &Self,
+        operation: fn(&Self, &Self) -> Self,
+    ) -> Option<Self> {
+        let result: Self = match (&self.expression, &other.expression) {
+            (
+                ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                },
+                _,
+            ) => ConditionalExpression {
+                condition: condition.clone(),
+                consequent: box operation(consequent, other),
+                alternate: box operation(alternate, other),
+            }
+            .into(),
+            (
+                _,
+                ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                },
+            ) => ConditionalExpression {
+                condition: condition.clone(),
+                consequent: box operation(self, consequent),
+                alternate: box operation(self, alternate),
+            }
+            .into(),
+            (Join { left, right }, _) => Join {
+                left: box operation(left, other),
+                right: box operation(right, other),
+            }
+            .into(),
+            (_, Join { left, right }) => Join {
+                left: box operation(self, left),
+                right: box operation(self, right),
+            }
+            .into(),
+            _ => return None,
+        };
+        Some(result)
     }
 
     /// Returns a domain whose corresponding set of concrete values include all of the values

@@ -127,6 +127,18 @@ pub enum Expression {
         right: Box<AbstractDomain>,
     },
 
+    /// Either left or right without a condition to tell them apart.
+    /// This can happen when there is loss of precision because of a loop fixed point computation.
+    /// For instance inside a loop body after the second fixed point iteration, a counter may have
+    /// either its initial value or the value computed in the first loop body iteration and we
+    /// don't have a way to tell which value it is.
+    Join {
+        // The value of the left operand.
+        left: Box<AbstractDomain>,
+        // The value of the right operand.
+        right: Box<AbstractDomain>,
+    },
+
     /// An expression that is true if left is less than or equal to right. <=
     LessOrEqual {
         // The value of the left operand.
@@ -293,6 +305,7 @@ impl Expression {
             Expression::Equals { .. } => Bool,
             Expression::GreaterOrEqual { .. } => Bool,
             Expression::GreaterThan { .. } => Bool,
+            Expression::Join { left, .. } => left.expression.infer_type(),
             Expression::LessOrEqual { .. } => Bool,
             Expression::LessThan { .. } => Bool,
             Expression::Mul { left, .. } => left.expression.infer_type(),
@@ -350,6 +363,10 @@ impl Expression {
                 condition.expression.record_heap_addresses(result);
                 consequent.expression.record_heap_addresses(result);
                 alternate.expression.record_heap_addresses(result);
+            }
+            Expression::Join { left, right } => {
+                left.expression.record_heap_addresses(result);
+                right.expression.record_heap_addresses(result);
             }
             Expression::Neg { operand } | Expression::Not { operand } => {
                 operand.expression.record_heap_addresses(result);
@@ -412,6 +429,15 @@ impl ExpressionType {
         use self::ExpressionType::*;
         match self {
             F32 | F64 => true,
+            _ => false,
+        }
+    }
+
+    /// Returns true if this type is one of the integer types.
+    pub fn is_integer(&self) -> bool {
+        use self::ExpressionType::*;
+        match self {
+            I8 | I16 | I32 | I64 | I128 | Isize | U8 | U16 | U32 | U64 | U128 | Usize => true,
             _ => false,
         }
     }

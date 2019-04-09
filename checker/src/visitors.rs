@@ -386,7 +386,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         // in_state[bb] is now complete for every basic block bb in the body.
         if iteration_count > 6 {
             warn!(
-                "Fixed point loop took {} iterations for {}, now checking for errors.",
+                "Fixed point loop took {} iterations for {}.",
                 iteration_count, function_name
             );
         }
