@@ -127,7 +127,7 @@ pub mod foreign_contracts {
                             range.is_empty = Some(!is_iterating);
                             Some(if is_iterating {
                                 let n = range.start;
-                                range.start = n + 1; //~ possible attempt to add with overflow
+                                range.start = n + 1;
                                 n
                             } else {
                                 range.start
@@ -143,8 +143,7 @@ pub mod foreign_contracts {
 
 pub fn foo(n: usize) {
     for ordinal in 2..=n {
-        //~ possible attempt to add with overflow
-        verify!(ordinal - 1 >= 1); //~ possible attempt to subtract with overflow
+        verify!(ordinal - 1 >= 1);
     }
 }
 

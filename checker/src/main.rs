@@ -16,6 +16,7 @@
 #![feature(box_syntax)]
 
 extern crate env_logger;
+extern crate mirai;
 extern crate rustc_driver;
 extern crate rustc_interface;
 
