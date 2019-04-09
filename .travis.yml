@@ -13,6 +13,8 @@ before_script:
 - rustup component add clippy-preview
 # install audit
 - cargo install --force cargo-audit || true
+# install z3
+- cp binaries/libz3.dylib /usr/local/lib
 
 script:
 # Exit immediately if a command exits with a non-zero status.

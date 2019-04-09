@@ -20,6 +20,7 @@ path = "src/main.rs"
 [dependencies]
 bincode = { version = "*", features = ["i128"] }
 env_logger = "*"
+lazy_static = "*"
 log = "*"
 mirai-annotations = { path = "../annotations" }
 rpds = { version = "*", features = ["serde"] }
@@ -27,3 +28,4 @@ serde = "*"
 serde_derive = "*"
 sled = "*"
 tempdir = "*"
+z3-sys = "*"

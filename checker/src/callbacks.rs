@@ -7,9 +7,9 @@
 use crate::constant_domain::ConstantValueCache;
 use crate::expected_errors;
 use crate::k_limits;
-use crate::smt_solver::SolverStub;
 use crate::summaries::{PersistentSummaryCache, Summary};
 use crate::visitors::{MirVisitor, MirVisitorCrateContext};
+use crate::z3_solver::Z3Solver;
 
 use log::{info, warn};
 use rustc::hir::def_id::DefId;
@@ -282,7 +282,7 @@ impl MiraiCallbacks {
     ) -> (Option<Summary>, u64) {
         let mir = tcx.optimized_mir(def_id);
         // todo: #3 provide a helper that returns the solver as specified by a compiler switch.
-        let mut smt_solver = SolverStub::default();
+        let mut smt_solver = Z3Solver::default();
         let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
             session: compiler.session(),
             tcx,

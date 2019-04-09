@@ -37,12 +37,18 @@ use tempdir::TempDir;
 #[test]
 fn run_pass() {
     let annotations_path = find_annotations_path();
-    let run_pass_path = PathBuf::from_str("tests/run-pass").unwrap();
+    let mut run_pass_path = PathBuf::from_str("tests/run-pass").unwrap();
+    if !run_pass_path.exists() {
+        run_pass_path = PathBuf::from_str("checker/tests/run-pass").unwrap();
+    }
     assert_eq!(run_directory(run_pass_path, annotations_path), 0);
 }
 
 fn find_annotations_path() -> String {
-    let deps_path = PathBuf::from_str("../target/debug/deps").unwrap();
+    let mut deps_path = PathBuf::from_str("../target/debug/deps").unwrap();
+    if !deps_path.exists() {
+        deps_path = PathBuf::from_str("target/debug/deps").unwrap();
+    }
     for entry in fs::read_dir(deps_path).expect("failed to read target/debug/deps dir") {
         let entry = entry.unwrap();
         if !entry.file_type().unwrap().is_file() {
@@ -87,20 +93,33 @@ fn run_directory(directory_path: PathBuf, annotations_path: String) -> usize {
             output_dir_path_buf.into_os_string().into_string().unwrap(),
         ));
     }
-    files_and_temp_dirs
-        .into_par_iter()
-        .fold(
-            || 0,
-            |acc, (file_name, temp_dir_path)| {
+    if cfg!(target_os = "linux") {
+        files_and_temp_dirs
+            .into_iter()
+            .fold(0, |acc, (file_name, temp_dir_path)| {
                 acc + self::invoke_driver(
                     file_name,
                     temp_dir_path,
                     sys_root.clone(),
                     annotations_path.clone(),
                 )
-            },
-        )
-        .reduce(|| 0, |acc, code| acc + code)
+            })
+    } else {
+        files_and_temp_dirs
+            .into_par_iter()
+            .fold(
+                || 0,
+                |acc, (file_name, temp_dir_path)| {
+                    acc + self::invoke_driver(
+                        file_name,
+                        temp_dir_path,
+                        sys_root.clone(),
+                        annotations_path.clone(),
+                    )
+                },
+            )
+            .reduce(|| 0, |acc, code| acc + code)
+    }
 }
 
 // Runs the single test case found in file_name, using temp_dir_path as the place

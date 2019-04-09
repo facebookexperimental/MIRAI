@@ -10,8 +10,8 @@ pub fn main() {
     while i < 100 {
         let mut j = i;
         while j <= 100 {
-            j += i; //~ possible attempt to add with overflow
+            j += i;
         }
-        i += 1; //~ possible attempt to add with overflow
+        i += 1;
     }
 }

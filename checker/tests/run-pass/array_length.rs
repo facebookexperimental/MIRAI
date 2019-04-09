@@ -21,7 +21,7 @@ impl Path {
             Path::QualifiedPath { qualifier, .. } => {
                 checked_assume!(qualifier.path_length() <= 10);
                 Path::QualifiedPath {
-                    length: qualifier.path_length() + 1, //~ possible attempt to add with overflow
+                    length: qualifier.path_length() + 1,
                     qualifier: box Path::Root,
                 }
             }
