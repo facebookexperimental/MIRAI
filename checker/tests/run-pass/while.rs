@@ -9,14 +9,14 @@
 pub fn foo(n: usize) {
     let mut i: usize = 0;
     while i < n {
-        i += 1;
+        i += 1; //~ possible attempt to add with overflow
     }
 }
 
 pub fn bar(n: usize) {
     let mut i: usize = 10;
     while i > n {
-        i -= 1;
+        i -= 1; //~ possible attempt to subtract with overflow
     }
 }
 

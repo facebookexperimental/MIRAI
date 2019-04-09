@@ -23,7 +23,7 @@ pub fn t2(cond: bool) {
     let raw = &cond as *const _;
     let bottom = interval - (raw as usize); //~ possible attempt to subtract with overflow
     verify!((interval as isize) > -2);
-    verify!(top < 3); //~ possibly false assertion
+    verify!(top < 3);
     verify!(bottom <= bottom); //~ possibly false assertion
 }
 
