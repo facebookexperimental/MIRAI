@@ -75,53 +75,7 @@ impl Environment {
     /// lack of precise knowledge at compile time.
     fn try_to_split(&mut self, path: &Path) -> Option<(AbstractValue, Path, Path)> {
         match path {
-            Path::LocalVariable { .. } => {
-                let val_opt = self.value_at(path);
-                if let Some(val) = val_opt {
-                    if let AbstractValue {
-                        domain:
-                            AbstractDomain {
-                                expression:
-                                    Expression::ConditionalExpression {
-                                        condition,
-                                        consequent,
-                                        alternate,
-                                    },
-                                ..
-                            },
-                        provenance,
-                    } = val
-                    {
-                        match (&consequent.expression, &alternate.expression) {
-                            (
-                                Expression::AbstractHeapAddress(addr1),
-                                Expression::AbstractHeapAddress(addr2),
-                            ) => {
-                                return Some((
-                                    AbstractValue {
-                                        provenance: provenance.clone(),
-                                        domain: (**condition).clone(),
-                                    },
-                                    Path::AbstractHeapAddress { ordinal: *addr1 },
-                                    Path::AbstractHeapAddress { ordinal: *addr2 },
-                                ));
-                            }
-                            (Expression::Reference(path1), Expression::Reference(path2)) => {
-                                return Some((
-                                    AbstractValue {
-                                        provenance: provenance.clone(),
-                                        domain: (**condition).clone(),
-                                    },
-                                    path1.clone(),
-                                    path2.clone(),
-                                ));
-                            }
-                            _ => (),
-                        }
-                    }
-                };
-                None
-            }
+            Path::LocalVariable { .. } => self.try_to_split_local(path),
             Path::QualifiedPath {
                 ref qualifier,
                 ref selector,
@@ -145,6 +99,55 @@ impl Environment {
             }
             _ => None,
         }
+    }
+
+    /// Helper for try_to_split.
+    fn try_to_split_local(&mut self, path: &Path) -> Option<(AbstractValue, Path, Path)> {
+        let val_opt = self.value_at(path);
+        if let Some(val) = val_opt {
+            if let AbstractValue {
+                domain:
+                    AbstractDomain {
+                        expression:
+                            Expression::ConditionalExpression {
+                                condition,
+                                consequent,
+                                alternate,
+                            },
+                        ..
+                    },
+                provenance,
+            } = val
+            {
+                match (&consequent.expression, &alternate.expression) {
+                    (
+                        Expression::AbstractHeapAddress(addr1),
+                        Expression::AbstractHeapAddress(addr2),
+                    ) => {
+                        return Some((
+                            AbstractValue {
+                                provenance: provenance.clone(),
+                                domain: (**condition).clone(),
+                            },
+                            Path::AbstractHeapAddress { ordinal: *addr1 },
+                            Path::AbstractHeapAddress { ordinal: *addr2 },
+                        ));
+                    }
+                    (Expression::Reference(path1), Expression::Reference(path2)) => {
+                        return Some((
+                            AbstractValue {
+                                provenance: provenance.clone(),
+                                domain: (**condition).clone(),
+                            },
+                            path1.clone(),
+                            path2.clone(),
+                        ));
+                    }
+                    _ => (),
+                }
+            }
+        };
+        None
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated

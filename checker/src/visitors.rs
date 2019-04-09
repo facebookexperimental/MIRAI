@@ -14,11 +14,12 @@ use crate::summaries;
 use crate::summaries::{PersistentSummaryCache, Summary};
 use crate::utils::{self, is_public};
 
-use log::{debug, info};
+use log::{debug, info, warn};
 use mirai_annotations::{assume, checked_assume, checked_assume_eq, precondition, verify};
 use rustc::session::Session;
 use rustc::ty::{Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
+use rustc_data_structures::graph::dominators::Dominators;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -53,6 +54,7 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
     current_environment: Environment,
     current_location: mir::Location,
     current_span: syntax_pos::Span,
+    start_instant: Instant,
     exit_environment: Environment,
     heap_addresses: HashMap<mir::Location, AbstractValue>,
     post_conditions: Vec<AbstractValue>,
@@ -83,6 +85,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             current_environment: Environment::default(),
             current_location: mir::Location::START,
             current_span: syntax_pos::DUMMY_SP,
+            start_instant: Instant::now(),
             exit_environment: Environment::default(),
             heap_addresses: HashMap::default(),
             post_conditions: Vec::new(),
@@ -101,6 +104,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.current_environment = Environment::default();
         self.current_location = mir::Location::START;
         self.current_span = syntax_pos::DUMMY_SP;
+        self.start_instant = Instant::now();
         self.exit_environment = Environment::default();
         self.heap_addresses = HashMap::default();
         self.post_conditions = Vec::new();
@@ -212,32 +216,81 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         (&loc.ty.sty).into()
     }
 
+    /// Do a topological sort, breaking loops by preferring lower block indices, using dominance
+    /// to determine if there is a loop (if a is predecessor of b and b dominates a then they
+    /// form a loop and we'll emit the one with the lower index first).
+    fn add_predecessors_then_root_block(
+        &self,
+        root_block: mir::BasicBlock,
+        dominators: &Dominators<mir::BasicBlock>,
+        block_indices: &mut Vec<mir::BasicBlock>,
+        already_added: &mut HashSet<mir::BasicBlock>,
+    ) {
+        if !already_added.insert(root_block) {
+            return;
+        }
+        let mut added_root = false;
+        for pred_bb in self.mir.predecessors_for(root_block).iter() {
+            if already_added.contains(pred_bb) {
+                continue;
+            };
+            if !added_root && dominators.is_dominated_by(*pred_bb, root_block) {
+                block_indices.push(root_block);
+                added_root = true;
+            }
+            self.add_predecessors_then_root_block(
+                *pred_bb,
+                dominators,
+                block_indices,
+                already_added,
+            );
+        }
+        if !added_root {
+            block_indices.push(root_block);
+        }
+    }
+
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
     /// Returns true if the newly computed summary is different from the summary (if any)
     /// that is already in the cache.
-    pub fn visit_body(&mut self) -> (Option<Summary>, u64) {
-        debug!("visit_body({:?})", self.def_id);
-        let start_instant = Instant::now();
+    pub fn visit_body(&mut self, function_name: &str) -> (Option<Summary>, u64) {
+        debug!("visit_body({:?}) of {}", self.def_id, function_name);
         let mut elapsed_time_in_seconds = 0;
+
+        // Perform a topological sort on the basic blocks so that blocks are analyzed after their
+        // predecessors (except in the case of loop anchors).
+        let dominators = self.mir.dominators();
+
+        let mut block_indices = Vec::new();
+        let mut already_added = HashSet::new();
+        for bb in self.mir.basic_blocks().indices() {
+            self.add_predecessors_then_root_block(
+                bb,
+                &dominators,
+                &mut block_indices,
+                &mut already_added,
+            );
+        }
+
         // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
         let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
         // out_state[bb] is the environment that results from analyzing block bb, given in_state[bb]
         let mut out_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
-        for bb in self.mir.basic_blocks().indices() {
-            in_state.insert(bb, Environment::default());
-            out_state.insert(bb, Environment::default());
+        for bb in block_indices.iter() {
+            in_state.insert(*bb, Environment::default());
+            out_state.insert(*bb, Environment::default());
         }
         // The entry block has no predecessors and its initial state is the function parameters
         // as well any promoted constants.
-        let first_state = self.promote_constants();
+        let first_state = self.promote_constants(function_name);
 
         // Compute a fixed point, which is a value of out_state that will not grow with more iterations.
         let mut changed = true;
         let mut iteration_count = 0;
         while changed {
             changed = false;
-            for bb in self.mir.basic_blocks().indices() {
-                elapsed_time_in_seconds = start_instant.elapsed().as_secs();
+            for bb in block_indices.iter() {
+                elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
                 if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
                     break;
                 }
@@ -251,18 +304,18 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         Option<&AbstractValue>,
                     )> = self
                         .mir
-                        .predecessors_for(bb)
+                        .predecessors_for(*bb)
                         .iter()
                         .map(|pred_bb| {
                             let pred_state = &out_state[pred_bb];
-                            let pred_exit_condition = pred_state.exit_conditions.get(&bb);
+                            let pred_exit_condition = pred_state.exit_conditions.get(bb);
                             (pred_state, pred_exit_condition)
                         })
                         .filter(|(_, pred_exit_condition)| pred_exit_condition.is_some())
                         .collect();
                     if predecessor_states_and_conditions.is_empty() {
                         // nothing is currently known about the predecessors
-                        let mut i_state = in_state[&bb].clone();
+                        let mut i_state = in_state[bb].clone();
                         i_state.entry_condition = abstract_value::TOP;
                         i_state
                     } else {
@@ -296,29 +349,34 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     }
                 };
                 // Analyze the basic block
-                in_state.insert(bb, i_state.clone());
+                in_state.insert(*bb, i_state.clone());
                 if i_state.entry_condition.as_bool_if_known().unwrap_or(true) {
                     self.current_environment = i_state;
-                    self.visit_basic_block(bb);
+                    self.visit_basic_block(*bb);
                 }
 
                 // Check for a fixed point.
-                if !self.current_environment.subset(&out_state[&bb]) {
+                if !self.current_environment.subset(&out_state[bb]) {
                     // There is some path for which self.current_environment.value_at(path) includes
                     // a value this is not present in out_state[bb].value_at(path), so any block
                     // that used out_state[bb] as part of its input state now needs to get reanalyzed.
-                    out_state.insert(bb, self.current_environment.clone());
+                    out_state.insert(*bb, self.current_environment.clone());
                     changed = true;
                 } else {
                     // If the environment at the end of this block does not have any new values,
                     // we have reached a fixed point for this block.
+                    // We update out_state anyway, since exit conditions may have changed.
+                    // This is particularly a problem when the current entry is the dummy entry
+                    // and the current state is empty except for the exit condition.
+                    out_state.get_mut(bb).unwrap().exit_conditions =
+                        self.current_environment.exit_conditions.clone();
                 }
             }
             if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
                 break;
             }
             if iteration_count > 50 {
-                println!("fixed point loop diverged");
+                warn!("fixed point loop diverged in body of {}", function_name);
                 break;
             }
             iteration_count += 1;
@@ -326,16 +384,22 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
         // Now traverse the blocks again, doing checks and emitting diagnostics.
         // in_state[bb] is now complete for every basic block bb in the body.
+        if iteration_count > 6 {
+            warn!(
+                "Fixed point loop took {} iterations for {}, now checking for errors.",
+                iteration_count, function_name
+            );
+        }
         debug!(
-            "Fixed point loop took {} iterations, now checking for errors.",
-            iteration_count
+            "Fixed point loop took {} iterations for {}, now checking for errors.",
+            iteration_count, function_name
         );
         self.check_for_errors = true;
-        for bb in self.mir.basic_blocks().indices() {
-            let i_state = (&in_state[&bb]).clone();
+        for bb in block_indices.iter() {
+            let i_state = (&in_state[bb]).clone();
             if i_state.entry_condition.as_bool_if_known().unwrap_or(true) {
                 self.current_environment = i_state;
-                self.visit_basic_block(bb);
+                self.visit_basic_block(*bb);
             }
         }
 
@@ -368,14 +432,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Use the visitor to compute the state corresponding to promoted constants.
-    fn promote_constants(&mut self) -> Environment {
+    fn promote_constants(&mut self, function_name: &str) -> Environment {
         let mut state_with_parameters = Environment::default();
         let saved_mir = self.mir;
         let result_root = Path::LocalVariable { ordinal: 0 };
         for (ordinal, constant_mir) in self.mir.promoted.iter().enumerate() {
             self.mir = constant_mir;
             let result_type = self.get_type_for_local(0);
-            self.visit_body();
+            self.visit_body(function_name);
 
             let promoted_root = Path::PromotedConstant { ordinal };
             let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
@@ -410,6 +474,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
         while location.statement_index < terminator_index {
             self.visit_statement(location, &statements[location.statement_index]);
+            if self.start_instant.elapsed().as_secs() >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                return;
+            }
             location.statement_index += 1;
         }
 
@@ -1025,8 +1092,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if let Expression::CompileTimeConstant(fun) = func_to_call.domain.expression {
             if cache.check_if_mirai_verify_function(&fun) {
                 assume!(actual_args.len() == 1); // The type checker ensures this.
+                let (_, cond) = &actual_args[0];
                 let (cond_as_bool, entry_cond_as_bool) =
-                    self.check_condition_value_and_reachability(&actual_args[0].1);
+                    self.check_condition_value_and_reachability(cond);
 
                 // If we never get here, rather call unreachable!()
                 if !entry_cond_as_bool.unwrap_or(true) {
@@ -1084,6 +1152,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         self.current_environment
                             .entry_condition
                             .not(None)
+                            .or(cond, None)
                             .replacing_provenance(self.current_span),
                         "possibly false assertion".to_string(),
                     ));

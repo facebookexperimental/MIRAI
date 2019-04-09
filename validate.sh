@@ -21,4 +21,4 @@ cd ..; cargo build
 cargo uninstall mirai || true
 cargo install --debug --path ./checker
 cargo clean -p mirai
-time RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 cargo build --lib -p mirai
+time RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn cargo build --lib -p mirai

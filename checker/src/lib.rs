@@ -18,6 +18,7 @@
 #![feature(vec_remove_item)]
 
 extern crate rustc;
+extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_interface;
 extern crate rustc_metadata;

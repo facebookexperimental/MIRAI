@@ -7,10 +7,9 @@ use crate::abstract_domains::{self, AbstractDomain};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
-use crate::k_limits;
 
 use log::debug;
-use mirai_annotations::{assume, checked_assume};
+use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -497,7 +496,7 @@ impl AbstractValue {
         provenance.extend_from_slice(&self.provenance);
         AbstractValue {
             provenance,
-            domain: self.domain.refine_with(&path_condition.domain),
+            domain: self.domain.refine_with(&path_condition.domain, 0),
         }
     }
 
@@ -885,7 +884,7 @@ impl Path {
                 } else {
                     qualifier.replace_root(old_root, new_root)
                 };
-                checked_assume!(new_qualifier.path_length() <= k_limits::MAX_PATH_LENGTH);
+                assume!(new_qualifier.path_length() < 1_000_000_000); // We'll run out of memory long before this happens
                 Path::QualifiedPath {
                     length: new_qualifier.path_length() + 1,
                     qualifier: box new_qualifier,
