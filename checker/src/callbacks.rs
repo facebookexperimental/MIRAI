@@ -124,7 +124,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
                             constant_value_cache: &mut constant_value_cache,
                             smt_solver: &mut smt_solver,
                         });
-                        let (r, analysis_time_in_seconds) = mir_visitor.visit_body();
+                        let (r, analysis_time_in_seconds) = mir_visitor.visit_body(&name);
                         if analysis_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
                             // This body is beyond MIRAI for now
                             warn!(
@@ -184,6 +184,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
             }
             info!("done with analysis");
         });
-        true // Although MIRAI is only a checker we still need code generation for build scripts.
+        !self.test_run // Although MIRAI is only a checker we still need code generation for build scripts.
+                       // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
     }
 }
