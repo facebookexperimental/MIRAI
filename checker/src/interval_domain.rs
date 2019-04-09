@@ -169,20 +169,6 @@ impl IntervalDomain {
         self.lower_bound == std::i128::MIN && self.upper_bound == std::i128::MAX
     }
 
-    // [x...y] * [a...b] = [x*a...y*b]
-    pub fn mul(&self, other: &Self) -> Self {
-        if self.is_bottom() || other.is_bottom() {
-            return BOTTOM.clone();
-        }
-        if self.is_top() || other.is_top() {
-            return TOP.clone();
-        }
-        IntervalDomain {
-            lower_bound: self.lower_bound.saturating_mul(other.lower_bound),
-            upper_bound: self.upper_bound.saturating_mul(other.upper_bound),
-        }
-    }
-
     // [x...y] <= [a...b] = y <= a
     // !([x...y] <= [a...b]) = [a...b] < [x...y] = b < x
     pub fn less_equal(&self, other: &Self) -> Option<bool> {
@@ -208,6 +194,50 @@ impl IntervalDomain {
             Some(false)
         } else {
             None
+        }
+    }
+
+    pub fn lower_bound(&self) -> Option<i128> {
+        if self.lower_bound == TOP.lower_bound {
+            None
+        } else {
+            Some(self.lower_bound)
+        }
+    }
+
+    pub fn upper_bound(&self) -> Option<i128> {
+        if self.upper_bound == TOP.upper_bound {
+            None
+        } else {
+            Some(self.upper_bound)
+        }
+    }
+
+    pub fn remove_lower_bound(&self) -> Self {
+        IntervalDomain {
+            lower_bound: TOP.lower_bound,
+            upper_bound: self.upper_bound,
+        }
+    }
+
+    pub fn remove_upper_bound(&self) -> Self {
+        IntervalDomain {
+            lower_bound: self.lower_bound,
+            upper_bound: TOP.upper_bound,
+        }
+    }
+
+    // [x...y] * [a...b] = [x*a...y*b]
+    pub fn mul(&self, other: &Self) -> Self {
+        if self.is_bottom() || other.is_bottom() {
+            return BOTTOM.clone();
+        }
+        if self.is_top() || other.is_top() {
+            return TOP.clone();
+        }
+        IntervalDomain {
+            lower_bound: self.lower_bound.saturating_mul(other.lower_bound),
+            upper_bound: self.upper_bound.saturating_mul(other.upper_bound),
         }
     }
 

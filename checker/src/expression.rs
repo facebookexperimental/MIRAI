@@ -279,6 +279,19 @@ pub enum Expression {
         path: Box<Path>,
         var_type: ExpressionType,
     },
+
+    /// The partly known value of a place in memory.
+    /// The value in operand will be the join of several expressions that all reference
+    /// the path of this value. This models a variable that is assigned to from inside a loop
+    /// body.
+    Widen {
+        /// The path of the location where an indeterminate number of flows join together.
+        path: Box<Path>,
+        /// The join of some of the flows to come together at this path.
+        /// The first few iterations do joins. Once widening happens, further iterations
+        /// all result in the same widened value.
+        operand: Box<AbstractDomain>,
+    },
 }
 
 impl Expression {
@@ -324,6 +337,7 @@ impl Expression {
             Expression::Sub { left, .. } => left.expression.infer_type(),
             Expression::SubOverflows { .. } => Bool,
             Expression::Variable { var_type, .. } => var_type.clone(),
+            Expression::Widen { operand, .. } => operand.expression.infer_type(),
         }
     }
 

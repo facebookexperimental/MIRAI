@@ -153,13 +153,13 @@ impl Environment {
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the join of self.value_at(path) and other.value_at(path)
     pub fn join(&self, other: &Environment, join_condition: &AbstractValue) -> Environment {
-        self.join_or_widen(other, join_condition, |x, y, c| x.join(y, c))
+        self.join_or_widen(other, join_condition, |x, y, c, _p| x.join(y, c))
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the widen of self.value_at(path) and other.value_at(path)
     pub fn widen(&self, other: &Environment, join_condition: &AbstractValue) -> Environment {
-        self.join_or_widen(other, join_condition, |x, y, c| x.widen(y, c))
+        self.join_or_widen(other, join_condition, |x, y, c, p| x.widen(y, c, p))
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
@@ -168,7 +168,7 @@ impl Environment {
         &self,
         other: &Environment,
         join_condition: &AbstractValue,
-        join_or_widen: fn(&AbstractValue, &AbstractValue, &AbstractValue) -> AbstractValue,
+        join_or_widen: fn(&AbstractValue, &AbstractValue, &AbstractValue, &Path) -> AbstractValue,
     ) -> Environment {
         let value_map1 = &self.value_map;
         let value_map2 = &other.value_map;
@@ -177,11 +177,12 @@ impl Environment {
             let p = path.clone();
             match value_map2.get(path) {
                 Some(val2) => {
-                    value_map = value_map.insert(p, join_or_widen(&val1, &val2, &join_condition));
+                    value_map =
+                        value_map.insert(p, join_or_widen(&val1, &val2, &join_condition, path));
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
-                    let val = join_or_widen(&val1, &abstract_value::BOTTOM, &join_condition);
+                    let val = join_or_widen(&val1, &abstract_value::BOTTOM, &join_condition, path);
                     if !val.is_bottom() {
                         value_map = value_map.insert(p, val);
                     }
@@ -192,7 +193,7 @@ impl Environment {
             if !value_map1.contains_key(path) {
                 checked_assume!(!val2.is_bottom());
                 let p = path.clone();
-                let val = join_or_widen(&abstract_value::BOTTOM, &val2, &join_condition);
+                let val = join_or_widen(&abstract_value::BOTTOM, &val2, &join_condition, path);
                 if !val.is_bottom() {
                     value_map = value_map.insert(p, val);
                 }
