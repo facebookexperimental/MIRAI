@@ -23,5 +23,5 @@ pub fn bad_foo(arr: &mut [i32; 2], i: usize) {
     if i > 0 {
         precondition!(i < 2); //~ preconditions should be reached unconditionally
     }
-    arr[i] = 12; //~ possible array index out of bounds
+    arr[i] = 12;
 }

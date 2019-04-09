@@ -1,11 +1,12 @@
 os:
 - linux
 sudo: required
-dist: trusty
+dist: xenial
 addons:
   apt:
     packages:
     - libssl-dev
+    - libz3-dev
 language: rust
 rust:
 - nightly-2019-04-23
