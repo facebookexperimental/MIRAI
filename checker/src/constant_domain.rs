@@ -111,10 +111,7 @@ impl ConstantDomain {
                 ExpressionType::I32 => i32::overflowing_add(*val1 as i32, *val2 as i32).1,
                 ExpressionType::I16 => i16::overflowing_add(*val1 as i16, *val2 as i16).1,
                 ExpressionType::I8 => i8::overflowing_add(*val1 as i8, *val2 as i8).1,
-                _ => {
-                    println!("{:?}", target_type);
-                    unreachable!()
-                }
+                _ => unreachable!("{:?}", target_type),
             }
             .into(),
             (ConstantDomain::U128(val1), ConstantDomain::U128(val2)) => match target_type {
@@ -124,10 +121,7 @@ impl ConstantDomain {
                 ExpressionType::U32 => u32::overflowing_add(*val1 as u32, *val2 as u32).1,
                 ExpressionType::U16 => u16::overflowing_add(*val1 as u16, *val2 as u16).1,
                 ExpressionType::U8 => u8::overflowing_add(*val1 as u8, *val2 as u8).1,
-                _ => {
-                    println!("{:?}", target_type);
-                    unreachable!()
-                }
+                _ => unreachable!("{:?}", target_type),
             }
             .into(),
             _ => ConstantDomain::Bottom,
@@ -387,23 +381,29 @@ impl ConstantDomain {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => {
                 let result = match target_type {
+                    ExpressionType::Isize => {
+                        isize::overflowing_mul(*val1 as isize, *val2 as isize).1
+                    }
                     ExpressionType::I128 => i128::overflowing_mul(*val1, *val2).1,
                     ExpressionType::I64 => i64::overflowing_mul(*val1 as i64, *val2 as i64).1,
                     ExpressionType::I32 => i32::overflowing_mul(*val1 as i32, *val2 as i32).1,
                     ExpressionType::I16 => i16::overflowing_mul(*val1 as i16, *val2 as i16).1,
                     ExpressionType::I8 => i8::overflowing_mul(*val1 as i8, *val2 as i8).1,
-                    _ => unreachable!(),
+                    _ => unreachable!("target_type {:?}", target_type),
                 };
                 result.into()
             }
             (ConstantDomain::U128(val1), ConstantDomain::U128(val2)) => {
                 let result = match target_type {
+                    ExpressionType::Usize => {
+                        usize::overflowing_mul(*val1 as usize, *val2 as usize).1
+                    }
                     ExpressionType::U128 => u128::overflowing_mul(*val1, *val2).1,
                     ExpressionType::U64 => u64::overflowing_mul(*val1 as u64, *val2 as u64).1,
                     ExpressionType::U32 => u32::overflowing_mul(*val1 as u32, *val2 as u32).1,
                     ExpressionType::U16 => u16::overflowing_mul(*val1 as u16, *val2 as u16).1,
                     ExpressionType::U8 => u8::overflowing_mul(*val1 as u8, *val2 as u8).1,
-                    _ => unreachable!(),
+                    _ => unreachable!("target_type {:?}", target_type),
                 };
                 result.into()
             }
@@ -507,21 +507,23 @@ impl ConstantDomain {
         };
         match (&self, other_as_u32) {
             (ConstantDomain::I128(val1), Some(val2)) => match target_type {
+                ExpressionType::Isize => isize::overflowing_shl(*val1 as isize, val2).1,
                 ExpressionType::I128 => i128::overflowing_shl(*val1, val2).1,
                 ExpressionType::I64 => i64::overflowing_shl(*val1 as i64, val2).1,
                 ExpressionType::I32 => i32::overflowing_shl(*val1 as i32, val2).1,
                 ExpressionType::I16 => i16::overflowing_shl(*val1 as i16, val2).1,
                 ExpressionType::I8 => i8::overflowing_shl(*val1 as i8, val2).1,
-                _ => unreachable!(),
+                _ => unreachable!("{:?}", target_type),
             }
             .into(),
             (ConstantDomain::U128(val1), Some(val2)) => match target_type {
+                ExpressionType::Usize => usize::overflowing_shl(*val1 as usize, val2).1,
                 ExpressionType::U128 => u128::overflowing_shl(*val1, val2).1,
                 ExpressionType::U64 => u64::overflowing_shl(*val1 as u64, val2).1,
                 ExpressionType::U32 => u32::overflowing_shl(*val1 as u32, val2).1,
                 ExpressionType::U16 => u16::overflowing_shl(*val1 as u16, val2).1,
                 ExpressionType::U8 => u8::overflowing_shl(*val1 as u8, val2).1,
-                _ => unreachable!(),
+                _ => unreachable!("{:?}", target_type),
             }
             .into(),
             _ => ConstantDomain::Bottom,
@@ -555,21 +557,23 @@ impl ConstantDomain {
         };
         match (&self, other_as_u32) {
             (ConstantDomain::I128(val1), Some(val2)) => match target_type {
+                ExpressionType::Isize => isize::overflowing_shl(*val1 as isize, val2).1,
                 ExpressionType::I128 => i128::overflowing_shl(*val1, val2).1,
                 ExpressionType::I64 => i64::overflowing_shl(*val1 as i64, val2).1,
                 ExpressionType::I32 => i32::overflowing_shl(*val1 as i32, val2).1,
                 ExpressionType::I16 => i16::overflowing_shl(*val1 as i16, val2).1,
                 ExpressionType::I8 => i8::overflowing_shl(*val1 as i8, val2).1,
-                _ => unreachable!(),
+                _ => unreachable!("{:?}", target_type),
             }
             .into(),
             (ConstantDomain::U128(val1), Some(val2)) => match target_type {
+                ExpressionType::Usize => usize::overflowing_shl(*val1 as usize, val2).1,
                 ExpressionType::U128 => u128::overflowing_shl(*val1, val2).1,
                 ExpressionType::U64 => u64::overflowing_shl(*val1 as u64, val2).1,
                 ExpressionType::U32 => u32::overflowing_shl(*val1 as u32, val2).1,
                 ExpressionType::U16 => u16::overflowing_shl(*val1 as u16, val2).1,
                 ExpressionType::U8 => u8::overflowing_shl(*val1 as u8, val2).1,
-                _ => unreachable!(),
+                _ => unreachable!("{:?}", target_type),
             }
             .into(),
             _ => ConstantDomain::Bottom,
@@ -607,10 +611,7 @@ impl ConstantDomain {
                 ExpressionType::I32 => i32::overflowing_add(*val1 as i32, *val2 as i32).1,
                 ExpressionType::I16 => i16::overflowing_add(*val1 as i16, *val2 as i16).1,
                 ExpressionType::I8 => i8::overflowing_add(*val1 as i8, *val2 as i8).1,
-                _ => {
-                    println!("{:?}", target_type);
-                    unreachable!()
-                }
+                _ => unreachable!("{:?}", target_type),
             }
             .into(),
             (ConstantDomain::U128(val1), ConstantDomain::U128(val2)) => match target_type {
@@ -620,10 +621,7 @@ impl ConstantDomain {
                 ExpressionType::U32 => u32::overflowing_add(*val1 as u32, *val2 as u32).1,
                 ExpressionType::U16 => u16::overflowing_add(*val1 as u16, *val2 as u16).1,
                 ExpressionType::U8 => u8::overflowing_add(*val1 as u8, *val2 as u8).1,
-                _ => {
-                    println!("{:?}", target_type);
-                    unreachable!()
-                }
+                _ => unreachable!("{:?}", target_type),
             }
             .into(),
             _ => ConstantDomain::Bottom,
