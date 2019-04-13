@@ -74,8 +74,8 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_, '_, '_>) -> bool {
 /// long as the definition does not change its name or location, so it can be used to
 /// transfer information from one compilation to the next, making incremental analysis possible.
 pub fn summary_key_str(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> String {
-    let crate_name = if def_id.is_local() {
-        tcx.crate_name.as_interned_str().as_str().get()
+    let mut name = if def_id.is_local() {
+        tcx.crate_name.as_interned_str().as_str().to_string()
     } else {
         // This is both ugly and probably brittle, but I can't find any other
         // way to retrieve the crate name from a def_id that is not local.
@@ -90,13 +90,11 @@ pub fn summary_key_str(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> String {
         let cdata = cdata
             .downcast_ref::<rustc_metadata::cstore::CrateMetadata>()
             .unwrap();
-        cdata.name.as_str().get()
+        cdata.name.as_str().to_string()
     };
-    let mut name = String::from(crate_name);
     for component in &tcx.def_path(def_id).data {
         name.push('.');
-        let cn = component.data.as_interned_str().as_str().get();
-        name.push_str(cn);
+        name.push_str(component.data.as_interned_str().as_str().get());
         if component.disambiguator != 0 {
             name.push(':');
             let da = component.disambiguator.to_string();
