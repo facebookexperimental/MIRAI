@@ -435,11 +435,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             } => self.visit_set_discriminant(place, *variant_index),
             mir::StatementKind::StorageLive(local) => self.visit_storage_live(*local),
             mir::StatementKind::StorageDead(local) => self.visit_storage_dead(*local),
-            mir::StatementKind::InlineAsm {
-                asm,
-                outputs,
-                inputs,
-            } => self.visit_inline_asm(asm, outputs, inputs),
+            mir::StatementKind::InlineAsm(inline_asm) => self.visit_inline_asm(inline_asm),
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
             mir::StatementKind::AscribeUserType(..) => unreachable!(),
             mir::StatementKind::Nop => return,
@@ -492,16 +488,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Execute a piece of inline Assembly.
-    fn visit_inline_asm(
-        &mut self,
-        asm: &hir::InlineAsm,
-        outputs: &[mir::Place<'tcx>],
-        inputs: &[(syntax_pos::Span, mir::Operand<'tcx>)],
-    ) {
-        debug!(
-            "default visit_inline_asm(asm: {:?}, outputs: {:?}, inputs: {:?})",
-            asm, outputs, inputs
-        );
+    fn visit_inline_asm(&mut self, inline_asm: &mir::InlineAsm<'tcx>) {
+        debug!("default visit_inline_asm(inline_asm: {:?})", inline_asm);
         if self.check_for_errors {
             let span = self.current_span;
             let err = self.session.struct_span_warn(
@@ -1619,8 +1607,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// path = length of a [X] or [X;n] value.
     fn visit_len(&mut self, path: Path, place: &mir::Place<'tcx>) {
         debug!("default visit_len(path: {:?}, place: {:?})", path, place);
-        let place_ty = place.ty(&self.mir.local_decls, self.tcx).to_ty(self.tcx);
-        let len_value = if let TyKind::Array(_, len) = place_ty.sty {
+        let place_ty = self.get_rustc_place_type(place);
+        let len_value = if let TyKind::Array(_, len) = place_ty {
             // We only get here if "-Z mir-opt-level=0" was specified.
             // todo: #52 Add a way to run an integration test with a non default compiler option.
             let usize_type = self.tcx.types.usize;
@@ -2291,21 +2279,20 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 mir::PlaceBase::Local(local) => Path::LocalVariable {
                     ordinal: local.as_usize(),
                 },
-                mir::PlaceBase::Static(boxed_static) => {
-                    let def_id = boxed_static.def_id;
-                    let name = utils::summary_key_str(&self.tcx, def_id);
-                    Path::StaticVariable {
-                        def_id: Some(def_id),
-                        summary_cache_key: name,
-                        expression_type: self.get_place_type(place),
+                mir::PlaceBase::Static(boxed_static) => match boxed_static.kind {
+                    mir::StaticKind::Promoted(promoted) => {
+                        let index = promoted.index();
+                        Path::PromotedConstant { ordinal: index }
                     }
-                }
-                mir::PlaceBase::Promoted(boxed_promoted) => {
-                    let index = boxed_promoted.0;
-                    Path::PromotedConstant {
-                        ordinal: index.as_usize(),
+                    mir::StaticKind::Static(def_id) => {
+                        let name = utils::summary_key_str(&self.tcx, def_id);
+                        Path::StaticVariable {
+                            def_id: Some(def_id),
+                            summary_cache_key: name,
+                            expression_type: self.get_place_type(place),
+                        }
                     }
-                }
+                },
             },
             mir::Place::Projection(boxed_place_projection) => {
                 let base = self.visit_place(&boxed_place_projection.base);
@@ -2339,7 +2326,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// but which can be serialized.
     fn visit_projection_elem(
         &mut self,
-        projection_elem: &mir::ProjectionElem<'tcx, mir::Local, &rustc::ty::TyS<'tcx>>,
+        projection_elem: &mir::ProjectionElem<mir::Local, &rustc::ty::TyS<'tcx>>,
     ) -> PathSelector {
         debug!(
             "visit_projection_elem(projection_elem: {:?})",
@@ -2379,7 +2366,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns the rustc TyKind of the given place in memory.
-    fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> &TyKind<'tcx> {
+    fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> &'tcx TyKind<'tcx> {
         match place {
             mir::Place::Base(base_place) => match base_place {
                 mir::PlaceBase::Local(local) => {
@@ -2387,7 +2374,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     &loc.ty.sty
                 }
                 mir::PlaceBase::Static(boxed_static) => &boxed_static.ty.sty,
-                mir::PlaceBase::Promoted(boxed_promoted) => &boxed_promoted.1.sty,
             },
             mir::Place::Projection(_boxed_place_projection) => {
                 self.get_type_for_projection_element(place)
@@ -2396,7 +2382,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns the rustc TyKind of the element selected by projection_elem.
-    fn get_type_for_projection_element(&self, place: &mir::Place<'tcx>) -> &TyKind<'tcx> {
+    fn get_type_for_projection_element(&self, place: &mir::Place<'tcx>) -> &'tcx TyKind<'tcx> {
         if let mir::Place::Projection(boxed_place_projection) = place {
             let base_ty = self.get_rustc_place_type(&boxed_place_projection.base);
             match boxed_place_projection.elem {
