@@ -10,6 +10,7 @@ use crate::utils::is_rust_intrinsic;
 
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Abstracts over constant values referenced in MIR and adds information

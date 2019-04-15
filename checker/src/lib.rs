@@ -25,13 +25,6 @@ extern crate rustc_target;
 extern crate syntax;
 extern crate syntax_pos;
 
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate mirai_annotations;
-
 pub mod abstract_domains;
 pub mod abstract_value;
 pub mod callbacks;

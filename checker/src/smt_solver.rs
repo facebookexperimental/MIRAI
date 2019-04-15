@@ -5,6 +5,8 @@
 
 use crate::expression::Expression;
 
+use serde::{Deserialize, Serialize};
+
 /// The result of using the solver to solve an expression.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum SmtResult {

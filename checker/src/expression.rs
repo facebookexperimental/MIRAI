@@ -7,6 +7,7 @@ use crate::abstract_domains::AbstractDomain;
 use crate::abstract_value::Path;
 use crate::constant_domain::ConstantDomain;
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// Closely based on the expressions found in MIR.

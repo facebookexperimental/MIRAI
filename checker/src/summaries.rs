@@ -9,6 +9,7 @@ use crate::utils;
 
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
+use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
