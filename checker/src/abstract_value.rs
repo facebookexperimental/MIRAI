@@ -912,11 +912,12 @@ impl Path {
                 } else {
                     qualifier.replace_root(old_root, new_root)
                 };
-                assume!(new_qualifier.path_length() < 1_000_000_000); // We'll run out of memory long before this happens
+                let new_qualifier_path_length = new_qualifier.path_length();
+                assume!(new_qualifier_path_length < 1_000_000_000); // We'll run out of memory long before this happens
                 Path::QualifiedPath {
-                    length: new_qualifier.path_length() + 1,
                     qualifier: box new_qualifier,
                     selector: selector.clone(),
+                    length: new_qualifier_path_length + 1,
                 }
             }
             _ => new_root,
