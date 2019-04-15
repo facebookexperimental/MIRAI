@@ -12,6 +12,9 @@ pub const MAX_ANALYSIS_TIME_FOR_BODY: u64 = 3;
 /// Helps to limit the size of summaries.
 pub const MAX_INFERRED_PRECONDITIONS: usize = 50;
 
+/// Double the observed maximum used in practice.
+pub const MAX_FIXPOINT_ITERATIONS: usize = 50;
+
 /// The point at which diverging summaries experience exponential blowup right now.
 pub const MAX_OUTER_FIXPOINT_ITERATIONS: usize = 3;
 
