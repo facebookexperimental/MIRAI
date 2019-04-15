@@ -11,6 +11,7 @@ use crate::smt_solver::SolverStub;
 use crate::summaries;
 use crate::visitors::{MirVisitor, MirVisitorCrateContext};
 
+use log::{info, warn};
 use rustc::hir::def_id::DefId;
 use rustc_interface::interface;
 use std::collections::{HashMap, HashSet};

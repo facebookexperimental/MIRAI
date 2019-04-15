@@ -14,6 +14,8 @@ use crate::summaries;
 use crate::summaries::{PersistentSummaryCache, Summary};
 use crate::utils::{self, is_public};
 
+use log::{debug, info};
+use mirai_annotations::{assume, checked_assume, checked_assume_eq, precondition, verify};
 use rustc::session::Session;
 use rustc::ty::{Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
