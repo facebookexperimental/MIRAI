@@ -825,17 +825,15 @@ impl Path {
                         // is an explicit reference to another path, put the other path in the place
                         // of qualifier since references do not own elements directly in
                         // the environment.
-                        let path_len = dereferenced_path.path_length();
+                        //
+                        // If the new qualifier is itself a reference, we have to dereference again.
+                        let qualifier = dereferenced_path.clone().refine_paths(environment);
+                        let path_len = qualifier.path_length();
                         assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
-                        let deref_path = Path::QualifiedPath {
-                            qualifier: box dereferenced_path.clone(),
+                        return Path::QualifiedPath {
+                            qualifier: box qualifier,
                             selector: selector.clone(),
                             length: path_len + 1,
-                        };
-                        return if environment.value_at(&deref_path).is_some() {
-                            deref_path
-                        } else {
-                            deref_path.refine_paths(environment)
                         };
                     }
                     // if **path == **qualifier, this value came about as the result of a copy
@@ -847,20 +845,18 @@ impl Path {
                         // paths rooted in a are copied or moved to paths rooted in b.
                         // In the case of formal parameters, however, there are no paths to
                         // copy or move and instead the target is assigned a value which, in the case
-                        // of a move is in an alias to the parameter. We de-alias here, which is
+                        // of a move, is in an alias to the parameter. We de-alias here, which is
                         // needed because ultimately the path has to get refined (again) in a calling
                         // context where the root has to be the parameter.
-                        let path_len = path.path_length();
+                        //
+                        // If the new qualifier is itself an alias we have to de-alias again.
+                        let qualifier = path.clone().refine_paths(environment);
+                        let path_len = qualifier.path_length();
                         assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
-                        let de_aliased_path = Path::QualifiedPath {
-                            qualifier: path.clone(),
+                        return Path::QualifiedPath {
+                            qualifier: box qualifier,
                             selector: selector.clone(),
                             length: path_len + 1,
-                        };
-                        return if environment.value_at(&de_aliased_path).is_some() {
-                            de_aliased_path
-                        } else {
-                            de_aliased_path.refine_paths(environment)
                         };
                     }
                     Expression::CompileTimeConstant(constant_value) => {

@@ -665,12 +665,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         for i in 0..values.len() {
             let val: AbstractValue = ConstantDomain::U128(values[i]).into();
             let cond = discr.equals(&val, None);
+            let exit_condition = self.current_environment.entry_condition.and(&cond, None);
             let not_cond = cond.not(None);
             default_exit_condition = default_exit_condition.and(&not_cond, None);
             let target = targets[i];
             self.current_environment
                 .exit_conditions
-                .insert(target, cond);
+                .insert(target, exit_condition);
         }
         self.current_environment
             .exit_conditions
