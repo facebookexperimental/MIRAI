@@ -31,23 +31,25 @@ use syntax_pos;
 
 pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b, E> {
     pub session: &'b Session,
-    pub tcx: TyCtxt<'b, 'tcx, 'tcx>,
+    pub tcx: &'b TyCtxt<'b, 'tcx, 'tcx>,
     pub def_id: hir::def_id::DefId,
     pub mir: &'a mir::Mir<'tcx>,
     pub constant_value_cache: &'a mut ConstantValueCache,
     pub summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
     pub smt_solver: &'a mut dyn SmtSolver<E>,
+    pub buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
 }
 
 /// Holds the state for the MIR test visitor.
 pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
     session: &'b Session,
-    tcx: TyCtxt<'b, 'tcx, 'tcx>,
+    tcx: &'b TyCtxt<'b, 'tcx, 'tcx>,
     def_id: hir::def_id::DefId,
     mir: &'a mir::Mir<'tcx>,
     constant_value_cache: &'a mut ConstantValueCache,
     summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
     smt_solver: &'a mut dyn SmtSolver<E>,
+    buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
 
     already_report_errors_for_call_to: HashSet<AbstractValue>,
     check_for_errors: bool,
@@ -61,8 +63,6 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
     preconditions: Vec<(AbstractValue, String)>,
     unwind_condition: Option<AbstractValue>,
     unwind_environment: Environment,
-
-    pub buffered_diagnostics: Vec<DiagnosticBuilder<'b>>,
 }
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
@@ -79,6 +79,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             constant_value_cache: crate_context.constant_value_cache,
             summary_cache: crate_context.summary_cache,
             smt_solver: crate_context.smt_solver,
+            buffered_diagnostics: crate_context.buffered_diagnostics,
 
             already_report_errors_for_call_to: HashSet::new(),
             check_for_errors: false,
@@ -92,8 +93,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             preconditions: Vec::new(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
-
-            buffered_diagnostics: vec![],
         }
     }
 
@@ -255,17 +254,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         }
     }
 
-    /// Analyze the body and store a summary of its behavior in self.summary_cache.
-    /// Returns true if the newly computed summary is different from the summary (if any)
-    /// that is already in the cache.
-    pub fn visit_body(&mut self, function_name: &str) -> (Option<Summary>, u64) {
-        debug!("visit_body({:?}) of {}", self.def_id, function_name);
-        let mut elapsed_time_in_seconds = 0;
-
-        // Perform a topological sort on the basic blocks so that blocks are analyzed after their
-        // predecessors (except in the case of loop anchors).
+    // Perform a topological sort on the basic blocks so that blocks are analyzed after their
+    // predecessors (except in the case of loop anchors).
+    fn get_sorted_block_indices(&mut self) -> Vec<mir::BasicBlock> {
         let dominators = self.mir.dominators();
-
         let mut block_indices = Vec::new();
         let mut already_added = HashSet::new();
         for bb in self.mir.basic_blocks().indices() {
@@ -276,138 +268,35 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 &mut already_added,
             );
         }
+        block_indices
+    }
 
-        // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
-        let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
-        // out_state[bb] is the environment that results from analyzing block bb, given in_state[bb]
-        let mut out_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
-        for bb in block_indices.iter() {
-            in_state.insert(*bb, Environment::default());
-            out_state.insert(*bb, Environment::default());
-        }
+    /// Analyze the body and store a summary of its behavior in self.summary_cache.
+    /// Returns true if the newly computed summary is different from the summary (if any)
+    /// that is already in the cache.
+    pub fn visit_body(&mut self, function_name: &str) -> (Option<Summary>, u64) {
+        debug!("visit_body({:?}) of {}", self.def_id, function_name);
+
+        let mut block_indices = self.get_sorted_block_indices();
+
+        let (mut in_state, mut out_state) =
+            <MirVisitor<'a, 'b, 'tcx, E>>::initialize_state_maps(&block_indices);
+
         // The entry block has no predecessors and its initial state is the function parameters
         // as well any promoted constants.
         let first_state = self.promote_constants(function_name);
 
-        // Compute a fixed point, which is a value of out_state that will not grow with more iterations.
-        let mut changed = true;
-        let mut iteration_count = 0;
-        while changed {
-            changed = false;
-            for bb in block_indices.iter() {
-                elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
-                if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-                    break;
-                }
-
-                // Merge output states of predecessors of bb
-                let i_state = if bb.index() == 0 {
-                    first_state.clone()
-                } else {
-                    let mut predecessor_states_and_conditions: Vec<(
-                        &Environment,
-                        Option<&AbstractValue>,
-                    )> = self
-                        .mir
-                        .predecessors_for(*bb)
-                        .iter()
-                        .map(|pred_bb| {
-                            let pred_state = &out_state[pred_bb];
-                            let pred_exit_condition = pred_state.exit_conditions.get(bb);
-                            (pred_state, pred_exit_condition)
-                        })
-                        .filter(|(_, pred_exit_condition)| pred_exit_condition.is_some())
-                        .collect();
-                    if predecessor_states_and_conditions.is_empty() {
-                        // nothing is currently known about the predecessors
-                        let mut i_state = in_state[bb].clone();
-                        i_state.entry_condition = abstract_value::TOP;
-                        i_state
-                    } else {
-                        // We want to do right associative operations and that is easier if we reverse.
-                        predecessor_states_and_conditions.reverse();
-                        let (p_state, pred_exit_condition) = predecessor_states_and_conditions[0];
-                        let mut i_state = p_state.clone();
-                        i_state.entry_condition = pred_exit_condition
-                            .unwrap()
-                            .with_provenance(self.current_span);
-                        for (p_state, pred_exit_condition) in
-                            predecessor_states_and_conditions.iter().skip(1)
-                        {
-                            let join_condition = pred_exit_condition.unwrap();
-                            // Once all paths have already been analyzed for a second time (iteration_count == 2)
-                            // all blocks not involved in loops will have their final values.
-                            // If there are no loops, the next iteration will be a no-op, but since we
-                            // don't know if there are loops or not, we do iteration_count == 3 while still
-                            // joining. Once we get to iteration_count == 4, we start widening in
-                            // order to converge on a fixed point.
-                            let mut j_state = if iteration_count < 4 {
-                                p_state.join(&i_state, join_condition)
-                            } else {
-                                p_state.widen(&i_state, join_condition)
-                            };
-                            j_state.entry_condition = join_condition
-                                .clone()
-                                .or(i_state.entry_condition.clone(), Some(self.current_span));
-                            i_state = j_state;
-                        }
-                        i_state
-                    }
-                };
-                // Analyze the basic block
-                in_state.insert(*bb, i_state.clone());
-                if i_state.entry_condition.as_bool_if_known().unwrap_or(true) {
-                    self.current_environment = i_state;
-                    self.visit_basic_block(*bb);
-                }
-
-                // Check for a fixed point.
-                if !self.current_environment.subset(&out_state[bb]) {
-                    // There is some path for which self.current_environment.value_at(path) includes
-                    // a value this is not present in out_state[bb].value_at(path), so any block
-                    // that used out_state[bb] as part of its input state now needs to get reanalyzed.
-                    out_state.insert(*bb, self.current_environment.clone());
-                    changed = true;
-                } else {
-                    // If the environment at the end of this block does not have any new values,
-                    // we have reached a fixed point for this block.
-                    // We update out_state anyway, since exit conditions may have changed.
-                    // This is particularly a problem when the current entry is the dummy entry
-                    // and the current state is empty except for the exit condition.
-                    out_state.get_mut(bb).unwrap().exit_conditions =
-                        self.current_environment.exit_conditions.clone();
-                }
-            }
-            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-                break;
-            }
-            if iteration_count > 50 {
-                warn!("fixed point loop diverged in body of {}", function_name);
-                break;
-            }
-            iteration_count += 1;
-        }
+        let elapsed_time_in_seconds = self.compute_fixed_point(
+            function_name,
+            &mut block_indices,
+            &mut in_state,
+            &mut out_state,
+            &first_state,
+        );
 
         // Now traverse the blocks again, doing checks and emitting diagnostics.
         // in_state[bb] is now complete for every basic block bb in the body.
-        if iteration_count > 6 {
-            warn!(
-                "Fixed point loop took {} iterations for {}.",
-                iteration_count, function_name
-            );
-        }
-        debug!(
-            "Fixed point loop took {} iterations for {}, now checking for errors.",
-            iteration_count, function_name
-        );
-        self.check_for_errors = true;
-        for bb in block_indices.iter() {
-            let i_state = (&in_state[bb]).clone();
-            if i_state.entry_condition.as_bool_if_known().unwrap_or(true) {
-                self.current_environment = i_state;
-                self.visit_basic_block(*bb);
-            }
-        }
+        self.check_for_errors(&block_indices, &in_state);
 
         // Now create a summary of the body that can be in-lined into call sites.
         let summary = summaries::summarize(
@@ -434,6 +323,189 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             // we don't have a way to persist provenance across compilations).
             self.summary_cache.set_summary_for(self.def_id, summary);
             (None, elapsed_time_in_seconds)
+        }
+    }
+
+    /// Compute a fixed point, which is a value of out_state that will not grow with more iterations.
+    fn compute_fixed_point(
+        &mut self,
+        function_name: &str,
+        mut block_indices: &mut Vec<mir::BasicBlock>,
+        mut in_state: &mut HashMap<mir::BasicBlock, Environment>,
+        mut out_state: &mut HashMap<mir::BasicBlock, Environment>,
+        first_state: &Environment,
+    ) -> u64 {
+        let mut elapsed_time_in_seconds = 0;
+        let mut iteration_count = 0;
+        let mut changed = true;
+        while changed {
+            changed = self.visit_blocks(
+                &mut block_indices,
+                &mut in_state,
+                &mut out_state,
+                &first_state,
+                iteration_count,
+            );
+            elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
+            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                break;
+            }
+            if iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
+                warn!("fixed point loop diverged in body of {}", function_name);
+                break;
+            }
+            iteration_count += 1;
+        }
+        if iteration_count > 9 {
+            warn!(
+                "Fixed point loop took {} iterations for {}.",
+                iteration_count, function_name
+            );
+        }
+        debug!(
+            "Fixed point loop took {} iterations for {}, now checking for errors.",
+            iteration_count, function_name
+        );
+        elapsed_time_in_seconds
+    }
+
+    fn check_for_errors(
+        &mut self,
+        block_indices: &[mir::BasicBlock],
+        in_state: &HashMap<mir::BasicBlock, Environment>,
+    ) {
+        self.check_for_errors = true;
+        for bb in block_indices.iter() {
+            let i_state = (&in_state[bb]).clone();
+            if i_state.entry_condition.as_bool_if_known().unwrap_or(true) {
+                self.current_environment = i_state;
+                self.visit_basic_block(*bb);
+            }
+        }
+    }
+
+    fn initialize_state_maps(
+        block_indices: &[mir::BasicBlock],
+    ) -> (
+        HashMap<mir::BasicBlock, Environment>,
+        HashMap<mir::BasicBlock, Environment>,
+    ) {
+        // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
+        let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
+        // out_state[bb] is the environment that results from analyzing block bb, given in_state[bb]
+        let mut out_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
+        for bb in block_indices.iter() {
+            in_state.insert(*bb, Environment::default());
+            out_state.insert(*bb, Environment::default());
+        }
+        (in_state, out_state)
+    }
+
+    /// Visits each block in block_indices, after computing a precondition and initial state for
+    /// each block by joining together the exit conditions and exit states of its predecessors.
+    /// Returns true if one or more of the blocks changed their output states.
+    fn visit_blocks(
+        &mut self,
+        block_indices: &mut Vec<mir::BasicBlock>,
+        in_state: &mut HashMap<mir::BasicBlock, Environment>,
+        out_state: &mut HashMap<mir::BasicBlock, Environment>,
+        first_state: &Environment,
+        iteration_count: usize,
+    ) -> bool {
+        let mut changed = false;
+        for bb in block_indices.iter() {
+            let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
+            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                break;
+            }
+
+            // Merge output states of predecessors of bb
+            let i_state = if bb.index() == 0 {
+                first_state.clone()
+            } else {
+                self.get_intial_state_from_predecessors(*bb, in_state, out_state, iteration_count)
+            };
+            // Analyze the basic block
+            in_state.insert(*bb, i_state.clone());
+            if i_state.entry_condition.as_bool_if_known().unwrap_or(true) {
+                self.current_environment = i_state;
+                self.visit_basic_block(*bb);
+            }
+
+            // Check for a fixed point.
+            if !self.current_environment.subset(&out_state[bb]) {
+                // There is some path for which self.current_environment.value_at(path) includes
+                // a value this is not present in out_state[bb].value_at(path), so any block
+                // that used out_state[bb] as part of its input state now needs to get reanalyzed.
+                out_state.insert(*bb, self.current_environment.clone());
+                changed = true;
+            } else {
+                // If the environment at the end of this block does not have any new values,
+                // we have reached a fixed point for this block.
+                // We update out_state anyway, since exit conditions may have changed.
+                // This is particularly a problem when the current entry is the dummy entry
+                // and the current state is empty except for the exit condition.
+                out_state.get_mut(bb).unwrap().exit_conditions =
+                    self.current_environment.exit_conditions.clone();
+            }
+        }
+        changed
+    }
+
+    /// Join the exit states from all predecessors blocks to get the entry state fo this block.
+    /// If a predecessor has not yet been analyzed, its state does not form part of the join.
+    /// If no predecessors have been analyzed, the entry state is a default entry state with an
+    /// entry condition of TOP.
+    fn get_intial_state_from_predecessors(
+        &mut self,
+        bb: mir::BasicBlock,
+        in_state: &HashMap<mir::BasicBlock, Environment>,
+        out_state: &HashMap<mir::BasicBlock, Environment>,
+        iteration_count: usize,
+    ) -> Environment {
+        let mut predecessor_states_and_conditions: Vec<(&Environment, Option<&AbstractValue>)> =
+            self.mir
+                .predecessors_for(bb)
+                .iter()
+                .map(|pred_bb| {
+                    let pred_state = &out_state[pred_bb];
+                    let pred_exit_condition = pred_state.exit_conditions.get(&bb);
+                    (pred_state, pred_exit_condition)
+                })
+                .filter(|(_, pred_exit_condition)| pred_exit_condition.is_some())
+                .collect();
+        if predecessor_states_and_conditions.is_empty() {
+            // nothing is currently known about the predecessors
+            let mut i_state = in_state[&bb].clone();
+            i_state.entry_condition = abstract_value::TOP;
+            i_state
+        } else {
+            // We want to do right associative operations and that is easier if we reverse.
+            predecessor_states_and_conditions.reverse();
+            let (p_state, pred_exit_condition) = predecessor_states_and_conditions[0];
+            let mut i_state = p_state.clone();
+            i_state.entry_condition = pred_exit_condition
+                .unwrap()
+                .with_provenance(self.current_span);
+            for (p_state, pred_exit_condition) in predecessor_states_and_conditions.iter().skip(1) {
+                let join_condition = pred_exit_condition.unwrap();
+                // Once all paths have already been analyzed for a second time (iteration_count == 2)
+                // all blocks not involved in loops will have their final values.
+                // If there are no loops, the next iteration will be a no-op, but since we
+                // don't know if there are loops or not, we do iteration_count == 3 while still
+                // joining. Once we get to iteration_count == 4, we start widening in
+                // order to converge on a fixed point.
+                let mut j_state = if iteration_count < 4 {
+                    p_state.join(&i_state, join_condition)
+                } else {
+                    p_state.widen(&i_state, join_condition)
+                };
+                j_state.entry_condition = join_condition
+                    .clone()
+                    .or(i_state.entry_condition.clone(), Some(self.current_span));
+                i_state = j_state;
+            }
+            i_state
         }
     }
 
@@ -1513,6 +1585,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Copies/moves all paths rooted in rpath to corresponding paths rooted in target_path.
+    /// todo: this is expensive, optimize it
     fn copy_or_move_elements(
         &mut self,
         target_path: Path,

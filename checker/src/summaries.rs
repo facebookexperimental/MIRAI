@@ -148,6 +148,16 @@ fn extract_side_effects(env: &Environment, argument_count: usize) -> Vec<(Path, 
             result.push((path.clone(), value.clone()));
         }
     }
+    extract_reachable_heap_allocations(env, &mut heap_roots, &mut result);
+    result
+}
+
+/// Adds roots for all new heap allocated objects that are reachable by the caller.
+fn extract_reachable_heap_allocations(
+    env: &Environment,
+    heap_roots: &mut HashSet<usize>,
+    result: &mut Vec<(Path, AbstractValue)>,
+) {
     let mut visited_heap_roots: HashSet<usize> = HashSet::new();
     while heap_roots.len() > visited_heap_roots.len() {
         let mut new_roots: HashSet<usize> = HashSet::new();
@@ -167,7 +177,6 @@ fn extract_side_effects(env: &Environment, argument_count: usize) -> Vec<(Path, 
         }
         heap_roots.extend(new_roots.into_iter());
     }
-    result
 }
 
 /// A persistent map from DefId to Summary.
