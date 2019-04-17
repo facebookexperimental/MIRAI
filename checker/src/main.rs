@@ -20,11 +20,13 @@ extern crate rustc_driver;
 extern crate rustc_interface;
 
 use mirai::callbacks;
+use mirai::k_limits;
+use mirai::k_limits::KLimitConfig;
 use mirai::utils;
 use std::env;
 use std::path::Path;
 
-fn main() {
+fn main() -> Result<(), Box<std::error::Error>> {
     // Initialize loggers.
     if env::var("RUST_LOG").is_ok() {
         rustc_driver::init_rustc_env_logger();
@@ -47,15 +49,61 @@ fn main() {
         command_line_arguments.remove(1);
     }
 
+    let max_inferred_preconditions = command_line_arguments
+        .iter_mut()
+        .position(|s| s == "--max_inferred_preconditions")
+        .map(|i| {
+            command_line_arguments.remove(i);
+            usize::from_str_radix(&command_line_arguments.remove(i), 10) //return corresponding value
+        })
+        .transpose()?
+        .unwrap_or(k_limits::MAX_INFERRED_PRECONDITIONS);
+
+    let max_path_length = command_line_arguments
+        .iter_mut()
+        .position(|s| s == "--max_path_length")
+        .map(|i| {
+            command_line_arguments.remove(i);
+            usize::from_str_radix(&command_line_arguments.remove(i), 10) //return corresponding value
+        })
+        .transpose()?
+        .unwrap_or(k_limits::MAX_PATH_LENGTH);
+
+    let max_outer_fixpoint_iterations = command_line_arguments
+        .iter_mut()
+        .position(|s| s == "--max_outer_fixpoint_iterations")
+        .map(|i| {
+            command_line_arguments.remove(i);
+            usize::from_str_radix(&command_line_arguments.remove(i), 10) //return corresponding value
+        })
+        .transpose()?
+        .unwrap_or(k_limits::MAX_OUTER_FIXPOINT_ITERATIONS);
+
+    let max_analysis_time_for_body = command_line_arguments
+        .iter_mut()
+        .position(|s| s == "--max_analysis_time_for_body")
+        .map(|i| {
+            command_line_arguments.remove(i);
+            u64::from_str_radix(&command_line_arguments.remove(i), 10) //return corresponding value
+        })
+        .transpose()?
+        .unwrap_or(k_limits::MAX_ANALYSIS_TIME_FOR_BODY);
+
     // Tell compiler where to find the std library and so on.
     // The compiler relies on the standard rustc driver to tell it, so we have to do likewise.
     command_line_arguments.push(String::from("--sysroot"));
     command_line_arguments.push(utils::find_sysroot());
 
+    let config = KLimitConfig::new(
+        max_inferred_preconditions,
+        max_path_length,
+        max_outer_fixpoint_iterations,
+        max_analysis_time_for_body,
+    );
     let result = rustc_driver::report_ices_to_stderr_if_any(move || {
         rustc_driver::run_compiler(
             &command_line_arguments,
-            &mut callbacks::MiraiCallbacks::default(),
+            &mut callbacks::MiraiCallbacks::new(config),
             None, // use default file loader
             None, // emit output to default destination
         )

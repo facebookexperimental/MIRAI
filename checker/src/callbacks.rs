@@ -6,7 +6,7 @@
 
 use crate::constant_domain::ConstantValueCache;
 use crate::expected_errors;
-use crate::k_limits;
+use crate::k_limits::KLimitConfig;
 use crate::smt_solver::SolverStub;
 use crate::summaries;
 use crate::visitors::{MirVisitor, MirVisitorCrateContext};
@@ -27,29 +27,33 @@ pub struct MiraiCallbacks {
     output_directory: PathBuf,
     /// True if this run is done via cargo test
     test_run: bool,
+    k_limits: KLimitConfig,
 }
 
 /// Constructors
 impl MiraiCallbacks {
-    pub fn new() -> MiraiCallbacks {
+    pub fn new(config: KLimitConfig) -> MiraiCallbacks {
         MiraiCallbacks {
             file_name: String::new(),
             output_directory: PathBuf::default(),
             test_run: false,
+            k_limits: config.clone(),
         }
     }
 
-    pub fn test_runner() -> MiraiCallbacks {
+    pub fn test_runner(config: KLimitConfig) -> MiraiCallbacks {
         MiraiCallbacks {
             file_name: String::new(),
             output_directory: PathBuf::default(),
             test_run: true,
+            k_limits: config.clone(),
         }
     }
 }
 impl Default for MiraiCallbacks {
     fn default() -> Self {
-        Self::new()
+        let config = KLimitConfig::default();
+        Self::new(config)
     }
 }
 
@@ -88,7 +92,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
             let mut diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'_>>> = HashMap::new();
             let mut not_done = true;
             let mut iteration_count = 0;
-            while not_done && iteration_count < k_limits::MAX_OUTER_FIXPOINT_ITERATIONS {
+            while not_done && iteration_count < self.k_limits.max_outer_fixpoint_iterations {
                 for def_id in tcx.body_owners() {
                     if defs_to_not_reanalyze.contains(&def_id) {
                         continue;
@@ -123,9 +127,10 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
                             summary_cache: &mut persistent_summary_cache,
                             constant_value_cache: &mut constant_value_cache,
                             smt_solver: &mut smt_solver,
+                            k_limits: self.k_limits.clone(),
                         });
                         let (r, analysis_time_in_seconds) = mir_visitor.visit_body();
-                        if analysis_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                        if analysis_time_in_seconds >= self.k_limits.max_analysis_time_for_body {
                             // This body is beyond MIRAI for now
                             warn!(
                                 "analysis of {} timed out after {} seconds",

@@ -7,7 +7,6 @@ use crate::abstract_domains::{self, AbstractDomain};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
-use crate::k_limits;
 
 use log::debug;
 use mirai_annotations::{assume, checked_assume};
@@ -873,7 +872,7 @@ impl Path {
     }
 
     /// Returns a copy path with the root replaced by new_root.
-    pub fn replace_root(&self, old_root: &Path, new_root: Path) -> Path {
+    pub fn replace_root(&self, old_root: &Path, new_root: Path, max_path_length: usize) -> Path {
         match self {
             Path::QualifiedPath {
                 qualifier,
@@ -883,9 +882,9 @@ impl Path {
                 let new_qualifier = if **qualifier == *old_root {
                     new_root
                 } else {
-                    qualifier.replace_root(old_root, new_root)
+                    qualifier.replace_root(old_root, new_root, max_path_length)
                 };
-                checked_assume!(new_qualifier.path_length() <= k_limits::MAX_PATH_LENGTH);
+                checked_assume!(new_qualifier.path_length() <= max_path_length);
                 Path::QualifiedPath {
                     length: new_qualifier.path_length() + 1,
                     qualifier: box new_qualifier,

@@ -8,7 +8,7 @@ use crate::abstract_value::{self, AbstractValue, Path, PathSelector};
 use crate::constant_domain::{ConstantDomain, ConstantValueCache};
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
-use crate::k_limits;
+use crate::k_limits::KLimitConfig;
 use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries;
 use crate::summaries::{PersistentSummaryCache, Summary};
@@ -36,10 +36,12 @@ pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b, E> {
     pub constant_value_cache: &'a mut ConstantValueCache,
     pub summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
     pub smt_solver: &'a mut dyn SmtSolver<E>,
+    pub k_limits: KLimitConfig,
 }
 
 /// Holds the state for the MIR test visitor.
 pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
+    k_limits: KLimitConfig,
     session: &'b Session,
     tcx: TyCtxt<'b, 'tcx, 'tcx>,
     def_id: hir::def_id::DefId,
@@ -70,6 +72,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         crate_context: MirVisitorCrateContext<'a, 'b, 'tcx, E>,
     ) -> MirVisitor<'a, 'b, 'tcx, E> {
         MirVisitor {
+            k_limits: crate_context.k_limits,
             session: crate_context.session,
             tcx: crate_context.tcx,
             def_id: crate_context.def_id,
@@ -153,7 +156,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                                 (*p) == source_path || p.is_rooted_by(&source_path)
                             }) {
                                 let tpath = path
-                                    .replace_root(&source_path, target_path.clone())
+                                    .replace_root(
+                                        &source_path,
+                                        target_path.clone(),
+                                        self.k_limits.max_path_length,
+                                    )
                                     .refine_paths(&mut self.current_environment);
                                 let rvalue = value.refine_paths(&mut self.current_environment);
                                 self.current_environment.update_value_at(tpath, rvalue);
@@ -167,7 +174,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         }
                         .into()
                     }
-                } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
+                } else if path.path_length() < self.k_limits.max_path_length {
                     if result_type == ExpressionType::Reference {
                         Expression::Reference(path).into()
                     } else {
@@ -238,7 +245,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             changed = false;
             for bb in self.mir.basic_blocks().indices() {
                 elapsed_time_in_seconds = start_instant.elapsed().as_secs();
-                if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                if elapsed_time_in_seconds >= self.k_limits.max_analysis_time_for_body {
                     break;
                 }
 
@@ -314,7 +321,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     // we have reached a fixed point for this block.
                 }
             }
-            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+            if elapsed_time_in_seconds >= self.k_limits.max_analysis_time_for_body {
                 break;
             }
             if iteration_count > 50 {
@@ -353,7 +360,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             let old_summary = self.summary_cache.get_summary_for(self.def_id, None);
             summary != *old_summary
         };
-        if changed && elapsed_time_in_seconds < k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+        if changed && elapsed_time_in_seconds < self.k_limits.max_analysis_time_for_body {
             (
                 self.summary_cache.set_summary_for(self.def_id, summary),
                 elapsed_time_in_seconds,
@@ -386,7 +393,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .iter()
                 .filter(|(p, _)| p.is_rooted_by(&result_root))
             {
-                let promoted_path = path.replace_root(&result_root, promoted_root.clone());
+                let promoted_path = path.replace_root(
+                    &result_root,
+                    promoted_root.clone(),
+                    self.k_limits.max_path_length,
+                );
                 state_with_parameters.update_value_at(promoted_path, value.clone());
             }
 
@@ -865,7 +876,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 continue;
             };
             if !refined_precondition_as_bool.unwrap_or(true)
-                || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+                || self.preconditions.len() >= self.k_limits.max_inferred_preconditions
             {
                 // The precondition is definitely false, if we ever get to this call site.
                 if entry_cond_as_bool.unwrap_or(false)
@@ -916,7 +927,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 // since we add the current entry condition to the promoted precondition.
             }
 
-            if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+            if self.preconditions.len() < self.k_limits.max_inferred_preconditions {
                 // Promote the precondition to a precondition of the current function.
                 let mut promoted_precondition = self
                     .current_environment
@@ -1049,7 +1060,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let span = self.current_span;
                     let error = self.session.struct_span_err(span, "false assertion");
                     self.emit_diagnostic(error);
-                    if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                    if self.preconditions.len() < self.k_limits.max_inferred_preconditions {
                         // promote the path as precondition. I.e. the program is only correct
                         // if we never get here.
                         self.preconditions.push((
@@ -1066,7 +1077,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 // We might get here, or not, and the condition might be false, or not.
                 // Give a warning if we don't know all of the callers, or if we run into a k-limit
                 if is_public(self.def_id, &self.tcx)
-                    || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+                    || self.preconditions.len() >= self.k_limits.max_inferred_preconditions
                 {
                     // We expect public functions to have programmer supplied preconditions
                     // that preclude any assertions from failing. So, if at this stage we get to
@@ -1079,7 +1090,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
                 // Now try to push a precondition so that any known or unknown caller of this function
                 // is warned that this function will fail if the precondition is not met.
-                if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                if self.preconditions.len() < self.k_limits.max_inferred_preconditions {
                     self.preconditions.push((
                         self.current_environment
                             .entry_condition
@@ -1169,7 +1180,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .filter(|(p, _)| (*p) == source_path || p.is_rooted_by(&source_path))
         {
             let tpath = path
-                .replace_root(&source_path, target_path.clone())
+                .replace_root(
+                    &source_path,
+                    target_path.clone(),
+                    self.k_limits.max_path_length,
+                )
                 .refine_paths(&mut self.current_environment);
             let rvalue = value
                 .refine_parameters(arguments)
@@ -1236,7 +1251,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 // At this point, we don't know that this assert is unreachable and we don't know
                 // that the condition is as expected, so we need to warn about it somewhere.
                 if is_public(self.def_id, &self.tcx)
-                    || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+                    || self.preconditions.len() >= self.k_limits.max_inferred_preconditions
                 {
                     // We expect public functions to have programmer supplied preconditions
                     // that preclude any assertions from failing. So, if at this stage we get to
@@ -1248,7 +1263,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
 
                 // Regardless, it is still the caller's problem, so push a precondition.
-                if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                if self.preconditions.len() < self.k_limits.max_inferred_preconditions {
                     let expected_cond = if expected {
                         cond_val
                     } else {
@@ -1534,7 +1549,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .iter()
             .filter(|(p, _)| p.is_rooted_by(&rpath))
         {
-            let qualified_path = path.replace_root(&rpath, target_path.clone());
+            let qualified_path =
+                path.replace_root(&rpath, target_path.clone(), self.k_limits.max_path_length);
             if move_elements {
                 debug!("moving {:?} to {:?}", value, qualified_path);
                 value_map = value_map.remove(&path);
@@ -1828,7 +1844,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::AggregateKind::Array(..) => true,
             _ => false,
         });
-        if path.path_length() >= k_limits::MAX_PATH_LENGTH {
+        if path.path_length() >= self.k_limits.max_path_length {
             // If we get to this limit we have a very weird array. Just use Top.
             self.current_environment
                 .update_value_at(path, abstract_value::TOP);

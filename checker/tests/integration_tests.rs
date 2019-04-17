@@ -24,6 +24,7 @@ extern crate syntax;
 extern crate tempdir;
 
 use mirai::callbacks;
+use mirai::k_limits::KLimitConfig;
 use mirai::utils;
 use rustc_rayon::iter::IntoParallelIterator;
 use rustc_rayon::iter::ParallelIterator;
@@ -134,7 +135,8 @@ fn invoke_driver(
         annotations_option,
     ];
 
-    let mut call_backs = callbacks::MiraiCallbacks::test_runner();
+    let config = KLimitConfig::new(50, 10, 3, 3);
+    let mut call_backs = callbacks::MiraiCallbacks::test_runner(config);
     let result = std::panic::catch_unwind(move || {
         rustc_driver::run_compiler(
             &command_line_arguments,
