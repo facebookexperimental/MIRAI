@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
             usize::from_str_radix(&command_line_arguments.remove(i), 10) //return corresponding value
         })
         .transpose()?
-        .unwrap_or(k_limits::MAX_INFERRED_PRECONDITIONS);
+        .unwrap_or(k_limits::MAX_INFERRED_PRECONDITIONS_DEFAULT);
 
     let max_path_length = command_line_arguments
         .iter_mut()
@@ -67,7 +67,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
             usize::from_str_radix(&command_line_arguments.remove(i), 10) //return corresponding value
         })
         .transpose()?
-        .unwrap_or(k_limits::MAX_PATH_LENGTH);
+        .unwrap_or(k_limits::MAX_PATH_LENGTH_DEFAULT);
 
     let max_outer_fixpoint_iterations = command_line_arguments
         .iter_mut()
@@ -77,7 +77,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
             usize::from_str_radix(&command_line_arguments.remove(i), 10) //return corresponding value
         })
         .transpose()?
-        .unwrap_or(k_limits::MAX_OUTER_FIXPOINT_ITERATIONS);
+        .unwrap_or(k_limits::MAX_OUTER_FIXPOINT_ITERATIONS_DEFAULT);
 
     let max_analysis_time_for_body = command_line_arguments
         .iter_mut()
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
             u64::from_str_radix(&command_line_arguments.remove(i), 10) //return corresponding value
         })
         .transpose()?
-        .unwrap_or(k_limits::MAX_ANALYSIS_TIME_FOR_BODY);
+        .unwrap_or(k_limits::MAX_ANALYSIS_TIME_FOR_BODY_DEFAULT);
 
     // Tell compiler where to find the std library and so on.
     // The compiler relies on the standard rustc driver to tell it, so we have to do likewise.

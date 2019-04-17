@@ -6,16 +6,16 @@
 // take too long or use too much memory.
 
 /// Helps to limit the size of summaries.
-pub const MAX_INFERRED_PRECONDITIONS: usize = 50;
+pub const MAX_INFERRED_PRECONDITIONS_DEFAULT: usize = 50;
 
 /// Prevents the fixed point loop from creating ever more new abstract values of type Expression::Variable.
-pub const MAX_PATH_LENGTH: usize = 10;
+pub const MAX_PATH_LENGTH_DEFAULT: usize = 10;
 
 /// The point at which diverging summaries experience exponential blowup right now.
-pub const MAX_OUTER_FIXPOINT_ITERATIONS: usize = 3;
+pub const MAX_OUTER_FIXPOINT_ITERATIONS_DEFAULT: usize = 3;
 
 /// The maximum number of seconds that MIRAI is willing to analyze a function body for.
-pub const MAX_ANALYSIS_TIME_FOR_BODY: u64 = 3;
+pub const MAX_ANALYSIS_TIME_FOR_BODY_DEFAULT: u64 = 3;
 
 #[derive(Debug, Clone)]
 pub struct KLimitConfig {
@@ -44,10 +44,10 @@ impl KLimitConfig {
 impl Default for KLimitConfig {
     fn default() -> Self {
         Self::new(
-            self::MAX_INFERRED_PRECONDITIONS,
-            self::MAX_PATH_LENGTH,
-            self::MAX_OUTER_FIXPOINT_ITERATIONS,
-            self::MAX_ANALYSIS_TIME_FOR_BODY,
+            self::MAX_INFERRED_PRECONDITIONS_DEFAULT,
+            self::MAX_PATH_LENGTH_DEFAULT,
+            self::MAX_OUTER_FIXPOINT_ITERATIONS_DEFAULT,
+            self::MAX_ANALYSIS_TIME_FOR_BODY_DEFAULT,
         )
     }
 }

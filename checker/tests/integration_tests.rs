@@ -163,10 +163,7 @@ fn test_config() {
         config1.max_analysis_time_for_body,
         config2.max_analysis_time_for_body
     );
-    assert_eq!(
-        config1.max_path_length,
-        config2.max_path_length
-    );
+    assert_eq!(config1.max_path_length, config2.max_path_length);
     assert_eq!(
         config1.max_analysis_time_for_body,
         config2.max_analysis_time_for_body
