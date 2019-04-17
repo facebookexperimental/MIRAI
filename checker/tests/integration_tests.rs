@@ -155,12 +155,24 @@ fn invoke_driver(
 }
 
 #[test]
-fn test_config(){
+fn test_config() {
     let config1 = KLimitConfig::default();
     let config2 = KLimitConfig::new(50, 10, 3, 3);
 
-    assert_eq!(config1.max_analysis_time_for_body, config2.max_analysis_time_for_body);
-    assert_eq!(config1.max_path_length, config2.max_path_length);
-    assert_eq!(config1.max_analysis_time_for_body, config2.max_analysis_time_for_body);
-    assert_eq!(config1.max_outer_fixpoint_iterations, config2.max_outer_fixpoint_iterations);
+    assert_eq!(
+        config1.max_analysis_time_for_body,
+        config2.max_analysis_time_for_body
+    );
+    assert_eq!(
+        config1.max_path_length,
+        config2.max_path_length
+    );
+    assert_eq!(
+        config1.max_analysis_time_for_body,
+        config2.max_analysis_time_for_body
+    );
+    assert_eq!(
+        config1.max_outer_fixpoint_iterations,
+        config2.max_outer_fixpoint_iterations
+    );
 }
