@@ -8,7 +8,7 @@ use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 
-use log::{debug, warn};
+use log::debug;
 use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
@@ -238,6 +238,27 @@ impl AbstractValue {
         }
     }
 
+    /// Returns an abstract value whose corresponding set of concrete values include all of the values
+    /// corresponding to self and other.
+    /// In a context where the condition is known to be true, the result can be refined to be
+    /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
+    pub fn conditional_expression(
+        &self,
+        consequent: &AbstractValue,
+        alternate: &AbstractValue,
+    ) -> AbstractValue {
+        let mut provenance = Vec::new();
+        provenance.extend_from_slice(&self.provenance);
+        provenance.extend_from_slice(&consequent.provenance);
+        provenance.extend_from_slice(&alternate.provenance);
+        AbstractValue {
+            provenance,
+            domain: self
+                .domain
+                .conditional_expression(&consequent.domain, &alternate.domain),
+        }
+    }
+
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "/" to each element of the cross product of the concrete
     /// values or self and other.
@@ -324,14 +345,13 @@ impl AbstractValue {
     /// corresponding to self and other.
     /// In a context where the join condition is known to be true, the result can be refined to be
     /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
-    pub fn join(&self, other: &AbstractValue, join_condition: &AbstractValue) -> AbstractValue {
+    pub fn join(&self, other: &AbstractValue, path: &Path) -> AbstractValue {
         let mut provenance = Vec::new();
-        provenance.extend_from_slice(&join_condition.provenance);
         provenance.extend_from_slice(&self.provenance);
         provenance.extend_from_slice(&other.provenance);
         AbstractValue {
             provenance,
-            domain: self.domain.join(&other.domain, &join_condition.domain),
+            domain: self.domain.join(&other.domain, path),
         }
     }
 
@@ -444,14 +464,6 @@ impl AbstractValue {
             provenance.push(expression_provenance.unwrap())
         }
         provenance.extend_from_slice(&self.provenance);
-        match self.domain.expression {
-            Expression::Reference(..) | Expression::Variable { .. } => (),
-            _ => {
-                if self.domain.expression.infer_type() != ExpressionType::Bool {
-                    warn!("bad not operand {:?} at {:?}", self, provenance);
-                }
-            }
-        }
         AbstractValue {
             provenance,
             domain: self.domain.not(),
@@ -663,17 +675,10 @@ impl AbstractValue {
     /// corresponding to self and other. The set of values may be less precise (more inclusive) than
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to Top.
-    pub fn widen(
-        &self,
-        other: &AbstractValue,
-        join_condition: &AbstractValue,
-        path: &Path,
-    ) -> AbstractValue {
+    pub fn widen(&self, path: &Path) -> AbstractValue {
         AbstractValue {
-            provenance: other.provenance.clone(),
-            domain: self
-                .domain
-                .widen(&other.domain, &join_condition.domain, path),
+            provenance: self.provenance.clone(),
+            domain: self.domain.widen(path),
         }
     }
 
