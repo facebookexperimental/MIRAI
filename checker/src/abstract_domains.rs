@@ -291,23 +291,60 @@ impl AbstractDomain {
                 condition,
                 consequent,
                 alternate,
-            } => ConditionalExpression {
-                condition: condition.clone(),
-                consequent: box consequent.cast(target_type.clone()),
-                alternate: box alternate.cast(target_type),
-            }
-            .into(),
-            Expression::Join { left, right } => Join {
-                left: box left.cast(target_type.clone()),
-                right: box right.cast(target_type),
-            }
-            .into(),
+            } => condition.conditional_expression(
+                &consequent.cast(target_type.clone()),
+                &alternate.cast(target_type),
+            ),
+            Expression::Join { left, right, path } => left
+                .cast(target_type.clone())
+                .join(&right.cast(target_type), path),
             _ => Expression::Cast {
                 operand: box self.clone(),
                 target_type,
             }
             .into(),
         }
+    }
+
+    /// Returns an element that is "if self { consequent } else { alternate }".
+    pub fn conditional_expression(&self, consequent: &Self, alternate: &Self) -> Self {
+        if self.is_bottom() {
+            // If the condition is impossible so is the expression.
+            return consequent.clone();
+        }
+        if (*consequent).expression == (*alternate).expression {
+            // c ? x : x is just x
+            return consequent.clone();
+        }
+        let join_condition_as_bool = self.as_bool_if_known();
+        if join_condition_as_bool == Some(true) {
+            // true ? x : y is just x
+            return consequent.clone();
+        } else if join_condition_as_bool == Some(false) {
+            // false ? x : y is just y
+            return alternate.clone();
+        }
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&consequent.expression, &alternate.expression)
+        {
+            match (v1, v2) {
+                (ConstantDomain::True, ConstantDomain::False) => {
+                    // c ? true : false is just c
+                    return self.clone();
+                }
+                (ConstantDomain::False, ConstantDomain::True) => {
+                    // c ? false : true is just !c
+                    return self.not();
+                }
+                _ => (),
+            }
+        }
+        ConditionalExpression {
+            condition: box self.clone(),
+            consequent: box consequent.clone(),
+            alternate: box alternate.clone(),
+        }
+        .into()
     }
 
     /// Returns an element that is "self / other".
@@ -479,61 +516,22 @@ impl AbstractDomain {
     }
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
-    /// corresponding to self and other.
-    pub fn join(&self, other: &Self, join_condition: &AbstractDomain) -> Self {
-        if join_condition.is_bottom() {
-            // If the condition is impossible so is the expression.
-            return Expression::Bottom.into();
-        } else if (*self).expression == (*other).expression {
-            // c ? x : x is just x
-            return self.clone();
-        } else if self.is_bottom() {
-            // {} join x is just x
+    /// corresponding to self and other. In effect this behaves like set union.
+    pub fn join(&self, other: &Self, path: &Path) -> Self {
+        // {} union y is just y
+        if self.is_bottom() {
             return other.clone();
-        } else if other.is_bottom() {
-            // x join {} is just x
+        }
+        // x union {} just x
+        if other.is_bottom() {
             return self.clone();
         }
-        let join_condition_as_bool = join_condition.as_bool_if_known();
-        // If the join condition is known to be false, the second branch is unreachable, so no join
-        if join_condition_as_bool == Some(false) {
-            return self.clone();
+        Expression::Join {
+            path: box path.clone(),
+            left: box self.clone(),
+            right: box other.clone(),
         }
-        // If the join condition is known to be true, we have two unconditional branches joining
-        // up here and no way to tell which one brought us here. This can happen for an infinite
-        // loop, where the dominator of the loop anchor unconditionally branches to the anchor
-        // and the backward branch also unconditionally branches to the anchor.
-        // While such loops can be expected to be rare in source form, they do show up during
-        // abstract interpretation because the loop exit condition may evaluate to false
-        // for the first few iterations of the loop and thus the backwards branch only becomes
-        // conditional once widening kicks in.
-        if join_condition_as_bool == Some(true) {
-            Expression::Join {
-                left: box self.clone(),
-                right: box other.clone(),
-            }
-            .into()
-        } else {
-            if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-                (&self.expression, &other.expression)
-            {
-                match (v1, v2) {
-                    (ConstantDomain::True, ConstantDomain::False) => {
-                        return join_condition.clone();
-                    }
-                    (ConstantDomain::False, ConstantDomain::True) => {
-                        return join_condition.not();
-                    }
-                    _ => (),
-                }
-            }
-            Expression::ConditionalExpression {
-                condition: box join_condition.clone(),
-                consequent: box self.clone(),
-                alternate: box other.clone(),
-            }
-            .into()
-        }
+        .into()
     }
 
     /// Returns an element that is "self <= other".
@@ -976,9 +974,9 @@ impl AbstractDomain {
                 condition,
                 consequent,
                 alternate,
-            } => consequent.refine_paths(environment).join(
+            } => condition.refine_paths(environment).conditional_expression(
+                &consequent.refine_paths(environment),
                 &alternate.refine_paths(environment),
-                &condition.refine_paths(environment),
             ),
             Expression::Div { left, right } => left
                 .refine_paths(environment)
@@ -992,9 +990,9 @@ impl AbstractDomain {
             Expression::GreaterThan { left, right } => left
                 .refine_paths(environment)
                 .greater_than(&mut right.refine_paths(environment)),
-            Expression::Join { left, right } => left
+            Expression::Join { left, right, path } => left
                 .refine_paths(environment)
-                .join(&right.refine_paths(environment), &TRUE),
+                .join(&right.refine_paths(environment), path),
             Expression::LessOrEqual { left, right } => left
                 .refine_paths(environment)
                 .less_or_equal(&mut right.refine_paths(environment)),
@@ -1079,14 +1077,9 @@ impl AbstractDomain {
                     }
                 }
             }
-            Expression::Widen { path, operand } => {
-                let refined_path = path.refine_paths(environment);
-                Expression::Widen {
-                    path: box refined_path,
-                    operand: box operand.refine_paths(environment),
-                }
-                .into()
-            }
+            Expression::Widen { path, operand } => operand
+                .refine_paths(environment)
+                .widen(&path.refine_paths(environment)),
         }
     }
 
@@ -1131,10 +1124,12 @@ impl AbstractDomain {
                 condition,
                 consequent,
                 alternate,
-            } => consequent.refine_parameters(arguments).join(
-                &alternate.refine_parameters(arguments),
-                &condition.refine_parameters(arguments),
-            ),
+            } => condition
+                .refine_parameters(arguments)
+                .conditional_expression(
+                    &consequent.refine_parameters(arguments),
+                    &alternate.refine_parameters(arguments),
+                ),
             Expression::Div { left, right } => left
                 .refine_parameters(arguments)
                 .div(&right.refine_parameters(arguments)),
@@ -1147,9 +1142,9 @@ impl AbstractDomain {
             Expression::GreaterThan { left, right } => left
                 .refine_parameters(arguments)
                 .greater_than(&mut right.refine_parameters(arguments)),
-            Expression::Join { left, right } => left
+            Expression::Join { left, right, path } => left
                 .refine_parameters(arguments)
-                .join(&right.refine_parameters(arguments), &TRUE),
+                .join(&right.refine_parameters(arguments), path),
             Expression::LessOrEqual { left, right } => left
                 .refine_parameters(arguments)
                 .less_or_equal(&mut right.refine_parameters(arguments)),
@@ -1227,14 +1222,9 @@ impl AbstractDomain {
                     .into()
                 }
             }
-            Expression::Widen { path, operand } => {
-                let refined_path = path.refine_parameters(arguments);
-                Expression::Widen {
-                    path: box refined_path,
-                    operand: box operand.refine_parameters(arguments),
-                }
-                .into()
-            }
+            Expression::Widen { path, operand } => operand
+                .refine_parameters(arguments)
+                .widen(&path.refine_parameters(arguments)),
         }
     }
 
@@ -1305,12 +1295,8 @@ impl AbstractDomain {
                         refined_consequent.refine_with(&refined_condition, depth + 1);
                     let refined_alternate =
                         refined_alternate.refine_with(&refined_condition, depth + 1);
-                    Expression::ConditionalExpression {
-                        condition: box refined_condition,
-                        consequent: box refined_consequent,
-                        alternate: box refined_alternate,
-                    }
-                    .into()
+                    refined_condition
+                        .conditional_expression(&refined_consequent, &refined_alternate)
                 }
             }
             Expression::Div { left, right } => left
@@ -1325,9 +1311,9 @@ impl AbstractDomain {
             Expression::GreaterThan { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .greater_than(&mut right.refine_with(path_condition, depth + 1)),
-            Expression::Join { left, right } => left
+            Expression::Join { left, right, path } => left
                 .refine_with(path_condition, depth + 1)
-                .join(&right.refine_with(path_condition, depth + 1), &TRUE),
+                .join(&right.refine_with(path_condition, depth + 1), path),
             Expression::LessOrEqual { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .less_or_equal(&mut right.refine_with(path_condition, depth + 1)),
@@ -1424,11 +1410,9 @@ impl AbstractDomain {
                     self.clone()
                 }
             }
-            Expression::Widen { path, operand } => Expression::Widen {
-                path: path.clone(),
-                operand: box operand.refine_with(path_condition, depth + 1),
+            Expression::Widen { path, operand } => {
+                operand.refine_with(path_condition, depth + 1).widen(&path)
             }
-            .into(),
         }
     }
 
@@ -1484,12 +1468,10 @@ impl AbstractDomain {
                     alternate,
                 },
                 _,
-            ) => ConditionalExpression {
-                condition: condition.clone(),
-                consequent: box operation(consequent, other),
-                alternate: box operation(alternate, other),
-            }
-            .into(),
+            ) => condition.conditional_expression(
+                &operation(consequent, other),
+                &operation(alternate, other),
+            ),
             (
                 _,
                 ConditionalExpression {
@@ -1497,22 +1479,14 @@ impl AbstractDomain {
                     consequent,
                     alternate,
                 },
-            ) => ConditionalExpression {
-                condition: condition.clone(),
-                consequent: box operation(self, consequent),
-                alternate: box operation(self, alternate),
+            ) => condition
+                .conditional_expression(&operation(self, consequent), &operation(self, alternate)),
+            (Join { left, right, path }, _) => {
+                operation(left, other).join(&operation(right, other), path)
             }
-            .into(),
-            (Join { left, right }, _) => Join {
-                left: box operation(left, other),
-                right: box operation(right, other),
+            (_, Join { left, right, path }) => {
+                operation(self, left).join(&operation(self, right), path)
             }
-            .into(),
-            (_, Join { left, right }) => Join {
-                left: box operation(self, left),
-                right: box operation(self, right),
-            }
-            .into(),
             (Widen { .. }, _) => self.clone(),
             (_, Widen { .. }) => other.clone(),
             _ => return None,
@@ -1525,20 +1499,13 @@ impl AbstractDomain {
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to a set of values that include of the values that could be stored
     /// in memory at the given path.
-    pub fn widen(&self, other: &Self, join_condition: &AbstractDomain, path: &Path) -> Self {
-        if self == other {
-            return self.clone();
-        };
+    pub fn widen(&self, path: &Path) -> Self {
         if let Widen { .. } = self.expression {
             return self.clone();
         }
-        if let Widen { .. } = other.expression {
-            return other.clone();
-        }
-        let operand = self.join(other, join_condition);
         Expression::Widen {
             path: box path.clone(),
-            operand: box operand,
+            operand: box self.clone(),
         }
         .into()
     }

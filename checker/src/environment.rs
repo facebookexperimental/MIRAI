@@ -58,11 +58,10 @@ impl Environment {
         if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
             // If path is an abstraction that can match more than one path, we need to do weak updates.
             let top = abstract_value::TOP;
-            let true_val = value.join(self.value_at(&true_path).unwrap_or(&top), &join_condition);;
-            let false_val = self
-                .value_at(&false_path)
-                .unwrap_or(&top)
-                .join(&value, &join_condition);
+            let true_val = join_condition
+                .conditional_expression(&value, self.value_at(&true_path).unwrap_or(&top));
+            let false_val = join_condition
+                .conditional_expression(self.value_at(&false_path).unwrap_or(&top), &value);
             self.update_value_at(true_path, true_val);
             self.update_value_at(false_path, false_val);
         }
@@ -153,13 +152,27 @@ impl Environment {
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the join of self.value_at(path) and other.value_at(path)
     pub fn join(&self, other: &Environment, join_condition: &AbstractValue) -> Environment {
-        self.join_or_widen(other, join_condition, |x, y, c, _p| x.join(y, c))
+        self.join_or_widen(other, join_condition, |x, y, c, p| {
+            if Some(true) == c.as_bool_if_known() {
+                // If the join condition is known to be true, we have two unconditional branches joining
+                // up here and no way to tell which one brought us here. This can happen for an infinite
+                // loop, where the dominator of the loop anchor unconditionally branches to the anchor
+                // and the backward branch also unconditionally branches to the anchor.
+                // While such loops can be expected to be rare in source form, they do show up during
+                // abstract interpretation because the loop exit condition may evaluate to false
+                // for the first few iterations of the loop and thus the backwards branch only becomes
+                // conditional once widening kicks in.
+                x.join(y, p)
+            } else {
+                c.conditional_expression(x, y)
+            }
+        })
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the widen of self.value_at(path) and other.value_at(path)
     pub fn widen(&self, other: &Environment, join_condition: &AbstractValue) -> Environment {
-        self.join_or_widen(other, join_condition, |x, y, c, p| x.widen(y, c, p))
+        self.join_or_widen(other, join_condition, |x, y, _c, p| x.join(y, p).widen(p))
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated

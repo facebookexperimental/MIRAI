@@ -133,6 +133,8 @@ pub enum Expression {
     /// either its initial value or the value computed in the first loop body iteration and we
     /// don't have a way to tell which value it is.
     Join {
+        /// The path of the location where the two flows join together.
+        path: Box<Path>,
         // The value of the left operand.
         left: Box<AbstractDomain>,
         // The value of the right operand.
@@ -378,7 +380,7 @@ impl Expression {
                 consequent.expression.record_heap_addresses(result);
                 alternate.expression.record_heap_addresses(result);
             }
-            Expression::Join { left, right } => {
+            Expression::Join { left, right, .. } => {
                 left.expression.record_heap_addresses(result);
                 right.expression.record_heap_addresses(result);
             }
