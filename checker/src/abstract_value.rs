@@ -107,14 +107,14 @@ impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "+" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn add(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn add(self, other: AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.add(&other.domain),
+            domain: self.domain.addition(other.domain),
         }
     }
 
@@ -122,8 +122,8 @@ impl AbstractValue {
     /// values resulting from applying add_overflows to each element of the cross product of the concrete
     /// values or self and other.
     pub fn add_overflows(
-        &mut self,
-        other: &mut AbstractValue,
+        self,
+        other: AbstractValue,
         target_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -133,21 +133,21 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: (&mut self.domain).add_overflows(&mut other.domain, target_type),
+            domain: self.domain.add_overflows(other.domain, target_type),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "&&" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn and(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn and(self, other: AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.and(&other.domain),
+            domain: self.domain.and(other.domain),
         }
     }
 
@@ -179,8 +179,8 @@ impl AbstractValue {
     /// values resulting from applying "&" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn bit_and(
-        &self,
-        other: &AbstractValue,
+        self,
+        other: AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
         AbstractValue {
@@ -189,7 +189,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.bit_and(&other.domain),
+            domain: self.domain.bit_and(other.domain),
         }
     }
 
@@ -197,8 +197,8 @@ impl AbstractValue {
     /// values resulting from applying "|" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn bit_or(
-        &self,
-        other: &AbstractValue,
+        self,
+        other: AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
         AbstractValue {
@@ -207,7 +207,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.bit_or(&other.domain),
+            domain: self.domain.bit_or(other.domain),
         }
     }
 
@@ -215,8 +215,8 @@ impl AbstractValue {
     /// values resulting from applying "^" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn bit_xor(
-        &self,
-        other: &AbstractValue,
+        self,
+        other: AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
         AbstractValue {
@@ -225,13 +225,13 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.bit_xor(&other.domain),
+            domain: self.domain.bit_xor(other.domain),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "as target_type" to each element of the concrete values of self.
-    pub fn cast(&self, target_type: ExpressionType) -> AbstractValue {
+    pub fn cast(self, target_type: ExpressionType) -> AbstractValue {
         AbstractValue {
             provenance: self.provenance.clone(),
             domain: self.domain.cast(target_type),
@@ -243,9 +243,9 @@ impl AbstractValue {
     /// In a context where the condition is known to be true, the result can be refined to be
     /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
     pub fn conditional_expression(
-        &self,
-        consequent: &AbstractValue,
-        alternate: &AbstractValue,
+        self,
+        consequent: AbstractValue,
+        alternate: AbstractValue,
     ) -> AbstractValue {
         let mut provenance = Vec::new();
         provenance.extend_from_slice(&self.provenance);
@@ -255,21 +255,21 @@ impl AbstractValue {
             provenance,
             domain: self
                 .domain
-                .conditional_expression(&consequent.domain, &alternate.domain),
+                .conditional_expression(consequent.domain, alternate.domain),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "/" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn div(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn div(self, other: AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.div(&other.domain),
+            domain: self.domain.divide(other.domain),
         }
     }
 
@@ -277,8 +277,8 @@ impl AbstractValue {
     /// values resulting from applying "==" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn equals(
-        &self,
-        other: &AbstractValue,
+        self,
+        other: AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
         AbstractValue {
@@ -287,7 +287,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.equals(&other.domain),
+            domain: self.domain.equals(other.domain),
         }
     }
 
@@ -295,8 +295,8 @@ impl AbstractValue {
     /// values resulting from applying ">=" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn greater_or_equal(
-        &mut self,
-        other: &mut AbstractValue,
+        self,
+        other: AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
         AbstractValue {
@@ -305,7 +305,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.greater_or_equal(&mut other.domain),
+            domain: self.domain.greater_or_equal(other.domain),
         }
     }
 
@@ -313,8 +313,8 @@ impl AbstractValue {
     /// values resulting from applying ">" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn greater_than(
-        &mut self,
-        other: &mut AbstractValue,
+        self,
+        other: AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
         AbstractValue {
@@ -323,7 +323,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.greater_than(&mut other.domain),
+            domain: self.domain.greater_than(other.domain),
         }
     }
 
@@ -345,13 +345,13 @@ impl AbstractValue {
     /// corresponding to self and other.
     /// In a context where the join condition is known to be true, the result can be refined to be
     /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
-    pub fn join(&self, other: &AbstractValue, path: &Path) -> AbstractValue {
+    pub fn join(self, other: AbstractValue, path: Path) -> AbstractValue {
         let mut provenance = Vec::new();
         provenance.extend_from_slice(&self.provenance);
         provenance.extend_from_slice(&other.provenance);
         AbstractValue {
             provenance,
-            domain: self.domain.join(&other.domain, path),
+            domain: self.domain.join(other.domain, path),
         }
     }
 
@@ -359,8 +359,8 @@ impl AbstractValue {
     /// values resulting from applying "<=" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn less_or_equal(
-        &mut self,
-        other: &mut AbstractValue,
+        self,
+        other: AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
         AbstractValue {
@@ -369,7 +369,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.less_or_equal(&mut other.domain),
+            domain: self.domain.less_or_equal(other.domain),
         }
     }
 
@@ -377,8 +377,8 @@ impl AbstractValue {
     /// values resulting from applying "lt" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn less_than(
-        &mut self,
-        other: &mut AbstractValue,
+        self,
+        other: AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
         AbstractValue {
@@ -387,21 +387,21 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.less_than(&mut other.domain),
+            domain: self.domain.less_than(other.domain),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "*" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn mul(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn mul(self, other: AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.mul(&other.domain),
+            domain: self.domain.multiply(other.domain),
         }
     }
 
@@ -409,8 +409,8 @@ impl AbstractValue {
     /// values resulting from applying mul_overflows to each element of the cross product of the concrete
     /// values or self and other.
     pub fn mul_overflows(
-        &mut self,
-        other: &mut AbstractValue,
+        self,
+        other: AbstractValue,
         target_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -420,13 +420,13 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.mul_overflows(&mut other.domain, target_type),
+            domain: self.domain.mul_overflows(other.domain, target_type),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "neg" to each element of the concrete values of self.
-    pub fn neg(&self, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn neg(self, expression_provenance: Option<Span>) -> AbstractValue {
         let mut provenance = Vec::new();
         if expression_provenance.is_some() {
             provenance.push(expression_provenance.unwrap())
@@ -434,7 +434,7 @@ impl AbstractValue {
         provenance.extend_from_slice(&self.provenance);
         AbstractValue {
             provenance,
-            domain: self.domain.neg(),
+            domain: self.domain.negate(),
         }
     }
 
@@ -442,8 +442,8 @@ impl AbstractValue {
     /// values resulting from applying "!=" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn not_equals(
-        &self,
-        other: &AbstractValue,
+        self,
+        other: AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
         AbstractValue {
@@ -452,13 +452,13 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.not_equals(&other.domain),
+            domain: self.domain.not_equals(other.domain),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "not" to each element of the concrete values of self.
-    pub fn not(&self, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn not(self, expression_provenance: Option<Span>) -> AbstractValue {
         let mut provenance = Vec::new();
         if expression_provenance.is_some() {
             provenance.push(expression_provenance.unwrap())
@@ -466,7 +466,7 @@ impl AbstractValue {
         provenance.extend_from_slice(&self.provenance);
         AbstractValue {
             provenance,
-            domain: self.domain.not(),
+            domain: self.domain.logical_not(),
         }
     }
 
@@ -474,8 +474,8 @@ impl AbstractValue {
     /// values resulting from applying "ptr.offset" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn offset(
-        &self,
-        other: &AbstractValue,
+        self,
+        other: AbstractValue,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
         AbstractValue {
@@ -484,21 +484,21 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.offset(&other.domain),
+            domain: self.domain.offset(other.domain),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "or" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn or(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn or(self, other: AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.or(&other.domain),
+            domain: self.domain.or(other.domain),
         }
     }
 
@@ -511,7 +511,7 @@ impl AbstractValue {
     /// (conditions known to be true in the current context). If no refinement is possible
     /// the result is simply a clone of this value, but with its provenance updated by
     /// pre-pending the given span.
-    pub fn refine_with(&self, path_condition: &AbstractValue, provenance: Span) -> AbstractValue {
+    pub fn refine_with(self, path_condition: &AbstractValue, provenance: Span) -> AbstractValue {
         let mut provenance = vec![provenance];
         provenance.extend_from_slice(&self.provenance);
         AbstractValue {
@@ -524,7 +524,7 @@ impl AbstractValue {
     /// with the value at that path (if there is one). If no refinement is possible
     /// the result is simply a clone of this value. This refinement only makes sense
     /// following a call to refine_parameters.
-    pub fn refine_paths(&self, environment: &mut Environment) -> AbstractValue {
+    pub fn refine_paths(self, environment: &mut Environment) -> AbstractValue {
         AbstractValue {
             provenance: self.provenance.clone(),
             domain: self.domain.refine_paths(environment),
@@ -534,7 +534,7 @@ impl AbstractValue {
     /// Returns a value that is simplified (refined) by replacing parameter values
     /// with their corresponding argument values. If no refinement is possible
     /// the result is simply a clone of this value.
-    pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> AbstractValue {
+    pub fn refine_parameters(self, arguments: &[(Path, AbstractValue)]) -> AbstractValue {
         AbstractValue {
             provenance: self.provenance.clone(),
             domain: self.domain.refine_parameters(arguments),
@@ -544,19 +544,19 @@ impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "%" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn rem(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn rem(self, other: AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.rem(&other.domain),
+            domain: self.domain.remainder(other.domain),
         }
     }
 
     /// Returns a clone of the value with the given span replacing its provenance.
-    pub fn replacing_provenance(&self, provenance: Span) -> AbstractValue {
+    pub fn replacing_provenance(self, provenance: Span) -> AbstractValue {
         let mut result = self.clone();
         result.provenance = vec![provenance];
         result
@@ -565,14 +565,14 @@ impl AbstractValue {
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "<<" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn shl(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn shl(self, other: AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.shl(&other.domain),
+            domain: self.domain.shift_left(other.domain),
         }
     }
 
@@ -580,8 +580,8 @@ impl AbstractValue {
     /// values resulting from applying shl_overflows to each element of the cross product of the concrete
     /// values or self and other.
     pub fn shl_overflows(
-        &self,
-        other: &mut AbstractValue,
+        self,
+        other: AbstractValue,
         target_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -591,7 +591,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.shl_overflows(&mut other.domain, target_type),
+            domain: self.domain.shl_overflows(other.domain, target_type),
         }
     }
 
@@ -599,8 +599,8 @@ impl AbstractValue {
     /// values resulting from applying ">>" to each element of the cross product of the concrete
     /// values or self and other.
     pub fn shr(
-        &self,
-        other: &AbstractValue,
+        self,
+        other: AbstractValue,
         expression_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -610,7 +610,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.shr(&other.domain, expression_type),
+            domain: self.domain.shr(other.domain, expression_type),
         }
     }
 
@@ -618,8 +618,8 @@ impl AbstractValue {
     /// values resulting from applying shr_overflows to each element of the cross product of the concrete
     /// values or self and other.
     pub fn shr_overflows(
-        &self,
-        other: &mut AbstractValue,
+        self,
+        other: AbstractValue,
         target_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -629,21 +629,21 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.shr_overflows(&mut other.domain, target_type),
+            domain: self.domain.shr_overflows(other.domain, target_type),
         }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the
     /// values resulting from applying "-" to each element of the cross product of the concrete
     /// values or self and other.
-    pub fn sub(&self, other: &AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
+    pub fn sub(self, other: AbstractValue, expression_provenance: Option<Span>) -> AbstractValue {
         AbstractValue {
             provenance: Self::binary_provenance(
                 expression_provenance,
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.sub(&other.domain),
+            domain: self.domain.subtract(other.domain),
         }
     }
 
@@ -651,8 +651,8 @@ impl AbstractValue {
     /// values resulting from applying sub_overflows to each element of the cross product of the concrete
     /// values or self and other.
     pub fn sub_overflows(
-        &mut self,
-        other: &mut AbstractValue,
+        self,
+        other: AbstractValue,
         target_type: ExpressionType,
         expression_provenance: Option<Span>,
     ) -> AbstractValue {
@@ -662,7 +662,7 @@ impl AbstractValue {
                 &self.provenance,
                 &other.provenance,
             ),
-            domain: self.domain.sub_overflows(&mut other.domain, target_type),
+            domain: self.domain.sub_overflows(other.domain, target_type),
         }
     }
 
@@ -675,7 +675,7 @@ impl AbstractValue {
     /// corresponding to self and other. The set of values may be less precise (more inclusive) than
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to Top.
-    pub fn widen(&self, path: &Path) -> AbstractValue {
+    pub fn widen(self, path: Path) -> AbstractValue {
         AbstractValue {
             provenance: self.provenance.clone(),
             domain: self.domain.widen(path),
@@ -683,6 +683,7 @@ impl AbstractValue {
     }
 
     /// Returns a clone of the value with the given span prepended to its provenance.
+    /// todo: do we really want a clone?
     pub fn with_provenance(&self, provenance: Span) -> AbstractValue {
         let mut result = self.clone();
         result.provenance.insert(0, provenance);
@@ -782,14 +783,14 @@ impl Path {
     }
 
     /// Refine parameters inside embedded index values with the given arguments.
-    pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Path {
+    pub fn refine_parameters(self, arguments: &[(Path, AbstractValue)]) -> Path {
         match self {
-            Path::LocalVariable { ordinal } if 0 < *ordinal && *ordinal <= arguments.len() => {
-                arguments[*ordinal - 1].0.clone()
+            Path::LocalVariable { ordinal } if 0 < ordinal && ordinal <= arguments.len() => {
+                arguments[ordinal - 1].0.clone()
             }
             Path::QualifiedPath {
-                ref qualifier,
-                ref selector,
+                qualifier,
+                selector,
                 ..
             } => {
                 let refined_qualifier = qualifier.refine_parameters(arguments);
@@ -802,7 +803,7 @@ impl Path {
                     length: refined_length + 1,
                 }
             }
-            _ => self.clone(),
+            _ => self,
         }
     }
 
@@ -811,16 +812,16 @@ impl Path {
     /// or leaks it back to the caller in the qualifier of a path then
     /// we want to dereference the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
-    pub fn refine_paths(&self, environment: &mut Environment) -> Self {
+    pub fn refine_paths(self, environment: &mut Environment) -> Self {
         if let Path::QualifiedPath {
             qualifier,
             selector,
-            ..
+            length,
         } = self
         {
-            if let Some(val) = environment.value_at(&**qualifier) {
+            if let Some(val) = environment.value_at(&qualifier) {
                 match &val.domain.expression {
-                    Expression::Reference(ref dereferenced_path) => {
+                    Expression::Reference(dereferenced_path) => {
                         // The qualifier is being dereferenced, so if the value at qualifier
                         // is an explicit reference to another path, put the other path in the place
                         // of qualifier since references do not own elements directly in
@@ -830,15 +831,15 @@ impl Path {
                         let qualifier = dereferenced_path.clone().refine_paths(environment);
                         let path_len = qualifier.path_length();
                         assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
-                        return Path::QualifiedPath {
+                        Path::QualifiedPath {
                             qualifier: box qualifier,
-                            selector: selector.clone(),
+                            selector,
                             length: path_len + 1,
-                        };
+                        }
                     }
-                    // if **path == **qualifier, this value came about as the result of a copy
+                    // if **path == *qualifier, this value came about as the result of a copy
                     // sequence that started in a formal parameter.
-                    Expression::Variable { ref path, .. } if (**path != **qualifier) => {
+                    Expression::Variable { path, .. } if (**path != *qualifier) => {
                         // In this case the qualifier is not a reference, but an alias created by
                         // by a move instruction.
                         // Normally, when local a is assigned to local b, all of the
@@ -853,20 +854,30 @@ impl Path {
                         let qualifier = path.clone().refine_paths(environment);
                         let path_len = qualifier.path_length();
                         assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
-                        return Path::QualifiedPath {
+                        Path::QualifiedPath {
                             qualifier: box qualifier,
-                            selector: selector.clone(),
+                            selector,
                             length: path_len + 1,
-                        };
+                        }
                     }
                     Expression::CompileTimeConstant(constant_value) => {
-                        debug!("constant qualifier with path selector that is not in the environment\n{:?}\n{:?}\n{:?}", constant_value, self, environment);
+                        debug!("constant qualifier with path selector that is not in the environment\n{:?}\n{:?}", constant_value, environment);
                         //todo: at least some of these arise from qualifiers that are ADTs
+                        Path::QualifiedPath {
+                            qualifier,
+                            selector,
+                            length,
+                        }
                     }
                     _ => {
                         // Although the qualifier matches an expression, that expression
                         // is too abstract too qualify the path sufficiently that we
                         // can refine this value.
+                        Path::QualifiedPath {
+                            qualifier,
+                            selector,
+                            length,
+                        }
                     }
                 }
             } else {
@@ -877,14 +888,15 @@ impl Path {
                 let refined_selector = selector.refine_paths(environment);
                 let refined_length = refined_qualifier.path_length();
                 assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
-                return Path::QualifiedPath {
+                Path::QualifiedPath {
                     qualifier: box refined_qualifier,
                     selector: box refined_selector,
                     length: refined_length + 1,
-                };
+                }
             }
+        } else {
+            self
         }
-        self.clone()
     }
 
     /// Returns a copy path with the root replaced by new_root.
@@ -967,22 +979,22 @@ impl PathSelector {
     /// with the value at that path (if there is one). If no refinement is possible
     /// the result is simply a clone of this value. This refinement only makes sense
     /// following a call to refine_parameters.
-    pub fn refine_paths(&self, environment: &mut Environment) -> Self {
+    pub fn refine_paths(self, environment: &mut Environment) -> Self {
         if let PathSelector::Index(boxed_abstract_value) = self {
-            let refined_value = (**boxed_abstract_value).refine_paths(environment);
+            let refined_value = boxed_abstract_value.refine_paths(environment);
             PathSelector::Index(box refined_value)
         } else {
-            self.clone()
+            self
         }
     }
 
     /// Refine parameters inside embedded index values with the given arguments.
-    pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Self {
+    pub fn refine_parameters(self, arguments: &[(Path, AbstractValue)]) -> Self {
         if let PathSelector::Index(boxed_abstract_value) = self {
-            let refined_value = (**boxed_abstract_value).refine_parameters(arguments);
+            let refined_value = boxed_abstract_value.refine_parameters(arguments);
             PathSelector::Index(box refined_value)
         } else {
-            self.clone()
+            self
         }
     }
 }
