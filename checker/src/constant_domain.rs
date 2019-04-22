@@ -177,7 +177,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self as target_type"
     #[allow(clippy::cast_lossless)]
-    pub fn cast(&self, target_type: ExpressionType) -> Self {
+    pub fn cast(&self, target_type: &ExpressionType) -> Self {
         match self {
             ConstantDomain::Bottom => self.clone(),
             ConstantDomain::Char(ch) => {
@@ -199,7 +199,7 @@ impl ConstantDomain {
                 }
             }
             ConstantDomain::U128(val) => {
-                if target_type == ExpressionType::Char {
+                if *target_type == ExpressionType::Char {
                     ConstantDomain::Char((*val as u8) as char)
                 } else if target_type.is_signed_integer() {
                     ConstantDomain::I128(*val as i128).cast(target_type)
@@ -228,7 +228,7 @@ impl ConstantDomain {
             }
             ConstantDomain::F32(val) => {
                 let f = f32::from_bits(*val);
-                if target_type == ExpressionType::F64 {
+                if *target_type == ExpressionType::F64 {
                     ConstantDomain::F64((f as f64).to_bits())
                 } else if target_type.is_signed_integer() {
                     ConstantDomain::I128(f as i128).cast(target_type)
@@ -240,7 +240,7 @@ impl ConstantDomain {
             }
             ConstantDomain::F64(val) => {
                 let f = f64::from_bits(*val);
-                if target_type == ExpressionType::F32 {
+                if *target_type == ExpressionType::F32 {
                     ConstantDomain::F32((f as f32).to_bits())
                 } else if target_type.is_signed_integer() {
                     ConstantDomain::I128(f as i128).cast(target_type)

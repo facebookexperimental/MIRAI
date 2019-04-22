@@ -58,10 +58,14 @@ impl Environment {
         if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
             // If path is an abstraction that can match more than one path, we need to do weak updates.
             let top = abstract_value::TOP;
-            let true_val = join_condition
-                .conditional_expression(&value, self.value_at(&true_path).unwrap_or(&top));
-            let false_val = join_condition
-                .conditional_expression(self.value_at(&false_path).unwrap_or(&top), &value);
+            let true_val = join_condition.clone().conditional_expression(
+                value.clone(),
+                self.value_at(&true_path).unwrap_or(&top).clone(),
+            );
+            let false_val = join_condition.conditional_expression(
+                self.value_at(&false_path).unwrap_or(&top).clone(),
+                value.clone(),
+            );
             self.update_value_at(true_path, true_val);
             self.update_value_at(false_path, false_val);
         }
@@ -162,9 +166,9 @@ impl Environment {
                 // abstract interpretation because the loop exit condition may evaluate to false
                 // for the first few iterations of the loop and thus the backwards branch only becomes
                 // conditional once widening kicks in.
-                x.join(y, p)
+                x.clone().join(y.clone(), p.clone())
             } else {
-                c.conditional_expression(x, y)
+                c.clone().conditional_expression(x.clone(), y.clone())
             }
         })
     }
@@ -172,7 +176,10 @@ impl Environment {
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the widen of self.value_at(path) and other.value_at(path)
     pub fn widen(&self, other: &Environment, join_condition: &AbstractValue) -> Environment {
-        self.join_or_widen(other, join_condition, |x, y, _c, p| x.join(y, p).widen(p))
+        self.clone()
+            .join_or_widen(other, join_condition, |x, y, _c, p| {
+                x.clone().join(y.clone(), p.clone()).widen(p.clone())
+            })
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
@@ -191,7 +198,7 @@ impl Environment {
             match value_map2.get(path) {
                 Some(val2) => {
                     value_map =
-                        value_map.insert(p, join_or_widen(&val1, &val2, &join_condition, path));
+                        value_map.insert(p, join_or_widen(val1, &val2, &join_condition, path));
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());

@@ -126,67 +126,72 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ) -> AbstractValue {
         let refined_val = {
             let bottom = abstract_value::BOTTOM;
-            let local_val = self.current_environment.value_at(&path).unwrap_or(&bottom);
+            let local_val = self
+                .current_environment
+                .value_at(&path)
+                .unwrap_or(&bottom)
+                .clone();
             local_val.refine_with(&self.current_environment.entry_condition, self.current_span)
         };
-        let result =
-            if refined_val.is_bottom() {
-                // Not found locally, so try statics.
-                if let Path::StaticVariable {
-                    def_id,
-                    ref summary_cache_key,
-                    ref expression_type,
-                } = path
-                {
-                    let mut summary;
-                    let summary = if let Some(def_id) = def_id {
-                        self.summary_cache
-                            .get_summary_for(def_id, Some(self.def_id))
-                    } else {
-                        summary = self
-                            .summary_cache
-                            .get_persistent_summary_for(summary_cache_key);
-                        &summary
-                    };
-                    if let Some(result) = &summary.result {
-                        let result = result.refine_paths(&mut self.current_environment);
-                        if let Expression::AbstractHeapAddress(ordinal) = result.domain.expression {
-                            let source_path = Path::LocalVariable { ordinal: 0 };
-                            let target_path = &Path::AbstractHeapAddress { ordinal };
-                            for (path, value) in summary.side_effects.iter().filter(|(p, _)| {
-                                (*p) == source_path || p.is_rooted_by(&source_path)
-                            }) {
-                                let tpath = path
-                                    .replace_root(&source_path, target_path.clone())
-                                    .refine_paths(&mut self.current_environment);
-                                let rvalue = value.refine_paths(&mut self.current_environment);
-                                self.current_environment.update_value_at(tpath, rvalue);
-                            }
-                        }
-                        result
-                    } else {
-                        Expression::Variable {
-                            path: box path.clone(),
-                            var_type: expression_type.clone(),
-                        }
-                        .into()
-                    }
-                } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
-                    if result_type == ExpressionType::Reference {
-                        Expression::Reference(path).into()
-                    } else {
-                        Expression::Variable {
-                            path: box path.clone(),
-                            var_type: result_type.clone(),
-                        }
-                        .into()
-                    }
+        let result = if refined_val.is_bottom() {
+            // Not found locally, so try statics.
+            if let Path::StaticVariable {
+                def_id,
+                ref summary_cache_key,
+                ref expression_type,
+            } = path
+            {
+                let mut summary;
+                let summary = if let Some(def_id) = def_id {
+                    self.summary_cache
+                        .get_summary_for(def_id, Some(self.def_id))
                 } else {
-                    abstract_value::TOP
+                    summary = self
+                        .summary_cache
+                        .get_persistent_summary_for(summary_cache_key);
+                    &summary
+                };
+                if let Some(result) = &summary.result {
+                    let result = result.clone().refine_paths(&mut self.current_environment);
+                    if let Expression::AbstractHeapAddress(ordinal) = result.domain.expression {
+                        let source_path = Path::LocalVariable { ordinal: 0 };
+                        let target_path = &Path::AbstractHeapAddress { ordinal };
+                        for (path, value) in summary
+                            .side_effects
+                            .iter()
+                            .filter(|(p, _)| (*p) == source_path || p.is_rooted_by(&source_path))
+                        {
+                            let tpath = path
+                                .replace_root(&source_path, target_path.clone())
+                                .refine_paths(&mut self.current_environment);
+                            let rvalue = value.clone().refine_paths(&mut self.current_environment);
+                            self.current_environment.update_value_at(tpath, rvalue);
+                        }
+                    }
+                    result
+                } else {
+                    Expression::Variable {
+                        path: box path.clone(),
+                        var_type: expression_type.clone(),
+                    }
+                    .into()
+                }
+            } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
+                if result_type == ExpressionType::Reference {
+                    Expression::Reference(path).into()
+                } else {
+                    Expression::Variable {
+                        path: box path.clone(),
+                        var_type: result_type.clone(),
+                    }
+                    .into()
                 }
             } else {
-                refined_val
-            };
+                abstract_value::TOP
+            }
+        } else {
+            refined_val
+        };
         if result_type == ExpressionType::Bool
             && self.current_environment.entry_condition.implies(&result)
         {
@@ -342,7 +347,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                                 p_state.widen(&i_state, join_condition)
                             };
                             j_state.entry_condition = join_condition
-                                .or(&i_state.entry_condition, Some(self.current_span));
+                                .clone()
+                                .or(i_state.entry_condition.clone(), Some(self.current_span));
                             i_state = j_state;
                         }
                         i_state
@@ -664,10 +670,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let discr = discr.as_int_if_known().unwrap_or(discr);
         for i in 0..values.len() {
             let val: AbstractValue = ConstantDomain::U128(values[i]).into();
-            let cond = discr.equals(&val, None);
-            let exit_condition = self.current_environment.entry_condition.and(&cond, None);
+            let cond = discr.clone().equals(val, None);
+            let exit_condition = self
+                .current_environment
+                .entry_condition
+                .clone()
+                .and(cond.clone(), None);
             let not_cond = cond.not(None);
-            default_exit_condition = default_exit_condition.and(&not_cond, None);
+            default_exit_condition = default_exit_condition.and(not_cond, None);
             let target = targets[i];
             self.current_environment
                 .exit_conditions
@@ -825,7 +835,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let exit_condition = self
             .exit_environment
             .entry_condition
-            .and(assumed_condition, Some(self.current_span));
+            .clone()
+            .and(assumed_condition.clone(), Some(self.current_span));
         if let Some((_, target)) = destination {
             self.current_environment
                 .exit_conditions
@@ -922,6 +933,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         verify!(self.check_for_errors);
         for (precondition, message) in &function_summary.preconditions {
             let refined_precondition = precondition
+                .clone()
                 .refine_parameters(actual_args)
                 .refine_paths(&mut self.current_environment)
                 .refine_with(&self.current_environment.entry_condition, self.current_span);
@@ -989,8 +1001,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 let mut promoted_precondition = self
                     .current_environment
                     .entry_condition
+                    .clone()
                     .not(None)
-                    .or(&refined_precondition, None);
+                    .or(refined_precondition, None);
                 let mut stacked_provenance = vec![self.current_span];
                 stacked_provenance.append(&mut precondition.provenance.clone());
                 promoted_precondition.provenance = stacked_provenance;
@@ -1044,7 +1057,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             let mut exit_condition = self.current_environment.entry_condition.clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
                 exit_condition =
-                    exit_condition.and(&unwind_condition.not(None), Some(self.current_span));
+                    exit_condition.and(unwind_condition.clone().not(None), Some(self.current_span));
             }
             self.current_environment
                 .exit_conditions
@@ -1071,7 +1084,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             }
             let mut exit_condition = self.current_environment.entry_condition.clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
-                exit_condition = exit_condition.and(&unwind_condition, Some(self.current_span));
+                exit_condition =
+                    exit_condition.and(unwind_condition.clone(), Some(self.current_span));
             }
             self.current_environment
                 .exit_conditions
@@ -1124,6 +1138,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         self.preconditions.push((
                             self.current_environment
                                 .entry_condition
+                                .clone()
                                 .not(None)
                                 .replacing_provenance(self.current_span),
                             "will cause a false assertion".to_string(),
@@ -1152,8 +1167,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     self.preconditions.push((
                         self.current_environment
                             .entry_condition
+                            .clone()
                             .not(None)
-                            .or(cond, None)
+                            .or(cond.clone(), None)
                             .replacing_provenance(self.current_span),
                         "possibly false assertion".to_string(),
                     ));
@@ -1214,6 +1230,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     self.preconditions.push((
                         self.current_environment
                             .entry_condition
+                            .clone()
                             .not(None)
                             .replacing_provenance(self.current_span),
                         maybe_message,
@@ -1242,6 +1259,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .replace_root(&source_path, target_path.clone())
                 .refine_paths(&mut self.current_environment);
             let rvalue = value
+                .clone()
                 .refine_parameters(arguments)
                 .refine_paths(&mut self.current_environment);
             self.current_environment.update_value_at(tpath, rvalue);
@@ -1260,24 +1278,32 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ) {
         debug!("default visit_assert(cond: {:?}, expected: {:?}, msg: {:?}, target: {:?}, cleanup: {:?})", cond, expected, msg, target, cleanup);
         let cond_val = self.visit_operand(cond);
-        let not_cond_val = cond_val.not(None);
+        let not_cond_val = cond_val.clone().not(None);
         // Propagate the entry condition to the successor blocks, conjoined with cond (or !cond).
-        let exit_condition = self
-            .current_environment
-            .entry_condition
-            .and(if expected { &cond_val } else { &not_cond_val }, None);
-        self.current_environment
-            .exit_conditions
-            .insert(target, exit_condition);
         if let Some(cleanup_target) = cleanup {
-            let cleanup_condition = self
-                .current_environment
-                .entry_condition
-                .and(if expected { &not_cond_val } else { &cond_val }, None);
+            let cleanup_condition = self.current_environment.entry_condition.clone().and(
+                if expected {
+                    not_cond_val.clone()
+                } else {
+                    cond_val.clone()
+                },
+                None,
+            );
             self.current_environment
                 .exit_conditions
                 .insert(cleanup_target, cleanup_condition);
         };
+        let exit_condition = self.current_environment.entry_condition.clone().and(
+            if expected {
+                cond_val.clone()
+            } else {
+                not_cond_val.clone()
+            },
+            None,
+        );
+        self.current_environment
+            .exit_conditions
+            .insert(target, exit_condition);
         if self.check_for_errors {
             if let mir::Operand::Constant(..) = cond {
                 // Do not complain about compile time constants known to the compiler.
@@ -1329,8 +1355,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let pre_cond = self
                         .current_environment
                         .entry_condition
+                        .clone()
                         .not(None)
-                        .or(&expected_cond, None)
+                        .or(expected_cond, None)
                         .replacing_provenance(self.current_span);
                     self.preconditions
                         .push((pre_cond, String::from(msg.description())));
@@ -1387,7 +1414,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             SmtResult::Satisfiable => {
                 // We could get here with cond_val being true. Or perhaps not.
                 // So lets see if !cond_val is provably false.
-                let not_cond_expr = cond_val.not(None).domain.expression;
+                let not_cond_expr = cond_val.clone().not(None).domain.expression;
                 let smt_expr = self.smt_solver.get_as_smt_predicate(&not_cond_expr);
                 if self.smt_solver.solve_expression(&smt_expr) == SmtResult::Unsatisfiable {
                     // The solver can prove that !cond_val is always false.
@@ -1743,30 +1770,30 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             "default visit_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})",
             path, bin_op, left_operand, right_operand
         );
-        let mut left = self.visit_operand(left_operand);
-        let mut right = self.visit_operand(right_operand);
+        let left = self.visit_operand(left_operand);
+        let right = self.visit_operand(right_operand);
         let result = match bin_op {
-            mir::BinOp::Add => left.add(&right, Some(self.current_span)),
-            mir::BinOp::BitAnd => left.bit_and(&right, Some(self.current_span)),
-            mir::BinOp::BitOr => left.bit_or(&right, Some(self.current_span)),
-            mir::BinOp::BitXor => left.bit_xor(&right, Some(self.current_span)),
-            mir::BinOp::Div => left.div(&right, Some(self.current_span)),
-            mir::BinOp::Eq => left.equals(&right, Some(self.current_span)),
-            mir::BinOp::Ge => left.greater_or_equal(&mut right, Some(self.current_span)),
-            mir::BinOp::Gt => left.greater_than(&mut right, Some(self.current_span)),
-            mir::BinOp::Le => left.less_or_equal(&mut right, Some(self.current_span)),
-            mir::BinOp::Lt => left.less_than(&mut right, Some(self.current_span)),
-            mir::BinOp::Mul => left.mul(&right, Some(self.current_span)),
-            mir::BinOp::Ne => left.not_equals(&right, Some(self.current_span)),
-            mir::BinOp::Offset => left.offset(&right, Some(self.current_span)),
-            mir::BinOp::Rem => left.rem(&right, Some(self.current_span)),
-            mir::BinOp::Shl => left.shl(&right, Some(self.current_span)),
+            mir::BinOp::Add => left.add(right, Some(self.current_span)),
+            mir::BinOp::BitAnd => left.bit_and(right, Some(self.current_span)),
+            mir::BinOp::BitOr => left.bit_or(right, Some(self.current_span)),
+            mir::BinOp::BitXor => left.bit_xor(right, Some(self.current_span)),
+            mir::BinOp::Div => left.div(right, Some(self.current_span)),
+            mir::BinOp::Eq => left.equals(right, Some(self.current_span)),
+            mir::BinOp::Ge => left.greater_or_equal(right, Some(self.current_span)),
+            mir::BinOp::Gt => left.greater_than(right, Some(self.current_span)),
+            mir::BinOp::Le => left.less_or_equal(right, Some(self.current_span)),
+            mir::BinOp::Lt => left.less_than(right, Some(self.current_span)),
+            mir::BinOp::Mul => left.mul(right, Some(self.current_span)),
+            mir::BinOp::Ne => left.not_equals(right, Some(self.current_span)),
+            mir::BinOp::Offset => left.offset(right, Some(self.current_span)),
+            mir::BinOp::Rem => left.rem(right, Some(self.current_span)),
+            mir::BinOp::Shl => left.shl(right, Some(self.current_span)),
             mir::BinOp::Shr => {
                 // We assume that path is a temporary used to track the operation result.
                 let target_type = self.get_target_path_type(&path);
-                left.shr(&right, target_type, Some(self.current_span))
+                left.shr(right, target_type, Some(self.current_span))
             }
-            mir::BinOp::Sub => left.sub(&right, Some(self.current_span)),
+            mir::BinOp::Sub => left.sub(right, Some(self.current_span)),
         };
         self.current_environment.update_value_at(path, result);
     }
@@ -1783,28 +1810,29 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         debug!("default visit_checked_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})", path, bin_op, left_operand, right_operand);
         // We assume that path is a temporary used to track the operation result and its overflow status.
         let target_type = self.get_target_path_type(&path);
-        let mut left = self.visit_operand(left_operand);
-        let mut right = self.visit_operand(right_operand);
+        let left = self.visit_operand(left_operand);
+        let right = self.visit_operand(right_operand);
         let (result, overflow_flag) = match bin_op {
             mir::BinOp::Add => (
-                left.add(&right, Some(self.current_span)),
-                left.add_overflows(&mut right, target_type, Some(self.current_span)),
+                left.clone().add(right.clone(), Some(self.current_span)),
+                left.add_overflows(right, target_type, Some(self.current_span)),
             ),
             mir::BinOp::Mul => (
-                left.mul(&right, Some(self.current_span)),
-                (&mut left).mul_overflows(&mut right, target_type, Some(self.current_span)),
+                left.clone().mul(right.clone(), Some(self.current_span)),
+                left.mul_overflows(right, target_type, Some(self.current_span)),
             ),
             mir::BinOp::Shl => (
-                left.shl(&right, Some(self.current_span)),
-                left.shl_overflows(&mut right, target_type, Some(self.current_span)),
+                left.clone().shl(right.clone(), Some(self.current_span)),
+                left.shl_overflows(right, target_type, Some(self.current_span)),
             ),
             mir::BinOp::Shr => (
-                left.shr(&right, target_type.clone(), Some(self.current_span)),
-                left.shr_overflows(&mut right, target_type, Some(self.current_span)),
+                left.clone()
+                    .shr(right.clone(), target_type.clone(), Some(self.current_span)),
+                left.shr_overflows(right, target_type, Some(self.current_span)),
             ),
             mir::BinOp::Sub => (
-                left.sub(&right, Some(self.current_span)),
-                left.sub_overflows(&mut right, target_type, Some(self.current_span)),
+                left.clone().sub(right.clone(), Some(self.current_span)),
+                left.sub_overflows(right, target_type, Some(self.current_span)),
             ),
             _ => unreachable!(),
         };

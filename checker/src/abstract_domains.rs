@@ -148,19 +148,18 @@ impl From<Expression> for AbstractDomain {
 
 impl AbstractDomain {
     /// Returns an element that is "self + other".
-    pub fn add(&self, other: &Self) -> Self {
-        self.try_to_simplify_binary_op(other, ConstantDomain::add, AbstractDomain::add)
-            .unwrap_or_else(|| {
-                Expression::Add {
-                    left: box self.clone(),
-                    right: box other.clone(),
-                }
-                .into()
-            })
+    pub fn addition(self, other: Self) -> Self {
+        self.try_to_simplify_binary_op(other, ConstantDomain::add, |left, right| {
+            Expression::Add {
+                left: box left,
+                right: box right,
+            }
+            .into()
+        })
     }
 
     /// Returns an element that is true if "self + other" is not in range of target_type.
-    pub fn add_overflows(&mut self, other: &mut Self, target_type: ExpressionType) -> Self {
+    pub fn add_overflows(mut self, mut other: Self, target_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -174,15 +173,15 @@ impl AbstractDomain {
             return false.into();
         }
         Expression::AddOverflows {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
             result_type: target_type,
         }
         .into()
     }
 
     /// Returns an element that is "self && other".
-    pub fn and(&self, other: &Self) -> Self {
+    pub fn and(self, other: Self) -> Self {
         let self_bool = self.as_bool_if_known();
         if let Some(false) = self_bool {
             return false.into();
@@ -195,20 +194,20 @@ impl AbstractDomain {
             if other_bool.unwrap_or(false) {
                 true.into()
             } else {
-                other.clone()
+                other
             }
         } else if other_bool.unwrap_or(false)
             || self.is_top()
             || self.is_bottom() && other.is_bottom()
         {
-            self.clone()
+            self
         } else if other.is_top() {
-            other.clone()
+            other
         } else {
             // todo: #32 more simplifications
             Expression::And {
-                left: box self.clone(),
-                right: box other.clone(),
+                left: box self,
+                right: box other,
             }
             .into()
         }
@@ -227,7 +226,7 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is "self & other".
-    pub fn bit_and(&self, other: &Self) -> Self {
+    pub fn bit_and(self, other: Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -237,14 +236,14 @@ impl AbstractDomain {
             }
         };
         Expression::BitAnd {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is "self | other".
-    pub fn bit_or(&self, other: &Self) -> Self {
+    pub fn bit_or(self, other: Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -254,14 +253,14 @@ impl AbstractDomain {
             }
         };
         Expression::BitOr {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is "self ^ other".
-    pub fn bit_xor(&self, other: &Self) -> Self {
+    pub fn bit_xor(self, other: Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -271,58 +270,58 @@ impl AbstractDomain {
             }
         };
         Expression::BitXor {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is "self as target_type".
-    pub fn cast(&self, target_type: ExpressionType) -> Self {
+    pub fn cast(self, target_type: ExpressionType) -> Self {
         if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.cast(target_type.clone());
+            let result = v1.cast(&target_type);
             if result != ConstantDomain::Bottom {
                 return result.into();
             }
         };
-        match &self.expression {
-            Expression::Bottom => self.clone(),
+        match self.expression {
+            Expression::Bottom => self,
             Expression::ConditionalExpression {
                 condition,
                 consequent,
                 alternate,
             } => condition.conditional_expression(
-                &consequent.cast(target_type.clone()),
-                &alternate.cast(target_type),
+                consequent.cast(target_type.clone()),
+                alternate.cast(target_type),
             ),
             Expression::Join { left, right, path } => left
                 .cast(target_type.clone())
-                .join(&right.cast(target_type), path),
+                .join(right.cast(target_type), *path),
             _ => Expression::Cast {
-                operand: box self.clone(),
-                target_type,
+                operand: box self,
+                target_type: target_type.clone(),
             }
             .into(),
         }
     }
 
     /// Returns an element that is "if self { consequent } else { alternate }".
-    pub fn conditional_expression(&self, consequent: &Self, alternate: &Self) -> Self {
+    pub fn conditional_expression(self, consequent: Self, alternate: Self) -> Self {
         if self.is_bottom() {
             // If the condition is impossible so is the expression.
-            return consequent.clone();
+            return consequent;
         }
-        if (*consequent).expression == (*alternate).expression {
+        if consequent.expression == alternate.expression {
             // c ? x : x is just x
-            return consequent.clone();
+            return consequent;
         }
         let join_condition_as_bool = self.as_bool_if_known();
         if join_condition_as_bool == Some(true) {
             // true ? x : y is just x
-            return consequent.clone();
+            return consequent;
         } else if join_condition_as_bool == Some(false) {
             // false ? x : y is just y
-            return alternate.clone();
+            return alternate;
         }
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&consequent.expression, &alternate.expression)
@@ -330,37 +329,36 @@ impl AbstractDomain {
             match (v1, v2) {
                 (ConstantDomain::True, ConstantDomain::False) => {
                     // c ? true : false is just c
-                    return self.clone();
+                    return self;
                 }
                 (ConstantDomain::False, ConstantDomain::True) => {
                     // c ? false : true is just !c
-                    return self.not();
+                    return self.logical_not();
                 }
                 _ => (),
             }
         }
         ConditionalExpression {
-            condition: box self.clone(),
-            consequent: box consequent.clone(),
-            alternate: box alternate.clone(),
+            condition: box self,
+            consequent: box consequent,
+            alternate: box alternate,
         }
         .into()
     }
 
     /// Returns an element that is "self / other".
-    pub fn div(&self, other: &Self) -> Self {
-        self.try_to_simplify_binary_op(other, ConstantDomain::div, AbstractDomain::div)
-            .unwrap_or_else(|| {
-                Expression::Div {
-                    left: box self.clone(),
-                    right: box other.clone(),
-                }
-                .into()
-            })
+    pub fn divide(self, other: Self) -> Self {
+        self.try_to_simplify_binary_op(other, ConstantDomain::div, |left, right| {
+            Expression::Div {
+                left: box left,
+                right: box right,
+            }
+            .into()
+        })
     }
 
     /// Returns an element that is "self == other".
-    pub fn equals(&self, other: &Self) -> Self {
+    pub fn equals(self, other: Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -396,35 +394,36 @@ impl AbstractDomain {
                 Expression::CompileTimeConstant(ConstantDomain::U128(val)),
             ) => {
                 if *val == 0 && operand.expression.infer_type() == ExpressionType::Bool {
-                    return (**operand).clone();
+                    return *operand.clone();
                 }
             }
             // x == 0 is the same as !x when x is a Boolean. Canonicalize it to the latter.
-            (_, Expression::CompileTimeConstant(ConstantDomain::U128(val))) => {
-                if *val == 0 && (self.expression.infer_type() == ExpressionType::Bool) {
-                    return self.not();
+            (x, Expression::CompileTimeConstant(ConstantDomain::U128(val))) => {
+                if *val == 0 && (x.infer_type() == ExpressionType::Bool) {
+                    return Expression::Not {
+                        operand: box x.clone().into(),
+                    }
+                    .into();
                 }
             }
-            _ => {
+            (x, y) => {
                 // If self and other are the same expression and the expression could not result in NaN
                 // and the expression represents exactly one value, we can simplify this to true.
-                if self.expression == other.expression
-                    && !self.expression.infer_type().is_floating_point_number()
-                {
+                if x == y && !x.infer_type().is_floating_point_number() {
                     return true.into();
                 }
             }
         }
         // Return an equals expression rather than a constant expression.
         Expression::Equals {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is "self >= other".
-    pub fn greater_or_equal(&mut self, other: &mut Self) -> Self {
+    pub fn greater_or_equal(mut self, mut other: Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -437,14 +436,14 @@ impl AbstractDomain {
             return result.into();
         }
         Expression::GreaterOrEqual {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is "self > other".
-    pub fn greater_than(&mut self, other: &mut Self) -> Self {
+    pub fn greater_than(mut self, mut other: Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -457,8 +456,8 @@ impl AbstractDomain {
             return result.into();
         }
         Expression::GreaterThan {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
@@ -517,25 +516,25 @@ impl AbstractDomain {
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
     /// corresponding to self and other. In effect this behaves like set union.
-    pub fn join(&self, other: &Self, path: &Path) -> Self {
+    pub fn join(self, other: Self, path: Path) -> Self {
         // {} union y is just y
         if self.is_bottom() {
-            return other.clone();
+            return other;
         }
         // x union {} just x
         if other.is_bottom() {
-            return self.clone();
+            return self;
         }
         Expression::Join {
-            path: box path.clone(),
-            left: box self.clone(),
-            right: box other.clone(),
+            path: box path,
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is "self <= other".
-    pub fn less_or_equal(&mut self, other: &mut Self) -> Self {
+    pub fn less_or_equal(mut self, mut other: Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -548,14 +547,14 @@ impl AbstractDomain {
             return result.into();
         }
         Expression::LessOrEqual {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is self < other
-    pub fn less_than(&mut self, other: &mut Self) -> Self {
+    pub fn less_than(mut self, mut other: Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -568,26 +567,25 @@ impl AbstractDomain {
             return result.into();
         }
         Expression::LessThan {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is "self * other".
-    pub fn mul(&self, other: &Self) -> Self {
-        self.try_to_simplify_binary_op(other, ConstantDomain::mul, AbstractDomain::mul)
-            .unwrap_or_else(|| {
-                Expression::Mul {
-                    left: box self.clone(),
-                    right: box other.clone(),
-                }
-                .into()
-            })
+    pub fn multiply(self, other: Self) -> Self {
+        self.try_to_simplify_binary_op(other, ConstantDomain::mul, |left, right| {
+            Expression::Mul {
+                left: box left,
+                right: box right,
+            }
+            .into()
+        })
     }
 
     /// Returns an element that is true if "self * other" is not in range of target_type.
-    pub fn mul_overflows(&mut self, other: &mut Self, target_type: ExpressionType) -> Self {
+    pub fn mul_overflows(mut self, mut other: Self, target_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -601,83 +599,77 @@ impl AbstractDomain {
             return false.into();
         }
         Expression::MulOverflows {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
             result_type: target_type,
         }
         .into()
     }
 
     /// Returns an element that is "-self".
-    pub fn neg(&self) -> Self {
+    pub fn negate(self) -> Self {
         if let Expression::CompileTimeConstant(v1) = &self.expression {
             let result = v1.neg();
             if result != ConstantDomain::Bottom {
                 return result.into();
             }
         };
-        Expression::Neg {
-            operand: box self.clone(),
-        }
-        .into()
+        Expression::Neg { operand: box self }.into()
     }
 
     /// Returns an element that is "self != other".
-    pub fn not_equals(&self, other: &Self) -> Self {
+    pub fn not_equals(self, other: Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
             return v1.not_equals(v2).into();
         };
         Expression::Ne {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is "!self".
-    pub fn not(&self) -> Self {
+    pub fn logical_not(self) -> Self {
         if let Expression::CompileTimeConstant(v1) = &self.expression {
             let result = v1.not();
             if result != ConstantDomain::Bottom {
                 return result.into();
             }
         };
-        match &self.expression {
-            Expression::Bottom => self.clone(),
-            Expression::Not { operand } => (**operand).clone(),
-            _ => Expression::Not {
-                operand: box self.clone(),
-            }
-            .into(),
+        match self.expression {
+            Expression::Bottom => self,
+            Expression::Not { operand } => *operand,
+            _ => Expression::Not { operand: box self }.into(),
         }
     }
 
     /// Returns an element that is "self.other".
-    pub fn offset(&self, other: &Self) -> Self {
+    pub fn offset(self, other: Self) -> Self {
         Expression::Offset {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is "self || other".
-    pub fn or(&self, other: &Self) -> Self {
+    pub fn or(self, other: Self) -> Self {
         if self.as_bool_if_known().unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
             true.into()
         } else if self.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
-            other.clone()
+            other
         } else if other.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
-            self.clone()
+            self
         } else {
             match (&self.expression, &other.expression) {
-                (Expression::Not { ref operand }, _) if (**operand).eq(other) => true.into(),
-                (_, Expression::Not { ref operand }) if (**operand).eq(self) => true.into(),
+                (Expression::Not { ref operand }, _) if (**operand).eq(&other) => true.into(),
+                (_, Expression::Not { ref operand }) if (**operand).eq(&self) => true.into(),
                 _ => Expression::Or {
-                    left: box self.clone(),
-                    right: box other.clone(),
+                    left: box self,
+                    right: box other,
                 }
                 .into(),
             }
@@ -685,19 +677,18 @@ impl AbstractDomain {
     }
 
     /// Returns an element that is "self % other".
-    pub fn rem(&self, other: &Self) -> Self {
-        self.try_to_simplify_binary_op(other, ConstantDomain::rem, AbstractDomain::rem)
-            .unwrap_or_else(|| {
-                Expression::Rem {
-                    left: box self.clone(),
-                    right: box other.clone(),
-                }
-                .into()
-            })
+    pub fn remainder(self, other: Self) -> Self {
+        self.try_to_simplify_binary_op(other, ConstantDomain::rem, |left, right| {
+            Expression::Rem {
+                left: box left,
+                right: box right,
+            }
+            .into()
+        })
     }
 
     /// Returns an element that is "self << other".
-    pub fn shl(&self, other: &Self) -> Self {
+    pub fn shift_left(self, other: Self) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -707,14 +698,14 @@ impl AbstractDomain {
             }
         };
         Expression::Shl {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
         }
         .into()
     }
 
     /// Returns an element that is true if "self << other" shifts away all bits.
-    pub fn shl_overflows(&self, other: &mut Self, target_type: ExpressionType) -> Self {
+    pub fn shl_overflows(self, mut other: Self, target_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -728,15 +719,15 @@ impl AbstractDomain {
             return false.into();
         }
         Expression::ShlOverflows {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
             result_type: target_type,
         }
         .into()
     }
 
     /// Returns an element that is "self >> other".
-    pub fn shr(&self, other: &Self, expression_type: ExpressionType) -> Self {
+    pub fn shr(self, other: Self, expression_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -746,15 +737,15 @@ impl AbstractDomain {
             }
         };
         Expression::Shr {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
             result_type: expression_type,
         }
         .into()
     }
 
     /// Returns an element that is true if "self >> other" shifts away all bits.
-    pub fn shr_overflows(&self, other: &mut Self, target_type: ExpressionType) -> Self {
+    pub fn shr_overflows(self, mut other: Self, target_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -768,27 +759,26 @@ impl AbstractDomain {
             return false.into();
         }
         Expression::ShrOverflows {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
             result_type: target_type,
         }
         .into()
     }
 
     /// Returns an element that is "self - other".
-    pub fn sub(&self, other: &Self) -> Self {
-        self.try_to_simplify_binary_op(other, ConstantDomain::sub, AbstractDomain::sub)
-            .unwrap_or_else(|| {
-                Expression::Sub {
-                    left: box self.clone(),
-                    right: box other.clone(),
-                }
-                .into()
-            })
+    pub fn subtract(self, other: Self) -> Self {
+        self.try_to_simplify_binary_op(other, ConstantDomain::sub, |left, right| {
+            Expression::Sub {
+                left: box left,
+                right: box right,
+            }
+            .into()
+        })
     }
 
     /// Returns an element that is true if "self - other" is not in range of target_type.
-    pub fn sub_overflows(&mut self, other: &mut Self, target_type: ExpressionType) -> Self {
+    pub fn sub_overflows(mut self, mut other: Self, target_type: ExpressionType) -> Self {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -802,8 +792,8 @@ impl AbstractDomain {
             return false.into();
         }
         Expression::SubOverflows {
-            left: box self.clone(),
-            right: box other.clone(),
+            left: box self,
+            right: box other,
             result_type: target_type,
         }
         .into()
@@ -938,140 +928,135 @@ impl AbstractDomain {
 
     /// Replaces occurrences of Expression::Variable(path) with the value at that path
     /// in the given environment (if there is such a value).
-    pub fn refine_paths(&self, environment: &mut Environment) -> Self {
-        match &self.expression {
-            Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
-                self.clone()
-            }
+    pub fn refine_paths(self, environment: &mut Environment) -> Self {
+        match self.expression {
+            Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => self,
             Expression::Add { left, right } => left
                 .refine_paths(environment)
-                .add(&right.refine_paths(environment)),
+                .addition(right.refine_paths(environment)),
             Expression::AddOverflows {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_paths(environment)
-                .add_overflows(&mut right.refine_paths(environment), result_type.clone()),
+                .add_overflows(right.refine_paths(environment), result_type),
             Expression::And { left, right } => left
                 .refine_paths(environment)
-                .and(&right.refine_paths(environment)),
+                .and(right.refine_paths(environment)),
             Expression::BitAnd { left, right } => left
                 .refine_paths(environment)
-                .bit_and(&right.refine_paths(environment)),
+                .bit_and(right.refine_paths(environment)),
             Expression::BitOr { left, right } => left
                 .refine_paths(environment)
-                .bit_or(&right.refine_paths(environment)),
+                .bit_or(right.refine_paths(environment)),
             Expression::BitXor { left, right } => left
                 .refine_paths(environment)
-                .bit_xor(&right.refine_paths(environment)),
+                .bit_xor(right.refine_paths(environment)),
             Expression::Cast {
                 operand,
                 target_type,
-            } => operand.refine_paths(environment).cast(target_type.clone()),
-            Expression::CompileTimeConstant(..) => self.clone(),
+            } => operand.refine_paths(environment).cast(target_type),
+            Expression::CompileTimeConstant(..) => self,
             Expression::ConditionalExpression {
                 condition,
                 consequent,
                 alternate,
             } => condition.refine_paths(environment).conditional_expression(
-                &consequent.refine_paths(environment),
-                &alternate.refine_paths(environment),
+                consequent.refine_paths(environment),
+                alternate.refine_paths(environment),
             ),
             Expression::Div { left, right } => left
                 .refine_paths(environment)
-                .div(&right.refine_paths(environment)),
+                .divide(right.refine_paths(environment)),
             Expression::Equals { left, right } => left
                 .refine_paths(environment)
-                .equals(&right.refine_paths(environment)),
+                .equals(right.refine_paths(environment)),
             Expression::GreaterOrEqual { left, right } => left
                 .refine_paths(environment)
-                .greater_or_equal(&mut right.refine_paths(environment)),
+                .greater_or_equal(right.refine_paths(environment)),
             Expression::GreaterThan { left, right } => left
                 .refine_paths(environment)
-                .greater_than(&mut right.refine_paths(environment)),
+                .greater_than(right.refine_paths(environment)),
             Expression::Join { left, right, path } => left
                 .refine_paths(environment)
-                .join(&right.refine_paths(environment), path),
+                .join(right.refine_paths(environment), *path),
             Expression::LessOrEqual { left, right } => left
                 .refine_paths(environment)
-                .less_or_equal(&mut right.refine_paths(environment)),
+                .less_or_equal(right.refine_paths(environment)),
             Expression::LessThan { left, right } => left
                 .refine_paths(environment)
-                .less_than(&mut right.refine_paths(environment)),
+                .less_than(right.refine_paths(environment)),
             Expression::Mul { left, right } => left
                 .refine_paths(environment)
-                .mul(&right.refine_paths(environment)),
+                .multiply(right.refine_paths(environment)),
             Expression::MulOverflows {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_paths(environment)
-                .mul_overflows(&mut right.refine_paths(environment), result_type.clone()),
+                .mul_overflows(right.refine_paths(environment), result_type),
             Expression::Ne { left, right } => left
                 .refine_paths(environment)
-                .not_equals(&right.refine_paths(environment)),
-            Expression::Neg { operand } => operand.refine_paths(environment).neg(),
-            Expression::Not { operand } => operand.refine_paths(environment).not(),
+                .not_equals(right.refine_paths(environment)),
+            Expression::Neg { operand } => operand.refine_paths(environment).negate(),
+            Expression::Not { operand } => operand.refine_paths(environment).logical_not(),
             Expression::Offset { left, right } => left
                 .refine_paths(environment)
-                .offset(&right.refine_paths(environment)),
+                .offset(right.refine_paths(environment)),
             Expression::Or { left, right } => left
                 .refine_paths(environment)
-                .or(&right.refine_paths(environment)),
-            Expression::Reference(..) => self.clone(),
+                .or(right.refine_paths(environment)),
+            Expression::Reference(..) => self,
             Expression::Rem { left, right } => left
                 .refine_paths(environment)
-                .rem(&right.refine_paths(environment)),
+                .remainder(right.refine_paths(environment)),
             Expression::Shl { left, right } => left
                 .refine_paths(environment)
-                .shl(&right.refine_paths(environment)),
+                .shift_left(right.refine_paths(environment)),
             Expression::ShlOverflows {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_paths(environment)
-                .shl_overflows(&mut right.refine_paths(environment), result_type.clone()),
+                .shl_overflows(right.refine_paths(environment), result_type),
             Expression::Shr {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_paths(environment)
-                .shr(&right.refine_paths(environment), result_type.clone()),
+                .shr(right.refine_paths(environment), result_type),
             Expression::ShrOverflows {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_paths(environment)
-                .shr_overflows(&mut right.refine_paths(environment), result_type.clone()),
+                .shr_overflows(right.refine_paths(environment), result_type),
             Expression::Sub { left, right } => left
                 .refine_paths(environment)
-                .sub(&right.refine_paths(environment)),
+                .subtract(right.refine_paths(environment)),
             Expression::SubOverflows {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_paths(environment)
-                .sub_overflows(&mut right.refine_paths(environment), result_type.clone()),
+                .sub_overflows(right.refine_paths(environment), result_type),
             Expression::Variable { path, var_type } => {
-                if let Some(val) = environment.value_at(path) {
+                if let Some(val) = environment.value_at(&path) {
                     val.domain.clone()
                 } else {
                     let refined_path = path.refine_paths(environment);
-                    if refined_path == **path {
-                        return self.clone();
-                    }
                     if let Some(val) = environment.value_at(&refined_path) {
                         val.domain.clone()
                     } else {
                         Expression::Variable {
                             path: box refined_path,
-                            var_type: var_type.clone(),
+                            var_type,
                         }
                         .into()
                     }
@@ -1079,47 +1064,43 @@ impl AbstractDomain {
             }
             Expression::Widen { path, operand } => operand
                 .refine_paths(environment)
-                .widen(&path.refine_paths(environment)),
+                .widen(path.refine_paths(environment)),
         }
     }
 
     /// Returns a value that is simplified (refined) by replacing parameter values
     /// with their corresponding argument values. If no refinement is possible
     /// the result is simply a clone of this value.
-    pub fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Self {
-        match &self.expression {
-            Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
-                self.clone()
-            }
+    pub fn refine_parameters(self, arguments: &[(Path, AbstractValue)]) -> Self {
+        match self.expression {
+            Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => self,
             Expression::Add { left, right } => left
                 .refine_parameters(arguments)
-                .add(&right.refine_parameters(arguments)),
+                .addition(right.refine_parameters(arguments)),
             Expression::AddOverflows {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .add_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
+                .add_overflows(right.refine_parameters(arguments), result_type),
             Expression::And { left, right } => left
                 .refine_parameters(arguments)
-                .and(&right.refine_parameters(arguments)),
+                .and(right.refine_parameters(arguments)),
             Expression::BitAnd { left, right } => left
                 .refine_parameters(arguments)
-                .bit_and(&right.refine_parameters(arguments)),
+                .bit_and(right.refine_parameters(arguments)),
             Expression::BitOr { left, right } => left
                 .refine_parameters(arguments)
-                .bit_or(&right.refine_parameters(arguments)),
+                .bit_or(right.refine_parameters(arguments)),
             Expression::BitXor { left, right } => left
                 .refine_parameters(arguments)
-                .bit_xor(&right.refine_parameters(arguments)),
+                .bit_xor(right.refine_parameters(arguments)),
             Expression::Cast {
                 operand,
                 target_type,
-            } => operand
-                .refine_parameters(arguments)
-                .cast(target_type.clone()),
-            Expression::CompileTimeConstant(..) => self.clone(),
+            } => operand.refine_parameters(arguments).cast(target_type),
+            Expression::CompileTimeConstant(..) => self,
             Expression::ConditionalExpression {
                 condition,
                 consequent,
@@ -1127,93 +1108,93 @@ impl AbstractDomain {
             } => condition
                 .refine_parameters(arguments)
                 .conditional_expression(
-                    &consequent.refine_parameters(arguments),
-                    &alternate.refine_parameters(arguments),
+                    consequent.refine_parameters(arguments),
+                    alternate.refine_parameters(arguments),
                 ),
             Expression::Div { left, right } => left
                 .refine_parameters(arguments)
-                .div(&right.refine_parameters(arguments)),
+                .divide(right.refine_parameters(arguments)),
             Expression::Equals { left, right } => left
                 .refine_parameters(arguments)
-                .equals(&right.refine_parameters(arguments)),
+                .equals(right.refine_parameters(arguments)),
             Expression::GreaterOrEqual { left, right } => left
                 .refine_parameters(arguments)
-                .greater_or_equal(&mut right.refine_parameters(arguments)),
+                .greater_or_equal(right.refine_parameters(arguments)),
             Expression::GreaterThan { left, right } => left
                 .refine_parameters(arguments)
-                .greater_than(&mut right.refine_parameters(arguments)),
+                .greater_than(right.refine_parameters(arguments)),
             Expression::Join { left, right, path } => left
                 .refine_parameters(arguments)
-                .join(&right.refine_parameters(arguments), path),
+                .join(right.refine_parameters(arguments), *path),
             Expression::LessOrEqual { left, right } => left
                 .refine_parameters(arguments)
-                .less_or_equal(&mut right.refine_parameters(arguments)),
+                .less_or_equal(right.refine_parameters(arguments)),
             Expression::LessThan { left, right } => left
                 .refine_parameters(arguments)
-                .less_than(&mut right.refine_parameters(arguments)),
+                .less_than(right.refine_parameters(arguments)),
             Expression::Mul { left, right } => left
                 .refine_parameters(arguments)
-                .mul(&right.refine_parameters(arguments)),
+                .multiply(right.refine_parameters(arguments)),
             Expression::MulOverflows {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .mul_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
+                .mul_overflows(right.refine_parameters(arguments), result_type),
             Expression::Ne { left, right } => left
                 .refine_parameters(arguments)
-                .not_equals(&right.refine_parameters(arguments)),
-            Expression::Neg { operand } => operand.refine_parameters(arguments).neg(),
-            Expression::Not { operand } => operand.refine_parameters(arguments).not(),
+                .not_equals(right.refine_parameters(arguments)),
+            Expression::Neg { operand } => operand.refine_parameters(arguments).negate(),
+            Expression::Not { operand } => operand.refine_parameters(arguments).logical_not(),
             Expression::Offset { left, right } => left
                 .refine_parameters(arguments)
-                .offset(&right.refine_parameters(arguments)),
+                .offset(right.refine_parameters(arguments)),
             Expression::Or { left, right } => left
                 .refine_parameters(arguments)
-                .or(&right.refine_parameters(arguments)),
-            Expression::Reference(..) => self.clone(),
+                .or(right.refine_parameters(arguments)),
+            Expression::Reference(..) => self,
             Expression::Rem { left, right } => left
                 .refine_parameters(arguments)
-                .rem(&right.refine_parameters(arguments)),
+                .remainder(right.refine_parameters(arguments)),
             Expression::Shl { left, right } => left
                 .refine_parameters(arguments)
-                .shl(&right.refine_parameters(arguments)),
+                .shift_left(right.refine_parameters(arguments)),
             Expression::ShlOverflows {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .shl_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
+                .shl_overflows(right.refine_parameters(arguments), result_type),
             Expression::Shr {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .shr(&right.refine_parameters(arguments), result_type.clone()),
+                .shr(right.refine_parameters(arguments), result_type),
             Expression::ShrOverflows {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .shr_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
+                .shr_overflows(right.refine_parameters(arguments), result_type),
             Expression::Sub { left, right } => left
                 .refine_parameters(arguments)
-                .sub(&right.refine_parameters(arguments)),
+                .subtract(right.refine_parameters(arguments)),
             Expression::SubOverflows {
                 left,
                 right,
                 result_type,
             } => left
                 .refine_parameters(arguments)
-                .sub_overflows(&mut right.refine_parameters(arguments), result_type.clone()),
+                .sub_overflows(right.refine_parameters(arguments), result_type),
             Expression::Variable { path, var_type } => {
                 let refined_path = path.refine_parameters(arguments);
                 if let Path::Constant { value } = refined_path {
-                    value.domain.clone()
+                    value.domain
                 } else {
                     Expression::Variable {
                         path: box refined_path,
@@ -1224,68 +1205,63 @@ impl AbstractDomain {
             }
             Expression::Widen { path, operand } => operand
                 .refine_parameters(arguments)
-                .widen(&path.refine_parameters(arguments)),
+                .widen(path.refine_parameters(arguments)),
         }
     }
 
     /// Returns a domain that is simplified (refined) by using the current path conditions
     /// (conditions known to be true in the current context). If no refinement is possible
     /// the result is simply a clone of this domain.
-    pub fn refine_with(&self, path_condition: &Self, depth: usize) -> Self {
+    pub fn refine_with(self, path_condition: &Self, depth: usize) -> Self {
         if depth >= k_limits::MAX_REFINE_DEPTH {
-            return self.clone();
+            return self;
         }
-        match &self.expression {
-            Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
-                self.clone()
-            }
+        match self.expression {
+            Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => self,
             Expression::Add { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .add(&right.refine_with(path_condition, depth + 1)),
+                .addition(right.refine_with(path_condition, depth + 1)),
             Expression::AddOverflows {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).add_overflows(
-                &mut right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .add_overflows(right.refine_with(path_condition, depth + 1), result_type),
             Expression::And { left, right } => {
-                if path_condition.implies(&**left) && path_condition.implies(&**right) {
+                if path_condition.implies(&left) && path_condition.implies(&right) {
                     true.into()
-                } else if path_condition.implies_not(&**left)
-                    || path_condition.implies_not(&**right)
-                {
+                } else if path_condition.implies_not(&left) || path_condition.implies_not(&right) {
                     false.into()
                 } else {
                     left.refine_with(path_condition, depth + 1)
-                        .and(&right.refine_with(path_condition, depth + 1))
+                        .and(right.refine_with(path_condition, depth + 1))
                 }
             }
             Expression::BitAnd { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .bit_and(&right.refine_with(path_condition, depth + 1)),
+                .bit_and(right.refine_with(path_condition, depth + 1)),
             Expression::BitOr { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .bit_or(&right.refine_with(path_condition, depth + 1)),
+                .bit_or(right.refine_with(path_condition, depth + 1)),
             Expression::BitXor { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .bit_xor(&right.refine_with(path_condition, depth + 1)),
+                .bit_xor(right.refine_with(path_condition, depth + 1)),
             Expression::Cast {
                 operand,
                 target_type,
             } => operand
                 .refine_with(path_condition, depth + 1)
-                .cast(target_type.clone()),
-            Expression::CompileTimeConstant(..) => self.clone(),
+                .cast(target_type),
+            Expression::CompileTimeConstant(..) => self,
             Expression::ConditionalExpression {
                 condition,
                 consequent,
                 alternate,
             } => {
-                if path_condition.implies(&**condition) {
+                if path_condition.implies(&condition) {
                     consequent.refine_with(path_condition, depth + 1)
-                } else if path_condition.implies_not(&**condition) {
+                } else if path_condition.implies_not(&condition) {
                     alternate.refine_with(path_condition, depth + 1)
                 } else {
                     let refined_condition = condition.refine_with(path_condition, depth + 1);
@@ -1295,203 +1271,177 @@ impl AbstractDomain {
                         refined_consequent.refine_with(&refined_condition, depth + 1);
                     let refined_alternate =
                         refined_alternate.refine_with(&refined_condition, depth + 1);
-                    refined_condition
-                        .conditional_expression(&refined_consequent, &refined_alternate)
+                    refined_condition.conditional_expression(refined_consequent, refined_alternate)
                 }
             }
             Expression::Div { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .div(&right.refine_with(path_condition, depth + 1)),
+                .divide(right.refine_with(path_condition, depth + 1)),
             Expression::Equals { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .equals(&right.refine_with(path_condition, depth + 1)),
+                .equals(right.refine_with(path_condition, depth + 1)),
             Expression::GreaterOrEqual { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .greater_or_equal(&mut right.refine_with(path_condition, depth + 1)),
+                .greater_or_equal(right.refine_with(path_condition, depth + 1)),
             Expression::GreaterThan { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .greater_than(&mut right.refine_with(path_condition, depth + 1)),
+                .greater_than(right.refine_with(path_condition, depth + 1)),
             Expression::Join { left, right, path } => left
                 .refine_with(path_condition, depth + 1)
-                .join(&right.refine_with(path_condition, depth + 1), path),
+                .join(right.refine_with(path_condition, depth + 1), *path),
             Expression::LessOrEqual { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .less_or_equal(&mut right.refine_with(path_condition, depth + 1)),
+                .less_or_equal(right.refine_with(path_condition, depth + 1)),
             Expression::LessThan { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .less_than(&mut right.refine_with(path_condition, depth + 1)),
+                .less_than(right.refine_with(path_condition, depth + 1)),
             Expression::Mul { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .mul(&right.refine_with(path_condition, depth + 1)),
+                .multiply(right.refine_with(path_condition, depth + 1)),
             Expression::MulOverflows {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).mul_overflows(
-                &mut right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .mul_overflows(right.refine_with(path_condition, depth + 1), result_type),
             Expression::Ne { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .not_equals(&right.refine_with(path_condition, depth + 1)),
-            Expression::Neg { operand } => operand.refine_with(path_condition, depth + 1).neg(),
+                .not_equals(right.refine_with(path_condition, depth + 1)),
+            Expression::Neg { operand } => operand.refine_with(path_condition, depth + 1).negate(),
             Expression::Not { operand } => {
-                if path_condition.implies(&**operand) {
+                if path_condition.implies(&operand) {
                     false.into()
-                } else if path_condition.implies_not(&**operand) {
+                } else if path_condition.implies_not(&operand) {
                     true.into()
                 } else {
-                    operand.refine_with(path_condition, depth + 1).not()
+                    operand.refine_with(path_condition, depth + 1).logical_not()
                 }
             }
             Expression::Offset { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .offset(&right.refine_with(path_condition, depth + 1)),
+                .offset(right.refine_with(path_condition, depth + 1)),
             Expression::Or { left, right } => {
-                if path_condition.implies(&**left) || path_condition.implies(&**right) {
+                if path_condition.implies(&left) || path_condition.implies(&right) {
                     true.into()
-                } else if path_condition.implies_not(&**left)
-                    && path_condition.implies_not(&**right)
-                {
+                } else if path_condition.implies_not(&left) && path_condition.implies_not(&right) {
                     false.into()
                 } else {
                     left.refine_with(path_condition, depth + 1)
-                        .or(&right.refine_with(path_condition, depth + 1))
+                        .or(right.refine_with(path_condition, depth + 1))
                 }
             }
-            Expression::Reference(..) => self.clone(),
+            Expression::Reference(..) => self,
             Expression::Rem { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .rem(&right.refine_with(path_condition, depth + 1)),
+                .remainder(right.refine_with(path_condition, depth + 1)),
             Expression::Shl { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .shl(&right.refine_with(path_condition, depth + 1)),
+                .shift_left(right.refine_with(path_condition, depth + 1)),
             Expression::ShlOverflows {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).shl_overflows(
-                &mut right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .shl_overflows(right.refine_with(path_condition, depth + 1), result_type),
             Expression::Shr {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).shr(
-                &right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .shr(right.refine_with(path_condition, depth + 1), result_type),
             Expression::ShrOverflows {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).shr_overflows(
-                &mut right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .shr_overflows(right.refine_with(path_condition, depth + 1), result_type),
             Expression::Sub { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .sub(&right.refine_with(path_condition, depth + 1)),
+                .subtract(right.refine_with(path_condition, depth + 1)),
             Expression::SubOverflows {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).sub_overflows(
-                &mut right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .sub_overflows(right.refine_with(path_condition, depth + 1), result_type),
             Expression::Variable { .. } => {
                 if path_condition.implies(&self) {
                     true.into()
                 } else if path_condition.implies_not(&self) {
                     false.into()
                 } else {
-                    self.clone()
+                    self
                 }
             }
             Expression::Widen { path, operand } => {
-                operand.refine_with(path_condition, depth + 1).widen(&path)
+                operand.refine_with(path_condition, depth + 1).widen(*path)
             }
         }
     }
 
     /// Tries to simplify operation(self, other) by constant folding or by distribution
     /// the operation over self and/or other.
-    /// Returns None if no simplification is possible.
+    /// Returns operation(self, other) if no simplification is possible.
     fn try_to_simplify_binary_op(
-        &self,
-        other: &Self,
+        self,
+        other: Self,
         const_op: fn(&ConstantDomain, &ConstantDomain) -> ConstantDomain,
-        abs_op: fn(&Self, &Self) -> Self,
-    ) -> Option<Self> {
-        let result = self.try_to_fold_binary_op(other, const_op);
-        if result.is_none() {
-            self.try_to_distribute_binary_op(other, abs_op)
-        } else {
-            result
-        }
-    }
-
-    /// Tries to do constant folding for operation(self, other).
-    /// Returns None if folding is not possible.
-    fn try_to_fold_binary_op(
-        &self,
-        other: &Self,
-        operation: fn(&ConstantDomain, &ConstantDomain) -> ConstantDomain,
-    ) -> Option<Self> {
+        operation: fn(Self, Self) -> Self,
+    ) -> Self {
         match (&self.expression, &other.expression) {
             (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) => {
-                let result = operation(&v1, &v2);
+                let result = const_op(&v1, &v2);
                 if result == ConstantDomain::Bottom {
-                    None
+                    self.try_to_distribute_binary_op(other, operation)
                 } else {
-                    Some(result.into())
+                    result.into()
                 }
             }
-            _ => None,
+            _ => self.try_to_distribute_binary_op(other, operation),
         }
     }
 
     /// Tries to distribute the operation over self and/or other.
-    /// Return None if no simplification is possible.
-    fn try_to_distribute_binary_op(
-        &self,
-        other: &Self,
-        operation: fn(&Self, &Self) -> Self,
-    ) -> Option<Self> {
-        let result: Self = match (&self.expression, &other.expression) {
-            (
-                ConditionalExpression {
-                    condition,
-                    consequent,
-                    alternate,
-                },
-                _,
-            ) => condition.conditional_expression(
-                &operation(consequent, other),
-                &operation(alternate, other),
-            ),
-            (
-                _,
-                ConditionalExpression {
-                    condition,
-                    consequent,
-                    alternate,
-                },
-            ) => condition
-                .conditional_expression(&operation(self, consequent), &operation(self, alternate)),
-            (Join { left, right, path }, _) => {
-                operation(left, other).join(&operation(right, other), path)
-            }
-            (_, Join { left, right, path }) => {
-                operation(self, left).join(&operation(self, right), path)
-            }
-            (Widen { .. }, _) => self.clone(),
-            (_, Widen { .. }) => other.clone(),
-            _ => return None,
+    /// Return operation(self, other) if no simplification is possible.
+    fn try_to_distribute_binary_op(self, other: Self, operation: fn(Self, Self) -> Self) -> Self {
+        if let ConditionalExpression {
+            condition,
+            consequent,
+            alternate,
+        } = self.expression
+        {
+            return condition.conditional_expression(
+                operation(*consequent, other.clone()),
+                operation(*alternate, other),
+            );
         };
-        Some(result)
+        if let ConditionalExpression {
+            condition,
+            consequent,
+            alternate,
+        } = other.expression
+        {
+            return condition.conditional_expression(
+                operation(self.clone(), *consequent),
+                operation(self, *alternate),
+            );
+        };
+        if let Join { left, right, path } = self.expression {
+            return operation(*left, other.clone()).join(operation(*right, other), *path);
+        }
+        if let Join { left, right, path } = other.expression {
+            return operation(self.clone(), *left).join(operation(self, *right), *path);
+        }
+        match (&self.expression, &other.expression) {
+            (Widen { .. }, _) => self,
+            (_, Widen { .. }) => other,
+            _ => operation(self, other),
+        }
     }
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
@@ -1499,13 +1449,13 @@ impl AbstractDomain {
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to a set of values that include of the values that could be stored
     /// in memory at the given path.
-    pub fn widen(&self, path: &Path) -> Self {
+    pub fn widen(self, path: Path) -> Self {
         if let Widen { .. } = self.expression {
-            return self.clone();
+            return self;
         }
         Expression::Widen {
-            path: box path.clone(),
-            operand: box self.clone(),
+            path: box path,
+            operand: box self,
         }
         .into()
     }
