@@ -5,16 +5,16 @@ They add value by allowing [MIRAI](https://github.com/facebookexperimental/MIRAI
 * distinguish between path conditions and verification conditions
 * distinguish between conditions that it should assume as true and conditions that it should verify
 * check conditions at compile time that should not be checked at runtime because they are too expensive
- 
+
 From this it follows that we have three families of macros:
 * assume macros
 * precondition macros (like assume where defined and like verify for callers)
 * verify macros
 
 Each of these has three kinds
-* only checked at compile time
-* always checked at runtime
-* checked at runtime only for debug builds
+* only checked at compile time ('macro' with macro among {assume, precondition, verify})
+* always checked at runtime ('checked_macro')
+* checked at runtime only for debug builds ('debug_checked_macro')
 
 Additionally, the runtime checked kinds provides eq and ne varieties, leaving us with:
 * assume!
