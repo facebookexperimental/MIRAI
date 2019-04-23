@@ -16,6 +16,7 @@
 #![feature(box_syntax)]
 #![feature(const_vec_new)]
 #![feature(vec_remove_item)]
+#![feature(bind_by_move_pattern_guards)]
 
 extern crate rustc;
 extern crate rustc_data_structures;
@@ -24,6 +25,9 @@ extern crate rustc_interface;
 extern crate rustc_metadata;
 extern crate syntax;
 extern crate syntax_pos;
+
+#[macro_use]
+extern crate log;
 
 pub mod abstract_domains;
 pub mod abstract_value;

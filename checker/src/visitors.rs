@@ -14,7 +14,6 @@ use crate::summaries;
 use crate::summaries::{PersistentSummaryCache, Summary};
 use crate::utils::{self, is_public};
 
-use log::{debug, info, warn};
 use mirai_annotations::{assume, checked_assume, checked_assume_eq, precondition, verify};
 use rustc::session::Session;
 use rustc::ty::{Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
@@ -858,34 +857,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .iter()
             .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
             .collect();
-        match *known_name {
-            KnownFunctionNames::MiraiAssume => {
-                checked_assume!(actual_args.len() == 1);
-                self.handle_assume(destination, &actual_args);
-                return;
-            }
-            KnownFunctionNames::MiraiPrecondition => {
-                checked_assume!(actual_args.len() == 1);
-                self.handle_precondition(&actual_args);
-                self.handle_assume(destination, &actual_args);
-                return;
-            }
-            _ => {
-                let result: AbstractValue =
-                    self.try_to_inline_standard_ops_func(known_name, &actual_args);
-                if !result.is_bottom() {
-                    if let Some((place, target)) = destination {
-                        let target_path = self.visit_place(place);
-                        self.current_environment
-                            .update_value_at(target_path, result);
-                        let exit_condition = self.exit_environment.entry_condition.clone();
-                        self.current_environment
-                            .exit_conditions
-                            .insert(*target, exit_condition);
-                        return;
-                    }
-                }
-            }
+        if self.handled_as_special_function_call(destination, known_name, &actual_args) {
+            return;
         }
         let function_summary = self.get_function_summary(&func_to_call);
         if self.check_for_errors
@@ -900,6 +873,136 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if self.check_for_errors {
             self.report_calls_to_special_functions(known_name, &actual_args)
         }
+    }
+
+    /// If the current call is to a well known function for which we don't have a cached summary,
+    /// this function will update the environment as appropriate and return true. If the return
+    /// result is false, just carry on with the normal logic.
+    fn handled_as_special_function_call(
+        &mut self,
+        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+        known_name: &KnownFunctionNames,
+        actual_args: &[(Path, AbstractValue)],
+    ) -> bool {
+        match *known_name {
+            KnownFunctionNames::MiraiAssume => {
+                checked_assume!(actual_args.len() == 1);
+                self.handle_assume(destination, &actual_args);
+                return true;
+            }
+            KnownFunctionNames::MiraiGetModelField => {
+                if let Some((place, target)) = destination {
+                    let rtype = self.get_place_type(place);
+                    checked_assume!(actual_args.len() == 3);
+
+                    // The current value, if any, of the model field are a set of (path, value) pairs
+                    // where each path is rooted by qualifier.model_field(..)
+                    let qualifier = box actual_args[0].0.clone();
+                    let path_length = qualifier.path_length();
+                    let field_name = match &actual_args[1].1.domain.expression {
+                        Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s,
+                        _ => unreachable!(),
+                    };
+                    let selector = box PathSelector::ModelField(field_name.clone());
+                    assume!(path_length < 1_000_000_000);
+                    let rpath = Path::QualifiedPath {
+                        qualifier,
+                        selector,
+                        length: path_length + 1,
+                    }
+                    .refine_paths(&mut self.current_environment);
+
+                    let target_path = self.visit_place(place);
+                    if self.current_environment.value_at(&rpath).is_some() {
+                        // Move the model field (path, val) pairs to the target (i.e. the place where
+                        // the return value of call to the mirai_get_model_field function would go if
+                        // it were a normal call.
+                        self.copy_or_move_elements(target_path, rpath, rtype, true);
+                    } else {
+                        // If there is no value for the model field in the environment, we should
+                        // use the default value, but only the qualifier is not rooted in a parameter
+                        // value since only the caller will know what the values of the fields are.
+                        match &actual_args[0].1.domain.expression {
+                            Expression::Variable { .. } | Expression::Reference(..) => {
+                                let rval: AbstractValue = Expression::UnknownModelField {
+                                    path: box rpath,
+                                    default: box actual_args[2].1.domain.clone(),
+                                }
+                                .into();
+                                self.current_environment.update_value_at(target_path, rval);
+                            }
+                            _ => {
+                                let rpath = actual_args[2].0.clone();
+                                self.copy_or_move_elements(target_path, rpath, rtype, true);
+                            }
+                        }
+                    }
+                    let exit_condition = self.exit_environment.entry_condition.clone();
+                    self.current_environment
+                        .exit_conditions
+                        .insert(*target, exit_condition);
+                } else {
+                    unreachable!();
+                }
+                return true;
+            }
+            KnownFunctionNames::MiraiPrecondition => {
+                checked_assume!(actual_args.len() == 1);
+                self.handle_precondition(&actual_args);
+                self.handle_assume(destination, &actual_args);
+                return true;
+            }
+            KnownFunctionNames::MiraiSetModelField => {
+                if let Some((_, target)) = destination {
+                    checked_assume!(actual_args.len() == 3);
+                    let qualifier = box actual_args[0].0.clone();
+                    let path_length = qualifier.path_length();
+                    let field_name = match &actual_args[1].1.domain.expression {
+                        Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s,
+                        _ => unreachable!(),
+                    };
+                    let selector = box PathSelector::ModelField(field_name.clone());
+                    assume!(path_length < 1_000_000_000);
+                    let target_path = Path::QualifiedPath {
+                        qualifier,
+                        selector,
+                        length: path_length + 1,
+                    }
+                    .refine_paths(&mut self.current_environment);
+                    let rpath = actual_args[2].0.clone();
+                    self.copy_or_move_elements(
+                        target_path,
+                        rpath,
+                        ExpressionType::NonPrimitive,
+                        true,
+                    );
+                    let exit_condition = self.exit_environment.entry_condition.clone();
+                    self.current_environment
+                        .exit_conditions
+                        .insert(*target, exit_condition);
+                } else {
+                    unreachable!();
+                }
+                return true;
+            }
+            _ => {
+                let result: AbstractValue =
+                    self.try_to_inline_standard_ops_func(known_name, &actual_args);
+                if !result.is_bottom() {
+                    if let Some((place, target)) = destination {
+                        let target_path = self.visit_place(place);
+                        self.current_environment
+                            .update_value_at(target_path, result);
+                        let exit_condition = self.exit_environment.entry_condition.clone();
+                        self.current_environment
+                            .exit_conditions
+                            .insert(*target, exit_condition);
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Adds the first and only value in actual_args to the path condition of the destination.
@@ -1786,7 +1889,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             path, region, borrow_kind, place
         );
         let value_path = self.visit_place(place);
-        let value = Expression::Reference(value_path).into();
+        let value = match value_path {
+            Path::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } if *selector == PathSelector::Deref => {
+                self.lookup_path_and_refine_result(*qualifier, ExpressionType::Reference)
+            }
+            _ => Expression::Reference(value_path).into(),
+        };
         self.current_environment.update_value_at(path, value);
     }
 
@@ -2486,13 +2598,20 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 if let PathSelector::Deref = selector {
                     // Strip the Deref in order to canonicalize paths
                     let base_val = self.lookup_path_and_refine_result(base.clone(), base_type);
-                    return match base_val.domain.expression {
-                        Expression::Reference(dereferenced_path) => dereferenced_path,
+                    match base_val.domain.expression {
+                        Expression::Reference(dereferenced_path) => {
+                            return dereferenced_path;
+                        }
+                        Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
+                            // A string is a reference, so fall through to wrap the string in a deref.
+                            // Typically this happens because unoptimized code contains expression of
+                            // the form &*"str".
+                        }
                         _ => {
                             // If we are dereferencing a path whose value is not known to be a
                             // reference, we just drop the deref so that the path can be found
                             // in the environment.
-                            base.clone()
+                            return base.clone();
                         }
                     };
                 }
