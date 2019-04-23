@@ -6,17 +6,14 @@
 
 use crate::expression::{Expression, ExpressionType};
 use crate::summaries::PersistentSummaryCache;
-use crate::utils::is_rust_intrinsic;
 
 use rustc::hir::def_id::DefId;
-use rustc::ty::TyCtxt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Abstracts over constant values referenced in MIR and adds information
 /// that is useful for the abstract interpreter. More importantly, this
 /// value can be serialized to the persistent summary cache.
-
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash, Ord)]
 pub enum ConstantDomain {
     /// The impossible constant. Use this as the result of a partial transfer function.
@@ -33,7 +30,7 @@ pub enum ConstantDomain {
         #[serde(skip)]
         def_id: Option<DefId>,
         /// Indicates if the function is known to be treated specially by the Rust compiler
-        is_intrinsic: bool,
+        known_name: KnownFunctionNames,
         /// The key to use when retrieving a summary for the function from the summary cache
         summary_cache_key: String,
     },
@@ -53,18 +50,42 @@ pub enum ConstantDomain {
     Unimplemented,
 }
 
+/// Well known functions that are treated in special ways.
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash, Ord)]
+pub enum KnownFunctionNames {
+    /// This is not a known function
+    None,
+    /// core.slice.{{impl}}.len
+    CoreSliceLen,
+    /// mirai_annotations.mirai_assume
+    MiraiAssume,
+    /// mirai_annotations.mirai_precondition
+    MiraiPrecondition,
+    /// mirai_annotations.mirai_verify
+    MiraiVerify,
+    /// std.panicking.begin_panic
+    StdBeginPanic,
+}
+
 /// Constructors
 impl ConstantDomain {
     /// Returns a constant value that is a reference to a function
     pub fn for_function(
         def_id: DefId,
-        tcx: &TyCtxt<'_, '_, '_>,
         summary_cache: &mut PersistentSummaryCache<'_, '_>,
     ) -> ConstantDomain {
         let summary_cache_key = summary_cache.get_summary_key_for(def_id);
+        let known_name = match summary_cache_key.as_str() {
+            "core.slice.{{impl}}.len" => KnownFunctionNames::CoreSliceLen,
+            "mirai_annotations.mirai_assume" => KnownFunctionNames::MiraiAssume,
+            "mirai_annotations.mirai_precondition" => KnownFunctionNames::MiraiPrecondition,
+            "mirai_annotations.mirai_verify" => KnownFunctionNames::MiraiVerify,
+            "std.panicking.begin_panic" => KnownFunctionNames::StdBeginPanic,
+            _ => KnownFunctionNames::None,
+        };
         ConstantDomain::Function {
             def_id: Some(def_id),
-            is_intrinsic: is_rust_intrinsic(def_id, tcx),
+            known_name,
             summary_cache_key: summary_cache_key.to_owned(),
         }
     }
@@ -638,11 +659,6 @@ pub struct ConstantValueCache {
     i128_cache: HashMap<i128, ConstantDomain>,
     u128_cache: HashMap<u128, ConstantDomain>,
     str_cache: HashMap<String, ConstantDomain>,
-    core_slice_len_function: Option<ConstantDomain>,
-    mirai_assume_function: Option<ConstantDomain>,
-    mirai_precondition_function: Option<ConstantDomain>,
-    mirai_verify_function: Option<ConstantDomain>,
-    std_panicking_panic_function: Option<ConstantDomain>,
     heap_address_counter: usize,
 }
 
@@ -656,11 +672,6 @@ impl ConstantValueCache {
             i128_cache: HashMap::default(),
             u128_cache: HashMap::default(),
             str_cache: HashMap::default(),
-            core_slice_len_function: None,
-            mirai_assume_function: None,
-            mirai_precondition_function: None,
-            mirai_verify_function: None,
-            std_panicking_panic_function: None,
             heap_address_counter: 0,
         }
     }
@@ -719,117 +730,11 @@ impl ConstantValueCache {
     pub fn get_function_constant_for(
         &mut self,
         def_id: DefId,
-        tcx: &TyCtxt<'_, '_, '_>,
         summary_cache: &mut PersistentSummaryCache<'_, '_>,
     ) -> &ConstantDomain {
         self.function_cache
             .entry(def_id)
-            .or_insert_with(|| ConstantDomain::for_function(def_id, tcx, summary_cache))
-    }
-
-    /// Does an expensive check to see if the given function is mirai_annotations.mirai_assume.
-    /// Once it finds the function it caches it so that subsequent checks are cheaper.
-    pub fn check_if_core_slice_len_function(&mut self, fun: &ConstantDomain) -> bool {
-        let result = self
-            .core_slice_len_function
-            .as_ref()
-            .map(|cached_fun| *cached_fun == *fun);
-        result.unwrap_or_else(|| {
-            let result = match fun {
-                ConstantDomain::Function {
-                    summary_cache_key, ..
-                } => summary_cache_key == "core.slice.{{impl}}.len",
-                _ => false,
-            };
-            if result {
-                self.core_slice_len_function = Some(fun.clone());
-            };
-            result
-        })
-    }
-
-    /// Does an expensive check to see if the given function is mirai_annotations.mirai_assume.
-    /// Once it finds the function it caches it so that subsequent checks are cheaper.
-    pub fn check_if_mirai_assume_function(&mut self, fun: &ConstantDomain) -> bool {
-        let result = self
-            .mirai_assume_function
-            .as_ref()
-            .map(|cached_fun| *cached_fun == *fun);
-        result.unwrap_or_else(|| {
-            let result = match fun {
-                ConstantDomain::Function {
-                    summary_cache_key, ..
-                } => summary_cache_key.ends_with("mirai_annotations.mirai_assume"),
-                _ => false,
-            };
-            if result {
-                self.mirai_assume_function = Some(fun.clone());
-            };
-            result
-        })
-    }
-
-    /// Does an expensive check to see if the given function is mirai_annotations.mirai_precondition.
-    /// Once it finds the function it caches it so that subsequent checks are cheaper.
-    pub fn check_if_mirai_precondition_function(&mut self, fun: &ConstantDomain) -> bool {
-        let result = self
-            .mirai_precondition_function
-            .as_ref()
-            .map(|cached_fun| *cached_fun == *fun);
-        result.unwrap_or_else(|| {
-            let result = match fun {
-                ConstantDomain::Function {
-                    summary_cache_key, ..
-                } => summary_cache_key.ends_with("mirai_annotations.mirai_precondition"),
-                _ => false,
-            };
-            if result {
-                self.mirai_precondition_function = Some(fun.clone());
-            };
-            result
-        })
-    }
-
-    /// Does an expensive check to see if the given function is mirai_annotations.mirai_verify.
-    /// Once it finds the function it caches it so that subsequent checks are cheaper.
-    pub fn check_if_mirai_verify_function(&mut self, fun: &ConstantDomain) -> bool {
-        let result = self
-            .mirai_verify_function
-            .as_ref()
-            .map(|cached_fun| *cached_fun == *fun);
-        result.unwrap_or_else(|| {
-            let result = match fun {
-                ConstantDomain::Function {
-                    summary_cache_key, ..
-                } => summary_cache_key.ends_with("mirai_annotations.mirai_verify"),
-                _ => false,
-            };
-            if result {
-                self.mirai_verify_function = Some(fun.clone());
-            };
-            result
-        })
-    }
-
-    /// Does an expensive check to see if the given function is std.panicking.begin_panic.
-    /// Once it finds the function it caches it so that subsequent checks are cheaper.
-    pub fn check_if_std_panicking_begin_panic_function(&mut self, fun: &ConstantDomain) -> bool {
-        let result = self
-            .std_panicking_panic_function
-            .as_ref()
-            .map(|std_fun| *std_fun == *fun);
-        result.unwrap_or_else(|| {
-            let result = match fun {
-                ConstantDomain::Function {
-                    summary_cache_key, ..
-                } => summary_cache_key == "std.panicking.begin_panic",
-                _ => false,
-            };
-            if result {
-                self.std_panicking_panic_function = Some(fun.clone());
-            };
-            result
-        })
+            .or_insert_with(|| ConstantDomain::for_function(def_id, summary_cache))
     }
 }
 
