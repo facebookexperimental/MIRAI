@@ -1046,6 +1046,26 @@ impl AbstractDomain {
             } => left
                 .refine_paths(environment)
                 .sub_overflows(right.refine_paths(environment), result_type),
+            Expression::UnknownModelField { path, default } => {
+                if let Some(val) = environment.value_at(&*path) {
+                    // This environment has a value for the model field.
+                    val.domain.clone()
+                } else if let Path::QualifiedPath { qualifier, .. } = &*path {
+                    if environment.value_at(&*qualifier).is_some() {
+                        // This environment does have a value for the qualifier, so the buck stops here.
+                        (*default).clone()
+                    } else {
+                        // Keep passing the buck to the next caller.
+                        Expression::UnknownModelField {
+                            path: box *path,
+                            default,
+                        }
+                        .into()
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
             Expression::Variable { path, var_type } => {
                 if let Some(val) = environment.value_at(&path) {
                     val.domain.clone()
@@ -1191,6 +1211,14 @@ impl AbstractDomain {
             } => left
                 .refine_parameters(arguments)
                 .sub_overflows(right.refine_parameters(arguments), result_type),
+            Expression::UnknownModelField { path, default } => {
+                let refined_path = path.refine_parameters(arguments);
+                Expression::UnknownModelField {
+                    path: box refined_path,
+                    default,
+                }
+                .into()
+            }
             Expression::Variable { path, var_type } => {
                 let refined_path = path.refine_parameters(arguments);
                 if let Path::Constant { value } = refined_path {
@@ -1369,6 +1397,7 @@ impl AbstractDomain {
             } => left
                 .refine_with(path_condition, depth + 1)
                 .sub_overflows(right.refine_with(path_condition, depth + 1), result_type),
+            Expression::UnknownModelField { .. } => self,
             Expression::Variable { .. } => {
                 if path_condition.implies(&self) {
                     true.into()

@@ -272,6 +272,14 @@ pub enum Expression {
         result_type: ExpressionType,
     },
 
+    /// Like a variable, but during refinement the default value is used
+    /// when the qualifier becomes a known value without a defined value for the model field.
+    UnknownModelField {
+        /// Must be a qualified path with a model field selector.
+        path: Box<Path>,
+        default: Box<AbstractDomain>,
+    },
+
     /// The unknown value of a place in memory.
     /// This is distinct from Top in that we known something: the place and the type.
     /// This is a useful distinction because it allows us to simplify some expressions
@@ -338,6 +346,7 @@ impl Expression {
             Expression::ShrOverflows { .. } => Bool,
             Expression::Sub { left, .. } => left.expression.infer_type(),
             Expression::SubOverflows { .. } => Bool,
+            Expression::UnknownModelField { default, .. } => default.expression.infer_type(),
             Expression::Variable { var_type, .. } => var_type.clone(),
             Expression::Widen { operand, .. } => operand.expression.infer_type(),
         }

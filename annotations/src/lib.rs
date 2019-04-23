@@ -15,11 +15,6 @@ macro_rules! assume {
             mirai_annotations::mirai_assume($condition)
         }
     };
-    ($condition:expr, $($arg:tt)*) => {
-        if cfg!(mirai) {
-            mirai_annotations::mirai_assume($condition);
-        }
-    };
 }
 
 /// Equivalent to the standard assert! when used with an unmodified Rust compiler.
@@ -157,11 +152,6 @@ macro_rules! precondition {
     ($condition:expr) => {
         if cfg!(mirai) {
             mirai_annotations::mirai_precondition($condition)
-        }
-    };
-    ($condition:expr, $($arg:tt)*) => {
-        if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($condition);
         }
     };
 }
@@ -308,11 +298,6 @@ macro_rules! verify {
             mirai_annotations::mirai_verify($condition)
         }
     };
-    ($condition:expr, $($arg:tt)*) => {
-        if cfg!(mirai) {
-            mirai_annotations::mirai_verify($condition, $message);
-        }
-    };
 }
 
 /// Equivalent to the standard debug_assert! when used with an unmodified Rust compiler.
@@ -420,8 +405,48 @@ macro_rules! debug_checked_verify_ne {
     );
 }
 
+/// Retrieves the value of the specified model field, or the given default value if the model field
+/// is not set.
+/// This function has no meaning outside of a verification
+/// condition and should not be used with checked or debug_checked conditions.
+/// For example: precondition!(get_model_field!(x, f) > 1).
+#[macro_export]
+macro_rules! get_model_field {
+    ($target:expr, $field_name:ident, $default_value:expr) => {
+        mirai_annotations::mirai_get_model_field($target, stringify!($field_name), $default_value)
+    };
+}
+
+/// Sets the value of the specified model field.
+/// A model field does not exist at runtime and is invisible to the Rust compiler.
+/// This macro expands to nothing unless the program is compiled with MIRAI.
+#[macro_export]
+macro_rules! set_model_field {
+    ($target:expr, $field_name:ident, $value:expr) => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_set_model_field($target, stringify!($field_name), $value);
+        }
+    };
+}
+
+// Helper function for MIRAI. Should only be called via the assume macros.
+#[doc(hidden)]
 pub fn mirai_assume(_condition: bool) {}
 
+// Helper function for MIRAI. Should only be called via the precondition macros.
+#[doc(hidden)]
 pub fn mirai_precondition(_condition: bool) {}
 
+// Helper function for MIRAI. Should only be called via the verify macros.
+#[doc(hidden)]
 pub fn mirai_verify(_condition: bool) {}
+
+// Helper function for MIRAI. Should only be called via the get_model_field macro.
+#[doc(hidden)]
+pub fn mirai_get_model_field<T, V>(_target: T, _field_name: &str, default_value: V) -> V {
+    default_value
+}
+
+// Helper function for MIRAI. Should only be called via the set_model_field macro.
+#[doc(hidden)]
+pub fn mirai_set_model_field<T, V>(_target: T, _field_name: &str, _value: V) {}

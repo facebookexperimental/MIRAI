@@ -1,7 +1,7 @@
 [package]
 
 name = "mirai-annotations"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Herman Venter <hermanv@fb.com>"]
 description = "Macros that provide source code annotations for MIRAI"
 repository = "https://github.com/facebookexperimental/MIRAI"
