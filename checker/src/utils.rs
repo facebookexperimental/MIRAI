@@ -8,7 +8,6 @@ use rustc::hir::def_id::DefId;
 use rustc::hir::ItemKind;
 use rustc::hir::Node;
 use rustc::ty::TyCtxt;
-use rustc_target::spec::abi::Abi;
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
 /// The location is obtained by looking at the contents of the environmental variables that were
@@ -28,17 +27,6 @@ pub fn find_sysroot() -> String {
                  or use rustup to set the compiler to use for Mirai",
             )
             .to_owned(),
-    }
-}
-
-/// Returns true if the function identified by def_id is a Rust intrinsic function.
-/// Warning: it is not clear what will happen if def_id does not identify a function.
-pub fn is_rust_intrinsic(def_id: DefId, tcx: &TyCtxt<'_, '_, '_>) -> bool {
-    let binder = tcx.fn_sig(def_id);
-    let sig = binder.skip_binder();
-    match sig.abi {
-        Abi::RustIntrinsic => true,
-        _ => false,
     }
 }
 

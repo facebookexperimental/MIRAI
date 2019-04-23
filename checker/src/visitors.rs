@@ -5,7 +5,7 @@
 
 use crate::abstract_domains::AbstractDomain;
 use crate::abstract_value::{self, AbstractValue, Path, PathSelector};
-use crate::constant_domain::{ConstantDomain, ConstantValueCache};
+use crate::constant_domain::{ConstantDomain, ConstantValueCache, KnownFunctionNames};
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::k_limits;
@@ -844,39 +844,46 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ) {
         debug!("default visit_call(func: {:?}, args: {:?}, destination: {:?}, cleanup: {:?}, from_hir_call: {:?})", func, args, destination, cleanup, from_hir_call);
         let func_to_call = self.visit_operand(func);
+        let known_name =
+            if let Expression::CompileTimeConstant(fun) = &func_to_call.domain.expression {
+                if let ConstantDomain::Function { known_name, .. } = fun {
+                    known_name
+                } else {
+                    &KnownFunctionNames::None
+                }
+            } else {
+                &KnownFunctionNames::None
+            };
         let actual_args: Vec<(Path, AbstractValue)> = args
             .iter()
             .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
             .collect();
-        if let Expression::CompileTimeConstant(fun) = &func_to_call.domain.expression {
-            if self
-                .constant_value_cache
-                .check_if_mirai_assume_function(&fun)
-            {
+        match *known_name {
+            KnownFunctionNames::MiraiAssume => {
                 checked_assume!(actual_args.len() == 1);
                 self.handle_assume(destination, &actual_args);
                 return;
             }
-            if self
-                .constant_value_cache
-                .check_if_mirai_precondition_function(&fun)
-            {
+            KnownFunctionNames::MiraiPrecondition => {
                 checked_assume!(actual_args.len() == 1);
                 self.handle_precondition(&actual_args);
                 self.handle_assume(destination, &actual_args);
                 return;
             }
-            let result: AbstractValue = self.try_to_inline_standard_ops_func(fun, &actual_args);
-            if !result.is_bottom() {
-                if let Some((place, target)) = destination {
-                    let target_path = self.visit_place(place);
-                    self.current_environment
-                        .update_value_at(target_path, result);
-                    let exit_condition = self.exit_environment.entry_condition.clone();
-                    self.current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
-                    return;
+            _ => {
+                let result: AbstractValue =
+                    self.try_to_inline_standard_ops_func(known_name, &actual_args);
+                if !result.is_bottom() {
+                    if let Some((place, target)) = destination {
+                        let target_path = self.visit_place(place);
+                        self.current_environment
+                            .update_value_at(target_path, result);
+                        let exit_condition = self.exit_environment.entry_condition.clone();
+                        self.current_environment
+                            .exit_conditions
+                            .insert(*target, exit_condition);
+                        return;
+                    }
                 }
             }
         }
@@ -891,7 +898,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.transfer_and_refine_normal_return_state(destination, &actual_args, &function_summary);
         self.transfer_and_refine_cleanup_state(cleanup, &actual_args, &function_summary);
         if self.check_for_errors {
-            self.report_calls_to_special_functions(func_to_call, &actual_args)
+            self.report_calls_to_special_functions(known_name, &actual_args)
         }
     }
 
@@ -947,13 +954,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// since there is no way to write a summary to that effect in Rust itself.
     fn try_to_inline_standard_ops_func(
         &mut self,
-        fun: &ConstantDomain,
+        known_name: &KnownFunctionNames,
         args: &[(Path, AbstractValue)],
     ) -> AbstractValue {
-        if self
-            .constant_value_cache
-            .check_if_core_slice_len_function(&fun)
-        {
+        if *known_name == KnownFunctionNames::CoreSliceLen {
             checked_assume!(args.len() == 1);
             let slice_val = &args[0].1;
             let qualifier = match &slice_val.domain.expression {
@@ -1171,143 +1175,140 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// function to ensure that the call to the special function will never be reached at runtime.
     fn report_calls_to_special_functions(
         &mut self,
-        func_to_call: AbstractValue,
+        known_name: &KnownFunctionNames,
         actual_args: &[(Path, AbstractValue)],
     ) {
         verify!(self.check_for_errors);
-        let cache = &mut self.constant_value_cache;
-        if let Expression::CompileTimeConstant(fun) = func_to_call.domain.expression {
-            if cache.check_if_mirai_verify_function(&fun) {
-                assume!(actual_args.len() == 1); // The type checker ensures this.
-                let (_, cond) = &actual_args[0];
-                let (cond_as_bool, entry_cond_as_bool) =
-                    self.check_condition_value_and_reachability(cond);
+        if *known_name == KnownFunctionNames::MiraiVerify {
+            assume!(actual_args.len() == 1); // The type checker ensures this.
+            let (_, cond) = &actual_args[0];
+            let (cond_as_bool, entry_cond_as_bool) =
+                self.check_condition_value_and_reachability(cond);
 
-                // If we never get here, rather call unreachable!()
-                if !entry_cond_as_bool.unwrap_or(true) {
-                    let span = self.current_span;
-                    let message =
-                        "this is unreachable, mark it as such by using the unreachable! macro";
-                    let warning = self.session.struct_span_warn(span, message);
-                    self.emit_diagnostic(warning);
-                    return;
-                }
+            // If we never get here, rather call unreachable!()
+            if !entry_cond_as_bool.unwrap_or(true) {
+                let span = self.current_span;
+                let message =
+                    "this is unreachable, mark it as such by using the unreachable! macro";
+                let warning = self.session.struct_span_warn(span, message);
+                self.emit_diagnostic(warning);
+                return;
+            }
 
-                // If the condition is always true when we get here there is nothing to report.
-                if cond_as_bool.unwrap_or(false) {
-                    return;
-                }
+            // If the condition is always true when we get here there is nothing to report.
+            if cond_as_bool.unwrap_or(false) {
+                return;
+            }
 
-                // If the condition is always false, give an error since that is bad style.
-                if !cond_as_bool.unwrap_or(true) {
-                    // If the condition is always false, give an error
-                    let span = self.current_span;
-                    let error = self.session.struct_span_err(span, "false assertion");
-                    self.emit_diagnostic(error);
-                    if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
-                        // promote the path as precondition. I.e. the program is only correct
-                        // if we never get here.
-                        self.preconditions.push((
-                            self.current_environment
-                                .entry_condition
-                                .clone()
-                                .not(None)
-                                .replacing_provenance(self.current_span),
-                            "will cause a false assertion".to_string(),
-                        ));
-                    }
-                    return;
-                }
-
-                // We might get here, or not, and the condition might be false, or not.
-                // Give a warning if we don't know all of the callers, or if we run into a k-limit
-                if is_public(self.def_id, &self.tcx)
-                    || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
-                {
-                    // We expect public functions to have programmer supplied preconditions
-                    // that preclude any assertions from failing. So, if at this stage we get to
-                    // complain a bit.
-                    let message = "possibly false assertion";
-                    let span = self.current_span;
-                    let warning = self.session.struct_span_warn(span, message);
-                    self.emit_diagnostic(warning);
-                }
-
-                // Now try to push a precondition so that any known or unknown caller of this function
-                // is warned that this function will fail if the precondition is not met.
+            // If the condition is always false, give an error since that is bad style.
+            if !cond_as_bool.unwrap_or(true) {
+                // If the condition is always false, give an error
+                let span = self.current_span;
+                let error = self.session.struct_span_err(span, "false assertion");
+                self.emit_diagnostic(error);
                 if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                    // promote the path as precondition. I.e. the program is only correct
+                    // if we never get here.
                     self.preconditions.push((
                         self.current_environment
                             .entry_condition
                             .clone()
                             .not(None)
-                            .or(cond.clone(), None)
                             .replacing_provenance(self.current_span),
-                        "possibly false assertion".to_string(),
+                        "will cause a false assertion".to_string(),
                     ));
                 }
                 return;
             }
-            if cache.check_if_std_panicking_begin_panic_function(&fun) {
-                let mut path_cond = self.current_environment.entry_condition.as_bool_if_known();
-                if path_cond.is_none() {
-                    // Try the SMT solver
-                    let path_expr = &self.current_environment.entry_condition.domain.expression;
-                    let path_smt = self.smt_solver.get_as_smt_predicate(path_expr);
-                    if self.smt_solver.solve_expression(&path_smt) == SmtResult::Unsatisfiable {
-                        path_cond = Some(false)
-                    }
-                }
-                if !path_cond.unwrap_or(true) {
-                    // We never get to this call, so nothing to report.
-                    return;
-                }
 
-                let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
-                    actual_args[0].1.domain.expression
-                {
-                    if msg.contains("entered unreachable code") {
-                        // We treat unreachable!() as an assumption rather than an assertion to prove.
-                        return;
-                    } else {
-                        msg.clone()
-                    }
-                } else {
-                    String::from("execution panic")
-                };
+            // We might get here, or not, and the condition might be false, or not.
+            // Give a warning if we don't know all of the callers, or if we run into a k-limit
+            if is_public(self.def_id, &self.tcx)
+                || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+            {
+                // We expect public functions to have programmer supplied preconditions
+                // that preclude any assertions from failing. So, if at this stage we get to
+                // complain a bit.
+                let message = "possibly false assertion";
                 let span = self.current_span;
+                let warning = self.session.struct_span_warn(span, message);
+                self.emit_diagnostic(warning);
+            }
 
-                if path_cond.unwrap_or(false) && is_public(self.def_id, &self.tcx) {
-                    // We always get to this call and we have to assume that the function will
-                    // get called, so keep the message certain.
-                    let err = self.session.struct_span_warn(span, msg.as_str());
-                    self.emit_diagnostic(err);
-                } else {
-                    // We might get to this call, depending on the state at the call site.
-                    //
-                    // In the case when an assert macro has been called, the inverse of the assertion
-                    // was conjoined into the entry condition and this condition was simplified.
-                    // We therefore cannot distinguish between the case of maybe reaching a definitely
-                    // false assertion from the case of definitely reaching a maybe false assertion.
-                    //
-                    // Since the assert and panic macros are commonly used to create preconditions
-                    // it would be very inconvenient if this possibly false assertion were reported
-                    // as a problem since there would be no way to shut it up. We therefore do not
-                    // report this and instead insist that anyone who wants to have MIRAI check
-                    // their assertions should use the mirai_annotations::verify! macro instead.
-                    //
-                    // We **do** have to push a precondition since this is the probable intent.
-                    let mut maybe_message = String::from("possible error: ");
-                    maybe_message.push_str(msg.as_str());
-                    self.preconditions.push((
-                        self.current_environment
-                            .entry_condition
-                            .clone()
-                            .not(None)
-                            .replacing_provenance(self.current_span),
-                        maybe_message,
-                    ));
+            // Now try to push a precondition so that any known or unknown caller of this function
+            // is warned that this function will fail if the precondition is not met.
+            if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                self.preconditions.push((
+                    self.current_environment
+                        .entry_condition
+                        .clone()
+                        .not(None)
+                        .or(cond.clone(), None)
+                        .replacing_provenance(self.current_span),
+                    "possibly false assertion".to_string(),
+                ));
+            }
+            return;
+        }
+        if *known_name == KnownFunctionNames::StdBeginPanic {
+            let mut path_cond = self.current_environment.entry_condition.as_bool_if_known();
+            if path_cond.is_none() {
+                // Try the SMT solver
+                let path_expr = &self.current_environment.entry_condition.domain.expression;
+                let path_smt = self.smt_solver.get_as_smt_predicate(path_expr);
+                if self.smt_solver.solve_expression(&path_smt) == SmtResult::Unsatisfiable {
+                    path_cond = Some(false)
                 }
+            }
+            if !path_cond.unwrap_or(true) {
+                // We never get to this call, so nothing to report.
+                return;
+            }
+
+            let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
+                actual_args[0].1.domain.expression
+            {
+                if msg.contains("entered unreachable code") {
+                    // We treat unreachable!() as an assumption rather than an assertion to prove.
+                    return;
+                } else {
+                    msg.clone()
+                }
+            } else {
+                String::from("execution panic")
+            };
+            let span = self.current_span;
+
+            if path_cond.unwrap_or(false) && is_public(self.def_id, &self.tcx) {
+                // We always get to this call and we have to assume that the function will
+                // get called, so keep the message certain.
+                let err = self.session.struct_span_warn(span, msg.as_str());
+                self.emit_diagnostic(err);
+            } else {
+                // We might get to this call, depending on the state at the call site.
+                //
+                // In the case when an assert macro has been called, the inverse of the assertion
+                // was conjoined into the entry condition and this condition was simplified.
+                // We therefore cannot distinguish between the case of maybe reaching a definitely
+                // false assertion from the case of definitely reaching a maybe false assertion.
+                //
+                // Since the assert and panic macros are commonly used to create preconditions
+                // it would be very inconvenient if this possibly false assertion were reported
+                // as a problem since there would be no way to shut it up. We therefore do not
+                // report this and instead insist that anyone who wants to have MIRAI check
+                // their assertions should use the mirai_annotations::verify! macro instead.
+                //
+                // We **do** have to push a precondition since this is the probable intent.
+                let mut maybe_message = String::from("possible error: ");
+                maybe_message.push_str(msg.as_str());
+                self.preconditions.push((
+                    self.current_environment
+                        .entry_condition
+                        .clone()
+                        .not(None)
+                        .replacing_provenance(self.current_span),
+                    maybe_message,
+                ));
             }
         }
     }
@@ -2444,11 +2445,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// let bar = foo; // bar: fn() -> i32 {foo}
     /// ```
     fn visit_function_reference(&mut self, def_id: hir::def_id::DefId) -> &ConstantDomain {
-        &mut self.constant_value_cache.get_function_constant_for(
-            def_id,
-            &self.tcx,
-            &mut self.summary_cache,
-        )
+        &mut self
+            .constant_value_cache
+            .get_function_constant_for(def_id, &mut self.summary_cache)
     }
 
     /// Returns a Path instance that is the essentially the same as the Place instance, but which
