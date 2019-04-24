@@ -929,22 +929,23 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// No check is performed, since we get to assume the caller has verified this condition.
     fn handle_precondition(&mut self, actual_args: &[(Path, AbstractValue)]) {
         precondition!(actual_args.len() == 1);
-        if self.check_for_errors
-            && !self
+        if self.check_for_errors {
+            if !self
                 .current_environment
                 .entry_condition
                 .as_bool_if_known()
                 .unwrap_or(false)
-        {
-            let span = self.current_span;
-            let warning = self
-                .session
-                .struct_span_warn(span, "preconditions should be reached unconditionally");
-            self.emit_diagnostic(warning);
+            {
+                let span = self.current_span;
+                let warning = self
+                    .session
+                    .struct_span_warn(span, "preconditions should be reached unconditionally");
+                self.emit_diagnostic(warning);
+            }
+            let precondition = &actual_args[0].1;
+            self.preconditions
+                .push((precondition.clone(), "unsatisfied precondition".to_string()));
         }
-        let precondition = &actual_args[0].1;
-        self.preconditions
-            .push((precondition.clone(), "unsatisfied precondition".to_string()));
     }
 
     /// Standard functions that represent an alternative way to perform operations for which
@@ -1020,60 +1021,37 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 // The precondition is definitely true.
                 continue;
             };
-            if !refined_precondition_as_bool.unwrap_or(true)
-                || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
-            {
-                // The precondition is definitely false, if we ever get to this call site.
-                if entry_cond_as_bool.unwrap_or(false)
-                    && !refined_precondition_as_bool.unwrap_or(true)
-                {
-                    // We always get here if the function is called, and the precondition is always
-                    // false, so it may seem to make sense to just complain loudly here and not
-                    // promote the precondition, which can never be satisfied by the caller.
-                    // It could, however, be the case that this function wraps the panic! macro
-                    // and that the way to shut MIRAI up about it is to never call it.
-                    if is_public(self.def_id, &self.tcx) {
-                        // If this is a public function and we assume that calling
-                        // panic! is a way of stating a precondition, then we'd also expect a public
-                        // caller to have a precondition that prevents us from reaching this call.
-                        // So, since we **do** reach this call, complain loudly.
-                        if !self
-                            .already_report_errors_for_call_to
-                            .contains(&func_to_call)
-                        {
-                            self.emit_diagnostic_for_precondition(precondition, &message);
-                            self.already_report_errors_for_call_to
-                                .insert(func_to_call.clone());
-                        }
-                    } else {
-                        // Since the function is not public, we assume that we get to see
-                        // every call to this function, so just rely on the inferred precondition.
+            if !refined_precondition_as_bool.unwrap_or(true) {
+                // The precondition is definitely false.
+                if entry_cond_as_bool.unwrap_or(false) && is_public(self.def_id, &self.tcx) {
+                    // If this function is called, we always get to this call.
+                    // Since this function is public, we have assume that it will get called.
+                    // If this function is not meant to be called, it should add an explicit
+                    // false precondition of its own.
+                    if !self
+                        .already_report_errors_for_call_to
+                        .contains(&func_to_call)
+                    {
+                        self.emit_diagnostic_for_precondition(precondition, message);
+                        self.already_report_errors_for_call_to
+                            .insert(func_to_call.clone());
                     }
                 } else {
-                    // We might never get here since it depends on the parameter values used to call
-                    // this function. If the function is public, let's warn that we might get here.
-                    if is_public(self.def_id, &self.tcx) {
-                        if !self
-                            .already_report_errors_for_call_to
-                            .contains(&func_to_call)
-                        {
-                            let warning = format!("possible error: {}", message.as_str());
-                            self.emit_diagnostic_for_precondition(precondition, &warning);
-                            self.already_report_errors_for_call_to
-                                .insert(func_to_call.clone());
-                        }
-                    } else {
-                        // Since the function is not public, we assume that we get to see
-                        // every call to this function, so just rely on the inferred precondition.
-                    }
-                };
-                // Fall through and promote the precondition.
-                // It does not matter that refined_precondition itself is known to be false,
-                // since we add the current entry condition to the promoted precondition.
+                    // If the entry condition is not known to be true, it will serve as the
+                    // promoted precondition and the program is only faulty if a caller enables
+                    // the current function to reach this call.
+                    // If the entry condition is known to be true, the program can still
+                    // be regarded as correct if this function is never called. Since the function
+                    // is not public in that case, we can check that no call is ever reached.
+                }
+            } else {
+                // The precondition may or may not be false.
+                self.warn_if_public(func_to_call, precondition, message)
             }
 
+            // Promote the precondition, subject to a k-limit.
             if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
-                // Promote the precondition to a precondition of the current function.
+                // Promote the callee precondition to a precondition of the current function.
                 let mut promoted_precondition = self
                     .current_environment
                     .entry_condition
@@ -1086,6 +1064,33 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 self.preconditions
                     .push((promoted_precondition, message.clone()));
             }
+        }
+    }
+
+    /// If the current function is public, or if there are already too many promoted preconditions,
+    /// emit a warning that the given precondition of the function being called is not known to
+    /// be true at this point and/or the call is not known to be unreachable.
+    fn warn_if_public(
+        &mut self,
+        func_to_call: &AbstractValue,
+        precondition: &AbstractValue,
+        message: &str,
+    ) {
+        if is_public(self.def_id, &self.tcx)
+            || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+        {
+            if !self
+                .already_report_errors_for_call_to
+                .contains(&func_to_call)
+            {
+                let warning = format!("possible {}", message);
+                self.emit_diagnostic_for_precondition(precondition, &warning);
+                self.already_report_errors_for_call_to
+                    .insert(func_to_call.clone());
+            }
+        } else {
+            // Since the function is not public, we assume that we get to see
+            // every call to this function, so just rely on the inferred precondition.
         }
     }
 

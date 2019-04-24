@@ -12,12 +12,11 @@ extern crate mirai_annotations;
 
 pub fn foo(arr: &mut [i32], i: usize) {
     arr[i] = 123; //~ possible array index out of bounds
-    // If we get here i is known to be within bounds, so no warning below.
-    bar(arr, i);
+    bar(arr, i); //~ possible array index out of bounds
 }
 
 fn bar(arr: &mut [i32], i: usize) {
-    arr[i] = 123;
+    arr[i] = 123; //~ related location
     verify!(arr[i] == 123);
 }
 
@@ -31,4 +30,3 @@ pub fn main() {
     let elem = get_elem(&arr, 1);
     verify!(elem == 2);
 }
-
