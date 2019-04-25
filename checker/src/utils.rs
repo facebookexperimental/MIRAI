@@ -82,7 +82,15 @@ pub fn summary_key_str(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> String {
         cdata.name.as_str().to_string()
     };
     for component in &tcx.def_path(def_id).data {
-        name.push('.');
+        if name.ends_with("foreign_contracts") {
+            // By stripping off this special prefix, we allow this crate (or module) to define
+            // functions that appear to be from other crates.
+            // We use this to provide contracts for functions defined in crates we do not
+            // wish to modify in place.
+            name.clear();
+        } else {
+            name.push('.');
+        }
         name.push_str(component.data.as_interned_str().as_str().get());
         if component.disambiguator != 0 {
             name.push(':');

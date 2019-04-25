@@ -244,22 +244,31 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         let db = &self.db;
         self.cache.entry(def_id).or_insert_with(|| {
             let persistent_key = utils::summary_key_str(tcx, def_id);
-            Self::get_persistent_summary_for_db(db, &persistent_key)
+            Self::get_persistent_summary_for_db(db, &persistent_key, Some(def_id))
         })
     }
 
     /// Returns the summary corresponding to the persistent_key in the the summary database.
     /// The caller is expected to cache this.
     pub fn get_persistent_summary_for(&self, persistent_key: &str) -> Summary {
-        Self::get_persistent_summary_for_db(&self.db, persistent_key)
+        Self::get_persistent_summary_for_db(&self.db, persistent_key, None)
     }
 
     /// Helper for get_summary_for and get_persistent_summary_for.
-    fn get_persistent_summary_for_db(db: &Db, persistent_key: &str) -> Summary {
+    fn get_persistent_summary_for_db(
+        db: &Db,
+        persistent_key: &str,
+        def_id: Option<DefId>,
+    ) -> Summary {
         if let Ok(Some(pinned_value)) = db.get(persistent_key.as_bytes()) {
             bincode::deserialize(pinned_value.deref()).unwrap()
         } else {
-            Summary::default() // todo: #33 look for a contract summary or construct from type
+            if let Some(def_id) = def_id {
+                if !def_id.is_local() {
+                    warn!("Summary store has no entry for {}", persistent_key);
+                }
+            }
+            Summary::default()
         }
     }
 
