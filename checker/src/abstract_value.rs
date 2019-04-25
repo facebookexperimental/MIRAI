@@ -917,7 +917,7 @@ impl Path {
                 Path::QualifiedPath {
                     qualifier: box new_qualifier,
                     selector: selector.clone(),
-                    length: new_qualifier_path_length + 1,
+                    length: new_qualifier_path_length.wrapping_add(1), //todo: this should not be necessary
                 }
             }
             _ => new_root,

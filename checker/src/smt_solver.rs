@@ -5,6 +5,7 @@
 
 use crate::expression::Expression;
 
+use mirai_annotations::{get_model_field, precondition, set_model_field};
 use serde::{Deserialize, Serialize};
 
 /// The result of using the solver to solve an expression.
@@ -27,7 +28,9 @@ pub trait SmtSolver<SmtExpressionType> {
     fn assert(&mut self, expression: &SmtExpressionType);
 
     /// Destroy the current context and restore the containing context as current.
-    fn backtrack(&mut self);
+    fn backtrack(&mut self) {
+        precondition!(get_model_field!(&self, number_of_backtracks, 0) > 0);
+    }
 
     /// Translate the MIRAI expression into a corresponding expression for the Solver.
     fn get_as_smt_predicate(&mut self, mirai_expression: &Expression) -> SmtExpressionType;
@@ -42,7 +45,14 @@ pub trait SmtSolver<SmtExpressionType> {
 
     /// Create a nested context. When a matching backtrack is called, the current context (state)
     /// of the solver will be restored to what it was when this was called.
-    fn set_backtrack_position(&mut self);
+    fn set_backtrack_position(&mut self) {
+        precondition!(get_model_field!(&self, number_of_backtracks, 0) < 1000);
+        set_model_field!(
+            &self,
+            number_of_backtracks,
+            get_model_field!(&self, number_of_backtracks, 0) + 1 //todo: the precondition should allow this
+        );
+    }
 
     /// Try to find an assignment of values to the free variables so that the assertions in the
     /// current context are all true.
