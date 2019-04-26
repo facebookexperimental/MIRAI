@@ -63,6 +63,8 @@ pub enum KnownFunctionNames {
     MiraiGetModelField,
     /// mirai_annotations.mirai_precondition
     MiraiPrecondition,
+    /// mirai_annotations.mirai_result
+    MiraiResult,
     /// mirai_annotations.mirai_set_model_field
     MiraiSetModelField,
     /// mirai_annotations.mirai_verify
@@ -84,6 +86,7 @@ impl ConstantDomain {
             "mirai_annotations.mirai_assume" => KnownFunctionNames::MiraiAssume,
             "mirai_annotations.mirai_get_model_field" => KnownFunctionNames::MiraiGetModelField,
             "mirai_annotations.mirai_precondition" => KnownFunctionNames::MiraiPrecondition,
+            "mirai_annotations.mirai_result" => KnownFunctionNames::MiraiResult,
             "mirai_annotations.mirai_set_model_field" => KnownFunctionNames::MiraiSetModelField,
             "mirai_annotations.mirai_verify" => KnownFunctionNames::MiraiVerify,
             "std.panicking.begin_panic" => KnownFunctionNames::StdBeginPanic,
