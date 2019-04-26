@@ -11,11 +11,11 @@ extern crate mirai_annotations;
 
 pub fn main() {
     let mut a = [1, 2];
-    foo(&mut a, 3); //~ unsatisfied precondition
+    foo(&mut a, 3); //~ unsatisfied precondition: i should be 0 or 1
 }
 
 fn foo(arr: &mut [i32; 2], i: usize) {
-    precondition!(i < 2); //~ related location
+    precondition!(i < 2, "i should be 0 or 1"); //~ related location
     arr[i] = 12;
 }
 

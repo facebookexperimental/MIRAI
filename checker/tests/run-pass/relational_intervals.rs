@@ -24,7 +24,7 @@ pub fn t2(cond: bool) {
     let bottom = interval - (raw as usize); //~ possible attempt to subtract with overflow
     verify!((interval as isize) > -2);
     verify!(top < 3);
-    verify!(bottom <= bottom); //~ possibly false assertion
+    verify!(bottom <= bottom); //~ possible false verification condition
 }
 
 pub fn main() {}
