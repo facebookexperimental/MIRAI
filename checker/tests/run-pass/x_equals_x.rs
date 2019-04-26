@@ -17,11 +17,11 @@ pub fn bar(y: f32) {
     if y == y {
         verify!(true);
     } else {
-        verify!(false);  //~ false assertion
+        verify!(false); //~ provably false verification condition
     }
 }
 
-fn foo (x: i32, y: f32) {
+fn foo(x: i32, y: f32) {
     if x == x {
         verify!(true);
     } else {
@@ -30,6 +30,6 @@ fn foo (x: i32, y: f32) {
     if y == y {
         verify!(true);
     } else {
-        verify!(false);  //~ false assertion
+        verify!(false); //~ provably false verification condition
     }
 }
