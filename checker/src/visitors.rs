@@ -899,11 +899,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     // where each path is rooted by qualifier.model_field(..)
                     let qualifier = box actual_args[0].0.clone();
                     let path_length = qualifier.path_length();
-                    let field_name = match &actual_args[1].1.domain.expression {
-                        Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s,
-                        _ => unreachable!(),
-                    };
-                    let selector = box PathSelector::ModelField(field_name.clone());
+                    let field_name = self.coerce_to_string(&actual_args[1].1);
+                    let selector = box PathSelector::ModelField(field_name);
                     assume!(path_length < 1_000_000_000);
                     let rpath = Path::QualifiedPath {
                         qualifier,
@@ -947,7 +944,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 return true;
             }
             KnownFunctionNames::MiraiPrecondition => {
-                checked_assume!(actual_args.len() == 1);
+                checked_assume!(actual_args.len() == 2);
                 self.handle_precondition(&actual_args);
                 self.handle_assume(destination, &actual_args);
                 return true;
@@ -957,11 +954,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     checked_assume!(actual_args.len() == 3);
                     let qualifier = box actual_args[0].0.clone();
                     let path_length = qualifier.path_length();
-                    let field_name = match &actual_args[1].1.domain.expression {
-                        Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s,
-                        _ => unreachable!(),
-                    };
-                    let selector = box PathSelector::ModelField(field_name.clone());
+                    let field_name = self.coerce_to_string(&actual_args[1].1);
+                    let selector = box PathSelector::ModelField(field_name);
                     assume!(path_length < 1_000_000_000);
                     let target_path = Path::QualifiedPath {
                         qualifier,
@@ -1005,6 +999,25 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         false
     }
 
+    /// Extracts the string from an AbstractValue that is required to be a string literal.
+    /// This is the case for helper MIRAI helper functions that are hidden in the documentation
+    /// and that are required to be invoked via macros that ensure that the argument providing
+    /// this value is always a string literal.
+    fn coerce_to_string(&mut self, value: &AbstractValue) -> String {
+        match &value.domain.expression {
+            Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s.clone(),
+            _ => {
+                let span = *value.provenance.get(0).unwrap_or(&self.current_span);
+                let error = self.session.struct_span_err(
+                    span,
+                    "this argument should be a string literal, do not call this function directly",
+                );
+                self.emit_diagnostic(error);
+                "dummy argument".to_string()
+            }
+        }
+    }
+
     /// Adds the first and only value in actual_args to the path condition of the destination.
     /// No check is performed, since we get to assume this condition without proof.
     fn handle_assume(
@@ -1031,7 +1044,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Adds the first and only value in actual_args to the current list of preconditions.
     /// No check is performed, since we get to assume the caller has verified this condition.
     fn handle_precondition(&mut self, actual_args: &[(Path, AbstractValue)]) {
-        precondition!(actual_args.len() == 1);
+        precondition!(actual_args.len() == 2);
         if self.check_for_errors {
             if !self
                 .current_environment
@@ -1046,8 +1059,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 self.emit_diagnostic(warning);
             }
             let precondition = &actual_args[0].1;
-            self.preconditions
-                .push((precondition.clone(), "unsatisfied precondition".to_string()));
+            let message = self.coerce_to_string(&actual_args[1].1);
+            self.preconditions.push((precondition.clone(), message));
         }
     }
 
@@ -1288,7 +1301,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ) {
         verify!(self.check_for_errors);
         if *known_name == KnownFunctionNames::MiraiVerify {
-            assume!(actual_args.len() == 1); // The type checker ensures this.
+            assume!(actual_args.len() == 2); // The type checker ensures this.
             let (_, cond) = &actual_args[0];
             let (cond_as_bool, entry_cond_as_bool) =
                 self.check_condition_value_and_reachability(cond);
@@ -1308,11 +1321,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 return;
             }
 
+            let message = self.coerce_to_string(&actual_args[1].1);
+
             // If the condition is always false, give an error since that is bad style.
             if !cond_as_bool.unwrap_or(true) {
                 // If the condition is always false, give an error
                 let span = self.current_span;
-                let error = self.session.struct_span_err(span, "false assertion");
+                let error = self
+                    .session
+                    .struct_span_err(span, "provably false verification condition");
                 self.emit_diagnostic(error);
                 if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
                     // promote the path as precondition. I.e. the program is only correct
@@ -1323,11 +1340,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             .clone()
                             .not(None)
                             .replacing_provenance(self.current_span),
-                        "will cause a false assertion".to_string(),
+                        message,
                     ));
                 }
                 return;
             }
+
+            let warning = format!("possible {}", message);
 
             // We might get here, or not, and the condition might be false, or not.
             // Give a warning if we don't know all of the callers, or if we run into a k-limit
@@ -1337,9 +1356,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 // We expect public functions to have programmer supplied preconditions
                 // that preclude any assertions from failing. So, if at this stage we get to
                 // complain a bit.
-                let message = "possibly false assertion";
                 let span = self.current_span;
-                let warning = self.session.struct_span_warn(span, message);
+                let warning = self.session.struct_span_warn(span, warning.as_str());
                 self.emit_diagnostic(warning);
             }
 
@@ -1353,7 +1371,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         .not(None)
                         .or(cond.clone(), None)
                         .replacing_provenance(self.current_span),
-                    "possibly false assertion".to_string(),
+                    warning,
                 ));
             }
             return;

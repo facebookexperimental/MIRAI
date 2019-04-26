@@ -11,5 +11,5 @@ extern crate mirai_annotations;
 
 pub fn main() {
     let i = 1;
-    verify!(i == 2); //~ false assertion
+    verify!(i == 2); //~ provably false verification condition
 }
