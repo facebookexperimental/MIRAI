@@ -979,6 +979,24 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
                 return true;
             }
+            KnownFunctionNames::MiraiResult => {
+                if let Some((place, target)) = destination {
+                    let target_path = self.visit_place(place);
+                    let target_type = self.get_place_type(place);
+                    let return_value_path = Path::LocalVariable { ordinal: 0 };
+                    let return_value =
+                        self.lookup_path_and_refine_result(return_value_path, target_type);
+                    self.current_environment
+                        .update_value_at(target_path, return_value);
+                    let exit_condition = self.exit_environment.entry_condition.clone();
+                    self.current_environment
+                        .exit_conditions
+                        .insert(*target, exit_condition);
+                } else {
+                    unreachable!();
+                }
+                return true;
+            }
             _ => {
                 let result: AbstractValue =
                     self.try_to_inline_standard_ops_func(known_name, &actual_args);

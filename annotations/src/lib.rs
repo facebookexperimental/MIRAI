@@ -532,6 +532,24 @@ macro_rules! get_model_field {
     };
 }
 
+/// Provides a way to refer to the result value of an abstract or contract function without
+/// specifying an actual value anywhere.
+/// This macro expands to unimplemented!() unless the program is compiled with MIRAI.
+/// It result should therefore not be assigned to a variable unless the assignment is contained
+/// inside a specification macro argument list.
+/// It may, however, be the return value of the function, which should never be called and
+/// therefore unimplemented!() is the right behavior for it at runtime.
+#[macro_export]
+macro_rules! result {
+    () => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_result()
+        } else {
+            unimplemented!()
+        }
+    };
+}
+
 /// Sets the value of the specified model field.
 /// A model field does not exist at runtime and is invisible to the Rust compiler.
 /// This macro expands to nothing unless the program is compiled with MIRAI.
@@ -560,6 +578,12 @@ pub fn mirai_verify(_condition: bool, _message: &str) {}
 #[doc(hidden)]
 pub fn mirai_get_model_field<T, V>(_target: T, _field_name: &str, default_value: V) -> V {
     default_value
+}
+
+// Helper function for MIRAI. Should only be called via the result! macro.
+#[doc(hidden)]
+pub fn mirai_result<T>() -> T {
+    unreachable!()
 }
 
 // Helper function for MIRAI. Should only be called via the set_model_field macro.

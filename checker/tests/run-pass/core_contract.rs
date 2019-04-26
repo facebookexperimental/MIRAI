@@ -27,8 +27,7 @@ pub mod foreign_contracts {
                         },
                         "self may not be None"
                     );
-                    assume!(false);
-                    unreachable!();
+                    result!()
                 }
             }
         }
