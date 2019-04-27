@@ -426,10 +426,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             };
             // Analyze the basic block
             in_state.insert(*bb, i_state.clone());
-            if i_state.entry_condition.as_bool_if_known().unwrap_or(true) {
-                self.current_environment = i_state;
-                self.visit_basic_block(*bb);
-            }
+            self.current_environment = i_state;
+            self.visit_basic_block(*bb);
 
             // Check for a fixed point.
             if !self.current_environment.subset(&out_state[bb]) {
@@ -1530,6 +1528,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     self.check_condition_value_and_reachability(&cond_val);
 
                 // Quick exit if things are known.
+                if let Some(false) = entry_cond_as_bool {
+                    // We can't reach this assertion, so just return.
+                    return;
+                }
                 if cond_as_bool.is_some() {
                     if expected == cond_as_bool.unwrap() {
                         // If the condition is always as expected when we get here, so there is nothing to report.
