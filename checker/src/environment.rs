@@ -178,7 +178,11 @@ impl Environment {
     pub fn widen(&self, other: &Environment, join_condition: &AbstractValue) -> Environment {
         self.clone()
             .join_or_widen(other, join_condition, |x, y, _c, p| {
-                x.clone().join(y.clone(), p.clone()).widen(p.clone())
+                match (&x.domain.expression, &y.domain.expression) {
+                    (Expression::Widen { .. }, _) => x.clone(),
+                    (_, Expression::Widen { .. }) => y.clone(),
+                    _ => x.clone().join(y.clone(), p.clone()).widen(p.clone()),
+                }
             })
     }
 
@@ -202,21 +206,20 @@ impl Environment {
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
-                    let val = join_or_widen(&val1, &abstract_value::BOTTOM, &join_condition, path);
-                    if !val.is_bottom() {
-                        value_map = value_map.insert(p, val);
-                    }
+                    // Partially initialized values at join points are not allowed by the type system,
+                    // hence this value is missing because we are at an early stage of the fixed point
+                    // computation. It is therefore reasonable to only look at the known value.
+                    value_map = value_map.insert(p, val1.clone());
                 }
             }
         }
         for (path, val2) in value_map2.iter() {
             if !value_map1.contains_key(path) {
                 checked_assume!(!val2.is_bottom());
-                let p = path.clone();
-                let val = join_or_widen(&abstract_value::BOTTOM, &val2, &join_condition, path);
-                if !val.is_bottom() {
-                    value_map = value_map.insert(p, val);
-                }
+                // Partially initialized values at join points are not allowed by the type system,
+                // hence this value is missing because we are at an early stage of the fixed point
+                // computation. It is therefore reasonable to only look at the known value.
+                value_map = value_map.insert(path.clone(), val2.clone());
             }
         }
         Environment {
