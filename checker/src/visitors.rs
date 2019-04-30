@@ -977,6 +977,22 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
                 return true;
             }
+            KnownFunctionNames::MiraiShallowClone => {
+                if let Some((place, target)) = destination {
+                    checked_assume!(actual_args.len() == 1);
+                    let rpath = actual_args[0].0.clone();
+                    let rtype = self.get_place_type(place);
+                    let target_path = self.visit_place(place);
+                    self.copy_or_move_elements(target_path, rpath, rtype, false);
+                    let exit_condition = self.exit_environment.entry_condition.clone();
+                    self.current_environment
+                        .exit_conditions
+                        .insert(*target, exit_condition);
+                } else {
+                    unreachable!();
+                }
+                return true;
+            }
             KnownFunctionNames::MiraiResult => {
                 if let Some((place, target)) = destination {
                     let target_path = self.visit_place(place);
@@ -2337,7 +2353,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         };
                     }
                     TyKind::FnDef(def_id, ..) => {
-                        result = self.visit_function_reference(def_id);
+                        result = self.visit_function_reference(def_id, ty);
                     }
                     TyKind::Int(..) => {
                         result = match literal {
@@ -2599,10 +2615,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// fn foo() -> i32 { 1 }
     /// let bar = foo; // bar: fn() -> i32 {foo}
     /// ```
-    fn visit_function_reference(&mut self, def_id: hir::def_id::DefId) -> &ConstantDomain {
-        &mut self
-            .constant_value_cache
-            .get_function_constant_for(def_id, &mut self.summary_cache)
+    fn visit_function_reference(
+        &mut self,
+        def_id: hir::def_id::DefId,
+        ty: Ty<'tcx>,
+    ) -> &ConstantDomain {
+        &mut self.constant_value_cache.get_function_constant_for(
+            def_id,
+            ty,
+            &mut self.summary_cache,
+        )
     }
 
     /// Returns a Path instance that is the essentially the same as the Place instance, but which

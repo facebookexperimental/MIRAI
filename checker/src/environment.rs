@@ -69,6 +69,11 @@ impl Environment {
             self.update_value_at(true_path, true_val);
             self.update_value_at(false_path, false_val);
         }
+        //todo: if the path contains an Index selector where the index is abstract, then
+        //this entry should be weakly updated with any paths that are contained by it and already
+        //in the environment.
+        //Conversely, if this path is contained in a path that is already in the environment, then
+        //that path should be updated weakly.
         self.value_map = self.value_map.insert(path, value);
     }
 
