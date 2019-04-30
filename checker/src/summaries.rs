@@ -8,7 +8,7 @@ use crate::environment::Environment;
 use crate::utils;
 
 use rustc::hir::def_id::DefId;
-use rustc::ty::TyCtxt;
+use rustc::ty::{Ty, TyCtxt};
 use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::collections::{HashMap, HashSet};
@@ -186,6 +186,7 @@ pub struct PersistentSummaryCache<'a, 'tcx: 'a> {
     cache: HashMap<DefId, Summary>,
     dependencies: HashMap<DefId, Vec<DefId>>,
     key_cache: HashMap<DefId, String>,
+    argument_key_cache: HashMap<DefId, String>,
     type_context: &'a TyCtxt<'a, 'tcx, 'tcx>,
 }
 
@@ -201,6 +202,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
                 .unwrap_or_else(|err| unreachable!(format!("{} ", err))),
             cache: HashMap::new(),
             key_cache: HashMap::new(),
+            argument_key_cache: HashMap::new(),
             dependencies: HashMap::new(),
             type_context,
         }
@@ -226,6 +228,19 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             .or_insert_with(|| utils::summary_key_str(tcx, def_id))
     }
 
+    /// Returns (and caches) a string that uniquely identifies the argument type signature of a
+    /// function definition. When this is appended to a normal summary key, it provides a way
+    /// to find type specialized core summaries provided via the foreign_contracts mechanism.
+    /// The string will always be the same as long as the definition does not change its type
+    /// signature, so it can be used to transfer information from one compilation to the next,
+    /// making incremental analysis possible.
+    pub fn get_argument_types_key_for(&mut self, def_id: DefId, ty: Ty<'tcx>) -> &String {
+        let tcx = self.type_context;
+        self.argument_key_cache
+            .entry(def_id)
+            .or_insert_with(|| utils::argument_types_key_str(tcx, ty))
+    }
+
     /// Returns the cached summary corresponding to def_id, or creates a default for it.
     /// The optional dependent_def_id is the definition that refers to the returned summary.
     /// The cache tracks all such dependents so that they can be retrieved and re-analyzed
@@ -240,26 +255,64 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
                 }
             }
         };
-        let tcx = self.type_context;
         let db = &self.db;
+        let tcx = self.type_context;
+        let persistent_key = self
+            .key_cache
+            .entry(def_id)
+            .or_insert_with(|| utils::summary_key_str(tcx, def_id));
+        let argument_key_cache = &self.argument_key_cache;
         self.cache.entry(def_id).or_insert_with(|| {
-            let persistent_key = utils::summary_key_str(tcx, def_id);
-            Self::get_persistent_summary_for_db(db, &persistent_key)
+            let arg_types_key = argument_key_cache.get(&def_id);
+            Self::get_persistent_summary_using_arg_types_if_possible(
+                db,
+                &persistent_key,
+                arg_types_key,
+            )
         })
+    }
+
+    /// Returns a summary from the persistent summary cache, preferentially using the concatenation
+    /// of persistent_key with arg_types_key as the cache key and falling back to just the
+    /// persistent_key if arg_types_key is None.
+    fn get_persistent_summary_using_arg_types_if_possible(
+        db: &Db,
+        persistent_key: &str,
+        arg_types_key: Option<&String>,
+    ) -> Summary {
+        if let Some(arg_types_key) = arg_types_key {
+            if !arg_types_key.is_empty() {
+                let mut mangled_key = String::new();
+                mangled_key.push_str(persistent_key);
+                mangled_key.push_str(arg_types_key.as_str());
+                return match Self::get_persistent_summary_for_db(db, mangled_key.as_str()) {
+                    Some(summary) => summary,
+                    None => match Self::get_persistent_summary_for_db(db, persistent_key) {
+                        Some(summary) => summary,
+                        None => {
+                            info!("Summary store has no entry for {}", mangled_key);
+                            Summary::default()
+                        }
+                    },
+                };
+            }
+        };
+        Self::get_persistent_summary_for_db(db, persistent_key).unwrap_or_else(Summary::default)
     }
 
     /// Returns the summary corresponding to the persistent_key in the the summary database.
     /// The caller is expected to cache this.
     pub fn get_persistent_summary_for(&self, persistent_key: &str) -> Summary {
         Self::get_persistent_summary_for_db(&self.db, persistent_key)
+            .unwrap_or_else(Summary::default)
     }
 
     /// Helper for get_summary_for and get_persistent_summary_for.
-    fn get_persistent_summary_for_db(db: &Db, persistent_key: &str) -> Summary {
+    fn get_persistent_summary_for_db(db: &Db, persistent_key: &str) -> Option<Summary> {
         if let Ok(Some(pinned_value)) = db.get(persistent_key.as_bytes()) {
-            bincode::deserialize(pinned_value.deref()).unwrap()
+            Some(bincode::deserialize(pinned_value.deref()).unwrap())
         } else {
-            Summary::default() // todo: #33 look for a contract summary or construct from type
+            None
         }
     }
 
