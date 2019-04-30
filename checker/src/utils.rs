@@ -7,7 +7,8 @@ use log::debug;
 use rustc::hir::def_id::DefId;
 use rustc::hir::ItemKind;
 use rustc::hir::Node;
-use rustc::ty::TyCtxt;
+use rustc::ty::subst::UnpackedKind;
+use rustc::ty::{Ty, TyCtxt, TyKind};
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
 /// The location is obtained by looking at the contents of the environmental variables that were
@@ -58,6 +59,139 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_, '_, '_>) -> bool {
     }
 }
 
+/// Returns a string that is a valid identifier, made up from the concatenation of
+/// the string representationss of the given list of argument types.
+pub fn argument_types_key_str<'tcx>(tcx: &TyCtxt<'_, '_, 'tcx>, ty: Ty<'tcx>) -> String {
+    let mut result = String::new();
+    let bound_sig = ty.fn_sig(*tcx);
+    let sig = bound_sig.skip_binder();
+    for arg_ty in sig.inputs().iter() {
+        result.push('_');
+        append_mangled_type(&mut result, arg_ty, tcx);
+    }
+    result
+}
+
+/// Appends a string to str with the constraint that it must uniquely identify ty and also
+/// be a valid identifier (so that core library contracts can be written for type specialized
+/// generic trait methods).
+fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'_, '_, 'tcx>) {
+    use syntax::ast;
+    use TyKind::*;
+    match ty.sty {
+        Bool => str.push_str("bool"),
+        Char => str.push_str("char"),
+        Int(int_ty) => {
+            str.push_str(match int_ty {
+                ast::IntTy::Isize => "isize",
+                ast::IntTy::I8 => "i8",
+                ast::IntTy::I16 => "i16",
+                ast::IntTy::I32 => "i32",
+                ast::IntTy::I64 => "i64",
+                ast::IntTy::I128 => "i128",
+            });
+        }
+        Uint(uint_ty) => {
+            str.push_str(match uint_ty {
+                ast::UintTy::Usize => "usize",
+                ast::UintTy::U8 => "u8",
+                ast::UintTy::U16 => "u16",
+                ast::UintTy::U32 => "u32",
+                ast::UintTy::U64 => "u64",
+                ast::UintTy::U128 => "u128",
+            });
+        }
+        Float(float_ty) => {
+            str.push_str(match float_ty {
+                ast::FloatTy::F32 => "f32",
+                ast::FloatTy::F64 => "f64",
+            });
+        }
+        Adt(def, subs) => {
+            str.push_str(qualified_type_name(tcx, def.did).as_str());
+            for sub in subs {
+                if let UnpackedKind::Type(ty) = sub.unpack() {
+                    str.push('_');
+                    append_mangled_type(str, ty, tcx);
+                }
+            }
+        }
+        Foreign(def_id) => {
+            str.push_str("extern_type_");
+            str.push_str(qualified_type_name(tcx, def_id).as_str());
+        }
+        Str => str.push_str("str"),
+        Array(ty, len) => {
+            str.push_str("array_");
+            append_mangled_type(str, ty, tcx);
+            str.push('_');
+            str.push_str(&format!("{:?}", len));
+        }
+        Slice(ty) => {
+            str.push_str("slice_");
+            append_mangled_type(str, ty, tcx);
+        }
+        RawPtr(ty_and_mut) => {
+            str.push_str("pointer_");
+            match ty_and_mut.mutbl {
+                rustc::hir::MutMutable => str.push_str("mut_"),
+                rustc::hir::MutImmutable => str.push_str("const_"),
+            }
+            append_mangled_type(str, ty_and_mut.ty, tcx);
+        }
+        Ref(_, ty, mutability) => {
+            str.push_str("ref_");
+            if mutability == rustc::hir::MutMutable {
+                str.push_str("mut_");
+            }
+            append_mangled_type(str, ty, tcx);
+        }
+        FnPtr(psig) => {
+            str.push_str(&format!("FnPtr {:?}", psig));
+        }
+        Tuple(types) => {
+            str.push_str("tuple_");
+            str.push_str(&format!("{}", types.len()));
+            types.iter().for_each(|t| {
+                str.push('_');
+                append_mangled_type(str, t, tcx);
+            });
+        }
+        Param(param_ty) => {
+            let ty: Ty<'tcx> = param_ty.to_ty(*tcx);
+            str.push_str(&format!("{:?}", ty));
+        }
+        _ => {
+            //todo: add cases as the need arises, meanwhile make the need obvious.
+            str.push_str(&format!("default formatted {:?}", ty))
+        }
+    }
+}
+
+/// Pretty much the same as summary_key_str but with _ used rather than . so that
+/// the result can be appended to a valid identifier.
+fn qualified_type_name(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> String {
+    let mut name = if def_id.is_local() {
+        tcx.crate_name.as_interned_str().as_str().to_string()
+    } else {
+        let cdata = tcx.crate_data_as_rc_any(def_id.krate);
+        let cdata = cdata
+            .downcast_ref::<rustc_metadata::cstore::CrateMetadata>()
+            .unwrap();
+        cdata.name.as_str().to_string()
+    };
+    for component in &tcx.def_path(def_id).data {
+        name.push('_');
+        name.push_str(component.data.as_interned_str().as_str().get());
+        if component.disambiguator != 0 {
+            name.push('_');
+            let da = component.disambiguator.to_string();
+            name.push_str(da.as_str());
+        }
+    }
+    name
+}
+
 /// Constructs a string that uniquely identifies a definition to serve as a key to
 /// the summary cache, which is a key value store. The string will always be the same as
 /// long as the definition does not change its name or location, so it can be used to
@@ -91,9 +225,15 @@ pub fn summary_key_str(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> String {
         } else {
             name.push('.');
         }
-        name.push_str(component.data.as_interned_str().as_str().get());
+        let component_name = component.data.as_interned_str().as_str();
+        let component_name = component_name.get();
+        if component_name == "{{impl}}" {
+            name.push_str("impl");
+        } else {
+            name.push_str(component_name);
+        }
         if component.disambiguator != 0 {
-            name.push(':');
+            name.push('_');
             let da = component.disambiguator.to_string();
             name.push_str(da.as_str());
         }

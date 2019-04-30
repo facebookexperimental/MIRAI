@@ -8,6 +8,7 @@ use crate::expression::{Expression, ExpressionType};
 use crate::summaries::PersistentSummaryCache;
 
 use rustc::hir::def_id::DefId;
+use rustc::ty::Ty;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -33,6 +34,10 @@ pub enum ConstantDomain {
         known_name: KnownFunctionNames,
         /// The key to use when retrieving a summary for the function from the summary cache
         summary_cache_key: String,
+        /// To be appended to summary_cache_key when searching for a type specific version of
+        /// a summary. This is necessary when a trait method cannot be accurately summarized
+        /// in a generic way. For example std::ops::eq.
+        argument_type_key: String,
     },
     /// Signed 16 byte integer.
     I128(i128),
@@ -55,7 +60,7 @@ pub enum ConstantDomain {
 pub enum KnownFunctionNames {
     /// This is not a known function
     None,
-    /// core.slice.{{impl}}.len
+    /// core.slice.impl.len
     CoreSliceLen,
     /// mirai_annotations.mirai_assume
     MiraiAssume,
@@ -67,6 +72,8 @@ pub enum KnownFunctionNames {
     MiraiResult,
     /// mirai_annotations.mirai_set_model_field
     MiraiSetModelField,
+    /// mirai_annotations.mirai_shallow_clone
+    MiraiShallowClone,
     /// mirai_annotations.mirai_verify
     MiraiVerify,
     /// std.panicking.begin_panic
@@ -76,18 +83,23 @@ pub enum KnownFunctionNames {
 /// Constructors
 impl ConstantDomain {
     /// Returns a constant value that is a reference to a function
-    pub fn for_function(
+    pub fn for_function<'tcx>(
         def_id: DefId,
-        summary_cache: &mut PersistentSummaryCache<'_, '_>,
+        ty: Ty<'tcx>,
+        summary_cache: &mut PersistentSummaryCache<'_, 'tcx>,
     ) -> ConstantDomain {
-        let summary_cache_key = summary_cache.get_summary_key_for(def_id);
+        let summary_cache_key = summary_cache.get_summary_key_for(def_id).to_owned();
+        let argument_type_key = summary_cache
+            .get_argument_types_key_for(def_id, ty)
+            .to_owned();
         let known_name = match summary_cache_key.as_str() {
-            "core.slice.{{impl}}.len" => KnownFunctionNames::CoreSliceLen,
+            "core.slice.impl.len" => KnownFunctionNames::CoreSliceLen,
             "mirai_annotations.mirai_assume" => KnownFunctionNames::MiraiAssume,
             "mirai_annotations.mirai_get_model_field" => KnownFunctionNames::MiraiGetModelField,
             "mirai_annotations.mirai_precondition" => KnownFunctionNames::MiraiPrecondition,
             "mirai_annotations.mirai_result" => KnownFunctionNames::MiraiResult,
             "mirai_annotations.mirai_set_model_field" => KnownFunctionNames::MiraiSetModelField,
+            "mirai_annotations.mirai_shallow_clone" => KnownFunctionNames::MiraiShallowClone,
             "mirai_annotations.mirai_verify" => KnownFunctionNames::MiraiVerify,
             "std.panicking.begin_panic" => KnownFunctionNames::StdBeginPanic,
             _ => KnownFunctionNames::None,
@@ -95,7 +107,8 @@ impl ConstantDomain {
         ConstantDomain::Function {
             def_id: Some(def_id),
             known_name,
-            summary_cache_key: summary_cache_key.to_owned(),
+            summary_cache_key,
+            argument_type_key,
         }
     }
 }
@@ -736,14 +749,15 @@ impl ConstantValueCache {
 
     /// Given the MIR DefId of a function return the unique (cached) ConstantDomain that corresponds
     /// to the function identified by that DefId.
-    pub fn get_function_constant_for(
+    pub fn get_function_constant_for<'tcx>(
         &mut self,
         def_id: DefId,
-        summary_cache: &mut PersistentSummaryCache<'_, '_>,
+        ty: Ty<'tcx>,
+        summary_cache: &mut PersistentSummaryCache<'_, 'tcx>,
     ) -> &ConstantDomain {
         self.function_cache
             .entry(def_id)
-            .or_insert_with(|| ConstantDomain::for_function(def_id, summary_cache))
+            .or_insert_with(|| ConstantDomain::for_function(def_id, ty, summary_cache))
     }
 }
 
