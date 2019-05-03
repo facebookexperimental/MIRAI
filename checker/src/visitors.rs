@@ -282,6 +282,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             <MirVisitor<'a, 'b, 'tcx, E>>::initialize_state_maps(&block_indices);
 
         // The entry block has no predecessors and its initial state is the function parameters
+        // (which we omit here so that we can lazily provision them with additional context)
         // as well any promoted constants.
         let first_state = self.promote_constants(function_name);
 
@@ -514,7 +515,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         for (ordinal, constant_mir) in self.mir.promoted.iter().enumerate() {
             self.mir = constant_mir;
             let result_type = self.get_type_for_local(0);
-            self.visit_body(function_name);
+            self.visit_promoted_constants_block(function_name);
 
             let promoted_root = Path::PromotedConstant { ordinal };
             let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
@@ -533,6 +534,28 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         }
         self.mir = saved_mir;
         state_with_parameters
+    }
+
+    /// Computes a fixed point over the blocks of the MIR for a promoted constant block
+    fn visit_promoted_constants_block(&mut self, function_name: &str) {
+        let mut block_indices = self.get_sorted_block_indices();
+
+        let (mut in_state, mut out_state) =
+            <MirVisitor<'a, 'b, 'tcx, E>>::initialize_state_maps(&block_indices);
+
+        // The entry block has no predecessors and its initial state is the function parameters
+        // (which we omit here so that we can lazily provision them with additional context).
+        let first_state = Environment::default();
+
+        self.compute_fixed_point(
+            function_name,
+            &mut block_indices,
+            &mut in_state,
+            &mut out_state,
+            &first_state,
+        );
+
+        self.check_for_errors(&block_indices, &in_state);
     }
 
     /// Visits each statement in order and then visits the terminator.
