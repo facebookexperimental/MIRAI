@@ -41,7 +41,7 @@ use std::ops::Deref;
 ///    desirable to havoc all static variables every time such a function is called. Consequently
 ///    sound analysis is only possible one can assume that all such functions have been provided
 ///    with explicit contract functions.
-#[derive(Serialize, Deserialize, Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, Eq)]
 pub struct Summary {
     /// The number of seconds that the analyzer used to construct this summary.
     /// If it is >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY then this summary is not definitive
@@ -92,6 +92,30 @@ pub struct Summary {
     // under the current path condition. They should then update their current state to reflect the
     // side-effects of the call for the unwind control paths, following the call.
     pub unwind_side_effects: Vec<(Path, AbstractValue)>,
+}
+
+impl PartialEq for Summary {
+    fn eq(&self, other: &Summary) -> bool {
+        if !self.result.eq(&other.result) {
+            return false;
+        }
+        if self.preconditions != other.preconditions {
+            return false;
+        }
+        if self.side_effects != other.side_effects {
+            return false;
+        }
+        if self.post_conditions != other.post_conditions {
+            return false;
+        }
+        if self.post_conditions != other.post_conditions {
+            return false;
+        }
+        if self.unwind_side_effects != other.unwind_side_effects {
+            return false;
+        }
+        true
+    }
 }
 
 /// Constructs a summary of a function body by processing state information gathered during
