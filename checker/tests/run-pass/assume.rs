@@ -11,15 +11,24 @@ extern crate mirai_annotations;
 
 pub fn main() {
     foo(2); // This breaks an assumed pre-condition and leads to a runtime failure.
-    // It is not checked by Mirai, because of the assumption.
-    // Unlike this test case, in real life assumptions are made for complicated reasons that are
-    // hard to encode in checked preconditions.
+            // It is not checked by Mirai, because of the assumption.
+            // Unlike this test case, in real life assumptions are made for complicated reasons that are
+            // hard to encode in checked preconditions.
+    foo2(2); //~ possible false verification condition
 }
 
 pub fn foo(i: i32) {
     checked_assume!(i == 3); // this is a pre-condition that is assumed to hold.
-    // It is not promoted, but it is checked here at runtime.
+                             // It is not promoted, but it is checked here at runtime.
     let x = if i == 3 { 1 } else { 2 };
-    verify!(x == 1);  // This is neither true, nor checked at runtime, but it can only fail if
-    // the assumption above, which is checked at runtime does not fail.
+    verify!(x == 1); // This is neither true, nor checked at runtime, but it can only fail if
+                     // the assumption above, which is checked at runtime, does not fail.
+}
+
+pub fn foo2(i: i32) {
+    verify!(i == 3); //~ possible false verification condition
+                     //~ related location
+    let x = if i == 3 { 1 } else { 2 };
+    verify!(x == 1); // This is neither true, nor checked at runtime, but it can only fail if
+                     // the first verify fails, so the problem is already pointed out and we need not repeat ourselves.
 }
