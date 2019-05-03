@@ -878,7 +878,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .iter()
             .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
             .collect();
-        if self.handled_as_special_function_call(destination, known_name, &actual_args) {
+        if self.handled_as_special_function_call(known_name, &actual_args, destination, cleanup) {
             return;
         }
         let function_summary = self.get_function_summary(&func_to_call);
@@ -891,9 +891,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         }
         self.transfer_and_refine_normal_return_state(destination, &actual_args, &function_summary);
         self.transfer_and_refine_cleanup_state(cleanup, &actual_args, &function_summary);
-        if self.check_for_errors {
-            self.report_calls_to_special_functions(known_name, &actual_args)
-        }
     }
 
     /// If the current call is to a well known function for which we don't have a cached summary,
@@ -901,14 +898,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// result is false, just carry on with the normal logic.
     fn handled_as_special_function_call(
         &mut self,
-        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         known_name: &KnownFunctionNames,
         actual_args: &[(Path, AbstractValue)],
+        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+        cleanup: Option<mir::BasicBlock>,
     ) -> bool {
         match *known_name {
             KnownFunctionNames::MiraiAssume => {
                 checked_assume!(actual_args.len() == 1);
-                self.handle_assume(destination, &actual_args);
+                self.handle_assume(&actual_args, destination, cleanup);
                 return true;
             }
             KnownFunctionNames::MiraiGetModelField => {
@@ -955,7 +953,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             }
                         }
                     }
-                    let exit_condition = self.exit_environment.entry_condition.clone();
+                    let exit_condition = self.current_environment.entry_condition.clone();
                     self.current_environment
                         .exit_conditions
                         .insert(*target, exit_condition);
@@ -967,7 +965,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             KnownFunctionNames::MiraiPrecondition => {
                 checked_assume!(actual_args.len() == 2);
                 self.handle_precondition(&actual_args);
-                self.handle_assume(destination, &actual_args);
+                self.handle_assume(&actual_args, destination, cleanup);
                 return true;
             }
             KnownFunctionNames::MiraiSetModelField => {
@@ -991,7 +989,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         ExpressionType::NonPrimitive,
                         true,
                     );
-                    let exit_condition = self.exit_environment.entry_condition.clone();
+                    let exit_condition = self.current_environment.entry_condition.clone();
                     self.current_environment
                         .exit_conditions
                         .insert(*target, exit_condition);
@@ -1007,7 +1005,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let rtype = self.get_place_type(place);
                     let target_path = self.visit_place(place);
                     self.copy_or_move_elements(target_path, rpath, rtype, false);
-                    let exit_condition = self.exit_environment.entry_condition.clone();
+                    let exit_condition = self.current_environment.entry_condition.clone();
                     self.current_environment
                         .exit_conditions
                         .insert(*target, exit_condition);
@@ -1025,12 +1023,31 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         self.lookup_path_and_refine_result(return_value_path, target_type);
                     self.current_environment
                         .update_value_at(target_path, return_value);
-                    let exit_condition = self.exit_environment.entry_condition.clone();
+                    let exit_condition = self.current_environment.entry_condition.clone();
                     self.current_environment
                         .exit_conditions
                         .insert(*target, exit_condition);
                 } else {
                     unreachable!();
+                }
+                return true;
+            }
+            KnownFunctionNames::MiraiVerify => {
+                checked_assume!(actual_args.len() == 2);
+                if self.check_for_errors {
+                    self.report_calls_to_special_functions(known_name, actual_args);
+                }
+                self.handle_assume(&actual_args[0..1], destination, cleanup);
+                return true;
+            }
+            KnownFunctionNames::StdBeginPanic => {
+                if self.check_for_errors {
+                    self.report_calls_to_special_functions(known_name, actual_args);
+                }
+                if let Some((_, target)) = destination {
+                    self.current_environment
+                        .exit_conditions
+                        .insert(*target, abstract_value::FALSE);
                 }
                 return true;
             }
@@ -1042,7 +1059,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         let target_path = self.visit_place(place);
                         self.current_environment
                             .update_value_at(target_path, result);
-                        let exit_condition = self.exit_environment.entry_condition.clone();
+                        let exit_condition = self.current_environment.entry_condition.clone();
                         self.current_environment
                             .exit_conditions
                             .insert(*target, exit_condition);
@@ -1077,13 +1094,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// No check is performed, since we get to assume this condition without proof.
     fn handle_assume(
         &mut self,
-        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         actual_args: &[(Path, AbstractValue)],
+        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+        cleanup: Option<mir::BasicBlock>,
     ) {
         precondition!(actual_args.len() == 1);
         let assumed_condition = &actual_args[0].1;
         let exit_condition = self
-            .exit_environment
+            .current_environment
             .entry_condition
             .clone()
             .and(assumed_condition.clone(), Some(self.current_span));
@@ -1093,6 +1111,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .insert(*target, exit_condition);
         } else {
             unreachable!();
+        }
+        if let Some(cleanup_target) = cleanup {
+            self.current_environment
+                .exit_conditions
+                .insert(cleanup_target, abstract_value::FALSE);
         }
     }
 
@@ -1345,152 +1368,153 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         }
     }
 
-    /// If the function being called is a special function like unreachable or panic,
-    /// then report a diagnostic if the call is definitely reachable.
-    /// If the call might be reached then add a precondition that requires the caller of this
-    /// function to ensure that the call to the special function will never be reached at runtime.
+    /// If the function being called is a special function like mirai_annotations.mirai_verify or
+    /// std.panicking.begin_panic then report a diagnostic or create a precondition as appropriate.
     fn report_calls_to_special_functions(
         &mut self,
         known_name: &KnownFunctionNames,
         actual_args: &[(Path, AbstractValue)],
     ) {
         verify!(self.check_for_errors);
-        if *known_name == KnownFunctionNames::MiraiVerify {
-            assume!(actual_args.len() == 2); // The type checker ensures this.
-            let (_, cond) = &actual_args[0];
-            let (cond_as_bool, entry_cond_as_bool) =
-                self.check_condition_value_and_reachability(cond);
+        match known_name {
+            KnownFunctionNames::MiraiVerify => {
+                assume!(actual_args.len() == 2); // The type checker ensures this.
+                let (_, cond) = &actual_args[0];
+                let (cond_as_bool, entry_cond_as_bool) =
+                    self.check_condition_value_and_reachability(cond);
 
-            // If we never get here, rather call unreachable!()
-            if !entry_cond_as_bool.unwrap_or(true) {
-                let span = self.current_span;
-                let message =
-                    "this is unreachable, mark it as such by using the unreachable! macro";
-                let warning = self.session.struct_span_warn(span, message);
-                self.emit_diagnostic(warning);
-                return;
-            }
+                // If we never get here, rather call unreachable!()
+                if !entry_cond_as_bool.unwrap_or(true) {
+                    let span = self.current_span;
+                    let message =
+                        "this is unreachable, mark it as such by using the unreachable! macro";
+                    let warning = self.session.struct_span_warn(span, message);
+                    self.emit_diagnostic(warning);
+                    return;
+                }
 
-            // If the condition is always true when we get here there is nothing to report.
-            if cond_as_bool.unwrap_or(false) {
-                return;
-            }
+                // If the condition is always true when we get here there is nothing to report.
+                if cond_as_bool.unwrap_or(false) {
+                    return;
+                }
 
-            let message = self.coerce_to_string(&actual_args[1].1);
+                let message = self.coerce_to_string(&actual_args[1].1);
 
-            // If the condition is always false, give an error since that is bad style.
-            if !cond_as_bool.unwrap_or(true) {
-                // If the condition is always false, give an error
-                let span = self.current_span;
-                let error = self
-                    .session
-                    .struct_span_err(span, "provably false verification condition");
-                self.emit_diagnostic(error);
+                // If the condition is always false, give an error since that is bad style.
+                if !cond_as_bool.unwrap_or(true) {
+                    // If the condition is always false, give an error
+                    let span = self.current_span;
+                    let error = self
+                        .session
+                        .struct_span_err(span, "provably false verification condition");
+                    self.emit_diagnostic(error);
+                    if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                        // promote the path as precondition. I.e. the program is only correct
+                        // if we never get here.
+                        self.preconditions.push((
+                            self.current_environment
+                                .entry_condition
+                                .clone()
+                                .not(None)
+                                .replacing_provenance(self.current_span),
+                            message,
+                        ));
+                    }
+                    return;
+                }
+
+                let warning = format!("possible {}", message);
+
+                // We might get here, or not, and the condition might be false, or not.
+                // Give a warning if we don't know all of the callers, or if we run into a k-limit
+                if is_public(self.def_id, &self.tcx)
+                    || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+                {
+                    // We expect public functions to have programmer supplied preconditions
+                    // that preclude any assertions from failing. So, at this stage we get to
+                    // complain a bit.
+                    let span = self.current_span;
+                    let warning = self.session.struct_span_warn(span, warning.as_str());
+                    self.emit_diagnostic(warning);
+                }
+
+                // Now try to push a precondition so that any known or unknown caller of this function
+                // is warned that this function will fail if the precondition is not met.
                 if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
-                    // promote the path as precondition. I.e. the program is only correct
-                    // if we never get here.
+                    self.preconditions.push((
+                        self.current_environment
+                            .entry_condition
+                            .clone()
+                            .not(None)
+                            .or(cond.clone(), None)
+                            .replacing_provenance(self.current_span),
+                        warning,
+                    ));
+                }
+                return;
+            }
+            KnownFunctionNames::StdBeginPanic => {
+                let mut path_cond = self.current_environment.entry_condition.as_bool_if_known();
+                if path_cond.is_none() {
+                    // Try the SMT solver
+                    let path_expr = &self.current_environment.entry_condition.domain.expression;
+                    let path_smt = self.smt_solver.get_as_smt_predicate(path_expr);
+                    if self.smt_solver.solve_expression(&path_smt) == SmtResult::Unsatisfiable {
+                        path_cond = Some(false)
+                    }
+                }
+                if !path_cond.unwrap_or(true) {
+                    // We never get to this call, so nothing to report.
+                    return;
+                }
+
+                let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
+                    actual_args[0].1.domain.expression
+                {
+                    if msg.contains("entered unreachable code") {
+                        // We treat unreachable!() as an assumption rather than an assertion to prove.
+                        return;
+                    } else {
+                        msg.clone()
+                    }
+                } else {
+                    String::from("execution panic")
+                };
+                let span = self.current_span;
+
+                if path_cond.unwrap_or(false) && is_public(self.def_id, &self.tcx) {
+                    // We always get to this call and we have to assume that the function will
+                    // get called, so keep the message certain.
+                    let err = self.session.struct_span_warn(span, msg.as_str());
+                    self.emit_diagnostic(err);
+                } else {
+                    // We might get to this call, depending on the state at the call site.
+                    //
+                    // In the case when an assert macro has been called, the inverse of the assertion
+                    // was conjoined into the entry condition and this condition was simplified.
+                    // We therefore cannot distinguish the case of maybe reaching a definitely
+                    // false assertion from the case of definitely reaching a maybe false assertion.
+                    //
+                    // Since the assert and panic macros are commonly used to create preconditions
+                    // it would be very inconvenient if this possibly false assertion were reported
+                    // as a problem since there would be no way to shut it up. We therefore do not
+                    // report this and instead insist that anyone who wants to have MIRAI check
+                    // their assertions should use the mirai_annotations::verify! macro instead.
+                    //
+                    // We **do** have to push a precondition since this is the probable intent.
+                    let mut maybe_message = String::from("possible error: ");
+                    maybe_message.push_str(msg.as_str());
                     self.preconditions.push((
                         self.current_environment
                             .entry_condition
                             .clone()
                             .not(None)
                             .replacing_provenance(self.current_span),
-                        message,
+                        maybe_message,
                     ));
                 }
-                return;
             }
-
-            let warning = format!("possible {}", message);
-
-            // We might get here, or not, and the condition might be false, or not.
-            // Give a warning if we don't know all of the callers, or if we run into a k-limit
-            if is_public(self.def_id, &self.tcx)
-                || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
-            {
-                // We expect public functions to have programmer supplied preconditions
-                // that preclude any assertions from failing. So, if at this stage we get to
-                // complain a bit.
-                let span = self.current_span;
-                let warning = self.session.struct_span_warn(span, warning.as_str());
-                self.emit_diagnostic(warning);
-            }
-
-            // Now try to push a precondition so that any known or unknown caller of this function
-            // is warned that this function will fail if the precondition is not met.
-            if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
-                self.preconditions.push((
-                    self.current_environment
-                        .entry_condition
-                        .clone()
-                        .not(None)
-                        .or(cond.clone(), None)
-                        .replacing_provenance(self.current_span),
-                    warning,
-                ));
-            }
-            return;
-        }
-        if *known_name == KnownFunctionNames::StdBeginPanic {
-            let mut path_cond = self.current_environment.entry_condition.as_bool_if_known();
-            if path_cond.is_none() {
-                // Try the SMT solver
-                let path_expr = &self.current_environment.entry_condition.domain.expression;
-                let path_smt = self.smt_solver.get_as_smt_predicate(path_expr);
-                if self.smt_solver.solve_expression(&path_smt) == SmtResult::Unsatisfiable {
-                    path_cond = Some(false)
-                }
-            }
-            if !path_cond.unwrap_or(true) {
-                // We never get to this call, so nothing to report.
-                return;
-            }
-
-            let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
-                actual_args[0].1.domain.expression
-            {
-                if msg.contains("entered unreachable code") {
-                    // We treat unreachable!() as an assumption rather than an assertion to prove.
-                    return;
-                } else {
-                    msg.clone()
-                }
-            } else {
-                String::from("execution panic")
-            };
-            let span = self.current_span;
-
-            if path_cond.unwrap_or(false) && is_public(self.def_id, &self.tcx) {
-                // We always get to this call and we have to assume that the function will
-                // get called, so keep the message certain.
-                let err = self.session.struct_span_warn(span, msg.as_str());
-                self.emit_diagnostic(err);
-            } else {
-                // We might get to this call, depending on the state at the call site.
-                //
-                // In the case when an assert macro has been called, the inverse of the assertion
-                // was conjoined into the entry condition and this condition was simplified.
-                // We therefore cannot distinguish between the case of maybe reaching a definitely
-                // false assertion from the case of definitely reaching a maybe false assertion.
-                //
-                // Since the assert and panic macros are commonly used to create preconditions
-                // it would be very inconvenient if this possibly false assertion were reported
-                // as a problem since there would be no way to shut it up. We therefore do not
-                // report this and instead insist that anyone who wants to have MIRAI check
-                // their assertions should use the mirai_annotations::verify! macro instead.
-                //
-                // We **do** have to push a precondition since this is the probable intent.
-                let mut maybe_message = String::from("possible error: ");
-                maybe_message.push_str(msg.as_str());
-                self.preconditions.push((
-                    self.current_environment
-                        .entry_condition
-                        .clone()
-                        .not(None)
-                        .replacing_provenance(self.current_span),
-                    maybe_message,
-                ));
-            }
+            _ => unreachable!(),
         }
     }
 
