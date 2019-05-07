@@ -122,6 +122,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         path: Path,
         result_type: ExpressionType,
     ) -> AbstractValue {
+        if let Path::Constant { value } = path {
+            return *value.clone();
+        }
         let refined_val = {
             let bottom = abstract_value::BOTTOM;
             let local_val = self

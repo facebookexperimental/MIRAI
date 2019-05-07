@@ -1,6 +1,6 @@
 ignore:
-  - tests/.*
-  - src/main.rs
+  - checker/tests/.*
+  - checker/src/main.rs
 
 coverage:
   range: 60..85
