@@ -207,7 +207,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             Path::LocalVariable { ordinal } => {
                 let loc = &self.mir.local_decls[mir::Local::from(*ordinal)];
                 match loc.ty.sty {
-                    TyKind::Tuple(types) => (&types[0].sty).into(),
+                    TyKind::Tuple(types) => (&types[0].expect_ty().sty).into(),
                     _ => unreachable!(),
                 }
             }

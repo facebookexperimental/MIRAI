@@ -154,7 +154,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'_, '_
             str.push_str(&format!("{}", types.len()));
             types.iter().for_each(|t| {
                 str.push('_');
-                append_mangled_type(str, t, tcx);
+                append_mangled_type(str, t.expect_ty(), tcx);
             });
         }
         Param(param_ty) => {
