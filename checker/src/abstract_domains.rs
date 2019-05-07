@@ -1075,7 +1075,9 @@ impl AbstractDomain {
                     val.domain.clone()
                 } else {
                     let refined_path = path.refine_paths(environment);
-                    if let Some(val) = environment.value_at(&refined_path) {
+                    if let Path::Constant { value } = refined_path {
+                        value.domain
+                    } else if let Some(val) = environment.value_at(&refined_path) {
                         val.domain.clone()
                     } else {
                         Expression::Variable {
