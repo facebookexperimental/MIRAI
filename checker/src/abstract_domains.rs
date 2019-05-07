@@ -521,8 +521,12 @@ impl AbstractDomain {
         if self.is_bottom() {
             return other;
         }
-        // x union {} just x
+        // x union {} is just x
         if other.is_bottom() {
+            return self;
+        }
+        // x union x is just x
+        if self == other {
             return self;
         }
         Expression::Join {

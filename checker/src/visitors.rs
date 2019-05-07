@@ -1540,6 +1540,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .clone()
                 .refine_parameters(arguments)
                 .refine_paths(&mut self.current_environment);
+            for (arg_path, arg_val) in arguments.iter() {
+                if arg_val.eq(&rvalue) {
+                    let rtype = rvalue.domain.expression.infer_type();
+                    self.copy_or_move_elements(tpath, arg_path.clone(), rtype, false);
+                    return;
+                }
+            }
             self.current_environment.update_value_at(tpath, rvalue);
         }
     }

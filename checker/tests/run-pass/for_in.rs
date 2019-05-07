@@ -16,6 +16,14 @@ extern crate mirai_annotations;
 pub mod foreign_contracts {
     pub mod core {
 
+        pub mod default {
+            pub trait Default {
+                fn default_() {
+                    result!()
+                }
+            }
+        }
+
         pub mod option {
             pub enum Option<T> {
                 None,
