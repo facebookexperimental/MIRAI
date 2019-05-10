@@ -1,6 +1,7 @@
 ignore:
   - checker/tests/.*
   - checker/src/main.rs
+  - annotations/*
 
 coverage:
   range: 60..85
