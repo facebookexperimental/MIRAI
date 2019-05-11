@@ -51,7 +51,7 @@ pub mod foreign_contracts {
                 }
             }
 
-            pub mod impl_5 {
+            pub mod implement_5 {
                 use crate::foreign_contracts::core::option::Option;
 
                 pub fn unwrap_or_default<T: Default>(v: Option<T>) -> T {
@@ -65,7 +65,7 @@ pub mod foreign_contracts {
 
         pub mod ops {
             pub mod range {
-                pub mod impl_12 {
+                pub mod implement_12 {
                     pub struct RangeInclusive_usize {
                         pub start: usize,
                         pub end: usize,
@@ -99,7 +99,7 @@ pub mod foreign_contracts {
         pub mod iter {
             pub mod traits {
                 pub mod collect {
-                    use crate::foreign_contracts::core::ops::range::impl_12::RangeInclusive_usize;
+                    use crate::foreign_contracts::core::ops::range::implement_12::RangeInclusive_usize;
 
                     pub trait IntoIterator {
                         fn into_iter__core_ops_range_RangeInclusive_usize(
@@ -111,7 +111,7 @@ pub mod foreign_contracts {
                 }
 
                 pub mod iterator {
-                    use crate::foreign_contracts::core::ops::range::impl_12::{
+                    use crate::foreign_contracts::core::ops::range::implement_12::{
                         compute_is_empty__usize, RangeInclusive_usize,
                     };
 

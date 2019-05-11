@@ -46,11 +46,9 @@ impl Z3Solver {
         unsafe {
             let _guard = Z3_MUTEX.lock().unwrap();
             let z3_sys_cfg = z3_sys::Z3_mk_config();
-            if !cfg!(target_os = "linux") {
-                let time_out = CString::new("timeout").unwrap().into_raw();
-                let ms = CString::new("100").unwrap().into_raw();
-                z3_sys::Z3_set_param_value(z3_sys_cfg, time_out, ms);
-            }
+            let time_out = CString::new("timeout").unwrap().into_raw();
+            let ms = CString::new("100").unwrap().into_raw();
+            z3_sys::Z3_set_param_value(z3_sys_cfg, time_out, ms);
 
             let z3_context = z3_sys::Z3_mk_context(z3_sys_cfg);
             let z3_solver = z3_sys::Z3_mk_solver(z3_context);
@@ -1077,13 +1075,13 @@ impl Z3Solver {
                 }
             }
             Expression::CompileTimeConstant(const_domain) => match const_domain {
-                //                ConstantDomain::Char(v) => unsafe {
-                //                    z3_sys::Z3_mk_bv_numeral(self.z3_context, 16, v as *const char as *const bool)
-                //                },
-                //                ConstantDomain::False => unsafe {
-                //                    let v = false;
-                //                    z3_sys::Z3_mk_bv_numeral(self.z3_context, 1, &v as *const bool)
-                //                },
+                ConstantDomain::Char(v) => unsafe {
+                    z3_sys::Z3_mk_bv_numeral(self.z3_context, 16, v as *const char as *const bool)
+                },
+                ConstantDomain::False => unsafe {
+                    let v = false;
+                    z3_sys::Z3_mk_bv_numeral(self.z3_context, 1, &v as *const bool)
+                },
                 ConstantDomain::F32(v) => unsafe {
                     let fv = f32::from_bits(*v);
                     z3_sys::Z3_mk_fpa_numeral_float(self.z3_context, fv, self.f32_sort)
@@ -1092,16 +1090,16 @@ impl Z3Solver {
                     let fv = f64::from_bits(*v);
                     z3_sys::Z3_mk_fpa_numeral_double(self.z3_context, fv, self.f64_sort)
                 },
-                //                ConstantDomain::I128(v) => unsafe {
-                //                    z3_sys::Z3_mk_bv_numeral(self.z3_context, 128, v as *const i128 as *const bool)
-                //                },
-                //                ConstantDomain::U128(v) => unsafe {
-                //                    z3_sys::Z3_mk_bv_numeral(self.z3_context, 128, v as *const u128 as *const bool)
-                //                },
-                //                ConstantDomain::True => unsafe {
-                //                    let v = true;
-                //                    z3_sys::Z3_mk_bv_numeral(self.z3_context, 1, &v as *const bool)
-                //                },
+                ConstantDomain::I128(v) => unsafe {
+                    z3_sys::Z3_mk_bv_numeral(self.z3_context, 128, v as *const i128 as *const bool)
+                },
+                ConstantDomain::U128(v) => unsafe {
+                    z3_sys::Z3_mk_bv_numeral(self.z3_context, 128, v as *const u128 as *const bool)
+                },
+                ConstantDomain::True => unsafe {
+                    let v = true;
+                    z3_sys::Z3_mk_bv_numeral(self.z3_context, 1, &v as *const bool)
+                },
                 _ => unsafe {
                     let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
                     z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort)
