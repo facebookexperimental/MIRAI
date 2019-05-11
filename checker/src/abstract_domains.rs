@@ -149,6 +149,16 @@ impl From<Expression> for AbstractDomain {
 impl AbstractDomain {
     /// Returns an element that is "self + other".
     pub fn addition(self, other: Self) -> Self {
+        if let Expression::Add { left, right } = &self.expression {
+            if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+                (&right.expression, &other.expression)
+            {
+                let folded = v1.add(v2);
+                if folded != ConstantDomain::Bottom {
+                    return left.clone().addition(folded.into());
+                }
+            }
+        }
         self.try_to_simplify_binary_op(other, ConstantDomain::add, |left, right| {
             Expression::Add {
                 left: box left,
@@ -388,6 +398,40 @@ impl AbstractDomain {
                     }
                 }
             }
+            // (c ? 1 : 0) == 0 is the same as !c
+            // (c ? 1 : 0) == 1 is the same as c
+            // (c ? 0 : 1) == 0 is the same as c
+            // (c ? 0 : 1) == 1 is the same as !c
+            (
+                Expression::ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                },
+                Expression::CompileTimeConstant(ConstantDomain::U128(val)),
+            ) => {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(cval)) =
+                    consequent.expression
+                {
+                    if let Expression::CompileTimeConstant(ConstantDomain::U128(aval)) =
+                        alternate.expression
+                    {
+                        if cval == 1 && aval == 0 {
+                            if *val == 0 {
+                                return (**condition).clone().logical_not();
+                            } else if *val == 1 {
+                                return (**condition).clone();
+                            }
+                        } else if cval == 0 && aval == 1 {
+                            if *val == 0 {
+                                return (**condition).clone();
+                            } else {
+                                return (**condition).clone().logical_not();
+                            }
+                        }
+                    }
+                }
+            }
             // !x == 0 is the same as x when x is Boolean. Canonicalize it to the latter.
             (
                 Expression::Not { operand },
@@ -398,12 +442,14 @@ impl AbstractDomain {
                 }
             }
             // x == 0 is the same as !x when x is a Boolean. Canonicalize it to the latter.
+            // x == 1 is the same as x when x is a Boolean. Canonicalize it to the latter.
             (x, Expression::CompileTimeConstant(ConstantDomain::U128(val))) => {
-                if *val == 0 && (x.infer_type() == ExpressionType::Bool) {
-                    return Expression::Not {
-                        operand: box x.clone().into(),
+                if x.infer_type() == ExpressionType::Bool {
+                    if *val == 0 {
+                        return self.logical_not();
+                    } else if *val == 1 {
+                        return self.clone();
                     }
-                    .into();
                 }
             }
             (x, y) => {
@@ -1012,7 +1058,10 @@ impl AbstractDomain {
             Expression::Or { left, right } => left
                 .refine_paths(environment)
                 .or(right.refine_paths(environment)),
-            Expression::Reference(..) => self,
+            Expression::Reference(path) => {
+                let refined_path = path.refine_paths(environment);
+                Expression::Reference(refined_path).into()
+            }
             Expression::Rem { left, right } => left
                 .refine_paths(environment)
                 .remainder(right.refine_paths(environment)),
@@ -1179,7 +1228,21 @@ impl AbstractDomain {
             Expression::Or { left, right } => left
                 .refine_parameters(arguments)
                 .or(right.refine_parameters(arguments)),
-            Expression::Reference(..) => self,
+            Expression::Reference(path) => {
+                // if the path is a parameter, the reference is an artifact of its type
+                // and needs to be removed in the call context
+                match path {
+                    Path::LocalVariable { ordinal }
+                        if 0 < ordinal && ordinal <= arguments.len() =>
+                    {
+                        arguments[ordinal - 1].1.domain.clone()
+                    }
+                    _ => {
+                        let refined_path = path.refine_parameters(arguments);
+                        Expression::Reference(refined_path).into()
+                    }
+                }
+            }
             Expression::Rem { left, right } => left
                 .refine_parameters(arguments)
                 .remainder(right.refine_parameters(arguments)),
@@ -1430,7 +1493,7 @@ impl AbstractDomain {
     ) -> Self {
         match (&self.expression, &other.expression) {
             (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) => {
-                let result = const_op(&v1, &v2);
+                let result = const_op(v1, v2);
                 if result == ConstantDomain::Bottom {
                     self.try_to_distribute_binary_op(other, operation)
                 } else {
@@ -1486,6 +1549,9 @@ impl AbstractDomain {
     /// in memory at the given path.
     pub fn widen(self, path: Path) -> Self {
         if let Widen { .. } = self.expression {
+            return self;
+        }
+        if let Expression::CompileTimeConstant(..) = self.expression {
             return self;
         }
         Expression::Widen {

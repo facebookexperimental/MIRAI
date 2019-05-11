@@ -93,7 +93,7 @@ impl ConstantDomain {
             .get_argument_types_key_for(def_id, ty)
             .to_owned();
         let known_name = match summary_cache_key.as_str() {
-            "core.slice.impl.len" => KnownFunctionNames::CoreSliceLen,
+            "core.slice.implement.len" => KnownFunctionNames::CoreSliceLen,
             "mirai_annotations.mirai_assume" => KnownFunctionNames::MiraiAssume,
             "mirai_annotations.mirai_get_model_field" => KnownFunctionNames::MiraiGetModelField,
             "mirai_annotations.mirai_precondition" => KnownFunctionNames::MiraiPrecondition,
