@@ -39,8 +39,9 @@ Additionally, the runtime checked kinds provides eq and ne varieties, leaving us
 * debug_checked_verify_eq!
 * debug_checked_verify_ne!
 
+This crate also provides macros for describing and constraining abstract state that only has meaning to MIRAI. These are:
+* get_model_field!
+* result!
+* set_model_field!
 
-Still to come are macros for expressing conditions with quantifiers. Possibly there will also be attributes for
-identifying definitions that provide specification summaries for functions defined in other crates, such as third party
-crates that use unsafe code blocks or calls to foreign functions, or anything else that makes it difficult for Mirai
-to automatically infer summaries.
+See the documentation for details on how to use these.
