@@ -426,7 +426,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             let i_state = if bb.index() == 0 {
                 first_state.clone()
             } else {
-                self.get_intial_state_from_predecessors(*bb, in_state, out_state, iteration_count)
+                self.get_initial_state_from_predecessors(*bb, in_state, out_state, iteration_count)
             };
             // Analyze the basic block
             in_state.insert(*bb, i_state.clone());
@@ -457,7 +457,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// If a predecessor has not yet been analyzed, its state does not form part of the join.
     /// If no predecessors have been analyzed, the entry state is a default entry state with an
     /// entry condition of TOP.
-    fn get_intial_state_from_predecessors(
+    fn get_initial_state_from_predecessors(
         &mut self,
         bb: mir::BasicBlock,
         in_state: &HashMap<mir::BasicBlock, Environment>,
@@ -1176,7 +1176,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             if let Some(qualifier) = qualifier {
                 let selector = box PathSelector::ArrayLength;
                 let len_path = Path::QualifiedPath {
-                    length: 2,
+                    length: qualifier.path_length() + 1,
                     qualifier,
                     selector,
                 };
@@ -1553,8 +1553,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             for (arg_path, arg_val) in arguments.iter() {
                 if arg_val.eq(&rvalue) {
                     let rtype = rvalue.domain.expression.infer_type();
-                    self.copy_or_move_elements(tpath, arg_path.clone(), rtype, false);
-                    return;
+                    self.copy_or_move_elements(tpath.clone(), arg_path.clone(), rtype, false);
+                    break;
                 }
             }
             self.current_environment.update_value_at(tpath, rvalue);
@@ -1678,6 +1678,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let mut entry_cond_as_bool = self.current_environment.entry_condition.as_bool_if_known();
         // Use SMT solver if need be.
         if entry_cond_as_bool.is_none() {
+            // Check if path implies condition
+            if self.current_environment.entry_condition.implies(cond_val) {
+                return (Some(true), None);
+            }
+            if self
+                .current_environment
+                .entry_condition
+                .implies_not(cond_val)
+            {
+                return (Some(false), None);
+            }
             // The abstract domains are unable to decide if the entry condition is always true.
             // (If it could decide that the condition is always false, we wouldn't be here.)
             // See if the SMT solver can prove that the entry condition is always true.
@@ -1940,7 +1951,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             };
             value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
-        // Now move (rpath, value) itself.
+        // Now move/copy (rpath, value) itself.
         let mut value = self.lookup_path_and_refine_result(rpath.clone(), rtype);
         if move_elements {
             debug!("moving {:?} to {:?}", value, target_path);
@@ -1984,14 +1995,24 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             "default visit_repeat(path: {:?}, operand: {:?}, count: {:?})",
             path, operand, count
         );
-        self.visit_operand(operand);
-        //todo: needs #62
-        // get a heap address and put it in Path::AbstractHeapAddress
-        // get an abs value for x
-        // create a PathSelector::Index paths where the value is the range 0..count
-        // add qualified path to the environment with value x.
+        let path_len = path.path_length();
+        let length_path = Path::QualifiedPath {
+            qualifier: box path,
+            selector: box PathSelector::ArrayLength,
+            length: path_len + 1,
+        };
+        let length_value = self
+            .constant_value_cache
+            .get_u128_for(u128::from(count))
+            .clone()
+            .into();
         self.current_environment
-            .update_value_at(path, abstract_value::TOP);
+            .update_value_at(length_path, length_value);
+        //todo: also need to write a path that summarizes count paths and give it the value
+        //  of operand.
+        //We do not yet have a way to summarize paths.
+        //Meanwhile just visit the operand to at least look at its validity.
+        self.visit_operand(operand);
     }
 
     /// path = &x or &mut x

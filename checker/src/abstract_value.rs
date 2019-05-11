@@ -8,7 +8,6 @@ use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 
-use log::debug;
 use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
@@ -329,6 +328,10 @@ impl AbstractValue {
 
     pub fn implies(&self, other: &AbstractValue) -> bool {
         self.domain.implies(&other.domain)
+    }
+
+    pub fn implies_not(&self, other: &AbstractValue) -> bool {
+        self.domain.implies_not(&other.domain)
     }
 
     /// True if the set of concrete values that correspond to this abstract value is empty.
@@ -813,6 +816,10 @@ impl Path {
     /// we want to dereference the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
     pub fn refine_paths(self, environment: &mut Environment) -> Self {
+        if environment.value_map.contains_key(&self) {
+            // if the environment has self as a key, then self is canonical.
+            return self;
+        };
         if let Path::QualifiedPath {
             qualifier,
             selector,
@@ -826,47 +833,12 @@ impl Path {
                         // is an explicit reference to another path, put the other path in the place
                         // of qualifier since references do not own elements directly in
                         // the environment.
-                        //
-                        // If the new qualifier is itself a reference, we have to dereference again.
-                        let qualifier = dereferenced_path.clone().refine_paths(environment);
-                        let path_len = qualifier.path_length();
+                        let path_len = dereferenced_path.path_length();
                         assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
                         Path::QualifiedPath {
-                            qualifier: box qualifier,
+                            qualifier: box dereferenced_path.clone(),
                             selector,
                             length: path_len + 1,
-                        }
-                    }
-                    // if **path == *qualifier, this value came about as the result of a copy
-                    // sequence that started in a formal parameter.
-                    Expression::Variable { path, .. } if (**path != *qualifier) => {
-                        // In this case the qualifier is not a reference, but an alias created by
-                        // by a move instruction.
-                        // Normally, when local a is assigned to local b, all of the
-                        // paths rooted in a are copied or moved to paths rooted in b.
-                        // In the case of formal parameters, however, there are no paths to
-                        // copy or move and instead the target is assigned a value which, in the case
-                        // of a move, is in an alias to the parameter. We de-alias here, which is
-                        // needed because ultimately the path has to get refined (again) in a calling
-                        // context where the root has to be the parameter.
-                        //
-                        // If the new qualifier is itself an alias we have to de-alias again.
-                        let qualifier = path.clone().refine_paths(environment);
-                        let path_len = qualifier.path_length();
-                        assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
-                        Path::QualifiedPath {
-                            qualifier: box qualifier,
-                            selector,
-                            length: path_len + 1,
-                        }
-                    }
-                    Expression::CompileTimeConstant(constant_value) => {
-                        debug!("constant qualifier with path selector that is not in the environment\n{:?}\n{:?}", constant_value, environment);
-                        //todo: at least some of these arise from qualifiers that are ADTs
-                        Path::QualifiedPath {
-                            qualifier,
-                            selector,
-                            length,
                         }
                     }
                     _ => {
@@ -885,13 +857,20 @@ impl Path {
                 // Reminder, a path that does not match a value in the environment is rooted in
                 // an unknown value, such as a parameter.
                 let refined_qualifier = qualifier.refine_paths(environment);
+                let refined_qualifier_matches =
+                    environment.value_map.contains_key(&refined_qualifier);
                 let refined_selector = selector.refine_paths(environment);
                 let refined_length = refined_qualifier.path_length();
                 assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
-                Path::QualifiedPath {
+                let refined_path = Path::QualifiedPath {
                     qualifier: box refined_qualifier,
                     selector: box refined_selector,
                     length: refined_length + 1,
+                };
+                if refined_qualifier_matches {
+                    refined_path.refine_paths(environment)
+                } else {
+                    refined_path
                 }
             }
         } else {
