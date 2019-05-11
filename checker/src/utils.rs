@@ -228,7 +228,7 @@ pub fn summary_key_str(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> String {
         let component_name = component.data.as_interned_str().as_str();
         let component_name = component_name.get();
         if component_name == "{{impl}}" {
-            name.push_str("impl");
+            name.push_str("implement");
         } else {
             name.push_str(component_name);
         }
