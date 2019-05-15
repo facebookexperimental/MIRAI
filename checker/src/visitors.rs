@@ -632,7 +632,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             "default visit_set_discriminant(place: {:?}, variant_index: {:?})",
             place, variant_index
         );
-        let target_path = self.visit_place(place);
+        let target_qualifier = self.visit_place(place);
+        let qualifier_length = target_qualifier.path_length();
+        assume!(qualifier_length < 1_000_000_000);
+        let target_path = Path::QualifiedPath {
+            qualifier: box target_qualifier,
+            selector: box PathSelector::Discriminant,
+            length: qualifier_length + 1,
+        };
         let index_val = self
             .constant_value_cache
             .get_u128_for(variant_index.as_usize() as u128)
@@ -2198,18 +2205,24 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Read the discriminant of an ADT and assign to path.
-    ///
-    /// Undefined (i.e. no effort is made to make it defined, but there’s no reason why it cannot
-    /// be defined to return, say, a 0) if ADT is not an enum.
     fn visit_discriminant(&mut self, path: Path, place: &mir::Place<'tcx>) {
         debug!(
             "default visit_discriminant(path: {:?}, place: {:?})",
             path, place
         );
-        let adtd_path = self.visit_place(place);
-        let adtd_type = self.get_place_type(place);
-        let adtd_value = self.lookup_path_and_refine_result(adtd_path, adtd_type);
-        self.current_environment.update_value_at(path, adtd_value);
+        let adt_path = self.visit_place(place);
+        let adt_path_length = adt_path.path_length();
+        assume!(adt_path_length < 1_000_000_000);
+        let discriminant_path = Path::QualifiedPath {
+            qualifier: box adt_path,
+            selector: box PathSelector::Discriminant,
+            length: adt_path_length + 1,
+        };
+        let discriminant_type = self.get_place_type(place);
+        let discriminant_value =
+            self.lookup_path_and_refine_result(discriminant_path, discriminant_type);
+        self.current_environment
+            .update_value_at(path, discriminant_value);
     }
 
     /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.
