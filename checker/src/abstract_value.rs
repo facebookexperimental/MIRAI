@@ -934,6 +934,9 @@ pub enum PathSelector {
     /// Given a path that denotes a reference, select the thing the reference points to.
     Deref,
 
+    /// The tag used to indicate which case of an enum is used for a particular enum value.
+    Discriminant,
+
     /// Select the struct field with the given index.
     Field(usize),
 
