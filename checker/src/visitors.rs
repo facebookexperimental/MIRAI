@@ -2724,9 +2724,22 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         debug!("default visit_place(place: {:?})", place);
         match place {
             mir::Place::Base(base_place) => match base_place {
-                mir::PlaceBase::Local(local) => Path::LocalVariable {
-                    ordinal: local.as_usize(),
-                },
+                mir::PlaceBase::Local(local) => {
+                    let result = Path::LocalVariable {
+                        ordinal: local.as_usize(),
+                    };
+                    let ty = self.get_rustc_place_type(place);
+                    if let TyKind::Array(_, len) = ty {
+                        let len_val = self.visit_constant(len.ty, None, &len.val);
+                        let len_path = Path::QualifiedPath {
+                            qualifier: box result.clone(),
+                            selector: box PathSelector::ArrayLength,
+                            length: 2,
+                        };
+                        self.current_environment.update_value_at(len_path, len_val);
+                    }
+                    result
+                }
                 mir::PlaceBase::Static(boxed_static) => match boxed_static.kind {
                     mir::StaticKind::Promoted(promoted) => {
                         let index = promoted.index();
