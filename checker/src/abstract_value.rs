@@ -816,9 +816,13 @@ impl Path {
     /// we want to dereference the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
     pub fn refine_paths(self, environment: &mut Environment) -> Self {
-        if environment.value_map.contains_key(&self) {
-            // if the environment has self as a key, then self is canonical.
-            return self;
+        if let Some(val) = environment.value_at(&self) {
+            // if the environment has self as a key, then self is canonical,
+            // except if val is a Reference to another path.
+            return match &val.domain.expression {
+                Expression::Reference(dereferenced_path) => dereferenced_path.clone(),
+                _ => self,
+            };
         };
         if let Path::QualifiedPath {
             qualifier,
