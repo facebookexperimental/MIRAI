@@ -1542,16 +1542,16 @@ impl AbstractDomain {
     /// deterministically lead to a set of values that include of the values that could be stored
     /// in memory at the given path.
     pub fn widen(self, path: Path) -> Self {
-        if let Widen { .. } = self.expression {
-            return self;
+        match self.expression {
+            Expression::Widen { .. }
+            | Expression::CompileTimeConstant(..)
+            | Expression::Reference(..)
+            | Expression::Variable { .. } => self,
+            _ => Expression::Widen {
+                path: box path,
+                operand: box self,
+            }
+            .into(),
         }
-        if let Expression::CompileTimeConstant(..) = self.expression {
-            return self;
-        }
-        Expression::Widen {
-            path: box path,
-            operand: box self,
-        }
-        .into()
     }
 }
