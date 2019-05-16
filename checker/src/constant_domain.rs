@@ -102,6 +102,8 @@ pub enum KnownFunctionNames {
     MiraiGetModelField,
     /// mirai_annotations.mirai_postcondition
     MiraiPostcondition,
+    /// mirai_annotations.mirai_precondition_start
+    MiraiPreconditionStart,
     /// mirai_annotations.mirai_precondition
     MiraiPrecondition,
     /// mirai_annotations.mirai_result
@@ -136,6 +138,7 @@ impl ConstantDomain {
             "mirai_annotations.mirai_assume" => MiraiAssume,
             "mirai_annotations.mirai_get_model_field" => MiraiGetModelField,
             "mirai_annotations.mirai_postcondition" => MiraiPostcondition,
+            "mirai_annotations.mirai_precondition_start" => MiraiPreconditionStart,
             "mirai_annotations.mirai_precondition" => MiraiPrecondition,
             "mirai_annotations.mirai_result" => MiraiResult,
             "mirai_annotations.mirai_set_model_field" => MiraiSetModelField,
