@@ -72,7 +72,7 @@ pub struct MirVisitor<'a, 'b, 'tcx, E> {
     start_instant: Instant,
     exit_environment: Environment,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
-    post_conditions: Vec<Rc<AbstractValue>>,
+    post_condition: Option<Rc<AbstractValue>>,
     preconditions: Vec<Precondition>,
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
@@ -111,7 +111,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             start_instant: Instant::now(),
             exit_environment: Environment::default(),
             heap_addresses: HashMap::default(),
-            post_conditions: Vec::new(),
+            post_condition: None,
             preconditions: Vec::new(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
@@ -130,7 +130,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.start_instant = Instant::now();
         self.exit_environment = Environment::default();
         self.heap_addresses = HashMap::default();
-        self.post_conditions = Vec::new();
+        self.post_condition = None;
         self.preconditions = Vec::new();
         self.unwind_condition = None;
         self.unwind_environment = Environment::default();
@@ -359,7 +359,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             self.mir.arg_count,
             &self.exit_environment,
             &self.preconditions,
-            &self.post_conditions,
+            &self.post_condition,
             self.unwind_condition.clone(),
             &self.unwind_environment,
             *self.tcx,
@@ -1032,6 +1032,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
                 return true;
             }
+            KnownFunctionNames::MiraiPostcondition => {
+                checked_assume!(actual_args.len() == 3);
+                if self.check_for_errors {
+                    self.report_calls_to_special_functions(known_name, actual_args);
+                }
+                self.handle_post_condition(&actual_args, destination);
+                return true;
+            }
             KnownFunctionNames::MiraiPrecondition => {
                 checked_assume!(actual_args.len() == 2);
                 self.handle_precondition(&actual_args);
@@ -1040,23 +1048,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             }
             KnownFunctionNames::MiraiSetModelField => {
                 if let Some((_, target)) = destination {
-                    checked_assume!(actual_args.len() == 3);
-                    let qualifier = actual_args[0].0.clone();
-                    let field_name = self.coerce_to_string(&actual_args[1].1);
-                    let target_path = Path::new_model_field(qualifier, field_name)
-                        .refine_paths(&self.current_environment);
-                    let rpath = actual_args[2].0.clone();
-                    self.copy_or_move_elements(
-                        target_path,
-                        rpath,
-                        ExpressionType::NonPrimitive,
-                        true,
-                    );
-                    let exit_condition = self.current_environment.entry_condition.clone();
-                    self.current_environment.exit_conditions = self
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
+                    self.handle_set_model_field(&actual_args, *target);
                 } else {
                     unreachable!();
                 }
@@ -1138,6 +1130,25 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         false
     }
 
+    fn handle_set_model_field(
+        &mut self,
+        actual_args: &&[(Rc<Path>, Rc<AbstractValue>)],
+        target: mir::BasicBlock,
+    ) {
+        checked_assume!(actual_args.len() == 3);
+        let qualifier = actual_args[0].0.clone();
+        let field_name = self.coerce_to_string(&actual_args[1].1);
+        let target_path =
+            Path::new_model_field(qualifier, field_name).refine_paths(&self.current_environment);
+        let rpath = actual_args[2].0.clone();
+        self.copy_or_move_elements(target_path, rpath, ExpressionType::NonPrimitive, true);
+        let exit_condition = self.current_environment.entry_condition.clone();
+        self.current_environment.exit_conditions = self
+            .current_environment
+            .exit_conditions
+            .insert(target, exit_condition);
+    }
+
     /// Extracts the string from an AbstractDomain that is required to be a string literal.
     /// This is the case for helper MIRAI helper functions that are hidden in the documentation
     /// and that are required to be invoked via macros that ensure that the argument providing
@@ -1185,6 +1196,34 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .current_environment
                 .exit_conditions
                 .insert(cleanup_target, abstract_value::FALSE.into());
+        }
+    }
+
+    fn handle_post_condition(
+        &mut self,
+        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+    ) {
+        precondition!(actual_args.len() == 3);
+        let condition = actual_args[0].1.clone();
+        if self.check_for_errors {
+            if self.post_condition.is_some() {
+                let span = self.current_span;
+                let warning = self
+                    .session
+                    .struct_span_warn(span, "only one post condition is supported");
+                self.emit_diagnostic(warning);
+            }
+            self.post_condition = Some(condition.clone());
+        }
+        let exit_condition = self.current_environment.entry_condition.and(condition);
+        if let Some((_, target)) = destination {
+            self.current_environment.exit_conditions = self
+                .current_environment
+                .exit_conditions
+                .insert(*target, exit_condition);
+        } else {
+            unreachable!();
         }
     }
 
@@ -1464,10 +1503,18 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
             }
 
+            // Add post conditions to entry condition
             let mut exit_condition = self.current_environment.entry_condition.clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
                 exit_condition = exit_condition.and(unwind_condition.logical_not());
             }
+            if let Some(post_condition) = &function_summary.post_condition {
+                let refined_post_condition = post_condition
+                    .refine_parameters(actual_args, self.fresh_variable_offset)
+                    .refine_paths(&self.current_environment);
+                exit_condition = exit_condition.and(refined_post_condition);
+            }
+
             self.current_environment.exit_conditions = self
                 .current_environment
                 .exit_conditions
@@ -1539,82 +1586,36 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     self.emit_diagnostic(warning);
                 }
             }
+            KnownFunctionNames::MiraiPostcondition => {
+                assume!(actual_args.len() == 3); // The type checker ensures this.
+                let (_, assumption) = &actual_args[1];
+                if !assumption.as_bool_if_known().unwrap_or(false) {
+                    let (_, cond) = &actual_args[0];
+                    let message = self.coerce_to_string(&actual_args[2].1);
+                    self.check_condition(cond, message, true);
+                }
+            }
             KnownFunctionNames::MiraiVerify => {
                 assume!(actual_args.len() == 2); // The type checker ensures this.
                 let (_, cond) = &actual_args[0];
-                let (cond_as_bool, entry_cond_as_bool) =
-                    self.check_condition_value_and_reachability(cond);
-
-                // If we never get here, rather call unreachable!()
-                if !entry_cond_as_bool.unwrap_or(true) {
-                    let span = self.current_span;
-                    let message =
-                        "this is unreachable, mark it as such by using the unreachable! macro";
-                    let warning = self.session.struct_span_warn(span, message);
-                    self.emit_diagnostic(warning);
-                    return;
-                }
-
-                // If the condition is always true when we get here there is nothing to report.
-                if cond_as_bool.unwrap_or(false) {
-                    return;
-                }
-
                 let message = self.coerce_to_string(&actual_args[1].1);
-
-                // If the condition is always false, give an error since that is bad style.
-                if !cond_as_bool.unwrap_or(true) {
-                    // If the condition is always false, give a style error
-                    let span = self.current_span;
-                    let error = self
-                        .session
-                        .struct_span_err(span, "provably false verification condition");
-                    self.emit_diagnostic(error);
+                if let Some(warning) = self.check_condition(cond, message, false) {
+                    // Push a precondition so that any known or unknown caller of this function
+                    // is warned that this function will fail if the precondition is not met.
                     if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
-                        // promote the path as a precondition. I.e. the program is only correct,
-                        // albeit badly written, if we never get here.
-                        let condition = self.current_environment.entry_condition.logical_not();
+                        let condition = self
+                            .current_environment
+                            .entry_condition
+                            .logical_not()
+                            .or(cond.clone());
                         let precondition = Precondition {
                             condition,
-                            message,
+                            message: Rc::new(warning),
                             provenance: None,
-                            spans: vec![span],
+                            spans: vec![self.current_span],
                         };
                         self.preconditions.push(precondition);
                     }
-                    return;
-                }
-
-                let warning = format!("possible {}", message);
-
-                // We might get here, or not, and the condition might be false, or not.
-                // Give a warning if we don't know all of the callers, or if we run into a k-limit
-                if is_public(self.def_id, &self.tcx)
-                    || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
-                {
-                    // We expect public functions to have programmer supplied preconditions
-                    // that preclude any assertions from failing. So, at this stage we get to
-                    // complain a bit.
-                    let span = self.current_span;
-                    let warning = self.session.struct_span_warn(span, warning.as_str());
-                    self.emit_diagnostic(warning);
-                }
-
-                // Now try to push a precondition so that any known or unknown caller of this function
-                // is warned that this function will fail if the precondition is not met.
-                if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
-                    let condition = self
-                        .current_environment
-                        .entry_condition
-                        .logical_not()
-                        .or(cond.clone());
-                    let precondition = Precondition {
-                        condition,
-                        message: Rc::new(warning),
-                        provenance: None,
-                        spans: vec![self.current_span],
-                    };
-                    self.preconditions.push(precondition);
                 }
             }
             KnownFunctionNames::StdBeginPanic => {
@@ -1680,6 +1681,74 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             }
             _ => unreachable!(),
         }
+    }
+
+    /// Check if the given condition is reachable and true.
+    /// If not issue a warning if the function is public and return the warning message, if
+    /// the condition is not a post condition.
+    fn check_condition(
+        &mut self,
+        cond: &Rc<AbstractValue>,
+        message: Rc<String>,
+        is_post_condition: bool,
+    ) -> Option<String> {
+        let (cond_as_bool, entry_cond_as_bool) = self.check_condition_value_and_reachability(cond);
+
+        // If we never get here, rather call unreachable!()
+        if !entry_cond_as_bool.unwrap_or(true) {
+            let span = self.current_span;
+            let message = "this is unreachable, mark it as such by using the unreachable! macro";
+            let warning = self.session.struct_span_warn(span, message);
+            self.emit_diagnostic(warning);
+            return None;
+        }
+
+        // If the condition is always true when we get here there is nothing to report.
+        if cond_as_bool.unwrap_or(false) {
+            return None;
+        }
+
+        // If the condition is always false, give an error since that is bad style.
+        if !cond_as_bool.unwrap_or(true) {
+            // If the condition is always false, give a style error
+            let span = self.current_span;
+            let error = self
+                .session
+                .struct_span_err(span, "provably false verification condition");
+            self.emit_diagnostic(error);
+            if !is_post_condition && self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
+            {
+                // promote the path as a precondition. I.e. the program is only correct,
+                // albeit badly written, if we never get here.
+                let condition = self.current_environment.entry_condition.logical_not();
+                let message = Rc::new(format!("possible {}", message));
+                let precondition = Precondition {
+                    condition,
+                    message,
+                    provenance: None,
+                    spans: vec![span],
+                };
+                self.preconditions.push(precondition);
+            }
+            return None;
+        }
+
+        let warning = format!("possible {}", message);
+
+        // We might get here, or not, and the condition might be false, or not.
+        // Give a warning if we don't know all of the callers, or if we run into a k-limit
+        if is_public(self.def_id, &self.tcx)
+            || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+        {
+            // We expect public functions to have programmer supplied preconditions
+            // that preclude any assertions from failing. So, at this stage we get to
+            // complain a bit.
+            let span = self.current_span;
+            let warning = self.session.struct_span_warn(span, warning.as_str());
+            self.emit_diagnostic(warning);
+        }
+
+        Some(warning)
     }
 
     /// Adds a (rpath, rvalue) pair to the current environment for every pair in effects

@@ -44,7 +44,7 @@ for instructions on how to build, run and debug MIRAI.
 
 ## Road map
 * Stabilize MIRAI and get rid of crashing bugs and OOMs
-* Explicit post conditions
+* Model (ghost) variables
 * Quantifiers
 * Explicit loop invariants
 * Structure invariants
@@ -53,6 +53,7 @@ for instructions on how to build, run and debug MIRAI.
 * Publish MIRAI to crates.io
 * Support linting interfaces
 * Tutorials and worked examples
+* Loop discovery
 * Loop invariant inference
 * Make MIRAI work on Linux
 

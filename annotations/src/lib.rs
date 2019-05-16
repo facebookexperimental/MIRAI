@@ -144,6 +144,216 @@ macro_rules! debug_checked_assume_ne {
 }
 
 /// Equivalent to a no op when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// point where it appears in a function, but to also add it a postcondition that can
+/// be assumed by the caller of the function.
+#[macro_export]
+macro_rules! postcondition {
+    ($condition:expr) => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($condition, false, "unsatisfied postcondition")
+        }
+    };
+    ($condition:expr, $message:literal) => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", $message))
+        }
+    };
+    ($condition:expr, $($arg:tt)*) => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", stringify!($($arg)*)));
+        }
+    };
+}
+
+/// Equivalent to a no op when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes the compiler to assume the condition at the
+/// point where it appears in a function, but to also add it a postcondition that can
+/// be assumed by the caller of the function.
+#[macro_export]
+macro_rules! assumed_postcondition {
+    ($condition:expr) => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($condition, true, "")
+        }
+    };
+}
+
+/// Equivalent to the standard assert! when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// point where it appears in a function, but to also add it a postcondition that can
+/// be assumed by the caller of the function.
+#[macro_export]
+macro_rules! checked_postcondition {
+    ($condition:expr) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($condition, false,  "unsatisfied postcondition")
+        } else {
+            assert!($condition);
+        }
+    );
+    ($condition:expr, $message:literal) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", $message))
+        } else {
+            assert!($condition, $message);
+        }
+    );
+    ($condition:expr, $($arg:tt)*) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", stringify!($($arg)*)));
+        } else {
+            assert!($condition, $($arg)*);
+        }
+    );
+}
+
+/// Equivalent to the standard assert_eq! when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// point where it appears in a function, but to also add it a postcondition that can
+/// be assumed by the caller of the function.
+#[macro_export]
+macro_rules! checked_postcondition_eq {
+    ($left:expr, $right:expr) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left == $right, false,  concat!("unsatisfied postcondition: ", stringify!($left == $right)))
+        } else {
+            assert_eq!($left, $right);
+        }
+    );
+    ($left:expr, $right:expr, $message:literal) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left == $right, false,  concat!("unsatisfied postcondition: ", stringify!($left == $right), ", ", $message))
+        } else {
+            assert_eq!($left, $right, $message);
+        }
+    );
+    ($left:expr, $right:expr, $($arg:tt)*) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left == $right, false,  concat!("unsatisfied postcondition: ", stringify!($left == $right), ", ", stringify!($($arg)*)));
+        } else {
+            assert_eq!($left, $right, $($arg)*);
+        }
+    );
+}
+
+/// Equivalent to the standard assert_ne! when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// point where it appears in a function, but to also add it a postcondition that can
+/// be assumed by the caller of the function.
+#[macro_export]
+macro_rules! checked_postcondition_ne {
+    ($left:expr, $right:expr) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left != $right, false,  concat!("unsatisfied postcondition: ", stringify!($left != $right)))
+        } else {
+            assert_ne!($left, $right);
+        }
+    );
+    ($left:expr, $right:expr, $message:literal) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left != $right, false,  concat!("unsatisfied postcondition: ", stringify!($left != $right), ", ", $message))
+        } else {
+            assert_ne!($left, $right, $message);
+        }
+    );
+    ($left:expr, $right:expr, $($arg:tt)*) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left != $right, false,  concat!("unsatisfied postcondition: ", stringify!($left != $right), ", ", stringify!($($arg)*)));
+        } else {
+            assert_ne!($left, $right, $($arg)*);
+        }
+    );
+}
+
+/// Equivalent to the standard debug_assert! when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// point where it appears in a function, but to also add it a postcondition that can
+/// be assumed by the caller of the function.
+#[macro_export]
+macro_rules! debug_checked_postcondition {
+    ($condition:expr) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($condition, false,  "unsatisfied postcondition")
+        } else {
+            debug_assert!($condition);
+        }
+    );
+    ($condition:expr, $message:literal) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", $message))
+        } else {
+            debug_assert!($condition, $message);
+        }
+    );
+    ($condition:expr, $($arg:tt)*) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", stringify!($($arg)*)));
+        } else {
+            debug_assert!($condition, $($arg)*);
+        }
+    );
+}
+
+/// Equivalent to the standard debug_assert_eq! when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// point where it appears in a function, but to also add it a postcondition that can
+/// be assumed by the caller of the function.
+#[macro_export]
+macro_rules! debug_checked_postcondition_eq {
+    ($left:expr, $right:expr) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left == $right, false,  concat!("unsatisfied postcondition: ", stringify!($left == $right)))
+        } else {
+            debug_assert_eq!($left, $right);
+        }
+    );
+    ($left:expr, $right:expr, $message:literal) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left == $right, false,  concat!("unsatisfied postcondition: ", stringify!($left == $right), ", ", $message))
+        } else {
+            debug_assert_eq!($left, $right, $message);
+        }
+    );
+    ($left:expr, $right:expr, $($arg:tt)*) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left == $right, false,  concat!("unsatisfied postcondition: ", stringify!($left == $right), ", ", stringify!($($arg)*)));
+        } else {
+            debug_assert_eq!($left, $right, $($arg)*);
+        }
+    );
+}
+
+/// Equivalent to the standard debug_assert_ne! when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// point where it appears in a function, but to also add it a postcondition that can
+/// be assumed by the caller of the function.
+#[macro_export]
+macro_rules! debug_checked_postcondition_ne {
+    ($left:expr, $right:expr) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left != $right, false,  concat!("unsatisfied postcondition: ", stringify!($left != $right)))
+        } else {
+            debug_assert_ne!($left, $right);
+        }
+    );
+    ($left:expr, $right:expr, $message:literal) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left != $right, false,  concat!("unsatisfied postcondition: ", stringify!($left != $right), ", ", $message))
+        } else {
+            debug_assert_ne!($left, $right, $message);
+        }
+    );
+    ($left:expr, $right:expr, $($arg:tt)*) => (
+        if cfg!(mirai) {
+            mirai_annotations::mirai_postcondition($left != $right, false,  concat!("unsatisfied postcondition: ", stringify!($left != $right), ", ", stringify!($($arg)*)));
+        } else {
+            debug_assert_ne!($left, $right, $($arg)*);
+        }
+    );
+}
+
+/// Equivalent to a no op when used with an unmodified Rust compiler.
 /// When compiled with MIRAI, this causes the compiler to assume the condition at the
 /// point where it appears in a function, but to also add it a precondition that must
 /// be verified by the caller of the function.
@@ -565,6 +775,10 @@ macro_rules! set_model_field {
 // Helper function for MIRAI. Should only be called via the assume macros.
 #[doc(hidden)]
 pub fn mirai_assume(_condition: bool) {}
+
+// Helper function for MIRAI. Should only be called via the postcondition macros.
+#[doc(hidden)]
+pub fn mirai_postcondition(_condition: bool, _assumed: bool, _message: &str) {}
 
 // Helper function for MIRAI. Should only be called via the precondition macros.
 #[doc(hidden)]
