@@ -134,6 +134,7 @@ impl MiraiCallbacks {
             let defs_to_reanalyze = def_sets.defs_to_reanalyze;
             def_sets.defs_to_reanalyze = HashSet::new();
             def_sets.defs_to_analyze = defs_to_reanalyze;
+            persistent_summary_cache.invalidate_default_summaries();
             info!(" ");
         }
         self.emit_or_check_diagnostics(&mut diagnostics_for);

@@ -41,12 +41,11 @@ use std::ops::Deref;
 ///    desirable to havoc all static variables every time such a function is called. Consequently
 ///    sound analysis is only possible one can assume that all such functions have been provided
 ///    with explicit contract functions.
-#[derive(Serialize, Deserialize, Clone, Debug, Default, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Summary {
-    /// The number of seconds that the analyzer used to construct this summary.
-    /// If it is >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY then this summary is not definitive
-    /// because the analyzer will omit it from the outer fixed point loop.
-    pub analysis_time_in_seconds: u64,
+    /// If true this summary was computed. If false, it is a default summary.
+    /// Used to distinguish a computed empty summary from a default summary.
+    pub is_not_default: bool,
 
     // Conditions that should hold prior to the call.
     // Callers should substitute parameter values with argument values and simplify the results
@@ -94,34 +93,9 @@ pub struct Summary {
     pub unwind_side_effects: Vec<(Path, AbstractValue)>,
 }
 
-impl PartialEq for Summary {
-    fn eq(&self, other: &Summary) -> bool {
-        if !self.result.eq(&other.result) {
-            return false;
-        }
-        if self.preconditions != other.preconditions {
-            return false;
-        }
-        if self.side_effects != other.side_effects {
-            return false;
-        }
-        if self.post_conditions != other.post_conditions {
-            return false;
-        }
-        if self.post_conditions != other.post_conditions {
-            return false;
-        }
-        if self.unwind_side_effects != other.unwind_side_effects {
-            return false;
-        }
-        true
-    }
-}
-
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
 pub fn summarize(
-    analysis_time_in_seconds: u64,
     argument_count: usize,
     exit_environment: &Environment,
     preconditions: &[(AbstractValue, String)],
@@ -141,7 +115,7 @@ pub fn summarize(
     unwind_side_effects.sort();
 
     Summary {
-        analysis_time_in_seconds,
+        is_not_default: true,
         preconditions,
         result: result.cloned(),
         side_effects,
@@ -203,7 +177,8 @@ fn extract_reachable_heap_allocations(
     }
 }
 
-/// A persistent map from DefId to Summary.
+/// A persistent map from summary key to Summary, along with a transient cache from DefId to
+/// Summary. The latter is cleared after every outer fixed point loop iteration.
 /// Also tracks which definitions depend on (use) any particular Summary.
 pub struct PersistentSummaryCache<'a, 'tcx: 'a> {
     db: Db,
@@ -232,6 +207,25 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         }
     }
 
+    /// Any summaries that are still in a default state will be for functions in the foreign_contracts
+    /// module and their definitions use DefIds that are different from the ids at the call sites.
+    pub fn invalidate_default_summaries(&mut self) {
+        let keys_to_remove: Vec<DefId> = self
+            .cache
+            .iter()
+            .filter_map(|(def_id, summary)| {
+                if summary.is_not_default {
+                    None
+                } else {
+                    Some(*def_id)
+                }
+            })
+            .collect();
+        for key in keys_to_remove {
+            self.cache.remove(&key);
+        }
+    }
+
     /// Returns a list of DefIds for all functions in the current crate that are known
     /// to have used the summary of the function identified by def_id.
     /// Use this after all functions in a crate have been analyzed.
@@ -253,9 +247,9 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     }
 
     /// Returns (and caches) a string that uniquely identifies the argument type signature of a
-    /// function definition. When this is appended to a normal summary key, it provides a way
+    /// function call site. When this is appended to a normal summary key, it provides a way
     /// to find type specialized core summaries provided via the foreign_contracts mechanism.
-    /// The string will always be the same as long as the definition does not change its type
+    /// The string will always be the same as long as the contract definition does not change its type
     /// signature, so it can be used to transfer information from one compilation to the next,
     /// making incremental analysis possible.
     pub fn get_argument_types_key_for(&mut self, def_id: DefId, ty: Ty<'tcx>) -> &String {
