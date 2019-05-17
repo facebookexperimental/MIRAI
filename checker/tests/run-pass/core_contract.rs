@@ -10,6 +10,13 @@
 #[macro_use]
 extern crate mirai_annotations;
 
+pub fn main() {
+    let x: Option<i64> = Some(1);
+    let _y = x.unwrap();
+    let z: Option<i64> = None;
+    let _ = z.unwrap(); //~ unsatisfied precondition: self may not be None
+}
+
 pub mod foreign_contracts {
     pub mod core {
         pub mod option {
@@ -32,11 +39,4 @@ pub mod foreign_contracts {
             }
         }
     }
-}
-
-pub fn main() {
-    let x: Option<i64> = Some(1);
-    let _y = x.unwrap();
-    let z: Option<i64> = None;
-    let _ = z.unwrap(); //~ unsatisfied precondition: self may not be None
 }

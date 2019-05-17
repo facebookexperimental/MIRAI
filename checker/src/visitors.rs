@@ -303,7 +303,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
         // Now create a summary of the body that can be in-lined into call sites.
         let summary = summaries::summarize(
-            elapsed_time_in_seconds,
             self.mir.arg_count,
             &self.exit_environment,
             &self.preconditions,
