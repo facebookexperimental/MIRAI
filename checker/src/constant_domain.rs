@@ -6,9 +6,10 @@
 
 use crate::expression::{Expression, ExpressionType};
 use crate::summaries::PersistentSummaryCache;
+use crate::utils;
 
 use rustc::hir::def_id::DefId;
-use rustc::ty::Ty;
+use rustc::ty::{Ty, TyCtxt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -30,6 +31,8 @@ pub enum ConstantDomain {
         /// since the def id the other crates use have no meaning for the current crate.
         #[serde(skip)]
         def_id: Option<DefId>,
+        #[serde(skip)]
+        function_id: Option<usize>,
         /// Indicates if the function is known to be treated specially by the Rust compiler
         known_name: KnownFunctionNames,
         /// The key to use when retrieving a summary for the function from the summary cache
@@ -83,15 +86,15 @@ pub enum KnownFunctionNames {
 /// Constructors
 impl ConstantDomain {
     /// Returns a constant value that is a reference to a function
-    pub fn for_function<'tcx>(
+    pub fn for_function<'a, 'tcx>(
+        function_id: usize,
         def_id: DefId,
         ty: Ty<'tcx>,
-        summary_cache: &mut PersistentSummaryCache<'_, 'tcx>,
+        tcx: &'a TyCtxt<'a, 'tcx, 'tcx>,
+        summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
     ) -> ConstantDomain {
         let summary_cache_key = summary_cache.get_summary_key_for(def_id).to_owned();
-        let argument_type_key = summary_cache
-            .get_argument_types_key_for(def_id, ty)
-            .to_owned();
+        let argument_type_key = utils::argument_types_key_str(tcx, ty);
         let known_name = match summary_cache_key.as_str() {
             "core.slice.implement.len" => KnownFunctionNames::CoreSliceLen,
             "mirai_annotations.mirai_assume" => KnownFunctionNames::MiraiAssume,
@@ -106,6 +109,7 @@ impl ConstantDomain {
         };
         ConstantDomain::Function {
             def_id: Some(def_id),
+            function_id: Some(function_id),
             known_name,
             summary_cache_key,
             argument_type_key,
@@ -673,9 +677,9 @@ impl ConstantDomain {
 }
 
 /// Keeps track of MIR constants that have already been mapped onto ConstantDomain instances.
-pub struct ConstantValueCache {
+pub struct ConstantValueCache<'tcx> {
     char_cache: HashMap<char, ConstantDomain>,
-    function_cache: HashMap<DefId, ConstantDomain>,
+    function_cache: HashMap<(DefId, Ty<'tcx>), ConstantDomain>,
     f32_cache: HashMap<u32, ConstantDomain>,
     f64_cache: HashMap<u64, ConstantDomain>,
     i128_cache: HashMap<i128, ConstantDomain>,
@@ -684,8 +688,8 @@ pub struct ConstantValueCache {
     heap_address_counter: usize,
 }
 
-impl ConstantValueCache {
-    pub fn new() -> ConstantValueCache {
+impl<'tcx> ConstantValueCache<'tcx> {
+    pub fn new() -> ConstantValueCache<'tcx> {
         ConstantValueCache {
             char_cache: HashMap::default(),
             function_cache: HashMap::default(),
@@ -749,19 +753,21 @@ impl ConstantValueCache {
 
     /// Given the MIR DefId of a function return the unique (cached) ConstantDomain that corresponds
     /// to the function identified by that DefId.
-    pub fn get_function_constant_for<'tcx>(
+    pub fn get_function_constant_for<'a>(
         &mut self,
         def_id: DefId,
         ty: Ty<'tcx>,
-        summary_cache: &mut PersistentSummaryCache<'_, 'tcx>,
+        tcx: &'a TyCtxt<'a, 'tcx, 'tcx>,
+        summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
     ) -> &ConstantDomain {
-        self.function_cache
-            .entry(def_id)
-            .or_insert_with(|| ConstantDomain::for_function(def_id, ty, summary_cache))
+        let function_id = self.function_cache.len();
+        self.function_cache.entry((def_id, ty)).or_insert_with(|| {
+            ConstantDomain::for_function(function_id, def_id, ty, tcx, summary_cache)
+        })
     }
 }
 
-impl Default for ConstantValueCache {
+impl<'tcx> Default for ConstantValueCache<'tcx> {
     fn default() -> Self {
         Self::new()
     }

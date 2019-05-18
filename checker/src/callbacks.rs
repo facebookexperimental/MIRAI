@@ -152,7 +152,7 @@ impl MiraiCallbacks {
         compiler: &'a interface::Compiler,
         tcx: &'a TyCtxt<'a, 'tcx, 'tcx>,
         mut persistent_summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
-        mut constant_value_cache: &mut ConstantValueCache,
+        mut constant_value_cache: &mut ConstantValueCache<'tcx>,
         def_sets: &mut DefSets,
         diagnostics_for: &mut HashMap<DefId, Vec<DiagnosticBuilder<'a>>>,
         iteration_count: usize,
@@ -277,7 +277,7 @@ impl MiraiCallbacks {
         name: &str,
         compiler: &'b interface::Compiler,
         tcx: &'b TyCtxt<'b, 'tcx, 'tcx>,
-        mut constant_value_cache: &'a mut ConstantValueCache,
+        mut constant_value_cache: &'a mut ConstantValueCache<'tcx>,
         mut persistent_summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
         mut buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
     ) -> (Option<Summary>, u64) {
