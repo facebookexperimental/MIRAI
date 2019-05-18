@@ -121,11 +121,9 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'_, '_
             str.push_str(qualified_type_name(tcx, def_id).as_str());
         }
         Str => str.push_str("str"),
-        Array(ty, len) => {
+        Array(ty, _) => {
             str.push_str("array_");
             append_mangled_type(str, ty, tcx);
-            str.push('_');
-            str.push_str(&format!("{:?}", len));
         }
         Slice(ty) => {
             str.push_str("slice_");
@@ -158,8 +156,12 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'_, '_
             });
         }
         Param(param_ty) => {
-            let ty: Ty<'tcx> = param_ty.to_ty(*tcx);
-            str.push_str(&format!("{:?}", ty));
+            let pty: Ty<'tcx> = param_ty.to_ty(*tcx);
+            if ty.eq(pty) {
+                str.push_str(&format!("{:?}", ty));
+            } else {
+                append_mangled_type(str, pty, tcx);
+            }
         }
         _ => {
             //todo: add cases as the need arises, meanwhile make the need obvious.

@@ -33,7 +33,7 @@ pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b, E> {
     pub tcx: &'b TyCtxt<'b, 'tcx, 'tcx>,
     pub def_id: hir::def_id::DefId,
     pub mir: &'a mir::Mir<'tcx>,
-    pub constant_value_cache: &'a mut ConstantValueCache,
+    pub constant_value_cache: &'a mut ConstantValueCache<'tcx>,
     pub summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
     pub smt_solver: &'a mut dyn SmtSolver<E>,
     pub buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
@@ -45,7 +45,7 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
     tcx: &'b TyCtxt<'b, 'tcx, 'tcx>,
     def_id: hir::def_id::DefId,
     mir: &'a mir::Mir<'tcx>,
-    constant_value_cache: &'a mut ConstantValueCache,
+    constant_value_cache: &'a mut ConstantValueCache<'tcx>,
     summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
     smt_solver: &'a mut dyn SmtSolver<E>,
     buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
@@ -1189,11 +1189,20 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn get_function_summary(&mut self, func_to_call: &AbstractValue) -> Summary {
         if let Expression::CompileTimeConstant(ConstantDomain::Function {
             def_id: Some(def_id),
+            function_id: Some(function_id),
+            summary_cache_key,
+            argument_type_key,
             ..
-        }) = func_to_call.domain.expression
+        }) = &func_to_call.domain.expression
         {
             self.summary_cache
-                .get_summary_for(def_id, Some(self.def_id))
+                .get_summary_for_function_constant(
+                    *def_id,
+                    *function_id,
+                    summary_cache_key,
+                    argument_type_key,
+                    self.def_id,
+                )
                 .clone()
         } else {
             Summary::default()
@@ -2713,6 +2722,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         &mut self.constant_value_cache.get_function_constant_for(
             def_id,
             ty,
+            self.tcx,
             &mut self.summary_cache,
         )
     }

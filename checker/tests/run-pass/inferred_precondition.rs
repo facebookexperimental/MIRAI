@@ -14,4 +14,3 @@ pub fn main() {
 fn foo(arr: &mut [i32], i: usize) {
     arr[i] = 12; //~ related location
 }
-

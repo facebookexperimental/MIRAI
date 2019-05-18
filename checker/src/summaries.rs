@@ -8,7 +8,7 @@ use crate::environment::Environment;
 use crate::utils;
 
 use rustc::hir::def_id::DefId;
-use rustc::ty::{Ty, TyCtxt};
+use rustc::ty::TyCtxt;
 use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::collections::{HashMap, HashSet};
@@ -183,9 +183,9 @@ fn extract_reachable_heap_allocations(
 pub struct PersistentSummaryCache<'a, 'tcx: 'a> {
     db: Db,
     cache: HashMap<DefId, Summary>,
+    typed_cache: HashMap<usize, Summary>,
     dependencies: HashMap<DefId, Vec<DefId>>,
     key_cache: HashMap<DefId, String>,
-    argument_key_cache: HashMap<DefId, String>,
     type_context: &'a TyCtxt<'a, 'tcx, 'tcx>,
 }
 
@@ -200,8 +200,8 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             db: Db::start_default(summary_store_path)
                 .unwrap_or_else(|err| unreachable!(format!("{} ", err))),
             cache: HashMap::new(),
+            typed_cache: HashMap::new(),
             key_cache: HashMap::new(),
-            argument_key_cache: HashMap::new(),
             dependencies: HashMap::new(),
             type_context,
         }
@@ -210,6 +210,20 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// Any summaries that are still in a default state will be for functions in the foreign_contracts
     /// module and their definitions use DefIds that are different from the ids at the call sites.
     pub fn invalidate_default_summaries(&mut self) {
+        let keys_to_remove: Vec<usize> = self
+            .typed_cache
+            .iter()
+            .filter_map(|(id, summary)| {
+                if summary.is_not_default {
+                    None
+                } else {
+                    Some(*id)
+                }
+            })
+            .collect();
+        for key in keys_to_remove {
+            self.typed_cache.remove(&key);
+        }
         let keys_to_remove: Vec<DefId> = self
             .cache
             .iter()
@@ -246,19 +260,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             .or_insert_with(|| utils::summary_key_str(tcx, def_id))
     }
 
-    /// Returns (and caches) a string that uniquely identifies the argument type signature of a
-    /// function call site. When this is appended to a normal summary key, it provides a way
-    /// to find type specialized core summaries provided via the foreign_contracts mechanism.
-    /// The string will always be the same as long as the contract definition does not change its type
-    /// signature, so it can be used to transfer information from one compilation to the next,
-    /// making incremental analysis possible.
-    pub fn get_argument_types_key_for(&mut self, def_id: DefId, ty: Ty<'tcx>) -> &String {
-        let tcx = self.type_context;
-        self.argument_key_cache
-            .entry(def_id)
-            .or_insert_with(|| utils::argument_types_key_str(tcx, ty))
-    }
-
     /// Returns the cached summary corresponding to def_id, or creates a default for it.
     /// The optional dependent_def_id is the definition that refers to the returned summary.
     /// The cache tracks all such dependents so that they can be retrieved and re-analyzed
@@ -279,15 +280,57 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             .key_cache
             .entry(def_id)
             .or_insert_with(|| utils::summary_key_str(tcx, def_id));
-        let argument_key_cache = &self.argument_key_cache;
         self.cache.entry(def_id).or_insert_with(|| {
-            let arg_types_key = argument_key_cache.get(&def_id);
-            Self::get_persistent_summary_using_arg_types_if_possible(
-                db,
-                &persistent_key,
-                arg_types_key,
-            )
+            Self::get_persistent_summary_for_db(db, &persistent_key).unwrap_or_default()
         })
+    }
+
+    /// Returns the cached summary corresponding to function_id, or creates a default for it.
+    /// The optional dependent_def_id is the definition that refers to the returned summary.
+    /// The cache tracks all such dependents so that they can be retrieved and re-analyzed
+    /// if the cache is updated with a new summary for def_id.
+    /// Note that function_id is derived from the location where the function is referenced
+    /// and that this location may augment a generic function with type parameter information for,
+    /// whereas def_id refers to the generic function itself.
+    /// This matters if a useful function summary can only be written for specific generic instantiations.
+    pub fn get_summary_for_function_constant(
+        &mut self,
+        def_id: DefId,
+        function_id: usize,
+        persistent_key: &str,
+        arg_types_key: &str,
+        dependent_def_id: DefId,
+    ) -> &Summary {
+        let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
+        if !dependents.contains(&dependent_def_id) {
+            dependents.push(dependent_def_id);
+        }
+        if self.typed_cache.contains_key(&function_id) {
+            self.typed_cache.get(&function_id).unwrap()
+        } else {
+            let db = &self.db;
+            if let Some(summary) = Self::get_persistent_summary_using_arg_types_if_possible(
+                db,
+                persistent_key,
+                arg_types_key,
+            ) {
+                return self.typed_cache.entry(function_id).or_insert(summary);
+            }
+
+            // In this case we default to the summary that is not argument type specific, but
+            // we need to take care not to cache this summary in self.typed_cache because updating
+            // self.cache will not also update self.typed_cache.
+            self.cache.entry(def_id).or_insert_with(|| {
+                let summary = Self::get_persistent_summary_for_db(db, &persistent_key);
+                if !def_id.is_local() && summary.is_none() {
+                    info!(
+                        "Summary store has no entry for {}{}",
+                        persistent_key, arg_types_key
+                    );
+                };
+                summary.unwrap_or_default()
+            })
+        }
     }
 
     /// Returns a summary from the persistent summary cache, preferentially using the concatenation
@@ -296,26 +339,16 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     fn get_persistent_summary_using_arg_types_if_possible(
         db: &Db,
         persistent_key: &str,
-        arg_types_key: Option<&String>,
-    ) -> Summary {
-        if let Some(arg_types_key) = arg_types_key {
-            if !arg_types_key.is_empty() {
-                let mut mangled_key = String::new();
-                mangled_key.push_str(persistent_key);
-                mangled_key.push_str(arg_types_key.as_str());
-                return match Self::get_persistent_summary_for_db(db, mangled_key.as_str()) {
-                    Some(summary) => summary,
-                    None => match Self::get_persistent_summary_for_db(db, persistent_key) {
-                        Some(summary) => summary,
-                        None => {
-                            info!("Summary store has no entry for {}", mangled_key);
-                            Summary::default()
-                        }
-                    },
-                };
-            }
-        };
-        Self::get_persistent_summary_for_db(db, persistent_key).unwrap_or_else(Summary::default)
+        arg_types_key: &str,
+    ) -> Option<Summary> {
+        if !arg_types_key.is_empty() {
+            let mut mangled_key = String::new();
+            mangled_key.push_str(persistent_key);
+            mangled_key.push_str(arg_types_key);
+            Self::get_persistent_summary_for_db(db, mangled_key.as_str())
+        } else {
+            None
+        }
     }
 
     /// Returns the summary corresponding to the persistent_key in the the summary database.
