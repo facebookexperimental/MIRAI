@@ -50,7 +50,7 @@ pub trait SmtSolver<SmtExpressionType> {
         set_model_field!(
             &self,
             number_of_backtracks,
-            get_model_field!(&self, number_of_backtracks, 0) + 1 //todo: the precondition should allow this
+            get_model_field!(&self, number_of_backtracks, 0) + 1
         );
     }
 
