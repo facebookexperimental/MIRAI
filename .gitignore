@@ -2,3 +2,5 @@
 .idea/
 target/
 examples/
+!examples/foreign_contracts.rs
+
