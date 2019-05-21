@@ -382,7 +382,7 @@ impl Z3Solver {
             Expression::Widen { path, operand } => {
                 self.get_ast_for_widened(path, operand, operand.expression.infer_type())
             }
-            Expression::Join { path, .. } => {
+            Expression::Join { path, .. } | Expression::UnknownModelField { path, .. } => {
                 let path_str = CString::new(format!("{:?}", path)).unwrap();
                 unsafe {
                     let path_symbol =
