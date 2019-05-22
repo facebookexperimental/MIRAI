@@ -211,20 +211,28 @@ impl Environment {
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
-                    // Partially initialized values at join points are not allowed by the type system,
-                    // hence this value is missing because we are at an early stage of the fixed point
-                    // computation. It is therefore reasonable to only look at the known value.
-                    value_map = value_map.insert(p, val1.clone());
+                    let val2 = Expression::Variable {
+                        path: box path.clone(),
+                        var_type: val1.domain.expression.infer_type(),
+                    }
+                    .into();
+                    value_map =
+                        value_map.insert(p, join_or_widen(val1, &val2, &join_condition, path));
                 }
             }
         }
         for (path, val2) in value_map2.iter() {
             if !value_map1.contains_key(path) {
                 checked_assume!(!val2.is_bottom());
-                // Partially initialized values at join points are not allowed by the type system,
-                // hence this value is missing because we are at an early stage of the fixed point
-                // computation. It is therefore reasonable to only look at the known value.
-                value_map = value_map.insert(path.clone(), val2.clone());
+                let val1 = Expression::Variable {
+                    path: box path.clone(),
+                    var_type: val2.domain.expression.infer_type(),
+                }
+                .into();
+                value_map = value_map.insert(
+                    path.clone(),
+                    join_or_widen(&val1, val2, &join_condition, path),
+                );
             }
         }
         Environment {

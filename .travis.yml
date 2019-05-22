@@ -1,7 +1,7 @@
 os: osx
 language: rust
 rust:
-- nightly
+- nightly-2019-05-22
 
 before_install:
 - curl -L https://github.com/mozilla/grcov/releases/download/v0.4.3/grcov-osx-x86_64.tar.bz2 | tar jxf -
