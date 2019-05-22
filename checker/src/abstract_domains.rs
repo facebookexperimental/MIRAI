@@ -858,6 +858,8 @@ impl AbstractDomain {
             (_, Expression::Top) => true,
             // The universal set is not a subset of any set other than the universal set.
             (Expression::Top, _) => false,
+            // Widened expressions are equal if their paths are equal, regardless of their operand values.
+            (Expression::Widen { path: p1, .. }, Expression::Widen { path: p2, .. }) => p1 == p2,
             // (condition ? consequent : alternate) is a subset of x if both consequent and alternate are subsets of x.
             (
                 Expression::ConditionalExpression {
@@ -882,25 +884,18 @@ impl AbstractDomain {
                 // This is a conservative answer. False does not imply other.subset(self).
                 self.subset(&consequent) && self.subset(&alternate)
             }
-            // (x join y) subset widen { z } if (x join y) subset z
-            (Expression::Join { .. }, Expression::Widen { operand, .. }) => self.subset(&operand),
+            // x subset widen { z } if x subset z
+            (_, Expression::Widen { operand, .. }) => self.subset(&operand),
             // (left join right) is a subset of x if both left and right are subsets of x.
             (Expression::Join { left, right, .. }, _) => {
                 // This is a conservative answer. False does not imply other.subset(self).
                 left.subset(other) && right.subset(other)
             }
-            // x is a subset of (left join right) if x is a subset of both left and right.
+            // x is a subset of (left join right) if x is a subset of either left or right.
             (_, Expression::Join { left, right, .. }) => {
                 // This is a conservative answer. False does not imply other.subset(self).
-                self.subset(&left) && self.subset(&right)
+                self.subset(&left) || self.subset(&right)
             }
-            // {x} subset {y} iff x = y
-            (Expression::AbstractHeapAddress(a1), Expression::AbstractHeapAddress(a2)) => a1 == a2,
-            (Expression::CompileTimeConstant(cv1), Expression::CompileTimeConstant(cv2)) => {
-                cv1 == cv2
-            }
-            (Expression::Reference(p1), Expression::Reference(p2)) => p1 == p2,
-            (Expression::Widen { path: p1, .. }, Expression::Widen { path: p2, .. }) => p1 == p2,
             // in all other cases we conservatively answer false
             _ => false,
         }
