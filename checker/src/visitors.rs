@@ -24,6 +24,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::iter::FromIterator;
+use std::rc::Rc;
 use std::time::Instant;
 use syntax::errors::DiagnosticBuilder;
 use syntax_pos;
@@ -172,17 +173,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     result
                 } else {
                     Expression::Variable {
-                        path: box path.clone(),
+                        path: Rc::new(path.clone()),
                         var_type: expression_type.clone(),
                     }
                     .into()
                 }
             } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
                 if result_type == ExpressionType::Reference {
-                    Expression::Reference(path).into()
+                    Expression::Reference(Rc::new(path)).into()
                 } else {
                     Expression::Variable {
-                        path: box path.clone(),
+                        path: Rc::new(path),
                         var_type: result_type.clone(),
                     }
                     .into()
@@ -635,8 +636,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let qualifier_length = target_qualifier.path_length();
         assume!(qualifier_length < 1_000_000_000);
         let target_path = Path::QualifiedPath {
-            qualifier: box target_qualifier,
-            selector: box PathSelector::Discriminant,
+            qualifier: Rc::new(target_qualifier),
+            selector: Rc::new(PathSelector::Discriminant),
             length: qualifier_length + 1,
         };
         let index_val = self
@@ -925,10 +926,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
                     // The current value, if any, of the model field are a set of (path, value) pairs
                     // where each path is rooted by qualifier.model_field(..)
-                    let qualifier = box actual_args[0].0.clone();
+                    let qualifier = Rc::new(actual_args[0].0.clone());
                     let path_length = qualifier.path_length();
                     let field_name = self.coerce_to_string(&actual_args[1].1);
-                    let selector = box PathSelector::ModelField(field_name);
+                    let selector = Rc::new(PathSelector::ModelField(field_name));
                     assume!(path_length < 1_000_000_000);
                     let rpath = Path::QualifiedPath {
                         qualifier,
@@ -950,7 +951,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         match &actual_args[0].1.domain.expression {
                             Expression::Variable { .. } | Expression::Reference(..) => {
                                 let rval: AbstractValue = Expression::UnknownModelField {
-                                    path: box rpath,
+                                    path: Rc::new(rpath),
                                     default: box actual_args[2].1.domain.clone(),
                                 }
                                 .into();
@@ -980,10 +981,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             KnownFunctionNames::MiraiSetModelField => {
                 if let Some((_, target)) = destination {
                     checked_assume!(actual_args.len() == 3);
-                    let qualifier = box actual_args[0].0.clone();
+                    let qualifier = Rc::new(actual_args[0].0.clone());
                     let path_length = qualifier.path_length();
                     let field_name = self.coerce_to_string(&actual_args[1].1);
-                    let selector = box PathSelector::ModelField(field_name);
+                    let selector = Rc::new(PathSelector::ModelField(field_name));
                     assume!(path_length < 1_000_000_000);
                     let target_path = Path::QualifiedPath {
                         qualifier,
@@ -1165,15 +1166,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             checked_assume!(args.len() == 1);
             let slice_val = &args[0].1;
             let qualifier = match &slice_val.domain.expression {
-                Expression::Reference(path) => Some(box path.clone()),
+                Expression::Reference(path) => Some(path.clone()),
                 Expression::Variable { path, .. } => Some(path.clone()),
                 Expression::AbstractHeapAddress(ordinal) => {
-                    Some(box Path::AbstractHeapAddress { ordinal: *ordinal })
+                    Some(Rc::new(Path::AbstractHeapAddress { ordinal: *ordinal }))
                 }
                 _ => None,
             };
             if let Some(qualifier) = qualifier {
-                let selector = box PathSelector::ArrayLength;
+                let selector = Rc::new(PathSelector::ArrayLength);
                 let len_path = Path::QualifiedPath {
                     length: qualifier.path_length() + 1,
                     qualifier,
@@ -1873,8 +1874,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     };
                     let index_val = self.constant_value_cache.get_u128_for(index).clone().into();
                     let index_path = Path::QualifiedPath {
-                        qualifier: (*qualifier).clone(),
-                        selector: box PathSelector::Index(box index_val),
+                        qualifier: qualifier.clone(),
+                        selector: Rc::new(PathSelector::Index(box index_val)),
                         length,
                     };
                     self.copy_or_move_elements(
@@ -1916,8 +1917,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             .clone()
                             .into();
                         let index_path = Path::QualifiedPath {
-                            qualifier: (*qualifier).clone(),
-                            selector: box PathSelector::Index(box index_val),
+                            qualifier: qualifier.clone(),
+                            selector: Rc::new(PathSelector::Index(box index_val)),
                             length,
                         };
                         let target_index_val = self
@@ -1926,8 +1927,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             .clone()
                             .into();
                         let indexed_target = Path::QualifiedPath {
-                            qualifier: box target_path.clone(),
-                            selector: box PathSelector::Index(box target_index_val),
+                            qualifier: Rc::new(target_path.clone()),
+                            selector: Rc::new(PathSelector::Index(box target_index_val)),
                             length,
                         };
                         self.copy_or_move_elements(
@@ -1972,7 +1973,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     value = AbstractValue {
                         provenance: value.provenance.clone(),
                         domain: Expression::Variable {
-                            path: box target_path.clone(),
+                            path: Rc::new(target_path.clone()),
                             var_type: var_type.clone(),
                         }
                         .into(),
@@ -2005,8 +2006,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         );
         let path_len = path.path_length();
         let length_path = Path::QualifiedPath {
-            qualifier: box path,
-            selector: box PathSelector::ArrayLength,
+            qualifier: Rc::new(path),
+            selector: Rc::new(PathSelector::ArrayLength),
             length: path_len + 1,
         };
         let length_value = self
@@ -2041,10 +2042,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 qualifier,
                 selector,
                 ..
-            } if *selector == PathSelector::Deref => {
-                self.lookup_path_and_refine_result(*qualifier, ExpressionType::Reference)
-            }
-            _ => Expression::Reference(value_path).into(),
+            } if *selector == PathSelector::Deref => self.lookup_path_and_refine_result(
+                qualifier.as_ref().clone(),
+                ExpressionType::Reference,
+            ),
+            _ => Expression::Reference(Rc::new(value_path)).into(),
         };
         self.current_environment.update_value_at(path, value);
     }
@@ -2069,8 +2071,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn get_len(&mut self, path: Path) -> AbstractValue {
         let length_path = Path::QualifiedPath {
             length: path.path_length() + 1,
-            qualifier: box path,
-            selector: box PathSelector::ArrayLength,
+            qualifier: Rc::new(path),
+            selector: Rc::new(PathSelector::ArrayLength),
         };
         self.lookup_path_and_refine_result(length_path, ExpressionType::Usize)
     }
@@ -2177,14 +2179,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let path_length = path.path_length();
         assume!(path_length < 1_000_000_000); // We'll run out of memory long before this happens
         let path0 = Path::QualifiedPath {
-            qualifier: box path.clone(),
-            selector: box PathSelector::Field(0),
+            qualifier: Rc::new(path.clone()),
+            selector: Rc::new(PathSelector::Field(0)),
             length: path_length + 1,
         };
         self.current_environment.update_value_at(path0, result);
         let path1 = Path::QualifiedPath {
-            qualifier: box path.clone(),
-            selector: box PathSelector::Field(1),
+            qualifier: Rc::new(path.clone()),
+            selector: Rc::new(PathSelector::Field(1)),
             length: path_length + 1,
         };
         self.current_environment
@@ -2243,8 +2245,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let adt_path_length = adt_path.path_length();
         assume!(adt_path_length < 1_000_000_000);
         let discriminant_path = Path::QualifiedPath {
-            qualifier: box adt_path,
-            selector: box PathSelector::Discriminant,
+            qualifier: Rc::new(adt_path),
+            selector: Rc::new(PathSelector::Discriminant),
             length: adt_path_length + 1,
         };
         let discriminant_type = self.get_place_type(place);
@@ -2285,17 +2287,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .get_u128_for(i as u128)
                 .clone()
                 .into();
-            let selector = box PathSelector::Index(box index_value);
+            let selector = Rc::new(PathSelector::Index(box index_value));
             let index_path = Path::QualifiedPath {
-                qualifier: box path.clone(),
+                qualifier: Rc::new(path.clone()),
                 selector,
                 length: path.path_length() + 1,
             };
             self.visit_used_operand(index_path, operand);
         }
         let length_path = Path::QualifiedPath {
-            qualifier: box path.clone(),
-            selector: box PathSelector::ArrayLength,
+            qualifier: Rc::new(path.clone()),
+            selector: Rc::new(PathSelector::ArrayLength),
             length: path.path_length() + 1,
         };
         let length_value = self
@@ -2627,9 +2629,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .get_u128_for(last_index)
                 .clone()
                 .into();
-            let selector = box PathSelector::Index(box index_value);
+            let selector = Rc::new(PathSelector::Index(box index_value));
             let index_path = Path::QualifiedPath {
-                qualifier: box array_path.clone(),
+                qualifier: Rc::new(array_path.clone()),
                 selector,
                 length: array_path.path_length() + 1,
             };
@@ -2637,8 +2639,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .update_value_at(index_path, operand);
         }
         let length_path = Path::QualifiedPath {
-            qualifier: box array_path.clone(),
-            selector: box PathSelector::ArrayLength,
+            qualifier: Rc::new(array_path.clone()),
+            selector: Rc::new(PathSelector::ArrayLength),
             length: array_path.path_length() + 1,
         };
         let length_value = self
@@ -2741,8 +2743,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     if let TyKind::Array(_, len) = ty {
                         let len_val = self.visit_constant(len.ty, None, &len.val);
                         let len_path = Path::QualifiedPath {
-                            qualifier: box result.clone(),
-                            selector: box PathSelector::ArrayLength,
+                            qualifier: Rc::new(result.clone()),
+                            selector: Rc::new(PathSelector::ArrayLength),
                             length: 2,
                         };
                         self.current_environment.update_value_at(len_path, len_val);
@@ -2773,7 +2775,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let base_val = self.lookup_path_and_refine_result(base.clone(), base_type);
                     match base_val.domain.expression {
                         Expression::Reference(dereferenced_path) => {
-                            return dereferenced_path;
+                            return dereferenced_path.as_ref().clone();
                         }
                         Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
                             // A string is a reference, so fall through to wrap the string in a deref.
@@ -2792,8 +2794,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 checked_assume!(base_path_length < std::usize::MAX);
                 Path::QualifiedPath {
                     length: base_path_length + 1,
-                    qualifier: box base,
-                    selector: box selector,
+                    qualifier: Rc::new(base),
+                    selector: Rc::new(selector),
                 }
             }
         }
