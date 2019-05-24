@@ -13,6 +13,7 @@ use rpds::HashTrieMap;
 use rustc::mir::BasicBlock;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
+use std::rc::Rc;
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Environment {
@@ -93,12 +94,12 @@ impl Environment {
                 {
                     let true_path = Path::QualifiedPath {
                         length: true_path.path_length() + 1,
-                        qualifier: box true_path,
+                        qualifier: Rc::new(true_path),
                         selector: selector.clone(),
                     };
                     let false_path = Path::QualifiedPath {
                         length: false_path.path_length() + 1,
-                        qualifier: box false_path,
+                        qualifier: Rc::new(false_path),
                         selector: selector.clone(),
                     };
                     return Some((join_condition, true_path, false_path));
@@ -147,8 +148,8 @@ impl Environment {
                                 provenance: provenance.clone(),
                                 domain: (**condition).clone(),
                             },
-                            path1.clone(),
-                            path2.clone(),
+                            path1.as_ref().clone(),
+                            path2.as_ref().clone(),
                         ));
                     }
                     _ => (),
@@ -212,7 +213,7 @@ impl Environment {
                 None => {
                     checked_assume!(!val1.is_bottom());
                     let val2 = Expression::Variable {
-                        path: box path.clone(),
+                        path: Rc::new(path.clone()),
                         var_type: val1.domain.expression.infer_type(),
                     }
                     .into();
@@ -225,7 +226,7 @@ impl Environment {
             if !value_map1.contains_key(path) {
                 checked_assume!(!val2.is_bottom());
                 let val1 = Expression::Variable {
-                    path: box path.clone(),
+                    path: Rc::new(path.clone()),
                     var_type: val2.domain.expression.infer_type(),
                 }
                 .into();

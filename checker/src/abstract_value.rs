@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 use syntax_pos::Span;
 
 /// Mirai is an abstract interpreter and thus produces abstract values.
@@ -748,8 +749,8 @@ pub enum Path {
     /// The selector denotes a de-referenced item, field, or element, or slice.
     QualifiedPath {
         length: usize,
-        qualifier: Box<Path>,
-        selector: Box<PathSelector>,
+        qualifier: Rc<Path>,
+        selector: Rc<PathSelector>,
     },
 }
 
@@ -796,13 +797,13 @@ impl Path {
                 selector,
                 ..
             } => {
-                let refined_qualifier = qualifier.refine_parameters(arguments);
-                let refined_selector = selector.refine_parameters(arguments);
+                let refined_qualifier = qualifier.as_ref().clone().refine_parameters(arguments);
+                let refined_selector = selector.as_ref().clone().refine_parameters(arguments);
                 let refined_length = refined_qualifier.path_length();
                 assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
                 Path::QualifiedPath {
-                    qualifier: box refined_qualifier,
-                    selector: box refined_selector,
+                    qualifier: Rc::new(refined_qualifier),
+                    selector: Rc::new(refined_selector),
                     length: refined_length + 1,
                 }
             }
@@ -820,7 +821,7 @@ impl Path {
             // if the environment has self as a key, then self is canonical,
             // except if val is a Reference to another path.
             return match &val.domain.expression {
-                Expression::Reference(dereferenced_path) => dereferenced_path.clone(),
+                Expression::Reference(dereferenced_path) => dereferenced_path.as_ref().clone(),
                 _ => self,
             };
         };
@@ -840,7 +841,7 @@ impl Path {
                         let path_len = dereferenced_path.path_length();
                         assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
                         Path::QualifiedPath {
-                            qualifier: box dereferenced_path.clone(),
+                            qualifier: dereferenced_path.clone(),
                             selector,
                             length: path_len + 1,
                         }
@@ -860,15 +861,15 @@ impl Path {
                 // The qualifier does not match a value in the environment, but parts of it might.
                 // Reminder, a path that does not match a value in the environment is rooted in
                 // an unknown value, such as a parameter.
-                let refined_qualifier = qualifier.refine_paths(environment);
+                let refined_qualifier = qualifier.as_ref().clone().refine_paths(environment);
                 let refined_qualifier_matches =
                     environment.value_map.contains_key(&refined_qualifier);
-                let refined_selector = selector.refine_paths(environment);
+                let refined_selector = selector.as_ref().clone().refine_paths(environment);
                 let refined_length = refined_qualifier.path_length();
                 assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
                 let refined_path = Path::QualifiedPath {
-                    qualifier: box refined_qualifier,
-                    selector: box refined_selector,
+                    qualifier: Rc::new(refined_qualifier),
+                    selector: Rc::new(refined_selector),
                     length: refined_length + 1,
                 };
                 if refined_qualifier_matches {
@@ -890,7 +891,7 @@ impl Path {
                 selector,
                 ..
             } => {
-                let new_qualifier = if **qualifier == *old_root {
+                let new_qualifier = if *qualifier.as_ref() == *old_root {
                     new_root
                 } else {
                     qualifier.replace_root(old_root, new_root)
@@ -898,7 +899,7 @@ impl Path {
                 let new_qualifier_path_length = new_qualifier.path_length();
                 assume!(new_qualifier_path_length < 1_000_000_000); // We'll run out of memory long before this happens
                 Path::QualifiedPath {
-                    qualifier: box new_qualifier,
+                    qualifier: Rc::new(new_qualifier),
                     selector: selector.clone(),
                     length: new_qualifier_path_length.wrapping_add(1), //todo: this should not be necessary
                 }
