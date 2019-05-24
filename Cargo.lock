@@ -216,7 +216,6 @@ dependencies = [
  "mirai-annotations 0.2.1",
  "rpds 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.91 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_derive 1.0.91 (registry+https://github.com/rust-lang/crates.io-index)",
  "sled 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tempdir 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "z3-sys 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -24,8 +24,7 @@ lazy_static = "*"
 log = "*"
 mirai-annotations = { path = "../annotations" }
 rpds = { version = "*", features = ["serde"] }
-serde = "*"
-serde_derive = "*"
+serde = {version = "*", features = ["derive", "alloc", "rc"] }
 sled = "*"
 tempdir = "*"
 z3-sys = "*"

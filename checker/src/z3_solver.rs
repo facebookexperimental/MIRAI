@@ -17,6 +17,7 @@ use mirai_annotations::{checked_assume, checked_assume_eq};
 use std::convert::TryFrom;
 use std::ffi::CStr;
 use std::ffi::CString;
+use std::rc::Rc;
 use std::sync::Mutex;
 use z3_sys;
 
@@ -430,7 +431,7 @@ impl Z3Solver {
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
             if target_type.is_integer() {
                 let domain: AbstractDomain = AbstractDomain::from(Expression::Widen {
-                    path: box path.clone(),
+                    path: Rc::new(path.clone()),
                     operand: box operand.clone(),
                 });
                 let interval = domain.get_as_interval();
