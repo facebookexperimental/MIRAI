@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::abstract_value::PathRefinement;
 use crate::abstract_value::{AbstractValue, Path};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
@@ -1049,8 +1050,8 @@ impl AbstractDomain {
                 .refine_paths(environment)
                 .or(right.refine_paths(environment)),
             Expression::Reference(path) => {
-                let refined_path = path.as_ref().clone().refine_paths(environment);
-                Expression::Reference(Rc::new(refined_path)).into()
+                let refined_path = path.refine_paths(environment);
+                Expression::Reference(refined_path).into()
             }
             Expression::Rem { left, right } => left
                 .refine_paths(environment)
@@ -1113,14 +1114,14 @@ impl AbstractDomain {
                 if let Some(val) = environment.value_at(&path) {
                     val.domain.clone()
                 } else {
-                    let refined_path = path.as_ref().clone().refine_paths(environment);
-                    if let Path::Constant { value } = refined_path {
-                        value.domain
+                    let refined_path = path.refine_paths(environment);
+                    if let Path::Constant { value } = refined_path.as_ref() {
+                        value.domain.clone()
                     } else if let Some(val) = environment.value_at(&refined_path) {
                         val.domain.clone()
                     } else {
                         Expression::Variable {
-                            path: Rc::new(refined_path),
+                            path: refined_path,
                             var_type,
                         }
                         .into()
@@ -1129,7 +1130,7 @@ impl AbstractDomain {
             }
             Expression::Widen { path, operand } => operand
                 .refine_paths(environment)
-                .widen(path.as_ref().clone().refine_paths(environment)),
+                .widen(path.refine_paths(environment).as_ref().clone()),
         }
     }
 
@@ -1228,8 +1229,8 @@ impl AbstractDomain {
                         arguments[*ordinal - 1].1.domain.clone()
                     }
                     _ => {
-                        let refined_path = path.as_ref().clone().refine_parameters(arguments);
-                        Expression::Reference(Rc::new(refined_path)).into()
+                        let refined_path = path.refine_parameters(arguments);
+                        Expression::Reference(refined_path).into()
                     }
                 }
             }
@@ -1271,20 +1272,20 @@ impl AbstractDomain {
                 .refine_parameters(arguments)
                 .sub_overflows(right.refine_parameters(arguments), result_type),
             Expression::UnknownModelField { path, default } => {
-                let refined_path = path.as_ref().clone().refine_parameters(arguments);
+                let refined_path = path.refine_parameters(arguments);
                 Expression::UnknownModelField {
-                    path: Rc::new(refined_path),
+                    path: refined_path,
                     default,
                 }
                 .into()
             }
             Expression::Variable { path, var_type } => {
-                let refined_path = path.as_ref().clone().refine_parameters(arguments);
-                if let Path::Constant { value } = refined_path {
-                    value.domain
+                let refined_path = path.refine_parameters(arguments);
+                if let Path::Constant { value } = refined_path.as_ref() {
+                    value.domain.clone()
                 } else {
                     Expression::Variable {
-                        path: Rc::new(refined_path),
+                        path: refined_path,
                         var_type: var_type.clone(),
                     }
                     .into()
@@ -1292,7 +1293,7 @@ impl AbstractDomain {
             }
             Expression::Widen { path, operand } => operand
                 .refine_parameters(arguments)
-                .widen(path.as_ref().clone().refine_parameters(arguments)),
+                .widen(path.refine_parameters(arguments).as_ref().clone()),
         }
     }
 

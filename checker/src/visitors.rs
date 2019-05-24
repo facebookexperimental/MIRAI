@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use crate::abstract_domains::AbstractDomain;
+use crate::abstract_value::PathRefinement;
 use crate::abstract_value::{self, AbstractValue, Path, PathSelector};
 use crate::constant_domain::{ConstantDomain, ConstantValueCache, KnownFunctionNames};
 use crate::environment::Environment;
@@ -157,17 +158,18 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let result = result.clone().refine_paths(&mut self.current_environment);
                     if let Expression::AbstractHeapAddress(ordinal) = result.domain.expression {
                         let source_path = Path::LocalVariable { ordinal: 0 };
-                        let target_path = &Path::AbstractHeapAddress { ordinal };
+                        let target_path = Rc::new(Path::AbstractHeapAddress { ordinal });
                         for (path, value) in summary
                             .side_effects
                             .iter()
                             .filter(|(p, _)| (*p) == source_path || p.is_rooted_by(&source_path))
                         {
-                            let tpath = path
+                            let tpath = Rc::new(path.clone())
                                 .replace_root(&source_path, target_path.clone())
                                 .refine_paths(&mut self.current_environment);
                             let rvalue = value.clone().refine_paths(&mut self.current_environment);
-                            self.current_environment.update_value_at(tpath, rvalue);
+                            self.current_environment
+                                .update_value_at(tpath.as_ref().clone(), rvalue);
                         }
                     }
                     result
@@ -520,17 +522,19 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             let result_type = self.get_type_for_local(0);
             self.visit_promoted_constants_block(function_name);
 
-            let promoted_root = Path::PromotedConstant { ordinal };
+            let promoted_root = Rc::new(Path::PromotedConstant { ordinal });
             let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
-            state_with_parameters.update_value_at(promoted_root.clone(), value);
+            state_with_parameters.update_value_at(promoted_root.as_ref().clone(), value);
             for (path, value) in self
                 .exit_environment
                 .value_map
                 .iter()
                 .filter(|(p, _)| p.is_rooted_by(&result_root))
             {
-                let promoted_path = path.replace_root(&result_root, promoted_root.clone());
-                state_with_parameters.update_value_at(promoted_path, value.clone());
+                let promoted_path =
+                    Rc::new(path.clone()).replace_root(&result_root, promoted_root.clone());
+                state_with_parameters
+                    .update_value_at(promoted_path.as_ref().clone(), value.clone());
             }
 
             self.reset_visitor_state();
@@ -931,11 +935,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let field_name = self.coerce_to_string(&actual_args[1].1);
                     let selector = Rc::new(PathSelector::ModelField(field_name));
                     assume!(path_length < 1_000_000_000);
-                    let rpath = Path::QualifiedPath {
+                    let rpath = Rc::new(Path::QualifiedPath {
                         qualifier,
                         selector,
                         length: path_length + 1,
-                    }
+                    })
                     .refine_paths(&mut self.current_environment);
 
                     let target_path = self.visit_place(place);
@@ -943,7 +947,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         // Move the model field (path, val) pairs to the target (i.e. the place where
                         // the return value of call to the mirai_get_model_field function would go if
                         // it were a normal call.
-                        self.copy_or_move_elements(target_path, rpath, rtype, true);
+                        self.copy_or_move_elements(
+                            target_path,
+                            rpath.as_ref().clone(),
+                            rtype,
+                            true,
+                        );
                     } else {
                         // If there is no value for the model field in the environment, we should
                         // use the default value, but only the qualifier is not rooted in a parameter
@@ -951,7 +960,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         match &actual_args[0].1.domain.expression {
                             Expression::Variable { .. } | Expression::Reference(..) => {
                                 let rval: AbstractValue = Expression::UnknownModelField {
-                                    path: Rc::new(rpath),
+                                    path: rpath,
                                     default: box actual_args[2].1.domain.clone(),
                                 }
                                 .into();
@@ -986,15 +995,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let field_name = self.coerce_to_string(&actual_args[1].1);
                     let selector = Rc::new(PathSelector::ModelField(field_name));
                     assume!(path_length < 1_000_000_000);
-                    let target_path = Path::QualifiedPath {
+                    let target_path = Rc::new(Path::QualifiedPath {
                         qualifier,
                         selector,
                         length: path_length + 1,
-                    }
+                    })
                     .refine_paths(&mut self.current_environment);
                     let rpath = actual_args[2].0.clone();
                     self.copy_or_move_elements(
-                        target_path,
+                        target_path.as_ref().clone(),
                         rpath,
                         ExpressionType::NonPrimitive,
                         true,
@@ -1552,8 +1561,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .iter()
             .filter(|(p, _)| (*p) == source_path || p.is_rooted_by(&source_path))
         {
-            let tpath = path
-                .replace_root(&source_path, target_path.clone())
+            let tpath = Rc::new(path.clone())
+                .replace_root(&source_path, Rc::new(target_path.clone()))
                 .refine_paths(&mut self.current_environment);
             let rvalue = value
                 .clone()
@@ -1562,11 +1571,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             for (arg_path, arg_val) in arguments.iter() {
                 if arg_val.eq(&rvalue) {
                     let rtype = rvalue.domain.expression.infer_type();
-                    self.copy_or_move_elements(tpath.clone(), arg_path.clone(), rtype, false);
+                    self.copy_or_move_elements(
+                        tpath.as_ref().clone(),
+                        arg_path.clone(),
+                        rtype,
+                        false,
+                    );
                     break;
                 }
             }
-            self.current_environment.update_value_at(tpath, rvalue);
+            self.current_environment
+                .update_value_at(tpath.as_ref().clone(), rvalue);
         }
     }
 
@@ -1951,14 +1966,18 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .iter()
             .filter(|(p, _)| p.is_rooted_by(&rpath))
         {
-            let qualified_path = path.replace_root(&rpath, target_path.clone());
+            let qualified_path =
+                &Rc::new(path.clone()).replace_root(&rpath, Rc::new(target_path.clone()));
             if move_elements {
                 debug!("moving {:?} to {:?}", value, qualified_path);
                 value_map = value_map.remove(&path);
             } else {
                 debug!("copying {:?} to {:?}", value, qualified_path);
             };
-            value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
+            value_map = value_map.insert(
+                qualified_path.as_ref().clone(),
+                value.with_provenance(self.current_span),
+            );
         }
         // Now move/copy (rpath, value) itself.
         let mut value = self.lookup_path_and_refine_result(rpath.clone(), rtype);

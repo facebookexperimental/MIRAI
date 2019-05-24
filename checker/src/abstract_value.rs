@@ -785,29 +785,46 @@ impl Path {
             selector.record_heap_addresses(result);
         }
     }
+}
 
+pub trait PathRefinement: Sized {
     /// Refine parameters inside embedded index values with the given arguments.
-    pub fn refine_parameters(self, arguments: &[(Path, AbstractValue)]) -> Path {
-        match self {
-            Path::LocalVariable { ordinal } if 0 < ordinal && ordinal <= arguments.len() => {
-                arguments[ordinal - 1].0.clone()
+    fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Rc<Path>;
+
+    /// Refine paths that reference other paths.
+    /// I.e. when a reference is passed to a function that then returns
+    /// or leaks it back to the caller in the qualifier of a path then
+    /// we want to dereference the qualifier in order to normalize the path
+    /// and not have more than one path for the same location.
+    fn refine_paths(&self, environment: &mut Environment) -> Rc<Path>;
+
+    /// Returns a copy path with the root replaced by new_root.
+    fn replace_root(&self, old_root: &Path, new_root: Rc<Path>) -> Rc<Path>;
+}
+
+impl PathRefinement for Rc<Path> {
+    /// Refine parameters inside embedded index values with the given arguments.
+    fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Rc<Path> {
+        match self.as_ref() {
+            Path::LocalVariable { ordinal } if 0 < *ordinal && *ordinal <= arguments.len() => {
+                Rc::new(arguments[*ordinal - 1].0.clone())
             }
             Path::QualifiedPath {
                 qualifier,
                 selector,
                 ..
             } => {
-                let refined_qualifier = qualifier.as_ref().clone().refine_parameters(arguments);
-                let refined_selector = selector.as_ref().clone().refine_parameters(arguments);
+                let refined_qualifier = qualifier.refine_parameters(arguments);
+                let refined_selector = selector.refine_parameters(arguments);
                 let refined_length = refined_qualifier.path_length();
                 assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
-                Path::QualifiedPath {
-                    qualifier: Rc::new(refined_qualifier),
-                    selector: Rc::new(refined_selector),
+                Rc::new(Path::QualifiedPath {
+                    qualifier: refined_qualifier,
+                    selector: refined_selector,
                     length: refined_length + 1,
-                }
+                })
             }
-            _ => self,
+            _ => self.clone(),
         }
     }
 
@@ -816,20 +833,20 @@ impl Path {
     /// or leaks it back to the caller in the qualifier of a path then
     /// we want to dereference the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
-    pub fn refine_paths(self, environment: &mut Environment) -> Self {
-        if let Some(val) = environment.value_at(&self) {
+    fn refine_paths(&self, environment: &mut Environment) -> Rc<Path> {
+        if let Some(val) = environment.value_at(self.as_ref()) {
             // if the environment has self as a key, then self is canonical,
             // except if val is a Reference to another path.
             return match &val.domain.expression {
-                Expression::Reference(dereferenced_path) => dereferenced_path.as_ref().clone(),
-                _ => self,
+                Expression::Reference(dereferenced_path) => dereferenced_path.clone(),
+                _ => self.clone(),
             };
         };
         if let Path::QualifiedPath {
             qualifier,
             selector,
             length,
-        } = self
+        } = self.as_ref()
         {
             if let Some(val) = environment.value_at(&qualifier) {
                 match &val.domain.expression {
@@ -840,38 +857,38 @@ impl Path {
                         // the environment.
                         let path_len = dereferenced_path.path_length();
                         assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
-                        Path::QualifiedPath {
+                        Rc::new(Path::QualifiedPath {
                             qualifier: dereferenced_path.clone(),
-                            selector,
+                            selector: selector.clone(),
                             length: path_len + 1,
-                        }
+                        })
                     }
                     _ => {
                         // Although the qualifier matches an expression, that expression
                         // is too abstract too qualify the path sufficiently that we
                         // can refine this value.
-                        Path::QualifiedPath {
-                            qualifier,
-                            selector,
-                            length,
-                        }
+                        Rc::new(Path::QualifiedPath {
+                            qualifier: qualifier.clone(),
+                            selector: selector.clone(),
+                            length: *length,
+                        })
                     }
                 }
             } else {
                 // The qualifier does not match a value in the environment, but parts of it might.
                 // Reminder, a path that does not match a value in the environment is rooted in
                 // an unknown value, such as a parameter.
-                let refined_qualifier = qualifier.as_ref().clone().refine_paths(environment);
+                let refined_qualifier = qualifier.refine_paths(environment);
                 let refined_qualifier_matches =
                     environment.value_map.contains_key(&refined_qualifier);
-                let refined_selector = selector.as_ref().clone().refine_paths(environment);
+                let refined_selector = selector.refine_paths(environment);
                 let refined_length = refined_qualifier.path_length();
                 assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
-                let refined_path = Path::QualifiedPath {
-                    qualifier: Rc::new(refined_qualifier),
-                    selector: Rc::new(refined_selector),
+                let refined_path = Rc::new(Path::QualifiedPath {
+                    qualifier: refined_qualifier,
+                    selector: refined_selector,
                     length: refined_length + 1,
-                };
+                });
                 if refined_qualifier_matches {
                     refined_path.refine_paths(environment)
                 } else {
@@ -879,13 +896,13 @@ impl Path {
                 }
             }
         } else {
-            self
+            self.clone()
         }
     }
 
     /// Returns a copy path with the root replaced by new_root.
-    pub fn replace_root(&self, old_root: &Path, new_root: Path) -> Path {
-        match self {
+    fn replace_root(&self, old_root: &Path, new_root: Rc<Path>) -> Rc<Path> {
+        match self.as_ref() {
             Path::QualifiedPath {
                 qualifier,
                 selector,
@@ -898,11 +915,11 @@ impl Path {
                 };
                 let new_qualifier_path_length = new_qualifier.path_length();
                 assume!(new_qualifier_path_length < 1_000_000_000); // We'll run out of memory long before this happens
-                Path::QualifiedPath {
-                    qualifier: Rc::new(new_qualifier),
+                Rc::new(Path::QualifiedPath {
+                    qualifier: new_qualifier,
                     selector: selector.clone(),
                     length: new_qualifier_path_length.wrapping_add(1), //todo: this should not be necessary
-                }
+                })
             }
             _ => new_root,
         }
@@ -967,27 +984,40 @@ impl PathSelector {
             boxed_abstract_value.record_heap_addresses(result);
         }
     }
+}
+
+pub trait PathSelectorRefinement: Sized {
+    /// Refine parameters inside embedded index values with the given arguments.
+    fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Self;
 
     /// Returns a value that is simplified (refined) by replacing values with Variable(path) expressions
     /// with the value at that path (if there is one). If no refinement is possible
     /// the result is simply a clone of this value. This refinement only makes sense
     /// following a call to refine_parameters.
-    pub fn refine_paths(self, environment: &mut Environment) -> Self {
-        if let PathSelector::Index(boxed_abstract_value) = self {
-            let refined_value = boxed_abstract_value.refine_paths(environment);
-            PathSelector::Index(box refined_value)
+    fn refine_paths(&self, environment: &mut Environment) -> Self;
+}
+
+impl PathSelectorRefinement for Rc<PathSelector> {
+    /// Refine parameters inside embedded index values with the given arguments.
+    fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Rc<PathSelector> {
+        if let PathSelector::Index(boxed_abstract_value) = self.as_ref() {
+            let refined_value = boxed_abstract_value.clone().refine_parameters(arguments);
+            Rc::new(PathSelector::Index(box refined_value))
         } else {
-            self
+            self.clone()
         }
     }
 
-    /// Refine parameters inside embedded index values with the given arguments.
-    pub fn refine_parameters(self, arguments: &[(Path, AbstractValue)]) -> Self {
-        if let PathSelector::Index(boxed_abstract_value) = self {
-            let refined_value = boxed_abstract_value.refine_parameters(arguments);
-            PathSelector::Index(box refined_value)
+    /// Returns a value that is simplified (refined) by replacing values with Variable(path) expressions
+    /// with the value at that path (if there is one). If no refinement is possible
+    /// the result is simply a clone of this value. This refinement only makes sense
+    /// following a call to refine_parameters.
+    fn refine_paths(&self, environment: &mut Environment) -> Rc<PathSelector> {
+        if let PathSelector::Index(boxed_abstract_value) = self.as_ref() {
+            let refined_value = boxed_abstract_value.clone().refine_paths(environment);
+            Rc::new(PathSelector::Index(box refined_value))
         } else {
-            self
+            self.clone()
         }
     }
 }
