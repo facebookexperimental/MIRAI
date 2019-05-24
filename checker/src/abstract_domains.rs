@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter, Result};
 use std::hash::Hash;
 use std::hash::Hasher;
+use std::rc::Rc;
 use syntax::ast;
 
 // See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
@@ -306,7 +307,7 @@ impl AbstractDomain {
             ),
             Expression::Join { left, right, path } => left
                 .cast(target_type.clone())
-                .join(right.cast(target_type), *path),
+                .join(right.cast(target_type), path.as_ref().clone()),
             _ => Expression::Cast {
                 operand: box self,
                 target_type: target_type.clone(),
@@ -570,7 +571,7 @@ impl AbstractDomain {
             return self;
         }
         Expression::Join {
-            path: box path,
+            path: Rc::new(path),
             left: box self,
             right: box other,
         }
@@ -1019,7 +1020,7 @@ impl AbstractDomain {
                 .greater_than(right.refine_paths(environment)),
             Expression::Join { left, right, path } => left
                 .refine_paths(environment)
-                .join(right.refine_paths(environment), *path),
+                .join(right.refine_paths(environment), path.as_ref().clone()),
             Expression::LessOrEqual { left, right } => left
                 .refine_paths(environment)
                 .less_or_equal(right.refine_paths(environment)),
@@ -1048,8 +1049,8 @@ impl AbstractDomain {
                 .refine_paths(environment)
                 .or(right.refine_paths(environment)),
             Expression::Reference(path) => {
-                let refined_path = path.refine_paths(environment);
-                Expression::Reference(refined_path).into()
+                let refined_path = path.as_ref().clone().refine_paths(environment);
+                Expression::Reference(Rc::new(refined_path)).into()
             }
             Expression::Rem { left, right } => left
                 .refine_paths(environment)
@@ -1099,7 +1100,7 @@ impl AbstractDomain {
                     } else {
                         // Keep passing the buck to the next caller.
                         Expression::UnknownModelField {
-                            path: box *path,
+                            path: path.clone(),
                             default,
                         }
                         .into()
@@ -1112,14 +1113,14 @@ impl AbstractDomain {
                 if let Some(val) = environment.value_at(&path) {
                     val.domain.clone()
                 } else {
-                    let refined_path = path.refine_paths(environment);
+                    let refined_path = path.as_ref().clone().refine_paths(environment);
                     if let Path::Constant { value } = refined_path {
                         value.domain
                     } else if let Some(val) = environment.value_at(&refined_path) {
                         val.domain.clone()
                     } else {
                         Expression::Variable {
-                            path: box refined_path,
+                            path: Rc::new(refined_path),
                             var_type,
                         }
                         .into()
@@ -1128,7 +1129,7 @@ impl AbstractDomain {
             }
             Expression::Widen { path, operand } => operand
                 .refine_paths(environment)
-                .widen(path.refine_paths(environment)),
+                .widen(path.as_ref().clone().refine_paths(environment)),
         }
     }
 
@@ -1189,7 +1190,7 @@ impl AbstractDomain {
                 .greater_than(right.refine_parameters(arguments)),
             Expression::Join { left, right, path } => left
                 .refine_parameters(arguments)
-                .join(right.refine_parameters(arguments), *path),
+                .join(right.refine_parameters(arguments), path.as_ref().clone()),
             Expression::LessOrEqual { left, right } => left
                 .refine_parameters(arguments)
                 .less_or_equal(right.refine_parameters(arguments)),
@@ -1220,15 +1221,15 @@ impl AbstractDomain {
             Expression::Reference(path) => {
                 // if the path is a parameter, the reference is an artifact of its type
                 // and needs to be removed in the call context
-                match path {
+                match path.as_ref() {
                     Path::LocalVariable { ordinal }
-                        if 0 < ordinal && ordinal <= arguments.len() =>
+                        if 0 < *ordinal && *ordinal <= arguments.len() =>
                     {
-                        arguments[ordinal - 1].1.domain.clone()
+                        arguments[*ordinal - 1].1.domain.clone()
                     }
                     _ => {
-                        let refined_path = path.refine_parameters(arguments);
-                        Expression::Reference(refined_path).into()
+                        let refined_path = path.as_ref().clone().refine_parameters(arguments);
+                        Expression::Reference(Rc::new(refined_path)).into()
                     }
                 }
             }
@@ -1270,20 +1271,20 @@ impl AbstractDomain {
                 .refine_parameters(arguments)
                 .sub_overflows(right.refine_parameters(arguments), result_type),
             Expression::UnknownModelField { path, default } => {
-                let refined_path = path.refine_parameters(arguments);
+                let refined_path = path.as_ref().clone().refine_parameters(arguments);
                 Expression::UnknownModelField {
-                    path: box refined_path,
+                    path: Rc::new(refined_path),
                     default,
                 }
                 .into()
             }
             Expression::Variable { path, var_type } => {
-                let refined_path = path.refine_parameters(arguments);
+                let refined_path = path.as_ref().clone().refine_parameters(arguments);
                 if let Path::Constant { value } = refined_path {
                     value.domain
                 } else {
                     Expression::Variable {
-                        path: box refined_path,
+                        path: Rc::new(refined_path),
                         var_type: var_type.clone(),
                     }
                     .into()
@@ -1291,7 +1292,7 @@ impl AbstractDomain {
             }
             Expression::Widen { path, operand } => operand
                 .refine_parameters(arguments)
-                .widen(path.refine_parameters(arguments)),
+                .widen(path.as_ref().clone().refine_parameters(arguments)),
         }
     }
 
@@ -1372,9 +1373,12 @@ impl AbstractDomain {
             Expression::GreaterThan { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .greater_than(right.refine_with(path_condition, depth + 1)),
-            Expression::Join { left, right, path } => left
-                .refine_with(path_condition, depth + 1)
-                .join(right.refine_with(path_condition, depth + 1), *path),
+            Expression::Join { left, right, path } => {
+                left.refine_with(path_condition, depth + 1).join(
+                    right.refine_with(path_condition, depth + 1),
+                    path.as_ref().clone(),
+                )
+            }
             Expression::LessOrEqual { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .less_or_equal(right.refine_with(path_condition, depth + 1)),
@@ -1465,9 +1469,9 @@ impl AbstractDomain {
                     self
                 }
             }
-            Expression::Widen { path, operand } => {
-                operand.refine_with(path_condition, depth + 1).widen(*path)
-            }
+            Expression::Widen { path, operand } => operand
+                .refine_with(path_condition, depth + 1)
+                .widen(path.as_ref().clone()),
         }
     }
 
@@ -1519,10 +1523,12 @@ impl AbstractDomain {
             );
         };
         if let Join { left, right, path } = self.expression {
-            return operation(*left, other.clone()).join(operation(*right, other), *path);
+            return operation(*left, other.clone())
+                .join(operation(*right, other), path.as_ref().clone());
         }
         if let Join { left, right, path } = other.expression {
-            return operation(self.clone(), *left).join(operation(self, *right), *path);
+            return operation(self.clone(), *left)
+                .join(operation(self, *right), path.as_ref().clone());
         }
         match (&self.expression, &other.expression) {
             (Widen { .. }, _) => self,
@@ -1543,7 +1549,7 @@ impl AbstractDomain {
             | Expression::Reference(..)
             | Expression::Variable { .. } => self,
             _ => Expression::Widen {
-                path: box path,
+                path: Rc::new(path),
                 operand: box self,
             }
             .into(),

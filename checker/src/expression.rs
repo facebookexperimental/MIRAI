@@ -9,6 +9,7 @@ use crate::constant_domain::ConstantDomain;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::rc::Rc;
 
 /// Closely based on the expressions found in MIR.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -134,7 +135,7 @@ pub enum Expression {
     /// don't have a way to tell which value it is.
     Join {
         /// The path of the location where the two flows join together.
-        path: Box<Path>,
+        path: Rc<Path>,
         // The value of the left operand.
         left: Box<AbstractDomain>,
         // The value of the right operand.
@@ -206,7 +207,7 @@ pub enum Expression {
     },
 
     /// The corresponding concrete value is the runtime address of location identified by the path.
-    Reference(Path),
+    Reference(Rc<Path>),
 
     /// An expression that is the remainder of left divided by right. %
     Rem {
@@ -276,7 +277,7 @@ pub enum Expression {
     /// when the qualifier becomes a known value without a defined value for the model field.
     UnknownModelField {
         /// Must be a qualified path with a model field selector.
-        path: Box<Path>,
+        path: Rc<Path>,
         default: Box<AbstractDomain>,
     },
 
@@ -286,7 +287,7 @@ pub enum Expression {
     /// like x == x. The type is needed to prevent this particular optimization if
     /// the variable is a floating point number that could be NaN.
     Variable {
-        path: Box<Path>,
+        path: Rc<Path>,
         var_type: ExpressionType,
     },
 
@@ -296,7 +297,7 @@ pub enum Expression {
     /// body.
     Widen {
         /// The path of the location where an indeterminate number of flows join together.
-        path: Box<Path>,
+        path: Rc<Path>,
         /// The join of some of the flows to come together at this path.
         /// The first few iterations do joins. Once widening happens, further iterations
         /// all result in the same widened value.
