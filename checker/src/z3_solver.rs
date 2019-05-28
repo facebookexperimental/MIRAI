@@ -400,7 +400,7 @@ impl Z3Solver {
         }
     }
 
-    fn get_symbol_for(&self, path: &Path) -> z3_sys::Z3_symbol {
+    fn get_symbol_for(&self, path: &Rc<Path>) -> z3_sys::Z3_symbol {
         let path_str = CString::new(format!("{:?}", path)).unwrap();
         unsafe { z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw()) }
     }
@@ -420,7 +420,7 @@ impl Z3Solver {
 
     fn get_ast_for_widened(
         &mut self,
-        path: &Path,
+        path: &Rc<Path>,
         operand: &AbstractDomain,
         target_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
@@ -431,7 +431,7 @@ impl Z3Solver {
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
             if target_type.is_integer() {
                 let domain: AbstractDomain = AbstractDomain::from(Expression::Widen {
-                    path: Rc::new(path.clone()),
+                    path: path.clone(),
                     operand: box operand.clone(),
                 });
                 let interval = domain.get_as_interval();
@@ -831,7 +831,7 @@ impl Z3Solver {
                 use self::ExpressionType::*;
                 match var_type {
                     Bool | Reference | NonPrimitive => unsafe {
-                        let path_symbol = self.get_symbol_for(&**path);
+                        let path_symbol = self.get_symbol_for(path);
                         (
                             false,
                             z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.int_sort),
@@ -1125,7 +1125,7 @@ impl Z3Solver {
             }
             Expression::Join { path, .. } => unsafe {
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
-                let path_symbol = self.get_symbol_for(&**path);
+                let path_symbol = self.get_symbol_for(path);
                 z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
             },
             Expression::Reference(path) => unsafe {
@@ -1185,7 +1185,7 @@ impl Z3Solver {
                     Bool | Reference | NonPrimitive => ExpressionType::I128,
                     _ => expr_type,
                 };
-                let path_symbol = self.get_symbol_for(&**path);
+                let path_symbol = self.get_symbol_for(path);
                 unsafe {
                     let sort =
                         z3_sys::Z3_mk_bv_sort(self.z3_context, u32::from(expr_type.bit_length()));
