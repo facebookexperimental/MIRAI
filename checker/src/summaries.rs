@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
+use std::rc::Rc;
 
 /// A summary is a declarative abstract specification of what a function does.
 /// This is calculated once per function and is used by callers of the function.
@@ -69,7 +70,7 @@ pub struct Summary {
     // Callers should substitute parameter values with argument values and simplify the results
     // under the current path condition. They should then update their current state to reflect the
     // side-effects of the call.
-    pub side_effects: Vec<(Path, AbstractValue)>,
+    pub side_effects: Vec<(Rc<Path>, AbstractValue)>,
 
     // Conditions that should hold subsequent to the call.
     // Callers should substitute parameter values with argument values and simplify the results
@@ -90,7 +91,7 @@ pub struct Summary {
     // Callers should substitute parameter values with argument values and simplify the results
     // under the current path condition. They should then update their current state to reflect the
     // side-effects of the call for the unwind control paths, following the call.
-    pub unwind_side_effects: Vec<(Path, AbstractValue)>,
+    pub unwind_side_effects: Vec<(Rc<Path>, AbstractValue)>,
 }
 
 /// Constructs a summary of a function body by processing state information gathered during
@@ -104,7 +105,7 @@ pub fn summarize(
     unwind_environment: &Environment,
 ) -> Summary {
     let mut preconditions: Vec<(AbstractValue, String)> = preconditions.to_owned();
-    let result = exit_environment.value_at(&Path::LocalVariable { ordinal: 0 });
+    let result = exit_environment.value_at(&Rc::new(Path::LocalVariable { ordinal: 0 }));
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
     let mut post_conditions: Vec<AbstractValue> = post_conditions.to_owned();
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
@@ -130,12 +131,15 @@ pub fn summarize(
 /// Since paths are created by writes, these are side-effects.
 /// Since these values are reachable from arguments or the result, they are visible to the caller
 /// and must be included in the summary.
-fn extract_side_effects(env: &Environment, argument_count: usize) -> Vec<(Path, AbstractValue)> {
+fn extract_side_effects(
+    env: &Environment,
+    argument_count: usize,
+) -> Vec<(Rc<Path>, AbstractValue)> {
     let mut heap_roots: HashSet<usize> = HashSet::new();
     let mut result = Vec::new();
     for ordinal in 0..=argument_count {
         // remember that 0 is the result
-        let root = Path::LocalVariable { ordinal };
+        let root = Rc::new(Path::LocalVariable { ordinal });
         for (path, value) in env
             .value_map
             .iter()
@@ -154,14 +158,14 @@ fn extract_side_effects(env: &Environment, argument_count: usize) -> Vec<(Path, 
 fn extract_reachable_heap_allocations(
     env: &Environment,
     heap_roots: &mut HashSet<usize>,
-    result: &mut Vec<(Path, AbstractValue)>,
+    result: &mut Vec<(Rc<Path>, AbstractValue)>,
 ) {
     let mut visited_heap_roots: HashSet<usize> = HashSet::new();
     while heap_roots.len() > visited_heap_roots.len() {
         let mut new_roots: HashSet<usize> = HashSet::new();
         for ordinal in heap_roots.iter() {
             if visited_heap_roots.insert(*ordinal) {
-                let root = Path::AbstractHeapAddress { ordinal: *ordinal };
+                let root = Rc::new(Path::AbstractHeapAddress { ordinal: *ordinal });
                 for (path, value) in env
                     .value_map
                     .iter()

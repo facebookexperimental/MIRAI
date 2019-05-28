@@ -349,7 +349,7 @@ impl AbstractValue {
     /// corresponding to self and other.
     /// In a context where the join condition is known to be true, the result can be refined to be
     /// just self, correspondingly if it is known to be false, the result can be refined to be just other.
-    pub fn join(self, other: AbstractValue, path: Path) -> AbstractValue {
+    pub fn join(self, other: AbstractValue, path: &Rc<Path>) -> AbstractValue {
         let mut provenance = Vec::new();
         provenance.extend_from_slice(&self.provenance);
         provenance.extend_from_slice(&other.provenance);
@@ -538,7 +538,7 @@ impl AbstractValue {
     /// Returns a value that is simplified (refined) by replacing parameter values
     /// with their corresponding argument values. If no refinement is possible
     /// the result is simply a clone of this value.
-    pub fn refine_parameters(self, arguments: &[(Path, AbstractValue)]) -> AbstractValue {
+    pub fn refine_parameters(self, arguments: &[(Rc<Path>, AbstractValue)]) -> AbstractValue {
         AbstractValue {
             provenance: self.provenance.clone(),
             domain: self.domain.refine_parameters(arguments),
@@ -679,7 +679,7 @@ impl AbstractValue {
     /// corresponding to self and other. The set of values may be less precise (more inclusive) than
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to Top.
-    pub fn widen(self, path: Path) -> AbstractValue {
+    pub fn widen(self, path: &Rc<Path>) -> AbstractValue {
         AbstractValue {
             provenance: self.provenance.clone(),
             domain: self.domain.widen(path),
@@ -756,10 +756,10 @@ pub enum Path {
 
 impl Path {
     /// True if path qualifies root, or another qualified path rooted by root.
-    pub fn is_rooted_by(&self, root: &Path) -> bool {
+    pub fn is_rooted_by(&self, root: &Rc<Path>) -> bool {
         match self {
             Path::QualifiedPath { qualifier, .. } => {
-                **qualifier == *root || qualifier.is_rooted_by(root)
+                *qualifier == *root || qualifier.is_rooted_by(root)
             }
             _ => false,
         }
@@ -789,7 +789,7 @@ impl Path {
 
 pub trait PathRefinement: Sized {
     /// Refine parameters inside embedded index values with the given arguments.
-    fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Rc<Path>;
+    fn refine_parameters(&self, arguments: &[(Rc<Path>, AbstractValue)]) -> Rc<Path>;
 
     /// Refine paths that reference other paths.
     /// I.e. when a reference is passed to a function that then returns
@@ -799,15 +799,15 @@ pub trait PathRefinement: Sized {
     fn refine_paths(&self, environment: &mut Environment) -> Rc<Path>;
 
     /// Returns a copy path with the root replaced by new_root.
-    fn replace_root(&self, old_root: &Path, new_root: Rc<Path>) -> Rc<Path>;
+    fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path>;
 }
 
 impl PathRefinement for Rc<Path> {
     /// Refine parameters inside embedded index values with the given arguments.
-    fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Rc<Path> {
+    fn refine_parameters(&self, arguments: &[(Rc<Path>, AbstractValue)]) -> Rc<Path> {
         match self.as_ref() {
             Path::LocalVariable { ordinal } if 0 < *ordinal && *ordinal <= arguments.len() => {
-                Rc::new(arguments[*ordinal - 1].0.clone())
+                arguments[*ordinal - 1].0.clone()
             }
             Path::QualifiedPath {
                 qualifier,
@@ -834,7 +834,7 @@ impl PathRefinement for Rc<Path> {
     /// we want to dereference the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
     fn refine_paths(&self, environment: &mut Environment) -> Rc<Path> {
-        if let Some(val) = environment.value_at(self.as_ref()) {
+        if let Some(val) = environment.value_at(&self) {
             // if the environment has self as a key, then self is canonical,
             // except if val is a Reference to another path.
             return match &val.domain.expression {
@@ -901,14 +901,14 @@ impl PathRefinement for Rc<Path> {
     }
 
     /// Returns a copy path with the root replaced by new_root.
-    fn replace_root(&self, old_root: &Path, new_root: Rc<Path>) -> Rc<Path> {
+    fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path> {
         match self.as_ref() {
             Path::QualifiedPath {
                 qualifier,
                 selector,
                 ..
             } => {
-                let new_qualifier = if *qualifier.as_ref() == *old_root {
+                let new_qualifier = if *qualifier == *old_root {
                     new_root
                 } else {
                     qualifier.replace_root(old_root, new_root)
@@ -988,7 +988,7 @@ impl PathSelector {
 
 pub trait PathSelectorRefinement: Sized {
     /// Refine parameters inside embedded index values with the given arguments.
-    fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Self;
+    fn refine_parameters(&self, arguments: &[(Rc<Path>, AbstractValue)]) -> Self;
 
     /// Returns a value that is simplified (refined) by replacing values with Variable(path) expressions
     /// with the value at that path (if there is one). If no refinement is possible
@@ -999,7 +999,7 @@ pub trait PathSelectorRefinement: Sized {
 
 impl PathSelectorRefinement for Rc<PathSelector> {
     /// Refine parameters inside embedded index values with the given arguments.
-    fn refine_parameters(&self, arguments: &[(Path, AbstractValue)]) -> Rc<PathSelector> {
+    fn refine_parameters(&self, arguments: &[(Rc<Path>, AbstractValue)]) -> Rc<PathSelector> {
         if let PathSelector::Index(boxed_abstract_value) = self.as_ref() {
             let refined_value = boxed_abstract_value.clone().refine_parameters(arguments);
             Rc::new(PathSelector::Index(box refined_value))

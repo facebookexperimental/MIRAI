@@ -308,7 +308,7 @@ impl AbstractDomain {
             ),
             Expression::Join { left, right, path } => left
                 .cast(target_type.clone())
-                .join(right.cast(target_type), path.as_ref().clone()),
+                .join(right.cast(target_type), &path),
             _ => Expression::Cast {
                 operand: box self,
                 target_type: target_type.clone(),
@@ -558,7 +558,7 @@ impl AbstractDomain {
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
     /// corresponding to self and other. In effect this behaves like set union.
-    pub fn join(self, other: Self, path: Path) -> Self {
+    pub fn join(self, other: Self, path: &Rc<Path>) -> Self {
         // {} union y is just y
         if self.is_bottom() {
             return other;
@@ -572,7 +572,7 @@ impl AbstractDomain {
             return self;
         }
         Expression::Join {
-            path: Rc::new(path),
+            path: path.clone(),
             left: box self,
             right: box other,
         }
@@ -1021,7 +1021,7 @@ impl AbstractDomain {
                 .greater_than(right.refine_paths(environment)),
             Expression::Join { left, right, path } => left
                 .refine_paths(environment)
-                .join(right.refine_paths(environment), path.as_ref().clone()),
+                .join(right.refine_paths(environment), &path),
             Expression::LessOrEqual { left, right } => left
                 .refine_paths(environment)
                 .less_or_equal(right.refine_paths(environment)),
@@ -1091,7 +1091,7 @@ impl AbstractDomain {
                 .refine_paths(environment)
                 .sub_overflows(right.refine_paths(environment), result_type),
             Expression::UnknownModelField { path, default } => {
-                if let Some(val) = environment.value_at(&*path) {
+                if let Some(val) = environment.value_at(&path) {
                     // This environment has a value for the model field.
                     val.domain.clone()
                 } else if let Path::QualifiedPath { qualifier, .. } = &*path {
@@ -1130,14 +1130,14 @@ impl AbstractDomain {
             }
             Expression::Widen { path, operand } => operand
                 .refine_paths(environment)
-                .widen(path.refine_paths(environment).as_ref().clone()),
+                .widen(&path.refine_paths(environment)),
         }
     }
 
     /// Returns a value that is simplified (refined) by replacing parameter values
     /// with their corresponding argument values. If no refinement is possible
     /// the result is simply a clone of this value.
-    pub fn refine_parameters(self, arguments: &[(Path, AbstractValue)]) -> Self {
+    pub fn refine_parameters(self, arguments: &[(Rc<Path>, AbstractValue)]) -> Self {
         match self.expression {
             Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => self,
             Expression::Add { left, right } => left
@@ -1191,7 +1191,7 @@ impl AbstractDomain {
                 .greater_than(right.refine_parameters(arguments)),
             Expression::Join { left, right, path } => left
                 .refine_parameters(arguments)
-                .join(right.refine_parameters(arguments), path.as_ref().clone()),
+                .join(right.refine_parameters(arguments), &path),
             Expression::LessOrEqual { left, right } => left
                 .refine_parameters(arguments)
                 .less_or_equal(right.refine_parameters(arguments)),
@@ -1293,7 +1293,7 @@ impl AbstractDomain {
             }
             Expression::Widen { path, operand } => operand
                 .refine_parameters(arguments)
-                .widen(path.refine_parameters(arguments).as_ref().clone()),
+                .widen(&path.refine_parameters(arguments)),
         }
     }
 
@@ -1374,12 +1374,9 @@ impl AbstractDomain {
             Expression::GreaterThan { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .greater_than(right.refine_with(path_condition, depth + 1)),
-            Expression::Join { left, right, path } => {
-                left.refine_with(path_condition, depth + 1).join(
-                    right.refine_with(path_condition, depth + 1),
-                    path.as_ref().clone(),
-                )
-            }
+            Expression::Join { left, right, path } => left
+                .refine_with(path_condition, depth + 1)
+                .join(right.refine_with(path_condition, depth + 1), &path),
             Expression::LessOrEqual { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .less_or_equal(right.refine_with(path_condition, depth + 1)),
@@ -1470,9 +1467,9 @@ impl AbstractDomain {
                     self
                 }
             }
-            Expression::Widen { path, operand } => operand
-                .refine_with(path_condition, depth + 1)
-                .widen(path.as_ref().clone()),
+            Expression::Widen { path, operand } => {
+                operand.refine_with(path_condition, depth + 1).widen(&path)
+            }
         }
     }
 
@@ -1524,12 +1521,10 @@ impl AbstractDomain {
             );
         };
         if let Join { left, right, path } = self.expression {
-            return operation(*left, other.clone())
-                .join(operation(*right, other), path.as_ref().clone());
+            return operation(*left, other.clone()).join(operation(*right, other), &path);
         }
         if let Join { left, right, path } = other.expression {
-            return operation(self.clone(), *left)
-                .join(operation(self, *right), path.as_ref().clone());
+            return operation(self.clone(), *left).join(operation(self, *right), &path);
         }
         match (&self.expression, &other.expression) {
             (Widen { .. }, _) => self,
@@ -1543,14 +1538,14 @@ impl AbstractDomain {
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to a set of values that include of the values that could be stored
     /// in memory at the given path.
-    pub fn widen(self, path: Path) -> Self {
+    pub fn widen(self, path: &Rc<Path>) -> Self {
         match self.expression {
             Expression::Widen { .. }
             | Expression::CompileTimeConstant(..)
             | Expression::Reference(..)
             | Expression::Variable { .. } => self,
             _ => Expression::Widen {
-                path: Rc::new(path),
+                path: path.clone(),
                 operand: box self,
             }
             .into(),

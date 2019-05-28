@@ -121,10 +121,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// For now, promoted constants just return Top.
     fn lookup_path_and_refine_result(
         &mut self,
-        path: Path,
+        path: Rc<Path>,
         result_type: ExpressionType,
     ) -> AbstractValue {
-        if let Path::Constant { value } = path {
+        if let Path::Constant { value } = path.as_ref() {
             return *value.clone();
         }
         let refined_val = {
@@ -142,12 +142,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 def_id,
                 ref summary_cache_key,
                 ref expression_type,
-            } = path
+            } = path.as_ref()
             {
                 let mut summary;
                 let summary = if let Some(def_id) = def_id {
                     self.summary_cache
-                        .get_summary_for(def_id, Some(self.def_id))
+                        .get_summary_for(*def_id, Some(self.def_id))
                 } else {
                     summary = self
                         .summary_cache
@@ -157,7 +157,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 if let Some(result) = &summary.result {
                     let result = result.clone().refine_paths(&mut self.current_environment);
                     if let Expression::AbstractHeapAddress(ordinal) = result.domain.expression {
-                        let source_path = Path::LocalVariable { ordinal: 0 };
+                        let source_path = Rc::new(Path::LocalVariable { ordinal: 0 });
                         let target_path = Rc::new(Path::AbstractHeapAddress { ordinal });
                         for (path, value) in summary
                             .side_effects
@@ -168,24 +168,23 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                                 .replace_root(&source_path, target_path.clone())
                                 .refine_paths(&mut self.current_environment);
                             let rvalue = value.clone().refine_paths(&mut self.current_environment);
-                            self.current_environment
-                                .update_value_at(tpath.as_ref().clone(), rvalue);
+                            self.current_environment.update_value_at(tpath, rvalue);
                         }
                     }
                     result
                 } else {
                     Expression::Variable {
-                        path: Rc::new(path.clone()),
+                        path: path.clone(),
                         var_type: expression_type.clone(),
                     }
                     .into()
                 }
             } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
                 if result_type == ExpressionType::Reference {
-                    Expression::Reference(Rc::new(path)).into()
+                    Expression::Reference(path.clone()).into()
                 } else {
                     Expression::Variable {
-                        path: Rc::new(path),
+                        path: path.clone(),
                         var_type: result_type.clone(),
                     }
                     .into()
@@ -205,8 +204,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     // Path is required to be a temporary used to track an operation result.
-    fn get_target_path_type(&mut self, path: &Path) -> ExpressionType {
-        match path {
+    fn get_target_path_type(&mut self, path: &Rc<Path>) -> ExpressionType {
+        match path.as_ref() {
             Path::LocalVariable { ordinal } => {
                 let loc = &self.mir.local_decls[mir::Local::from(*ordinal)];
                 match loc.ty.sty {
@@ -516,7 +515,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn promote_constants(&mut self, function_name: &str) -> Environment {
         let mut state_with_parameters = Environment::default();
         let saved_mir = self.mir;
-        let result_root = Path::LocalVariable { ordinal: 0 };
+        let result_root = Rc::new(Path::LocalVariable { ordinal: 0 });
         for (ordinal, constant_mir) in self.mir.promoted.iter().enumerate() {
             self.mir = constant_mir;
             let result_type = self.get_type_for_local(0);
@@ -524,17 +523,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
             let promoted_root = Rc::new(Path::PromotedConstant { ordinal });
             let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
-            state_with_parameters.update_value_at(promoted_root.as_ref().clone(), value);
+            state_with_parameters.update_value_at(promoted_root.clone(), value);
             for (path, value) in self
                 .exit_environment
                 .value_map
                 .iter()
                 .filter(|(p, _)| p.is_rooted_by(&result_root))
             {
-                let promoted_path =
-                    Rc::new(path.clone()).replace_root(&result_root, promoted_root.clone());
-                state_with_parameters
-                    .update_value_at(promoted_path.as_ref().clone(), value.clone());
+                let promoted_path = path.replace_root(&result_root, promoted_root.clone());
+                state_with_parameters.update_value_at(promoted_path, value.clone());
             }
 
             self.reset_visitor_state();
@@ -639,11 +636,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let target_qualifier = self.visit_place(place);
         let qualifier_length = target_qualifier.path_length();
         assume!(qualifier_length < 1_000_000_000);
-        let target_path = Path::QualifiedPath {
-            qualifier: Rc::new(target_qualifier),
+        let target_path = Rc::new(Path::QualifiedPath {
+            qualifier: target_qualifier,
             selector: Rc::new(PathSelector::Discriminant),
             length: qualifier_length + 1,
-        };
+        });
         let index_val = self
             .constant_value_cache
             .get_u128_for(variant_index.as_usize() as u128)
@@ -661,9 +658,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// End the current live range for the storage of the local.
     fn visit_storage_dead(&mut self, local: mir::Local) {
         debug!("default visit_storage_dead(local: {:?})", local);
-        let path = Path::LocalVariable {
+        let path = Rc::new(Path::LocalVariable {
             ordinal: local.as_usize(),
-        };
+        });
         self.current_environment
             .update_value_at(path, abstract_value::BOTTOM.clone());
     }
@@ -888,7 +885,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             } else {
                 &KnownFunctionNames::None
             };
-        let actual_args: Vec<(Path, AbstractValue)> = args
+        let actual_args: Vec<(Rc<Path>, AbstractValue)> = args
             .iter()
             .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
             .collect();
@@ -913,7 +910,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn handled_as_special_function_call(
         &mut self,
         known_name: &KnownFunctionNames,
-        actual_args: &[(Path, AbstractValue)],
+        actual_args: &[(Rc<Path>, AbstractValue)],
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
     ) -> bool {
@@ -930,7 +927,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
                     // The current value, if any, of the model field are a set of (path, value) pairs
                     // where each path is rooted by qualifier.model_field(..)
-                    let qualifier = Rc::new(actual_args[0].0.clone());
+                    let qualifier = actual_args[0].0.clone();
                     let path_length = qualifier.path_length();
                     let field_name = self.coerce_to_string(&actual_args[1].1);
                     let selector = Rc::new(PathSelector::ModelField(field_name));
@@ -947,12 +944,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         // Move the model field (path, val) pairs to the target (i.e. the place where
                         // the return value of call to the mirai_get_model_field function would go if
                         // it were a normal call.
-                        self.copy_or_move_elements(
-                            target_path,
-                            rpath.as_ref().clone(),
-                            rtype,
-                            true,
-                        );
+                        self.copy_or_move_elements(target_path, rpath, rtype, true);
                     } else {
                         // If there is no value for the model field in the environment, we should
                         // use the default value, but only the qualifier is not rooted in a parameter
@@ -990,7 +982,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             KnownFunctionNames::MiraiSetModelField => {
                 if let Some((_, target)) = destination {
                     checked_assume!(actual_args.len() == 3);
-                    let qualifier = Rc::new(actual_args[0].0.clone());
+                    let qualifier = actual_args[0].0.clone();
                     let path_length = qualifier.path_length();
                     let field_name = self.coerce_to_string(&actual_args[1].1);
                     let selector = Rc::new(PathSelector::ModelField(field_name));
@@ -1003,7 +995,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     .refine_paths(&mut self.current_environment);
                     let rpath = actual_args[2].0.clone();
                     self.copy_or_move_elements(
-                        target_path.as_ref().clone(),
+                        target_path,
                         rpath,
                         ExpressionType::NonPrimitive,
                         true,
@@ -1037,7 +1029,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 if let Some((place, target)) = destination {
                     let target_path = self.visit_place(place);
                     let target_type = self.get_place_type(place);
-                    let return_value_path = Path::LocalVariable { ordinal: 0 };
+                    let return_value_path = Rc::new(Path::LocalVariable { ordinal: 0 });
                     let return_value =
                         self.lookup_path_and_refine_result(return_value_path, target_type);
                     self.current_environment
@@ -1113,7 +1105,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// No check is performed, since we get to assume this condition without proof.
     fn handle_assume(
         &mut self,
-        actual_args: &[(Path, AbstractValue)],
+        actual_args: &[(Rc<Path>, AbstractValue)],
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
     ) {
@@ -1140,7 +1132,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Adds the first and only value in actual_args to the current list of preconditions.
     /// No check is performed, since we get to assume the caller has verified this condition.
-    fn handle_precondition(&mut self, actual_args: &[(Path, AbstractValue)]) {
+    fn handle_precondition(&mut self, actual_args: &[(Rc<Path>, AbstractValue)]) {
         precondition!(actual_args.len() == 2);
         if self.check_for_errors {
             if !self
@@ -1169,7 +1161,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn try_to_inline_standard_ops_func(
         &mut self,
         known_name: &KnownFunctionNames,
-        args: &[(Path, AbstractValue)],
+        args: &[(Rc<Path>, AbstractValue)],
     ) -> AbstractValue {
         if *known_name == KnownFunctionNames::CoreSliceLen {
             checked_assume!(args.len() == 1);
@@ -1184,11 +1176,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             };
             if let Some(qualifier) = qualifier {
                 let selector = Rc::new(PathSelector::ArrayLength);
-                let len_path = Path::QualifiedPath {
+                let len_path = Rc::new(Path::QualifiedPath {
                     length: qualifier.path_length() + 1,
                     qualifier,
                     selector,
-                };
+                });
                 return self.lookup_path_and_refine_result(len_path, ExpressionType::Usize);
             }
         }
@@ -1225,7 +1217,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Preconditions that are maybe false become preconditions of the calling function.
     fn check_function_preconditions(
         &mut self,
-        actual_args: &[(Path, AbstractValue)],
+        actual_args: &[(Rc<Path>, AbstractValue)],
         function_summary: &Summary,
         func_to_call: &AbstractValue,
     ) {
@@ -1334,26 +1326,26 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn transfer_and_refine_normal_return_state(
         &mut self,
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
-        actual_args: &[(Path, AbstractValue)],
+        actual_args: &[(Rc<Path>, AbstractValue)],
         function_summary: &Summary,
     ) {
         if let Some((place, target)) = destination {
             // Assign function result to place
             let target_path = self.visit_place(place);
-            let return_value_path = Path::LocalVariable { ordinal: 0 };
+            let return_value_path = Rc::new(Path::LocalVariable { ordinal: 0 });
             // Transfer side effects
             self.transfer_and_refine(
                 &function_summary.side_effects,
-                &target_path,
-                return_value_path,
+                target_path,
+                &return_value_path,
                 actual_args,
             );
             for (i, (target_path, _)) in actual_args.iter().enumerate() {
-                let parameter_path = Path::LocalVariable { ordinal: i + 1 };
+                let parameter_path = Rc::new(Path::LocalVariable { ordinal: i + 1 });
                 self.transfer_and_refine(
                     &function_summary.side_effects,
-                    target_path,
-                    parameter_path,
+                    target_path.clone(),
+                    &parameter_path,
                     actual_args,
                 );
             }
@@ -1372,16 +1364,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn transfer_and_refine_cleanup_state(
         &mut self,
         cleanup: Option<mir::BasicBlock>,
-        actual_args: &[(Path, AbstractValue)],
+        actual_args: &[(Rc<Path>, AbstractValue)],
         function_summary: &Summary,
     ) {
         if let Some(cleanup_target) = cleanup {
             for (i, (target_path, _)) in actual_args.iter().enumerate() {
-                let parameter_path = Path::LocalVariable { ordinal: i + 1 };
+                let parameter_path = Rc::new(Path::LocalVariable { ordinal: i + 1 });
                 self.transfer_and_refine(
                     &function_summary.unwind_side_effects,
-                    target_path,
-                    parameter_path,
+                    target_path.clone(),
+                    &parameter_path,
                     actual_args,
                 );
             }
@@ -1401,7 +1393,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn report_calls_to_special_functions(
         &mut self,
         known_name: &KnownFunctionNames,
-        actual_args: &[(Path, AbstractValue)],
+        actual_args: &[(Rc<Path>, AbstractValue)],
     ) {
         verify!(self.check_for_errors);
         match known_name {
@@ -1552,17 +1544,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// with the corresponding actual values.
     fn transfer_and_refine(
         &mut self,
-        effects: &[(Path, AbstractValue)],
-        target_path: &Path,
-        source_path: Path,
-        arguments: &[(Path, AbstractValue)],
+        effects: &[(Rc<Path>, AbstractValue)],
+        target_path: Rc<Path>,
+        source_path: &Rc<Path>,
+        arguments: &[(Rc<Path>, AbstractValue)],
     ) {
         for (path, value) in effects
             .iter()
-            .filter(|(p, _)| (*p) == source_path || p.is_rooted_by(&source_path))
+            .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
         {
             let tpath = Rc::new(path.clone())
-                .replace_root(&source_path, Rc::new(target_path.clone()))
+                .replace_root(source_path, target_path.clone())
                 .refine_paths(&mut self.current_environment);
             let rvalue = value
                 .clone()
@@ -1571,17 +1563,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             for (arg_path, arg_val) in arguments.iter() {
                 if arg_val.eq(&rvalue) {
                     let rtype = rvalue.domain.expression.infer_type();
-                    self.copy_or_move_elements(
-                        tpath.as_ref().clone(),
-                        arg_path.clone(),
-                        rtype,
-                        false,
-                    );
+                    self.copy_or_move_elements(tpath.clone(), arg_path.clone(), rtype, false);
                     break;
                 }
             }
-            self.current_environment
-                .update_value_at(tpath.as_ref().clone(), rvalue);
+            self.current_environment.update_value_at(tpath, rvalue);
         }
     }
 
@@ -1762,7 +1748,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Calls a specialized visitor for each kind of Rvalue
-    fn visit_rvalue(&mut self, path: Path, rvalue: &mir::Rvalue<'tcx>) {
+    fn visit_rvalue(&mut self, path: Rc<Path>, rvalue: &mir::Rvalue<'tcx>) {
         match rvalue {
             mir::Rvalue::Use(operand) => {
                 self.visit_use(path, operand);
@@ -1801,7 +1787,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// path = x (either a move or copy, depending on type of x), or path = constant.
-    fn visit_use(&mut self, path: Path, operand: &mir::Operand<'tcx>) {
+    fn visit_use(&mut self, path: Rc<Path>, operand: &mir::Operand<'tcx>) {
         debug!(
             "default visit_use(path: {:?}, operand: {:?})",
             path, operand
@@ -1823,7 +1809,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 let const_value: AbstractValue = self.visit_constant(ty, *user_ty, &literal.val);
                 if let Expression::AbstractHeapAddress(ordinal) = const_value.domain.expression {
                     let rtype = ExpressionType::Reference;
-                    let rpath = Path::AbstractHeapAddress { ordinal };
+                    let rpath = Rc::new(Path::AbstractHeapAddress { ordinal });
                     self.copy_or_move_elements(path, rpath, rtype, false);
                 } else {
                     self.current_environment
@@ -1836,7 +1822,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// For each (path', value) pair in the environment where path' is rooted in place,
     /// add a (path'', value) pair to the environment where path'' is a copy of path re-rooted
     /// with place.
-    fn visit_used_copy(&mut self, target_path: Path, place: &mir::Place<'tcx>) {
+    fn visit_used_copy(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
         debug!(
             "default visit_used_copy(target_path: {:?}, place: {:?})",
             target_path, place
@@ -1850,8 +1836,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// todo: this is expensive, optimize it
     fn copy_or_move_elements(
         &mut self,
-        target_path: Path,
-        rpath: Path,
+        target_path: Rc<Path>,
+        rpath: Rc<Path>,
         rtype: ExpressionType,
         move_elements: bool,
     ) {
@@ -1862,14 +1848,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             ref qualifier,
             ref selector,
             length,
-        } = rpath
+        } = rpath.as_ref()
         {
             match **selector {
                 PathSelector::ConstantIndex {
                     offset, from_end, ..
                 } => {
                     let index = if from_end {
-                        let len_value = self.get_len((**qualifier).clone());
+                        let len_value = self.get_len(qualifier.clone());
                         if let AbstractValue {
                             domain:
                                 AbstractDomain {
@@ -1888,11 +1874,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         u128::from(offset)
                     };
                     let index_val = self.constant_value_cache.get_u128_for(index).clone().into();
-                    let index_path = Path::QualifiedPath {
+                    let index_path = Rc::new(Path::QualifiedPath {
                         qualifier: qualifier.clone(),
                         selector: Rc::new(PathSelector::Index(box index_val)),
-                        length,
-                    };
+                        length: *length,
+                    });
                     self.copy_or_move_elements(
                         target_path,
                         index_path,
@@ -1904,7 +1890,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 PathSelector::Subslice { from, to } => {
                     //slice[from:-to] in Python terms.
                     let len = {
-                        let len_value = self.get_len((**qualifier).clone());
+                        let len_value = self.get_len(qualifier.clone());
                         if let AbstractValue {
                             domain:
                                 AbstractDomain {
@@ -1931,21 +1917,21 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             .get_u128_for(u128::from(i))
                             .clone()
                             .into();
-                        let index_path = Path::QualifiedPath {
+                        let index_path = Rc::new(Path::QualifiedPath {
                             qualifier: qualifier.clone(),
                             selector: Rc::new(PathSelector::Index(box index_val)),
-                            length,
-                        };
+                            length: *length,
+                        });
                         let target_index_val = self
                             .constant_value_cache
                             .get_u128_for(u128::try_from(i - from).unwrap())
                             .clone()
                             .into();
-                        let indexed_target = Path::QualifiedPath {
-                            qualifier: Rc::new(target_path.clone()),
+                        let indexed_target = Rc::new(Path::QualifiedPath {
+                            qualifier: target_path.clone(),
                             selector: Rc::new(PathSelector::Index(box target_index_val)),
-                            length,
-                        };
+                            length: *length,
+                        });
                         self.copy_or_move_elements(
                             indexed_target,
                             index_path,
@@ -1966,18 +1952,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .iter()
             .filter(|(p, _)| p.is_rooted_by(&rpath))
         {
-            let qualified_path =
-                &Rc::new(path.clone()).replace_root(&rpath, Rc::new(target_path.clone()));
+            let qualified_path = path.replace_root(&rpath, target_path.clone());
             if move_elements {
                 debug!("moving {:?} to {:?}", value, qualified_path);
-                value_map = value_map.remove(&path);
+                value_map = value_map.remove(path);
             } else {
                 debug!("copying {:?} to {:?}", value, qualified_path);
             };
-            value_map = value_map.insert(
-                qualified_path.as_ref().clone(),
-                value.with_provenance(self.current_span),
-            );
+            value_map = value_map.insert(qualified_path, value.with_provenance(self.current_span));
         }
         // Now move/copy (rpath, value) itself.
         let mut value = self.lookup_path_and_refine_result(rpath.clone(), rtype);
@@ -1992,7 +1974,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     value = AbstractValue {
                         provenance: value.provenance.clone(),
                         domain: Expression::Variable {
-                            path: Rc::new(target_path.clone()),
+                            path: target_path.clone(),
                             var_type: var_type.clone(),
                         }
                         .into(),
@@ -2007,7 +1989,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// For each (path', value) pair in the environment where path' is rooted in place,
     /// add a (path'', value) pair to the environment where path'' is a copy of path re-rooted
     /// with place, and also remove the (path', value) pair from the environment.
-    fn visit_used_move(&mut self, target_path: Path, place: &mir::Place<'tcx>) {
+    fn visit_used_move(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
         debug!(
             "default visit_used_move(target_path: {:?}, place: {:?})",
             target_path, place
@@ -2018,17 +2000,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// path = [x; 32]
-    fn visit_repeat(&mut self, path: Path, operand: &mir::Operand<'tcx>, count: u64) {
+    fn visit_repeat(&mut self, path: Rc<Path>, operand: &mir::Operand<'tcx>, count: u64) {
         debug!(
             "default visit_repeat(path: {:?}, operand: {:?}, count: {:?})",
             path, operand, count
         );
         let path_len = path.path_length();
-        let length_path = Path::QualifiedPath {
-            qualifier: Rc::new(path),
+        let length_path = Rc::new(Path::QualifiedPath {
+            qualifier: path,
             selector: Rc::new(PathSelector::ArrayLength),
             length: path_len + 1,
-        };
+        });
         let length_value = self
             .constant_value_cache
             .get_u128_for(u128::from(count))
@@ -2046,7 +2028,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// path = &x or &mut x
     fn visit_ref(
         &mut self,
-        path: Path,
+        path: Rc<Path>,
         region: rustc::ty::Region<'tcx>,
         borrow_kind: mir::BorrowKind,
         place: &mir::Place<'tcx>,
@@ -2056,22 +2038,21 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             path, region, borrow_kind, place
         );
         let value_path = self.visit_place(place);
-        let value = match value_path {
+        let value = match value_path.as_ref() {
             Path::QualifiedPath {
                 qualifier,
                 selector,
                 ..
-            } if *selector == PathSelector::Deref => self.lookup_path_and_refine_result(
-                qualifier.as_ref().clone(),
-                ExpressionType::Reference,
-            ),
-            _ => Expression::Reference(Rc::new(value_path)).into(),
+            } if *selector.as_ref() == PathSelector::Deref => {
+                self.lookup_path_and_refine_result(qualifier.clone(), ExpressionType::Reference)
+            }
+            _ => Expression::Reference(value_path).into(),
         };
         self.current_environment.update_value_at(path, value);
     }
 
     /// path = length of a [X] or [X;n] value.
-    fn visit_len(&mut self, path: Path, place: &mir::Place<'tcx>) {
+    fn visit_len(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         debug!("default visit_len(path: {:?}, place: {:?})", path, place);
         let place_ty = self.get_rustc_place_type(place);
         let len_value = if let TyKind::Array(_, len) = place_ty {
@@ -2087,19 +2068,19 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Get the length of an array. Will be a compile time constant if the array length is known.
-    fn get_len(&mut self, path: Path) -> AbstractValue {
-        let length_path = Path::QualifiedPath {
+    fn get_len(&mut self, path: Rc<Path>) -> AbstractValue {
+        let length_path = Rc::new(Path::QualifiedPath {
             length: path.path_length() + 1,
-            qualifier: Rc::new(path),
+            qualifier: path,
             selector: Rc::new(PathSelector::ArrayLength),
-        };
+        });
         self.lookup_path_and_refine_result(length_path, ExpressionType::Usize)
     }
 
     /// path = operand as ty.
     fn visit_cast(
         &mut self,
-        path: Path,
+        path: Rc<Path>,
         cast_kind: mir::CastKind,
         operand: &mir::Operand<'tcx>,
         ty: rustc::ty::Ty<'tcx>,
@@ -2120,7 +2101,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Apply the given binary operator to the two operands and assign result to path.
     fn visit_binary_op(
         &mut self,
-        path: Path,
+        path: Rc<Path>,
         bin_op: mir::BinOp,
         left_operand: &mir::Operand<'tcx>,
         right_operand: &mir::Operand<'tcx>,
@@ -2161,7 +2142,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// and assign the result to path.
     fn visit_checked_binary_op(
         &mut self,
-        path: Path,
+        path: Rc<Path>,
         bin_op: mir::BinOp,
         left_operand: &mir::Operand<'tcx>,
         right_operand: &mir::Operand<'tcx>,
@@ -2197,23 +2178,23 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         };
         let path_length = path.path_length();
         assume!(path_length < 1_000_000_000); // We'll run out of memory long before this happens
-        let path0 = Path::QualifiedPath {
-            qualifier: Rc::new(path.clone()),
+        let path0 = Rc::new(Path::QualifiedPath {
+            qualifier: path.clone(),
             selector: Rc::new(PathSelector::Field(0)),
             length: path_length + 1,
-        };
+        });
         self.current_environment.update_value_at(path0, result);
-        let path1 = Path::QualifiedPath {
-            qualifier: Rc::new(path.clone()),
+        let path1 = Rc::new(Path::QualifiedPath {
+            qualifier: path,
             selector: Rc::new(PathSelector::Field(1)),
             length: path_length + 1,
-        };
+        });
         self.current_environment
             .update_value_at(path1, overflow_flag);
     }
 
     /// Create a value based on the given type and assign it to path.
-    fn visit_nullary_op(&mut self, path: Path, null_op: mir::NullOp, ty: rustc::ty::Ty<'tcx>) {
+    fn visit_nullary_op(&mut self, path: Rc<Path>, null_op: mir::NullOp, ty: rustc::ty::Ty<'tcx>) {
         debug!(
             "default visit_nullary_op(path: {:?}, null_op: {:?}, ty: {:?})",
             path, null_op, ty
@@ -2241,7 +2222,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Apply the given unary operator to the operand and assign to path.
-    fn visit_unary_op(&mut self, path: Path, un_op: mir::UnOp, operand: &mir::Operand<'tcx>) {
+    fn visit_unary_op(&mut self, path: Rc<Path>, un_op: mir::UnOp, operand: &mir::Operand<'tcx>) {
         debug!(
             "default visit_unary_op(path: {:?}, un_op: {:?}, operand: {:?})",
             path, un_op, operand
@@ -2255,7 +2236,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Read the discriminant of an ADT and assign to path.
-    fn visit_discriminant(&mut self, path: Path, place: &mir::Place<'tcx>) {
+    fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         debug!(
             "default visit_discriminant(path: {:?}, place: {:?})",
             path, place
@@ -2263,11 +2244,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let adt_path = self.visit_place(place);
         let adt_path_length = adt_path.path_length();
         assume!(adt_path_length < 1_000_000_000);
-        let discriminant_path = Path::QualifiedPath {
-            qualifier: Rc::new(adt_path),
+        let discriminant_path = Rc::new(Path::QualifiedPath {
+            qualifier: adt_path,
             selector: Rc::new(PathSelector::Discriminant),
             length: adt_path_length + 1,
-        };
+        });
         let discriminant_type = self.get_place_type(place);
         let discriminant_value =
             self.lookup_path_and_refine_result(discriminant_path, discriminant_type);
@@ -2279,7 +2260,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// See https://github.com/rust-lang/rust/issues/48193.
     fn visit_aggregate(
         &mut self,
-        path: Path,
+        path: Rc<Path>,
         aggregate_kinds: &mir::AggregateKind<'tcx>,
         operands: &[mir::Operand<'tcx>],
     ) {
@@ -2307,18 +2288,18 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .clone()
                 .into();
             let selector = Rc::new(PathSelector::Index(box index_value));
-            let index_path = Path::QualifiedPath {
-                qualifier: Rc::new(path.clone()),
+            let index_path = Rc::new(Path::QualifiedPath {
+                qualifier: path.clone(),
                 selector,
                 length: path.path_length() + 1,
-            };
+            });
             self.visit_used_operand(index_path, operand);
         }
-        let length_path = Path::QualifiedPath {
-            qualifier: Rc::new(path.clone()),
-            selector: Rc::new(PathSelector::ArrayLength),
+        let length_path = Rc::new(Path::QualifiedPath {
             length: path.path_length() + 1,
-        };
+            qualifier: path,
+            selector: Rc::new(PathSelector::ArrayLength),
+        });
         let length_value = self
             .constant_value_cache
             .get_u128_for(operands.len() as u128)
@@ -2331,7 +2312,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Operand defines the values that can appear inside an rvalue. They are intentionally
     /// limited to prevent rvalues from being nested in one another.
     /// A used operand must move or copy values to a target path.
-    fn visit_used_operand(&mut self, target_path: Path, operand: &mir::Operand<'tcx>) {
+    fn visit_used_operand(&mut self, target_path: Rc<Path>, operand: &mir::Operand<'tcx>) {
         match operand {
             mir::Operand::Copy(place) => {
                 self.visit_used_copy(target_path, place);
@@ -2354,12 +2335,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns the path (location/lh-value) of the given operand.
-    fn get_operand_path(&mut self, operand: &mir::Operand<'tcx>) -> Path {
+    fn get_operand_path(&mut self, operand: &mir::Operand<'tcx>) -> Rc<Path> {
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => self.visit_place(place),
-            mir::Operand::Constant(..) => Path::Constant {
+            mir::Operand::Constant(..) => Rc::new(Path::Constant {
                 value: box self.visit_operand(operand),
-            },
+            }),
         }
     }
 
@@ -2426,11 +2407,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::interpret::ConstValue::Unevaluated(def_id, ..) => {
                 let name = utils::summary_key_str(&self.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.sty);
-                let path = Path::StaticVariable {
+                let path = Rc::new(Path::StaticVariable {
                     def_id: Some(*def_id),
                     summary_cache_key: name,
                     expression_type: expression_type.clone(),
-                };
+                });
                 self.lookup_path_and_refine_result(path, expression_type)
             }
             _ => {
@@ -2635,7 +2616,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             } else {
                 unreachable!()
             };
-        let array_path = Path::AbstractHeapAddress { ordinal };
+        let array_path = Rc::new(Path::AbstractHeapAddress { ordinal });
         let mut last_index: u128 = 0;
         for (i, operand) in self
             .get_element_values(bytes, elem_type, len)
@@ -2649,19 +2630,19 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .clone()
                 .into();
             let selector = Rc::new(PathSelector::Index(box index_value));
-            let index_path = Path::QualifiedPath {
-                qualifier: Rc::new(array_path.clone()),
+            let index_path = Rc::new(Path::QualifiedPath {
+                qualifier: array_path.clone(),
                 selector,
                 length: array_path.path_length() + 1,
-            };
+            });
             self.current_environment
                 .update_value_at(index_path, operand);
         }
-        let length_path = Path::QualifiedPath {
-            qualifier: Rc::new(array_path.clone()),
-            selector: Rc::new(PathSelector::ArrayLength),
+        let length_path = Rc::new(Path::QualifiedPath {
             length: array_path.path_length() + 1,
-        };
+            qualifier: array_path,
+            selector: Rc::new(PathSelector::ArrayLength),
+        });
         let length_value = self
             .constant_value_cache
             .get_u128_for(last_index + 1)
@@ -2750,22 +2731,22 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Returns a Path instance that is the essentially the same as the Place instance, but which
     /// can be serialized and used as a cache key.
-    fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Path {
+    fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         debug!("default visit_place(place: {:?})", place);
         match place {
             mir::Place::Base(base_place) => match base_place {
                 mir::PlaceBase::Local(local) => {
-                    let result = Path::LocalVariable {
+                    let result = Rc::new(Path::LocalVariable {
                         ordinal: local.as_usize(),
-                    };
+                    });
                     let ty = self.get_rustc_place_type(place);
                     if let TyKind::Array(_, len) = ty {
                         let len_val = self.visit_constant(len.ty, None, &len.val);
-                        let len_path = Path::QualifiedPath {
-                            qualifier: Rc::new(result.clone()),
+                        let len_path = Rc::new(Path::QualifiedPath {
+                            qualifier: result.clone(),
                             selector: Rc::new(PathSelector::ArrayLength),
                             length: 2,
-                        };
+                        });
                         self.current_environment.update_value_at(len_path, len_val);
                     }
                     result
@@ -2773,15 +2754,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 mir::PlaceBase::Static(boxed_static) => match boxed_static.kind {
                     mir::StaticKind::Promoted(promoted) => {
                         let index = promoted.index();
-                        Path::PromotedConstant { ordinal: index }
+                        Rc::new(Path::PromotedConstant { ordinal: index })
                     }
                     mir::StaticKind::Static(def_id) => {
                         let name = utils::summary_key_str(&self.tcx, def_id);
-                        Path::StaticVariable {
+                        Rc::new(Path::StaticVariable {
                             def_id: Some(def_id),
                             summary_cache_key: name,
                             expression_type: self.get_place_type(place),
-                        }
+                        })
                     }
                 },
             },
@@ -2794,7 +2775,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let base_val = self.lookup_path_and_refine_result(base.clone(), base_type);
                     match base_val.domain.expression {
                         Expression::Reference(dereferenced_path) => {
-                            return dereferenced_path.as_ref().clone();
+                            return dereferenced_path;
                         }
                         Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
                             // A string is a reference, so fall through to wrap the string in a deref.
@@ -2811,11 +2792,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
                 let base_path_length = base.path_length();
                 checked_assume!(base_path_length < std::usize::MAX);
-                Path::QualifiedPath {
+                Rc::new(Path::QualifiedPath {
                     length: base_path_length + 1,
-                    qualifier: Rc::new(base),
+                    qualifier: base,
                     selector: Rc::new(selector),
-                }
+                })
             }
         }
     }
@@ -2834,9 +2815,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, _) => PathSelector::Field(field.index()),
             mir::ProjectionElem::Index(local) => {
-                let local_path = Path::LocalVariable {
+                let local_path = Rc::new(Path::LocalVariable {
                     ordinal: local.as_usize(),
-                };
+                });
                 let index_value =
                     self.lookup_path_and_refine_result(local_path, ExpressionType::Usize);
                 PathSelector::Index(box index_value)

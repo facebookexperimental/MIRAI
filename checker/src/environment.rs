@@ -22,7 +22,7 @@ pub struct Environment {
     /// The conditions that guard exit from this block to successor blocks
     pub exit_conditions: HashMap<BasicBlock, AbstractValue>,
     /// Does not include any entries where the value is abstract_value::Bottom
-    pub value_map: HashTrieMap<Path, AbstractValue>,
+    pub value_map: HashTrieMap<Rc<Path>, AbstractValue>,
 }
 
 /// Default
@@ -45,12 +45,12 @@ impl Debug for Environment {
 /// Methods
 impl Environment {
     /// Returns a reference to the value associated with the given path, if there is one.
-    pub fn value_at(&self, path: &Path) -> Option<&AbstractValue> {
+    pub fn value_at(&self, path: &Rc<Path>) -> Option<&AbstractValue> {
         self.value_map.get(path)
     }
 
     /// Updates the path to value map so that the given path now points to the given value.
-    pub fn update_value_at(&mut self, path: Path, value: AbstractValue) {
+    pub fn update_value_at(&mut self, path: Rc<Path>, value: AbstractValue) {
         debug!("updating value of {:?} to {:?}", path, value);
         if value.is_bottom() {
             self.value_map = self.value_map.remove(&path);
@@ -82,8 +82,8 @@ impl Environment {
     /// concretized into two paths where the abstract value is replaced by the consequent
     /// and alternate, respectively. These paths can then be weakly updated to reflect the
     /// lack of precise knowledge at compile time.
-    fn try_to_split(&mut self, path: &Path) -> Option<(AbstractValue, Path, Path)> {
-        match path {
+    fn try_to_split(&mut self, path: &Rc<Path>) -> Option<(AbstractValue, Rc<Path>, Rc<Path>)> {
+        match path.as_ref() {
             Path::LocalVariable { .. } => self.try_to_split_local(path),
             Path::QualifiedPath {
                 ref qualifier,
@@ -92,16 +92,16 @@ impl Environment {
             } => {
                 if let Some((join_condition, true_path, false_path)) = self.try_to_split(qualifier)
                 {
-                    let true_path = Path::QualifiedPath {
+                    let true_path = Rc::new(Path::QualifiedPath {
                         length: true_path.path_length() + 1,
-                        qualifier: Rc::new(true_path),
+                        qualifier: true_path,
                         selector: selector.clone(),
-                    };
-                    let false_path = Path::QualifiedPath {
+                    });
+                    let false_path = Rc::new(Path::QualifiedPath {
                         length: false_path.path_length() + 1,
-                        qualifier: Rc::new(false_path),
+                        qualifier: false_path,
                         selector: selector.clone(),
-                    };
+                    });
                     return Some((join_condition, true_path, false_path));
                 }
                 None
@@ -111,7 +111,10 @@ impl Environment {
     }
 
     /// Helper for try_to_split.
-    fn try_to_split_local(&mut self, path: &Path) -> Option<(AbstractValue, Path, Path)> {
+    fn try_to_split_local(
+        &mut self,
+        path: &Rc<Path>,
+    ) -> Option<(AbstractValue, Rc<Path>, Rc<Path>)> {
         let val_opt = self.value_at(path);
         if let Some(val) = val_opt {
             if let AbstractValue {
@@ -138,8 +141,8 @@ impl Environment {
                                 provenance: provenance.clone(),
                                 domain: (**condition).clone(),
                             },
-                            Path::AbstractHeapAddress { ordinal: *addr1 },
-                            Path::AbstractHeapAddress { ordinal: *addr2 },
+                            Rc::new(Path::AbstractHeapAddress { ordinal: *addr1 }),
+                            Rc::new(Path::AbstractHeapAddress { ordinal: *addr2 }),
                         ));
                     }
                     (Expression::Reference(path1), Expression::Reference(path2)) => {
@@ -148,8 +151,8 @@ impl Environment {
                                 provenance: provenance.clone(),
                                 domain: (**condition).clone(),
                             },
-                            path1.as_ref().clone(),
-                            path2.as_ref().clone(),
+                            path1.clone(),
+                            path2.clone(),
                         ));
                     }
                     _ => (),
@@ -172,7 +175,7 @@ impl Environment {
                 // abstract interpretation because the loop exit condition may evaluate to false
                 // for the first few iterations of the loop and thus the backwards branch only becomes
                 // conditional once widening kicks in.
-                x.clone().join(y.clone(), p.clone())
+                x.clone().join(y.clone(), p)
             } else {
                 c.clone().conditional_expression(x.clone(), y.clone())
             }
@@ -187,7 +190,7 @@ impl Environment {
                 match (&x.domain.expression, &y.domain.expression) {
                     (Expression::Widen { .. }, _) => x.clone(),
                     (_, Expression::Widen { .. }) => y.clone(),
-                    _ => x.clone().join(y.clone(), p.clone()).widen(p.clone()),
+                    _ => x.clone().join(y.clone(), p).widen(p),
                 }
             })
     }
@@ -198,11 +201,16 @@ impl Environment {
         &self,
         other: &Environment,
         join_condition: &AbstractValue,
-        join_or_widen: fn(&AbstractValue, &AbstractValue, &AbstractValue, &Path) -> AbstractValue,
+        join_or_widen: fn(
+            &AbstractValue,
+            &AbstractValue,
+            &AbstractValue,
+            &Rc<Path>,
+        ) -> AbstractValue,
     ) -> Environment {
         let value_map1 = &self.value_map;
         let value_map2 = &other.value_map;
-        let mut value_map: HashTrieMap<Path, AbstractValue> = HashTrieMap::default();
+        let mut value_map: HashTrieMap<Rc<Path>, AbstractValue> = HashTrieMap::default();
         for (path, val1) in value_map1.iter() {
             let p = path.clone();
             match value_map2.get(path) {
@@ -213,7 +221,7 @@ impl Environment {
                 None => {
                     checked_assume!(!val1.is_bottom());
                     let val2 = Expression::Variable {
-                        path: Rc::new(path.clone()),
+                        path: path.clone(),
                         var_type: val1.domain.expression.infer_type(),
                     }
                     .into();
@@ -226,7 +234,7 @@ impl Environment {
             if !value_map1.contains_key(path) {
                 checked_assume!(!val2.is_bottom());
                 let val1 = Expression::Variable {
-                    path: Rc::new(path.clone()),
+                    path: path.clone(),
                     var_type: val2.domain.expression.infer_type(),
                 }
                 .into();
