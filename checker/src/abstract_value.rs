@@ -3,7 +3,8 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-use crate::abstract_domains::{self, AbstractDomain};
+use crate::abstract_domains::AbstractDomain;
+use crate::abstract_domains::AbstractDomainTrait;
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
@@ -37,33 +38,8 @@ pub struct AbstractValue {
     pub provenance: Vec<Span>,
     /// Various approximations of the actual value.
     /// See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
-    pub domain: AbstractDomain,
+    pub domain: Rc<AbstractDomain>,
 }
-
-/// An abstract value that can be used as the value for an operation that has no normal result.
-pub const BOTTOM: AbstractValue = AbstractValue {
-    provenance: Vec::new(),
-    domain: abstract_domains::BOTTOM,
-};
-
-/// An abstract value that is corresponds to the single concrete value, true.
-pub const FALSE: AbstractValue = AbstractValue {
-    provenance: Vec::new(),
-    domain: abstract_domains::FALSE,
-};
-
-/// An abstract value to use when nothing is known about the value. All possible concrete values
-/// are members of the concrete set of values corresponding to this abstract value.
-pub const TOP: AbstractValue = AbstractValue {
-    provenance: Vec::new(),
-    domain: abstract_domains::TOP,
-};
-
-/// An abstract value that is corresponds to the single concrete value, true.
-pub const TRUE: AbstractValue = AbstractValue {
-    provenance: Vec::new(),
-    domain: abstract_domains::TRUE,
-};
 
 impl Debug for AbstractValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -85,11 +61,20 @@ impl Hash for AbstractValue {
     }
 }
 
+impl From<AbstractDomain> for AbstractValue {
+    fn from(domain: AbstractDomain) -> AbstractValue {
+        AbstractValue {
+            provenance: vec![],
+            domain: Rc::new(domain),
+        }
+    }
+}
+
 impl From<ConstantDomain> for AbstractValue {
     fn from(cv: ConstantDomain) -> AbstractValue {
         AbstractValue {
             provenance: vec![],
-            domain: Expression::CompileTimeConstant(cv).into(),
+            domain: Rc::new(Expression::CompileTimeConstant(cv).into()),
         }
     }
 }
@@ -98,7 +83,7 @@ impl From<Expression> for AbstractValue {
     fn from(expression_domain: Expression) -> AbstractValue {
         AbstractValue {
             provenance: vec![],
-            domain: expression_domain.into(),
+            domain: Rc::new(expression_domain.into()),
         }
     }
 }
