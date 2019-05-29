@@ -5,6 +5,7 @@
 //
 
 use crate::abstract_domains::AbstractDomain;
+use crate::abstract_domains::AbstractDomainTrait;
 use crate::constant_domain::ConstantDomain;
 use crate::expression::{Expression, ExpressionType};
 use crate::smt_solver::SmtResult;
@@ -421,7 +422,7 @@ impl Z3Solver {
     fn get_ast_for_widened(
         &mut self,
         path: &Rc<Path>,
-        operand: &AbstractDomain,
+        operand: &Rc<AbstractDomain>,
         target_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
         let path_str = CString::new(format!("{:?}", path)).unwrap();
@@ -430,10 +431,10 @@ impl Z3Solver {
             let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
             if target_type.is_integer() {
-                let domain: AbstractDomain = AbstractDomain::from(Expression::Widen {
+                let domain = Rc::new(AbstractDomain::from(Expression::Widen {
                     path: path.clone(),
-                    operand: box operand.clone(),
-                });
+                    operand: operand.clone(),
+                }));
                 let interval = domain.get_as_interval();
                 if !interval.is_bottom() {
                     if let Some(lower_bound) = interval.lower_bound() {

@@ -3,9 +3,11 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::abstract_domains;
 use crate::abstract_domains::AbstractDomain;
+use crate::abstract_domains::AbstractDomainTrait;
 use crate::abstract_value::PathRefinement;
-use crate::abstract_value::{self, AbstractValue, Path, PathSelector};
+use crate::abstract_value::{AbstractValue, Path, PathSelector};
 use crate::constant_domain::{ConstantDomain, ConstantValueCache, KnownFunctionNames};
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
@@ -128,7 +130,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             return *value.clone();
         }
         let refined_val = {
-            let bottom = abstract_value::BOTTOM;
+            let bottom = abstract_domains::BOTTOM.into();
             let local_val = self
                 .current_environment
                 .value_at(&path)
@@ -190,7 +192,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     .into()
                 }
             } else {
-                abstract_value::TOP
+                abstract_domains::TOP.into()
             }
         } else {
             refined_val
@@ -198,7 +200,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if result_type == ExpressionType::Bool
             && self.current_environment.entry_condition.implies(&result)
         {
-            return abstract_value::TRUE;
+            return abstract_domains::TRUE.into();
         }
         result
     }
@@ -479,7 +481,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if predecessor_states_and_conditions.is_empty() {
             // nothing is currently known about the predecessors
             let mut i_state = in_state[&bb].clone();
-            i_state.entry_condition = abstract_value::TOP;
+            i_state.entry_condition = abstract_domains::TOP.into();
             i_state
         } else {
             // We want to do right associative operations and that is easier if we reverse.
@@ -662,7 +664,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             ordinal: local.as_usize(),
         });
         self.current_environment
-            .update_value_at(path, abstract_value::BOTTOM.clone());
+            .update_value_at(path, abstract_domains::BOTTOM.into());
     }
 
     /// Execute a piece of inline Assembly.
@@ -953,7 +955,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             Expression::Variable { .. } | Expression::Reference(..) => {
                                 let rval: AbstractValue = Expression::UnknownModelField {
                                     path: rpath,
-                                    default: box actual_args[2].1.domain.clone(),
+                                    default: actual_args[2].1.domain.clone(),
                                 }
                                 .into();
                                 self.current_environment.update_value_at(target_path, rval);
@@ -1058,7 +1060,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 if let Some((_, target)) = destination {
                     self.current_environment
                         .exit_conditions
-                        .insert(*target, abstract_value::FALSE);
+                        .insert(*target, abstract_domains::FALSE.into());
                 }
                 return true;
             }
@@ -1126,7 +1128,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if let Some(cleanup_target) = cleanup {
             self.current_environment
                 .exit_conditions
-                .insert(cleanup_target, abstract_value::FALSE);
+                .insert(cleanup_target, abstract_domains::FALSE.into());
         }
     }
 
@@ -1184,7 +1186,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 return self.lookup_path_and_refine_result(len_path, ExpressionType::Usize);
             }
         }
-        abstract_value::BOTTOM
+        abstract_domains::BOTTOM.into()
     }
 
     /// Returns a summary of the function to call, obtained from the summary cache.
@@ -1734,8 +1736,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             SmtResult::Satisfiable => {
                 // We could get here with cond_val being true. Or perhaps not.
                 // So lets see if !cond_val is provably false.
-                let not_cond_expr = cond_val.clone().not(None).domain.expression;
-                let smt_expr = self.smt_solver.get_as_smt_predicate(&not_cond_expr);
+                let not_cond_expr = &cond_val.domain.logical_not().expression;
+                let smt_expr = self.smt_solver.get_as_smt_predicate(not_cond_expr);
                 if self.smt_solver.solve_expression(&smt_expr) == SmtResult::Unsatisfiable {
                     // The solver can prove that !cond_val is always false.
                     Some(true)
@@ -1856,17 +1858,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 } => {
                     let index = if from_end {
                         let len_value = self.get_len(qualifier.clone());
-                        if let AbstractValue {
-                            domain:
-                                AbstractDomain {
-                                    expression:
-                                        Expression::CompileTimeConstant(ConstantDomain::U128(len)),
-                                    ..
-                                },
+                        if let AbstractDomain {
+                            expression: Expression::CompileTimeConstant(ConstantDomain::U128(len)),
                             ..
-                        } = len_value
+                        } = len_value.domain.as_ref()
                         {
-                            len - u128::from(offset)
+                            (*len) - u128::from(offset)
                         } else {
                             unreachable!("PathSelector::ConstantIndex implies the length of the value is known")
                         }
@@ -1891,17 +1888,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     //slice[from:-to] in Python terms.
                     let len = {
                         let len_value = self.get_len(qualifier.clone());
-                        if let AbstractValue {
-                            domain:
-                                AbstractDomain {
-                                    expression:
-                                        Expression::CompileTimeConstant(ConstantDomain::U128(len)),
-                                    ..
-                                },
+                        if let AbstractDomain {
+                            expression: Expression::CompileTimeConstant(ConstantDomain::U128(len)),
                             ..
-                        } = len_value
+                        } = len_value.domain.as_ref()
                         {
-                            u32::try_from(len).unwrap() - to
+                            u32::try_from(*len).unwrap() - to
                         } else {
                             unreachable!(
                                 "PathSelector::Subslice implies the length of the value is known"
@@ -1973,11 +1965,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 if *var_type == ExpressionType::NonPrimitive {
                     value = AbstractValue {
                         provenance: value.provenance.clone(),
-                        domain: Expression::Variable {
-                            path: target_path.clone(),
-                            var_type: var_type.clone(),
-                        }
-                        .into(),
+                        domain: Rc::new(
+                            Expression::Variable {
+                                path: target_path.clone(),
+                                var_type: var_type.clone(),
+                            }
+                            .into(),
+                        ),
                     };
                 }
             }
@@ -2203,7 +2197,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::NullOp::Box => self.get_new_heap_address(),
             mir::NullOp::SizeOf => {
                 //todo: figure out how to get the size from ty.
-                abstract_value::TOP
+                abstract_domains::TOP.into()
             }
         };
         self.current_environment.update_value_at(path, value);
@@ -2275,7 +2269,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if path.path_length() >= k_limits::MAX_PATH_LENGTH {
             // If we get to this limit we have a very weird array. Just use Top.
             self.current_environment
-                .update_value_at(path, abstract_value::TOP);
+                .update_value_at(path, abstract_domains::TOP.into());
             return;
         }
         let aggregate_value = self.get_new_heap_address();
@@ -2348,9 +2342,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// limited to prevent rvalues from being nested in one another.
     fn visit_operand(&mut self, operand: &mir::Operand<'tcx>) -> AbstractValue {
         let span = self.current_span;
-        let (expression_domain, span) = match operand {
-            mir::Operand::Copy(place) => (self.visit_copy(place).domain.expression, span),
-            mir::Operand::Move(place) => (self.visit_move(place).domain.expression, span),
+        let (operand_domain, span) = match operand {
+            mir::Operand::Copy(place) => (self.visit_copy(place).domain, span),
+            mir::Operand::Move(place) => (self.visit_move(place).domain, span),
             mir::Operand::Constant(constant) => {
                 let mir::Constant {
                     span,
@@ -2359,12 +2353,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     literal,
                 } = constant.borrow();
                 let const_value = self.visit_constant(ty, *user_ty, &literal.val);
-                (const_value.domain.expression, *span)
+                (const_value.domain, *span)
             }
         };
         AbstractValue {
             provenance: vec![span],
-            domain: expression_domain.into(),
+            domain: operand_domain.clone(),
         }
     }
 
@@ -2773,9 +2767,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 if let PathSelector::Deref = selector {
                     // Strip the Deref in order to canonicalize paths
                     let base_val = self.lookup_path_and_refine_result(base.clone(), base_type);
-                    match base_val.domain.expression {
+                    match &base_val.domain.expression {
                         Expression::Reference(dereferenced_path) => {
-                            return dereferenced_path;
+                            return dereferenced_path.clone();
                         }
                         Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
                             // A string is a reference, so fall through to wrap the string in a deref.

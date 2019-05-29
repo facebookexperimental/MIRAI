@@ -3,8 +3,9 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::abstract_domains;
 use crate::abstract_domains::AbstractDomain;
-use crate::abstract_value::{self, AbstractValue, Path};
+use crate::abstract_value::{AbstractValue, Path};
 use crate::expression::Expression;
 
 use log::debug;
@@ -29,7 +30,7 @@ pub struct Environment {
 impl Environment {
     pub fn default() -> Environment {
         Environment {
-            entry_condition: abstract_value::TRUE,
+            entry_condition: abstract_domains::TRUE.into(),
             exit_conditions: HashMap::default(),
             value_map: HashTrieMap::default(),
         }
@@ -58,7 +59,7 @@ impl Environment {
         }
         if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
             // If path is an abstraction that can match more than one path, we need to do weak updates.
-            let top = abstract_value::TOP;
+            let top = abstract_domains::TOP.into();
             let true_val = join_condition.clone().conditional_expression(
                 value.clone(),
                 self.value_at(&true_path).unwrap_or(&top).clone(),
@@ -115,51 +116,46 @@ impl Environment {
         &mut self,
         path: &Rc<Path>,
     ) -> Option<(AbstractValue, Rc<Path>, Rc<Path>)> {
-        let val_opt = self.value_at(path);
-        if let Some(val) = val_opt {
-            if let AbstractValue {
-                domain:
-                    AbstractDomain {
-                        expression:
-                            Expression::ConditionalExpression {
-                                condition,
-                                consequent,
-                                alternate,
-                            },
-                        ..
-                    },
-                provenance,
-            } = val
-            {
-                match (&consequent.expression, &alternate.expression) {
-                    (
-                        Expression::AbstractHeapAddress(addr1),
-                        Expression::AbstractHeapAddress(addr2),
-                    ) => {
-                        return Some((
+        match self.value_at(path) {
+            Some(AbstractValue { domain, provenance }) => {
+                if let AbstractDomain {
+                    expression:
+                        Expression::ConditionalExpression {
+                            condition,
+                            consequent,
+                            alternate,
+                        },
+                    ..
+                } = domain.as_ref()
+                {
+                    match (&consequent.expression, &alternate.expression) {
+                        (
+                            Expression::AbstractHeapAddress(addr1),
+                            Expression::AbstractHeapAddress(addr2),
+                        ) => Some((
                             AbstractValue {
                                 provenance: provenance.clone(),
-                                domain: (**condition).clone(),
+                                domain: condition.clone(),
                             },
                             Rc::new(Path::AbstractHeapAddress { ordinal: *addr1 }),
                             Rc::new(Path::AbstractHeapAddress { ordinal: *addr2 }),
-                        ));
-                    }
-                    (Expression::Reference(path1), Expression::Reference(path2)) => {
-                        return Some((
+                        )),
+                        (Expression::Reference(path1), Expression::Reference(path2)) => Some((
                             AbstractValue {
                                 provenance: provenance.clone(),
-                                domain: (**condition).clone(),
+                                domain: condition.clone(),
                             },
                             path1.clone(),
                             path2.clone(),
-                        ));
+                        )),
+                        _ => None,
                     }
-                    _ => (),
+                } else {
+                    None
                 }
             }
-        };
-        None
+            _ => None,
+        }
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
@@ -246,7 +242,7 @@ impl Environment {
         }
         Environment {
             value_map,
-            entry_condition: abstract_value::TRUE,
+            entry_condition: abstract_domains::TRUE.into(),
             exit_conditions: HashMap::default(),
         }
     }
