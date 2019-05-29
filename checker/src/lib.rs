@@ -21,6 +21,7 @@
 extern crate rustc;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
+extern crate rustc_errors;
 extern crate rustc_interface;
 extern crate rustc_metadata;
 extern crate syntax;
@@ -29,7 +30,6 @@ extern crate syntax_pos;
 #[macro_use]
 extern crate log;
 
-pub mod abstract_domains;
 pub mod abstract_value;
 pub mod callbacks;
 pub mod constant_domain;
@@ -38,6 +38,7 @@ pub mod expected_errors;
 pub mod expression;
 pub mod interval_domain;
 pub mod k_limits;
+pub mod path;
 pub mod smt_solver;
 pub mod summaries;
 pub mod utils;

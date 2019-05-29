@@ -14,7 +14,7 @@ pub fn main() {
     let x: Option<i64> = Some(1);
     let _y = x.unwrap();
     let z: Option<i64> = None;
-    let _ = z.unwrap(); //~ unsatisfied precondition: self may not be None
+    let _ = z.unwrap(); //~ unsatisfied precondition: self may not be None, defined in tests/run-pass/core_contract.rs:30:21: 36:23
 }
 
 pub mod foreign_contracts {

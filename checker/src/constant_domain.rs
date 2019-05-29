@@ -12,6 +12,7 @@ use rustc::hir::def_id::DefId;
 use rustc::ty::{Ty, TyCtxt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Abstracts over constant values referenced in MIR and adds information
 /// that is useful for the abstract interpreter. More importantly, this
@@ -36,11 +37,11 @@ pub enum ConstantDomain {
         /// Indicates if the function is known to be treated specially by the Rust compiler
         known_name: KnownFunctionNames,
         /// The key to use when retrieving a summary for the function from the summary cache
-        summary_cache_key: String,
+        summary_cache_key: Rc<String>,
         /// To be appended to summary_cache_key when searching for a type specific version of
         /// a summary. This is necessary when a trait method cannot be accurately summarized
         /// in a generic way. For example std::ops::eq.
-        argument_type_key: String,
+        argument_type_key: Rc<String>,
     },
     /// Signed 16 byte integer.
     I128(i128),
@@ -49,7 +50,7 @@ pub enum ConstantDomain {
     /// 32 bit floating point, stored as a u32 to make it comparable.
     F32(u32),
     /// A string literal.
-    Str(String),
+    Str(Rc<String>),
     /// The Boolean true value.
     True,
     /// Unsigned 16 byte integer.
@@ -741,7 +742,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
         let str_value = String::from(value);
         self.str_cache
             .entry(str_value)
-            .or_insert_with(|| ConstantDomain::Str(String::from(value)))
+            .or_insert_with(|| ConstantDomain::Str(Rc::new(String::from(value))))
     }
 
     /// Returns a reference to a cached Expression::U128(value).

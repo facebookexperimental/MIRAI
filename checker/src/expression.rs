@@ -3,13 +3,15 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::abstract_domains::AbstractDomain;
-use crate::abstract_value::Path;
+use crate::abstract_value::AbstractValue;
 use crate::constant_domain::ConstantDomain;
+use crate::path::Path;
 
+use rustc::ty::TyKind;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::rc::Rc;
+use syntax::ast;
 
 /// Closely based on the expressions found in MIR.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -30,17 +32,17 @@ pub enum Expression {
     /// An expression that is the sum of left and right. +
     Add {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is false if left + right overflows.
     AddOverflows {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
         // The type of the result of left + right.
         result_type: ExpressionType,
     },
@@ -48,38 +50,38 @@ pub enum Expression {
     /// An expression that is true if both left and right are true. &&
     And {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is the bitwise and of left and right. &
     BitAnd {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is the bitwise or of left and right. |
     BitOr {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is the bitwise xor of left and right. ^
     BitXor {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is the operand cast to the target_type. as
     Cast {
-        operand: Rc<AbstractDomain>,
+        operand: Rc<AbstractValue>,
         target_type: ExpressionType,
     },
 
@@ -89,43 +91,43 @@ pub enum Expression {
     /// An expression that is either if_true or if_false, depending on the value of condition.
     ConditionalExpression {
         // A condition that results in a Boolean value
-        condition: Rc<AbstractDomain>,
+        condition: Rc<AbstractValue>,
         // The value of this expression if join_condition is true.
-        consequent: Rc<AbstractDomain>,
+        consequent: Rc<AbstractValue>,
         // The value of this expression if join_condition is false.
-        alternate: Rc<AbstractDomain>,
+        alternate: Rc<AbstractValue>,
     },
 
     /// An expression that is the left value divided by the right value. /
     Div {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is true if left and right are equal. ==
     Equals {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is true if left is greater than or equal to right. >=
     GreaterOrEqual {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is true if left is greater than right. >
     GreaterThan {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// Either left or right without a condition to tell them apart.
@@ -137,41 +139,41 @@ pub enum Expression {
         /// The path of the location where the two flows join together.
         path: Rc<Path>,
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is true if left is less than or equal to right. <=
     LessOrEqual {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is true if left is less than right. <
     LessThan {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is left multiplied by right. *
     Mul {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is false if left multiplied by right overflows.
     MulOverflows {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
         // The type of the result of left * right.
         result_type: ExpressionType,
     },
@@ -179,31 +181,31 @@ pub enum Expression {
     /// An expression that is true if left and right are not equal. !=
     Ne {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is the arithmetic negation of its parameter. -x
-    Neg { operand: Rc<AbstractDomain> },
+    Neg { operand: Rc<AbstractValue> },
 
     /// An expression that is true if the operand is false.
-    Not { operand: Rc<AbstractDomain> },
+    Not { operand: Rc<AbstractValue> },
 
     /// An expression that is true if either one of left or right are true. ||
     Or {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is left offset with right. ptr.offset
     Offset {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// The corresponding concrete value is the runtime address of location identified by the path.
@@ -212,25 +214,25 @@ pub enum Expression {
     /// An expression that is the remainder of left divided by right. %
     Rem {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is the result of left shifted left by right bits. <<
     Shl {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is false if left shifted left by right bits would shift way all bits. <<
     ShlOverflows {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
         // The type of the result of left << right.
         result_type: ExpressionType,
     },
@@ -238,9 +240,9 @@ pub enum Expression {
     /// An expression that is the result of left shifted right by right bits. >>
     Shr {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
         // The type of the left argument and the result
         result_type: ExpressionType,
     },
@@ -248,9 +250,9 @@ pub enum Expression {
     /// An expression that is false if left shifted right by right bits would shift way all bits. >>
     ShrOverflows {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
         // The type of the result of left >> right.
         result_type: ExpressionType,
     },
@@ -258,17 +260,17 @@ pub enum Expression {
     /// An expression that is the right subtracted from left. -
     Sub {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
     },
 
     /// An expression that is false if right subtracted from left overflows. -
     SubOverflows {
         // The value of the left operand.
-        left: Rc<AbstractDomain>,
+        left: Rc<AbstractValue>,
         // The value of the right operand.
-        right: Rc<AbstractDomain>,
+        right: Rc<AbstractValue>,
         // The type of the result of left - right.
         result_type: ExpressionType,
     },
@@ -278,7 +280,7 @@ pub enum Expression {
     UnknownModelField {
         /// Must be a qualified path with a model field selector.
         path: Rc<Path>,
-        default: Rc<AbstractDomain>,
+        default: Rc<AbstractValue>,
     },
 
     /// The unknown value of a place in memory.
@@ -301,7 +303,7 @@ pub enum Expression {
         /// The join of some of the flows to come together at this path.
         /// The first few iterations do joins. Once widening happens, further iterations
         /// all result in the same widened value.
-        operand: Rc<AbstractDomain>,
+        operand: Rc<AbstractValue>,
     },
 }
 
@@ -445,6 +447,41 @@ impl From<&ConstantDomain> for ExpressionType {
             ConstantDomain::True => Bool,
             ConstantDomain::U128(..) => U128,
             ConstantDomain::Unimplemented => Reference,
+        }
+    }
+}
+
+impl<'a> From<&TyKind<'a>> for ExpressionType {
+    fn from(ty_kind: &TyKind<'a>) -> ExpressionType {
+        match ty_kind {
+            TyKind::Bool => ExpressionType::Bool,
+            TyKind::Char => ExpressionType::Char,
+            TyKind::Int(ast::IntTy::Isize) => ExpressionType::Isize,
+            TyKind::Int(ast::IntTy::I8) => ExpressionType::I8,
+            TyKind::Int(ast::IntTy::I16) => ExpressionType::I16,
+            TyKind::Int(ast::IntTy::I32) => ExpressionType::I32,
+            TyKind::Int(ast::IntTy::I64) => ExpressionType::I64,
+            TyKind::Int(ast::IntTy::I128) => ExpressionType::I128,
+            TyKind::Uint(ast::UintTy::Usize) => ExpressionType::Usize,
+            TyKind::Uint(ast::UintTy::U8) => ExpressionType::U8,
+            TyKind::Uint(ast::UintTy::U16) => ExpressionType::U16,
+            TyKind::Uint(ast::UintTy::U32) => ExpressionType::U32,
+            TyKind::Uint(ast::UintTy::U64) => ExpressionType::U64,
+            TyKind::Uint(ast::UintTy::U128) => ExpressionType::U128,
+            TyKind::Float(ast::FloatTy::F32) => ExpressionType::F32,
+            TyKind::Float(ast::FloatTy::F64) => ExpressionType::F64,
+            TyKind::Closure(..)
+            | TyKind::Dynamic(..)
+            | TyKind::Foreign(..)
+            | TyKind::FnDef(..)
+            | TyKind::FnPtr(..)
+            | TyKind::Generator(..)
+            | TyKind::GeneratorWitness(..)
+            | TyKind::RawPtr(..)
+            | TyKind::Ref(..)
+            | TyKind::Slice(..)
+            | TyKind::Str => ExpressionType::Reference,
+            _ => ExpressionType::NonPrimitive,
         }
     }
 }
