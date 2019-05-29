@@ -4,14 +4,14 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-use crate::abstract_domains::AbstractDomain;
-use crate::abstract_domains::AbstractDomainTrait;
+use crate::abstract_value::AbstractValue;
+use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::ConstantDomain;
 use crate::expression::{Expression, ExpressionType};
 use crate::smt_solver::SmtResult;
 use crate::smt_solver::SmtSolver;
 
-use crate::abstract_value::Path;
+use crate::path::Path;
 use lazy_static::lazy_static;
 use log::debug;
 use mirai_annotations::{checked_assume, checked_assume_eq};
@@ -422,7 +422,7 @@ impl Z3Solver {
     fn get_ast_for_widened(
         &mut self,
         path: &Rc<Path>,
-        operand: &Rc<AbstractDomain>,
+        operand: &Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
         let path_str = CString::new(format!("{:?}", path)).unwrap();
@@ -431,7 +431,7 @@ impl Z3Solver {
             let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
             if target_type.is_integer() {
-                let domain = Rc::new(AbstractDomain::from(Expression::Widen {
+                let domain = Rc::new(AbstractValue::from(Expression::Widen {
                     path: path.clone(),
                     operand: operand.clone(),
                 }));

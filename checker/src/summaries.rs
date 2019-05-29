@@ -3,17 +3,21 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::abstract_value::{AbstractValue, Path};
+use crate::abstract_value::AbstractValue;
+use crate::abstract_value::AbstractValueTrait;
 use crate::environment::Environment;
+use crate::path::Path;
 use crate::utils;
 
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
+use rustc_errors::SourceMapper;
 use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::rc::Rc;
+use syntax_pos;
 
 /// A summary is a declarative abstract specification of what a function does.
 /// This is calculated once per function and is used by callers of the function.
@@ -55,14 +59,12 @@ pub struct Summary {
     // will be sufficient to ensure that all of the preconditions in this summary are met.
     // The string value bundled with the condition is the message that details what would go
     // wrong at runtime if the precondition is not satisfied by the caller.
-    pub preconditions: Vec<(AbstractValue, String)>,
-    //todo: #124 add another string that provides provenance and or default documentation
-    // that can be used across crates.
+    pub preconditions: Vec<Precondition>,
 
     // If the function returns a value, this summarizes what is known statically of the return value.
     // Callers should substitute parameter values with argument values and simplify the result
     // under the current path condition.
-    pub result: Option<AbstractValue>,
+    pub result: Option<Rc<AbstractValue>>,
 
     // Modifications the function makes to mutable state external to the function.
     // Every path will be rooted in a static or in a mutable parameter.
@@ -70,20 +72,20 @@ pub struct Summary {
     // Callers should substitute parameter values with argument values and simplify the results
     // under the current path condition. They should then update their current state to reflect the
     // side-effects of the call.
-    pub side_effects: Vec<(Rc<Path>, AbstractValue)>,
+    pub side_effects: Vec<(Rc<Path>, Rc<AbstractValue>)>,
 
     // Conditions that should hold subsequent to the call.
     // Callers should substitute parameter values with argument values and simplify the results
     // under the current path condition. The resulting values should be treated as true, so any
     // value that is not the actual value true, should be added to the current path conditions.
-    pub post_conditions: Vec<AbstractValue>,
+    pub post_conditions: Vec<Rc<AbstractValue>>,
 
     // Condition that if true implies that the call to the function will not complete normally
     // and thus cause the cleanup block of the call to execute (unwinding).
     // Callers should substitute parameter values with argument values and simplify the result
     // under the current path condition. If the simplified value is statically known to be true
     // then the normal destination of the call should be treated as unreachable.
-    pub unwind_condition: Option<AbstractValue>,
+    pub unwind_condition: Option<Rc<AbstractValue>>,
 
     // Modifications the function makes to mutable state external to the function.
     // Every path will be rooted in a static or in a mutable parameter.
@@ -91,7 +93,31 @@ pub struct Summary {
     // Callers should substitute parameter values with argument values and simplify the results
     // under the current path condition. They should then update their current state to reflect the
     // side-effects of the call for the unwind control paths, following the call.
-    pub unwind_side_effects: Vec<(Rc<Path>, AbstractValue)>,
+    pub unwind_side_effects: Vec<(Rc<Path>, Rc<AbstractValue>)>,
+}
+
+/// Bundles together the condition of a precondition with the provenance (place where defined) of
+/// the condition, along with a diagnostic message to use when the precondition is not (might not be)
+/// satisfied.
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Precondition {
+    /// The condition that must be satisfied when calling a function that has this precondition.
+    pub condition: Rc<AbstractValue>,
+    /// A diagnostic message to issue if the precondition is not met.
+    pub message: Rc<String>,
+    /// The source location of the precondition definition (or the source expression/statement that
+    /// would panic if the precondition is not met). This is in textual form because it needs to be
+    /// persistable and crate independent.
+    pub provenance: Option<Rc<String>>,
+    /// A stack of source locations that lead to the definition of the precondition (or the source
+    /// expression/statement that would panic if the precondition is not met). It is a stack
+    /// because the precondition might have been promoted (when a non public function does not meet
+    /// a precondition of a function it calls, MIRAI infers a precondition that will allow it to
+    /// meet the precondition of the call, so things stack up).
+    /// Because this situation arises for non public functions, it is possible to use source spans
+    /// rather than strings to track the locations where the promotions happen.
+    #[serde(skip)]
+    pub spans: Vec<syntax_pos::Span>,
 }
 
 /// Constructs a summary of a function body by processing state information gathered during
@@ -99,15 +125,16 @@ pub struct Summary {
 pub fn summarize(
     argument_count: usize,
     exit_environment: &Environment,
-    preconditions: &[(AbstractValue, String)],
-    post_conditions: &[AbstractValue],
-    unwind_condition: Option<AbstractValue>,
+    preconditions: &[Precondition],
+    post_conditions: &[Rc<AbstractValue>],
+    unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: &Environment,
+    tcx: TyCtxt<'_, '_, '_>,
 ) -> Summary {
-    let mut preconditions: Vec<(AbstractValue, String)> = preconditions.to_owned();
+    let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
     let result = exit_environment.value_at(&Rc::new(Path::LocalVariable { ordinal: 0 }));
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
-    let mut post_conditions: Vec<AbstractValue> = post_conditions.to_owned();
+    let mut post_conditions: Vec<Rc<AbstractValue>> = post_conditions.to_owned();
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
 
     preconditions.sort();
@@ -126,6 +153,34 @@ pub fn summarize(
     }
 }
 
+/// When a precondition is being serialized into a summary, it needs a provenance that is not
+/// specific to the current (crate) compilation, since the summary may be used to compile a different
+/// crate, or a different version of the current crate.
+fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_, '_, '_>) -> Vec<Precondition> {
+    let mut result = vec![];
+    for precondition in preconditions.iter() {
+        let mut precond = precondition.clone();
+        if !precondition.spans.is_empty() {
+            let span = tcx
+                .sess
+                .source_map()
+                .call_span_if_macro(*precondition.spans.last().unwrap());
+            precond.provenance = Some(Rc::new(tcx.sess.source_map().span_to_string(span)));
+        }
+        result.push(precond);
+    }
+    result
+}
+
+/// When a precondition is used during the compilation of the crate in which it is defined, we
+/// want to use the spans, rather than the provenance string (and we don't want to waste memory),
+/// so we strip it's provenance string after it has been serialized.
+fn remove_provenance(preconditions: &mut Vec<Precondition>) {
+    for precondition in preconditions.iter_mut() {
+        precondition.provenance = None;
+    }
+}
+
 /// Returns a list of (path, value) pairs where each path is rooted by an argument(or the result)
 /// or where the path root is a heap address reachable from an argument (or the result).
 /// Since paths are created by writes, these are side-effects.
@@ -134,7 +189,7 @@ pub fn summarize(
 fn extract_side_effects(
     env: &Environment,
     argument_count: usize,
-) -> Vec<(Rc<Path>, AbstractValue)> {
+) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {
     let mut heap_roots: HashSet<usize> = HashSet::new();
     let mut result = Vec::new();
     for ordinal in 0..=argument_count {
@@ -158,7 +213,7 @@ fn extract_side_effects(
 fn extract_reachable_heap_allocations(
     env: &Environment,
     heap_roots: &mut HashSet<usize>,
-    result: &mut Vec<(Rc<Path>, AbstractValue)>,
+    result: &mut Vec<(Rc<Path>, Rc<AbstractValue>)>,
 ) {
     let mut visited_heap_roots: HashSet<usize> = HashSet::new();
     while heap_roots.len() > visited_heap_roots.len() {
@@ -189,7 +244,7 @@ pub struct PersistentSummaryCache<'a, 'tcx: 'a> {
     cache: HashMap<DefId, Summary>,
     typed_cache: HashMap<usize, Summary>,
     dependencies: HashMap<DefId, Vec<DefId>>,
-    key_cache: HashMap<DefId, String>,
+    key_cache: HashMap<DefId, Rc<String>>,
     type_context: &'a TyCtxt<'a, 'tcx, 'tcx>,
 }
 
@@ -257,7 +312,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// the summary cache, which is a key value store. The string will always be the same as
     /// long as the definition does not change its name or location, so it can be used to
     /// transfer information from one compilation to the next, making incremental analysis possible.
-    pub fn get_summary_key_for(&mut self, def_id: DefId) -> &String {
+    pub fn get_summary_key_for(&mut self, def_id: DefId) -> &Rc<String> {
         let tcx = self.type_context;
         self.key_cache
             .entry(def_id)
@@ -372,13 +427,17 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     }
 
     /// Sets or updates the cache so that from now on def_id maps to the given summary.
-    pub fn set_summary_for(&mut self, def_id: DefId, summary: Summary) -> Option<Summary> {
+    pub fn set_summary_for(&mut self, def_id: DefId, mut summary: Summary) -> Option<Summary> {
         let persistent_key = utils::summary_key_str(self.type_context, def_id);
         let serialized_summary = bincode::serialize(&summary).unwrap();
         let result = self.db.set(persistent_key.as_bytes(), serialized_summary);
         if result.is_err() {
             println!("unable to set key in summary database: {:?}", result);
         }
+        // Now that the summary has been serialized we can remove the provenance strings so that
+        // we can save memory and better fit in with the normal way of presenting compiler
+        // diagnostics.
+        remove_provenance(&mut summary.preconditions);
         self.cache.insert(def_id, summary)
     }
 }

@@ -9,6 +9,7 @@ use rustc::hir::ItemKind;
 use rustc::hir::Node;
 use rustc::ty::subst::UnpackedKind;
 use rustc::ty::{Ty, TyCtxt, TyKind};
+use std::rc::Rc;
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
 /// The location is obtained by looking at the contents of the environmental variables that were
@@ -61,7 +62,7 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_, '_, '_>) -> bool {
 
 /// Returns a string that is a valid identifier, made up from the concatenation of
 /// the string representationss of the given list of argument types.
-pub fn argument_types_key_str<'tcx>(tcx: &TyCtxt<'_, '_, 'tcx>, ty: Ty<'tcx>) -> String {
+pub fn argument_types_key_str<'tcx>(tcx: &TyCtxt<'_, '_, 'tcx>, ty: Ty<'tcx>) -> Rc<String> {
     let mut result = "_".to_string();
     let bound_sig = ty.fn_sig(*tcx);
     let sig = bound_sig.skip_binder();
@@ -69,7 +70,7 @@ pub fn argument_types_key_str<'tcx>(tcx: &TyCtxt<'_, '_, 'tcx>, ty: Ty<'tcx>) ->
         result.push('_');
         append_mangled_type(&mut result, arg_ty, tcx);
     }
-    result
+    Rc::new(result)
 }
 
 /// Appends a string to str with the constraint that it must uniquely identify ty and also
@@ -198,7 +199,7 @@ fn qualified_type_name(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> String {
 /// the summary cache, which is a key value store. The string will always be the same as
 /// long as the definition does not change its name or location, so it can be used to
 /// transfer information from one compilation to the next, making incremental analysis possible.
-pub fn summary_key_str(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> String {
+pub fn summary_key_str(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> Rc<String> {
     let mut name = if def_id.is_local() {
         tcx.crate_name.as_interned_str().as_str().to_string()
     } else {
@@ -240,5 +241,5 @@ pub fn summary_key_str(tcx: &TyCtxt<'_, '_, '_>, def_id: DefId) -> String {
             name.push_str(da.as_str());
         }
     }
-    name
+    Rc::new(name)
 }

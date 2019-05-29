@@ -18,6 +18,7 @@ use rustc_interface::interface;
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use std::path::PathBuf;
+use std::rc::Rc;
 use syntax::errors::DiagnosticBuilder;
 
 /// Private state used to implement the callbacks.
@@ -235,8 +236,8 @@ impl MiraiCallbacks {
         persistent_summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
         iteration_count: usize,
         def_id: DefId,
-    ) -> String {
-        let name: String;
+    ) -> Rc<String> {
+        let name: Rc<String>;
         {
             name = persistent_summary_cache.get_summary_key_for(def_id).clone();
             if iteration_count == 1 {

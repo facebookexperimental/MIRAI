@@ -3,35 +3,35 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::abstract_domains;
-use crate::abstract_domains::AbstractDomain;
-use crate::abstract_value::{AbstractValue, Path};
+use crate::abstract_value;
+use crate::abstract_value::AbstractValue;
+use crate::abstract_value::AbstractValueTrait;
 use crate::expression::Expression;
+use crate::path::Path;
 
 use log::debug;
-use mirai_annotations::checked_assume;
+use mirai_annotations::{assume, checked_assume};
 use rpds::HashTrieMap;
 use rustc::mir::BasicBlock;
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Environment {
     /// The disjunction of all the exit conditions from the predecessors of this block.
-    pub entry_condition: AbstractValue,
+    pub entry_condition: Rc<AbstractValue>,
     /// The conditions that guard exit from this block to successor blocks
-    pub exit_conditions: HashMap<BasicBlock, AbstractValue>,
+    pub exit_conditions: HashTrieMap<BasicBlock, Rc<AbstractValue>>,
     /// Does not include any entries where the value is abstract_value::Bottom
-    pub value_map: HashTrieMap<Rc<Path>, AbstractValue>,
+    pub value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>>,
 }
 
 /// Default
 impl Environment {
     pub fn default() -> Environment {
         Environment {
-            entry_condition: abstract_domains::TRUE.into(),
-            exit_conditions: HashMap::default(),
+            entry_condition: Rc::new(abstract_value::TRUE),
+            exit_conditions: HashTrieMap::default(),
             value_map: HashTrieMap::default(),
         }
     }
@@ -43,15 +43,18 @@ impl Debug for Environment {
     }
 }
 
+type JoinOrWiden =
+    fn(&Rc<AbstractValue>, &Rc<AbstractValue>, &Rc<AbstractValue>, &Rc<Path>) -> Rc<AbstractValue>;
+
 /// Methods
 impl Environment {
     /// Returns a reference to the value associated with the given path, if there is one.
-    pub fn value_at(&self, path: &Rc<Path>) -> Option<&AbstractValue> {
+    pub fn value_at(&self, path: &Rc<Path>) -> Option<&Rc<AbstractValue>> {
         self.value_map.get(path)
     }
 
     /// Updates the path to value map so that the given path now points to the given value.
-    pub fn update_value_at(&mut self, path: Rc<Path>, value: AbstractValue) {
+    pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
         debug!("updating value of {:?} to {:?}", path, value);
         if value.is_bottom() {
             self.value_map = self.value_map.remove(&path);
@@ -59,7 +62,7 @@ impl Environment {
         }
         if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
             // If path is an abstraction that can match more than one path, we need to do weak updates.
-            let top = abstract_domains::TOP.into();
+            let top = Rc::new(abstract_value::TOP);
             let true_val = join_condition.clone().conditional_expression(
                 value.clone(),
                 self.value_at(&true_path).unwrap_or(&top).clone(),
@@ -83,7 +86,7 @@ impl Environment {
     /// concretized into two paths where the abstract value is replaced by the consequent
     /// and alternate, respectively. These paths can then be weakly updated to reflect the
     /// lack of precise knowledge at compile time.
-    fn try_to_split(&mut self, path: &Rc<Path>) -> Option<(AbstractValue, Rc<Path>, Rc<Path>)> {
+    fn try_to_split(&mut self, path: &Rc<Path>) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
         match path.as_ref() {
             Path::LocalVariable { .. } => self.try_to_split_local(path),
             Path::QualifiedPath {
@@ -93,15 +96,19 @@ impl Environment {
             } => {
                 if let Some((join_condition, true_path, false_path)) = self.try_to_split(qualifier)
                 {
+                    let true_path_length = true_path.path_length();
+                    assume!(true_path_length < 1_000_000_000);
                     let true_path = Rc::new(Path::QualifiedPath {
-                        length: true_path.path_length() + 1,
                         qualifier: true_path,
                         selector: selector.clone(),
+                        length: true_path_length + 1,
                     });
+                    let false_path_length = false_path.path_length();
+                    assume!(false_path_length < 1_000_000_000);
                     let false_path = Rc::new(Path::QualifiedPath {
-                        length: false_path.path_length() + 1,
                         qualifier: false_path,
                         selector: selector.clone(),
+                        length: false_path_length + 1,
                     });
                     return Some((join_condition, true_path, false_path));
                 }
@@ -115,52 +122,37 @@ impl Environment {
     fn try_to_split_local(
         &mut self,
         path: &Rc<Path>,
-    ) -> Option<(AbstractValue, Rc<Path>, Rc<Path>)> {
-        match self.value_at(path) {
-            Some(AbstractValue { domain, provenance }) => {
-                if let AbstractDomain {
-                    expression:
-                        Expression::ConditionalExpression {
-                            condition,
-                            consequent,
-                            alternate,
-                        },
-                    ..
-                } = domain.as_ref()
-                {
-                    match (&consequent.expression, &alternate.expression) {
-                        (
-                            Expression::AbstractHeapAddress(addr1),
-                            Expression::AbstractHeapAddress(addr2),
-                        ) => Some((
-                            AbstractValue {
-                                provenance: provenance.clone(),
-                                domain: condition.clone(),
-                            },
-                            Rc::new(Path::AbstractHeapAddress { ordinal: *addr1 }),
-                            Rc::new(Path::AbstractHeapAddress { ordinal: *addr2 }),
-                        )),
-                        (Expression::Reference(path1), Expression::Reference(path2)) => Some((
-                            AbstractValue {
-                                provenance: provenance.clone(),
-                                domain: condition.clone(),
-                            },
-                            path1.clone(),
-                            path2.clone(),
-                        )),
-                        _ => None,
-                    }
-                } else {
-                    None
+    ) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
+        match self.value_at(path).map(Rc::as_ref) {
+            Some(AbstractValue {
+                expression:
+                    Expression::ConditionalExpression {
+                        condition,
+                        consequent,
+                        alternate,
+                    },
+                ..
+            }) => match (&consequent.expression, &alternate.expression) {
+                (
+                    Expression::AbstractHeapAddress(addr1),
+                    Expression::AbstractHeapAddress(addr2),
+                ) => Some((
+                    condition.clone(),
+                    Rc::new(Path::AbstractHeapAddress { ordinal: *addr1 }),
+                    Rc::new(Path::AbstractHeapAddress { ordinal: *addr2 }),
+                )),
+                (Expression::Reference(path1), Expression::Reference(path2)) => {
+                    Some((condition.clone(), path1.clone(), path2.clone()))
                 }
-            }
+                _ => None,
+            },
             _ => None,
         }
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the join of self.value_at(path) and other.value_at(path)
-    pub fn join(&self, other: &Environment, join_condition: &AbstractValue) -> Environment {
+    pub fn join(&self, other: &Environment, join_condition: &Rc<AbstractValue>) -> Environment {
         self.join_or_widen(other, join_condition, |x, y, c, p| {
             if Some(true) == c.as_bool_if_known() {
                 // If the join condition is known to be true, we have two unconditional branches joining
@@ -171,19 +163,19 @@ impl Environment {
                 // abstract interpretation because the loop exit condition may evaluate to false
                 // for the first few iterations of the loop and thus the backwards branch only becomes
                 // conditional once widening kicks in.
-                x.clone().join(y.clone(), p)
+                x.join(y.clone(), p)
             } else {
-                c.clone().conditional_expression(x.clone(), y.clone())
+                c.conditional_expression(x.clone(), y.clone())
             }
         })
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the widen of self.value_at(path) and other.value_at(path)
-    pub fn widen(&self, other: &Environment, join_condition: &AbstractValue) -> Environment {
+    pub fn widen(&self, other: &Environment, join_condition: &Rc<AbstractValue>) -> Environment {
         self.clone()
             .join_or_widen(other, join_condition, |x, y, _c, p| {
-                match (&x.domain.expression, &y.domain.expression) {
+                match (&x.expression, &y.expression) {
                     (Expression::Widen { .. }, _) => x.clone(),
                     (_, Expression::Widen { .. }) => y.clone(),
                     _ => x.clone().join(y.clone(), p).widen(p),
@@ -196,17 +188,12 @@ impl Environment {
     fn join_or_widen(
         &self,
         other: &Environment,
-        join_condition: &AbstractValue,
-        join_or_widen: fn(
-            &AbstractValue,
-            &AbstractValue,
-            &AbstractValue,
-            &Rc<Path>,
-        ) -> AbstractValue,
+        join_condition: &Rc<AbstractValue>,
+        join_or_widen: JoinOrWiden,
     ) -> Environment {
         let value_map1 = &self.value_map;
         let value_map2 = &other.value_map;
-        let mut value_map: HashTrieMap<Rc<Path>, AbstractValue> = HashTrieMap::default();
+        let mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>> = HashTrieMap::default();
         for (path, val1) in value_map1.iter() {
             let p = path.clone();
             match value_map2.get(path) {
@@ -216,11 +203,13 @@ impl Environment {
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
-                    let val2 = Expression::Variable {
-                        path: path.clone(),
-                        var_type: val1.domain.expression.infer_type(),
-                    }
-                    .into();
+                    let val2 = Rc::new(
+                        Expression::Variable {
+                            path: path.clone(),
+                            var_type: val1.expression.infer_type(),
+                        }
+                        .into(),
+                    );
                     value_map =
                         value_map.insert(p, join_or_widen(val1, &val2, &join_condition, path));
                 }
@@ -229,11 +218,13 @@ impl Environment {
         for (path, val2) in value_map2.iter() {
             if !value_map1.contains_key(path) {
                 checked_assume!(!val2.is_bottom());
-                let val1 = Expression::Variable {
-                    path: path.clone(),
-                    var_type: val2.domain.expression.infer_type(),
-                }
-                .into();
+                let val1 = Rc::new(
+                    Expression::Variable {
+                        path: path.clone(),
+                        var_type: val2.expression.infer_type(),
+                    }
+                    .into(),
+                );
                 value_map = value_map.insert(
                     path.clone(),
                     join_or_widen(&val1, val2, &join_condition, path),
@@ -242,8 +233,8 @@ impl Environment {
         }
         Environment {
             value_map,
-            entry_condition: abstract_domains::TRUE.into(),
-            exit_conditions: HashMap::default(),
+            entry_condition: Rc::new(abstract_value::TRUE),
+            exit_conditions: HashTrieMap::default(),
         }
     }
 
