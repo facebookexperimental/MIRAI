@@ -2,19 +2,10 @@
 
 The instructions assume that you've cloned the mirai repository into your home directory.
 
-## Building
+## Obtaining the MIRAI sources
 
-You'll need to have Rust installed on your system. See 
-[here](https://doc.rust-lang.org/book/ch01-01-installation.html) for instructions.
-
-Mirai depends on unstable private APIs of the rust compiler to do things like parsing, type checking and
-lowering to MIR. These can only be accessed by using the nightly build of the compiler. So use rustup to set
-the nightly build as the default for the mirai project.
-
-```rustup override set nightly```
-
-That done, all you need to do to build Mirai is to type `cargo build` in your command shell. Generally building happens 
-automatically as you run tests.
+You'll need a recent version of the Rust compiler and you'll need to clone the MIRAI source repository.
+See [here](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md) for more detailed instructions.
 
 
 ## Editing
@@ -26,9 +17,6 @@ Alternatively there is also
 [Rust (rls)](https://github.com/rust-lang-nursery/rls-vscode), [CodeLLDB](https://github.com/vadimcn/vscode-lldb) and
 [Better TOML](https://github.com/bungcip/better-toml).
 
-There is also [Nuclide](https://nuclide.io/). You'll want to install the [Rust](https://atom.io/packages/language-rust)
-extension. This option is pretty basic and not recommended right now. It does have a better integration with Git, so I
-actually use Clion for editing, VSCode for debugging and Nuclide for doing source control.
 
 ## Running
 

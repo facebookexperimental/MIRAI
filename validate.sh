@@ -19,6 +19,6 @@ cd checker; cargo rustc --lib -- -D rust-2018-idioms
 cd ..; cargo build
 # Run mirai on itself
 cargo uninstall mirai || true
-cargo install --debug --path ./checker
+cargo install --path ./checker
 cargo clean -p mirai
-time RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn cargo build --lib -p mirai
+RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn cargo check --lib -p mirai
