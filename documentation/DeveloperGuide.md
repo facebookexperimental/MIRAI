@@ -156,8 +156,7 @@ sources.
 ## Testing
 
 Testing is done via `cargo test`. We favor integration tests over unit tests and require every pull request to have 100%
-test coverage. The code coverage tool (`cargo tarpaulin`) is still buggy, so this may not always be possible, but all
-exceptions should be called out and explained in the pull request test plan.
+test coverage.
 
-For the time being (see issue #10), we provide a separate test method in integration_tests.rs for each test input in
-the [tests/run-pass](https://github.com/facebookexperimental/MIRAI/blob/master/tests/run-pass) directory.
+Before putting up a pull request it is also advisable to run the 'validate.sh' script. This will ensure that the code
+is properly formatted and that Clippy is happy. It also runs MIRAI on itself, which is a kind of stress test.

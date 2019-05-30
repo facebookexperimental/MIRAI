@@ -6,7 +6,7 @@ The initial focus will be on taint analysis.
 
 ## Using MIRAI
 
-You'll need to install MIRAI as described [here](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuid.md).
+You'll need to install MIRAI as described [here](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md).
 
 To run mirai, use cargo with `RUSTC_WRAPPER` set to `mirai`.
 
