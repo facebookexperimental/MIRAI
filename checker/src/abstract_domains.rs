@@ -1023,7 +1023,7 @@ impl AbstractDomainTrait for Rc<AbstractDomain> {
                 // This is a conservative answer. False does not imply other.subset(self).
                 consequent.subset(other) && alternate.subset(other)
             }
-            // x is a subset of (condition ? consequent : alternate) if x is a subset of both consequent and alternate.
+            // x is a subset of (condition ? consequent : alternate) if x is a subset of consequent or alternate.
             (
                 _,
                 Expression::ConditionalExpression {
@@ -1033,7 +1033,7 @@ impl AbstractDomainTrait for Rc<AbstractDomain> {
                 },
             ) => {
                 // This is a conservative answer. False does not imply other.subset(self).
-                self.subset(&consequent) && self.subset(&alternate)
+                self.subset(&consequent) || self.subset(&alternate)
             }
             // x subset widen { z } if x subset z
             (_, Expression::Widen { operand, .. }) => self.subset(&operand),

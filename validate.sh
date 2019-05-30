@@ -8,7 +8,6 @@
 set -e
 # start clean
 cargo clean -p mirai
-rm -rf target/debug/.summary_store.sled
 # Run format checks
 cargo fmt --all
 # Run lint checks
@@ -21,4 +20,5 @@ cd ..; cargo build
 cargo uninstall mirai || true
 cargo install --path ./checker
 cargo clean -p mirai
+rm -rf target/debug/.summary_store.sled
 RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn cargo check --lib -p mirai
