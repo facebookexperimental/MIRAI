@@ -7,7 +7,7 @@ use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::expression::Expression;
-use crate::path::Path;
+use crate::path::{Path, PathWithHash};
 
 use log::debug;
 use mirai_annotations::{assume, checked_assume};
@@ -23,7 +23,7 @@ pub struct Environment {
     /// The conditions that guard exit from this block to successor blocks
     pub exit_conditions: HashTrieMap<BasicBlock, Rc<AbstractValue>>,
     /// Does not include any entries where the value is abstract_value::Bottom
-    pub value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>>,
+    pub value_map: HashTrieMap<PathWithHash, Rc<AbstractValue>>,
 }
 
 /// Default
@@ -50,14 +50,14 @@ type JoinOrWiden =
 impl Environment {
     /// Returns a reference to the value associated with the given path, if there is one.
     pub fn value_at(&self, path: &Rc<Path>) -> Option<&Rc<AbstractValue>> {
-        self.value_map.get(path)
+        self.value_map.get(&path.into())
     }
 
     /// Updates the path to value map so that the given path now points to the given value.
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
         debug!("updating value of {:?} to {:?}", path, value);
         if value.is_bottom() {
-            self.value_map = self.value_map.remove(&path);
+            self.value_map = self.value_map.remove(&path.into());
             return;
         }
         if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
@@ -79,7 +79,7 @@ impl Environment {
         //in the environment.
         //Conversely, if this path is contained in a path that is already in the environment, then
         //that path should be updated weakly.
-        self.value_map = self.value_map.insert(path, value);
+        self.value_map = self.value_map.insert(path.into(), value);
     }
 
     /// If the path contains an abstract value that was constructed with a join, the path is
@@ -193,25 +193,25 @@ impl Environment {
     ) -> Environment {
         let value_map1 = &self.value_map;
         let value_map2 = &other.value_map;
-        let mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>> = HashTrieMap::default();
+        let mut value_map: HashTrieMap<PathWithHash, Rc<AbstractValue>> = HashTrieMap::default();
         for (path, val1) in value_map1.iter() {
             let p = path.clone();
             match value_map2.get(path) {
                 Some(val2) => {
-                    value_map =
-                        value_map.insert(p, join_or_widen(val1, &val2, &join_condition, path));
+                    value_map = value_map
+                        .insert(p, join_or_widen(val1, &val2, &join_condition, &path.path));
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
                     let val2 = Rc::new(
                         Expression::Variable {
-                            path: path.clone(),
+                            path: path.path.clone(),
                             var_type: val1.expression.infer_type(),
                         }
                         .into(),
                     );
-                    value_map =
-                        value_map.insert(p, join_or_widen(val1, &val2, &join_condition, path));
+                    value_map = value_map
+                        .insert(p, join_or_widen(val1, &val2, &join_condition, &path.path));
                 }
             }
         }
@@ -220,14 +220,14 @@ impl Environment {
                 checked_assume!(!val2.is_bottom());
                 let val1 = Rc::new(
                     Expression::Variable {
-                        path: path.clone(),
+                        path: path.path.clone(),
                         var_type: val2.expression.infer_type(),
                     }
                     .into(),
                 );
                 value_map = value_map.insert(
                     path.clone(),
-                    join_or_widen(&val1, val2, &join_condition, path),
+                    join_or_widen(&val1, val2, &join_condition, &path.path),
                 );
             }
         }
