@@ -10,7 +10,7 @@ use crate::expression::Expression;
 use crate::path::{Path, PathWithHash};
 
 use log::debug;
-use mirai_annotations::{assume, checked_assume};
+use mirai_annotations::checked_assume;
 use rpds::HashTrieMap;
 use rustc::mir::BasicBlock;
 use std::fmt::{Debug, Formatter, Result};
@@ -96,20 +96,8 @@ impl Environment {
             } => {
                 if let Some((join_condition, true_path, false_path)) = self.try_to_split(qualifier)
                 {
-                    let true_path_length = true_path.path_length();
-                    assume!(true_path_length < 1_000_000_000);
-                    let true_path = Rc::new(Path::QualifiedPath {
-                        qualifier: true_path,
-                        selector: selector.clone(),
-                        length: true_path_length + 1,
-                    });
-                    let false_path_length = false_path.path_length();
-                    assume!(false_path_length < 1_000_000_000);
-                    let false_path = Rc::new(Path::QualifiedPath {
-                        qualifier: false_path,
-                        selector: selector.clone(),
-                        length: false_path_length + 1,
-                    });
+                    let true_path = Path::new_qualified(true_path, selector.clone());
+                    let false_path = Path::new_qualified(false_path, selector.clone());
                     return Some((join_condition, true_path, false_path));
                 }
                 None
