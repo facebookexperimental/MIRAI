@@ -7,6 +7,7 @@ use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
+use crate::k_limits;
 
 use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
@@ -122,6 +123,50 @@ impl Path {
         }
     }
 
+    /// Creates a path the selects the discriminant of the enum at the given path.
+    pub fn new_discriminant(enum_path: Rc<Path>) -> Rc<Path> {
+        let selector = Rc::new(PathSelector::Discriminant);
+        Self::new_qualified(enum_path, selector)
+    }
+
+    /// Creates a path the selects the given field of the struct at the given path.
+    pub fn new_field(qualifier: Rc<Path>, field_index: usize) -> Rc<Path> {
+        let selector = Rc::new(PathSelector::Field(field_index));
+        Self::new_qualified(qualifier, selector)
+    }
+
+    /// Creates a path the selects the element at the given index value of the array at the given path.
+    pub fn new_index(collection_path: Rc<Path>, index_value: Rc<AbstractValue>) -> Rc<Path> {
+        let selector = Rc::new(PathSelector::Index(index_value));
+        Self::new_qualified(collection_path, selector)
+    }
+
+    /// Creates a path the selects the length of the array at the given path.
+    pub fn new_length(array_path: Rc<Path>) -> Rc<Path> {
+        let selector = Rc::new(PathSelector::ArrayLength);
+        Self::new_qualified(array_path, selector)
+    }
+
+    /// Creates a path the selects the given model field of the value at the given path.
+    pub fn new_model_field(qualifier: Rc<Path>, field_name: Rc<String>) -> Rc<Path> {
+        let selector = Rc::new(PathSelector::ModelField(field_name));
+        Self::new_qualified(qualifier, selector)
+    }
+
+    /// Creates a path the qualifies the given root path with the given selector.
+    pub fn new_qualified(qualifier: Rc<Path>, selector: Rc<PathSelector>) -> Rc<Path> {
+        let qualifier_length = qualifier.path_length();
+        if qualifier_length >= k_limits::MAX_PATH_LENGTH {
+            warn!("max path length exceeded {:?}.{:?}", qualifier, selector);
+        }
+        assume!(qualifier_length < 1_000_000_000); // We'll run out of memory long before this happens
+        Rc::new(Path::QualifiedPath {
+            qualifier,
+            selector,
+            length: qualifier_length + 1,
+        })
+    }
+
     /// Adds any abstract heap addresses found in embedded index values to the given set.
     pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
         if let Path::QualifiedPath {
@@ -165,13 +210,7 @@ impl PathRefinement for Rc<Path> {
             } => {
                 let refined_qualifier = qualifier.refine_parameters(arguments);
                 let refined_selector = selector.refine_parameters(arguments);
-                let refined_length = refined_qualifier.path_length();
-                assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
-                Rc::new(Path::QualifiedPath {
-                    qualifier: refined_qualifier,
-                    selector: refined_selector,
-                    length: refined_length + 1,
-                })
+                Path::new_qualified(refined_qualifier, refined_selector)
             }
             _ => self.clone(),
         }
@@ -194,7 +233,7 @@ impl PathRefinement for Rc<Path> {
         if let Path::QualifiedPath {
             qualifier,
             selector,
-            length,
+            ..
         } = self.as_ref()
         {
             if let Some(val) = environment.value_at(qualifier) {
@@ -204,23 +243,13 @@ impl PathRefinement for Rc<Path> {
                         // is an explicit reference to another path, put the other path in the place
                         // of qualifier since references do not own elements directly in
                         // the environment.
-                        let path_len = dereferenced_path.path_length();
-                        assume!(path_len < 1_000_000_000); // We'll run out of memory long before this happens
-                        Rc::new(Path::QualifiedPath {
-                            qualifier: dereferenced_path.clone(),
-                            selector: selector.clone(),
-                            length: path_len + 1,
-                        })
+                        Path::new_qualified(dereferenced_path.clone(), selector.clone())
                     }
                     _ => {
                         // Although the qualifier matches an expression, that expression
                         // is too abstract too qualify the path sufficiently that we
                         // can refine this value.
-                        Rc::new(Path::QualifiedPath {
-                            qualifier: qualifier.clone(),
-                            selector: selector.clone(),
-                            length: *length,
-                        })
+                        Path::new_qualified(qualifier.clone(), selector.clone())
                     }
                 }
             } else {
@@ -232,13 +261,7 @@ impl PathRefinement for Rc<Path> {
                     .value_map
                     .contains_key(&refined_qualifier.clone().into());
                 let refined_selector = selector.refine_paths(environment);
-                let refined_length = refined_qualifier.path_length();
-                assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
-                let refined_path = Rc::new(Path::QualifiedPath {
-                    qualifier: refined_qualifier,
-                    selector: refined_selector,
-                    length: refined_length + 1,
-                });
+                let refined_path = Path::new_qualified(refined_qualifier, refined_selector);
                 if refined_qualifier_matches {
                     refined_path.refine_paths(environment)
                 } else {
@@ -263,13 +286,7 @@ impl PathRefinement for Rc<Path> {
                 } else {
                     qualifier.replace_root(old_root, new_root)
                 };
-                let new_qualifier_path_length = new_qualifier.path_length();
-                assume!(new_qualifier_path_length < 1_000_000_000); // We'll run out of memory long before this happens
-                Rc::new(Path::QualifiedPath {
-                    qualifier: new_qualifier,
-                    selector: selector.clone(),
-                    length: new_qualifier_path_length + 1,
-                })
+                Path::new_qualified(new_qualifier, selector.clone())
             }
             _ => new_root,
         }
