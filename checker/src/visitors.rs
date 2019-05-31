@@ -529,9 +529,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .exit_environment
                 .value_map
                 .iter()
-                .filter(|(p, _)| p.is_rooted_by(&result_root))
+                .filter(|(p, _)| p.path.is_rooted_by(&result_root))
             {
-                let promoted_path = path.replace_root(&result_root, promoted_root.clone());
+                let promoted_path = path.path.replace_root(&result_root, promoted_root.clone());
                 state_with_parameters.update_value_at(promoted_path, value.clone());
             }
 
@@ -1856,7 +1856,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Copies/moves all paths rooted in rpath to corresponding paths rooted in target_path.
-    /// todo: this is expensive, optimize it
     fn copy_or_move_elements(
         &mut self,
         target_path: Rc<Path>,
@@ -1966,22 +1965,22 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .current_environment
             .value_map
             .iter()
-            .filter(|(p, _)| p.is_rooted_by(&rpath))
+            .filter(|(p, _)| p.path.is_rooted_by(&rpath))
         {
-            let qualified_path = path.replace_root(&rpath, target_path.clone());
+            let qualified_path = path.path.replace_root(&rpath, target_path.clone());
             if move_elements {
                 debug!("moving {:?} to {:?}", value, qualified_path);
                 value_map = value_map.remove(path);
             } else {
                 debug!("copying {:?} to {:?}", value, qualified_path);
             };
-            value_map = value_map.insert(qualified_path, value.clone());
+            value_map = value_map.insert(qualified_path.into(), value.clone());
         }
         // Now move/copy (rpath, value) itself.
         let mut value = self.lookup_path_and_refine_result(rpath.clone(), rtype);
         if move_elements {
             debug!("moving {:?} to {:?}", value, target_path);
-            value_map = value_map.remove(&rpath);
+            value_map = value_map.remove(&rpath.into());
         } else {
             debug!("copying {:?} to {:?}", value, target_path);
             // if the value is a non primitive and a path reference, update the reference to be the new target
@@ -1997,7 +1996,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
             }
         }
-        value_map = value_map.insert(target_path, value);
+        value_map = value_map.insert(target_path.into(), value);
         self.current_environment.value_map = value_map;
     }
 
