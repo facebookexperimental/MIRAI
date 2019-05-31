@@ -173,24 +173,24 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         }
                         result
                     } else {
-                        Rc::new(
+                        AbstractValue::make_from(
                             Expression::Variable {
                                 path: path.clone(),
                                 var_type: expression_type.clone(),
-                            }
-                            .into(),
+                            },
+                            1,
                         )
                     }
                 } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
                     if result_type == ExpressionType::Reference {
-                        Rc::new(Expression::Reference(path).into())
+                        AbstractValue::make_from(Expression::Reference(path), 1)
                     } else {
-                        Rc::new(
+                        AbstractValue::make_from(
                             Expression::Variable {
                                 path,
                                 var_type: result_type.clone(),
-                            }
-                            .into(),
+                            },
+                            1,
                         )
                     }
                 } else {
@@ -369,7 +369,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             }
             iteration_count += 1;
         }
-        if iteration_count > 9 {
+        if iteration_count > 10 {
             warn!(
                 "Fixed point loop took {} iterations for {}.",
                 iteration_count, function_name
@@ -509,7 +509,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 } else {
                     p_state.widen(&i_state, join_condition)
                 };
-                j_state.entry_condition = join_condition.or(i_state.entry_condition.clone());
+                let or = join_condition.or(i_state.entry_condition.clone());
+                if or.expression_size > k_limits::MAX_EXPRESSION_SIZE {
+                    j_state.entry_condition = Rc::new(abstract_value::TRUE);
+                } else {
+                    j_state.entry_condition = or;
+                }
                 i_state = j_state;
             }
             i_state
@@ -944,12 +949,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         // value since only the caller will know what the values of the fields are.
                         match &actual_args[0].1.expression {
                             Expression::Variable { .. } | Expression::Reference(..) => {
-                                let rval = Rc::new(
+                                let rval = AbstractValue::make_from(
                                     Expression::UnknownModelField {
                                         path: rpath,
                                         default: actual_args[2].1.clone(),
-                                    }
-                                    .into(),
+                                    },
+                                    1,
                                 );
                                 self.current_environment.update_value_at(target_path, rval);
                             }
@@ -1952,12 +1957,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             // if the value is a non primitive and a path reference, update the reference to be the new target
             if let Expression::Variable { var_type, .. } = &value.expression {
                 if *var_type == ExpressionType::NonPrimitive {
-                    value = Rc::new(
+                    value = AbstractValue::make_from(
                         Expression::Variable {
                             path: target_path.clone(),
                             var_type: var_type.clone(),
-                        }
-                        .into(),
+                        },
+                        1,
                     );
                 }
             }
@@ -2022,7 +2027,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             } if *selector.as_ref() == PathSelector::Deref => {
                 self.lookup_path_and_refine_result(qualifier.clone(), ExpressionType::Reference)
             }
-            _ => Rc::new(Expression::Reference(value_path).into()),
+            _ => AbstractValue::make_from(Expression::Reference(value_path), 1),
         };
         self.current_environment.update_value_at(path, value);
     }
@@ -2178,7 +2183,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let constants = &mut self.constant_value_cache;
         addresses
             .entry(self.current_location)
-            .or_insert_with(|| Rc::new(constants.get_new_heap_address().into()))
+            .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_address(), 1))
             .clone()
     }
 
