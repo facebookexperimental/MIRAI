@@ -198,11 +198,11 @@ fn extract_side_effects(
         for (path, value) in env
             .value_map
             .iter()
-            .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
+            .filter(|(p, _)| p.path == root || p.path.is_rooted_by(&root))
         {
-            path.record_heap_addresses(&mut heap_roots);
+            path.path.record_heap_addresses(&mut heap_roots);
             value.record_heap_addresses(&mut heap_roots);
-            result.push((path.clone(), value.clone()));
+            result.push((path.path.clone(), value.clone()));
         }
     }
     extract_reachable_heap_allocations(env, &mut heap_roots, &mut result);
@@ -224,11 +224,11 @@ fn extract_reachable_heap_allocations(
                 for (path, value) in env
                     .value_map
                     .iter()
-                    .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
+                    .filter(|(p, _)| p.path == root || p.path.is_rooted_by(&root))
                 {
-                    path.record_heap_addresses(&mut new_roots);
+                    path.path.record_heap_addresses(&mut new_roots);
                     value.record_heap_addresses(&mut new_roots);
-                    result.push((path.clone(), value.clone()));
+                    result.push((path.path.clone(), value.clone()));
                 }
             }
         }

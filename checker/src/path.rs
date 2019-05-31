@@ -11,8 +11,54 @@ use crate::expression::{Expression, ExpressionType};
 use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+
+/// During join and widen operations, paths are copied from one environment to another, causing them
+/// to get rehashed. This turns out to be expensive, so for this case we cache the hash to avoid
+/// recomputing it. The caching has a cost, so only use this in cases where it is highly likely
+/// that the path will be hashed more than once.
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, Ord, PartialOrd)]
+pub struct PathWithHash {
+    pub path: Rc<Path>,
+    hash: u64,
+}
+
+impl Hash for PathWithHash {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash);
+    }
+}
+
+impl PartialEq for PathWithHash {
+    fn eq(&self, other: &PathWithHash) -> bool {
+        self.hash == other.hash && self.path == other.path
+    }
+}
+
+impl From<&Rc<Path>> for PathWithHash {
+    fn from(path: &Rc<Path>) -> Self {
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        PathWithHash {
+            path: path.clone(),
+            hash: hasher.finish(),
+        }
+    }
+}
+
+impl From<Rc<Path>> for PathWithHash {
+    fn from(path: Rc<Path>) -> Self {
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        PathWithHash {
+            path,
+            hash: hasher.finish(),
+        }
+    }
+}
 
 /// A path represents a left hand side expression.
 /// When the actual expression is evaluated at runtime it will resolve to a particular memory
@@ -182,8 +228,9 @@ impl PathRefinement for Rc<Path> {
                 // Reminder, a path that does not match a value in the environment is rooted in
                 // an unknown value, such as a parameter.
                 let refined_qualifier = qualifier.refine_paths(environment);
-                let refined_qualifier_matches =
-                    environment.value_map.contains_key(&refined_qualifier);
+                let refined_qualifier_matches = environment
+                    .value_map
+                    .contains_key(&refined_qualifier.clone().into());
                 let refined_selector = selector.refine_paths(environment);
                 let refined_length = refined_qualifier.path_length();
                 assume!(refined_length < 1_000_000_000); // We'll run out of memory long before this happens
