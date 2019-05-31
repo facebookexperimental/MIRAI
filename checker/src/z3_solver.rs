@@ -431,10 +431,13 @@ impl Z3Solver {
             let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
             if target_type.is_integer() {
-                let domain = Rc::new(AbstractValue::from(Expression::Widen {
-                    path: path.clone(),
-                    operand: operand.clone(),
-                }));
+                let domain = AbstractValue::make_from(
+                    Expression::Widen {
+                        path: path.clone(),
+                        operand: operand.clone(),
+                    },
+                    1,
+                );
                 let interval = domain.get_as_interval();
                 if !interval.is_bottom() {
                     if let Some(lower_bound) = interval.lower_bound() {

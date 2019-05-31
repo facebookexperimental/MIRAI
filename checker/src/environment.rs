@@ -7,6 +7,7 @@ use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::expression::Expression;
+use crate::k_limits;
 use crate::path::{Path, PathWithHash};
 
 use log::debug;
@@ -153,7 +154,12 @@ impl Environment {
                 // conditional once widening kicks in.
                 x.join(y.clone(), p)
             } else {
-                c.conditional_expression(x.clone(), y.clone())
+                let cond_expr = c.conditional_expression(x.clone(), y.clone());
+                if cond_expr.expression_size > k_limits::MAX_EXPRESSION_SIZE {
+                    x.join(y.clone(), p).widen(p)
+                } else {
+                    cond_expr
+                }
             }
         })
     }
@@ -191,12 +197,12 @@ impl Environment {
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
-                    let val2 = Rc::new(
+                    let val2 = AbstractValue::make_from(
                         Expression::Variable {
                             path: path.path.clone(),
                             var_type: val1.expression.infer_type(),
-                        }
-                        .into(),
+                        },
+                        1,
                     );
                     value_map = value_map
                         .insert(p, join_or_widen(val1, &val2, &join_condition, &path.path));
@@ -206,12 +212,12 @@ impl Environment {
         for (path, val2) in value_map2.iter() {
             if !value_map1.contains_key(path) {
                 checked_assume!(!val2.is_bottom());
-                let val1 = Rc::new(
+                let val1 = AbstractValue::make_from(
                     Expression::Variable {
                         path: path.path.clone(),
                         var_type: val2.expression.infer_type(),
-                    }
-                    .into(),
+                    },
+                    1,
                 );
                 value_map = value_map.insert(
                     path.clone(),
