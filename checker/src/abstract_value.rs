@@ -37,6 +37,9 @@ pub struct AbstractValue {
     // It is used to refine the value with respect to path conditions and actual arguments.
     // It is also used to construct corresponding domain elements, when needed.
     pub expression: Expression,
+    // Keeps track of how large the expression is.
+    // When an expression gets too large it needs to get widened otherwise execution time diverges.
+    pub expression_size: u64,
     /// Cached interval domain element computed on demand by get_as_interval.
     #[serde(skip)]
     interval: RefCell<Option<Rc<IntervalDomain>>>,
@@ -64,24 +67,28 @@ impl PartialEq for AbstractValue {
 /// I.e. the corresponding set of possible concrete values is empty.
 pub const BOTTOM: AbstractValue = AbstractValue {
     expression: Expression::Bottom,
+    expression_size: 1,
     interval: RefCell::new(None),
 };
 
 /// An abstract domain element that all represent the single concrete value, false.
 pub const FALSE: AbstractValue = AbstractValue {
     expression: Expression::CompileTimeConstant(ConstantDomain::False),
+    expression_size: 1,
     interval: RefCell::new(None),
 };
 
 /// An abstract domain element that all represents all possible concrete values.
 pub const TOP: AbstractValue = AbstractValue {
     expression: Expression::Top,
+    expression_size: 1,
     interval: RefCell::new(None),
 };
 
 /// An abstract domain element that all represent the single concrete value, true.
 pub const TRUE: AbstractValue = AbstractValue {
     expression: Expression::CompileTimeConstant(ConstantDomain::True),
+    expression_size: 1,
     interval: RefCell::new(None),
 };
 
@@ -90,11 +97,13 @@ impl From<bool> for AbstractValue {
         if b {
             AbstractValue {
                 expression: Expression::CompileTimeConstant(ConstantDomain::True),
+                expression_size: 1,
                 interval: RefCell::new(None),
             }
         } else {
             AbstractValue {
                 expression: Expression::CompileTimeConstant(ConstantDomain::False),
+                expression_size: 1,
                 interval: RefCell::new(None),
             }
         }
@@ -105,17 +114,61 @@ impl From<ConstantDomain> for AbstractValue {
     fn from(cv: ConstantDomain) -> AbstractValue {
         AbstractValue {
             expression: Expression::CompileTimeConstant(cv),
+            expression_size: 1,
             interval: RefCell::new(None),
         }
     }
 }
 
-impl From<Expression> for AbstractValue {
-    fn from(expr: Expression) -> AbstractValue {
-        AbstractValue {
-            expression: expr,
+impl AbstractValue {
+    /// Creates an abstract value from a binary expression and keeps track of the size.
+    fn make_binary(
+        left: Rc<AbstractValue>,
+        right: Rc<AbstractValue>,
+        operation: fn(Rc<AbstractValue>, Rc<AbstractValue>) -> Expression,
+    ) -> Rc<AbstractValue> {
+        let expression_size = left.expression_size.saturating_add(right.expression_size);
+        Self::make_from(operation(left, right), expression_size)
+    }
+
+    /// Creates an abstract value from a typed binary expression and keeps track of the size.
+    fn make_typed_binary(
+        left: Rc<AbstractValue>,
+        right: Rc<AbstractValue>,
+        result_type: ExpressionType,
+        operation: fn(Rc<AbstractValue>, Rc<AbstractValue>, ExpressionType) -> Expression,
+    ) -> Rc<AbstractValue> {
+        let expression_size = left.expression_size.saturating_add(right.expression_size);
+        Self::make_from(operation(left, right, result_type), expression_size)
+    }
+
+    /// Creates an abstract value from a typed unary expression and keeps track of the size.
+    fn make_typed_unary(
+        operand: Rc<AbstractValue>,
+        result_type: ExpressionType,
+        operation: fn(Rc<AbstractValue>, ExpressionType) -> Expression,
+    ) -> Rc<AbstractValue> {
+        let expression_size = operand.expression_size.saturating_add(1);
+        Self::make_from(operation(operand, result_type), expression_size)
+    }
+
+    /// Creates an abstract value from a unary expression and keeps track of the size.
+    fn make_unary(
+        operand: Rc<AbstractValue>,
+        operation: fn(Rc<AbstractValue>) -> Expression,
+    ) -> Rc<AbstractValue> {
+        let expression_size = operand.expression_size.saturating_add(1);
+        Self::make_from(operation(operand), expression_size)
+    }
+
+    /// Creates an abstract value from the given expression and size.
+    /// Initializes the optional domains to None.
+    pub fn make_from(expression: Expression, expression_size: u64) -> Rc<AbstractValue> {
+        Rc::new(AbstractValue {
+            expression,
+            expression_size,
             interval: RefCell::new(None),
-        }
+        })
     }
 }
 
@@ -185,8 +238,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        self.try_to_simplify_binary_op(other, ConstantDomain::add, |left, right| {
-            Rc::new(Expression::Add { left, right }.into())
+        self.try_to_simplify_binary_op(other, ConstantDomain::add, |l, r| {
+            AbstractValue::make_binary(l, r, |left, right| Expression::Add { left, right })
         })
     }
 
@@ -208,13 +261,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in(&target_type) {
             return Rc::new(FALSE);
         }
-        Rc::new(
-            Expression::AddOverflows {
-                left: self.clone(),
-                right: other,
-                result_type: target_type,
-            }
-            .into(),
+        AbstractValue::make_typed_binary(
+            self.clone(),
+            other,
+            target_type,
+            |left, right, result_type| Expression::AddOverflows {
+                left,
+                right,
+                result_type,
+            },
         )
     }
 
@@ -243,13 +298,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             other
         } else {
             // todo: #32 more simplifications
-            Rc::new(
-                Expression::And {
-                    left: self.clone(),
-                    right: other,
-                }
-                .into(),
-            )
+            AbstractValue::make_binary(self.clone(), other, |left, right| Expression::And {
+                left,
+                right,
+            })
         }
     }
 
@@ -282,13 +334,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
-        Rc::new(
-            Expression::BitAnd {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::BitAnd {
+            left,
+            right,
+        })
     }
 
     /// Returns an element that is "self | other".
@@ -301,13 +350,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
-        Rc::new(
-            Expression::BitOr {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::BitOr {
+            left,
+            right,
+        })
     }
 
     /// Returns an element that is "self ^ other".
@@ -320,13 +366,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
-        Rc::new(
-            Expression::BitXor {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::BitXor {
+            left,
+            right,
+        })
     }
 
     /// Returns an element that is "self as target_type".
@@ -350,12 +393,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Join { left, right, path } => left
                 .cast(target_type.clone())
                 .join(right.cast(target_type), &path),
-            _ => Rc::new(
-                Expression::Cast {
-                    operand: self.clone(),
+            _ => AbstractValue::make_typed_unary(
+                self.clone(),
+                target_type,
+                |operand, target_type| Expression::Cast {
+                    operand,
                     target_type,
-                }
-                .into(),
+                },
             ),
         }
     }
@@ -397,20 +441,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 _ => (),
             }
         }
-        Rc::new(
+        let expression_size = self
+            .expression_size
+            .saturating_add(consequent.expression_size)
+            .saturating_add(alternate.expression_size);
+        AbstractValue::make_from(
             ConditionalExpression {
                 condition: self.clone(),
                 consequent,
                 alternate,
-            }
-            .into(),
+            },
+            expression_size,
         )
     }
 
     /// Returns an element that is "self / other".
     fn divide(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        self.try_to_simplify_binary_op(other, ConstantDomain::div, |left, right| {
-            Rc::new(Expression::Div { left, right }.into())
+        self.try_to_simplify_binary_op(other, ConstantDomain::div, |l, r| {
+            AbstractValue::make_binary(l, r, |left, right| Expression::Div { left, right })
         })
     }
 
@@ -502,13 +550,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
         }
         // Return an equals expression rather than a constant expression.
-        Rc::new(
-            Expression::Equals {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Equals {
+            left,
+            right,
+        })
     }
 
     /// Returns an element that is "self >= other".
@@ -524,13 +569,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(result.into());
         }
-        Rc::new(
-            Expression::GreaterOrEqual {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| {
+            Expression::GreaterOrEqual { left, right }
+        })
     }
 
     /// Returns an element that is "self > other".
@@ -546,13 +587,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(result.into());
         }
-        Rc::new(
-            Expression::GreaterThan {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::GreaterThan {
+            left,
+            right,
+        })
     }
 
     /// Returns true if "self => other" is known at compile time to be true.
@@ -622,13 +660,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if (*self) == other {
             return other;
         }
-        Rc::new(
+        let expression_size = self.expression_size.saturating_add(other.expression_size);
+        AbstractValue::make_from(
             Expression::Join {
                 path: path.clone(),
                 left: self.clone(),
                 right: other,
-            }
-            .into(),
+            },
+            expression_size,
         )
     }
 
@@ -645,13 +684,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(result.into());
         }
-        Rc::new(
-            Expression::LessOrEqual {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::LessOrEqual {
+            left,
+            right,
+        })
     }
 
     /// Returns an element that is self < other
@@ -667,19 +703,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(result.into());
         }
-        Rc::new(
-            Expression::LessThan {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::LessThan {
+            left,
+            right,
+        })
     }
 
     /// Returns an element that is "self * other".
     fn multiply(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        self.try_to_simplify_binary_op(other, ConstantDomain::mul, |left, right| {
-            Rc::new(Expression::Mul { left, right }.into())
+        self.try_to_simplify_binary_op(other, ConstantDomain::mul, |l, r| {
+            AbstractValue::make_binary(l, r, |left, right| Expression::Mul { left, right })
         })
     }
 
@@ -701,13 +734,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in(&target_type) {
             return Rc::new(FALSE);
         }
-        Rc::new(
-            Expression::MulOverflows {
-                left: self.clone(),
-                right: other,
-                result_type: target_type,
-            }
-            .into(),
+        AbstractValue::make_typed_binary(
+            self.clone(),
+            other,
+            target_type,
+            |left, right, result_type| Expression::MulOverflows {
+                left,
+                right,
+                result_type,
+            },
         )
     }
 
@@ -719,12 +754,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
-        Rc::new(
-            Expression::Neg {
-                operand: self.clone(),
-            }
-            .into(),
-        )
+        AbstractValue::make_unary(self.clone(), |operand| Expression::Neg { operand })
     }
 
     /// Returns an element that is "self != other".
@@ -734,13 +764,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(v1.not_equals(v2).into());
         };
-        Rc::new(
-            Expression::Ne {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Ne {
+            left,
+            right,
+        })
     }
 
     /// Returns an element that is "!self".
@@ -754,24 +781,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match &self.expression {
             Expression::Bottom => self.clone(),
             Expression::Not { operand } => operand.clone(),
-            _ => Rc::new(
-                Expression::Not {
-                    operand: self.clone(),
-                }
-                .into(),
-            ),
+            _ => AbstractValue::make_unary(self.clone(), |operand| Expression::Not { operand }),
         }
     }
 
     /// Returns an element that is "self.other".
     fn offset(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        Rc::new(
-            Expression::Offset {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Offset {
+            left,
+            right,
+        })
     }
 
     /// Returns an element that is "self || other".
@@ -786,13 +805,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             match (&self.expression, &other.expression) {
                 (Expression::Not { ref operand }, _) if (**operand).eq(&other) => Rc::new(TRUE),
                 (_, Expression::Not { ref operand }) if (**operand).eq(&self) => Rc::new(TRUE),
-                _ => Rc::new(
-                    Expression::Or {
-                        left: self.clone(),
-                        right: other,
-                    }
-                    .into(),
-                ),
+                _ => AbstractValue::make_binary(self.clone(), other, |left, right| {
+                    Expression::Or { left, right }
+                }),
             }
         }
     }
@@ -804,8 +819,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Returns an element that is "self % other".
     fn remainder(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        self.try_to_simplify_binary_op(other, ConstantDomain::rem, |left, right| {
-            Rc::new(Expression::Rem { left, right }.into())
+        self.try_to_simplify_binary_op(other, ConstantDomain::rem, |l, r| {
+            AbstractValue::make_binary(l, r, |left, right| Expression::Rem { left, right })
         })
     }
 
@@ -819,13 +834,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
-        Rc::new(
-            Expression::Shl {
-                left: self.clone(),
-                right: other,
-            }
-            .into(),
-        )
+        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Shl {
+            left,
+            right,
+        })
     }
 
     /// Returns an element that is true if "self << other" shifts away all bits.
@@ -846,13 +858,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in_width_of(&target_type) {
             return Rc::new(FALSE);
         }
-        Rc::new(
-            Expression::ShlOverflows {
-                left: self.clone(),
-                right: other,
-                result_type: target_type,
-            }
-            .into(),
+        AbstractValue::make_typed_binary(
+            self.clone(),
+            other,
+            target_type,
+            |left, right, result_type| Expression::ShlOverflows {
+                left,
+                right,
+                result_type,
+            },
         )
     }
 
@@ -866,13 +880,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
-        Rc::new(
-            Expression::Shr {
-                left: self.clone(),
-                right: other,
-                result_type: expression_type,
-            }
-            .into(),
+        AbstractValue::make_typed_binary(
+            self.clone(),
+            other,
+            expression_type,
+            |left, right, result_type| Expression::Shr {
+                left,
+                right,
+                result_type,
+            },
         )
     }
 
@@ -894,20 +910,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in_width_of(&target_type) {
             return Rc::new(FALSE);
         }
-        Rc::new(
-            Expression::ShrOverflows {
-                left: self.clone(),
-                right: other,
-                result_type: target_type,
-            }
-            .into(),
+        AbstractValue::make_typed_binary(
+            self.clone(),
+            other,
+            target_type,
+            |left, right, result_type| Expression::ShrOverflows {
+                left,
+                right,
+                result_type,
+            },
         )
     }
 
     /// Returns an element that is "self - other".
     fn subtract(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        self.try_to_simplify_binary_op(other, ConstantDomain::sub, |left, right| {
-            Rc::new(Expression::Sub { left, right }.into())
+        self.try_to_simplify_binary_op(other, ConstantDomain::sub, |l, r| {
+            AbstractValue::make_binary(l, r, |left, right| Expression::Sub { left, right })
         })
     }
 
@@ -929,13 +947,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in(&target_type) {
             return Rc::new(FALSE);
         }
-        Rc::new(
-            Expression::SubOverflows {
-                left: self.clone(),
-                right: other,
-                result_type: target_type,
-            }
-            .into(),
+        AbstractValue::make_typed_binary(
+            self.clone(),
+            other,
+            target_type,
+            |left, right, result_type| Expression::SubOverflows {
+                left,
+                right,
+                result_type,
+            },
         )
     }
 
@@ -1216,7 +1236,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .or(right.refine_paths(environment)),
             Expression::Reference(path) => {
                 let refined_path = path.refine_paths(environment);
-                Rc::new(Expression::Reference(refined_path).into())
+                AbstractValue::make_from(Expression::Reference(refined_path), 1)
             }
             Expression::Rem { left, right } => left
                 .refine_paths(environment)
@@ -1265,12 +1285,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         default.clone()
                     } else {
                         // Keep passing the buck to the next caller.
-                        Rc::new(
+                        AbstractValue::make_from(
                             Expression::UnknownModelField {
                                 path: path.clone(),
                                 default: default.clone(),
-                            }
-                            .into(),
+                            },
+                            default.expression_size.saturating_add(1),
                         )
                     }
                 } else {
@@ -1287,12 +1307,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     } else if let Some(val) = environment.value_at(&refined_path) {
                         val.clone()
                     } else {
-                        Rc::new(
+                        AbstractValue::make_from(
                             Expression::Variable {
                                 path: refined_path,
                                 var_type: var_type.clone(),
-                            }
-                            .into(),
+                            },
+                            1,
                         )
                     }
                 }
@@ -1403,7 +1423,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                     _ => {
                         let refined_path = path.refine_parameters(arguments);
-                        Rc::new(Expression::Reference(refined_path).into())
+                        AbstractValue::make_from(Expression::Reference(refined_path), 1)
                     }
                 }
             }
@@ -1446,12 +1466,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .sub_overflows(right.refine_parameters(arguments), result_type.clone()),
             Expression::UnknownModelField { path, default } => {
                 let refined_path = path.refine_parameters(arguments);
-                Rc::new(
+                AbstractValue::make_from(
                     Expression::UnknownModelField {
                         path: refined_path,
                         default: default.clone(),
-                    }
-                    .into(),
+                    },
+                    1,
                 )
             }
             Expression::Variable { path, var_type } => {
@@ -1459,12 +1479,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let Path::Constant { value } = refined_path.as_ref() {
                     value.clone()
                 } else {
-                    Rc::new(
+                    AbstractValue::make_from(
                         Expression::Variable {
                             path: refined_path,
                             var_type: var_type.clone(),
-                        }
-                        .into(),
+                        },
+                        1,
                     )
                 }
             }
@@ -1669,12 +1689,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::CompileTimeConstant(..)
             | Expression::Reference(..)
             | Expression::Variable { .. } => self.clone(),
-            _ => Rc::new(
+            _ => AbstractValue::make_from(
                 Expression::Widen {
                     path: path.clone(),
                     operand: self.clone(),
-                }
-                .into(),
+                },
+                1,
             ),
         }
     }
