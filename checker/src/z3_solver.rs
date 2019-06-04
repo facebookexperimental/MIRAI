@@ -101,21 +101,21 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
         }
     }
 
-    fn assert(&mut self, expression: &Z3ExpressionType) {
+    fn assert(&self, expression: &Z3ExpressionType) {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
             z3_sys::Z3_solver_assert(self.z3_context, self.z3_solver, *expression);
         }
     }
 
-    fn backtrack(&mut self) {
+    fn backtrack(&self) {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
             z3_sys::Z3_solver_pop(self.z3_context, self.z3_solver, 1);
         }
     }
 
-    fn get_as_smt_predicate(&mut self, mirai_expression: &Expression) -> Z3ExpressionType {
+    fn get_as_smt_predicate(&self, mirai_expression: &Expression) -> Z3ExpressionType {
         let _guard = Z3_MUTEX.lock().unwrap();
         self.get_as_bool_z3_ast(mirai_expression)
     }
@@ -139,14 +139,14 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
         }
     }
 
-    fn set_backtrack_position(&mut self) {
+    fn set_backtrack_position(&self) {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
             z3_sys::Z3_solver_push(self.z3_context, self.z3_solver);
         }
     }
 
-    fn solve(&mut self) -> SmtResult {
+    fn solve(&self) -> SmtResult {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
             match z3_sys::Z3_solver_check(self.z3_context, self.z3_solver) {
@@ -160,7 +160,7 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
 
 impl Z3Solver {
     #[allow(clippy::cognitive_complexity)]
-    fn get_as_z3_ast(&mut self, expression: &Expression) -> z3_sys::Z3_ast {
+    fn get_as_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
             Expression::Add { .. }
             | Expression::AddOverflows { .. }
@@ -420,7 +420,7 @@ impl Z3Solver {
     }
 
     fn get_ast_for_widened(
-        &mut self,
+        &self,
         path: &Rc<Path>,
         operand: &Rc<AbstractValue>,
         target_type: ExpressionType,
@@ -460,7 +460,7 @@ impl Z3Solver {
         }
     }
 
-    fn get_constant_as_ast(&mut self, const_domain: &ConstantDomain) -> z3_sys::Z3_ast {
+    fn get_constant_as_ast(&self, const_domain: &ConstantDomain) -> z3_sys::Z3_ast {
         match const_domain {
             ConstantDomain::Char(v) => unsafe {
                 z3_sys::Z3_mk_int(self.z3_context, i32::from(*v as u16), self.int_sort)
@@ -503,7 +503,7 @@ impl Z3Solver {
     }
 
     fn get_range_check(
-        &mut self,
+        &self,
         operand_ast: z3_sys::Z3_ast,
         min_ast: z3_sys::Z3_ast,
         max_ast: z3_sys::Z3_ast,
@@ -517,7 +517,7 @@ impl Z3Solver {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn get_as_numeric_z3_ast(&mut self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
+    fn get_as_numeric_z3_ast(&self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
         match expression {
             Expression::Add { left, right } => {
                 let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
@@ -860,7 +860,7 @@ impl Z3Solver {
         }
     }
 
-    fn get_as_bool_z3_ast(&mut self, expression: &Expression) -> z3_sys::Z3_ast {
+    fn get_as_bool_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
             Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
                 //todo: get operands as booleans and treat this operands as logical
@@ -929,7 +929,7 @@ impl Z3Solver {
         }
     }
 
-    fn get_as_bv_z3_ast(&mut self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
+    fn get_as_bv_z3_ast(&self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
         match expression {
             Expression::Add { left, right } => {
                 let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
