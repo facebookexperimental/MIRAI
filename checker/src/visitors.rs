@@ -157,7 +157,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         &summary
                     };
                     if let Some(result) = &summary.result {
-                        let result = result.refine_paths(&mut self.current_environment);
+                        let result = result.refine_paths(&self.current_environment);
                         if let Expression::AbstractHeapAddress(ordinal) = result.expression {
                             let source_path = Rc::new(Path::LocalVariable { ordinal: 0 });
                             let target_path = Rc::new(Path::AbstractHeapAddress { ordinal });
@@ -166,8 +166,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             }) {
                                 let tpath = Rc::new(path.clone())
                                     .replace_root(&source_path, target_path.clone())
-                                    .refine_paths(&mut self.current_environment);
-                                let rvalue = value.refine_paths(&mut self.current_environment);
+                                    .refine_paths(&self.current_environment);
+                                let rvalue = value.refine_paths(&self.current_environment);
                                 self.current_environment.update_value_at(tpath, rvalue);
                             }
                         }
@@ -935,7 +935,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let qualifier = actual_args[0].0.clone();
                     let field_name = self.coerce_to_string(&actual_args[1].1);
                     let rpath = Path::new_model_field(qualifier, field_name)
-                        .refine_paths(&mut self.current_environment);
+                        .refine_paths(&self.current_environment);
 
                     let target_path = self.visit_place(place);
                     if self.current_environment.value_at(&rpath).is_some() {
@@ -986,7 +986,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let qualifier = actual_args[0].0.clone();
                     let field_name = self.coerce_to_string(&actual_args[1].1);
                     let target_path = Path::new_model_field(qualifier, field_name)
-                        .refine_paths(&mut self.current_environment);
+                        .refine_paths(&self.current_environment);
                     let rpath = actual_args[2].0.clone();
                     self.copy_or_move_elements(
                         target_path,
@@ -1225,7 +1225,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             let refined_condition = precondition
                 .condition
                 .refine_parameters(actual_args)
-                .refine_paths(&mut self.current_environment)
+                .refine_paths(&self.current_environment)
                 .refine_with(&self.current_environment.entry_condition, 0);
             let (refined_precondition_as_bool, entry_cond_as_bool) =
                 self.check_condition_value_and_reachability(&refined_condition);
@@ -1562,11 +1562,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         {
             let tpath = Rc::new(path.clone())
                 .replace_root(source_path, target_path.clone())
-                .refine_paths(&mut self.current_environment);
+                .refine_paths(&self.current_environment);
             let rvalue = value
                 .clone()
                 .refine_parameters(arguments)
-                .refine_paths(&mut self.current_environment);
+                .refine_paths(&self.current_environment);
             for (arg_path, arg_val) in arguments.iter() {
                 if arg_val.eq(&rvalue) {
                     let rtype = rvalue.expression.infer_type();
