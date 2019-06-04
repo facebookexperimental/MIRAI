@@ -219,7 +219,7 @@ pub trait AbstractValueTrait: Sized {
     fn try_to_distribute_binary_op(&self, other: Self, operation: fn(Self, Self) -> Self) -> Self;
     fn get_cached_interval(&self) -> Rc<IntervalDomain>;
     fn get_as_interval(&self) -> IntervalDomain;
-    fn refine_paths(&self, environment: &mut Environment) -> Self;
+    fn refine_paths(&self, environment: &Environment) -> Self;
     fn refine_parameters(&self, arguments: &[(Rc<Path>, Rc<AbstractValue>)]) -> Self;
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Self;
     fn widen(&self, path: &Rc<Path>) -> Self;
@@ -1152,7 +1152,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Replaces occurrences of Expression::Variable(path) with the value at that path
     /// in the given environment (if there is such a value).
-    fn refine_paths(&self, environment: &mut Environment) -> Rc<AbstractValue> {
+    fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
                 self.clone()

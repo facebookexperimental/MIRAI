@@ -190,7 +190,7 @@ pub trait PathRefinement: Sized {
     /// or leaks it back to the caller in the qualifier of a path then
     /// we want to dereference the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
-    fn refine_paths(&self, environment: &mut Environment) -> Rc<Path>;
+    fn refine_paths(&self, environment: &Environment) -> Rc<Path>;
 
     /// Returns a copy path with the root replaced by new_root.
     fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path>;
@@ -221,7 +221,7 @@ impl PathRefinement for Rc<Path> {
     /// or leaks it back to the caller in the qualifier of a path then
     /// we want to dereference the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
-    fn refine_paths(&self, environment: &mut Environment) -> Rc<Path> {
+    fn refine_paths(&self, environment: &Environment) -> Rc<Path> {
         if let Some(val) = environment.value_at(&self) {
             // if the environment has self as a key, then self is canonical,
             // except if val is a Reference to another path.
@@ -361,7 +361,7 @@ pub trait PathSelectorRefinement: Sized {
     /// with the value at that path (if there is one). If no refinement is possible
     /// the result is simply a clone of this value. This refinement only makes sense
     /// following a call to refine_parameters.
-    fn refine_paths(&self, environment: &mut Environment) -> Self;
+    fn refine_paths(&self, environment: &Environment) -> Self;
 }
 
 impl PathSelectorRefinement for Rc<PathSelector> {
@@ -379,7 +379,7 @@ impl PathSelectorRefinement for Rc<PathSelector> {
     /// with the value at that path (if there is one). If no refinement is possible
     /// the result is simply a clone of this value. This refinement only makes sense
     /// following a call to refine_parameters.
-    fn refine_paths(&self, environment: &mut Environment) -> Rc<PathSelector> {
+    fn refine_paths(&self, environment: &Environment) -> Rc<PathSelector> {
         if let PathSelector::Index(value) = self.as_ref() {
             let refined_value = value.refine_paths(environment);
             Rc::new(PathSelector::Index(refined_value))
