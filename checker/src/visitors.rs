@@ -173,26 +173,32 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         }
                         result
                     } else {
-                        AbstractValue::make_from(
+                        let result = AbstractValue::make_from(
                             Expression::Variable {
                                 path: path.clone(),
                                 var_type: expression_type.clone(),
                             },
                             1,
-                        )
+                        );
+                        self.current_environment
+                            .update_value_at(path, result.clone());
+                        result
                     }
                 } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
-                    if result_type == ExpressionType::Reference {
-                        AbstractValue::make_from(Expression::Reference(path), 1)
+                    let result = if result_type == ExpressionType::Reference {
+                        AbstractValue::make_from(Expression::Reference(path.clone()), 1)
                     } else {
                         AbstractValue::make_from(
                             Expression::Variable {
-                                path,
+                                path: path.clone(),
                                 var_type: result_type.clone(),
                             },
                             1,
                         )
-                    }
+                    };
+                    self.current_environment
+                        .update_value_at(path, result.clone());
+                    result
                 } else {
                     Rc::new(abstract_value::TOP)
                 }
