@@ -25,15 +25,15 @@ pub trait SmtSolver<SmtExpressionType> {
     fn as_debug_string(&self, expression: &SmtExpressionType) -> String;
 
     /// Adds the given expression to the current context.
-    fn assert(&mut self, expression: &SmtExpressionType);
+    fn assert(&self, expression: &SmtExpressionType);
 
     /// Destroy the current context and restore the containing context as current.
-    fn backtrack(&mut self) {
+    fn backtrack(&self) {
         precondition!(get_model_field!(&self, number_of_backtracks, 0) > 0);
     }
 
     /// Translate the MIRAI expression into a corresponding expression for the Solver.
-    fn get_as_smt_predicate(&mut self, mirai_expression: &Expression) -> SmtExpressionType;
+    fn get_as_smt_predicate(&self, mirai_expression: &Expression) -> SmtExpressionType;
 
     /// Provides a string that contains a set of variable assignments that satisfied the
     /// assertions in the solver. Can only be called after self.solve return SmtResult::Satisfiable.
@@ -45,7 +45,7 @@ pub trait SmtSolver<SmtExpressionType> {
 
     /// Create a nested context. When a matching backtrack is called, the current context (state)
     /// of the solver will be restored to what it was when this was called.
-    fn set_backtrack_position(&mut self) {
+    fn set_backtrack_position(&self) {
         precondition!(get_model_field!(&self, number_of_backtracks, 0) < 1000);
         set_model_field!(
             &self,
@@ -56,10 +56,10 @@ pub trait SmtSolver<SmtExpressionType> {
 
     /// Try to find an assignment of values to the free variables so that the assertions in the
     /// current context are all true.
-    fn solve(&mut self) -> SmtResult;
+    fn solve(&self) -> SmtResult;
 
     /// Establish if the given expression can be satisfied (or not) without changing the current context.
-    fn solve_expression(&mut self, expression: &SmtExpressionType) -> SmtResult {
+    fn solve_expression(&self, expression: &SmtExpressionType) -> SmtResult {
         self.set_backtrack_position();
         self.assert(expression);
         let result = self.solve();
@@ -77,11 +77,11 @@ impl SmtSolver<()> for SolverStub {
         String::from("not implemented")
     }
 
-    fn assert(&mut self, _: &()) {}
+    fn assert(&self, _: &()) {}
 
-    fn backtrack(&mut self) {}
+    fn backtrack(&self) {}
 
-    fn get_as_smt_predicate(&mut self, _mirai_expression: &Expression) {}
+    fn get_as_smt_predicate(&self, _mirai_expression: &Expression) {}
 
     fn get_model_as_string(&self) -> String {
         String::from("not implemented")
@@ -91,9 +91,9 @@ impl SmtSolver<()> for SolverStub {
         String::from("not implemented")
     }
 
-    fn set_backtrack_position(&mut self) {}
+    fn set_backtrack_position(&self) {}
 
-    fn solve(&mut self) -> SmtResult {
+    fn solve(&self) -> SmtResult {
         SmtResult::Undefined
     }
 }
