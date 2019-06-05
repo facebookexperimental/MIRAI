@@ -49,9 +49,9 @@ cargo install --path ./checker
 ## Installing Z3
 
 You can find pre-built binaries for Z3 [here](https://github.com/Z3Prover/z3/releases). There are also binary libraries
-for MacOS and Windows included in the binaries directory of MIRAI.
+for macOS and Windows included in the binaries directory of MIRAI.
 
-For Windows, the binary does not have to be moved. For MacOS, the binary will have to be placed somewhere where it can be 
+For Windows, the binary does not have to be moved. For macOS, the binary will have to be placed somewhere where it can be 
 found and dynamically loaded by the Rust runtime. This can be done by copying the binary into `/usr/local/lib`.
 
 ```
