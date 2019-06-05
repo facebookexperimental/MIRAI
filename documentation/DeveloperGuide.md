@@ -36,6 +36,13 @@ You can then run mirai as if it were rustc, because it is in fact rustc, just wi
 To run mirai via cargo, as if it were rustc, first do `cargo install --force --path  ~/mirai` then set the
 `RUSTC_WRAPPER` environment variable to `mirai`.
 
+When running `cargo check` on a crate make sure to either:
+1. Set Rust to use the same nightly as MIRAI in the crate's directory (via `rustup override`).
+2. Or set `DYLD_LIBRARY_PATH=/Users/$USER/.rustup/toolchains/nightly-YYYY-MM-DD-x86_64-apple-darwin/lib/` before running `cargo check`.
+    - (Be sure to fill `YYYY-MM-DD` with the correctly nightly date.)
+
+Failure to do so may result in the error: `dyld: Library not loaded`.
+
 ## Debugging
 
 ### Clion
