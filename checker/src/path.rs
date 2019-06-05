@@ -183,7 +183,11 @@ impl Path {
 
 pub trait PathRefinement: Sized {
     /// Refine parameters inside embedded index values with the given arguments.
-    fn refine_parameters(&self, arguments: &[(Rc<Path>, Rc<AbstractValue>)]) -> Rc<Path>;
+    fn refine_parameters(
+        &self,
+        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        fresh: usize,
+    ) -> Rc<Path>;
 
     /// Refine paths that reference other paths.
     /// I.e. when a reference is passed to a function that then returns
@@ -198,18 +202,28 @@ pub trait PathRefinement: Sized {
 
 impl PathRefinement for Rc<Path> {
     /// Refine parameters inside embedded index values with the given arguments.
-    fn refine_parameters(&self, arguments: &[(Rc<Path>, Rc<AbstractValue>)]) -> Rc<Path> {
+    fn refine_parameters(
+        &self,
+        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        fresh: usize,
+    ) -> Rc<Path> {
         match self.as_ref() {
-            Path::LocalVariable { ordinal } if 0 < *ordinal && *ordinal <= arguments.len() => {
-                arguments[*ordinal - 1].0.clone()
+            Path::LocalVariable { ordinal } => {
+                if 0 < *ordinal && *ordinal <= arguments.len() {
+                    arguments[*ordinal - 1].0.clone()
+                } else {
+                    Rc::new(Path::LocalVariable {
+                        ordinal: ordinal + fresh,
+                    })
+                }
             }
             Path::QualifiedPath {
                 qualifier,
                 selector,
                 ..
             } => {
-                let refined_qualifier = qualifier.refine_parameters(arguments);
-                let refined_selector = selector.refine_parameters(arguments);
+                let refined_qualifier = qualifier.refine_parameters(arguments, fresh);
+                let refined_selector = selector.refine_parameters(arguments, fresh);
                 Path::new_qualified(refined_qualifier, refined_selector)
             }
             _ => self.clone(),
@@ -355,7 +369,7 @@ impl PathSelector {
 
 pub trait PathSelectorRefinement: Sized {
     /// Refine parameters inside embedded index values with the given arguments.
-    fn refine_parameters(&self, arguments: &[(Rc<Path>, Rc<AbstractValue>)]) -> Self;
+    fn refine_parameters(&self, arguments: &[(Rc<Path>, Rc<AbstractValue>)], fresh: usize) -> Self;
 
     /// Returns a value that is simplified (refined) by replacing values with Variable(path) expressions
     /// with the value at that path (if there is one). If no refinement is possible
@@ -366,9 +380,13 @@ pub trait PathSelectorRefinement: Sized {
 
 impl PathSelectorRefinement for Rc<PathSelector> {
     /// Refine parameters inside embedded index values with the given arguments.
-    fn refine_parameters(&self, arguments: &[(Rc<Path>, Rc<AbstractValue>)]) -> Rc<PathSelector> {
+    fn refine_parameters(
+        &self,
+        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        fresh: usize,
+    ) -> Rc<PathSelector> {
         if let PathSelector::Index(value) = self.as_ref() {
-            let refined_value = value.refine_parameters(arguments);
+            let refined_value = value.refine_parameters(arguments, fresh);
             Rc::new(PathSelector::Index(refined_value))
         } else {
             self.clone()
