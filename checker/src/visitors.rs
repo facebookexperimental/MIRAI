@@ -65,6 +65,7 @@ pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
     preconditions: Vec<Precondition>,
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
+    fresh_variable_offset: usize,
 }
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
@@ -95,6 +96,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             preconditions: Vec::new(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
+            fresh_variable_offset: 0,
         }
     }
 
@@ -112,6 +114,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.preconditions = Vec::new();
         self.unwind_condition = None;
         self.unwind_environment = Environment::default();
+        self.fresh_variable_offset = 1000;
     }
 
     fn emit_diagnostic(&mut self, diagnostic_builder: DiagnosticBuilder<'b>) {
@@ -358,6 +361,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let mut iteration_count = 0;
         let mut changed = true;
         while changed {
+            self.fresh_variable_offset = 0;
             changed = self.visit_blocks(
                 &mut block_indices,
                 &mut in_state,
@@ -886,6 +890,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         from_hir_call: bool,
     ) {
         debug!("default visit_call(func: {:?}, args: {:?}, destination: {:?}, cleanup: {:?}, from_hir_call: {:?})", func, args, destination, cleanup, from_hir_call);
+        // This offset is used to distinguish any local variables that leak out from the called function
+        // from local variables of the callee function.
+        // This situation arises when a structured value stored in a local variable is assigned to
+        // a field reachable from a mutable parameter.
+        // We assume that no program that does not make MIRAI run out of memory will have more than
+        // a million local variables.
+        self.fresh_variable_offset += 1_000_000;
         let func_to_call = self.visit_operand(func);
         let known_name = if let Expression::CompileTimeConstant(fun) = &func_to_call.expression {
             if let ConstantDomain::Function { known_name, .. } = fun {
@@ -1230,7 +1241,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         for precondition in &function_summary.preconditions {
             let refined_condition = precondition
                 .condition
-                .refine_parameters(actual_args)
+                .refine_parameters(actual_args, self.fresh_variable_offset)
                 .refine_paths(&self.current_environment)
                 .refine_with(&self.current_environment.entry_condition, 0);
             let (refined_precondition_as_bool, entry_cond_as_bool) =
@@ -1571,7 +1582,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .refine_paths(&self.current_environment);
             let rvalue = value
                 .clone()
-                .refine_parameters(arguments)
+                .refine_parameters(arguments, self.fresh_variable_offset)
                 .refine_paths(&self.current_environment);
             for (arg_path, arg_val) in arguments.iter() {
                 if arg_val.eq(&rvalue) {
