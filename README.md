@@ -9,6 +9,8 @@ The initial focus will be on taint analysis.
 You'll need to install MIRAI as described [here](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md).
 
 To run mirai, use cargo with `RUSTC_WRAPPER` set to `mirai`.
+Use `rustup override` to set your crate to use the same version of Rust as MIRAI as 
+described in the [Installation Guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md).
 
 The easiest way to get started is to first build your project in the normal way. When there are no compile errors,
 no lint errors and no test failures, you can proceed to the next step and run MIRAI. For example:
