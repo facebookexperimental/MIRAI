@@ -8,6 +8,7 @@ repository = "https://github.com/facebookexperimental/MIRAI"
 readme = "../README.md"
 license = "MIT"
 edition = "2018"
+build = "build.rs"
 
 [lib]
 test = false # we have no unit tests
