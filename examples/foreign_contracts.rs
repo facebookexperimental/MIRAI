@@ -324,5 +324,93 @@ pub mod std {
         }
     }
 
+    pub mod vec {
+        pub struct Vec<T> {
+            _phantom: std::marker::PhantomData<T>,
+            len: usize,
+        }
+        
+        impl<T> Vec<T> {
+            pub fn new() -> Vec<T> {
+                Vec {
+                    _phantom: std::marker::PhantomData,
+                    len: 0,
+                }
+            }
+
+            pub fn len(&self) -> usize {
+                self.len
+            }
+
+            pub fn push(&mut self, _value: T) {
+                precondition!(self.len < std::usize::MAX);
+                let old_len = self.len;
+                self.len += 1;
+                verify!(self.len == old_len + 1);
+            }
+
+            pub fn pop(&mut self) -> Option<T> {
+                if self.len == 0 {
+                    None
+                } else {
+                    let old_len = self.len;
+                    self.len -= 1;
+                    verify!(self.len == old_len - 1);
+                    result!()
+                }
+            }
+            
+            pub fn get(&self, index: usize) -> Option<&T> {
+                precondition!(index < self.len);
+                result!()
+            }
+        }
+    }
+
     pub mod result {}
+}
+
+pub mod alloc {
+    pub mod vec {
+        pub struct Vec<T> {
+            _phantom: std::marker::PhantomData<T>,
+            len: usize,
+        }
+        
+        impl<T> Vec<T> {
+            pub fn new() -> Vec<T> {
+                Vec {
+                    _phantom: std::marker::PhantomData,
+                    len: 0,
+                }
+            }
+
+            pub fn len(&self) -> usize {
+                self.len
+            }
+
+            pub fn push(&mut self, _value: T) {
+                precondition!(self.len < std::usize::MAX);
+                let old_len = self.len;
+                self.len += 1;
+                verify!(self.len == old_len + 1);
+            }
+
+            pub fn pop(&mut self) -> Option<T> {
+                if self.len == 0 {
+                    None
+                } else {
+                    let old_len = self.len;
+                    self.len -= 1;
+                    verify!(self.len == old_len - 1);
+                    result!()
+                }
+            }
+            
+            pub fn get(&self, index: usize) -> Option<&T> {
+                precondition!(index < self.len);
+                result!()
+            }
+        }
+    }
 }
