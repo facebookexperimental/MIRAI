@@ -8,7 +8,7 @@ use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::expression::Expression;
 use crate::k_limits;
-use crate::path::{Path, PathWithHash};
+use crate::path::{Path, PathEnum};
 
 use log::debug;
 use mirai_annotations::checked_assume;
@@ -24,7 +24,7 @@ pub struct Environment {
     /// The conditions that guard exit from this block to successor blocks
     pub exit_conditions: HashTrieMap<BasicBlock, Rc<AbstractValue>>,
     /// Does not include any entries where the value is abstract_value::Bottom
-    pub value_map: HashTrieMap<PathWithHash, Rc<AbstractValue>>,
+    pub value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>>,
 }
 
 /// Default
@@ -51,14 +51,14 @@ type JoinOrWiden =
 impl Environment {
     /// Returns a reference to the value associated with the given path, if there is one.
     pub fn value_at(&self, path: &Rc<Path>) -> Option<&Rc<AbstractValue>> {
-        self.value_map.get(&path.into())
+        self.value_map.get(path)
     }
 
     /// Updates the path to value map so that the given path now points to the given value.
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
         debug!("updating value of {:?} to {:?}", path, value);
         if value.is_bottom() {
-            self.value_map = self.value_map.remove(&path.into());
+            self.value_map = self.value_map.remove(&path);
             return;
         }
         if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
@@ -80,7 +80,7 @@ impl Environment {
         //in the environment.
         //Conversely, if this path is contained in a path that is already in the environment, then
         //that path should be updated weakly.
-        self.value_map = self.value_map.insert(path.into(), value);
+        self.value_map = self.value_map.insert(path, value);
     }
 
     /// If the path contains an abstract value that was constructed with a join, the path is
@@ -88,9 +88,9 @@ impl Environment {
     /// and alternate, respectively. These paths can then be weakly updated to reflect the
     /// lack of precise knowledge at compile time.
     fn try_to_split(&mut self, path: &Rc<Path>) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
-        match path.as_ref() {
-            Path::LocalVariable { .. } => self.try_to_split_local(path),
-            Path::QualifiedPath {
+        match &path.value {
+            PathEnum::LocalVariable { .. } => self.try_to_split_local(path),
+            PathEnum::QualifiedPath {
                 ref qualifier,
                 ref selector,
                 ..
@@ -127,8 +127,8 @@ impl Environment {
                     Expression::AbstractHeapAddress(addr2),
                 ) => Some((
                     condition.clone(),
-                    Rc::new(Path::AbstractHeapAddress { ordinal: *addr1 }),
-                    Rc::new(Path::AbstractHeapAddress { ordinal: *addr2 }),
+                    Rc::new(PathEnum::AbstractHeapAddress { ordinal: *addr1 }.into()),
+                    Rc::new(PathEnum::AbstractHeapAddress { ordinal: *addr2 }.into()),
                 )),
                 (Expression::Reference(path1), Expression::Reference(path2)) => {
                     Some((condition.clone(), path1.clone(), path2.clone()))
@@ -187,25 +187,25 @@ impl Environment {
     ) -> Environment {
         let value_map1 = &self.value_map;
         let value_map2 = &other.value_map;
-        let mut value_map: HashTrieMap<PathWithHash, Rc<AbstractValue>> = HashTrieMap::default();
+        let mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>> = HashTrieMap::default();
         for (path, val1) in value_map1.iter() {
             let p = path.clone();
             match value_map2.get(path) {
                 Some(val2) => {
-                    value_map = value_map
-                        .insert(p, join_or_widen(val1, &val2, &join_condition, &path.path));
+                    value_map =
+                        value_map.insert(p, join_or_widen(val1, &val2, &join_condition, &path));
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
                     let val2 = AbstractValue::make_from(
                         Expression::Variable {
-                            path: path.path.clone(),
+                            path: path.clone(),
                             var_type: val1.expression.infer_type(),
                         },
                         1,
                     );
-                    value_map = value_map
-                        .insert(p, join_or_widen(val1, &val2, &join_condition, &path.path));
+                    value_map =
+                        value_map.insert(p, join_or_widen(val1, &val2, &join_condition, &path));
                 }
             }
         }
@@ -214,14 +214,14 @@ impl Environment {
                 checked_assume!(!val2.is_bottom());
                 let val1 = AbstractValue::make_from(
                     Expression::Variable {
-                        path: path.path.clone(),
+                        path: path.clone(),
                         var_type: val2.expression.infer_type(),
                     },
                     1,
                 );
                 value_map = value_map.insert(
                     path.clone(),
-                    join_or_widen(&val1, val2, &join_condition, &path.path),
+                    join_or_widen(&val1, val2, &join_condition, &path),
                 );
             }
         }

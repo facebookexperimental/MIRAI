@@ -11,7 +11,7 @@ use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::k_limits;
 use crate::path::PathRefinement;
-use crate::path::{Path, PathSelector};
+use crate::path::{Path, PathEnum, PathSelector};
 use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries;
 use crate::summaries::{PersistentSummaryCache, Precondition, Summary};
@@ -128,7 +128,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         path: Rc<Path>,
         result_type: ExpressionType,
     ) -> Rc<AbstractValue> {
-        if let Path::Constant { value } = path.as_ref() {
+        if let PathEnum::Constant { value } = &path.value {
             return value.clone();
         }
         let refined_val = {
@@ -140,74 +140,76 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .clone();
             local_val.refine_with(&self.current_environment.entry_condition, 0)
         };
-        let result =
-            if refined_val.is_bottom() {
-                // Not found locally, so try statics.
-                if let Path::StaticVariable {
-                    def_id,
-                    ref summary_cache_key,
-                    ref expression_type,
-                } = path.as_ref()
-                {
-                    let mut summary;
-                    let summary = if let Some(def_id) = def_id {
-                        self.summary_cache
-                            .get_summary_for(*def_id, Some(self.def_id))
-                    } else {
-                        summary = self
-                            .summary_cache
-                            .get_persistent_summary_for(summary_cache_key);
-                        &summary
-                    };
-                    if let Some(result) = &summary.result {
-                        let result = result.refine_paths(&self.current_environment);
-                        if let Expression::AbstractHeapAddress(ordinal) = result.expression {
-                            let source_path = Rc::new(Path::LocalVariable { ordinal: 0 });
-                            let target_path = Rc::new(Path::AbstractHeapAddress { ordinal });
-                            for (path, value) in summary.side_effects.iter().filter(|(p, _)| {
-                                (*p) == source_path || p.is_rooted_by(&source_path)
-                            }) {
-                                let tpath = Rc::new(path.clone())
-                                    .replace_root(&source_path, target_path.clone())
-                                    .refine_paths(&self.current_environment);
-                                let rvalue = value.refine_paths(&self.current_environment);
-                                self.current_environment.update_value_at(tpath, rvalue);
-                            }
+        let result = if refined_val.is_bottom() {
+            // Not found locally, so try statics.
+            if let PathEnum::StaticVariable {
+                def_id,
+                ref summary_cache_key,
+                ref expression_type,
+            } = &path.value
+            {
+                let mut summary;
+                let summary = if let Some(def_id) = def_id {
+                    self.summary_cache
+                        .get_summary_for(*def_id, Some(self.def_id))
+                } else {
+                    summary = self
+                        .summary_cache
+                        .get_persistent_summary_for(summary_cache_key);
+                    &summary
+                };
+                if let Some(result) = &summary.result {
+                    let result = result.refine_paths(&self.current_environment);
+                    if let Expression::AbstractHeapAddress(ordinal) = result.expression {
+                        let source_path = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
+                        let target_path: Rc<Path> =
+                            Rc::new(PathEnum::AbstractHeapAddress { ordinal }.into());
+                        for (path, value) in summary
+                            .side_effects
+                            .iter()
+                            .filter(|(p, _)| (*p) == source_path || p.is_rooted_by(&source_path))
+                        {
+                            let tpath = Rc::new(path.clone())
+                                .replace_root(&source_path, target_path.clone())
+                                .refine_paths(&self.current_environment);
+                            let rvalue = value.refine_paths(&self.current_environment);
+                            self.current_environment.update_value_at(tpath, rvalue);
                         }
-                        result
-                    } else {
-                        let result = AbstractValue::make_from(
-                            Expression::Variable {
-                                path: path.clone(),
-                                var_type: expression_type.clone(),
-                            },
-                            1,
-                        );
-                        self.current_environment
-                            .update_value_at(path, result.clone());
-                        result
                     }
-                } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
-                    let result = if result_type == ExpressionType::Reference {
-                        AbstractValue::make_from(Expression::Reference(path.clone()), 1)
-                    } else {
-                        AbstractValue::make_from(
-                            Expression::Variable {
-                                path: path.clone(),
-                                var_type: result_type.clone(),
-                            },
-                            1,
-                        )
-                    };
+                    result
+                } else {
+                    let result = AbstractValue::make_from(
+                        Expression::Variable {
+                            path: path.clone(),
+                            var_type: expression_type.clone(),
+                        },
+                        1,
+                    );
                     self.current_environment
                         .update_value_at(path, result.clone());
                     result
-                } else {
-                    Rc::new(abstract_value::TOP)
                 }
+            } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
+                let result = if result_type == ExpressionType::Reference {
+                    AbstractValue::make_from(Expression::Reference(path.clone()), 1)
+                } else {
+                    AbstractValue::make_from(
+                        Expression::Variable {
+                            path: path.clone(),
+                            var_type: result_type.clone(),
+                        },
+                        1,
+                    )
+                };
+                self.current_environment
+                    .update_value_at(path, result.clone());
+                result
             } else {
-                refined_val
-            };
+                Rc::new(abstract_value::TOP)
+            }
+        } else {
+            refined_val
+        };
         if result_type == ExpressionType::Bool
             && self.current_environment.entry_condition.implies(&result)
         {
@@ -218,8 +220,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     // Path is required to be a temporary used to track an operation result.
     fn get_target_path_type(&mut self, path: &Rc<Path>) -> ExpressionType {
-        match path.as_ref() {
-            Path::LocalVariable { ordinal } => {
+        match &path.value {
+            PathEnum::LocalVariable { ordinal } => {
                 let loc = &self.mir.local_decls[mir::Local::from(*ordinal)];
                 match loc.ty.sty {
                     TyKind::Tuple(types) => (&types[0].expect_ty().sty).into(),
@@ -535,22 +537,22 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn promote_constants(&mut self, function_name: &str) -> Environment {
         let mut state_with_parameters = Environment::default();
         let saved_mir = self.mir;
-        let result_root = Rc::new(Path::LocalVariable { ordinal: 0 });
+        let result_root: Rc<Path> = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
         for (ordinal, constant_mir) in self.mir.promoted.iter().enumerate() {
             self.mir = constant_mir;
             let result_type = self.get_type_for_local(0);
             self.visit_promoted_constants_block(function_name);
 
-            let promoted_root = Rc::new(Path::PromotedConstant { ordinal });
+            let promoted_root: Rc<Path> = Rc::new(PathEnum::PromotedConstant { ordinal }.into());
             let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
             state_with_parameters.update_value_at(promoted_root.clone(), value);
             for (path, value) in self
                 .exit_environment
                 .value_map
                 .iter()
-                .filter(|(p, _)| p.path.is_rooted_by(&result_root))
+                .filter(|(p, _)| p.is_rooted_by(&result_root))
             {
-                let promoted_path = path.path.replace_root(&result_root, promoted_root.clone());
+                let promoted_path = path.replace_root(&result_root, promoted_root.clone());
                 state_with_parameters.update_value_at(promoted_path, value.clone());
             }
 
@@ -672,9 +674,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// End the current live range for the storage of the local.
     fn visit_storage_dead(&mut self, local: mir::Local) {
         debug!("default visit_storage_dead(local: {:?})", local);
-        let path = Rc::new(Path::LocalVariable {
-            ordinal: local.as_usize(),
-        });
+        let path = Rc::new(
+            PathEnum::LocalVariable {
+                ordinal: local.as_usize(),
+            }
+            .into(),
+        );
         self.current_environment
             .update_value_at(path, abstract_value::BOTTOM.into());
     }
@@ -1042,7 +1047,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 if let Some((place, target)) = destination {
                     let target_path = self.visit_place(place);
                     let target_type = self.get_place_type(place);
-                    let return_value_path = Rc::new(Path::LocalVariable { ordinal: 0 });
+                    let return_value_path = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
                     let return_value =
                         self.lookup_path_and_refine_result(return_value_path, target_type);
                     self.current_environment
@@ -1190,9 +1195,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             let qualifier = match &slice_val.expression {
                 Expression::Reference(path) => Some(path.clone()),
                 Expression::Variable { path, .. } => Some(path.clone()),
-                Expression::AbstractHeapAddress(ordinal) => {
-                    Some(Rc::new(Path::AbstractHeapAddress { ordinal: *ordinal }))
-                }
+                Expression::AbstractHeapAddress(ordinal) => Some(Rc::new(
+                    PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into(),
+                )),
                 _ => None,
             };
             if let Some(qualifier) = qualifier {
@@ -1353,7 +1358,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if let Some((place, target)) = destination {
             // Assign function result to place
             let target_path = self.visit_place(place);
-            let return_value_path = Rc::new(Path::LocalVariable { ordinal: 0 });
+            let return_value_path = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
             // Transfer side effects
             self.transfer_and_refine(
                 &function_summary.side_effects,
@@ -1362,7 +1367,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 actual_args,
             );
             for (i, (target_path, _)) in actual_args.iter().enumerate() {
-                let parameter_path = Rc::new(Path::LocalVariable { ordinal: i + 1 });
+                let parameter_path = Rc::new(PathEnum::LocalVariable { ordinal: i + 1 }.into());
                 self.transfer_and_refine(
                     &function_summary.side_effects,
                     target_path.clone(),
@@ -1390,7 +1395,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ) {
         if let Some(cleanup_target) = cleanup {
             for (i, (target_path, _)) in actual_args.iter().enumerate() {
-                let parameter_path = Rc::new(Path::LocalVariable { ordinal: i + 1 });
+                let parameter_path = Rc::new(PathEnum::LocalVariable { ordinal: i + 1 }.into());
                 self.transfer_and_refine(
                     &function_summary.unwind_side_effects,
                     target_path.clone(),
@@ -1833,7 +1838,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 let const_value = self.visit_constant(ty, *user_ty, &literal.val);
                 if let Expression::AbstractHeapAddress(ordinal) = const_value.expression {
                     let rtype = ExpressionType::Reference;
-                    let rpath = Rc::new(Path::AbstractHeapAddress { ordinal });
+                    let rpath = Rc::new(PathEnum::AbstractHeapAddress { ordinal }.into());
                     self.copy_or_move_elements(path, rpath, rtype, false);
                 } else {
                     self.current_environment.update_value_at(path, const_value);
@@ -1866,11 +1871,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let mut value_map = self.current_environment.value_map.clone();
         // Some qualified rpaths are patterns that represent collections of values.
         // We need to expand the patterns before doing the actual moves.
-        if let Path::QualifiedPath {
+        if let PathEnum::QualifiedPath {
             ref qualifier,
             ref selector,
             ..
-        } = rpath.as_ref()
+        } = &rpath.value
         {
             match **selector {
                 PathSelector::ConstantIndex {
@@ -1953,22 +1958,22 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .current_environment
             .value_map
             .iter()
-            .filter(|(p, _)| p.path.is_rooted_by(&rpath))
+            .filter(|(p, _)| p.is_rooted_by(&rpath))
         {
-            let qualified_path = path.path.replace_root(&rpath, target_path.clone());
+            let qualified_path = path.replace_root(&rpath, target_path.clone());
             if move_elements {
                 debug!("moving {:?} to {:?}", value, qualified_path);
                 value_map = value_map.remove(path);
             } else {
                 debug!("copying {:?} to {:?}", value, qualified_path);
             };
-            value_map = value_map.insert(qualified_path.into(), value.clone());
+            value_map = value_map.insert(qualified_path, value.clone());
         }
         // Now move/copy (rpath, value) itself.
         let mut value = self.lookup_path_and_refine_result(rpath.clone(), rtype);
         if move_elements {
             debug!("moving {:?} to {:?}", value, target_path);
-            value_map = value_map.remove(&rpath.into());
+            value_map = value_map.remove(&rpath);
         } else {
             debug!("copying {:?} to {:?}", value, target_path);
             // if the value is a non primitive and a path reference, update the reference to be the new target
@@ -1984,7 +1989,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
             }
         }
-        value_map = value_map.insert(target_path.into(), value);
+        value_map = value_map.insert(target_path, value);
         self.current_environment.value_map = value_map;
     }
 
@@ -2036,8 +2041,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             path, region, borrow_kind, place
         );
         let value_path = self.visit_place(place);
-        let value = match value_path.as_ref() {
-            Path::QualifiedPath {
+        let value = match &value_path.value {
+            PathEnum::QualifiedPath {
                 qualifier,
                 selector,
                 ..
@@ -2307,9 +2312,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn get_operand_path(&mut self, operand: &mir::Operand<'tcx>) -> Rc<Path> {
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => self.visit_place(place),
-            mir::Operand::Constant(..) => Rc::new(Path::Constant {
-                value: self.visit_operand(operand),
-            }),
+            mir::Operand::Constant(..) => Rc::new(
+                PathEnum::Constant {
+                    value: self.visit_operand(operand),
+                }
+                .into(),
+            ),
         }
     }
 
@@ -2370,11 +2378,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::interpret::ConstValue::Unevaluated(def_id, ..) => {
                 let name = utils::summary_key_str(&self.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.sty);
-                let path = Rc::new(Path::StaticVariable {
-                    def_id: Some(*def_id),
-                    summary_cache_key: name,
-                    expression_type: expression_type.clone(),
-                });
+                let path = Rc::new(
+                    PathEnum::StaticVariable {
+                        def_id: Some(*def_id),
+                        summary_cache_key: name,
+                        expression_type: expression_type.clone(),
+                    }
+                    .into(),
+                );
                 self.lookup_path_and_refine_result(path, expression_type)
             }
             _ => {
@@ -2578,7 +2589,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         } else {
             unreachable!()
         };
-        let array_path = Rc::new(Path::AbstractHeapAddress { ordinal });
+        let array_path: Rc<Path> = Rc::new(PathEnum::AbstractHeapAddress { ordinal }.into());
         let mut last_index: u128 = 0;
         for (i, operand) in self
             .get_element_values(bytes, elem_type, len)
@@ -2691,9 +2702,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         match place {
             mir::Place::Base(base_place) => match base_place {
                 mir::PlaceBase::Local(local) => {
-                    let result = Rc::new(Path::LocalVariable {
-                        ordinal: local.as_usize(),
-                    });
+                    let result: Rc<Path> = Rc::new(
+                        PathEnum::LocalVariable {
+                            ordinal: local.as_usize(),
+                        }
+                        .into(),
+                    );
                     let ty = self.get_rustc_place_type(place);
                     if let TyKind::Array(_, len) = ty {
                         let len_val = self.visit_constant(len.ty, None, &len.val);
@@ -2705,15 +2719,18 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 mir::PlaceBase::Static(boxed_static) => match boxed_static.kind {
                     mir::StaticKind::Promoted(promoted) => {
                         let index = promoted.index();
-                        Rc::new(Path::PromotedConstant { ordinal: index })
+                        Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
                     }
                     mir::StaticKind::Static(def_id) => {
                         let name = utils::summary_key_str(&self.tcx, def_id);
-                        Rc::new(Path::StaticVariable {
-                            def_id: Some(def_id),
-                            summary_cache_key: name,
-                            expression_type: self.get_place_type(place),
-                        })
+                        Rc::new(
+                            PathEnum::StaticVariable {
+                                def_id: Some(def_id),
+                                summary_cache_key: name,
+                                expression_type: self.get_place_type(place),
+                            }
+                            .into(),
+                        )
                     }
                 },
             },
@@ -2760,9 +2777,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, _) => PathSelector::Field(field.index()),
             mir::ProjectionElem::Index(local) => {
-                let local_path = Rc::new(Path::LocalVariable {
-                    ordinal: local.as_usize(),
-                });
+                let local_path = Rc::new(
+                    PathEnum::LocalVariable {
+                        ordinal: local.as_usize(),
+                    }
+                    .into(),
+                );
                 let index_value =
                     self.lookup_path_and_refine_result(local_path, ExpressionType::Usize);
                 PathSelector::Index(index_value)
