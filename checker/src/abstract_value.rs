@@ -805,6 +805,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             match (&self.expression, &other.expression) {
                 (Expression::Not { ref operand }, _) if (**operand).eq(&other) => Rc::new(TRUE),
                 (_, Expression::Not { ref operand }) if (**operand).eq(&self) => Rc::new(TRUE),
+                //(x && y) || (x && !y) = x
+                (
+                    Expression::And {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::And {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1 == x2 && y1.logical_not().eq(y2) => x1.clone(),
                 _ => AbstractValue::make_binary(self.clone(), other, |left, right| {
                     Expression::Or { left, right }
                 }),
