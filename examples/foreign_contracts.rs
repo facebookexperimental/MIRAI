@@ -162,6 +162,14 @@ pub mod core {
                 }
             }
         }
+
+        pub mod deref {
+            pub trait Deref {
+                fn deref__ref_alloc_vec_Vec_i32(vec: &Vec<i32>) -> &[i32] {
+                    &*vec
+                }
+            }
+        }
     }
 
     pub mod iter {
@@ -310,6 +318,11 @@ pub mod core {
 
             pub fn len__ref_slice_bool(collection: &[bool]) -> usize {
                 collection.len()
+            }
+
+            pub fn get__ref_slice_i32_usize(collection: &[i32], index: usize) -> i32 {
+                precondition!(index < collection.len());
+                collection[index]
             }
         }
     }
