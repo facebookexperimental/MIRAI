@@ -166,7 +166,10 @@ pub mod core {
         pub mod deref {
             pub trait Deref {
                 fn deref__ref_alloc_vec_Vec_i32(vec: &Vec<i32>) -> &[i32] {
-                    &*vec
+                    let old_len = vec.len();
+                    let res: &[i32] = result!();
+                    assume!(res.len() == old_len);
+                    res
                 }
             }
         }
