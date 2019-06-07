@@ -10,8 +10,8 @@ use crate::expression::Expression::{ConditionalExpression, Join, Widen};
 use crate::expression::{Expression, ExpressionType};
 use crate::interval_domain::{self, IntervalDomain};
 use crate::k_limits;
-use crate::path::Path;
 use crate::path::PathRefinement;
+use crate::path::{Path, PathEnum};
 
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -1279,7 +1279,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let Some(val) = environment.value_at(&path) {
                     // This environment has a value for the model field.
                     val.clone()
-                } else if let Path::QualifiedPath { qualifier, .. } = path.as_ref() {
+                } else if let PathEnum::QualifiedPath { qualifier, .. } = &path.value {
                     if environment.value_at(&*qualifier).is_some() {
                         // This environment does have a value for the qualifier, so the buck stops here.
                         default.clone()
@@ -1302,7 +1302,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     val.clone()
                 } else {
                     let refined_path = path.refine_paths(environment);
-                    if let Path::Constant { value } = refined_path.as_ref() {
+                    if let PathEnum::Constant { value } = &refined_path.value {
                         value.clone()
                     } else if let Some(val) = environment.value_at(&refined_path) {
                         val.clone()
@@ -1329,6 +1329,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn refine_parameters(
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        // An offset to add to locals from the called function so that they do not clash with caller locals.
         fresh: usize,
     ) -> Rc<AbstractValue> {
         match &self.expression {
@@ -1423,8 +1424,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Reference(path) => {
                 // if the path is a parameter, the reference is an artifact of its type
                 // and needs to be removed in the call context
-                match path.as_ref() {
-                    Path::LocalVariable { ordinal }
+                match &path.value {
+                    PathEnum::LocalVariable { ordinal }
                         if 0 < *ordinal && *ordinal <= arguments.len() =>
                     {
                         arguments[*ordinal - 1].1.clone()
@@ -1488,7 +1489,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             Expression::Variable { path, var_type } => {
                 let refined_path = path.refine_parameters(arguments, fresh);
-                if let Path::Constant { value } = refined_path.as_ref() {
+                if let PathEnum::Constant { value } = &refined_path.value {
                     value.clone()
                 } else {
                     AbstractValue::make_from(

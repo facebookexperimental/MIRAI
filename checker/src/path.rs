@@ -22,40 +22,29 @@ use std::rc::Rc;
 /// recomputing it. The caching has a cost, so only use this in cases where it is highly likely
 /// that the path will be hashed more than once.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, Ord, PartialOrd)]
-pub struct PathWithHash {
-    pub path: Rc<Path>,
+pub struct Path {
+    pub value: PathEnum,
     hash: u64,
 }
 
-impl Hash for PathWithHash {
+impl Hash for Path {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64(self.hash);
     }
 }
 
-impl PartialEq for PathWithHash {
-    fn eq(&self, other: &PathWithHash) -> bool {
-        self.hash == other.hash && self.path == other.path
+impl PartialEq for Path {
+    fn eq(&self, other: &Path) -> bool {
+        self.hash == other.hash && self.value == other.value
     }
 }
 
-impl From<&Rc<Path>> for PathWithHash {
-    fn from(path: &Rc<Path>) -> Self {
+impl From<PathEnum> for Path {
+    fn from(value: PathEnum) -> Self {
         let mut hasher = DefaultHasher::new();
-        path.hash(&mut hasher);
-        PathWithHash {
-            path: path.clone(),
-            hash: hasher.finish(),
-        }
-    }
-}
-
-impl From<Rc<Path>> for PathWithHash {
-    fn from(path: Rc<Path>) -> Self {
-        let mut hasher = DefaultHasher::new();
-        path.hash(&mut hasher);
-        PathWithHash {
-            path,
+        value.hash(&mut hasher);
+        Path {
+            value,
             hash: hasher.finish(),
         }
     }
@@ -65,7 +54,7 @@ impl From<Rc<Path>> for PathWithHash {
 /// When the actual expression is evaluated at runtime it will resolve to a particular memory
 /// location. During analysis it is used to keep track of state changes.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum Path {
+pub enum PathEnum {
     /// A dynamically allocated memory block.
     AbstractHeapAddress { ordinal: usize },
 
@@ -107,8 +96,8 @@ pub enum Path {
 impl Path {
     /// True if path qualifies root, or another qualified path rooted by root.
     pub fn is_rooted_by(&self, root: &Rc<Path>) -> bool {
-        match self {
-            Path::QualifiedPath { qualifier, .. } => {
+        match &self.value {
+            PathEnum::QualifiedPath { qualifier, .. } => {
                 *qualifier == *root || qualifier.is_rooted_by(root)
             }
             _ => false,
@@ -117,8 +106,8 @@ impl Path {
 
     // Returns the length of the path.
     pub fn path_length(&self) -> usize {
-        match self {
-            Path::QualifiedPath { length, .. } => *length,
+        match &self.value {
+            PathEnum::QualifiedPath { length, .. } => *length,
             _ => 1,
         }
     }
@@ -160,20 +149,23 @@ impl Path {
             warn!("max path length exceeded {:?}.{:?}", qualifier, selector);
         }
         assume!(qualifier_length < 1_000_000_000); // We'll run out of memory long before this happens
-        Rc::new(Path::QualifiedPath {
-            qualifier,
-            selector,
-            length: qualifier_length + 1,
-        })
+        Rc::new(
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                length: qualifier_length + 1,
+            }
+            .into(),
+        )
     }
 
     /// Adds any abstract heap addresses found in embedded index values to the given set.
     pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
-        if let Path::QualifiedPath {
+        if let PathEnum::QualifiedPath {
             qualifier,
             selector,
             ..
-        } = self
+        } = &self.value
         {
             (**qualifier).record_heap_addresses(result);
             selector.record_heap_addresses(result);
@@ -207,17 +199,20 @@ impl PathRefinement for Rc<Path> {
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
         fresh: usize,
     ) -> Rc<Path> {
-        match self.as_ref() {
-            Path::LocalVariable { ordinal } => {
+        match &self.value {
+            PathEnum::LocalVariable { ordinal } => {
                 if 0 < *ordinal && *ordinal <= arguments.len() {
                     arguments[*ordinal - 1].0.clone()
                 } else {
-                    Rc::new(Path::LocalVariable {
-                        ordinal: ordinal + fresh,
-                    })
+                    Rc::new(
+                        PathEnum::LocalVariable {
+                            ordinal: ordinal + fresh,
+                        }
+                        .into(),
+                    )
                 }
             }
-            Path::QualifiedPath {
+            PathEnum::QualifiedPath {
                 qualifier,
                 selector,
                 ..
@@ -244,11 +239,11 @@ impl PathRefinement for Rc<Path> {
                 _ => self.clone(),
             };
         };
-        if let Path::QualifiedPath {
+        if let PathEnum::QualifiedPath {
             qualifier,
             selector,
             ..
-        } = self.as_ref()
+        } = &self.value
         {
             if let Some(val) = environment.value_at(qualifier) {
                 match &val.expression {
@@ -271,9 +266,8 @@ impl PathRefinement for Rc<Path> {
                 // Reminder, a path that does not match a value in the environment is rooted in
                 // an unknown value, such as a parameter.
                 let refined_qualifier = qualifier.refine_paths(environment);
-                let refined_qualifier_matches = environment
-                    .value_map
-                    .contains_key(&refined_qualifier.clone().into());
+                let refined_qualifier_matches =
+                    environment.value_map.contains_key(&refined_qualifier);
                 let refined_selector = selector.refine_paths(environment);
                 let refined_path = Path::new_qualified(refined_qualifier, refined_selector);
                 if refined_qualifier_matches {
@@ -289,8 +283,8 @@ impl PathRefinement for Rc<Path> {
 
     /// Returns a copy path with the root replaced by new_root.
     fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path> {
-        match self.as_ref() {
-            Path::QualifiedPath {
+        match &self.value {
+            PathEnum::QualifiedPath {
                 qualifier,
                 selector,
                 ..

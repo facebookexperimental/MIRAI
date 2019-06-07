@@ -6,7 +6,7 @@
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::environment::Environment;
-use crate::path::Path;
+use crate::path::{Path, PathEnum};
 use crate::utils;
 
 use rustc::hir::def_id::DefId;
@@ -132,7 +132,7 @@ pub fn summarize(
     tcx: TyCtxt<'_, '_, '_>,
 ) -> Summary {
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
-    let result = exit_environment.value_at(&Rc::new(Path::LocalVariable { ordinal: 0 }));
+    let result = exit_environment.value_at(&Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into()));
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
     let mut post_conditions: Vec<Rc<AbstractValue>> = post_conditions.to_owned();
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
@@ -194,15 +194,15 @@ fn extract_side_effects(
     let mut result = Vec::new();
     for ordinal in 0..=argument_count {
         // remember that 0 is the result
-        let root = Rc::new(Path::LocalVariable { ordinal });
+        let root = Rc::new(PathEnum::LocalVariable { ordinal }.into());
         for (path, value) in env
             .value_map
             .iter()
-            .filter(|(p, _)| p.path == root || p.path.is_rooted_by(&root))
+            .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
         {
-            path.path.record_heap_addresses(&mut heap_roots);
+            path.record_heap_addresses(&mut heap_roots);
             value.record_heap_addresses(&mut heap_roots);
-            result.push((path.path.clone(), value.clone()));
+            result.push((path.clone(), value.clone()));
         }
     }
     extract_reachable_heap_allocations(env, &mut heap_roots, &mut result);
@@ -220,15 +220,15 @@ fn extract_reachable_heap_allocations(
         let mut new_roots: HashSet<usize> = HashSet::new();
         for ordinal in heap_roots.iter() {
             if visited_heap_roots.insert(*ordinal) {
-                let root = Rc::new(Path::AbstractHeapAddress { ordinal: *ordinal });
+                let root = Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
                 for (path, value) in env
                     .value_map
                     .iter()
-                    .filter(|(p, _)| p.path == root || p.path.is_rooted_by(&root))
+                    .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
                 {
-                    path.path.record_heap_addresses(&mut new_roots);
+                    path.record_heap_addresses(&mut new_roots);
                     value.record_heap_addresses(&mut new_roots);
-                    result.push((path.path.clone(), value.clone()));
+                    result.push((path.clone(), value.clone()));
                 }
             }
         }
