@@ -323,13 +323,19 @@ pub mod core {
                 collection.len()
             }
 
-            pub fn get__ref_slice_i32_usize(collection: &[i32], index: usize) -> i32 {
-                precondition!(index < collection.len());
-                collection[index]
+            pub fn get__ref_slice_i32_usize(collection: &[i32], index: usize) -> Option<&i32> {
+                if index >= collection.len() {
+                    None
+                } else {
+                    Some(&collection[index])
+                }
             }
         }
     }
 
+    pub mod usize {
+        pub const MAX: usize = 4294967295;
+    }
 }
 
 pub mod std {
@@ -337,49 +343,6 @@ pub mod std {
         pub mod stdio {
             use crate::foreign_contracts::core::fmt;
             pub fn _print(_args: fmt::Arguments<'_>) {}
-        }
-    }
-
-    pub mod vec {
-        pub struct Vec<T> {
-            _phantom: std::marker::PhantomData<T>,
-            len: usize,
-        }
-        
-        impl<T> Vec<T> {
-            pub fn new() -> Vec<T> {
-                Vec {
-                    _phantom: std::marker::PhantomData,
-                    len: 0,
-                }
-            }
-
-            pub fn len(&self) -> usize {
-                self.len
-            }
-
-            pub fn push(&mut self, _value: T) {
-                precondition!(self.len < std::usize::MAX);
-                let old_len = self.len;
-                self.len += 1;
-                verify!(self.len == old_len + 1);
-            }
-
-            pub fn pop(&mut self) -> Option<T> {
-                if self.len == 0 {
-                    None
-                } else {
-                    let old_len = self.len;
-                    self.len -= 1;
-                    verify!(self.len == old_len - 1);
-                    result!()
-                }
-            }
-            
-            pub fn get(&self, index: usize) -> Option<&T> {
-                precondition!(index < self.len);
-                result!()
-            }
         }
     }
 
@@ -421,11 +384,6 @@ pub mod alloc {
                     verify!(self.len == old_len - 1);
                     result!()
                 }
-            }
-            
-            pub fn get(&self, index: usize) -> Option<&T> {
-                precondition!(index < self.len);
-                result!()
             }
         }
     }
