@@ -355,7 +355,7 @@ pub mod alloc {
             _phantom: std::marker::PhantomData<T>,
             len: usize,
         }
-        
+
         impl<T> Vec<T> {
             pub fn new() -> Vec<T> {
                 Vec {
@@ -370,18 +370,14 @@ pub mod alloc {
 
             pub fn push(&mut self, _value: T) {
                 precondition!(self.len < std::usize::MAX);
-                let old_len = self.len;
                 self.len += 1;
-                verify!(self.len == old_len + 1);
             }
 
             pub fn pop(&mut self) -> Option<T> {
                 if self.len == 0 {
                     None
                 } else {
-                    let old_len = self.len;
                     self.len -= 1;
-                    verify!(self.len == old_len - 1);
                     result!()
                 }
             }
