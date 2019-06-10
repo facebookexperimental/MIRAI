@@ -9,8 +9,8 @@ struct Cart {
     /// We model a shopping cart as Vector of items.
     /// We are interested in the cost of those items
     /// for checkout purposes so we only add the items'
-    /// cost (as an i32) to the cart.
-    items: Vec<i32>,
+    /// cost (as an u32) to the cart.
+    items: Vec<u32>,
 }
 
 impl Cart {
@@ -18,14 +18,14 @@ impl Cart {
         Cart { items: Vec::new() }
     }
 
-    fn add_item(&mut self, value: i32) {
-        // We don't want items with zero or negative
-        // prices to be added to the cart
+    fn add_item(&mut self, value: u32) {
+        // We don't want items with zero
+        // value to be added to the cart
         precondition!(value > 0);
         self.items.push(value);
     }
 
-    fn remove_item(&mut self) -> Option<i32> {
+    fn remove_item(&mut self) -> Option<u32> {
         let res = self.items.pop();
         res
     }
@@ -34,8 +34,8 @@ impl Cart {
         self.items.len()
     }
 
-    fn checkout(&self) -> i32 {
-        let mut sum: i32 = 0;
+    fn checkout(&self) -> u32 {
+        let mut sum: u32 = 0;
         let len = self.items.len();
         let mut i = 0;
         while i < len {
