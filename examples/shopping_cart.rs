@@ -26,8 +26,7 @@ impl Cart {
     }
 
     fn remove_item(&mut self) -> Option<u32> {
-        let res = self.items.pop();
-        res
+        self.items.pop()
     }
 
     fn num_items(&self) -> usize {
