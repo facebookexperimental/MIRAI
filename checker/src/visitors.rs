@@ -1596,6 +1596,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     break;
                 }
             }
+            let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
+            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                return;
+            }
             self.current_environment.update_value_at(tpath, rvalue);
         }
     }
@@ -1868,6 +1872,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         rtype: ExpressionType,
         move_elements: bool,
     ) {
+        let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
+        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+            return;
+        }
         let mut value_map = self.current_environment.value_map.clone();
         // Some qualified rpaths are patterns that represent collections of values.
         // We need to expand the patterns before doing the actual moves.
@@ -1946,6 +1954,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             rtype.clone(),
                             move_elements,
                         );
+                        let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
+                        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                            return;
+                        }
                     }
                     return;
                 }
@@ -1960,6 +1972,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             .iter()
             .filter(|(p, _)| p.is_rooted_by(&rpath))
         {
+            let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
+            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                return;
+            }
             let qualified_path = path.replace_root(&rpath, target_path.clone());
             if move_elements {
                 debug!("moving {:?} to {:?}", value, qualified_path);
