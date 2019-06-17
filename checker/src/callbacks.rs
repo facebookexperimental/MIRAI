@@ -30,7 +30,7 @@ pub struct MiraiCallbacks {
     /// True if this run is done via cargo test
     test_run: bool,
     /// If a function name is given, only analyze that function
-    analyze_single_func: Option<String>,
+    pub analyze_single_func: Option<String>,
 }
 
 /// Constructors
@@ -100,11 +100,6 @@ struct DefSets {
 }
 
 impl MiraiCallbacks {
-    /// Set MIRAI to analyze just a single function
-    pub fn set_analyze_single_func(&mut self, fname: Option<String>) {
-        self.analyze_single_func = fname;
-    }
-
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     fn analyze_with_mirai<'a, 'tcx: 'a>(
         &mut self,
