@@ -1164,6 +1164,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Replaces occurrences of Expression::Variable(path) with the value at that path
     /// in the given environment (if there is such a value).
     fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
+        if self.expression_size > k_limits::MAX_EXPRESSION_SIZE {
+            return self.clone();
+        }
         match &self.expression {
             Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
                 self.clone()
