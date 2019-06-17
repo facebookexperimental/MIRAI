@@ -37,6 +37,12 @@ fn main() {
         env_logger::init_from_env(e);
     }
 
+    // Configure the analysis to just run on a single function if set
+    let mut analyze_single_func: Option<String> = None;
+    if env::var("SINGLE_FUNC").is_ok() {
+        analyze_single_func = env::var("SINGLE_FUNC").ok();
+    }
+
     // Get command line arguments from environment and massage them a bit.
     let mut command_line_arguments: Vec<_> = env::args().collect();
 
@@ -54,9 +60,11 @@ fn main() {
     command_line_arguments.push(utils::find_sysroot());
 
     let result = rustc_driver::report_ices_to_stderr_if_any(move || {
+        let callbacks = &mut callbacks::MiraiCallbacks::default();
+        callbacks.set_analyze_single_func(analyze_single_func);
         rustc_driver::run_compiler(
             &command_line_arguments,
-            &mut callbacks::MiraiCallbacks::default(),
+            callbacks,
             None, // use default file loader
             None, // emit output to default destination
         )
