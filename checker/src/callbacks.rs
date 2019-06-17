@@ -29,6 +29,8 @@ pub struct MiraiCallbacks {
     output_directory: PathBuf,
     /// True if this run is done via cargo test
     test_run: bool,
+    /// If a function name is given, only analyze that function
+    analyze_single_func: Option<String>,
 }
 
 /// Constructors
@@ -38,6 +40,7 @@ impl MiraiCallbacks {
             file_name: String::new(),
             output_directory: PathBuf::default(),
             test_run: false,
+            analyze_single_func: None,
         }
     }
 
@@ -46,6 +49,7 @@ impl MiraiCallbacks {
             file_name: String::new(),
             output_directory: PathBuf::default(),
             test_run: true,
+            analyze_single_func: None,
         }
     }
 }
@@ -96,6 +100,11 @@ struct DefSets {
 }
 
 impl MiraiCallbacks {
+    /// Set MIRAI to analyze just a single function
+    pub fn set_analyze_single_func(&mut self, fname: Option<String>) {
+        self.analyze_single_func = fname;
+    }
+
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     fn analyze_with_mirai<'a, 'tcx: 'a>(
         &mut self,
@@ -127,6 +136,7 @@ impl MiraiCallbacks {
                 &mut def_sets,
                 &mut diagnostics_for,
                 iteration_count,
+                &self.analyze_single_func,
             );
             if def_sets.defs_to_reanalyze.is_empty() {
                 info!("done with analysis");
@@ -157,6 +167,7 @@ impl MiraiCallbacks {
         def_sets: &mut DefSets,
         diagnostics_for: &mut HashMap<DefId, Vec<DiagnosticBuilder<'a>>>,
         iteration_count: usize,
+        analyze_single_func: &Option<String>,
     ) {
         for def_id in tcx.body_owners() {
             if def_sets.defs_to_not_reanalyze.contains(&def_id) {
@@ -175,6 +186,14 @@ impl MiraiCallbacks {
                 iteration_count,
                 def_id,
             );
+            if let Some(fname) = analyze_single_func {
+                // If the SINGLE_FUNC=fname option was provided, skip the analysis of all
+                // functions whose names don't match fname.
+                if *fname != name.to_string() {
+                    info!("Skipping analysis of: {}", name.to_string());
+                    continue;
+                }
+            };
             let old_summary_if_changed = {
                 let mut buffered_diagnostics: Vec<DiagnosticBuilder<'_>> = vec![];
                 let (r, analysis_time_in_seconds) = Self::visit_body(
