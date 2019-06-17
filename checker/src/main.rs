@@ -61,7 +61,7 @@ fn main() {
 
     let result = rustc_driver::report_ices_to_stderr_if_any(move || {
         let callbacks = &mut callbacks::MiraiCallbacks::default();
-        callbacks.set_analyze_single_func(analyze_single_func);
+        callbacks.analyze_single_func = analyze_single_func;
         rustc_driver::run_compiler(
             &command_line_arguments,
             callbacks,
