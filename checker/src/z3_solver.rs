@@ -1081,7 +1081,7 @@ impl Z3Solver {
                 result_type,
             } => self.bv_shr_by(num_bits, left, right, result_type),
             Expression::Top | Expression::Bottom => self.bv_fresh_const(num_bits),
-            Expression::Variable { path, var_type } => self.bv_variable(path, var_type),
+            Expression::Variable { path, var_type } => self.bv_variable(path, var_type, num_bits),
             Expression::Widen { path, operand } => self.bv_widen(path, operand),
             _ => self.get_as_z3_ast(expression),
         }
@@ -1251,18 +1251,25 @@ impl Z3Solver {
         }
     }
 
-    fn bv_variable(&self, path: &Rc<Path>, var_type: &ExpressionType) -> z3_sys::Z3_ast {
+    fn bv_variable(
+        &self,
+        path: &Rc<Path>,
+        var_type: &ExpressionType,
+        num_bits: u32,
+    ) -> z3_sys::Z3_ast {
         use self::ExpressionType::*;
         let path_str = CString::new(format!("{:?}", path)).unwrap();
         unsafe {
             let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
-            let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, u32::from(var_type.bit_length()));
             match var_type {
                 Bool | Char | I8 | I16 | I32 | I64 | I128 | Isize | U8 | U16 | U32 | U64 | U128
-                | Usize | Reference => z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort),
+                | Usize | Reference => {
+                    let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                    z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
+                }
                 F32 => z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.f32_sort),
                 F64 => z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.f64_sort),
-                NonPrimitive => z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort),
+                NonPrimitive => self.bv_fresh_const(num_bits),
             }
         }
     }
