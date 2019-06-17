@@ -509,7 +509,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             let mut i_state = p_state.clone();
             i_state.entry_condition = pred_exit_condition.unwrap().clone();
             for (p_state, pred_exit_condition) in predecessor_states_and_conditions.iter().skip(1) {
-                let join_condition = pred_exit_condition.unwrap();
+                let mut path_condition = pred_exit_condition.unwrap().clone();
+                if path_condition.as_bool_if_known().unwrap_or(false) {
+                    // A true path condition tells us nothing. If we are already widening,
+                    // then replace the true condition with equalities from the corresponding
+                    // environment.
+                    path_condition =
+                        path_condition.add_equalities_for_widened_vars(p_state, &i_state);
+                }
                 // Once all paths have already been analyzed for a second time (iteration_count == 2)
                 // all blocks not involved in loops will have their final values.
                 // If there are no loops, the next iteration will be a no-op, but since we
@@ -517,15 +524,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 // joining. Once we get to iteration_count == 4, we start widening in
                 // order to converge on a fixed point.
                 let mut j_state = if iteration_count < 4 {
-                    p_state.join(&i_state, join_condition)
+                    p_state.join(&i_state, &path_condition)
                 } else {
-                    p_state.widen(&i_state, join_condition)
+                    p_state.widen(&i_state, &path_condition)
                 };
-                let or = join_condition.or(i_state.entry_condition.clone());
-                if or.expression_size > k_limits::MAX_EXPRESSION_SIZE {
+                let joined_condition = path_condition.or(i_state.entry_condition.clone());
+                if joined_condition.expression_size > k_limits::MAX_EXPRESSION_SIZE {
                     j_state.entry_condition = Rc::new(abstract_value::TRUE);
                 } else {
-                    j_state.entry_condition = or;
+                    j_state.entry_condition = joined_condition;
                 }
                 i_state = j_state;
             }

@@ -4,7 +4,9 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that calls Z3Solver::bv_variable with an explicit bit length different from the var type
+// A test that calls Z3Solver::bv_variable with an explicit bit length different from the var type.
+// Additionally this also tests that the path condition includes equalities for loop controlled
+// variables that are not explicitly included in the loop condition.
 
 pub fn read_uleb128_as_u32(bytes: [u8; 20]) -> u32 {
     let mut value: u32 = 0;
@@ -13,7 +15,7 @@ pub fn read_uleb128_as_u32(bytes: [u8; 20]) -> u32 {
     while cursor < bytes.len() {
         let byte = bytes[cursor];
         let val = byte & 0x7f;
-        value |= (val as u32) << shift; //~ possible attempt to shift left with overflow
+        value |= (val as u32) << shift;
         if val == byte {
             return value;
         }
