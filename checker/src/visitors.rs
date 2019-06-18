@@ -31,9 +31,9 @@ use std::time::Instant;
 use syntax::errors::DiagnosticBuilder;
 use syntax_pos;
 
-pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b, E> {
+pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx, E> {
     pub session: &'b Session,
-    pub tcx: &'b TyCtxt<'b, 'tcx, 'tcx>,
+    pub tcx: &'b TyCtxt<'tcx>,
     pub def_id: hir::def_id::DefId,
     pub mir: &'a mir::Body<'tcx>,
     pub constant_value_cache: &'a mut ConstantValueCache<'tcx>,
@@ -43,9 +43,9 @@ pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx: 'b, E> {
 }
 
 /// Holds the state for the MIR test visitor.
-pub struct MirVisitor<'a, 'b: 'a, 'tcx: 'b, E> {
+pub struct MirVisitor<'a, 'b: 'a, 'tcx, E> {
     session: &'b Session,
-    tcx: &'b TyCtxt<'b, 'tcx, 'tcx>,
+    tcx: &'b TyCtxt<'tcx>,
     def_id: hir::def_id::DefId,
     mir: &'a mir::Body<'tcx>,
     constant_value_cache: &'a mut ConstantValueCache<'tcx>,
