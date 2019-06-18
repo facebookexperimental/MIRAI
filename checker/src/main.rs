@@ -38,10 +38,11 @@ fn main() {
     }
 
     // Configure the analysis to just run on a single function if set
-    let mut analyze_single_func: Option<String> = None;
-    if env::var("SINGLE_FUNC").is_ok() {
-        analyze_single_func = env::var("SINGLE_FUNC").ok();
-    }
+    let analyze_single_func = if env::var("SINGLE_FUNC").is_ok() {
+        env::var("SINGLE_FUNC").ok()
+    } else {
+        None
+    };
 
     // Get command line arguments from environment and massage them a bit.
     let mut command_line_arguments: Vec<_> = env::args().collect();
