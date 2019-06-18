@@ -109,11 +109,7 @@ struct AnalysisInfo<'a, 'tcx: 'a> {
 
 impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
-    fn analyze_with_mirai<'a, 'tcx: 'a>(
-        &mut self,
-        compiler: &interface::Compiler,
-        tcx: &'a TyCtxt<'a, 'tcx, 'tcx>,
-    ) {
+    fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: &TyCtxt<'_>) {
         self.output_directory.set_file_name(".summary_store");
         self.output_directory.set_extension("sled");
         let summary_store_path = String::from(self.output_directory.to_str().unwrap());
@@ -162,9 +158,9 @@ impl MiraiCallbacks {
     /// If a summary has changed from the previous iteration (i.e. not reached a fixed point), add
     /// the def_id of the function, as well as the def_id of any function that calls the function,
     /// to def_sets.defs_to_reanalyze.
-    fn analyze_bodies<'a, 'tcx: 'a>(
+    fn analyze_bodies<'a, 'tcx>(
         compiler: &'a interface::Compiler,
-        tcx: &'a TyCtxt<'a, 'tcx, 'tcx>,
+        tcx: &'a TyCtxt<'tcx>,
         analysis_info: &mut AnalysisInfo<'a, 'tcx>,
         iteration_count: usize,
     ) {
@@ -241,8 +237,8 @@ impl MiraiCallbacks {
 
     /// Add def_id (and its dependents) to defs_to_reanalyze if the old summary differs from the
     /// newly produced summary.
-    fn select_defs_to_reanalyze<'a, 'tcx: 'a>(
-        persistent_summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
+    fn select_defs_to_reanalyze(
+        persistent_summary_cache: &mut PersistentSummaryCache<'_, '_>,
         defs_to_reanalyze: &mut HashSet<DefId>,
         def_id: DefId,
         old_summary_if_changed: Option<Summary>,
@@ -257,8 +253,8 @@ impl MiraiCallbacks {
     }
 
     /// Logs the summary key of the function that is about to be analyzed.
-    fn get_and_log_name<'a, 'tcx: 'a>(
-        persistent_summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
+    fn get_and_log_name(
+        persistent_summary_cache: &mut PersistentSummaryCache<'_, '_>,
         iteration_count: usize,
         def_id: DefId,
     ) -> Rc<String> {
@@ -298,11 +294,11 @@ impl MiraiCallbacks {
 
     /// Run the abstract interpreter over the function body and produce a summary of its effects
     /// and collect any diagnostics into the buffer.
-    fn visit_body<'a, 'b, 'tcx: 'b>(
+    fn visit_body<'a, 'b, 'tcx>(
         def_id: DefId,
         name: &str,
         compiler: &'b interface::Compiler,
-        tcx: &'b TyCtxt<'b, 'tcx, 'tcx>,
+        tcx: &'b TyCtxt<'tcx>,
         mut constant_value_cache: &'a mut ConstantValueCache<'tcx>,
         mut persistent_summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
         mut buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
