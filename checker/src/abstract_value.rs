@@ -59,7 +59,10 @@ impl Hash for AbstractValue {
 
 impl PartialEq for AbstractValue {
     fn eq(&self, other: &Self) -> bool {
-        self.expression.eq(&other.expression)
+        match (&self.expression, &other.expression) {
+            (Expression::Widen { path: p1, .. }, Expression::Widen { path: p2, .. }) => p1.eq(p2),
+            (e1, e2) => e1.eq(e2),
+        }
     }
 }
 
