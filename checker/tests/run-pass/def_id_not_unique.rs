@@ -26,11 +26,11 @@ pub fn foo<T: Foo>(bar: &T) {
 pub mod foreign_contracts {
     pub mod def_id_not_unique {
         pub trait Foo {
-            fn one__ref_T_i32(&self, _t: i32) -> i32 {
+            fn one__T_i32(&self, _t: i32) -> i32 {
                 2
             }
 
-            fn one__ref_T_i64(_t: i64) -> i64 {
+            fn one__T_i64(_t: i64) -> i64 {
                 3
             }
         }

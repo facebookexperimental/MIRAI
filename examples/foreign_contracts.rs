@@ -15,7 +15,7 @@ pub mod core {
         }
 
         pub trait PartialOrd<Rhs: ?Sized = Self> {
-            fn lt__ref_ref_i32_ref_ref_i32(x: &i32, y: &i32) -> bool {
+            fn lt__ref_i32_ref_i32(x: &i32, y: &i32) -> bool {
                 (*x) < (*y)
             }
         }
@@ -29,7 +29,7 @@ pub mod core {
 
     pub mod default {
         pub trait Default {
-            fn default_() {
+            fn default__T() {
                 result!()
             }
         }
@@ -146,7 +146,7 @@ pub mod core {
                     // accept non-PartialOrd types, also we want the constructor to be const.
                 }
 
-                pub fn new__usize_usize(start: usize, end: usize) -> RangeInclusive_usize {
+                pub fn new__usize(start: usize, end: usize) -> RangeInclusive_usize {
                     RangeInclusive_usize {
                         start,
                         end,
@@ -165,9 +165,15 @@ pub mod core {
 
         pub mod deref {
             pub trait Deref {
-                fn deref__ref_alloc_vec_Vec_i32(vec: &Vec<i32>) -> &[i32] {
+                fn deref__alloc_vec_Vec_i32(vec: &Vec<i32>) -> &[i32] {
                     let old_len = vec.len();
                     let res: &[i32] = result!();
+                    assume!(res.len() == old_len);
+                    res
+                }
+                fn deref__alloc_vec_Vec_u32(vec: &Vec<u32>) -> &[u32] {
+                    let old_len = vec.len();
+                    let res: &[u32] = result!();
                     assume!(res.len() == old_len);
                     res
                 }
@@ -227,7 +233,7 @@ pub mod core {
                         Enumerator_slice { iterator: iter }
                     }
 
-                    fn next__ref_mut_core_iter_adapters_Enumerate_core_slice_Iter_bool(
+                    fn next__core_iter_adapters_Enumerate_core_slice_Iter_bool(
                         mut slice: &mut Enumerator_slice<bool>,
                     ) -> Option<(usize, bool)> {
                         let i = slice.iterator.index;
@@ -240,7 +246,7 @@ pub mod core {
                         }
                     }
 
-                    fn next__ref_mut_core_ops_range_Range_usize(
+                    fn next__core_ops_range_Range_usize(
                         mut range: &mut Range_usize,
                     ) -> Option<usize> {
                         if range.start < range.end {
@@ -252,7 +258,7 @@ pub mod core {
                         }
                     }
 
-                    fn next__ref_mut_core_ops_range_RangeInclusive_usize(
+                    fn next__core_ops_range_RangeInclusive_usize(
                         mut range: &mut RangeInclusive_usize,
                     ) -> Option<usize> {
                         compute_is_empty__usize(&mut range);
@@ -270,7 +276,7 @@ pub mod core {
                         })
                     }
 
-                    fn next_back__ref_mut_core_ops_range_Range_usize(
+                    fn next_back__core_ops_range_Range_usize(
                         range: &mut Range_usize,
                     ) -> Option<usize> {
                         if range.start < range.end {
@@ -281,10 +287,10 @@ pub mod core {
                         }
                     }
 
-                    fn next__ref_mut_core_iter_adapters_Rev_core_ops_range_Range_usize(
+                    fn next__core_iter_adapters_Rev_core_ops_range_Range_usize(
                         rev: &mut Rev__Range_usize,
                     ) -> Option<usize> {
-                        Self::next_back__ref_mut_core_ops_range_Range_usize(&mut rev.range)
+                        Self::next_back__core_ops_range_Range_usize(&mut rev.range)
                     }
 
                     fn rev__core_ops_range_Range_usize(range: Range_usize) -> Rev__Range_usize {
@@ -312,18 +318,18 @@ pub mod core {
         pub mod implement {
 
             use crate::foreign_contracts::core::slice::Iter;
-            pub fn iter__ref_slice_bool(collection: &[bool]) -> Iter<bool> {
+            pub fn iter__slice_bool(collection: &[bool]) -> Iter<bool> {
                 Iter {
                     collection,
                     index: 0,
                 }
             }
 
-            pub fn len__ref_slice_bool(collection: &[bool]) -> usize {
+            pub fn len__slice_bool(collection: &[bool]) -> usize {
                 collection.len()
             }
 
-            pub fn get__ref_slice_i32_usize(collection: &[i32], index: usize) -> Option<&i32> {
+            pub fn get__u32_usize(collection: &[u32], index: usize) -> Option<&u32> {
                 if index >= collection.len() {
                     None
                 } else {

@@ -9,6 +9,7 @@ use crate::summaries::PersistentSummaryCache;
 use crate::utils;
 
 use rustc::hir::def_id::DefId;
+use rustc::ty::subst::SubstsRef;
 use rustc::ty::{Ty, TyCtxt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -90,12 +91,12 @@ impl ConstantDomain {
     pub fn for_function<'a, 'tcx>(
         function_id: usize,
         def_id: DefId,
-        ty: Ty<'tcx>,
+        generic_args: SubstsRef<'tcx>,
         tcx: &'a TyCtxt<'tcx>,
         summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
     ) -> ConstantDomain {
         let summary_cache_key = summary_cache.get_summary_key_for(def_id).to_owned();
-        let argument_type_key = utils::argument_types_key_str(tcx, ty);
+        let argument_type_key = utils::argument_types_key_str(tcx, generic_args);
         let known_name = match summary_cache_key.as_str() {
             "core.slice.implement.len" => KnownFunctionNames::CoreSliceLen,
             "mirai_annotations.mirai_assume" => KnownFunctionNames::MiraiAssume,
@@ -758,12 +759,13 @@ impl<'tcx> ConstantValueCache<'tcx> {
         &mut self,
         def_id: DefId,
         ty: Ty<'tcx>,
+        generic_args: SubstsRef<'tcx>,
         tcx: &'a TyCtxt<'tcx>,
         summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
     ) -> &ConstantDomain {
         let function_id = self.function_cache.len();
         self.function_cache.entry((def_id, ty)).or_insert_with(|| {
-            ConstantDomain::for_function(function_id, def_id, ty, tcx, summary_cache)
+            ConstantDomain::for_function(function_id, def_id, generic_args, tcx, summary_cache)
         })
     }
 }

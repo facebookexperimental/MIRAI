@@ -78,7 +78,7 @@ pub mod foreign_contracts {
                         // accept non-PartialOrd types, also we want the constructor to be const.
                     }
 
-                    pub fn new__usize_usize(start: usize, end: usize) -> RangeInclusive_usize {
+                    pub fn new__usize(start: usize, end: usize) -> RangeInclusive_usize {
                         RangeInclusive_usize {
                             start,
                             end,
@@ -116,7 +116,7 @@ pub mod foreign_contracts {
                     };
 
                     pub trait Iterator {
-                        fn next__ref_mut_core_ops_range_RangeInclusive_usize(
+                        fn next__core_ops_range_RangeInclusive_usize(
                             mut range: &mut RangeInclusive_usize,
                         ) -> Option<usize> {
                             compute_is_empty__usize(&mut range);

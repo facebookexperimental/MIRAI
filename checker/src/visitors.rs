@@ -19,6 +19,7 @@ use crate::utils::{self, is_public};
 
 use mirai_annotations::{assume, checked_assume, checked_assume_eq, precondition, verify};
 use rustc::session::Session;
+use rustc::ty::subst::SubstsRef;
 use rustc::ty::{Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use rustc_data_structures::graph::dominators::Dominators;
@@ -2450,8 +2451,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             _ => unreachable!(),
                         };
                     }
-                    TyKind::FnDef(def_id, ..) => {
-                        result = self.visit_function_reference(def_id, ty);
+                    TyKind::FnDef(def_id, generic_args) => {
+                        result = self.visit_function_reference(def_id, ty, generic_args);
                     }
                     TyKind::Int(..) => {
                         result = match literal {
@@ -2698,10 +2699,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         &mut self,
         def_id: hir::def_id::DefId,
         ty: Ty<'tcx>,
+        generic_args: SubstsRef<'tcx>,
     ) -> &ConstantDomain {
         &mut self.constant_value_cache.get_function_constant_for(
             def_id,
             ty,
+            generic_args,
             self.tcx,
             &mut self.summary_cache,
         )
