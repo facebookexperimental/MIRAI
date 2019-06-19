@@ -9,6 +9,9 @@
 /// The maximum number of seconds that MIRAI is willing to analyze a function body for.
 pub const MAX_ANALYSIS_TIME_FOR_BODY: u64 = 3;
 
+/// The maximum number of elements in a byte array that will be individually tracked.
+pub const MAX_BYTE_ARRAY_LENGTH: u128 = 10;
+
 /// Helps to limit the size of summaries.
 pub const MAX_INFERRED_PRECONDITIONS: usize = 50;
 

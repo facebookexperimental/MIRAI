@@ -249,21 +249,55 @@ pub struct PersistentSummaryCache<'a, 'tcx> {
 }
 
 impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
-    /// Creates a new persistent summary cache, using (or creating) a Rocks data base at the given
-    /// file path.
+    /// Creates a new persistent summary cache, using (or creating) a Sled data base at the given
+    /// directory path.
     pub fn new(
         type_context: &'a TyCtxt<'tcx>,
-        summary_store_path: String,
+        summary_store_directory_str: String,
     ) -> PersistentSummaryCache<'a, 'tcx> {
+        let summary_store_path =
+            Self::create_default_summary_store_if_needed(&summary_store_directory_str);
+        let db = Db::start_default(summary_store_path)
+            .unwrap_or_else(|err| unreachable!(format!("{} ", err)));
         PersistentSummaryCache {
-            db: Db::start_default(summary_store_path)
-                .unwrap_or_else(|err| unreachable!(format!("{} ", err))),
+            db,
             cache: HashMap::new(),
             typed_cache: HashMap::new(),
             key_cache: HashMap::new(),
             dependencies: HashMap::new(),
             type_context,
         }
+    }
+
+    /// Creates a Sled database at the given directory path, if it does not already exist.
+    /// The initial value of the database contains summaries of standard library functions.
+    /// The code used to create these summaries are mirai/standard_contracts.
+    fn create_default_summary_store_if_needed(
+        summary_store_directory_str: &str,
+    ) -> std::path::PathBuf {
+        use std::env;
+        use std::fs::File;
+        use std::io::Write;
+        use std::path::Path;
+        use tar::Archive;
+
+        let directory_path = Path::new(summary_store_directory_str);
+        let store_path = directory_path.join(".summary_store.sled");
+        if !store_path.exists() && env::var("MIRAI_START_FRESH").is_err() {
+            let tar_path = directory_path.join(".summary_store.tar");
+            if !tar_path.exists() {
+                if let Ok(mut f) = File::create(tar_path.clone()) {
+                    debug!("creating a non default new summary store");
+                    {
+                        let bytes = include_bytes!("../../binaries/summary_store.tar");
+                        f.write_all(bytes).unwrap();
+                    }
+                    let mut ar = Archive::new(File::open(tar_path).unwrap());
+                    ar.unpack(directory_path).unwrap();
+                }
+            }
+        };
+        store_path
     }
 
     /// Any summaries that are still in a default state will be for functions in the foreign_contracts

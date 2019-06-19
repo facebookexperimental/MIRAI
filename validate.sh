@@ -16,9 +16,10 @@ cargo clippy -- -D warnings
 # Build
 cd checker; cargo rustc --lib -- -D rust-2018-idioms
 cd ..; cargo build
-# Run mirai on itself
+# Install MIRAI into cargo
 cargo uninstall mirai || true
 cargo install --path ./checker
-cargo clean -p mirai
-rm -rf target/debug/.summary_store.sled
-RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn cargo check --lib -p mirai
+# Run mirai on itself
+rm -rf target/debug/deps/.summary_store.sled
+touch checker/src/lib.rs
+RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_START_FRESH=true MIRAI_LOG=warn cargo check --lib -p mirai

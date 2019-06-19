@@ -2597,6 +2597,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         len: Option<u128>,
     ) -> Rc<AbstractValue> {
         let array_value = self.get_new_heap_address();
+        if let Some(byte_len) = len {
+            if byte_len > k_limits::MAX_BYTE_ARRAY_LENGTH {
+                return array_value;
+            }
+        }
         let ordinal = if let Expression::AbstractHeapAddress(ordinal) = array_value.expression {
             ordinal
         } else {
