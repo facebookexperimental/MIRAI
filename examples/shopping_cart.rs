@@ -1,9 +1,5 @@
-#![feature(type_alias_enum_variants)]
-
 #[macro_use]
 extern crate mirai_annotations;
-
-pub mod foreign_contracts;
 
 struct Cart {
     /// We model a shopping cart as Vector of items.

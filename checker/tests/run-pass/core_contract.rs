@@ -4,39 +4,11 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that uses a contract defined locally for an imported (core) function.
-#![feature(type_alias_enum_variants)]
-
-#[macro_use]
-extern crate mirai_annotations;
+// A test that uses a contract defined for a core function.
 
 pub fn main() {
     let x: Option<i64> = Some(1);
     let _y = x.unwrap();
     let z: Option<i64> = None;
-    let _ = z.unwrap(); //~ unsatisfied precondition: self may not be None, defined in tests/run-pass/core_contract.rs:30:21: 36:23
-}
-
-pub mod foreign_contracts {
-    pub mod core {
-        pub mod option {
-            pub enum Option<T> {
-                None,
-                Some(T),
-            }
-
-            impl<T> Option<T> {
-                pub fn unwrap(self) -> T {
-                    precondition!(
-                        match self {
-                            Self::None => false,
-                            _ => true,
-                        },
-                        "self may not be None"
-                    );
-                    result!()
-                }
-            }
-        }
-    }
+    let _ = z.unwrap(); //~ unsatisfied precondition: self may not be None, defined in standard_contracts/src/foreign_contracts.rs:114:17: 114:71
 }

@@ -13,11 +13,3 @@ extern crate mirai_annotations;
 pub fn main() {
     verify!(std::u64::MAX == 9223372036854775807);
 }
-
-pub mod foreign_contracts {
-    pub mod core {
-        pub mod u64 {
-            pub const MAX: u64 = 9223372036854775807;
-        }
-    }
-}

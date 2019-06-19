@@ -66,9 +66,10 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
         self.file_name = config.input.source_name().to_string();
         info!("Processing input file: {}", self.file_name);
         match &config.output_dir {
-            None => self
-                .output_directory
-                .push(std::env::temp_dir().to_str().unwrap()),
+            None => {
+                self.output_directory = std::env::temp_dir();
+                self.output_directory.pop();
+            }
             Some(path_buf) => self.output_directory.push(path_buf.as_path()),
         };
     }
@@ -110,11 +111,9 @@ struct AnalysisInfo<'a, 'tcx> {
 impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: &TyCtxt<'_>) {
-        self.output_directory.set_file_name(".summary_store");
-        self.output_directory.set_extension("sled");
         let summary_store_path = String::from(self.output_directory.to_str().unwrap());
         info!(
-            "storing summaries for {} at {}",
+            "storing summaries for {} at {}/.summary_store.sled",
             self.file_name, summary_store_path
         );
         let persistent_summary_cache = PersistentSummaryCache::new(tcx, summary_store_path);

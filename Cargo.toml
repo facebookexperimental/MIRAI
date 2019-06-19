@@ -3,6 +3,7 @@
 members = [
     "annotations",
     "checker",
+    "standard_contracts"
 ]
 
 [profile.release]

@@ -26,6 +26,7 @@ log = "*"
 mirai-annotations = { path = "../annotations" }
 rpds = { version = "*", features = ["serde"] }
 serde = {version = "*", features = ["derive", "alloc", "rc"] }
+tar = "*"
 sled = "*"
 tempdir = "*"
 z3-sys = "*"
