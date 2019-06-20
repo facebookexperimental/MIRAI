@@ -7,7 +7,7 @@ use log::debug;
 use rustc::hir::def_id::DefId;
 use rustc::hir::ItemKind;
 use rustc::hir::Node;
-use rustc::ty::subst::UnpackedKind;
+use rustc::ty::subst::{SubstsRef, UnpackedKind};
 use rustc::ty::{Ty, TyCtxt, TyKind};
 use std::rc::Rc;
 
@@ -61,14 +61,15 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_>) -> bool {
 }
 
 /// Returns a string that is a valid identifier, made up from the concatenation of
-/// the string representations of the given list of argument types.
-pub fn argument_types_key_str<'tcx>(tcx: &TyCtxt<'tcx>, ty: Ty<'tcx>) -> Rc<String> {
+/// the string representations of the given list of generic argument types.
+pub fn argument_types_key_str<'tcx>(
+    tcx: &TyCtxt<'tcx>,
+    generic_args: SubstsRef<'tcx>,
+) -> Rc<String> {
     let mut result = "_".to_string();
-    let bound_sig = ty.fn_sig(*tcx);
-    let sig = bound_sig.skip_binder();
-    for arg_ty in sig.inputs().iter() {
+    for generic_ty_arg in generic_args.types() {
         result.push('_');
-        append_mangled_type(&mut result, arg_ty, tcx);
+        append_mangled_type(&mut result, generic_ty_arg, tcx);
     }
     Rc::new(result)
 }
