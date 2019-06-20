@@ -129,7 +129,7 @@ pub fn summarize(
     post_conditions: &[Rc<AbstractValue>],
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: &Environment,
-    tcx: TyCtxt<'_, '_, '_>,
+    tcx: TyCtxt<'_>,
 ) -> Summary {
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
     let result = exit_environment.value_at(&Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into()));
@@ -156,7 +156,7 @@ pub fn summarize(
 /// When a precondition is being serialized into a summary, it needs a provenance that is not
 /// specific to the current (crate) compilation, since the summary may be used to compile a different
 /// crate, or a different version of the current crate.
-fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_, '_, '_>) -> Vec<Precondition> {
+fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precondition> {
     let mut result = vec![];
     for precondition in preconditions.iter() {
         let mut precond = precondition.clone();
@@ -239,20 +239,20 @@ fn extract_reachable_heap_allocations(
 /// A persistent map from summary key to Summary, along with a transient cache from DefId to
 /// Summary. The latter is cleared after every outer fixed point loop iteration.
 /// Also tracks which definitions depend on (use) any particular Summary.
-pub struct PersistentSummaryCache<'a, 'tcx: 'a> {
+pub struct PersistentSummaryCache<'a, 'tcx> {
     db: Db,
     cache: HashMap<DefId, Summary>,
     typed_cache: HashMap<usize, Summary>,
     dependencies: HashMap<DefId, Vec<DefId>>,
     key_cache: HashMap<DefId, Rc<String>>,
-    type_context: &'a TyCtxt<'a, 'tcx, 'tcx>,
+    type_context: &'a TyCtxt<'tcx>,
 }
 
 impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// Creates a new persistent summary cache, using (or creating) a Rocks data base at the given
     /// file path.
     pub fn new(
-        type_context: &'a TyCtxt<'a, 'tcx, 'tcx>,
+        type_context: &'a TyCtxt<'tcx>,
         summary_store_path: String,
     ) -> PersistentSummaryCache<'a, 'tcx> {
         PersistentSummaryCache {

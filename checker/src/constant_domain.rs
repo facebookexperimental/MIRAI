@@ -91,7 +91,7 @@ impl ConstantDomain {
         function_id: usize,
         def_id: DefId,
         ty: Ty<'tcx>,
-        tcx: &'a TyCtxt<'a, 'tcx, 'tcx>,
+        tcx: &'a TyCtxt<'tcx>,
         summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
     ) -> ConstantDomain {
         let summary_cache_key = summary_cache.get_summary_key_for(def_id).to_owned();
@@ -758,7 +758,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
         &mut self,
         def_id: DefId,
         ty: Ty<'tcx>,
-        tcx: &'a TyCtxt<'a, 'tcx, 'tcx>,
+        tcx: &'a TyCtxt<'tcx>,
         summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
     ) -> &ConstantDomain {
         let function_id = self.function_cache.len();
