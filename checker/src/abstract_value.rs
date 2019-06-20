@@ -174,6 +174,11 @@ impl AbstractValue {
 
 pub trait AbstractValueTrait: Sized {
     fn addition(&self, other: Self) -> Self;
+    fn add_equalities_for_widened_vars(
+        &self,
+        self_env: &Environment,
+        widened_env: &Environment,
+    ) -> Self;
     fn add_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn and(&self, other: Self) -> Self;
     fn as_bool_if_known(&self) -> Option<bool>;
@@ -241,6 +246,41 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         self.try_to_simplify_binary_op(other, ConstantDomain::add, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Add { left, right })
         })
+    }
+
+    /// Returns an expression that is self && equalities where the latter term is constructed
+    /// from the values of the self_env for keys that are in the widened_env and have values
+    /// that have been widened. This prevents a true self condition from collapsing the path
+    /// condition at a join point.
+    fn add_equalities_for_widened_vars(
+        &self,
+        self_env: &Environment,
+        widened_env: &Environment,
+    ) -> Rc<AbstractValue> {
+        let mut result = self.clone();
+        for (key, val) in widened_env.value_map.iter() {
+            if let Expression::Widen { .. } = val.expression {
+                if let Some(self_val) = self_env.value_map.get(key) {
+                    if let Expression::Widen { .. } = self_val.expression {
+                        continue;
+                    };
+                    let var_type = self_val.expression.infer_type();
+                    let variable = AbstractValue::make_from(
+                        Expression::Variable {
+                            path: key.clone(),
+                            var_type,
+                        },
+                        1,
+                    );
+                    let equality =
+                        AbstractValue::make_binary(variable, self_val.clone(), |left, right| {
+                            Expression::Equals { left, right }
+                        });
+                    result = result.and(equality);
+                }
+            }
+        }
+        result
     }
 
     /// Returns an element that is true if "self + other" is not in range of target_type.

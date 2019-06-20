@@ -11,7 +11,7 @@ use crate::expression::{Expression, ExpressionType};
 use crate::smt_solver::SmtResult;
 use crate::smt_solver::SmtSolver;
 
-use crate::path::Path;
+use crate::path::{Path, PathEnum};
 use lazy_static::lazy_static;
 use log::debug;
 use mirai_annotations::{checked_assume, checked_assume_eq};
@@ -161,6 +161,10 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
 impl Z3Solver {
     fn get_as_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
+            Expression::AbstractHeapAddress(ordinal) => {
+                let path = Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+                self.general_variable(&path, &expression.infer_type())
+            }
             Expression::Add { .. }
             | Expression::AddOverflows { .. }
             | Expression::Div { .. }
@@ -544,6 +548,10 @@ impl Z3Solver {
 
     fn get_as_numeric_z3_ast(&self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
         match expression {
+            Expression::AbstractHeapAddress(ordinal) => {
+                let path = Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+                self.numeric_variable(expression, &path, &expression.infer_type())
+            }
             Expression::Add { left, right } => {
                 self.numeric_binary_var_arg(left, right, z3_sys::Z3_mk_fpa_add, z3_sys::Z3_mk_add)
             }
@@ -995,6 +1003,10 @@ impl Z3Solver {
 
     fn get_as_bv_z3_ast(&self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
         match expression {
+            Expression::AbstractHeapAddress(ordinal) => {
+                let path = Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+                self.bv_variable(&path, &expression.infer_type(), num_bits)
+            }
             Expression::Add { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvadd)
             }
