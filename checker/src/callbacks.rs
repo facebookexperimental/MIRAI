@@ -99,7 +99,7 @@ struct DefSets {
     defs_to_not_reanalyze: HashSet<DefId>,
 }
 
-struct AnalysisInfo<'a, 'tcx: 'a> {
+struct AnalysisInfo<'a, 'tcx> {
     persistent_summary_cache: PersistentSummaryCache<'a, 'tcx>,
     constant_value_cache: ConstantValueCache<'tcx>,
     def_sets: DefSets,
