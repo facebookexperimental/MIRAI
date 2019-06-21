@@ -32,7 +32,7 @@ use std::time::Instant;
 use syntax::errors::DiagnosticBuilder;
 use syntax_pos;
 
-pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx, E> {
+pub struct MirVisitorCrateContext<'a, 'b, 'tcx, E> {
     pub session: &'b Session,
     pub tcx: &'b TyCtxt<'tcx>,
     pub def_id: hir::def_id::DefId,
@@ -44,7 +44,7 @@ pub struct MirVisitorCrateContext<'a, 'b: 'a, 'tcx, E> {
 }
 
 /// Holds the state for the MIR test visitor.
-pub struct MirVisitor<'a, 'b: 'a, 'tcx, E> {
+pub struct MirVisitor<'a, 'b, 'tcx, E> {
     session: &'b Session,
     tcx: &'b TyCtxt<'tcx>,
     def_id: hir::def_id::DefId,
@@ -2514,7 +2514,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                                         Some(len),
                                     );
                                 }
-                                mir::interpret::ConstValue::ByRef(_, alloc) => {
+                                mir::interpret::ConstValue::ByRef(_, _, alloc) => {
                                     return self.deconstruct_constant_array(
                                         &alloc.bytes,
                                         e_type,
@@ -2553,7 +2553,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             let e_type = ExpressionType::from(&elem_type.sty);
                             return self.deconstruct_constant_array(slice, e_type, None);
                         }
-                        mir::interpret::ConstValue::ByRef(_, alloc) => {
+                        mir::interpret::ConstValue::ByRef(_, _, alloc) => {
                             let e_type = ExpressionType::from(&elem_type.sty);
                             return self.deconstruct_constant_array(&alloc.bytes, e_type, None);
                         }

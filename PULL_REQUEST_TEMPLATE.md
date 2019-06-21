@@ -11,6 +11,7 @@ Fixes # (issue)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] API change with a documentation update
 - [ ] Additional test coverage
+- [ ] Code cleanup or just keeping up with the latest Rustc nightly
 
 ## How Has This Been Tested?
 
