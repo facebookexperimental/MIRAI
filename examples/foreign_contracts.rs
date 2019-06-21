@@ -342,6 +342,16 @@ pub mod core {
     pub mod usize {
         pub const MAX: usize = 4294967295;
     }
+
+    pub mod u64 {
+        pub const MAX: u64 = 9223372036854775807;
+    }
+
+    pub mod mem {
+        pub fn size_of__u32() -> usize {
+            4
+        }
+    }
 }
 
 pub mod std {
