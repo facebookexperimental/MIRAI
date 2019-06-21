@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that checks that size_of::<u32>() is mangled correctly.
+// A test that checks that std::u64::MAX is set correctly
 #![allow(non_snake_case)]
 
 #[macro_use]
