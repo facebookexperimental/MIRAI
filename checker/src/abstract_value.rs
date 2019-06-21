@@ -838,6 +838,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Returns an element that is "self || other".
     fn or(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        fn unsimplified(x: &Rc<AbstractValue>, y: Rc<AbstractValue>) -> Rc<AbstractValue> {
+            AbstractValue::make_binary(x.clone(), y, |left, right| Expression::Or { left, right })
+        }
         if self.as_bool_if_known().unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
             Rc::new(TRUE)
         } else if self.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
@@ -845,6 +848,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         } else if other.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
             self.clone()
         } else {
+            // x |\ x = x
+            if self.expression == other.expression {
+                return other;
+            }
+            // (!x || x) = true
+            if let Expression::Not { operand } = &self.expression {
+                if operand.eq(&other) {
+                    return Rc::new(TRUE);
+                }
+            }
             match (&self.expression, &other.expression) {
                 (Expression::Not { ref operand }, _) if (**operand).eq(&other) => Rc::new(TRUE),
                 (_, Expression::Not { ref operand }) if (**operand).eq(&self) => Rc::new(TRUE),
@@ -859,9 +872,33 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         right: y2,
                     },
                 ) if x1 == x2 && y1.logical_not().eq(y2) => x1.clone(),
-                _ => AbstractValue::make_binary(self.clone(), other, |left, right| {
-                    Expression::Or { left, right }
-                }),
+                // (((c ? e : 1) == 1) || ((c ? e : 1) == 0)) = !c || e == 0 || e == 1
+                (
+                    Expression::Equals {
+                        left: l1,
+                        right: r1,
+                    },
+                    Expression::Equals {
+                        left: l2,
+                        right: r2,
+                    },
+                ) if l1 == l2 && r1.expression.is_one() && r2.expression.is_zero() => {
+                    if let Expression::ConditionalExpression {
+                        condition: c,
+                        consequent: e,
+                        alternate: one,
+                    } = &l1.expression
+                    {
+                        if one.expression.is_one() {
+                            let not_c = c.logical_not();
+                            let e_eq_0 = e.equals(Rc::new(ConstantDomain::U128(0).into()));
+                            let e_eq_1 = e.equals(Rc::new(ConstantDomain::U128(1).into()));
+                            return not_c.or(e_eq_0).or(e_eq_1);
+                        }
+                    }
+                    unsimplified(self, other)
+                }
+                _ => unsimplified(self, other),
             }
         }
     }

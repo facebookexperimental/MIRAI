@@ -355,6 +355,26 @@ impl Expression {
         }
     }
 
+    /// Determines if the given expression is the compile time constant 1u128.
+    pub fn is_one(&self) -> bool {
+        if let Expression::CompileTimeConstant(c) = self {
+            if let ConstantDomain::U128(c) = c {
+                return *c == 1u128;
+            }
+        }
+        false
+    }
+
+    /// Determines if the given expression is the compile time constant 0u128.
+    pub fn is_zero(&self) -> bool {
+        if let Expression::CompileTimeConstant(c) = self {
+            if let ConstantDomain::U128(c) = c {
+                return *c == 0u128;
+            }
+        }
+        false
+    }
+
     /// Adds any abstract heap addresses found in the associated expression to the given set.
     pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
         match &self {
