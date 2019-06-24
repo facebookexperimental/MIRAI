@@ -253,14 +253,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if !already_added.insert(root_block) {
             return;
         }
-        let mut added_root = false;
         for pred_bb in self.mir.predecessors_for(root_block).iter() {
             if already_added.contains(pred_bb) {
                 continue;
             };
-            if !added_root && dominators.is_dominated_by(*pred_bb, root_block) {
-                block_indices.push(root_block);
-                added_root = true;
+            if dominators.is_dominated_by(*pred_bb, root_block) {
+                continue;
             }
             self.add_predecessors_then_root_block(
                 *pred_bb,
@@ -269,9 +267,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 already_added,
             );
         }
-        if !added_root {
-            block_indices.push(root_block);
-        }
+        block_indices.push(root_block);
     }
 
     // Perform a topological sort on the basic blocks so that blocks are analyzed after their

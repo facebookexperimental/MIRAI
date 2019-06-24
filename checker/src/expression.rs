@@ -525,6 +525,16 @@ impl ExpressionType {
         }
     }
 
+    /// Returns true if this type is not a primitive type. References are not regarded as
+    /// primitives for this purpose.
+    pub fn is_primitive(&self) -> bool {
+        use self::ExpressionType::*;
+        match self {
+            NonPrimitive | Reference => false,
+            _ => true,
+        }
+    }
+
     /// Returns true if this type is one of the signed integer types.
     pub fn is_signed_integer(&self) -> bool {
         use self::ExpressionType::*;

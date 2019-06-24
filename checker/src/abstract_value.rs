@@ -268,6 +268,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         continue;
                     };
                     let var_type = self_val.expression.infer_type();
+                    if !var_type.is_primitive() {
+                        continue;
+                    }
                     let variable = AbstractValue::make_from(
                         Expression::Variable {
                             path: key.clone(),

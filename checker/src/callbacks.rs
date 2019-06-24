@@ -131,20 +131,24 @@ impl MiraiCallbacks {
             diagnostics_for,
             analyze_single_func: self.analyze_single_func.to_owned(),
         };
-        for iteration_count in 1..=k_limits::MAX_OUTER_FIXPOINT_ITERATIONS {
-            info!("outer fixed point iteration {}", iteration_count);
-            Self::analyze_bodies(compiler, tcx, &mut analysis_info, iteration_count);
-            if analysis_info.def_sets.defs_to_reanalyze.is_empty() {
-                info!("done with analysis");
-                break;
+        if self.analyze_single_func.is_some() {
+            Self::analyze_bodies(compiler, tcx, &mut analysis_info, 1);
+        } else {
+            for iteration_count in 1..=k_limits::MAX_OUTER_FIXPOINT_ITERATIONS {
+                info!("outer fixed point iteration {}", iteration_count);
+                Self::analyze_bodies(compiler, tcx, &mut analysis_info, iteration_count);
+                if analysis_info.def_sets.defs_to_reanalyze.is_empty() {
+                    info!("done with analysis");
+                    break;
+                }
+                let defs_to_reanalyze = analysis_info.def_sets.defs_to_reanalyze;
+                analysis_info.def_sets.defs_to_reanalyze = HashSet::new();
+                analysis_info.def_sets.defs_to_analyze = defs_to_reanalyze;
+                analysis_info
+                    .persistent_summary_cache
+                    .invalidate_default_summaries();
+                info!(" ");
             }
-            let defs_to_reanalyze = analysis_info.def_sets.defs_to_reanalyze;
-            analysis_info.def_sets.defs_to_reanalyze = HashSet::new();
-            analysis_info.def_sets.defs_to_analyze = defs_to_reanalyze;
-            analysis_info
-                .persistent_summary_cache
-                .invalidate_default_summaries();
-            info!(" ");
         }
         self.emit_or_check_diagnostics(&mut analysis_info.diagnostics_for);
     }
@@ -181,6 +185,7 @@ impl MiraiCallbacks {
             }
             let name = MiraiCallbacks::get_and_log_name(
                 &mut analysis_info.persistent_summary_cache,
+                analysis_info.analyze_single_func.is_none(),
                 iteration_count,
                 def_id,
             );
@@ -188,7 +193,6 @@ impl MiraiCallbacks {
                 // If the SINGLE_FUNC=fname option was provided, skip the analysis of all
                 // functions whose names don't match fname.
                 if *fname != name.to_string() {
-                    info!("Skipping analysis of: {}", name.to_string());
                     continue;
                 }
             };
@@ -254,16 +258,19 @@ impl MiraiCallbacks {
     /// Logs the summary key of the function that is about to be analyzed.
     fn get_and_log_name(
         persistent_summary_cache: &mut PersistentSummaryCache<'_, '_>,
+        log_it: bool,
         iteration_count: usize,
         def_id: DefId,
     ) -> Rc<String> {
         let name: Rc<String>;
         {
             name = persistent_summary_cache.get_summary_key_for(def_id).clone();
-            if iteration_count == 1 {
-                info!("analyzing({:?})", name);
-            } else {
-                info!("reanalyzing({:?})", name);
+            if log_it {
+                if iteration_count == 1 {
+                    info!("analyzing({:?})", name);
+                } else {
+                    info!("reanalyzing({:?})", name);
+                }
             }
         }
         name
