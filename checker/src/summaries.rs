@@ -13,8 +13,9 @@ use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use rustc_errors::SourceMapper;
 use serde::{Deserialize, Serialize};
-use sled::Db;
+use sled::{ConfigBuilder, Db};
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::ops::Deref;
 use std::rc::Rc;
 use syntax_pos;
@@ -255,10 +256,50 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         type_context: &'a TyCtxt<'tcx>,
         summary_store_directory_str: String,
     ) -> PersistentSummaryCache<'a, 'tcx> {
+        use fs2::FileExt;
+        use rand::{thread_rng, Rng};
+        use std::thread;
+        use std::time::Duration;
+
+        let mut rng = thread_rng();
         let summary_store_path =
             Self::create_default_summary_store_if_needed(&summary_store_directory_str);
-        let db = Db::start_default(summary_store_path)
-            .unwrap_or_else(|err| unreachable!(format!("{} ", err)));
+        let db_path = summary_store_path.join("db");
+        let mut options = fs::OpenOptions::new();
+        options.create(true);
+        options.read(true);
+        options.write(true);
+        let config_builder = ConfigBuilder::new().path(summary_store_path.clone());
+        let config;
+        loop {
+            match options.open(&db_path) {
+                Ok(file) => {
+                    if file.try_lock_exclusive().is_ok() {
+                        // Give other processes a chance to fail to get the lock and go to sleep.
+                        thread::sleep(Duration::from_millis(1));
+                        // Have to let the lock go, otherwise config_builder.build() fails.
+                        file.unlock().unwrap();
+                        // The call to build will still panic if another process intervenes,
+                        // but the Sled API provides no way to prevent that.
+                        // At this point, however, it is somewhat unlikely.
+                        config = config_builder.build();
+                        break;
+                    }
+                    // Fall through to the random sleep interval below.
+                }
+                Err(..) => {
+                    // Probably the file does not yet exist because MIRAI_START_FRESH
+                    // has been specified. So just try to create it via config_builder.build().
+                    // If there is another reason for failure, it will probably show up in the
+                    // panic from build.
+                    config = config_builder.build();
+                    break;
+                }
+            }
+            let num_millis = rng.gen_range(100, 200);
+            thread::sleep(Duration::from_millis(num_millis));
+        }
+        let db = Db::start(config).unwrap_or_else(|err| unreachable!(format!("{} ", err)));
         PersistentSummaryCache {
             db,
             cache: HashMap::new(),
@@ -285,17 +326,15 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         let store_path = directory_path.join(".summary_store.sled");
         if !store_path.exists() && env::var("MIRAI_START_FRESH").is_err() {
             let tar_path = directory_path.join(".summary_store.tar");
-            if !tar_path.exists() {
-                if let Ok(mut f) = File::create(tar_path.clone()) {
-                    debug!("creating a non default new summary store");
-                    {
-                        let bytes = include_bytes!("../../binaries/summary_store.tar");
-                        f.write_all(bytes).unwrap();
-                    }
-                    let mut ar = Archive::new(File::open(tar_path).unwrap());
-                    ar.unpack(directory_path).unwrap();
+            if let Ok(mut f) = File::create(tar_path.clone()) {
+                debug!("creating a non default new summary store");
+                {
+                    let bytes = include_bytes!("../../binaries/summary_store.tar");
+                    f.write_all(bytes).unwrap();
                 }
             }
+            let mut ar = Archive::new(File::open(tar_path).unwrap());
+            ar.unpack(directory_path).unwrap();
         };
         store_path
     }
