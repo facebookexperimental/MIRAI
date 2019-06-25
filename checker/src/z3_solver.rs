@@ -1094,7 +1094,7 @@ impl Z3Solver {
             } => self.bv_shr_by(num_bits, left, right, result_type),
             Expression::Top | Expression::Bottom => self.bv_fresh_const(num_bits),
             Expression::Variable { path, var_type } => self.bv_variable(path, var_type, num_bits),
-            Expression::Widen { path, operand } => self.bv_widen(path, operand),
+            Expression::Widen { path, operand } => self.bv_widen(path, operand, num_bits),
             _ => self.get_as_z3_ast(expression),
         }
     }
@@ -1171,11 +1171,20 @@ impl Z3Solver {
     fn bv_constant(&self, num_bits: u32, const_domain: &ConstantDomain) -> z3_sys::Z3_ast {
         match const_domain {
             ConstantDomain::Char(v) => unsafe {
-                z3_sys::Z3_mk_bv_numeral(self.z3_context, 16, v as *const char as *const bool)
+                let n: u128 = *v as u128;
+                z3_sys::Z3_mk_bv_numeral(
+                    self.z3_context,
+                    num_bits,
+                    &n as *const u128 as *const bool,
+                )
             },
             ConstantDomain::False => unsafe {
-                let v = false;
-                z3_sys::Z3_mk_bv_numeral(self.z3_context, 1, &v as *const bool)
+                let n: u128 = 0;
+                z3_sys::Z3_mk_bv_numeral(
+                    self.z3_context,
+                    num_bits,
+                    &n as *const u128 as *const bool,
+                )
             },
             ConstantDomain::F32(v) => unsafe {
                 let fv = f32::from_bits(*v);
@@ -1192,8 +1201,12 @@ impl Z3Solver {
                 z3_sys::Z3_mk_bv_numeral(self.z3_context, 128, v as *const u128 as *const bool)
             },
             ConstantDomain::True => unsafe {
-                let v = true;
-                z3_sys::Z3_mk_bv_numeral(self.z3_context, 1, &v as *const bool)
+                let n: u128 = 1;
+                z3_sys::Z3_mk_bv_numeral(
+                    self.z3_context,
+                    num_bits,
+                    &n as *const u128 as *const bool,
+                )
             },
             _ => unsafe {
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
@@ -1286,17 +1299,12 @@ impl Z3Solver {
         }
     }
 
-    fn bv_widen(&self, path: &Rc<Path>, operand: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
-        use self::ExpressionType::*;
-        let expr_type = operand.expression.infer_type();
-        let expr_type = match expr_type {
-            Bool | Reference | NonPrimitive => ExpressionType::I128,
-            _ => expr_type,
-        };
-        let path_symbol = self.get_symbol_for(path);
-        unsafe {
-            let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, u32::from(expr_type.bit_length()));
-            z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
-        }
+    fn bv_widen(
+        &self,
+        path: &Rc<Path>,
+        operand: &Rc<AbstractValue>,
+        num_bits: u32,
+    ) -> z3_sys::Z3_ast {
+        self.bv_variable(path, &operand.expression.infer_type(), num_bits)
     }
 }
