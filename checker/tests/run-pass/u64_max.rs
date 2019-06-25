@@ -11,5 +11,5 @@
 extern crate mirai_annotations;
 
 pub fn main() {
-    verify!(std::u64::MAX == 9223372036854775807);
+    verify!(std::u64::MAX == 18446744073709551615);
 }

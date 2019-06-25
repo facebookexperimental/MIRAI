@@ -346,7 +346,7 @@ pub mod core {
     }
 
     pub mod u64 {
-        pub const MAX: u64 = 9223372036854775807;
+        pub const MAX: u64 = 18446744073709551615;
     }
 
     pub mod mem {
