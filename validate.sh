@@ -10,8 +10,6 @@ rustup component add rustfmt-preview
 rustup component add clippy-preview
 # install audit
 cargo install --force cargo-audit || true
-# install z3
-if [ ${TRAVIS_OS_NAME} == "osx" ]; then cp binaries/libz3.dylib /usr/local/lib; fi
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
