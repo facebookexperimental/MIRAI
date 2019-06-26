@@ -164,7 +164,7 @@ impl MiraiCallbacks {
     fn analyze_bodies<'a, 'tcx>(
         compiler: &'a interface::Compiler,
         tcx: &'a TyCtxt<'tcx>,
-        analysis_info: &mut AnalysisInfo<'a, 'tcx>,
+        mut analysis_info: &mut AnalysisInfo<'a, 'tcx>,
         iteration_count: usize,
     ) {
         for def_id in tcx.body_owners() {
@@ -203,9 +203,9 @@ impl MiraiCallbacks {
                     &name,
                     compiler,
                     tcx,
-                    &mut analysis_info.constant_value_cache,
-                    &mut analysis_info.persistent_summary_cache,
+                    &mut analysis_info,
                     &mut buffered_diagnostics,
+                    iteration_count,
                 );
                 if analysis_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
                     // This body is beyond MIRAI for now
@@ -305,22 +305,24 @@ impl MiraiCallbacks {
         name: &str,
         compiler: &'b interface::Compiler,
         tcx: &'b TyCtxt<'tcx>,
-        mut constant_value_cache: &'a mut ConstantValueCache<'tcx>,
-        mut persistent_summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
+        analysis_info: &'a mut AnalysisInfo<'b, 'tcx>,
         mut buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
+        iteration_count: usize,
     ) -> (Option<Summary>, u64) {
         let mir = tcx.optimized_mir(def_id);
         // todo: #3 provide a helper that returns the solver as specified by a compiler switch.
         let mut smt_solver = Z3Solver::default();
+        analysis_info.constant_value_cache.reset_heap_counter();
         let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
             session: compiler.session(),
             tcx,
             def_id,
             mir,
-            summary_cache: &mut persistent_summary_cache,
-            constant_value_cache: &mut constant_value_cache,
+            summary_cache: &mut analysis_info.persistent_summary_cache,
+            constant_value_cache: &mut analysis_info.constant_value_cache,
             smt_solver: &mut smt_solver,
             buffered_diagnostics: &mut buffered_diagnostics,
+            outer_fixed_point_iteration: iteration_count,
         });
         mir_visitor.visit_body(&name)
     }

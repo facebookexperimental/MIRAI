@@ -4,22 +4,37 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that uses an inferred post condition.
+// A test that use enum discriminants
+
+#![feature(box_syntax)]
 
 #[macro_use]
 extern crate mirai_annotations;
 
-fn check_index(a: &[i64], i: usize) -> Option<usize> {
-    if i < a.len() {
-        Some(i)
-    } else {
-        None
-    }
+pub enum Path {
+    QualifiedPath { length: usize, qualifier: Box<Path> },
+    Root,
 }
 
-pub fn foo(i: usize) {
-    if let Some(j) = check_index(&[0; 100], i) {
-        verify!(j < 100);
+impl Path {
+    pub fn path_length(&self) -> usize {
+        match self {
+            Path::QualifiedPath { length, .. } => *length,
+            _ => 1,
+        }
+    }
+
+    pub fn replace_root(&self, new_root: Path) -> Path {
+        match self {
+            Path::QualifiedPath { qualifier, .. } => {
+                checked_assume!(qualifier.path_length() <= 10);
+                Path::QualifiedPath {
+                    length: qualifier.path_length() + 1,
+                    qualifier: box Path::Root,
+                }
+            }
+            _ => new_root,
+        }
     }
 }
 

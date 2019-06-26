@@ -768,6 +768,14 @@ impl<'tcx> ConstantValueCache<'tcx> {
             ConstantDomain::for_function(function_id, def_id, generic_args, tcx, summary_cache)
         })
     }
+
+    /// Resets the heap address counter to 0.
+    /// Do this for every function body to ensure that its analysis is not dependent on what
+    /// happened elsewhere. Also remember to relocate heap addresses from summaries of other
+    /// functions when transferring callee state to the caller's state.
+    pub fn reset_heap_counter(&mut self) {
+        self.heap_address_counter = 0;
+    }
 }
 
 impl<'tcx> Default for ConstantValueCache<'tcx> {
