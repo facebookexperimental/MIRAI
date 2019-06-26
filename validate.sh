@@ -4,6 +4,15 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+# install formatter
+rustup component add rustfmt-preview
+# install linter
+rustup component add clippy-preview
+# install audit
+cargo install --force cargo-audit || true
+# install z3
+if [ ${TRAVIS_OS_NAME} == "osx" ]; then cp binaries/libz3.dylib /usr/local/lib; fi
+
 # Exit immediately if a command exits with a non-zero status.
 set -e
 # start clean
