@@ -349,6 +349,10 @@ pub mod core {
         pub const MAX: u64 = 18446744073709551615;
     }
 
+    pub mod u16 {
+        pub const MAX: u16 = 65535;
+    }
+
     pub mod mem {
         pub fn size_of__u32() -> usize {
             4
@@ -398,6 +402,10 @@ pub mod alloc {
                     self.len -= 1;
                     result!()
                 }
+            }
+
+            pub fn is_empty(&self) -> bool {
+                self.len() == 0
             }
         }
     }
