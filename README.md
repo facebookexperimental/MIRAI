@@ -32,7 +32,6 @@ Set the verbosity level of output from MIRAI by setting the environment variable
 
 To go beyond this, super lint + better documentation phase, you'll need to be aware of a lot more things.
 
-
 ## Developing MIRAI
 See the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation//DeveloperGuide.md)
 for instructions on how to build, run and debug MIRAI.
