@@ -2,6 +2,7 @@ ignore:
   - checker/tests/.*
   - checker/src/main.rs
   - annotations/*
+  - standard_contracts/*
 
 coverage:
   range: 60..85
