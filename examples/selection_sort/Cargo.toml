@@ -1,0 +1,4 @@
+[package]
+
+name = "selection_sort"
+version = "0.0.1"
