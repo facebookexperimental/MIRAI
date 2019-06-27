@@ -331,6 +331,10 @@ pub mod core {
                 collection.len()
             }
 
+            pub fn len__i32(arr: &[i32]) -> usize {
+                arr.len()
+            }
+
             pub fn get__u32_usize(collection: &[u32], index: usize) -> Option<&u32> {
                 if index >= collection.len() {
                     None
