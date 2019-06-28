@@ -8,7 +8,7 @@ use rustc::hir::def_id::DefId;
 use rustc::hir::ItemKind;
 use rustc::hir::Node;
 use rustc::ty::subst::{SubstsRef, UnpackedKind};
-use rustc::ty::{Ty, TyCtxt, TyKind};
+use rustc::ty::{DefIdTree, Ty, TyCtxt, TyKind};
 use std::rc::Rc;
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
@@ -231,13 +231,22 @@ pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
         }
         let component_name = component.data.as_interned_str().as_str();
         let component_name = component_name.get();
-        if component_name == "{{impl}}" {
+        let saw_implement = if component_name == "{{impl}}" {
             name.push_str("implement");
+            true
         } else {
             name.push_str(component_name);
-        }
+            false
+        };
         if component.disambiguator != 0 {
             name.push('_');
+            if saw_implement {
+                if let Some(parent_def_id) = tcx.parent(def_id) {
+                    let ty = tcx.type_of(parent_def_id);
+                    append_mangled_type(&mut name, ty, tcx);
+                    continue;
+                }
+            }
             let da = component.disambiguator.to_string();
             name.push_str(da.as_str());
         }

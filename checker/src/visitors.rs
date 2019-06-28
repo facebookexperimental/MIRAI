@@ -547,9 +547,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             let result_type = self.get_type_for_local(0);
             self.visit_promoted_constants_block(function_name);
 
-            let promoted_root: Rc<Path> = Rc::new(PathEnum::PromotedConstant { ordinal }.into());
+            let mut promoted_root: Rc<Path> =
+                Rc::new(PathEnum::PromotedConstant { ordinal }.into());
             let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
-            state_with_parameters.update_value_at(promoted_root.clone(), value);
+            state_with_parameters.update_value_at(promoted_root.clone(), value.clone());
+            if let Expression::AbstractHeapAddress(ordinal) = &value.expression {
+                promoted_root = Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+            }
             for (path, value) in self
                 .exit_environment
                 .value_map
@@ -1364,12 +1368,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             let target_path = self.visit_place(place);
             let return_value_path = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
             // Transfer side effects
+
+            // Effects on the call result
             self.transfer_and_refine(
                 &function_summary.side_effects,
                 target_path,
                 &return_value_path,
                 actual_args,
             );
+
+            // Effects on the call arguments
             for (i, (target_path, _)) in actual_args.iter().enumerate() {
                 let parameter_path = Rc::new(PathEnum::LocalVariable { ordinal: i + 1 }.into());
                 self.transfer_and_refine(
@@ -1379,6 +1387,19 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     actual_args,
                 );
             }
+
+            // Effects on the heap
+            for (path, value) in function_summary.side_effects.iter() {
+                if path.is_rooted_by_abstract_heap_address() {
+                    let rvalue = value
+                        .clone()
+                        .refine_parameters(actual_args, self.fresh_variable_offset)
+                        .refine_paths(&self.current_environment);
+                    self.current_environment
+                        .update_value_at(path.clone(), rvalue);
+                }
+            }
+
             let mut exit_condition = self.current_environment.entry_condition.clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
                 exit_condition = exit_condition.and(unwind_condition.logical_not());
@@ -2068,6 +2089,19 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 ..
             } if *selector.as_ref() == PathSelector::Deref => {
                 self.lookup_path_and_refine_result(qualifier.clone(), ExpressionType::Reference)
+            }
+            PathEnum::PromotedConstant { .. } => {
+                if let Some(val) = self.current_environment.value_at(&value_path) {
+                    if let Expression::AbstractHeapAddress(ordinal) = &val.expression {
+                        let heap_path =
+                            Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+                        AbstractValue::make_from(Expression::Reference(heap_path), 1)
+                    } else {
+                        AbstractValue::make_from(Expression::Reference(value_path), 1)
+                    }
+                } else {
+                    AbstractValue::make_from(Expression::Reference(value_path), 1)
+                }
             }
             _ => AbstractValue::make_from(Expression::Reference(value_path), 1),
         };

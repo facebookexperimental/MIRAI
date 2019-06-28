@@ -104,6 +104,18 @@ impl Path {
         }
     }
 
+    /// True is path qualifies an abstract heap address, or another qualified path rooted by an
+    /// abstract heap address.
+    pub fn is_rooted_by_abstract_heap_address(&self) -> bool {
+        match &self.value {
+            PathEnum::QualifiedPath { qualifier, .. } => match qualifier.value {
+                PathEnum::AbstractHeapAddress { .. } => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     // Returns the length of the path.
     pub fn path_length(&self) -> usize {
         match &self.value {
@@ -161,14 +173,19 @@ impl Path {
 
     /// Adds any abstract heap addresses found in embedded index values to the given set.
     pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
-        if let PathEnum::QualifiedPath {
-            qualifier,
-            selector,
-            ..
-        } = &self.value
-        {
-            (**qualifier).record_heap_addresses(result);
-            selector.record_heap_addresses(result);
+        match &self.value {
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } => {
+                (**qualifier).record_heap_addresses(result);
+                selector.record_heap_addresses(result);
+            }
+            PathEnum::AbstractHeapAddress { ordinal } => {
+                result.insert(*ordinal);
+            }
+            _ => (),
         }
     }
 }
