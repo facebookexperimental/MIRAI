@@ -50,7 +50,7 @@ pub mod core {
             phantom: PhantomData<&'a str>,
         }
 
-        pub mod implement_1 {
+        pub mod implement_core_fmt_ArgumentV1 {
             use crate::foreign_contracts::core::fmt::ArgumentV1;
             use crate::foreign_contracts::core::fmt::Formatter;
             use crate::foreign_contracts::core::fmt::Result;
@@ -67,7 +67,7 @@ pub mod core {
             phantom: PhantomData<&'a str>,
         }
 
-        pub mod implement_2 {
+        pub mod implement_core_fmt_Arguments {
             use crate::foreign_contracts::core::fmt::ArgumentV1;
             use crate::foreign_contracts::core::fmt::Arguments;
 
@@ -87,6 +87,146 @@ pub mod core {
 
         pub struct Void {}
 
+    }
+
+    pub mod isize {
+        pub const MAX: isize = 2147483647;
+        pub const MIN: isize = -2147483648;
+    }
+
+    pub mod i8 {
+        pub const MAX: i8 = 127;
+        pub const MIN: i8 = -128;
+    }
+
+    pub mod i16 {
+        pub const MAX: i16 = 32767;
+        pub const MIN: i16 = -32768;
+    }
+
+    pub mod i32 {
+        pub const MAX: i32 = 2147483647;
+        pub const MIN: i32 = -2147483648;
+    }
+
+    pub mod i64 {
+        pub const MAX: i64 = 9223372036854775807;
+        pub const MIN: i64 = -9223372036854775808;
+    }
+
+    pub mod i128 {
+        pub const MAX: i128 = 170141183460469231731687303715884105727;
+        pub const MIN: i128 = -170141183460469231731687303715884105728;
+    }
+
+    pub mod num {
+        pub mod implement_isize {
+            pub fn max_value() -> isize {
+                2147483647
+            }
+            pub fn min_value() -> isize {
+                -2147483648
+            }
+        }
+
+        pub mod implement_i8 {
+            pub fn max_value() -> i8 {
+                127
+            }
+            pub fn min_value() -> i8 {
+                -128
+            }
+        }
+
+        pub mod implement_i16 {
+            pub fn max_value() -> i16 {
+                32767
+            }
+            pub fn min_value() -> i16 {
+                -32768
+            }
+        }
+
+        pub mod implement_i32 {
+            pub fn max_value() -> i32 {
+                2147483647
+            }
+            pub fn min_value() -> i32 {
+                -2147483648
+            }
+        }
+
+        pub mod implement_i64 {
+            pub fn max_value() -> i64 {
+                9223372036854775807
+            }
+            pub fn min_value() -> i64 {
+                -9223372036854775808
+            }
+        }
+
+        pub mod implement_i128 {
+            pub fn max_value() -> i128 {
+                170141183460469231731687303715884105727
+            }
+            pub fn min_value() -> i128 {
+                -170141183460469231731687303715884105728
+            }
+        }
+
+        pub mod implement_usize {
+            pub fn max_value() -> usize {
+                4294967295
+            }
+            pub fn min_value() -> usize {
+                0
+            }
+        }
+
+        pub mod implement_u8 {
+            pub fn max_value() -> u8 {
+                255
+            }
+            pub fn min_value() -> u8 {
+                0
+            }
+        }
+
+        pub mod implement_u16 {
+            pub fn max_value() -> u16 {
+                65535
+            }
+            pub fn min_value() -> u16 {
+                0
+            }
+        }
+
+        pub mod implement_u32 {
+            pub fn max_value() -> u32 {
+                4294967295
+            }
+            pub fn min_value() -> u32 {
+                0
+            }
+        }
+
+        pub mod implement_u64 {
+            pub fn max_value() -> u128 {
+                18446744073709551615
+            }
+            pub fn min_value() -> u128 {
+                0
+            }
+        }
+
+        pub mod implement_u128 {
+            pub fn max_value() -> u128 {
+                340282366920938463463374607431768211455
+            }
+            pub fn min_value() -> u128 {
+                0
+            }
+        }
     }
 
     pub mod option {
@@ -116,7 +256,7 @@ pub mod core {
             }
         }
 
-        pub mod implement_5 {
+        pub mod implement_core_option_Option_T {
             use crate::foreign_contracts::core::option::Option;
 
             pub fn unwrap_or_default<T: Default>(v: Option<T>) -> T {
@@ -130,7 +270,7 @@ pub mod core {
 
     pub mod ops {
         pub mod range {
-            pub mod implement_12 {
+            pub mod implement_core_ops_range_RangeInclusive_Idx {
                 pub struct Range_usize {
                     pub start: usize,
                     pub end: usize,
@@ -185,7 +325,7 @@ pub mod core {
 
     pub mod iter {
         pub mod adapters {
-            use crate::foreign_contracts::core::ops::range::implement_12::Range_usize;
+            use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
             use crate::foreign_contracts::core::slice::Iter;
 
             pub struct Enumerator_slice<'a, T: 'a> {
@@ -200,8 +340,8 @@ pub mod core {
         pub mod traits {
             pub mod collect {
                 use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
-                use crate::foreign_contracts::core::ops::range::implement_12::RangeInclusive_usize;
-                use crate::foreign_contracts::core::ops::range::implement_12::Range_usize;
+                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
+                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
 
                 pub trait IntoIterator {
                     fn into_iter__core_iter_adapters_Enumerate_core_slice_Iter_bool(
@@ -225,9 +365,9 @@ pub mod core {
             pub mod iterator {
                 use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
                 use crate::foreign_contracts::core::iter::adapters::Rev__Range_usize;
-                use crate::foreign_contracts::core::ops::range::implement_12::compute_is_empty__usize;
-                use crate::foreign_contracts::core::ops::range::implement_12::RangeInclusive_usize;
-                use crate::foreign_contracts::core::ops::range::implement_12::Range_usize;
+                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::compute_is_empty__usize;
+                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
+                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
                 use crate::foreign_contracts::core::slice::Iter;
 
                 pub trait Iterator {
@@ -320,15 +460,11 @@ pub mod core {
         pub mod implement {
 
             use crate::foreign_contracts::core::slice::Iter;
-            pub fn iter__slice_bool(collection: &[bool]) -> Iter<bool> {
+            pub fn iter__bool(collection: &[bool]) -> Iter<bool> {
                 Iter {
                     collection,
                     index: 0,
                 }
-            }
-
-            pub fn len__slice_bool(collection: &[bool]) -> usize {
-                collection.len()
             }
 
             pub fn get__u32_usize(collection: &[u32], index: usize) -> Option<&u32> {
@@ -343,19 +479,49 @@ pub mod core {
 
     pub mod usize {
         pub const MAX: usize = 4294967295;
+        pub const MIN: usize = 0;
     }
 
-    pub mod u64 {
-        pub const MAX: u64 = 18446744073709551615;
+    pub mod u8 {
+        pub const MAX: u8 = 255;
+        pub const MIN: u8 = 0;
     }
 
     pub mod u16 {
         pub const MAX: u16 = 65535;
+        pub const MIN: u16 = 0;
+    }
+
+    pub mod u32 {
+        pub const MAX: u32 = 4294967295;
+        pub const MIN: u32 = 0;
+    }
+
+    pub mod u64 {
+        pub const MAX: u64 = 18446744073709551615;
+        pub const MIN: u64 = 0;
+    }
+
+    pub mod u128 {
+        pub const MAX: u128 = 340282366920938463463374607431768211455;
+        pub const MIN: u128 = 0;
     }
 
     pub mod mem {
+        pub fn size_of__u8() -> usize {
+            1
+        }
+        pub fn size_of__u16() -> usize {
+            2
+        }
         pub fn size_of__u32() -> usize {
             4
+        }
+        pub fn size_of__u64() -> usize {
+            8
+        }
+        pub fn size_of__u128() -> usize {
+            16
         }
     }
 }

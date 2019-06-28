@@ -19,3 +19,5 @@ fn foo() {
         intrinsics::unreachable();
     }
 }
+
+pub fn main() {}
