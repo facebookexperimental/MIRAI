@@ -1,7 +1,7 @@
 os: osx
 language: rust
 rust:
-- nightly-2019-06-20
+- nightly-2019-06-28
 
 before_install:
 - if [ ${TRAVIS_OS_NAME} == "osx" ]; then curl -L https://github.com/mozilla/grcov/releases/download/v0.4.3/grcov-osx-x86_64.tar.bz2 | tar jxf -; fi
