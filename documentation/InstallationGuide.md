@@ -35,6 +35,14 @@ cd ~
 git clone git@github.com:facebookexperimental/MIRAI.git
 ```
 
+## Install necessary Rust components
+
+```
+cd ~/MIRAI
+./setup.sh
+```
+
+
 ## Install MIRAI into cargo
 
 You'll need to change the nightly version below to the one found in .travis.yml. The install command will also
