@@ -639,7 +639,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::StatementKind::InlineAsm(inline_asm) => self.visit_inline_asm(inline_asm),
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
             mir::StatementKind::AscribeUserType(..) => unreachable!(),
-            mir::StatementKind::Nop => return,
+            mir::StatementKind::Nop => (),
         }
     }
 
@@ -1525,7 +1525,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     };
                     self.preconditions.push(precondition);
                 }
-                return;
             }
             KnownFunctionNames::StdBeginPanic => {
                 let mut path_cond = self.current_environment.entry_condition.as_bool_if_known();
@@ -2544,7 +2543,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                                         Some(len),
                                     );
                                 }
-                                mir::interpret::ConstValue::ByRef(_, _, alloc) => {
+                                mir::interpret::ConstValue::ByRef { alloc, .. } => {
                                     return self.deconstruct_constant_array(
                                         &alloc.bytes,
                                         e_type,
@@ -2583,7 +2582,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             let e_type = ExpressionType::from(&elem_type.sty);
                             return self.deconstruct_constant_array(slice, e_type, None);
                         }
-                        mir::interpret::ConstValue::ByRef(_, _, alloc) => {
+                        mir::interpret::ConstValue::ByRef { alloc, .. } => {
                             let e_type = ExpressionType::from(&elem_type.sty);
                             return self.deconstruct_constant_array(&alloc.bytes, e_type, None);
                         }

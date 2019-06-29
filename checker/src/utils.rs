@@ -41,17 +41,13 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_>) -> bool {
                     return item.vis.node.is_pub();
                 }
                 debug!("def_id is not a function item {:?}", item.node);
-                return false;
+                false
             }
-            Node::ImplItem(item) => {
-                return item.vis.node.is_pub();
-            }
-            Node::TraitItem(..) => {
-                return true;
-            }
+            Node::ImplItem(item) => item.vis.node.is_pub(),
+            Node::TraitItem(..) => true,
             _ => {
                 debug!("def_id is not an item {:?}", node);
-                return false;
+                false
             }
         }
     } else {
