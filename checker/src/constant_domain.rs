@@ -67,6 +67,8 @@ pub enum KnownFunctionNames {
     None,
     /// core.slice.impl.len
     CoreSliceLen,
+    /// core.str.implement_str.len
+    CoreStrLen,
     /// mirai_annotations.mirai_assume
     MiraiAssume,
     /// mirai_annotations.mirai_get_model_field
@@ -99,6 +101,7 @@ impl ConstantDomain {
         let argument_type_key = utils::argument_types_key_str(tcx, generic_args);
         let known_name = match summary_cache_key.as_str() {
             "core.slice.implement.len" => KnownFunctionNames::CoreSliceLen,
+            "core.str.implement_str.len" => KnownFunctionNames::CoreStrLen,
             "mirai_annotations.mirai_assume" => KnownFunctionNames::MiraiAssume,
             "mirai_annotations.mirai_get_model_field" => KnownFunctionNames::MiraiGetModelField,
             "mirai_annotations.mirai_precondition" => KnownFunctionNames::MiraiPrecondition,

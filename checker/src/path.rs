@@ -148,6 +148,12 @@ impl Path {
         Self::new_qualified(array_path, selector)
     }
 
+    /// Creates a path the selects the length of the string at the given path.
+    pub fn new_string_length(string_path: Rc<Path>) -> Rc<Path> {
+        let selector = Rc::new(PathSelector::StringLength);
+        Self::new_qualified(string_path, selector)
+    }
+
     /// Creates a path the selects the given model field of the value at the given path.
     pub fn new_model_field(qualifier: Rc<Path>, field_name: Rc<String>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::ModelField(field_name));
@@ -323,6 +329,9 @@ impl PathRefinement for Rc<Path> {
 pub enum PathSelector {
     /// The length of an array.
     ArrayLength,
+
+    /// The length of a string.
+    StringLength,
 
     /// Given a path that denotes a reference, select the thing the reference points to.
     Deref,

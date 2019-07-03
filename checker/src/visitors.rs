@@ -1219,6 +1219,24 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 return self.lookup_path_and_refine_result(len_path, ExpressionType::Usize);
             }
         }
+        if *known_name == KnownFunctionNames::CoreStrLen {
+            checked_assume!(args.len() == 1);
+            let str_val = &args[0].1;
+            let qualifier = match &str_val.expression {
+                Expression::Reference(path) => {
+                    let len_path = Path::new_string_length(path.clone());
+                    let res = self.lookup_path_and_refine_result(len_path, ExpressionType::U128);
+                    Some(res)
+                }
+                Expression::CompileTimeConstant(ConstantDomain::Str(s)) => {
+                    Some(Rc::new(ConstantDomain::U128(s.len() as u128).into()))
+                }
+                _ => None,
+            };
+            if let Some(qualifier) = qualifier {
+                return qualifier;
+            }
+        }
         abstract_value::BOTTOM.into()
     }
 
@@ -1883,12 +1901,27 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     ..
                 } = constant.borrow();
                 let const_value = self.visit_constant(ty, *user_ty, &literal.val);
-                if let Expression::AbstractHeapAddress(ordinal) = const_value.expression {
-                    let rtype = ExpressionType::Reference;
-                    let rpath = Rc::new(PathEnum::AbstractHeapAddress { ordinal }.into());
-                    self.copy_or_move_elements(path, rpath, rtype, false);
-                } else {
-                    self.current_environment.update_value_at(path, const_value);
+                match &const_value.expression {
+                    Expression::AbstractHeapAddress(ordinal) => {
+                        let rtype = ExpressionType::Reference;
+                        let rpath =
+                            Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+                        self.copy_or_move_elements(path, rpath, rtype, false);
+                    }
+                    Expression::CompileTimeConstant(ConstantDomain::Str(val)) => {
+                        let rtype = ExpressionType::U128;
+                        let rpath: Rc<Path> = Rc::new(
+                            PathEnum::Constant {
+                                value: Rc::new(ConstantDomain::Str(val.clone()).into()),
+                            }
+                            .into(),
+                        );
+                        self.copy_or_move_elements(path.clone(), rpath, rtype, false);
+                        self.current_environment.update_value_at(path, const_value);
+                    }
+                    _ => {
+                        self.current_environment.update_value_at(path, const_value);
+                    }
                 }
             }
         };
@@ -2531,7 +2564,20 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         {
                             let slice = &data.bytes[*start..*end];
                             let s = std::str::from_utf8(slice).expect("non utf8 str");
-                            &mut self.constant_value_cache.get_string_for(s)
+                            let len_val: Rc<AbstractValue> =
+                                Rc::new(ConstantDomain::U128(s.len() as u128).into());
+                            let res = &mut self.constant_value_cache.get_string_for(s);
+
+                            let path: Rc<Path> = Rc::new(
+                                PathEnum::Constant {
+                                    value: Rc::new(res.clone().into()),
+                                }
+                                .into(),
+                            );
+                            let len_path = Path::new_string_length(path);
+                            self.current_environment.update_value_at(len_path, len_val);
+
+                            res
                         } else {
                             unimplemented!("unsupported val of type Ref: {:?}", literal);
                         };
