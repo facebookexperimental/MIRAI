@@ -8,11 +8,13 @@ use crate::expression::{Expression, ExpressionType};
 use crate::summaries::PersistentSummaryCache;
 use crate::utils;
 
+use log_derive::{logfn, logfn_inputs};
 use rustc::hir::def_id::DefId;
 use rustc::ty::subst::SubstsRef;
 use rustc::ty::{Ty, TyCtxt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 
 /// Abstracts over constant values referenced in MIR and adds information
@@ -90,6 +92,7 @@ pub enum KnownFunctionNames {
 /// Constructors
 impl ConstantDomain {
     /// Returns a constant value that is a reference to a function
+    #[logfn(TRACE)]
     pub fn for_function<'a, 'tcx>(
         function_id: usize,
         def_id: DefId,
@@ -123,6 +126,7 @@ impl ConstantDomain {
 }
 
 impl From<bool> for ConstantDomain {
+    #[logfn_inputs(TRACE)]
     fn from(b: bool) -> ConstantDomain {
         if b {
             ConstantDomain::True
@@ -135,6 +139,7 @@ impl From<bool> for ConstantDomain {
 /// Transfer functions
 impl ConstantDomain {
     /// Returns a constant that is "self + other".
+    #[logfn_inputs(TRACE)]
     pub fn add(&self, other: &Self) -> Self {
         match (self, other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -154,6 +159,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is true if "self + other" is not in range of target_type.
+    #[logfn_inputs(TRACE)]
     pub fn add_overflows(&self, other: &Self, target_type: &ExpressionType) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => match target_type {
@@ -181,6 +187,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self & other".
+    #[logfn_inputs(TRACE)]
     pub fn bit_and(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => {
@@ -196,6 +203,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self | other".
+    #[logfn_inputs(TRACE)]
     pub fn bit_or(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => {
@@ -211,6 +219,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self ^ other".
+    #[logfn_inputs(TRACE)]
     pub fn bit_xor(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => {
@@ -229,6 +238,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self as target_type"
     #[allow(clippy::cast_lossless)]
+    #[logfn_inputs(TRACE)]
     pub fn cast(&self, target_type: &ExpressionType) -> Self {
         match self {
             ConstantDomain::Bottom => self.clone(),
@@ -307,6 +317,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self / other".
+    #[logfn_inputs(TRACE)]
     pub fn div(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -338,6 +349,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self == other".
+    #[logfn_inputs(TRACE)]
     pub fn equals(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -352,6 +364,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self >= other".
+    #[logfn_inputs(TRACE)]
     pub fn greater_or_equal(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -366,6 +379,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self > other".
+    #[logfn_inputs(TRACE)]
     pub fn greater_than(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -380,6 +394,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self <= other".
+    #[logfn_inputs(TRACE)]
     pub fn less_or_equal(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -394,6 +409,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self < other".
+    #[logfn_inputs(TRACE)]
     pub fn less_than(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -408,6 +424,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self * other".
+    #[logfn_inputs(TRACE)]
     pub fn mul(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -429,6 +446,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is true if "self * other" is not in range of target_type.
+    #[logfn_inputs(TRACE)]
     pub fn mul_overflows(&self, other: &Self, target_type: &ExpressionType) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => {
@@ -464,6 +482,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "-self".
+    #[logfn_inputs(TRACE)]
     pub fn neg(&self) -> Self {
         match self {
             ConstantDomain::F32(val) => {
@@ -481,6 +500,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self != other".
+    #[logfn_inputs(TRACE)]
     pub fn not_equals(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -495,6 +515,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "!self".
+    #[logfn_inputs(TRACE)]
     pub fn not(&self) -> Self {
         match &self {
             ConstantDomain::False => ConstantDomain::True,
@@ -504,6 +525,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self % other".
+    #[logfn_inputs(TRACE)]
     pub fn rem(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -533,6 +555,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self << other".
+    #[logfn_inputs(TRACE)]
     pub fn shl(&self, other: &Self) -> Self {
         let other_as_u32 = match &other {
             ConstantDomain::I128(val2) => Some(*val2 as u32),
@@ -551,6 +574,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is true if "self << other" is not in range of target_type.
+    #[logfn_inputs(TRACE)]
     pub fn shl_overflows(&self, other: &Self, target_type: &ExpressionType) -> Self {
         let other_as_u32 = match &other {
             ConstantDomain::I128(val2) => Some(*val2 as u32),
@@ -583,6 +607,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self >> other".
+    #[logfn_inputs(TRACE)]
     pub fn shr(&self, other: &Self) -> Self {
         let other_as_u32 = match &other {
             ConstantDomain::I128(val2) => Some(*val2 as u32),
@@ -601,6 +626,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is true if "self >> other" shifts away all bits.
+    #[logfn_inputs(TRACE)]
     pub fn shr_overflows(&self, other: &Self, target_type: &ExpressionType) -> Self {
         let other_as_u32 = match &other {
             ConstantDomain::I128(val2) => Some(*val2 as u32),
@@ -633,6 +659,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self - other".
+    #[logfn_inputs(TRACE)]
     pub fn sub(&self, other: &Self) -> Self {
         match (self, other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -654,6 +681,7 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is true if "self - other" is not in range of target_type.
+    #[logfn_inputs(TRACE)]
     pub fn sub_overflows(&self, other: &Self, target_type: &ExpressionType) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => match target_type {
@@ -693,7 +721,14 @@ pub struct ConstantValueCache<'tcx> {
     heap_address_counter: usize,
 }
 
+impl<'tcx> Debug for ConstantValueCache<'tcx> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        "ConstantValueCache".fmt(f)
+    }
+}
+
 impl<'tcx> ConstantValueCache<'tcx> {
+    #[logfn_inputs(TRACE)]
     pub fn new() -> ConstantValueCache<'tcx> {
         ConstantValueCache {
             char_cache: HashMap::default(),
@@ -708,6 +743,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
     }
 
     /// Returns a Expression::AbstractHeapAddress with a unique counter value.
+    #[logfn_inputs(TRACE)]
     pub fn get_new_heap_address(&mut self) -> Expression {
         let heap_address_counter = self.heap_address_counter;
         self.heap_address_counter = self.heap_address_counter.wrapping_add(1);
@@ -715,6 +751,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
     }
 
     /// Returns a reference to a cached Expression::Char(value).
+    #[logfn_inputs(TRACE)]
     pub fn get_char_for(&mut self, value: char) -> &ConstantDomain {
         self.char_cache
             .entry(value)
@@ -722,6 +759,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
     }
 
     /// Returns a reference to a cached Expression::F32(value).
+    #[logfn_inputs(TRACE)]
     pub fn get_f32_for(&mut self, value: u32) -> &ConstantDomain {
         self.f32_cache
             .entry(value)
@@ -729,6 +767,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
     }
 
     /// Returns a reference to a cached Expression::F64(value).
+    #[logfn_inputs(TRACE)]
     pub fn get_f64_for(&mut self, value: u64) -> &ConstantDomain {
         self.f64_cache
             .entry(value)
@@ -736,12 +775,15 @@ impl<'tcx> ConstantValueCache<'tcx> {
     }
 
     /// Returns a reference to a cached Expression::I128(value).
+    #[logfn_inputs(TRACE)]
     pub fn get_i128_for(&mut self, value: i128) -> &ConstantDomain {
         self.i128_cache
             .entry(value)
             .or_insert_with(|| ConstantDomain::I128(value))
     }
 
+    /// Returns a reference to a cached Expression::Str(value).
+    #[logfn_inputs(TRACE)]
     pub fn get_string_for(&mut self, value: &str) -> &ConstantDomain {
         let str_value = String::from(value);
         self.str_cache
@@ -750,6 +792,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
     }
 
     /// Returns a reference to a cached Expression::U128(value).
+    #[logfn_inputs(TRACE)]
     pub fn get_u128_for(&mut self, value: u128) -> &ConstantDomain {
         self.u128_cache
             .entry(value)
@@ -776,12 +819,14 @@ impl<'tcx> ConstantValueCache<'tcx> {
     /// Do this for every function body to ensure that its analysis is not dependent on what
     /// happened elsewhere. Also remember to relocate heap addresses from summaries of other
     /// functions when transferring callee state to the caller's state.
+    #[logfn_inputs(TRACE)]
     pub fn reset_heap_counter(&mut self) {
         self.heap_address_counter = 0;
     }
 }
 
 impl<'tcx> Default for ConstantValueCache<'tcx> {
+    #[logfn_inputs(TRACE)]
     fn default() -> Self {
         Self::new()
     }

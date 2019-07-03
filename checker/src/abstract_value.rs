@@ -13,6 +13,7 @@ use crate::k_limits;
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum};
 
+use log_derive::{logfn, logfn_inputs};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -58,6 +59,7 @@ impl Hash for AbstractValue {
 }
 
 impl PartialEq for AbstractValue {
+    #[logfn_inputs(TRACE)]
     fn eq(&self, other: &Self) -> bool {
         match (&self.expression, &other.expression) {
             (Expression::Widen { path: p1, .. }, Expression::Widen { path: p2, .. }) => p1.eq(p2),
@@ -96,6 +98,7 @@ pub const TRUE: AbstractValue = AbstractValue {
 };
 
 impl From<bool> for AbstractValue {
+    #[logfn_inputs(TRACE)]
     fn from(b: bool) -> AbstractValue {
         if b {
             AbstractValue {
@@ -114,6 +117,7 @@ impl From<bool> for AbstractValue {
 }
 
 impl From<ConstantDomain> for AbstractValue {
+    #[logfn_inputs(TRACE)]
     fn from(cv: ConstantDomain) -> AbstractValue {
         AbstractValue {
             expression: Expression::CompileTimeConstant(cv),
@@ -125,6 +129,7 @@ impl From<ConstantDomain> for AbstractValue {
 
 impl AbstractValue {
     /// Creates an abstract value from a binary expression and keeps track of the size.
+    #[logfn_inputs(TRACE)]
     fn make_binary(
         left: Rc<AbstractValue>,
         right: Rc<AbstractValue>,
@@ -135,6 +140,7 @@ impl AbstractValue {
     }
 
     /// Creates an abstract value from a typed binary expression and keeps track of the size.
+    #[logfn_inputs(TRACE)]
     fn make_typed_binary(
         left: Rc<AbstractValue>,
         right: Rc<AbstractValue>,
@@ -146,6 +152,7 @@ impl AbstractValue {
     }
 
     /// Creates an abstract value from a typed unary expression and keeps track of the size.
+    #[logfn_inputs(TRACE)]
     fn make_typed_unary(
         operand: Rc<AbstractValue>,
         result_type: ExpressionType,
@@ -156,6 +163,7 @@ impl AbstractValue {
     }
 
     /// Creates an abstract value from a unary expression and keeps track of the size.
+    #[logfn_inputs(TRACE)]
     fn make_unary(
         operand: Rc<AbstractValue>,
         operation: fn(Rc<AbstractValue>) -> Expression,
@@ -166,6 +174,7 @@ impl AbstractValue {
 
     /// Creates an abstract value from the given expression and size.
     /// Initializes the optional domains to None.
+    #[logfn_inputs(TRACE)]
     pub fn make_from(expression: Expression, expression_size: u64) -> Rc<AbstractValue> {
         Rc::new(AbstractValue {
             expression,
@@ -236,6 +245,7 @@ pub trait AbstractValueTrait: Sized {
 
 impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self + other".
+    #[logfn_inputs(TRACE)]
     fn addition(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let Expression::Add { left, right } = &self.expression {
             if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
@@ -256,6 +266,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// from the values of the self_env for keys that are in the widened_env and have values
     /// that have been widened. This prevents a true self condition from collapsing the path
     /// condition at a join point.
+    #[logfn_inputs(TRACE)]
     fn add_equalities_for_widened_vars(
         &self,
         self_env: &Environment,
@@ -291,6 +302,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is true if "self + other" is not in range of target_type.
+    #[logfn_inputs(TRACE)]
     fn add_overflows(
         &self,
         other: Rc<AbstractValue>,
@@ -321,6 +333,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self && other".
+    #[logfn_inputs(TRACE)]
     fn and(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         let self_bool = self.as_bool_if_known();
         if let Some(false) = self_bool {
@@ -353,6 +366,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// The Boolean value of this expression, if known, otherwise None.
+    #[logfn_inputs(TRACE)]
     fn as_bool_if_known(&self) -> Option<bool> {
         match self.expression {
             Expression::CompileTimeConstant(ConstantDomain::True) => Some(true),
@@ -366,12 +380,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// If the concrete Boolean value of this abstract value is known, return it as a UI28 constant,
     /// otherwise return None.
+    #[logfn_inputs(TRACE)]
     fn as_int_if_known(&self) -> Option<Rc<AbstractValue>> {
         self.as_bool_if_known()
             .map(|b| Rc::new(ConstantDomain::U128(b as u128).into()))
     }
 
     /// Returns an element that is "self & other".
+    #[logfn_inputs(TRACE)]
     fn bit_and(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -388,6 +404,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self | other".
+    #[logfn_inputs(TRACE)]
     fn bit_or(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -404,6 +421,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self ^ other".
+    #[logfn_inputs(TRACE)]
     fn bit_xor(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -420,6 +438,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self as target_type".
+    #[logfn_inputs(TRACE)]
     fn cast(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         if let Expression::CompileTimeConstant(v1) = &self.expression {
             let result = v1.cast(&target_type);
@@ -452,6 +471,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "if self { consequent } else { alternate }".
+    #[logfn_inputs(TRACE)]
     fn conditional_expression(
         &self,
         consequent: Rc<AbstractValue>,
@@ -503,6 +523,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self / other".
+    #[logfn_inputs(TRACE)]
     fn divide(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         self.try_to_simplify_binary_op(other, ConstantDomain::div, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Div { left, right })
@@ -510,6 +531,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self == other".
+    #[logfn_inputs(TRACE)]
     fn equals(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -604,6 +626,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self >= other".
+    #[logfn_inputs(TRACE)]
     fn greater_or_equal(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -622,6 +645,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self > other".
+    #[logfn_inputs(TRACE)]
     fn greater_than(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -642,6 +666,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Returns true if "self => other" is known at compile time to be true.
     /// Returning false does not imply the implication is false, just that we do not know.
+    #[logfn_inputs(TRACE)]
     fn implies(&self, other: &Rc<AbstractValue>) -> bool {
         // x => true, is always true
         // false => x, is always true
@@ -663,6 +688,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Returns true if "self => !other" is known at compile time to be true.
     /// Returning false does not imply the implication is false, just that we do not know.
+    #[logfn_inputs(TRACE)]
     fn implies_not(&self, other: &Rc<AbstractValue>) -> bool {
         // x => !false, is always true
         // false => !x, is always true
@@ -678,6 +704,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Returns true if "!self => !other" is known at compile time to be true.
     /// Returning false does not imply the implication is false, just that we do not know.
+    #[logfn_inputs(TRACE)]
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool {
         if self == other {
             return true;
@@ -689,6 +716,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// True if the set of concrete values that correspond to this domain is empty.
+    #[logfn_inputs(TRACE)]
     fn is_bottom(&self) -> bool {
         match self.expression {
             Expression::Bottom => true,
@@ -697,6 +725,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// True if all possible concrete values are elements of the set corresponding to this domain.
+    #[logfn_inputs(TRACE)]
     fn is_top(&self) -> bool {
         match self.expression {
             Expression::Top => true,
@@ -706,6 +735,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
     /// corresponding to self and other. In effect this behaves like set union.
+    #[logfn_inputs(TRACE)]
     fn join(&self, other: Rc<AbstractValue>, path: &Rc<Path>) -> Rc<AbstractValue> {
         // {} union y is just y
         if self.is_bottom() {
@@ -739,6 +769,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self <= other".
+    #[logfn_inputs(TRACE)]
     fn less_or_equal(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -758,6 +789,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is self < other
+    #[logfn_inputs(TRACE)]
     fn less_than(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -777,6 +809,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self * other".
+    #[logfn_inputs(TRACE)]
     fn multiply(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         self.try_to_simplify_binary_op(other, ConstantDomain::mul, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Mul { left, right })
@@ -784,6 +817,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is true if "self * other" is not in range of target_type.
+    #[logfn_inputs(TRACE)]
     fn mul_overflows(
         &self,
         other: Rc<AbstractValue>,
@@ -814,6 +848,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "-self".
+    #[logfn_inputs(TRACE)]
     fn negate(self) -> Rc<AbstractValue> {
         if let Expression::CompileTimeConstant(v1) = &self.expression {
             let result = v1.neg();
@@ -825,6 +860,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self != other".
+    #[logfn_inputs(TRACE)]
     fn not_equals(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -838,6 +874,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "!self".
+    #[logfn_inputs(TRACE)]
     fn logical_not(&self) -> Rc<AbstractValue> {
         if let Expression::CompileTimeConstant(v1) = &self.expression {
             let result = v1.not();
@@ -853,6 +890,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self.other".
+    #[logfn_inputs(TRACE)]
     fn offset(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Offset {
             left,
@@ -861,6 +899,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self || other".
+    #[logfn_inputs(TRACE)]
     fn or(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         fn unsimplified(x: &Rc<AbstractValue>, y: Rc<AbstractValue>) -> Rc<AbstractValue> {
             AbstractValue::make_binary(x.clone(), y, |left, right| Expression::Or { left, right })
@@ -932,11 +971,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Adds any abstract heap addresses found in the associated expression to the given set.
+    #[logfn_inputs(TRACE)]
     fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
         self.expression.record_heap_addresses(result);
     }
 
     /// Returns an element that is "self % other".
+    #[logfn_inputs(TRACE)]
     fn remainder(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         self.try_to_simplify_binary_op(other, ConstantDomain::rem, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Rem { left, right })
@@ -944,6 +985,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self << other".
+    #[logfn_inputs(TRACE)]
     fn shift_left(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -960,6 +1002,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is true if "self << other" shifts away all bits.
+    #[logfn_inputs(TRACE)]
     fn shl_overflows(
         &self,
         other: Rc<AbstractValue>,
@@ -990,6 +1033,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self >> other".
+    #[logfn_inputs(TRACE)]
     fn shr(&self, other: Rc<AbstractValue>, expression_type: ExpressionType) -> Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
@@ -1012,6 +1056,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is true if "self >> other" shifts away all bits.
+    #[logfn_inputs(TRACE)]
     fn shr_overflows(
         &self,
         other: Rc<AbstractValue>,
@@ -1042,6 +1087,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self - other".
+    #[logfn_inputs(TRACE)]
     fn subtract(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         self.try_to_simplify_binary_op(other, ConstantDomain::sub, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Sub { left, right })
@@ -1049,6 +1095,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is true if "self - other" is not in range of target_type.
+    #[logfn_inputs(TRACE)]
     fn sub_overflows(
         &self,
         other: Rc<AbstractValue>,
@@ -1080,6 +1127,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// True if all of the concrete values that correspond to self also correspond to other.
     /// Note: !x.subset(y) does not imply y.subset(x).
+    #[logfn_inputs(TRACE)]
     fn subset(&self, other: &Rc<AbstractValue>) -> bool {
         if self == other {
             return true;
@@ -1139,6 +1187,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Tries to simplify operation(self, other) by constant folding or by distribution
     /// the operation over self and/or other.
     /// Returns operation(self, other) if no simplification is possible.
+    #[logfn(TRACE)]
     fn try_to_simplify_binary_op(
         &self,
         other: Rc<AbstractValue>,
@@ -1160,6 +1209,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Tries to distribute the operation over self and/or other.
     /// Return operation(self, other) if no simplification is possible.
+    #[logfn_inputs(TRACE)]
     fn try_to_distribute_binary_op(
         &self,
         other: Rc<AbstractValue>,
@@ -1203,6 +1253,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Gets or constructs an interval that is cached.
+    #[logfn_inputs(TRACE)]
     fn get_cached_interval(&self) -> Rc<IntervalDomain> {
         {
             let mut cache = self.interval.borrow_mut();
@@ -1216,6 +1267,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Constructs an element of the Interval domain for simple expressions.
+    #[logfn_inputs(TRACE)]
     fn get_as_interval(&self) -> IntervalDomain {
         match &self.expression {
             Expression::Top => interval_domain::BOTTOM,
@@ -1271,6 +1323,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Replaces occurrences of Expression::Variable(path) with the value at that path
     /// in the given environment (if there is such a value).
+    #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
         if self.expression_size > k_limits::MAX_EXPRESSION_SIZE {
             return self.clone();
@@ -1448,6 +1501,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns a value that is simplified (refined) by replacing parameter values
     /// with their corresponding argument values. If no refinement is possible
     /// the result is simply a clone of this value.
+    #[logfn_inputs(TRACE)]
     fn refine_parameters(
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -1633,6 +1687,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns a domain that is simplified (refined) by using the current path conditions
     /// (conditions known to be true in the current context). If no refinement is possible
     /// the result is simply a clone of this domain.
+    #[logfn_inputs(TRACE)]
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Rc<AbstractValue> {
         if depth >= k_limits::MAX_REFINE_DEPTH {
             return self.clone();
@@ -1819,6 +1874,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to a set of values that include of the values that could be stored
     /// in memory at the given path.
+    #[logfn_inputs(TRACE)]
     fn widen(&self, path: &Rc<Path>) -> Rc<AbstractValue> {
         match self.expression {
             Expression::Widen { .. }

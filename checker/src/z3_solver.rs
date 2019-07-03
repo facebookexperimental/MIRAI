@@ -8,16 +8,17 @@ use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::ConstantDomain;
 use crate::expression::{Expression, ExpressionType};
+use crate::path::{Path, PathEnum};
 use crate::smt_solver::SmtResult;
 use crate::smt_solver::SmtSolver;
 
-use crate::path::{Path, PathEnum};
 use lazy_static::lazy_static;
 use log::debug;
+use log_derive::logfn_inputs;
 use mirai_annotations::{checked_assume, checked_assume_eq};
 use std::convert::TryFrom;
-use std::ffi::CStr;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
+use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 use std::sync::Mutex;
 use z3_sys;
@@ -43,7 +44,14 @@ pub struct Z3Solver {
     empty_str: z3_sys::Z3_string,
 }
 
+impl Debug for Z3Solver {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        "Z3Solver".fmt(f)
+    }
+}
+
 impl Z3Solver {
+    #[logfn_inputs(TRACE)]
     pub fn new() -> Z3Solver {
         unsafe {
             let _guard = Z3_MUTEX.lock().unwrap();
@@ -86,12 +94,14 @@ impl Z3Solver {
 }
 
 impl Default for Z3Solver {
+    #[logfn_inputs(TRACE)]
     fn default() -> Self {
         Z3Solver::new()
     }
 }
 
 impl SmtSolver<Z3ExpressionType> for Z3Solver {
+    #[logfn_inputs(TRACE)]
     fn as_debug_string(&self, expression: &Z3ExpressionType) -> String {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
@@ -101,6 +111,7 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn assert(&self, expression: &Z3ExpressionType) {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
@@ -108,6 +119,7 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn backtrack(&self) {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
@@ -115,11 +127,13 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_as_smt_predicate(&self, mirai_expression: &Expression) -> Z3ExpressionType {
         let _guard = Z3_MUTEX.lock().unwrap();
         self.get_as_bool_z3_ast(mirai_expression)
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_model_as_string(&self) -> String {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
@@ -130,6 +144,7 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_solver_state_as_string(&self) -> String {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
@@ -139,6 +154,7 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn set_backtrack_position(&self) {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
@@ -146,6 +162,7 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn solve(&self) -> SmtResult {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
@@ -159,6 +176,7 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
 }
 
 impl Z3Solver {
+    #[logfn_inputs(TRACE)]
     fn get_as_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
             Expression::AbstractHeapAddress(ordinal) => {
@@ -241,6 +259,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_boolean_op(
         &self,
         left: &Rc<AbstractValue>,
@@ -259,6 +278,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_cast(
         &self,
         operand: &Rc<AbstractValue>,
@@ -274,6 +294,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_conditional(
         &self,
         condition: &Rc<AbstractValue>,
@@ -293,6 +314,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_relational(
         &self,
         left: &Rc<AbstractValue>,
@@ -320,6 +342,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_ne(&self, left: &Rc<AbstractValue>, right: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
         let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
         let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
@@ -341,6 +364,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_negation(&self, operand: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
         let (is_float, operand_ast) = self.get_as_numeric_z3_ast(&(**operand).expression);
         unsafe {
@@ -352,11 +376,13 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_logical_not(&self, operand: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
         let operand_ast = self.get_as_bool_z3_ast(&(**operand).expression);
         unsafe { z3_sys::Z3_mk_not(self.z3_context, operand_ast) }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_reference(&self, path: &Rc<Path>) -> z3_sys::Z3_ast {
         let path_str = CString::new(format!("&{:?}", path)).unwrap();
         unsafe {
@@ -365,6 +391,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_shr(
         &self,
         left: &Rc<AbstractValue>,
@@ -383,6 +410,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_shift_overflows(
         &self,
         right: &Rc<AbstractValue>,
@@ -397,11 +425,13 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_fresh_const(&self) -> z3_sys::Z3_ast {
         //todo: why a bool_sort?
         unsafe { z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.bool_sort) }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_variable(&self, path: &Rc<Path>, var_type: &ExpressionType) -> z3_sys::Z3_ast {
         let path_str = CString::new(format!("{:?}", path)).unwrap();
         unsafe {
@@ -422,6 +452,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn general_join(&self, expression: &Expression, path: &Rc<Path>) -> z3_sys::Z3_ast {
         let path_str = CString::new(format!("{:?}", path)).unwrap();
         unsafe {
@@ -431,11 +462,13 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_symbol_for(&self, path: &Rc<Path>) -> z3_sys::Z3_symbol {
         let path_str = CString::new(format!("{:?}", path)).unwrap();
         unsafe { z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw()) }
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_sort_for(&self, var_type: &ExpressionType) -> z3_sys::Z3_sort {
         use self::ExpressionType::*;
         match var_type {
@@ -449,6 +482,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_ast_for_widened(
         &self,
         path: &Rc<Path>,
@@ -490,6 +524,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_constant_as_ast(&self, const_domain: &ConstantDomain) -> z3_sys::Z3_ast {
         match const_domain {
             ConstantDomain::Char(v) => unsafe {
@@ -532,6 +567,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_range_check(
         &self,
         operand_ast: z3_sys::Z3_ast,
@@ -546,6 +582,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_as_numeric_z3_ast(&self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
         match expression {
             Expression::AbstractHeapAddress(ordinal) => {
@@ -617,6 +654,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_binary_var_arg(
         &self,
         left: &Rc<AbstractValue>,
@@ -649,6 +687,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_binary_overflow_vararg(
         &self,
         left: &Rc<AbstractValue>,
@@ -679,6 +718,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_rem(
         &self,
         left: &Rc<AbstractValue>,
@@ -702,6 +742,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_binary(
         &self,
         left: &Rc<AbstractValue>,
@@ -733,6 +774,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_join(&self, expression: &Expression, path: &Rc<Path>) -> (bool, z3_sys::Z3_ast) {
         let path_str = CString::new(format!("{:?}", path)).unwrap();
         unsafe {
@@ -749,6 +791,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_boolean_op(&self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
         let ast = self.get_as_z3_ast(expression);
         unsafe {
@@ -759,11 +802,13 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_bitwise_binary(&self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
         let ast = self.get_as_bv_z3_ast(expression, 128);
         unsafe { (false, z3_sys::Z3_mk_bv2int(self.z3_context, ast, false)) }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_cast(
         &self,
         expression: &Expression,
@@ -789,6 +834,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_const(
         &self,
         expression: &Expression,
@@ -808,6 +854,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_conditional(
         &self,
         condition: &Rc<AbstractValue>,
@@ -831,6 +878,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_neg(&self, operand: &Rc<AbstractValue>) -> (bool, z3_sys::Z3_ast) {
         let (is_float, operand_ast) = self.get_as_numeric_z3_ast(&(**operand).expression);
         unsafe {
@@ -845,6 +893,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_reference(&self, path: &Rc<Path>) -> (bool, z3_sys::Z3_ast) {
         unsafe {
             let path_symbol = self.get_symbol_for(path);
@@ -855,6 +904,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_shl(
         &self,
         left: &Rc<AbstractValue>,
@@ -870,6 +920,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_shr(
         &self,
         left: &Rc<AbstractValue>,
@@ -887,6 +938,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_fresh_const(&self) -> (bool, z3_sys::Z3_ast) {
         unsafe {
             (
@@ -896,6 +948,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_variable(
         &self,
         expression: &Expression,
@@ -916,6 +969,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn numeric_widen(
         &self,
         path: &Rc<Path>,
@@ -932,6 +986,7 @@ impl Z3Solver {
         (is_float, ast)
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_as_bool_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
             Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
@@ -1001,6 +1056,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_as_bv_z3_ast(&self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
         match expression {
             Expression::AbstractHeapAddress(ordinal) => {
@@ -1099,6 +1155,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_binary(
         &self,
         num_bits: u32,
@@ -1115,6 +1172,7 @@ impl Z3Solver {
         unsafe { operation(self.z3_context, left_ast, right_ast) }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_overflows(
         &self,
         left: &Rc<AbstractValue>,
@@ -1149,6 +1207,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_boolean_op(&self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
         let ast = self.get_as_z3_ast(expression);
         // ast results in a boolean, but we want a bit vector.
@@ -1159,6 +1218,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_cast(&self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
         let path_str = CString::new(format!("{:?}", expression)).unwrap();
         unsafe {
@@ -1168,6 +1228,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_constant(&self, num_bits: u32, const_domain: &ConstantDomain) -> z3_sys::Z3_ast {
         match const_domain {
             ConstantDomain::Char(v) => unsafe {
@@ -1215,6 +1276,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_conditional(
         &self,
         num_bits: u32,
@@ -1235,6 +1297,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_join(&self, num_bits: u32, path: &Rc<Path>) -> z3_sys::Z3_ast {
         unsafe {
             let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
@@ -1243,6 +1306,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_reference(&self, num_bits: u32, path: &Rc<Path>) -> z3_sys::Z3_ast {
         unsafe {
             let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
@@ -1251,6 +1315,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_shr_by(
         &self,
         num_bits: u32,
@@ -1269,6 +1334,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_fresh_const(&self, num_bits: u32) -> z3_sys::Z3_ast {
         unsafe {
             let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
@@ -1276,6 +1342,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_variable(
         &self,
         path: &Rc<Path>,
@@ -1299,6 +1366,7 @@ impl Z3Solver {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn bv_widen(
         &self,
         path: &Rc<Path>,

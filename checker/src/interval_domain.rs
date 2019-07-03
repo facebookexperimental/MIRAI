@@ -6,6 +6,7 @@
 
 use crate::expression::ExpressionType::{self, *};
 
+use log_derive::logfn_inputs;
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::convert::TryFrom;
@@ -32,6 +33,7 @@ pub const TOP: IntervalDomain = IntervalDomain {
 };
 
 impl From<i128> for IntervalDomain {
+    #[logfn_inputs(TRACE)]
     fn from(i: i128) -> IntervalDomain {
         IntervalDomain {
             lower_bound: i,
@@ -41,6 +43,7 @@ impl From<i128> for IntervalDomain {
 }
 
 impl From<u128> for IntervalDomain {
+    #[logfn_inputs(TRACE)]
     fn from(u: u128) -> IntervalDomain {
         if let Result::Ok(i) = i128::try_from(u) {
             i.into()
@@ -55,6 +58,7 @@ impl From<u128> for IntervalDomain {
 
 impl IntervalDomain {
     //[x...y] + [a...b] = [x+a...y+b]
+    #[logfn_inputs(TRACE)]
     pub fn add(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();
@@ -70,6 +74,7 @@ impl IntervalDomain {
 
     // [x...y] >= [a...b] = x >= b
     // !([x...y] >= [a...b]) = [a...b] > [x...y] = a > y
+    #[logfn_inputs(TRACE)]
     pub fn greater_or_equal(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
             None
@@ -84,6 +89,7 @@ impl IntervalDomain {
 
     // [x...y] > [a...b] = x > b
     // !([x...y] > [a...b]) = [a...b] >= [x...y] = a >= y
+    #[logfn_inputs(TRACE)]
     pub fn greater_than(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
             None
@@ -101,6 +107,7 @@ impl IntervalDomain {
     // not implemented. The expectation is that bottom values will not often be encountered.
     // We don't need this domain to implement transfer functions for all operations that might
     // result in integer values since other domains will be preferred in those cases.
+    #[logfn_inputs(TRACE)]
     pub fn is_bottom(&self) -> bool {
         self.upper_bound < self.lower_bound
     }
@@ -109,6 +116,7 @@ impl IntervalDomain {
     // A false result just means that we don't know, it never means that we know it does not.
     // Note that i128::MIN and i128::MAX are reserved to indicate missing (unbounded) lower and upper
     // bounds, respectively.
+    #[logfn_inputs(TRACE)]
     pub fn is_contained_in(&self, target_type: &ExpressionType) -> bool {
         if self.is_bottom() || self.is_top() {
             return false;
@@ -147,6 +155,7 @@ impl IntervalDomain {
 
     // Returns true if this interval is known to be contained in the interval [0 ... bit size of target_type).
     // A false result just means that we don't know, it never means that we know it does not.
+    #[logfn_inputs(TRACE)]
     pub fn is_contained_in_width_of(&self, target_type: &ExpressionType) -> bool {
         if self.is_bottom() || self.is_top() {
             return false;
@@ -165,12 +174,14 @@ impl IntervalDomain {
     }
 
     // All concrete integer values belong to this interval, so we know nothing.
+    #[logfn_inputs(TRACE)]
     pub fn is_top(&self) -> bool {
         self.lower_bound == std::i128::MIN && self.upper_bound == std::i128::MAX
     }
 
     // [x...y] <= [a...b] = y <= a
     // !([x...y] <= [a...b]) = [a...b] < [x...y] = b < x
+    #[logfn_inputs(TRACE)]
     pub fn less_equal(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
             None
@@ -185,6 +196,7 @@ impl IntervalDomain {
 
     // [x...y] < [a...b] = y < a
     // !([x...y] < [a...b]) = [a...b] <= [x...y] = b <= x
+    #[logfn_inputs(TRACE)]
     pub fn less_than(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
             None
@@ -197,6 +209,7 @@ impl IntervalDomain {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     pub fn lower_bound(&self) -> Option<i128> {
         if self.lower_bound == TOP.lower_bound {
             None
@@ -205,6 +218,7 @@ impl IntervalDomain {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     pub fn upper_bound(&self) -> Option<i128> {
         if self.upper_bound == TOP.upper_bound {
             None
@@ -213,6 +227,7 @@ impl IntervalDomain {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     pub fn remove_lower_bound(&self) -> Self {
         IntervalDomain {
             lower_bound: TOP.lower_bound,
@@ -220,6 +235,7 @@ impl IntervalDomain {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     pub fn remove_upper_bound(&self) -> Self {
         IntervalDomain {
             lower_bound: self.lower_bound,
@@ -228,6 +244,7 @@ impl IntervalDomain {
     }
 
     // [x...y] * [a...b] = [x*a...y*b]
+    #[logfn_inputs(TRACE)]
     pub fn mul(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();
@@ -242,6 +259,7 @@ impl IntervalDomain {
     }
 
     // -[x...y] = [-y...-x]
+    #[logfn_inputs(TRACE)]
     pub fn neg(&self) -> Self {
         if self.is_bottom() {
             return BOTTOM.clone();
@@ -256,6 +274,7 @@ impl IntervalDomain {
     }
 
     // [x...y] - [a...b] = [x-b...y-a]
+    #[logfn_inputs(TRACE)]
     pub fn sub(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();
@@ -270,6 +289,7 @@ impl IntervalDomain {
     }
 
     // [x...y] widen [a...b] = [min(x,a)...max(y,b)],
+    #[logfn_inputs(TRACE)]
     pub fn widen(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();

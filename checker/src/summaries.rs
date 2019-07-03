@@ -9,12 +9,14 @@ use crate::environment::Environment;
 use crate::path::{Path, PathEnum};
 use crate::utils;
 
+use log_derive::{logfn, logfn_inputs};
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use rustc_errors::SourceMapper;
 use serde::{Deserialize, Serialize};
 use sled::{ConfigBuilder, Db};
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Formatter, Result};
 use std::fs;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -122,6 +124,7 @@ pub struct Precondition {
 }
 
 impl Summary {
+    #[logfn_inputs(TRACE)]
     pub fn is_subset_of(&self, other: &Summary) -> bool {
         if !Self::is_subset_of_preconditions(&self.preconditions[0..], &other.preconditions[0..]) {
             return false;
@@ -141,6 +144,7 @@ impl Summary {
         true
     }
 
+    #[logfn_inputs(TRACE)]
     fn is_subset_of_preconditions(p1: &[Precondition], p2: &[Precondition]) -> bool {
         if p1.is_empty() {
             return true;
@@ -160,6 +164,7 @@ impl Summary {
         Self::is_subset_of_preconditions(&p1[1..], &p2[1..])
     }
 
+    #[logfn_inputs(TRACE)]
     fn is_subset_of_result(r1: &Option<Rc<AbstractValue>>, r2: &Option<Rc<AbstractValue>>) -> bool {
         match (r1, r2) {
             (Some(v1), Some(v2)) => v1.subset(v2),
@@ -168,6 +173,7 @@ impl Summary {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn is_subset_of_side_effects(
         e1: &[(Rc<Path>, Rc<AbstractValue>)],
         e2: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -192,6 +198,7 @@ impl Summary {
         Self::is_subset_of_side_effects(&e1[1..], &e2[1..])
     }
 
+    #[logfn_inputs(TRACE)]
     pub fn widen_with(&self, other: &Summary) -> Summary {
         let side_effects =
             Self::widen_side_effects(&self.side_effects[0..], &other.side_effects[0..], vec![]);
@@ -217,6 +224,7 @@ impl Summary {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn widen_side_effects(
         e1: &[(Rc<Path>, Rc<AbstractValue>)],
         e2: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -254,6 +262,7 @@ impl Summary {
 
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
+#[logfn(TRACE)]
 pub fn summarize(
     argument_count: usize,
     exit_environment: &Environment,
@@ -288,6 +297,7 @@ pub fn summarize(
 /// When a precondition is being serialized into a summary, it needs a provenance that is not
 /// specific to the current (crate) compilation, since the summary may be used to compile a different
 /// crate, or a different version of the current crate.
+#[logfn(TRACE)]
 fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precondition> {
     let mut result = vec![];
     for precondition in preconditions.iter() {
@@ -307,6 +317,7 @@ fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precon
 /// When a precondition is used during the compilation of the crate in which it is defined, we
 /// want to use the spans, rather than the provenance string (and we don't want to waste memory),
 /// so we strip it's provenance string after it has been serialized.
+#[logfn_inputs(TRACE)]
 fn remove_provenance(preconditions: &mut Vec<Precondition>) {
     for precondition in preconditions.iter_mut() {
         precondition.provenance = None;
@@ -318,6 +329,7 @@ fn remove_provenance(preconditions: &mut Vec<Precondition>) {
 /// Since paths are created by writes, these are side-effects.
 /// Since these values are reachable from arguments or the result, they are visible to the caller
 /// and must be included in the summary.
+#[logfn_inputs(TRACE)]
 fn extract_side_effects(
     env: &Environment,
     argument_count: usize,
@@ -342,6 +354,7 @@ fn extract_side_effects(
 }
 
 /// Adds roots for all new heap allocated objects that are reachable by the caller.
+#[logfn_inputs(TRACE)]
 fn extract_reachable_heap_allocations(
     env: &Environment,
     heap_roots: &mut HashSet<usize>,
@@ -380,9 +393,16 @@ pub struct PersistentSummaryCache<'a, 'tcx> {
     type_context: &'a TyCtxt<'tcx>,
 }
 
+impl<'a, 'tcx> Debug for PersistentSummaryCache<'a, 'tcx> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        "PersistentSummaryCache".fmt(f)
+    }
+}
+
 impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// Creates a new persistent summary cache, using (or creating) a Sled data base at the given
     /// directory path.
+    #[logfn(TRACE)]
     pub fn new(
         type_context: &'a TyCtxt<'tcx>,
         summary_store_directory_str: String,
@@ -444,6 +464,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// Creates a Sled database at the given directory path, if it does not already exist.
     /// The initial value of the database contains summaries of standard library functions.
     /// The code used to create these summaries are mirai/standard_contracts.
+    #[logfn_inputs(TRACE)]
     fn create_default_summary_store_if_needed(
         summary_store_directory_str: &str,
     ) -> std::path::PathBuf {
@@ -472,6 +493,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
 
     /// Any summaries that are still in a default state will be for functions in the foreign_contracts
     /// module and their definitions use DefIds that are different from the ids at the call sites.
+    #[logfn_inputs(TRACE)]
     pub fn invalidate_default_summaries(&mut self) {
         let keys_to_remove: Vec<usize> = self
             .typed_cache
@@ -506,6 +528,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// Returns a list of DefIds for all functions in the current crate that are known
     /// to have used the summary of the function identified by def_id.
     /// Use this after all functions in a crate have been analyzed.
+    #[logfn_inputs(TRACE)]
     pub fn get_dependents(&mut self, def_id: &DefId) -> &Vec<DefId> {
         self.dependencies
             .entry(def_id.clone())
@@ -516,6 +539,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// the summary cache, which is a key value store. The string will always be the same as
     /// long as the definition does not change its name or location, so it can be used to
     /// transfer information from one compilation to the next, making incremental analysis possible.
+    #[logfn_inputs(TRACE)]
     pub fn get_summary_key_for(&mut self, def_id: DefId) -> &Rc<String> {
         let tcx = self.type_context;
         self.key_cache
@@ -527,6 +551,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// The optional dependent_def_id is the definition that refers to the returned summary.
     /// The cache tracks all such dependents so that they can be retrieved and re-analyzed
     /// if the cache is updated with a new summary for def_id.
+    #[logfn_inputs(TRACE)]
     pub fn get_summary_for(&mut self, def_id: DefId, dependent_def_id: Option<DefId>) -> &Summary {
         match dependent_def_id {
             None => {}
@@ -556,6 +581,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// and that this location may augment a generic function with type parameter information for,
     /// whereas def_id refers to the generic function itself.
     /// This matters if a useful function summary can only be written for specific generic instantiations.
+    #[logfn_inputs(TRACE)]
     pub fn get_summary_for_function_constant(
         &mut self,
         def_id: DefId,
@@ -599,6 +625,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// Returns a summary from the persistent summary cache, preferentially using the concatenation
     /// of persistent_key with arg_types_key as the cache key and falling back to just the
     /// persistent_key if arg_types_key is None.
+    #[logfn(TRACE)]
     fn get_persistent_summary_using_arg_types_if_possible(
         db: &Db,
         persistent_key: &str,
@@ -616,12 +643,14 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
 
     /// Returns the summary corresponding to the persistent_key in the the summary database.
     /// The caller is expected to cache this.
+    #[logfn_inputs(TRACE)]
     pub fn get_persistent_summary_for(&self, persistent_key: &str) -> Summary {
         Self::get_persistent_summary_for_db(&self.db, persistent_key)
             .unwrap_or_else(Summary::default)
     }
 
     /// Helper for get_summary_for and get_persistent_summary_for.
+    #[logfn(TRACE)]
     fn get_persistent_summary_for_db(db: &Db, persistent_key: &str) -> Option<Summary> {
         if let Ok(Some(pinned_value)) = db.get(persistent_key.as_bytes()) {
             Some(bincode::deserialize(pinned_value.deref()).unwrap())
@@ -631,6 +660,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     }
 
     /// Sets or updates the cache so that from now on def_id maps to the given summary.
+    #[logfn_inputs(TRACE)]
     pub fn set_summary_for(&mut self, def_id: DefId, mut summary: Summary) -> Option<Summary> {
         let persistent_key = utils::summary_key_str(self.type_context, def_id);
         let serialized_summary = bincode::serialize(&summary).unwrap();
