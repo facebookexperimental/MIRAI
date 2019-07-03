@@ -528,6 +528,14 @@ pub mod core {
             16
         }
     }
+
+    pub mod str {
+        pub mod implement_str {
+            pub fn is_empty(_self: &str) -> bool {
+                _self.len() == 0
+            }
+        }
+    }
 }
 
 pub mod std {
