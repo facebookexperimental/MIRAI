@@ -197,6 +197,7 @@ pub trait AbstractValueTrait: Sized {
     fn greater_than(&self, other: Self) -> Self;
     fn implies(&self, other: &Self) -> bool;
     fn implies_not(&self, other: &Self) -> bool;
+    fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool;
     fn is_bottom(&self) -> bool;
     fn is_top(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
@@ -675,6 +676,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         false
     }
 
+    /// Returns true if "!self => !other" is known at compile time to be true.
+    /// Returning false does not imply the implication is false, just that we do not know.
+    fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool {
+        if self == other {
+            return true;
+        }
+        if let Expression::And { left, right } = &other.expression {
+            return self.inverse_implies_not(left) || self.implies_not(right);
+        }
+        false
+    }
+
     /// True if the set of concrete values that correspond to this domain is empty.
     fn is_bottom(&self) -> bool {
         match self.expression {
@@ -868,6 +881,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if operand.eq(&other) {
                     return Rc::new(TRUE);
                 }
+            }
+            // (x || (x && y)) = x, etc.
+            if self.inverse_implies_not(&other) {
+                return self.clone();
             }
             match (&self.expression, &other.expression) {
                 (Expression::Not { ref operand }, _) if (**operand).eq(&other) => Rc::new(TRUE),

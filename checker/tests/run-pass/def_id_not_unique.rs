@@ -10,7 +10,6 @@
 
 // This example is highly contrived, but inspired by a larger way more subtle code fragment.
 
-#![feature(type_alias_enum_variants)]
 #![allow(non_snake_case)]
 
 #[macro_use]
