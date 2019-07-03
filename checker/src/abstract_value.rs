@@ -706,6 +706,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if (*self) == other {
             return other;
         }
+        // widened(x) union y is just widened(x)
+        if let Expression::Widen { .. } = &self.expression {
+            return self.clone();
+        }
+        // x union widened(y) is just widened(y)
+        if let Expression::Widen { .. } = &other.expression {
+            return other.clone();
+        }
         let expression_size = self.expression_size.saturating_add(other.expression_size);
         AbstractValue::make_from(
             Expression::Join {
@@ -1430,8 +1438,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         fresh: usize,
     ) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
-                self.clone()
+            Expression::Top | Expression::Bottom => self.clone(),
+            Expression::AbstractHeapAddress(ordinal) => {
+                AbstractValue::make_from(Expression::AbstractHeapAddress(*ordinal + fresh), 1)
             }
             Expression::Add { left, right } => left
                 .refine_parameters(arguments, fresh)
@@ -1796,6 +1805,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn widen(&self, path: &Rc<Path>) -> Rc<AbstractValue> {
         match self.expression {
             Expression::Widen { .. }
+            | Expression::AbstractHeapAddress(..)
             | Expression::CompileTimeConstant(..)
             | Expression::Reference(..)
             | Expression::Variable { .. } => self.clone(),

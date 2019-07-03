@@ -121,6 +121,137 @@ pub struct Precondition {
     pub spans: Vec<syntax_pos::Span>,
 }
 
+impl Summary {
+    pub fn is_subset_of(&self, other: &Summary) -> bool {
+        if !Self::is_subset_of_preconditions(&self.preconditions[0..], &other.preconditions[0..]) {
+            return false;
+        }
+        if !Self::is_subset_of_result(&self.result, &other.result) {
+            return false;
+        }
+        if !Self::is_subset_of_side_effects(&self.side_effects[0..], &other.side_effects[0..]) {
+            return false;
+        }
+        if !Self::is_subset_of_side_effects(
+            &self.unwind_side_effects[0..],
+            &other.unwind_side_effects[0..],
+        ) {
+            return false;
+        }
+        true
+    }
+
+    fn is_subset_of_preconditions(p1: &[Precondition], p2: &[Precondition]) -> bool {
+        if p1.is_empty() {
+            return true;
+        }
+        if p2.is_empty() {
+            return false;
+        }
+        if p1[0].spans < p2[0].spans {
+            return false;
+        }
+        if p1[0].spans > p2[0].spans {
+            return Self::is_subset_of_preconditions(p1, &p2[1..]);
+        }
+        if !p1[0].condition.subset(&p2[0].condition) {
+            return false;
+        }
+        Self::is_subset_of_preconditions(&p1[1..], &p2[1..])
+    }
+
+    fn is_subset_of_result(r1: &Option<Rc<AbstractValue>>, r2: &Option<Rc<AbstractValue>>) -> bool {
+        match (r1, r2) {
+            (Some(v1), Some(v2)) => v1.subset(v2),
+            (None, _) => true,
+            (_, None) => false,
+        }
+    }
+
+    fn is_subset_of_side_effects(
+        e1: &[(Rc<Path>, Rc<AbstractValue>)],
+        e2: &[(Rc<Path>, Rc<AbstractValue>)],
+    ) -> bool {
+        if e1.is_empty() {
+            return true;
+        }
+        if e2.is_empty() {
+            return false;
+        }
+        let (p1, v1) = &e1[0];
+        let (p2, v2) = &e2[0];
+        if p1 < p2 {
+            return false;
+        }
+        if p1 > p2 {
+            return Self::is_subset_of_side_effects(e1, &e2[1..]);
+        }
+        if !v1.subset(v2) {
+            return false;
+        }
+        Self::is_subset_of_side_effects(&e1[1..], &e2[1..])
+    }
+
+    pub fn widen_with(&self, other: &Summary) -> Summary {
+        let side_effects =
+            Self::widen_side_effects(&self.side_effects[0..], &other.side_effects[0..], vec![]);
+        let unwind_side_effects = Self::widen_side_effects(
+            &self.unwind_side_effects[0..],
+            &other.unwind_side_effects[0..],
+            vec![],
+        );
+        let result_path = &Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
+        let result = side_effects
+            .iter()
+            .find(|&(p, _)| p.eq(result_path))
+            .map(|(_, v)| v.clone());
+
+        Summary {
+            is_not_default: true,
+            preconditions: other.preconditions.clone(),
+            result,
+            side_effects,
+            post_conditions: other.post_conditions.clone(),
+            unwind_condition: None,
+            unwind_side_effects,
+        }
+    }
+
+    fn widen_side_effects(
+        e1: &[(Rc<Path>, Rc<AbstractValue>)],
+        e2: &[(Rc<Path>, Rc<AbstractValue>)],
+        mut acc: Vec<(Rc<Path>, Rc<AbstractValue>)>,
+    ) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {
+        if e1.is_empty() {
+            if e2.is_empty() {
+                return acc;
+            }
+            let (p, v) = &e2[0];
+            acc.push((p.clone(), v.widen(p)));
+            return Self::widen_side_effects(e1, &e2[1..], acc);
+        }
+        if e2.is_empty() {
+            let (p, v) = &e1[0];
+            acc.push((p.clone(), v.widen(p)));
+            return Self::widen_side_effects(&e1[1..], e2, acc);
+        }
+        let (p1, v1) = &e1[0];
+        let (p2, v2) = &e2[0];
+        if p1 < p2 {
+            let (p, v) = &e1[0];
+            acc.push((p.clone(), v.widen(p)));
+            return Self::widen_side_effects(&e1[1..], e2, acc);
+        }
+        if p1 > p2 {
+            let (p, v) = &e2[0];
+            acc.push((p.clone(), v.widen(p)));
+            return Self::widen_side_effects(e1, &e2[1..], acc);
+        }
+        acc.push((p1.clone(), v1.join(v2.clone(), p1).widen(p1)));
+        Self::widen_side_effects(&e1[1..], &e2[1..], acc)
+    }
+}
+
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
 pub fn summarize(

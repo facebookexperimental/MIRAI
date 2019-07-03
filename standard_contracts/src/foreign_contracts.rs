@@ -474,6 +474,10 @@ pub mod core {
                     Some(&collection[index])
                 }
             }
+
+            pub fn is_empty<T>(collection: &[T]) -> bool {
+                collection.len() == 0
+            }
         }
     }
 
@@ -571,7 +575,7 @@ pub mod alloc {
             }
 
             pub fn is_empty(&self) -> bool {
-                self.len() == 0
+                self.len == 0
             }
         }
     }

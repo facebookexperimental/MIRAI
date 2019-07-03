@@ -9,7 +9,14 @@
 #[macro_use]
 extern crate mirai_annotations;
 
+fn foo(a: &[i32]) -> i32 {
+    precondition!(!a.is_empty());
+    a[0]
+}
+
 pub fn main() {
     let v: Vec<i32> = Vec::new();
     verify!(v.is_empty());
+    let a: [i32; 1] = [0];
+    verify!(foo(&a) == 0);
 }

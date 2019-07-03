@@ -41,6 +41,7 @@ pub struct MirVisitorCrateContext<'a, 'b, 'tcx, E> {
     pub summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
     pub smt_solver: &'a mut dyn SmtSolver<E>,
     pub buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
+    pub outer_fixed_point_iteration: usize,
 }
 
 /// Holds the state for the MIR test visitor.
@@ -53,6 +54,7 @@ pub struct MirVisitor<'a, 'b, 'tcx, E> {
     summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
     smt_solver: &'a mut dyn SmtSolver<E>,
     buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
+    outer_fixed_point_iteration: usize,
 
     already_report_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     check_for_errors: bool,
@@ -84,6 +86,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             summary_cache: crate_context.summary_cache,
             smt_solver: crate_context.smt_solver,
             buffered_diagnostics: crate_context.buffered_diagnostics,
+            outer_fixed_point_iteration: crate_context.outer_fixed_point_iteration,
 
             already_report_errors_for_call_to: HashSet::new(),
             check_for_errors: false,
@@ -320,7 +323,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.check_for_errors(&block_indices, &in_state);
 
         // Now create a summary of the body that can be in-lined into call sites.
-        let summary = summaries::summarize(
+        let mut summary = summaries::summarize(
             self.mir.arg_count,
             &self.exit_environment,
             &self.preconditions,
@@ -331,7 +334,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         );
         let changed = {
             let old_summary = self.summary_cache.get_summary_for(self.def_id, None);
-            summary != *old_summary
+            if self.outer_fixed_point_iteration > 2 {
+                summary = old_summary.widen_with(&summary);
+            }
+            !summary.is_subset_of(old_summary)
         };
         if changed && elapsed_time_in_seconds < k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
             (
@@ -1295,6 +1301,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             // Promote the precondition, subject to a k-limit.
             if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
                 // Promote the callee precondition to a precondition of the current function.
+                // Unless, of course, if the precondition is already a precondition of the
+                // current function.
+                if self
+                    .preconditions
+                    .iter()
+                    .any(|pc| pc.spans.last() == precondition.spans.last())
+                {
+                    continue;
+                }
                 let promoted_condition = self
                     .current_environment
                     .entry_condition
@@ -1706,6 +1721,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
 
                 // Regardless, it is still the caller's problem, so push a precondition.
+                // After, of course, removing any promoted preconditions that match the current
+                // source span.
+                let sp = self.current_span;
+                self.preconditions.retain(|pc| pc.spans.last() != Some(&sp));
                 if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
                     let expected_cond = if expected {
                         cond_val
@@ -2253,6 +2272,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Allocates a new heap address and caches it, keyed with the current location
     /// so that subsequent visits deterministically use the same address when processing
     /// the instruction at this location. If we don't do this the fixed point loop wont converge.
+    /// Note, however, that this is not good enough for the outer fixed point because the counter
+    /// is shared between different functions unless it is reset to 0 for each function.
     fn get_new_heap_address(&mut self) -> Rc<AbstractValue> {
         let addresses = &mut self.heap_addresses;
         let constants = &mut self.constant_value_cache;
