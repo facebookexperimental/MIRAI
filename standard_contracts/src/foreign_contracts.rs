@@ -478,6 +478,10 @@ pub mod core {
             pub fn is_empty<T>(collection: &[T]) -> bool {
                 collection.len() == 0
             }
+
+            pub fn len<T>(collection: &[T]) -> usize {
+                collection.len()
+            }
         }
     }
 
