@@ -42,7 +42,9 @@ impl Environment {
 
 impl Debug for Environment {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.value_map.fmt(f)
+        f.debug_map()
+            .entries(self.value_map.iter().map(|(k, v)| (k, v)))
+            .finish()
     }
 }
 

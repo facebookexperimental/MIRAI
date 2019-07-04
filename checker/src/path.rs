@@ -15,6 +15,7 @@ use rustc::hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
+use std::fmt::{Debug, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -22,10 +23,16 @@ use std::rc::Rc;
 /// to get rehashed. This turns out to be expensive, so for this case we cache the hash to avoid
 /// recomputing it. The caching has a cost, so only use this in cases where it is highly likely
 /// that the path will be hashed more than once.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, Ord, PartialOrd)]
+#[derive(Serialize, Deserialize, Clone, Eq, Ord, PartialOrd)]
 pub struct Path {
     pub value: PathEnum,
     hash: u64,
+}
+
+impl Debug for Path {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        self.value.fmt(f)
+    }
 }
 
 impl Hash for Path {
@@ -55,7 +62,7 @@ impl From<PathEnum> for Path {
 /// A path represents a left hand side expression.
 /// When the actual expression is evaluated at runtime it will resolve to a particular memory
 /// location. During analysis it is used to keep track of state changes.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PathEnum {
     /// A dynamically allocated memory block.
     AbstractHeapAddress { ordinal: usize },
@@ -93,6 +100,29 @@ pub enum PathEnum {
         qualifier: Rc<Path>,
         selector: Rc<PathSelector>,
     },
+}
+
+impl Debug for PathEnum {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            PathEnum::AbstractHeapAddress { ordinal } => {
+                f.write_fmt(format_args!("heap_{}", ordinal))
+            }
+            PathEnum::Constant { value } => value.fmt(f),
+            PathEnum::LocalVariable { ordinal } => f.write_fmt(format_args!("local_{}", ordinal)),
+            PathEnum::StaticVariable {
+                summary_cache_key, ..
+            } => summary_cache_key.fmt(f),
+            PathEnum::PromotedConstant { ordinal } => {
+                f.write_fmt(format_args!("constant_{}", ordinal))
+            }
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } => f.write_fmt(format_args!("{:?}.{:?}", qualifier, selector)),
+        }
+    }
 }
 
 impl Path {
@@ -341,7 +371,7 @@ impl PathRefinement for Rc<Path> {
 }
 
 /// The selector denotes a de-referenced item, field, or element, or slice.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PathSelector {
     /// The length of an array.
     ArrayLength,
@@ -392,6 +422,29 @@ pub enum PathSelector {
     /// A model field is a specification construct used during MIRAI verification
     /// and does not have a runtime location.
     ModelField(Rc<String>),
+}
+
+impl Debug for PathSelector {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            PathSelector::ArrayLength | PathSelector::StringLength => f.write_str("len()"),
+            PathSelector::Deref => f.write_str("deref"),
+            PathSelector::Discriminant => f.write_str("discr"),
+            PathSelector::Field(index) => index.fmt(f),
+            PathSelector::Index(value) => f.write_fmt(format_args!("[{:?}]", value)),
+            PathSelector::ConstantIndex {
+                offset,
+                min_length,
+                from_end,
+            } => f.write_fmt(format_args!(
+                "[offset: {}, min_length: {}, from_end: {}",
+                offset, min_length, from_end
+            )),
+            PathSelector::Subslice { from, to } => f.write_fmt(format_args!("[{} : {}]", from, to)),
+            PathSelector::Downcast(ordinal) => f.write_fmt(format_args!(" as {}", ordinal)),
+            PathSelector::ModelField(name) => name.fmt(f),
+        }
+    }
 }
 
 impl PathSelector {
