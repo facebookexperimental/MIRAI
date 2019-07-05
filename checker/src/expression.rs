@@ -7,6 +7,7 @@ use crate::abstract_value::AbstractValue;
 use crate::constant_domain::ConstantDomain;
 use crate::path::Path;
 
+use log_derive::logfn_inputs;
 use rustc::ty::TyKind;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -310,6 +311,7 @@ pub enum Expression {
 impl Expression {
     /// Returns the type of value the expression should result in, if well formed.
     /// (both operands are of the same type for binary operators, conditional branches match).
+    #[logfn_inputs(TRACE)]
     pub fn infer_type(&self) -> ExpressionType {
         use self::ExpressionType::*;
         match self {
@@ -356,6 +358,7 @@ impl Expression {
     }
 
     /// Determines if the given expression is the compile time constant 1u128.
+    #[logfn_inputs(TRACE)]
     pub fn is_one(&self) -> bool {
         if let Expression::CompileTimeConstant(c) = self {
             if let ConstantDomain::U128(c) = c {
@@ -366,6 +369,7 @@ impl Expression {
     }
 
     /// Determines if the given expression is the compile time constant 0u128.
+    #[logfn_inputs(TRACE)]
     pub fn is_zero(&self) -> bool {
         if let Expression::CompileTimeConstant(c) = self {
             if let ConstantDomain::U128(c) = c {
@@ -376,6 +380,7 @@ impl Expression {
     }
 
     /// Adds any abstract heap addresses found in the associated expression to the given set.
+    #[logfn_inputs(TRACE)]
     pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
         match &self {
             Expression::AbstractHeapAddress(ordinal) => {
@@ -453,6 +458,7 @@ pub enum ExpressionType {
 }
 
 impl From<&ConstantDomain> for ExpressionType {
+    #[logfn_inputs(TRACE)]
     fn from(cv: &ConstantDomain) -> ExpressionType {
         use self::ExpressionType::*;
         match cv {
@@ -472,6 +478,7 @@ impl From<&ConstantDomain> for ExpressionType {
 }
 
 impl<'a> From<&TyKind<'a>> for ExpressionType {
+    #[logfn_inputs(TRACE)]
     fn from(ty_kind: &TyKind<'a>) -> ExpressionType {
         match ty_kind {
             TyKind::Bool => ExpressionType::Bool,
@@ -508,6 +515,7 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
 
 impl ExpressionType {
     /// Returns true if this type is one of the floating point number types.
+    #[logfn_inputs(TRACE)]
     pub fn is_floating_point_number(&self) -> bool {
         use self::ExpressionType::*;
         match self {
@@ -517,6 +525,7 @@ impl ExpressionType {
     }
 
     /// Returns true if this type is one of the integer types.
+    #[logfn_inputs(TRACE)]
     pub fn is_integer(&self) -> bool {
         use self::ExpressionType::*;
         match self {
@@ -527,6 +536,7 @@ impl ExpressionType {
 
     /// Returns true if this type is not a primitive type. References are not regarded as
     /// primitives for this purpose.
+    #[logfn_inputs(TRACE)]
     pub fn is_primitive(&self) -> bool {
         use self::ExpressionType::*;
         match self {
@@ -536,6 +546,7 @@ impl ExpressionType {
     }
 
     /// Returns true if this type is one of the signed integer types.
+    #[logfn_inputs(TRACE)]
     pub fn is_signed_integer(&self) -> bool {
         use self::ExpressionType::*;
         match self {
@@ -545,6 +556,7 @@ impl ExpressionType {
     }
 
     /// Returns true if this type is one of the unsigned integer types.
+    #[logfn_inputs(TRACE)]
     pub fn is_unsigned_integer(&self) -> bool {
         use self::ExpressionType::*;
         match self {
@@ -555,6 +567,7 @@ impl ExpressionType {
 
     /// Returns the number of bits used to represent the given type, if primitive.
     /// For non primitive types the result is just 0.
+    #[logfn_inputs(TRACE)]
     pub fn bit_length(&self) -> u8 {
         use self::ExpressionType::*;
         match self {
@@ -582,6 +595,7 @@ impl ExpressionType {
     /// Returns the maximum value for this type, as a ConstantDomain element.
     /// If the type is not a primitive value, the result is Bottom.
     #[allow(clippy::cast_lossless)]
+    #[logfn_inputs(TRACE)]
     pub fn max_value(&self) -> ConstantDomain {
         use self::ExpressionType::*;
         match self {
@@ -608,6 +622,7 @@ impl ExpressionType {
     /// Returns the minimum value for this type, as a ConstantDomain element.
     /// If the type is not a primitive value, the result is Bottom.
     #[allow(clippy::cast_lossless)]
+    #[logfn_inputs(TRACE)]
     pub fn min_value(&self) -> ConstantDomain {
         use self::ExpressionType::*;
         match self {

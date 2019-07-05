@@ -11,6 +11,7 @@ use crate::k_limits;
 use crate::path::{Path, PathEnum};
 
 use log::debug;
+use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::checked_assume;
 use rpds::HashTrieMap;
 use rustc::mir::BasicBlock;
@@ -29,6 +30,7 @@ pub struct Environment {
 
 /// Default
 impl Environment {
+    #[logfn_inputs(TRACE)]
     pub fn default() -> Environment {
         Environment {
             entry_condition: Rc::new(abstract_value::TRUE),
@@ -50,11 +52,13 @@ type JoinOrWiden =
 /// Methods
 impl Environment {
     /// Returns a reference to the value associated with the given path, if there is one.
+    #[logfn_inputs(TRACE)]
     pub fn value_at(&self, path: &Rc<Path>) -> Option<&Rc<AbstractValue>> {
         self.value_map.get(path)
     }
 
     /// Updates the path to value map so that the given path now points to the given value.
+    #[logfn_inputs(TRACE)]
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
         debug!("updating value of {:?} to {:?}", path, value);
         if value.is_bottom() {
@@ -87,6 +91,7 @@ impl Environment {
     /// concretized into two paths where the abstract value is replaced by the consequent
     /// and alternate, respectively. These paths can then be weakly updated to reflect the
     /// lack of precise knowledge at compile time.
+    #[logfn_inputs(TRACE)]
     fn try_to_split(&mut self, path: &Rc<Path>) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
         match &path.value {
             PathEnum::LocalVariable { .. } => self.try_to_split_local(path),
@@ -108,6 +113,7 @@ impl Environment {
     }
 
     /// Helper for try_to_split.
+    #[logfn_inputs(TRACE)]
     fn try_to_split_local(
         &mut self,
         path: &Rc<Path>,
@@ -141,6 +147,7 @@ impl Environment {
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the join of self.value_at(path) and other.value_at(path)
+    #[logfn_inputs(TRACE)]
     pub fn join(&self, other: &Environment, join_condition: &Rc<AbstractValue>) -> Environment {
         self.join_or_widen(other, join_condition, |x, y, c, p| {
             if Some(true) == c.as_bool_if_known() {
@@ -166,6 +173,7 @@ impl Environment {
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the widen of self.value_at(path) and other.value_at(path)
+    #[logfn_inputs(TRACE)]
     pub fn widen(&self, other: &Environment, join_condition: &Rc<AbstractValue>) -> Environment {
         self.clone()
             .join_or_widen(other, join_condition, |x, y, _c, p| {
@@ -179,6 +187,7 @@ impl Environment {
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the join or widen of self.value_at(path) and other.value_at(path).
+    #[logfn(TRACE)]
     fn join_or_widen(
         &self,
         other: &Environment,
@@ -233,6 +242,7 @@ impl Environment {
     }
 
     /// Returns true if for every path, self.value_at(path).subset(other.value_at(path))
+    #[logfn_inputs(TRACE)]
     pub fn subset(&self, other: &Environment) -> bool {
         let value_map1 = &self.value_map;
         let value_map2 = &other.value_map;

@@ -17,6 +17,7 @@ use crate::summaries;
 use crate::summaries::{PersistentSummaryCache, Precondition, Summary};
 use crate::utils::{self, is_public};
 
+use log_derive::logfn_inputs;
 use mirai_annotations::{assume, checked_assume, checked_assume_eq, precondition, verify};
 use rustc::session::Session;
 use rustc::ty::subst::SubstsRef;
@@ -27,6 +28,7 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::convert::TryInto;
+use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 use std::time::Instant;
 use syntax::errors::DiagnosticBuilder;
@@ -42,6 +44,12 @@ pub struct MirVisitorCrateContext<'a, 'b, 'tcx, E> {
     pub smt_solver: &'a mut dyn SmtSolver<E>,
     pub buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
     pub outer_fixed_point_iteration: usize,
+}
+
+impl<'a, 'b: 'a, 'tcx: 'b, E> Debug for MirVisitorCrateContext<'a, 'b, 'tcx, E> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        "MirVisitorCrateContext".fmt(f)
+    }
 }
 
 /// Holds the state for the MIR test visitor.
@@ -71,9 +79,16 @@ pub struct MirVisitor<'a, 'b, 'tcx, E> {
     fresh_variable_offset: usize,
 }
 
+impl<'a, 'b: 'a, 'tcx: 'b, E> Debug for MirVisitor<'a, 'b, 'tcx, E> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        "MirVisitor".fmt(f)
+    }
+}
+
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
 /// so that we can test a call to every default implementation of the MirVisitor trait.
 impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
+    #[logfn_inputs(TRACE)]
     pub fn new(
         crate_context: MirVisitorCrateContext<'a, 'b, 'tcx, E>,
     ) -> MirVisitor<'a, 'b, 'tcx, E> {
@@ -105,6 +120,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Restores the method only state to its initial state.
+    #[logfn_inputs(TRACE)]
     fn reset_visitor_state(&mut self) {
         self.already_report_errors_for_call_to = HashSet::new();
         self.check_for_errors = false;
@@ -121,12 +137,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.fresh_variable_offset = 1000;
     }
 
+    #[logfn_inputs(TRACE)]
     fn emit_diagnostic(&mut self, diagnostic_builder: DiagnosticBuilder<'b>) {
         self.buffered_diagnostics.push(diagnostic_builder);
     }
 
     /// Use the local and global environments to resolve Path to an abstract value.
     /// For now, promoted constants just return Top.
+    #[logfn_inputs(TRACE)]
     fn lookup_path_and_refine_result(
         &mut self,
         path: Rc<Path>,
@@ -223,6 +241,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     // Path is required to be a temporary used to track an operation result.
+    #[logfn_inputs(TRACE)]
     fn get_target_path_type(&mut self, path: &Rc<Path>) -> ExpressionType {
         match &path.value {
             PathEnum::LocalVariable { ordinal } => {
@@ -238,6 +257,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Lookups up the local definition for this ordinal and maps the type information
     /// onto ExpressionType.
+    #[logfn_inputs(TRACE)]
     fn get_type_for_local(&self, ordinal: usize) -> ExpressionType {
         let loc = &self.mir.local_decls[mir::Local::from(ordinal)];
         (&loc.ty.sty).into()
@@ -246,6 +266,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Do a topological sort, breaking loops by preferring lower block indices, using dominance
     /// to determine if there is a loop (if a is predecessor of b and b dominates a then they
     /// form a loop and we'll emit the one with the lower index first).
+    #[logfn_inputs(TRACE)]
     fn add_predecessors_then_root_block(
         &self,
         root_block: mir::BasicBlock,
@@ -275,6 +296,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     // Perform a topological sort on the basic blocks so that blocks are analyzed after their
     // predecessors (except in the case of loop anchors).
+    #[logfn_inputs(TRACE)]
     fn get_sorted_block_indices(&mut self) -> Vec<mir::BasicBlock> {
         let dominators = self.mir.dominators();
         let mut block_indices = Vec::new();
@@ -293,9 +315,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
     /// Returns true if the newly computed summary is different from the summary (if any)
     /// that is already in the cache.
+    #[logfn_inputs(TRACE)]
     pub fn visit_body(&mut self, function_name: &str) -> (Option<Summary>, u64) {
-        debug!("visit_body({:?}) of {}", self.def_id, function_name);
-
         let mut block_indices = self.get_sorted_block_indices();
 
         let (mut in_state, mut out_state) =
@@ -354,6 +375,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Compute a fixed point, which is a value of out_state that will not grow with more iterations.
+    #[logfn_inputs(TRACE)]
     fn compute_fixed_point(
         &mut self,
         function_name: &str,
@@ -397,6 +419,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         elapsed_time_in_seconds
     }
 
+    #[logfn_inputs(TRACE)]
     fn check_for_errors(
         &mut self,
         block_indices: &[mir::BasicBlock],
@@ -412,6 +435,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn initialize_state_maps(
         block_indices: &[mir::BasicBlock],
     ) -> (
@@ -432,6 +456,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Visits each block in block_indices, after computing a precondition and initial state for
     /// each block by joining together the exit conditions and exit states of its predecessors.
     /// Returns true if one or more of the blocks changed their output states.
+    #[logfn_inputs(TRACE)]
     fn visit_blocks(
         &mut self,
         block_indices: &mut Vec<mir::BasicBlock>,
@@ -482,6 +507,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// If a predecessor has not yet been analyzed, its state does not form part of the join.
     /// If no predecessors have been analyzed, the entry state is a default entry state with an
     /// entry condition of TOP.
+    #[logfn_inputs(TRACE)]
     fn get_initial_state_from_predecessors(
         &mut self,
         bb: mir::BasicBlock,
@@ -544,6 +570,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Use the visitor to compute the state corresponding to promoted constants.
+    #[logfn_inputs(TRACE)]
     fn promote_constants(&mut self, function_name: &str) -> Environment {
         let mut state_with_parameters = Environment::default();
         let saved_mir = self.mir;
@@ -577,6 +604,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Computes a fixed point over the blocks of the MIR for a promoted constant block
+    #[logfn_inputs(TRACE)]
     fn visit_promoted_constants_block(&mut self, function_name: &str) {
         let mut block_indices = self.get_sorted_block_indices();
 
@@ -599,9 +627,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Visits each statement in order and then visits the terminator.
+    #[logfn_inputs(TRACE)]
     fn visit_basic_block(&mut self, bb: mir::BasicBlock) {
-        debug!("visit_basic_block({:?})", bb);
-
         let mir::BasicBlockData {
             ref statements,
             ref terminator,
@@ -628,6 +655,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Calls a specialized visitor for each kind of statement.
+    #[logfn_inputs(TRACE)]
     fn visit_statement(&mut self, location: mir::Location, statement: &mir::Statement<'tcx>) {
         self.current_location = location;
         let mir::Statement { kind, source_info } = statement;
@@ -650,25 +678,19 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Write the RHS Rvalue to the LHS Place.
+    #[logfn_inputs(TRACE)]
     fn visit_assign(&mut self, place: &mir::Place<'tcx>, rvalue: &mir::Rvalue<'tcx>) {
-        debug!(
-            "default visit_assign(place: {:?}, rvalue: {:?})",
-            place, rvalue
-        );
         let path = self.visit_place(place);
         self.visit_rvalue(path, rvalue);
     }
 
     /// Write the discriminant for a variant to the enum Place.
+    #[logfn_inputs(TRACE)]
     fn visit_set_discriminant(
         &mut self,
         place: &mir::Place<'tcx>,
         variant_index: rustc::ty::layout::VariantIdx,
     ) {
-        debug!(
-            "default visit_set_discriminant(place: {:?}, variant_index: {:?})",
-            place, variant_index
-        );
         let target_path = Path::new_discriminant(self.visit_place(place));
         let index_val = Rc::new(
             self.constant_value_cache
@@ -681,13 +703,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Start a live range for the storage of the local.
-    fn visit_storage_live(&mut self, local: mir::Local) {
-        debug!("default visit_storage_live(local: {:?})", local);
-    }
+    #[logfn_inputs(TRACE)]
+    fn visit_storage_live(&mut self, local: mir::Local) {}
 
     /// End the current live range for the storage of the local.
+    #[logfn_inputs(TRACE)]
     fn visit_storage_dead(&mut self, local: mir::Local) {
-        debug!("default visit_storage_dead(local: {:?})", local);
         let path = Rc::new(
             PathEnum::LocalVariable {
                 ordinal: local.as_usize(),
@@ -699,8 +720,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Execute a piece of inline Assembly.
+    #[logfn_inputs(TRACE)]
     fn visit_inline_asm(&mut self, inline_asm: &mir::InlineAsm<'tcx>) {
-        debug!("default visit_inline_asm(inline_asm: {:?})", inline_asm);
         if self.check_for_errors {
             let span = self.current_span;
             let err = self.session.struct_span_warn(
@@ -716,11 +737,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// by miri and only generated when "-Z mir-emit-retag" is passed.
     /// See <https://internals.rust-lang.org/t/stacked-borrows-an-aliasing-model-for-rust/8153/>
     /// for more details.
+    #[logfn_inputs(TRACE)]
     fn visit_retag(&self, retag_kind: mir::RetagKind, place: &mir::Place<'tcx>) {
-        debug!(
-            "default visit_retag(retag_kind: {:?}, place: {:?})",
-            retag_kind, place
-        );
         // This seems to be an intermediate artifact of MIR generation and is related to aliasing.
         // We assume (and will attempt to enforce) that no aliasing of mutable pointers are present
         // in the programs we check.
@@ -729,8 +747,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Calls a specialized visitor for each kind of terminator.
+    #[logfn_inputs(TRACE)]
     fn visit_terminator(&mut self, source_info: mir::SourceInfo, kind: &mir::TerminatorKind<'tcx>) {
-        debug!("{:?}", source_info);
         self.current_span = source_info.span;
         match kind {
             mir::TerminatorKind::Goto { target } => self.visit_goto(*target),
@@ -772,8 +790,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// block should have one successor in the graph; we jump there
+    #[logfn_inputs(TRACE)]
     fn visit_goto(&mut self, target: mir::BasicBlock) {
-        debug!("default visit_goto(local: {:?})", target);
         // Propagate the entry condition to the successor block.
         self.current_environment.exit_conditions = self
             .current_environment
@@ -791,6 +809,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// are found in the corresponding indices from the `targets` vector.
     /// * `targets` - Possible branch sites. The last element of this vector is used
     /// for the otherwise branch, so targets.len() == values.len() + 1 should hold.
+    #[logfn_inputs(TRACE)]
     fn visit_switch_int(
         &mut self,
         discr: &mir::Operand<'tcx>,
@@ -798,10 +817,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         values: &[u128],
         targets: &[mir::BasicBlock],
     ) {
-        debug!(
-            "default visit_switch_int(discr: {:?}, switch_ty: {:?}, values: {:?}, targets: {:?})",
-            discr, switch_ty, values, targets
-        );
         assume!(targets.len() == values.len() + 1);
         let mut default_exit_condition = self.current_environment.entry_condition.clone();
         let discr = self.visit_operand(discr);
@@ -826,19 +841,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Indicates that the landing pad is finished and unwinding should
     /// continue. Emitted by build::scope::diverge_cleanup.
-    fn visit_resume(&self) {
-        debug!("default visit_resume()");
-    }
+    #[logfn_inputs(TRACE)]
+    fn visit_resume(&self) {}
 
     /// Indicates that the landing pad is finished and that the process
     /// should abort. Used to prevent unwinding for foreign items.
-    fn visit_abort(&self) {
-        debug!("default visit_abort()");
-    }
+    #[logfn_inputs(TRACE)]
+    fn visit_abort(&self) {}
 
     /// Indicates a normal return. The return place should have been filled in by now.
+    #[logfn_inputs(TRACE)]
     fn visit_return(&mut self) {
-        debug!("default visit_return()");
         if self.check_for_errors {
             // Done with fixed point, so prepare to summarize.
             let return_guard = self.current_environment.entry_condition.as_bool_if_known();
@@ -854,8 +867,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Indicates a terminator that can never be reached.
+    #[logfn_inputs(TRACE)]
     fn visit_unreachable(&mut self) {
-        debug!("default visit_unreachable()");
         // An unreachable terminator is the compiler's way to tell us that this block will
         // actually never be reached because the type system says so.
         // Why it is necessary in such a case to actually generate unreachable code is something
@@ -864,16 +877,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Drop the Place
+    #[logfn_inputs(TRACE)]
     fn visit_drop(
         &mut self,
         location: &mir::Place<'tcx>,
         target: mir::BasicBlock,
         unwind: Option<mir::BasicBlock>,
     ) {
-        debug!(
-            "default visit_drop(location: {:?}, target: {:?}, unwind: {:?})",
-            location, target, unwind
-        );
         // Propagate the entry condition to the successor blocks.
         self.current_environment.exit_conditions = self
             .current_environment
@@ -900,6 +910,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// * `cleanup` - Cleanups to be done if the call unwinds.
     /// * `from_hir_call` - Whether this is from a call in HIR, rather than from an overloaded
     /// operator. True for overloaded function call.
+    #[logfn_inputs(TRACE)]
     fn visit_call(
         &mut self,
         func: &mir::Operand<'tcx>,
@@ -908,7 +919,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         cleanup: Option<mir::BasicBlock>,
         from_hir_call: bool,
     ) {
-        debug!("default visit_call(func: {:?}, args: {:?}, destination: {:?}, cleanup: {:?}, from_hir_call: {:?})", func, args, destination, cleanup, from_hir_call);
         // This offset is used to distinguish any local variables that leak out from the called function
         // from local variables of the callee function.
         // This situation arises when a structured value stored in a local variable is assigned to
@@ -948,6 +958,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// If the current call is to a well known function for which we don't have a cached summary,
     /// this function will update the environment as appropriate and return true. If the return
     /// result is false, just carry on with the normal logic.
+    #[logfn_inputs(TRACE)]
     fn handled_as_special_function_call(
         &mut self,
         known_name: &KnownFunctionNames,
@@ -1120,6 +1131,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// This is the case for helper MIRAI helper functions that are hidden in the documentation
     /// and that are required to be invoked via macros that ensure that the argument providing
     /// this value is always a string literal.
+    #[logfn_inputs(TRACE)]
     fn coerce_to_string(&mut self, value: &AbstractValue) -> Rc<String> {
         match &value.expression {
             Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s.clone(),
@@ -1136,6 +1148,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Adds the first and only value in actual_args to the path condition of the destination.
     /// No check is performed, since we get to assume this condition without proof.
+    #[logfn_inputs(TRACE)]
     fn handle_assume(
         &mut self,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -1166,6 +1179,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Adds the first and only value in actual_args to the current list of preconditions.
     /// No check is performed, since we get to assume the caller has verified this condition.
+    #[logfn_inputs(TRACE)]
     fn handle_precondition(&mut self, actual_args: &[(Rc<Path>, Rc<AbstractValue>)]) {
         precondition!(actual_args.len() == 2);
         if self.check_for_errors {
@@ -1198,6 +1212,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// In some cases this can be done via a summary, but if not this is the place to do it.
     /// Right now, that means core::slice::len becomes a path with the ArrayLength selector
     /// since there is no way to write a summary to that effect in Rust itself.
+    #[logfn_inputs(TRACE)]
     fn try_to_inline_standard_ops_func(
         &mut self,
         known_name: &KnownFunctionNames,
@@ -1241,6 +1256,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns a summary of the function to call, obtained from the summary cache.
+    #[logfn_inputs(TRACE)]
     fn get_function_summary(&mut self, func_to_call: &Rc<AbstractValue>) -> Summary {
         if let Expression::CompileTimeConstant(ConstantDomain::Function {
             def_id: Some(def_id),
@@ -1268,6 +1284,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// are met by the current state and arguments of the calling function.
     /// Preconditions that are definitely false generate diagnostic messages.
     /// Preconditions that are maybe false become preconditions of the calling function.
+    #[logfn_inputs(TRACE)]
     fn check_function_preconditions(
         &mut self,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -1349,6 +1366,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// If the current function is public, or if there are already too many promoted preconditions,
     /// emit a warning that the given precondition of the function being called is not known to
     /// be true at this point and/or the call is not known to be unreachable.
+    #[logfn_inputs(TRACE)]
     fn warn_if_public(&mut self, func_to_call: &Rc<AbstractValue>, precondition: &Precondition) {
         if is_public(self.def_id, &self.tcx)
             || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
@@ -1369,6 +1387,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Emit a diagnostic to the effect that the current call might violate a the given precondition
     /// of the called function. Use the provenance and spans of the precondition to point out related locations.
+    #[logfn_inputs(TRACE)]
     fn emit_diagnostic_for_precondition(&mut self, precondition: &Precondition, warn: bool) {
         let mut diagnostic = if warn {
             Rc::new(format!("possible {}", precondition.message))
@@ -1390,6 +1409,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Updates the current state to reflect the effects of a normal return from the function call.
+    #[logfn_inputs(TRACE)]
     fn transfer_and_refine_normal_return_state(
         &mut self,
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
@@ -1445,6 +1465,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Handle the case where the called function does not complete normally.
+    #[logfn_inputs(TRACE)]
     fn transfer_and_refine_cleanup_state(
         &mut self,
         cleanup: Option<mir::BasicBlock>,
@@ -1474,6 +1495,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// If the function being called is a special function like mirai_annotations.mirai_verify or
     /// std.panicking.begin_panic then report a diagnostic or create a precondition as appropriate.
+    #[logfn_inputs(TRACE)]
     fn report_calls_to_special_functions(
         &mut self,
         known_name: &KnownFunctionNames,
@@ -1628,6 +1650,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// for which the path is rooted by source_path and where rpath is path re-rooted with
     /// target_path and rvalue is value refined by replacing all occurrences of parameter values
     /// with the corresponding actual values.
+    #[logfn_inputs(TRACE)]
     fn transfer_and_refine(
         &mut self,
         effects: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -1663,6 +1686,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Jump to the target if the condition has the expected value,
     /// otherwise panic with a message and a cleanup target.
+    #[logfn_inputs(TRACE)]
     fn visit_assert(
         &mut self,
         cond: &mir::Operand<'tcx>,
@@ -1671,7 +1695,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         target: mir::BasicBlock,
         cleanup: Option<mir::BasicBlock>,
     ) {
-        debug!("default visit_assert(cond: {:?}, expected: {:?}, msg: {:?}, target: {:?}, cleanup: {:?})", cond, expected, msg, target, cleanup);
         let cond_val = self.visit_operand(cond);
         let not_cond_val = cond_val.logical_not();
         // Propagate the entry condition to the successor blocks, conjoined with cond (or !cond).
@@ -1772,6 +1795,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Checks the given condition value and also checks if the current entry condition can be true.
     /// If the abstract domains are undecided, resort to using the SMT solver.
     /// Only call this when doing actual error checking, since this is expensive.
+    #[logfn_inputs(TRACE)]
     fn check_condition_value_and_reachability(
         &mut self,
         cond_val: &Rc<AbstractValue>,
@@ -1817,6 +1841,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         (cond_as_bool, entry_cond_as_bool)
     }
 
+    #[logfn_inputs(TRACE)]
     fn solve_condition(&mut self, cond_val: &Rc<AbstractValue>) -> Option<bool> {
         let ce = &cond_val.expression;
         let cond_smt_expr = self.smt_solver.get_as_smt_predicate(ce);
@@ -1842,6 +1867,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Calls a specialized visitor for each kind of Rvalue
+    #[logfn_inputs(TRACE)]
     fn visit_rvalue(&mut self, path: Rc<Path>, rvalue: &mir::Rvalue<'tcx>) {
         match rvalue {
             mir::Rvalue::Use(operand) => {
@@ -1881,11 +1907,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// path = x (either a move or copy, depending on type of x), or path = constant.
+    #[logfn_inputs(TRACE)]
     fn visit_use(&mut self, path: Rc<Path>, operand: &mir::Operand<'tcx>) {
-        debug!(
-            "default visit_use(path: {:?}, operand: {:?})",
-            path, operand
-        );
         match operand {
             mir::Operand::Copy(place) => {
                 self.visit_used_copy(path, place);
@@ -1930,17 +1953,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// For each (path', value) pair in the environment where path' is rooted in place,
     /// add a (path'', value) pair to the environment where path'' is a copy of path re-rooted
     /// with place.
+    #[logfn_inputs(TRACE)]
     fn visit_used_copy(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
-        debug!(
-            "default visit_used_copy(target_path: {:?}, place: {:?})",
-            target_path, place
-        );
         let rpath = self.visit_place(place);
         let rtype = self.get_place_type(place);
         self.copy_or_move_elements(target_path, rpath, rtype, false);
     }
 
     /// Copies/moves all paths rooted in rpath to corresponding paths rooted in target_path.
+    #[logfn_inputs(TRACE)]
     fn copy_or_move_elements(
         &mut self,
         target_path: Rc<Path>,
@@ -2088,22 +2109,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// For each (path', value) pair in the environment where path' is rooted in place,
     /// add a (path'', value) pair to the environment where path'' is a copy of path re-rooted
     /// with place, and also remove the (path', value) pair from the environment.
+    #[logfn_inputs(TRACE)]
     fn visit_used_move(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
-        debug!(
-            "default visit_used_move(target_path: {:?}, place: {:?})",
-            target_path, place
-        );
         let rpath = self.visit_place(place);
         let rtype = self.get_place_type(place);
         self.copy_or_move_elements(target_path, rpath, rtype, true);
     }
 
     /// path = [x; 32]
+    #[logfn_inputs(TRACE)]
     fn visit_repeat(&mut self, path: Rc<Path>, operand: &mir::Operand<'tcx>, count: u64) {
-        debug!(
-            "default visit_repeat(path: {:?}, operand: {:?}, count: {:?})",
-            path, operand, count
-        );
         let length_path = Path::new_length(path);
         let length_value = Rc::new(
             self.constant_value_cache
@@ -2121,6 +2136,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// path = &x or &mut x
+    #[logfn_inputs(TRACE)]
     fn visit_ref(
         &mut self,
         path: Rc<Path>,
@@ -2128,10 +2144,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         borrow_kind: mir::BorrowKind,
         place: &mir::Place<'tcx>,
     ) {
-        debug!(
-            "default visit_ref(path: {:?}, region: {:?}, borrow_kind: {:?}, place: {:?})",
-            path, region, borrow_kind, place
-        );
         let value_path = self.visit_place(place);
         let value = match &value_path.value {
             PathEnum::QualifiedPath {
@@ -2160,8 +2172,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// path = length of a [X] or [X;n] value.
+    #[logfn_inputs(TRACE)]
     fn visit_len(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
-        debug!("default visit_len(path: {:?}, place: {:?})", path, place);
         let place_ty = self.get_rustc_place_type(place);
         let len_value = if let TyKind::Array(_, len) = place_ty {
             // We only get here if "-Z mir-opt-level=0" was specified.
@@ -2176,12 +2188,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Get the length of an array. Will be a compile time constant if the array length is known.
+    #[logfn_inputs(TRACE)]
     fn get_len(&mut self, path: Rc<Path>) -> Rc<AbstractValue> {
         let length_path = Path::new_length(path);
         self.lookup_path_and_refine_result(length_path, ExpressionType::Usize)
     }
 
     /// path = operand as ty.
+    #[logfn_inputs(TRACE)]
     fn visit_cast(
         &mut self,
         path: Rc<Path>,
@@ -2189,10 +2203,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         operand: &mir::Operand<'tcx>,
         ty: rustc::ty::Ty<'tcx>,
     ) {
-        debug!(
-            "default visit_cast(path: {:?}, cast_kind: {:?}, operand: {:?}, ty: {:?})",
-            path, cast_kind, operand, ty
-        );
         let operand = self.visit_operand(operand);
         let result = if cast_kind == mir::CastKind::Misc {
             operand.cast(ExpressionType::from(&ty.sty))
@@ -2203,6 +2213,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Apply the given binary operator to the two operands and assign result to path.
+    #[logfn_inputs(TRACE)]
     fn visit_binary_op(
         &mut self,
         path: Rc<Path>,
@@ -2210,10 +2221,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         left_operand: &mir::Operand<'tcx>,
         right_operand: &mir::Operand<'tcx>,
     ) {
-        debug!(
-            "default visit_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})",
-            path, bin_op, left_operand, right_operand
-        );
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let result = match bin_op {
@@ -2244,6 +2251,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate
     /// and assign the result to path.
+    #[logfn_inputs(TRACE)]
     fn visit_checked_binary_op(
         &mut self,
         path: Rc<Path>,
@@ -2251,7 +2259,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         left_operand: &mir::Operand<'tcx>,
         right_operand: &mir::Operand<'tcx>,
     ) {
-        debug!("default visit_checked_binary_op(path: {:?}, bin_op: {:?}, left_operand: {:?}, right_operand: {:?})", path, bin_op, left_operand, right_operand);
         // We assume that path is a temporary used to track the operation result and its overflow status.
         let target_type = self.get_target_path_type(&path);
         let left = self.visit_operand(left_operand);
@@ -2287,11 +2294,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Create a value based on the given type and assign it to path.
+    #[logfn_inputs(TRACE)]
     fn visit_nullary_op(&mut self, path: Rc<Path>, null_op: mir::NullOp, ty: rustc::ty::Ty<'tcx>) {
-        debug!(
-            "default visit_nullary_op(path: {:?}, null_op: {:?}, ty: {:?})",
-            path, null_op, ty
-        );
         let value = match null_op {
             mir::NullOp::Box => self.get_new_heap_address(),
             mir::NullOp::SizeOf => {
@@ -2307,6 +2311,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// the instruction at this location. If we don't do this the fixed point loop wont converge.
     /// Note, however, that this is not good enough for the outer fixed point because the counter
     /// is shared between different functions unless it is reset to 0 for each function.
+    #[logfn_inputs(TRACE)]
     fn get_new_heap_address(&mut self) -> Rc<AbstractValue> {
         let addresses = &mut self.heap_addresses;
         let constants = &mut self.constant_value_cache;
@@ -2317,11 +2322,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Apply the given unary operator to the operand and assign to path.
+    #[logfn_inputs(TRACE)]
     fn visit_unary_op(&mut self, path: Rc<Path>, un_op: mir::UnOp, operand: &mir::Operand<'tcx>) {
-        debug!(
-            "default visit_unary_op(path: {:?}, un_op: {:?}, operand: {:?})",
-            path, un_op, operand
-        );
         let operand = self.visit_operand(operand);
         let result = match un_op {
             mir::UnOp::Neg => operand.negate(),
@@ -2331,11 +2333,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Read the discriminant of an enum and assign to path.
+    #[logfn_inputs(TRACE)]
     fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
-        debug!(
-            "default visit_discriminant(path: {:?}, place: {:?})",
-            path, place
-        );
         let discriminant_path = Path::new_discriminant(self.visit_place(place));
         let discriminant_type = self.get_place_type(place);
         let discriminant_value =
@@ -2346,16 +2345,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.
     /// See https://github.com/rust-lang/rust/issues/48193.
+    #[logfn_inputs(TRACE)]
     fn visit_aggregate(
         &mut self,
         path: Rc<Path>,
         aggregate_kinds: &mir::AggregateKind<'tcx>,
         operands: &[mir::Operand<'tcx>],
     ) {
-        debug!(
-            "default visit_aggregate(path: {:?}, aggregate_kinds: {:?}, operands: {:?})",
-            path, aggregate_kinds, operands
-        );
         checked_assume!(match *aggregate_kinds {
             mir::AggregateKind::Array(..) => true,
             _ => false,
@@ -2393,6 +2389,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Operand defines the values that can appear inside an rvalue. They are intentionally
     /// limited to prevent rvalues from being nested in one another.
     /// A used operand must move or copy values to a target path.
+    #[logfn_inputs(TRACE)]
     fn visit_used_operand(&mut self, target_path: Rc<Path>, operand: &mir::Operand<'tcx>) {
         match operand {
             mir::Operand::Copy(place) => {
@@ -2416,6 +2413,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns the path (location/lh-value) of the given operand.
+    #[logfn_inputs(TRACE)]
     fn get_operand_path(&mut self, operand: &mir::Operand<'tcx>) -> Rc<Path> {
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => self.visit_place(place),
@@ -2430,6 +2428,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Operand defines the values that can appear inside an rvalue. They are intentionally
     /// limited to prevent rvalues from being nested in one another.
+    #[logfn_inputs(TRACE)]
     fn visit_operand(&mut self, operand: &mir::Operand<'tcx>) -> Rc<AbstractValue> {
         match operand {
             mir::Operand::Copy(place) => self.visit_copy(place),
@@ -2450,8 +2449,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ///
     /// This implies that the type of the place must be `Copy`; this is true
     /// by construction during build, but also checked by the MIR type checker.
+    #[logfn_inputs(TRACE)]
     fn visit_copy(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
-        debug!("default visit_copy(place: {:?})", place);
         let path = self.visit_place(place);
         let place_type = self.get_place_type(place);
         self.lookup_path_and_refine_result(path, place_type)
@@ -2462,14 +2461,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Safe for values of all types (modulo future developments towards `?Move`).
     /// Correct usage patterns are enforced by the borrow checker for safe code.
     /// `Copy` may be converted to `Move` to enable "last-use" optimizations.
+    #[logfn_inputs(TRACE)]
     fn visit_move(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
-        debug!("default visit_move(place: {:?})", place);
         let path = self.visit_place(place);
         let place_type = self.get_place_type(place);
         self.lookup_path_and_refine_result(path, place_type)
     }
 
     /// Synthesizes a constant value.
+    #[logfn_inputs(TRACE)]
     fn visit_constant(
         &mut self,
         ty: Ty<'tcx>,
@@ -2477,10 +2477,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         literal: &mir::interpret::ConstValue<'tcx>,
     ) -> Rc<AbstractValue> {
         use rustc::mir::interpret::Scalar;
-        debug!(
-            "default visit_constant(ty: {:?}, user_ty: {:?}, literal: {:?})",
-            ty, user_ty, literal
-        );
+
         match literal {
             mir::interpret::ConstValue::Unevaluated(def_id, ..) => {
                 let name = utils::summary_key_str(&self.tcx, *def_id);
@@ -2686,6 +2683,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ///
     /// The optional length is available as a separate compile time constant in the case of byte string
     /// constants. It is passed in here to check against the length of the bytes array as a safety check.
+    #[logfn_inputs(TRACE)]
     fn deconstruct_constant_array(
         &mut self,
         bytes: &[u8],
@@ -2736,6 +2734,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// A helper for deconstruct_constant_array. See its comments.
     /// This does the deserialization part, whereas deconstruct_constant_array does the environment
     /// updates.
+    #[logfn_inputs(TRACE)]
     fn get_element_values(
         &mut self,
         bytes: &[u8],
@@ -2796,6 +2795,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// fn foo() -> i32 { 1 }
     /// let bar = foo; // bar: fn() -> i32 {foo}
     /// ```
+    #[logfn_inputs(TRACE)]
     fn visit_function_reference(
         &mut self,
         def_id: hir::def_id::DefId,
@@ -2813,8 +2813,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Returns a Path instance that is the essentially the same as the Place instance, but which
     /// can be serialized and used as a cache key.
+    #[logfn_inputs(TRACE)]
     fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
-        debug!("default visit_place(place: {:?})", place);
         match place {
             mir::Place::Base(base_place) => match base_place {
                 mir::PlaceBase::Local(local) => {
@@ -2881,14 +2881,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// Returns a PathSelector instance that is essentially the same as the ProjectionElem instance
     /// but which can be serialized.
+    #[logfn_inputs(TRACE)]
     fn visit_projection_elem(
         &mut self,
         projection_elem: &mir::ProjectionElem<mir::Local, &rustc::ty::TyS<'tcx>>,
     ) -> PathSelector {
-        debug!(
-            "visit_projection_elem(projection_elem: {:?})",
-            projection_elem
-        );
         match projection_elem {
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, _) => PathSelector::Field(field.index()),
@@ -2921,11 +2918,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns an ExpressionType value corresponding to the Rustc type of the place.
+    #[logfn_inputs(TRACE)]
     fn get_place_type(&mut self, place: &mir::Place<'tcx>) -> ExpressionType {
         (self.get_rustc_place_type(place)).into()
     }
 
     /// Returns the rustc TyKind of the given place in memory.
+    #[logfn_inputs(TRACE)]
     fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> &'tcx TyKind<'tcx> {
         match place {
             mir::Place::Base(base_place) => match base_place {
@@ -2942,6 +2941,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns the rustc TyKind of the element selected by projection_elem.
+    #[logfn_inputs(TRACE)]
     fn get_type_for_projection_element(&self, place: &mir::Place<'tcx>) -> &'tcx TyKind<'tcx> {
         if let mir::Place::Projection(boxed_place_projection) = place {
             let base_ty = self.get_rustc_place_type(&boxed_place_projection.base);

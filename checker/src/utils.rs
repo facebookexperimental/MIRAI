@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use log::debug;
+use log_derive::{logfn, logfn_inputs};
 use rustc::hir::def_id::DefId;
 use rustc::hir::ItemKind;
 use rustc::hir::Node;
@@ -18,6 +19,7 @@ use std::rc::Rc;
 /// If the rust compiler was compiled and installed in some other way, for example from a source
 /// enlistment, then the RUST_SYSROOT variable must be set in the environment from which Mirai
 /// is compiled.
+#[logfn_inputs(TRACE)]
 pub fn find_sysroot() -> String {
     let home = option_env!("RUSTUP_HOME");
     let toolchain = option_env!("RUSTUP_TOOLCHAIN");
@@ -33,6 +35,7 @@ pub fn find_sysroot() -> String {
 }
 
 /// Returns true if the function identified by def_id is a public function.
+#[logfn(TRACE)]
 pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_>) -> bool {
     if let Some(node) = tcx.hir().get_if_local(def_id) {
         match node {
@@ -58,6 +61,7 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_>) -> bool {
 
 /// Returns a string that is a valid identifier, made up from the concatenation of
 /// the string representations of the given list of generic argument types.
+#[logfn(TRACE)]
 pub fn argument_types_key_str<'tcx>(
     tcx: &TyCtxt<'tcx>,
     generic_args: SubstsRef<'tcx>,
@@ -73,6 +77,7 @@ pub fn argument_types_key_str<'tcx>(
 /// Appends a string to str with the constraint that it must uniquely identify ty and also
 /// be a valid identifier (so that core library contracts can be written for type specialized
 /// generic trait methods).
+#[logfn(TRACE)]
 fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>) {
     use syntax::ast;
     use TyKind::*;
@@ -170,6 +175,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
 
 /// Pretty much the same as summary_key_str but with _ used rather than . so that
 /// the result can be appended to a valid identifier.
+#[logfn(TRACE)]
 fn qualified_type_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
     let mut name = if def_id.is_local() {
         tcx.crate_name.as_interned_str().as_str().to_string()
@@ -196,6 +202,7 @@ fn qualified_type_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
 /// the summary cache, which is a key value store. The string will always be the same as
 /// long as the definition does not change its name or location, so it can be used to
 /// transfer information from one compilation to the next, making incremental analysis possible.
+#[logfn(TRACE)]
 pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
     let mut name = if def_id.is_local() {
         tcx.crate_name.as_interned_str().as_str().to_string()

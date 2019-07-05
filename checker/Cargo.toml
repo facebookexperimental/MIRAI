@@ -24,6 +24,7 @@ env_logger = "*"
 fs2 = "*"
 lazy_static = "*"
 log = "*"
+log-derive = "*"
 mirai-annotations = { path = "../annotations" }
 rand = "*"
 rpds = { version = "*", features = ["serde"] }

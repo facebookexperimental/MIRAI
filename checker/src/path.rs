@@ -9,6 +9,7 @@ use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::k_limits;
 
+use log_derive::logfn_inputs;
 use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,7 @@ impl PartialEq for Path {
 }
 
 impl From<PathEnum> for Path {
+    #[logfn_inputs(TRACE)]
     fn from(value: PathEnum) -> Self {
         let mut hasher = DefaultHasher::new();
         value.hash(&mut hasher);
@@ -95,6 +97,7 @@ pub enum PathEnum {
 
 impl Path {
     /// True if path qualifies root, or another qualified path rooted by root.
+    #[logfn_inputs(TRACE)]
     pub fn is_rooted_by(&self, root: &Rc<Path>) -> bool {
         match &self.value {
             PathEnum::QualifiedPath { qualifier, .. } => {
@@ -106,6 +109,7 @@ impl Path {
 
     /// True is path qualifies an abstract heap address, or another qualified path rooted by an
     /// abstract heap address.
+    #[logfn_inputs(TRACE)]
     pub fn is_rooted_by_abstract_heap_address(&self) -> bool {
         match &self.value {
             PathEnum::QualifiedPath { qualifier, .. } => match qualifier.value {
@@ -117,6 +121,7 @@ impl Path {
     }
 
     // Returns the length of the path.
+    #[logfn_inputs(TRACE)]
     pub fn path_length(&self) -> usize {
         match &self.value {
             PathEnum::QualifiedPath { length, .. } => *length,
@@ -125,42 +130,49 @@ impl Path {
     }
 
     /// Creates a path the selects the discriminant of the enum at the given path.
+    #[logfn_inputs(TRACE)]
     pub fn new_discriminant(enum_path: Rc<Path>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Discriminant);
         Self::new_qualified(enum_path, selector)
     }
 
     /// Creates a path the selects the given field of the struct at the given path.
+    #[logfn_inputs(TRACE)]
     pub fn new_field(qualifier: Rc<Path>, field_index: usize) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Field(field_index));
         Self::new_qualified(qualifier, selector)
     }
 
     /// Creates a path the selects the element at the given index value of the array at the given path.
+    #[logfn_inputs(TRACE)]
     pub fn new_index(collection_path: Rc<Path>, index_value: Rc<AbstractValue>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Index(index_value));
         Self::new_qualified(collection_path, selector)
     }
 
     /// Creates a path the selects the length of the array at the given path.
+    #[logfn_inputs(TRACE)]
     pub fn new_length(array_path: Rc<Path>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::ArrayLength);
         Self::new_qualified(array_path, selector)
     }
 
     /// Creates a path the selects the length of the string at the given path.
+    #[logfn_inputs(TRACE)]
     pub fn new_string_length(string_path: Rc<Path>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::StringLength);
         Self::new_qualified(string_path, selector)
     }
 
     /// Creates a path the selects the given model field of the value at the given path.
+    #[logfn_inputs(TRACE)]
     pub fn new_model_field(qualifier: Rc<Path>, field_name: Rc<String>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::ModelField(field_name));
         Self::new_qualified(qualifier, selector)
     }
 
     /// Creates a path the qualifies the given root path with the given selector.
+    #[logfn_inputs(TRACE)]
     pub fn new_qualified(qualifier: Rc<Path>, selector: Rc<PathSelector>) -> Rc<Path> {
         let qualifier_length = qualifier.path_length();
         if qualifier_length >= k_limits::MAX_PATH_LENGTH {
@@ -178,6 +190,7 @@ impl Path {
     }
 
     /// Adds any abstract heap addresses found in embedded index values to the given set.
+    #[logfn_inputs(TRACE)]
     pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
         match &self.value {
             PathEnum::QualifiedPath {
@@ -217,6 +230,7 @@ pub trait PathRefinement: Sized {
 
 impl PathRefinement for Rc<Path> {
     /// Refine parameters inside embedded index values with the given arguments.
+    #[logfn_inputs(TRACE)]
     fn refine_parameters(
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -253,6 +267,7 @@ impl PathRefinement for Rc<Path> {
     /// or leaks it back to the caller in the qualifier of a path then
     /// we want to dereference the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
+    #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<Path> {
         if let Some(val) = environment.value_at(&self) {
             // if the environment has self as a key, then self is canonical,
@@ -305,6 +320,7 @@ impl PathRefinement for Rc<Path> {
     }
 
     /// Returns a copy path with the root replaced by new_root.
+    #[logfn_inputs(TRACE)]
     fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path> {
         match &self.value {
             PathEnum::QualifiedPath {
@@ -380,6 +396,7 @@ pub enum PathSelector {
 
 impl PathSelector {
     /// Adds any abstract heap addresses found in embedded index values to the given set.
+    #[logfn_inputs(TRACE)]
     pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
         if let PathSelector::Index(value) = self {
             value.record_heap_addresses(result);
@@ -400,6 +417,7 @@ pub trait PathSelectorRefinement: Sized {
 
 impl PathSelectorRefinement for Rc<PathSelector> {
     /// Refine parameters inside embedded index values with the given arguments.
+    #[logfn_inputs(TRACE)]
     fn refine_parameters(
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -417,6 +435,7 @@ impl PathSelectorRefinement for Rc<PathSelector> {
     /// with the value at that path (if there is one). If no refinement is possible
     /// the result is simply a clone of this value. This refinement only makes sense
     /// following a call to refine_parameters.
+    #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<PathSelector> {
         if let PathSelector::Index(value) = self.as_ref() {
             let refined_value = value.refine_paths(environment);

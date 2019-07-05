@@ -12,10 +12,12 @@ use crate::visitors::{MirVisitor, MirVisitorCrateContext};
 use crate::z3_solver::Z3Solver;
 
 use log::{info, warn};
+use log_derive::{logfn, logfn_inputs};
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use rustc_interface::interface;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Formatter, Result};
 use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -53,6 +55,13 @@ impl MiraiCallbacks {
         }
     }
 }
+
+impl Debug for MiraiCallbacks {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        "MiraiCallbacks".fmt(f)
+    }
+}
+
 impl Default for MiraiCallbacks {
     fn default() -> Self {
         Self::new()
@@ -61,6 +70,7 @@ impl Default for MiraiCallbacks {
 
 impl rustc_driver::Callbacks for MiraiCallbacks {
     /// Called before creating the compiler instance
+    #[logfn(TRACE)]
     fn config(&mut self, config: &mut interface::Config) {
         config.crate_cfg.insert(("mirai".to_string(), None));
         self.file_name = config.input.source_name().to_string();
@@ -78,6 +88,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     /// At this point the compiler is ready to tell us all it knows and we can proceed to do abstract
     /// interpretation of all of the functions that will end up in the compiler output.
     /// If this method returns false, the compilation will stop.
+    #[logfn(TRACE)]
     fn after_analysis(&mut self, compiler: &interface::Compiler) -> bool {
         compiler.session().abort_if_errors();
         if self.output_directory.to_str().unwrap().contains("/build/") {
@@ -110,6 +121,7 @@ struct AnalysisInfo<'a, 'tcx> {
 
 impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
+    #[logfn(TRACE)]
     fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: &TyCtxt<'_>) {
         let summary_store_path = String::from(self.output_directory.to_str().unwrap());
         info!(
@@ -161,6 +173,7 @@ impl MiraiCallbacks {
     /// If a summary has changed from the previous iteration (i.e. not reached a fixed point), add
     /// the def_id of the function, as well as the def_id of any function that calls the function,
     /// to def_sets.defs_to_reanalyze.
+    #[logfn(TRACE)]
     fn analyze_bodies<'a, 'tcx>(
         compiler: &'a interface::Compiler,
         tcx: &'a TyCtxt<'tcx>,
@@ -240,6 +253,7 @@ impl MiraiCallbacks {
 
     /// Add def_id (and its dependents) to defs_to_reanalyze if the old summary differs from the
     /// newly produced summary.
+    #[logfn_inputs(TRACE)]
     fn select_defs_to_reanalyze(
         persistent_summary_cache: &mut PersistentSummaryCache<'_, '_>,
         defs_to_reanalyze: &mut HashSet<DefId>,
@@ -256,6 +270,7 @@ impl MiraiCallbacks {
     }
 
     /// Logs the summary key of the function that is about to be analyzed.
+    #[logfn_inputs(TRACE)]
     fn get_and_log_name(
         persistent_summary_cache: &mut PersistentSummaryCache<'_, '_>,
         log_it: bool,
@@ -278,6 +293,7 @@ impl MiraiCallbacks {
 
     /// The outer fixed point loop has been terminated, so emit any diagnostics or, if testing,
     /// check that they are as expected.
+    #[logfn_inputs(TRACE)]
     fn emit_or_check_diagnostics(
         &mut self,
         diagnostics_for: &mut HashMap<DefId, Vec<DiagnosticBuilder<'_>>>,
@@ -300,6 +316,7 @@ impl MiraiCallbacks {
 
     /// Run the abstract interpreter over the function body and produce a summary of its effects
     /// and collect any diagnostics into the buffer.
+    #[logfn(TRACE)]
     fn visit_body<'a, 'b, 'tcx>(
         def_id: DefId,
         name: &str,
