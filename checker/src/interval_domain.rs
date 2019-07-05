@@ -16,10 +16,22 @@ use std::convert::TryFrom;
 /// std::i128::MAX denotes +infinity.
 /// Interval domain elements are constructed on demand from AbstractDomain expressions.
 /// They are most useful for checking if an array index is within bounds.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash, Ord)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialOrd, PartialEq, Hash, Ord)]
 pub struct IntervalDomain {
     lower_bound: i128,
     upper_bound: i128,
+}
+
+impl std::fmt::Debug for IntervalDomain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.lower_bound, self.upper_bound) {
+            (1, 0) => f.write_str("[bottom]"),
+            (std::i128::MIN, std::i128::MAX) => f.write_str("[..]"),
+            (std::i128::MIN, _) => f.write_fmt(format_args!("[..{}]", self.upper_bound)),
+            (_, std::i128::MAX) => f.write_fmt(format_args!("[{}..]", self.lower_bound)),
+            _ => f.write_fmt(format_args!("[{}..{}]", self.lower_bound, self.upper_bound)),
+        }
+    }
 }
 
 pub const BOTTOM: IntervalDomain = IntervalDomain {

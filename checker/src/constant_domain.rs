@@ -20,7 +20,7 @@ use std::rc::Rc;
 /// Abstracts over constant values referenced in MIR and adds information
 /// that is useful for the abstract interpreter. More importantly, this
 /// value can be serialized to the persistent summary cache.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash, Ord)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialOrd, PartialEq, Hash, Ord)]
 pub enum ConstantDomain {
     /// The impossible constant. Use this as the result of a partial transfer function.
     Bottom,
@@ -60,6 +60,31 @@ pub enum ConstantDomain {
     U128(u128),
     /// A place holder for other kinds of constants. Eventually this goes away.
     Unimplemented,
+}
+
+impl Debug for ConstantDomain {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            ConstantDomain::Bottom => f.write_str("BOTTOM"),
+            ConstantDomain::Char(ch) => f.write_fmt(format_args!("'{}'", ch)),
+            ConstantDomain::False => f.write_str("false"),
+            ConstantDomain::Function {
+                summary_cache_key,
+                argument_type_key,
+                ..
+            } => f.write_fmt(format_args!(
+                "fn {}{}",
+                summary_cache_key, argument_type_key
+            )),
+            ConstantDomain::I128(val) => val.fmt(f),
+            ConstantDomain::F64(val) => val.fmt(f),
+            ConstantDomain::F32(val) => val.fmt(f),
+            ConstantDomain::Str(str_val) => str_val.fmt(f),
+            ConstantDomain::True => f.write_str("true"),
+            ConstantDomain::U128(val) => val.fmt(f),
+            ConstantDomain::Unimplemented => f.write_str("unimplemented"),
+        }
+    }
 }
 
 /// Well known functions that are treated in special ways.
