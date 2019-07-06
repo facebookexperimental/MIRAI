@@ -659,7 +659,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn visit_statement(&mut self, location: mir::Location, statement: &mir::Statement<'tcx>) {
         self.current_location = location;
         let mir::Statement { kind, source_info } = statement;
-        debug!("{:?}", source_info);
         self.current_span = source_info.span;
         match kind {
             mir::StatementKind::Assign(place, rvalue) => self.visit_assign(place, rvalue.borrow()),
@@ -2151,7 +2150,20 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 selector,
                 ..
             } if *selector.as_ref() == PathSelector::Deref => {
-                self.lookup_path_and_refine_result(qualifier.clone(), ExpressionType::Reference)
+                // We are taking a reference to the result of a deref. This is a bit awkward.
+                // The deref essentially does a copy of the value denoted by the qualifier.
+                // It this value is structured and not heap allocated, the copy must be done
+                // with copy_or_move_elements. We use path as the address of the copy and rely
+                // on the type of the value to ensure reference like behavior.
+                let rval = self
+                    .lookup_path_and_refine_result(qualifier.clone(), ExpressionType::Reference);
+                self.copy_or_move_elements(
+                    path.clone(),
+                    qualifier.clone(),
+                    rval.expression.infer_type(),
+                    false,
+                );
+                return;
             }
             PathEnum::PromotedConstant { .. } => {
                 if let Some(val) = self.current_environment.value_at(&value_path) {
