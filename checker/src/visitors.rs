@@ -428,10 +428,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.check_for_errors = true;
         for bb in block_indices.iter() {
             let i_state = (&in_state[bb]).clone();
-            if i_state.entry_condition.as_bool_if_known().unwrap_or(true) {
-                self.current_environment = i_state;
-                self.visit_basic_block(*bb);
-            }
+            self.current_environment = i_state;
+            self.visit_basic_block(*bb);
         }
     }
 
@@ -968,6 +966,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         match *known_name {
             KnownFunctionNames::MiraiAssume => {
                 checked_assume!(actual_args.len() == 1);
+                if self.check_for_errors {
+                    self.report_calls_to_special_functions(known_name, actual_args);
+                }
                 self.handle_assume(&actual_args, destination, cleanup);
                 return true;
             }
@@ -1502,6 +1503,31 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ) {
         verify!(self.check_for_errors);
         match known_name {
+            KnownFunctionNames::MiraiAssume => {
+                assume!(actual_args.len() == 1);
+                let (_, cond) = &actual_args[0];
+                let (cond_as_bool, entry_cond_as_bool) =
+                    self.check_condition_value_and_reachability(cond);
+
+                // If we never get here, rather call unreachable!()
+                if !entry_cond_as_bool.unwrap_or(true) {
+                    let span = self.current_span;
+                    let message =
+                        "this is unreachable, mark it as such by using the unreachable! macro";
+                    let warning = self.session.struct_span_warn(span, message);
+                    self.emit_diagnostic(warning);
+                    return;
+                }
+
+                // If the condition is always true, this assumption is redundant
+                if cond_as_bool.unwrap_or(false) {
+                    let span = self.current_span;
+                    let warning = self
+                        .session
+                        .struct_span_warn(span, "assumption is provably true and can be deleted");
+                    self.emit_diagnostic(warning);
+                }
+            }
             KnownFunctionNames::MiraiVerify => {
                 assume!(actual_args.len() == 2); // The type checker ensures this.
                 let (_, cond) = &actual_args[0];
