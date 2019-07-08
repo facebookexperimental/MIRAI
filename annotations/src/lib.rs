@@ -366,7 +366,7 @@ macro_rules! checked_verify {
     );
     ($condition:expr, $message:literal) => {
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($condition, concat!("false verification condition: ", $message))
+            mirai_annotations::mirai_verify($condition, concat!("false verification condition: ", $message))
         } else {
             assert!($condition, $message);
         }
@@ -387,21 +387,21 @@ macro_rules! checked_verify {
 macro_rules! checked_verify_eq {
     ($left:expr, $right:expr) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left == $right, concat!("false verification condition: ", stringify!($left == $right)))
+            mirai_annotations::mirai_verify($left == $right, concat!("false verification condition: ", stringify!($left == $right)))
         } else {
             assert_eq!($left, $right);
         }
     );
     ($left:expr, $right:expr, $message:literal) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left == $right, concat!("false verification condition: ", stringify!($left == $right), ", ", $message))
+            mirai_annotations::mirai_verify($left == $right, concat!("false verification condition: ", stringify!($left == $right), ", ", $message))
         } else {
             assert_eq!($left, $right, $message);
         }
     );
     ($left:expr, $right:expr, $($arg:tt)*) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left == $right, concat!("false verification condition: ", stringify!($left == $right), ", ", stringify!($($arg)*)));
+            mirai_annotations::mirai_verify($left == $right, concat!("false verification condition: ", stringify!($left == $right), ", ", stringify!($($arg)*)));
         } else {
             assert_eq!($left, $right, $($arg)*);
         }
@@ -415,21 +415,21 @@ macro_rules! checked_verify_eq {
 macro_rules! checked_verify_ne {
     ($left:expr, $right:expr) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left != $right, concat!("false verification condition: ", stringify!($left != $right)))
+            mirai_annotations::mirai_verify($left != $right, concat!("false verification condition: ", stringify!($left != $right)))
         } else {
             assert_ne!($left, $right);
         }
     );
     ($left:expr, $right:expr, $message:literal) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left != $right, concat!("false verification condition: ", stringify!($left != $right), ", ", $message))
+            mirai_annotations::mirai_verify($left != $right, concat!("false verification condition: ", stringify!($left != $right), ", ", $message))
         } else {
             assert_ne!($left, $right, $message);
         }
     );
     ($left:expr, $right:expr, $($arg:tt)*) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left != $right, concat!("false verification condition: ", stringify!($left != $right), ", ", stringify!($($arg)*)));
+            mirai_annotations::mirai_verify($left != $right, concat!("false verification condition: ", stringify!($left != $right), ", ", stringify!($($arg)*)));
         } else {
             assert_ne!($left, $right, $($arg)*);
         }
@@ -450,7 +450,7 @@ macro_rules! debug_checked_verify {
     );
     ($condition:expr, $message:literal) => {
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($condition, concat!("false verification condition: ", $message))
+            mirai_annotations::mirai_verify($condition, concat!("false verification condition: ", $message))
         } else {
             debug_assert!($condition, $message);
         }
@@ -471,21 +471,21 @@ macro_rules! debug_checked_verify {
 macro_rules! debug_checked_verify_eq {
     ($left:expr, $right:expr) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left == $right, concat!("false verification condition: ", stringify!($left == $right)))
+            mirai_annotations::mirai_verify($left == $right, concat!("false verification condition: ", stringify!($left == $right)))
         } else {
             debug_assert_eq!($left, $right);
         }
     );
     ($left:expr, $right:expr, $message:literal) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left == $right, concat!("false verification condition: ", stringify!($left == $right), ", ", $message))
+            mirai_annotations::mirai_verify($left == $right, concat!("false verification condition: ", stringify!($left == $right), ", ", $message))
         } else {
             debug_assert_eq!($left, $right, $message);
         }
     );
     ($left:expr, $right:expr, $($arg:tt)*) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left == $right, concat!("false verification condition: ", stringify!($left == $right), ", ", stringify!($($arg)*)));
+            mirai_annotations::mirai_verify($left == $right, concat!("false verification condition: ", stringify!($left == $right), ", ", stringify!($($arg)*)));
         } else {
             debug_assert_eq!($left, $right, $($arg)*);
         }
@@ -499,21 +499,21 @@ macro_rules! debug_checked_verify_eq {
 macro_rules! debug_checked_verify_ne {
     ($left:expr, $right:expr) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left != $right, concat!("false verification condition: ", stringify!($left != $right)))
+            mirai_annotations::mirai_verify($left != $right, concat!("false verification condition: ", stringify!($left != $right)))
         } else {
             debug_assert_ne!($left, $right);
         }
     );
     ($left:expr, $right:expr, $message:literal) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left != $right, concat!("false verification condition: ", stringify!($left != $right), ", ", $message))
+            mirai_annotations::mirai_verify($left != $right, concat!("false verification condition: ", stringify!($left != $right), ", ", $message))
         } else {
             debug_assert_ne!($left, $right, $message);
         }
     );
     ($left:expr, $right:expr, $($arg:tt)*) => (
         if cfg!(mirai) {
-            mirai_annotations::mirai_precondition($left != $right, concat!("false verification condition: ", stringify!($left != $right), ", ", stringify!($($arg)*)));
+            mirai_annotations::mirai_verify($left != $right, concat!("false verification condition: ", stringify!($left != $right), ", ", stringify!($($arg)*)));
         } else {
             debug_assert_ne!($left, $right, $($arg)*);
         }
