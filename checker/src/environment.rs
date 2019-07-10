@@ -7,7 +7,6 @@ use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::expression::Expression;
-use crate::k_limits;
 use crate::path::{Path, PathEnum};
 
 use log::debug;
@@ -164,7 +163,7 @@ impl Environment {
                 x.join(y.clone(), p)
             } else {
                 let cond_expr = c.conditional_expression(x.clone(), y.clone());
-                if cond_expr.expression_size > k_limits::MAX_EXPRESSION_SIZE {
+                if cond_expr.is_top() {
                     x.join(y.clone(), p).widen(p)
                 } else {
                     cond_expr

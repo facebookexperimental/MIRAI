@@ -176,6 +176,9 @@ impl AbstractValue {
     /// Initializes the optional domains to None.
     #[logfn_inputs(TRACE)]
     pub fn make_from(expression: Expression, expression_size: u64) -> Rc<AbstractValue> {
+        if expression_size > k_limits::MAX_EXPRESSION_SIZE {
+            return Rc::new(TOP);
+        }
         Rc::new(AbstractValue {
             expression,
             expression_size,
@@ -208,6 +211,7 @@ pub trait AbstractValueTrait: Sized {
     fn implies_not(&self, other: &Self) -> bool;
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool;
     fn is_bottom(&self) -> bool;
+    fn is_not_equal(&self, other: &Rc<AbstractValue>) -> bool;
     fn is_top(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
@@ -354,14 +358,38 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             || self.is_bottom() && other.is_bottom()
         {
             self.clone()
-        } else if other.is_top() {
+        } else if other.is_top() || self.eq(&other) {
             other
         } else {
-            // todo: #32 more simplifications
-            AbstractValue::make_binary(self.clone(), other, |left, right| Expression::And {
-                left,
-                right,
-            })
+            // (x || y) && x => x
+            // (x || y) && y => y
+            if let Expression::Or { left: x, right: y } = &self.expression {
+                if x.eq(&other) || y.eq(&other) {
+                    return other;
+                }
+            }
+
+            match (&self.expression, &other.expression) {
+                // (x == c) && (x != c) = false if c is not a floating point value
+                (
+                    Expression::Equals {
+                        left: x1,
+                        right: c1,
+                    },
+                    Expression::Ne {
+                        left: x2,
+                        right: c2,
+                    },
+                ) if x1.eq(x2)
+                    && c1.eq(c2)
+                    && !c2.expression.infer_type().is_floating_point_number() =>
+                {
+                    Rc::new(FALSE)
+                }
+                _ => AbstractValue::make_binary(self.clone(), other, |left, right| {
+                    Expression::And { left, right }
+                }),
+            }
         }
     }
 
@@ -508,6 +536,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 _ => (),
             }
         }
+
+        // if c { if c2 x else y } else z
+        // can be simplified to
+        // if c x else z
+        // provided that c => c2
+        if let Expression::ConditionalExpression {
+            condition: c2,
+            consequent: x,
+            ..
+        } = &consequent.expression
+        {
+            if self.implies(c2) {
+                return self.conditional_expression(x.clone(), alternate);
+            }
+        }
+
         let expression_size = self
             .expression_size
             .saturating_add(consequent.expression_size)
@@ -683,6 +727,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let Expression::And { left, right } = &self.expression {
             return left.implies(other) || right.implies(other);
         }
+
+        // x == c => y != d if x == y && c != d
+        if let (Expression::Equals { left: x, right: c }, Expression::Ne { left: y, right: d }) =
+            (&self.expression, &other.expression)
+        {
+            return x.eq(y) && c.is_not_equal(d);
+        }
+
         false
     }
 
@@ -722,6 +774,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Bottom => true,
             _ => false,
         }
+    }
+
+    /// True if self can be proved to be not equal to other.
+    /// False does not imply the values are not in fact equal at runtime, only that we failed to
+    /// prove inequality.
+    fn is_not_equal(&self, other: &Rc<AbstractValue>) -> bool {
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            return v1.not_equals(v2) == ConstantDomain::True;
+        };
+        false
     }
 
     /// True if all possible concrete values are elements of the set corresponding to this domain.
@@ -882,8 +946,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
+        let ty = self.expression.infer_type();
         match &self.expression {
             Expression::Bottom => self.clone(),
+            Expression::Equals { left, right } if !ty.is_floating_point_number() => {
+                left.not_equals(right.clone())
+            }
+            Expression::Ne { left, right } if !ty.is_floating_point_number() => {
+                left.equals(right.clone())
+            }
             Expression::Not { operand } => operand.clone(),
             _ => AbstractValue::make_unary(self.clone(), |operand| Expression::Not { operand }),
         }
@@ -928,6 +999,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             match (&self.expression, &other.expression) {
                 (Expression::Not { ref operand }, _) if (**operand).eq(&other) => Rc::new(TRUE),
                 (_, Expression::Not { ref operand }) if (**operand).eq(&self) => Rc::new(TRUE),
+                // (x != c) || (x == c) = true if c is not a floating point value
+                (
+                    Expression::Ne {
+                        left: x1,
+                        right: c1,
+                    },
+                    Expression::Equals {
+                        left: x2,
+                        right: c2,
+                    },
+                ) if x1.eq(x2)
+                    && c1.eq(c2)
+                    && !c2.expression.infer_type().is_floating_point_number() =>
+                {
+                    Rc::new(TRUE)
+                }
                 //(x && y) || (x && !y) = x
                 (
                     Expression::And {
@@ -1325,9 +1412,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// in the given environment (if there is such a value).
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
-        if self.expression_size > k_limits::MAX_EXPRESSION_SIZE {
-            return self.clone();
-        }
         match &self.expression {
             Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
                 self.clone()

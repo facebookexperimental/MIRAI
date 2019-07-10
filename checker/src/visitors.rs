@@ -556,7 +556,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     p_state.widen(&i_state, &path_condition)
                 };
                 let joined_condition = path_condition.or(i_state.entry_condition.clone());
-                if joined_condition.expression_size > k_limits::MAX_EXPRESSION_SIZE {
+                if joined_condition.is_top() {
                     j_state.entry_condition = Rc::new(abstract_value::TRUE);
                 } else {
                     j_state.entry_condition = joined_condition;
@@ -851,14 +851,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn visit_return(&mut self) {
         if self.check_for_errors {
             // Done with fixed point, so prepare to summarize.
+            self.exit_environment = self.current_environment.clone();
             let return_guard = self.current_environment.entry_condition.as_bool_if_known();
-            if return_guard.unwrap_or(false) {
-                self.exit_environment = self.current_environment.clone();
-            } else if return_guard.unwrap_or(true) {
-                self.exit_environment = self.current_environment.join(
-                    &self.exit_environment,
-                    &self.current_environment.entry_condition,
-                );
+            if return_guard.is_none() {
+                self.post_conditions
+                    .push(self.current_environment.entry_condition.clone());
             }
         }
     }
@@ -1453,10 +1450,24 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
             }
 
+            // Add post conditions to entry condition
             let mut exit_condition = self.current_environment.entry_condition.clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
-                exit_condition = exit_condition.and(unwind_condition.logical_not());
+                exit_condition = exit_condition.and(
+                    unwind_condition
+                        .refine_parameters(actual_args, self.fresh_variable_offset)
+                        .refine_paths(&self.current_environment)
+                        .logical_not(),
+                );
             }
+            for post_condition in function_summary.post_conditions.iter() {
+                exit_condition = exit_condition.and(
+                    post_condition
+                        .refine_parameters(actual_args, self.fresh_variable_offset)
+                        .refine_paths(&self.current_environment),
+                )
+            }
+
             self.current_environment.exit_conditions = self
                 .current_environment
                 .exit_conditions

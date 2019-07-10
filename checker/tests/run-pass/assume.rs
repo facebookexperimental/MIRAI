@@ -14,7 +14,7 @@ pub fn main() {
             // It is not checked by Mirai, because of the assumption.
             // Unlike this test case, in real life assumptions are made for complicated reasons that are
             // hard to encode in checked preconditions.
-    foo2(2); //~ possible false verification condition
+    foo2(2); // No error here because the assumption in foo tells MIRA to believe that 2 == 3, so anything goes.
 }
 
 pub fn foo(i: i32) {
@@ -27,7 +27,6 @@ pub fn foo(i: i32) {
 
 pub fn foo2(i: i32) {
     verify!(i == 3); //~ possible false verification condition
-                     //~ related location
     let x = if i == 3 { 1 } else { 2 };
     verify!(x == 1); // This is neither true, nor checked at runtime, but it can only fail if
                      // the first verify fails, so the problem is already pointed out and we need not repeat ourselves.

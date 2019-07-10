@@ -16,7 +16,7 @@ pub const MAX_BYTE_ARRAY_LENGTH: u128 = 10;
 pub const MAX_INFERRED_PRECONDITIONS: usize = 50;
 
 /// If Expressions get too large they become too costly to refine.
-pub const MAX_EXPRESSION_SIZE: u64 = 10_000;
+pub const MAX_EXPRESSION_SIZE: u64 = 1_000;
 
 /// Double the observed maximum used in practice.
 pub const MAX_FIXPOINT_ITERATIONS: usize = 50;
