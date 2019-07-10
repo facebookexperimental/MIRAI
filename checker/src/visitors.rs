@@ -426,9 +426,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 iteration_count, function_name
             );
         }
-        debug!(
+        trace!(
             "Fixed point loop took {} iterations for {}, now checking for errors.",
-            iteration_count, function_name
+            iteration_count,
+            function_name
         );
         elapsed_time_in_seconds
     }
@@ -1873,7 +1874,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     if entry_cond_as_bool.is_some() && entry_cond_as_bool.unwrap() {
                         let error = msg.description();
                         let span = self.current_span;
-                        let error = self.session.struct_span_err(span, error);
+                        // For now emit a warning since path conditions are not properly widened
+                        // during loops and thus may result in false negatives.
+                        let error = self.session.struct_span_warn(span, error);
                         self.emit_diagnostic(error);
                         // No need to push a precondition, the caller can never satisfy it.
                         return;
@@ -2208,20 +2211,20 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             }
             let qualified_path = path.replace_root(&rpath, target_path.clone());
             if move_elements {
-                debug!("moving {:?} to {:?}", value, qualified_path);
+                trace!("moving {:?} to {:?}", value, qualified_path);
                 value_map = value_map.remove(path);
             } else {
-                debug!("copying {:?} to {:?}", value, qualified_path);
+                trace!("copying {:?} to {:?}", value, qualified_path);
             };
             value_map = value_map.insert(qualified_path, value.clone());
         }
         // Now move/copy (rpath, value) itself.
         let mut value = self.lookup_path_and_refine_result(rpath.clone(), rtype);
         if move_elements {
-            debug!("moving {:?} to {:?}", value, target_path);
+            trace!("moving {:?} to {:?}", value, target_path);
             value_map = value_map.remove(&rpath);
         } else {
-            debug!("copying {:?} to {:?}", value, target_path);
+            trace!("copying {:?} to {:?}", value, target_path);
             // if the value is a non primitive and a path reference, update the reference to be the new target
             if let Expression::Variable { var_type, .. } = &value.expression {
                 if *var_type == ExpressionType::NonPrimitive {
