@@ -10,7 +10,6 @@ use crate::expression::Expression;
 use crate::k_limits;
 use crate::path::{Path, PathEnum};
 
-use log::debug;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::checked_assume;
 use rpds::HashTrieMap;
@@ -62,7 +61,6 @@ impl Environment {
     /// Updates the path to value map so that the given path now points to the given value.
     #[logfn_inputs(TRACE)]
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
-        debug!("updating value of {:?} to {:?}", path, value);
         if value.is_bottom() {
             self.value_map = self.value_map.remove(&path);
             return;
