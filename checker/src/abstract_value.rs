@@ -176,6 +176,9 @@ impl AbstractValue {
     /// Initializes the optional domains to None.
     #[logfn_inputs(TRACE)]
     pub fn make_from(expression: Expression, expression_size: u64) -> Rc<AbstractValue> {
+        if expression_size > k_limits::MAX_EXPRESSION_SIZE {
+            return Rc::new(TOP);
+        }
         Rc::new(AbstractValue {
             expression,
             expression_size,
@@ -1325,9 +1328,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// in the given environment (if there is such a value).
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
-        if self.expression_size > k_limits::MAX_EXPRESSION_SIZE {
-            return self.clone();
-        }
         match &self.expression {
             Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
                 self.clone()
