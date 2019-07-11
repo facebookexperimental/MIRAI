@@ -240,9 +240,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         result
     }
 
-    // Path is required to be a temporary used to track an operation result.
+    // Path is required to be a temporary used to track a checked operation result.
+    // The result type of the local will be a tuple (t, bool).
+    // The result of this function is the t part.
     #[logfn_inputs(TRACE)]
-    fn get_target_path_type(&mut self, path: &Rc<Path>) -> ExpressionType {
+    fn get_first_part_of_target_path_type_tuple(&mut self, path: &Rc<Path>) -> ExpressionType {
         match &path.value {
             PathEnum::LocalVariable { ordinal } => {
                 let loc = &self.mir.local_decls[mir::Local::from(*ordinal)];
@@ -251,6 +253,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     _ => unreachable!(),
                 }
             }
+            _ => unreachable!(),
+        }
+    }
+
+    // Path is required to be a temporary used to track an operation result.
+    #[logfn_inputs(TRACE)]
+    fn get_target_path_type(&mut self, path: &Rc<Path>) -> ExpressionType {
+        match &path.value {
+            PathEnum::LocalVariable { ordinal } => self.get_type_for_local(*ordinal),
             _ => unreachable!(),
         }
     }
@@ -2298,7 +2309,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         right_operand: &mir::Operand<'tcx>,
     ) {
         // We assume that path is a temporary used to track the operation result and its overflow status.
-        let target_type = self.get_target_path_type(&path);
+        let target_type = self.get_first_part_of_target_path_type_tuple(&path);
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let (result, overflow_flag) = match bin_op {
@@ -2365,7 +2376,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let operand = self.visit_operand(operand);
         let result = match un_op {
             mir::UnOp::Neg => operand.negate(),
-            mir::UnOp::Not => operand.logical_not(),
+            mir::UnOp::Not => {
+                let result_type = self.get_target_path_type(&path);
+                if result_type.is_integer() {
+                    operand.bit_not(result_type)
+                } else {
+                    operand.logical_not()
+                }
+            }
         };
         self.current_environment.update_value_at(path, result);
     }

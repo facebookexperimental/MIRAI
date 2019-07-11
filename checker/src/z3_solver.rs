@@ -104,11 +104,7 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
     #[logfn_inputs(TRACE)]
     fn as_debug_string(&self, expression: &Z3ExpressionType) -> String {
         let _guard = Z3_MUTEX.lock().unwrap();
-        unsafe {
-            let debug_str_bytes = z3_sys::Z3_ast_to_string(self.z3_context, *expression);
-            let debug_str = CStr::from_ptr(debug_str_bytes);
-            String::from(debug_str.to_str().unwrap())
-        }
+        self.as_debug_string_helper(*expression)
     }
 
     #[logfn_inputs(TRACE)]
@@ -176,6 +172,14 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
 }
 
 impl Z3Solver {
+    fn as_debug_string_helper(&self, expression: Z3ExpressionType) -> String {
+        unsafe {
+            let debug_str_bytes = z3_sys::Z3_ast_to_string(self.z3_context, expression);
+            let debug_str = CStr::from_ptr(debug_str_bytes);
+            String::from(debug_str.to_str().unwrap())
+        }
+    }
+
     #[logfn_inputs(TRACE)]
     fn get_as_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
@@ -197,6 +201,9 @@ impl Z3Solver {
             Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
                 self.get_as_bv_z3_ast(expression, 128)
             }
+            Expression::BitNot { result_type, .. } => {
+                self.get_as_bv_z3_ast(expression, u32::from(result_type.bit_length()))
+            }
             Expression::Cast {
                 operand,
                 target_type,
@@ -207,24 +214,49 @@ impl Z3Solver {
                 consequent,
                 alternate,
             } => self.general_conditional(condition, consequent, alternate),
-            Expression::Equals { left, right } => {
-                self.general_relational(left, right, z3_sys::Z3_mk_fpa_eq, z3_sys::Z3_mk_eq)
-            }
-            Expression::GreaterOrEqual { left, right } => {
-                self.general_relational(left, right, z3_sys::Z3_mk_fpa_geq, z3_sys::Z3_mk_ge)
-            }
-            Expression::GreaterThan { left, right } => {
-                self.general_relational(left, right, z3_sys::Z3_mk_fpa_gt, z3_sys::Z3_mk_gt)
-            }
-            Expression::LessOrEqual { left, right } => {
-                self.general_relational(left, right, z3_sys::Z3_mk_fpa_leq, z3_sys::Z3_mk_le)
-            }
-            Expression::LessThan { left, right } => {
-                self.general_relational(left, right, z3_sys::Z3_mk_fpa_lt, z3_sys::Z3_mk_lt)
-            }
+            Expression::Equals { left, right } => self.general_relational(
+                left,
+                right,
+                z3_sys::Z3_mk_fpa_eq,
+                z3_sys::Z3_mk_eq,
+                z3_sys::Z3_mk_eq,
+                z3_sys::Z3_mk_eq,
+            ),
+            Expression::GreaterOrEqual { left, right } => self.general_relational(
+                left,
+                right,
+                z3_sys::Z3_mk_fpa_geq,
+                z3_sys::Z3_mk_ge,
+                z3_sys::Z3_mk_bvsge,
+                z3_sys::Z3_mk_bvuge,
+            ),
+            Expression::GreaterThan { left, right } => self.general_relational(
+                left,
+                right,
+                z3_sys::Z3_mk_fpa_gt,
+                z3_sys::Z3_mk_gt,
+                z3_sys::Z3_mk_bvsgt,
+                z3_sys::Z3_mk_bvugt,
+            ),
+            Expression::LessOrEqual { left, right } => self.general_relational(
+                left,
+                right,
+                z3_sys::Z3_mk_fpa_leq,
+                z3_sys::Z3_mk_le,
+                z3_sys::Z3_mk_bvsle,
+                z3_sys::Z3_mk_bvule,
+            ),
+            Expression::LessThan { left, right } => self.general_relational(
+                left,
+                right,
+                z3_sys::Z3_mk_fpa_lt,
+                z3_sys::Z3_mk_lt,
+                z3_sys::Z3_mk_bvslt,
+                z3_sys::Z3_mk_bvult,
+            ),
+            Expression::LogicalNot { operand } => self.general_logical_not(operand),
             Expression::Ne { left, right } => self.general_ne(left, right),
             Expression::Neg { operand } => self.general_negation(operand),
-            Expression::Not { operand } => self.general_logical_not(operand),
             Expression::Or { left, right } => {
                 self.general_boolean_op(left, right, z3_sys::Z3_mk_or)
             }
@@ -329,37 +361,86 @@ impl Z3Solver {
             t1: z3_sys::Z3_ast,
             t2: z3_sys::Z3_ast,
         ) -> z3_sys::Z3_ast,
+        signed_bit_op: unsafe extern "C" fn(
+            c: z3_sys::Z3_context,
+            t1: z3_sys::Z3_ast,
+            t2: z3_sys::Z3_ast,
+        ) -> z3_sys::Z3_ast,
+        unsigned_bit_op: unsafe extern "C" fn(
+            c: z3_sys::Z3_context,
+            t1: z3_sys::Z3_ast,
+            t2: z3_sys::Z3_ast,
+        ) -> z3_sys::Z3_ast,
     ) -> z3_sys::Z3_ast {
-        let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-        let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
-        checked_assume_eq!(lf, rf);
-        unsafe {
-            if lf {
-                float_op(self.z3_context, left_ast, right_ast)
-            } else {
-                int_op(self.z3_context, left_ast, right_ast)
+        let (signed, num_bits) = if left.expression.is_bit_vector() {
+            let ty = left.expression.infer_type();
+            (ty.is_signed_integer(), u32::from(ty.bit_length()))
+        } else if right.expression.is_bit_vector() {
+            let ty = right.expression.infer_type();
+            (ty.is_signed_integer(), u32::from(ty.bit_length()))
+        } else {
+            (false, 0)
+        };
+        if num_bits > 0 {
+            let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
+            let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
+            unsafe {
+                if signed {
+                    signed_bit_op(self.z3_context, left_ast, right_ast)
+                } else {
+                    unsigned_bit_op(self.z3_context, left_ast, right_ast)
+                }
+            }
+        } else {
+            let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
+            let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+            checked_assume_eq!(lf, rf);
+            unsafe {
+                if lf {
+                    float_op(self.z3_context, left_ast, right_ast)
+                } else {
+                    int_op(self.z3_context, left_ast, right_ast)
+                }
             }
         }
     }
 
     #[logfn_inputs(TRACE)]
     fn general_ne(&self, left: &Rc<AbstractValue>, right: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
-        let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-        let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
-        checked_assume_eq!(lf, rf);
-        unsafe {
-            if lf {
-                let l = z3_sys::Z3_mk_fpa_is_nan(self.z3_context, left_ast);
-                let r = z3_sys::Z3_mk_fpa_is_nan(self.z3_context, right_ast);
-                let eq = z3_sys::Z3_mk_fpa_eq(self.z3_context, left_ast, right_ast);
-                let ne = z3_sys::Z3_mk_not(self.z3_context, eq);
-                let tmp = vec![l, r, ne];
-                z3_sys::Z3_mk_or(self.z3_context, 3, tmp.as_ptr())
-            } else {
+        let num_bits = if left.expression.is_bit_vector() {
+            u32::from(left.expression.infer_type().bit_length())
+        } else if right.expression.is_bit_vector() {
+            u32::from(right.expression.infer_type().bit_length())
+        } else {
+            0
+        };
+        if num_bits > 0 {
+            let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
+            let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
+            unsafe {
                 z3_sys::Z3_mk_not(
                     self.z3_context,
                     z3_sys::Z3_mk_eq(self.z3_context, left_ast, right_ast),
                 )
+            }
+        } else {
+            let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
+            let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+            checked_assume_eq!(lf, rf);
+            unsafe {
+                if lf {
+                    let l = z3_sys::Z3_mk_fpa_is_nan(self.z3_context, left_ast);
+                    let r = z3_sys::Z3_mk_fpa_is_nan(self.z3_context, right_ast);
+                    let eq = z3_sys::Z3_mk_fpa_eq(self.z3_context, left_ast, right_ast);
+                    let ne = z3_sys::Z3_mk_not(self.z3_context, eq);
+                    let tmp = vec![l, r, ne];
+                    z3_sys::Z3_mk_or(self.z3_context, 3, tmp.as_ptr())
+                } else {
+                    z3_sys::Z3_mk_not(
+                        self.z3_context,
+                        z3_sys::Z3_mk_eq(self.z3_context, left_ast, right_ast),
+                    )
+                }
             }
         }
     }
@@ -626,12 +707,16 @@ impl Z3Solver {
             | Expression::GreaterThan { .. }
             | Expression::LessOrEqual { .. }
             | Expression::LessThan { .. }
+            | Expression::LogicalNot { .. }
             | Expression::Ne { .. }
-            | Expression::Not { .. }
             | Expression::Or { .. } => self.numeric_boolean_op(expression),
             Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
-                self.numeric_bitwise_binary(expression)
+                self.numeric_bitwise_expression(expression)
             }
+            Expression::BitNot {
+                operand,
+                result_type,
+            } => self.numeric_bitwise_not(operand, result_type),
             Expression::Cast { target_type, .. } => self.numeric_cast(expression, target_type),
             Expression::CompileTimeConstant(const_domain) => {
                 self.numeric_const(expression, const_domain)
@@ -803,9 +888,31 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn numeric_bitwise_binary(&self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
+    fn numeric_bitwise_expression(&self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
         let ast = self.get_as_bv_z3_ast(expression, 128);
         unsafe { (false, z3_sys::Z3_mk_bv2int(self.z3_context, ast, false)) }
+    }
+
+    #[logfn_inputs(TRACE)]
+    fn numeric_bitwise_not(
+        &self,
+        operand: &Rc<AbstractValue>,
+        result_type: &ExpressionType,
+    ) -> (bool, z3_sys::Z3_ast) {
+        unsafe {
+            if result_type.is_signed_integer() {
+                let (fp, neg) = self.numeric_neg(operand);
+                checked_assume!(!fp); // The Rust type system should prevent this
+                let tmp = vec![neg, self.one];
+                (false, z3_sys::Z3_mk_sub(self.z3_context, 2, tmp.as_ptr()))
+            } else {
+                let (fp, ast) = self.get_as_numeric_z3_ast(&operand.expression);
+                checked_assume!(!fp); // The Rust type system should prevent this
+                let max_ast = self.get_constant_as_ast(&result_type.max_value());
+                let tmp = vec![max_ast, ast];
+                (false, z3_sys::Z3_mk_sub(self.z3_context, 2, tmp.as_ptr()))
+            }
+        }
     }
 
     #[logfn_inputs(TRACE)]
@@ -1117,12 +1224,16 @@ impl Z3Solver {
             | Expression::GreaterThan { .. }
             | Expression::LessOrEqual { .. }
             | Expression::LessThan { .. }
+            | Expression::LogicalNot { .. }
             | Expression::Ne { .. }
-            | Expression::Not { .. }
             | Expression::Or { .. } => self.bv_boolean_op(expression, num_bits),
             Expression::BitAnd { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvand)
             }
+            Expression::BitNot {
+                operand,
+                result_type,
+            } => self.bv_not(num_bits, operand, result_type),
             Expression::BitOr { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvor)
             }
@@ -1170,6 +1281,17 @@ impl Z3Solver {
         let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
         let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
         unsafe { operation(self.z3_context, left_ast, right_ast) }
+    }
+
+    #[logfn_inputs(TRACE)]
+    fn bv_not(
+        &self,
+        num_bits: u32,
+        operand: &Rc<AbstractValue>,
+        result_type: &ExpressionType,
+    ) -> z3_sys::Z3_ast {
+        let ast = self.get_as_bv_z3_ast(&(**operand).expression, num_bits);
+        unsafe { z3_sys::Z3_mk_bvnot(self.z3_context, ast) }
     }
 
     #[logfn_inputs(TRACE)]
@@ -1256,10 +1378,10 @@ impl Z3Solver {
                 z3_sys::Z3_mk_fpa_numeral_double(self.z3_context, fv, self.f64_sort)
             },
             ConstantDomain::I128(v) => unsafe {
-                z3_sys::Z3_mk_bv_numeral(self.z3_context, 128, v as *const i128 as *const bool)
+                z3_sys::Z3_mk_bv_numeral(self.z3_context, num_bits, v as *const i128 as *const bool)
             },
             ConstantDomain::U128(v) => unsafe {
-                z3_sys::Z3_mk_bv_numeral(self.z3_context, 128, v as *const u128 as *const bool)
+                z3_sys::Z3_mk_bv_numeral(self.z3_context, num_bits, v as *const u128 as *const bool)
             },
             ConstantDomain::True => unsafe {
                 let n: u128 = 1;

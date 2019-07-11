@@ -65,6 +65,14 @@ pub enum Expression {
         right: Rc<AbstractValue>,
     },
 
+    /// An expression that results in the bitwise complement of operand. ! integer
+    BitNot {
+        // The value of the operand.
+        operand: Rc<AbstractValue>,
+        // The kind of integer. Needed to specify the number of bits to flip.
+        result_type: ExpressionType,
+    },
+
     /// An expression that is the bitwise or of left and right. |
     BitOr {
         // The value of the left operand.
@@ -83,7 +91,9 @@ pub enum Expression {
 
     /// An expression that is the operand cast to the target_type. as
     Cast {
+        // The value of the operand.
         operand: Rc<AbstractValue>,
+        // The type the operand is being cast to.
         target_type: ExpressionType,
     },
 
@@ -162,6 +172,9 @@ pub enum Expression {
         right: Rc<AbstractValue>,
     },
 
+    /// An expression that is true if the operand is false. ! bool
+    LogicalNot { operand: Rc<AbstractValue> },
+
     /// An expression that is left multiplied by right. *
     Mul {
         // The value of the left operand.
@@ -190,9 +203,6 @@ pub enum Expression {
 
     /// An expression that is the arithmetic negation of its parameter. -x
     Neg { operand: Rc<AbstractValue> },
-
-    /// An expression that is true if the operand is false.
-    Not { operand: Rc<AbstractValue> },
 
     /// An expression that is true if either one of left or right are true. ||
     Or {
@@ -329,6 +339,7 @@ impl Debug for Expression {
             Expression::BitAnd { left, right } => {
                 f.write_fmt(format_args!("({:?}) & ({:?})", left, right))
             }
+            Expression::BitNot { operand, .. } => f.write_fmt(format_args!("~({:?})", operand)),
             Expression::BitOr { left, right } => {
                 f.write_fmt(format_args!("({:?}) | ({:?})", left, right))
             }
@@ -370,6 +381,7 @@ impl Debug for Expression {
             Expression::LessThan { left, right } => {
                 f.write_fmt(format_args!("({:?}) < ({:?})", left, right))
             }
+            Expression::LogicalNot { operand } => f.write_fmt(format_args!("!({:?})", operand)),
             Expression::Mul { left, right } => {
                 f.write_fmt(format_args!("({:?}) * ({:?})", left, right))
             }
@@ -380,7 +392,6 @@ impl Debug for Expression {
                 f.write_fmt(format_args!("({:?}) != ({:?})", left, right))
             }
             Expression::Neg { operand } => f.write_fmt(format_args!("-({:?})", operand)),
-            Expression::Not { operand } => f.write_fmt(format_args!("!({:?})", operand)),
             Expression::Or { left, right } => {
                 f.write_fmt(format_args!("({:?}) || ({:?})", left, right))
             }
@@ -434,6 +445,7 @@ impl Expression {
             Expression::AddOverflows { .. } => Bool,
             Expression::And { .. } => Bool,
             Expression::BitAnd { left, .. } => left.expression.infer_type(),
+            Expression::BitNot { result_type, .. } => result_type.clone(),
             Expression::BitOr { left, .. } => left.expression.infer_type(),
             Expression::BitXor { left, .. } => left.expression.infer_type(),
             Expression::Cast { target_type, .. } => target_type.clone(),
@@ -448,11 +460,11 @@ impl Expression {
             Expression::Join { left, .. } => left.expression.infer_type(),
             Expression::LessOrEqual { .. } => Bool,
             Expression::LessThan { .. } => Bool,
+            Expression::LogicalNot { .. } => Bool,
             Expression::Mul { left, .. } => left.expression.infer_type(),
             Expression::MulOverflows { .. } => Bool,
             Expression::Ne { .. } => Bool,
             Expression::Neg { operand } => operand.expression.infer_type(),
-            Expression::Not { .. } => Bool,
             Expression::Or { .. } => Bool,
             Expression::Offset { .. } => Reference,
             Expression::Reference(_) => Reference,
@@ -466,6 +478,17 @@ impl Expression {
             Expression::UnknownModelField { default, .. } => default.expression.infer_type(),
             Expression::Variable { var_type, .. } => var_type.clone(),
             Expression::Widen { operand, .. } => operand.expression.infer_type(),
+        }
+    }
+
+    /// Determines if the given expression is the result of a non constant binary bitwise operation.
+    #[logfn_inputs(TRACE)]
+    pub fn is_bit_vector(&self) -> bool {
+        match self {
+            Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
+                true
+            }
+            _ => false,
         }
     }
 
@@ -533,7 +556,7 @@ impl Expression {
                 left.expression.record_heap_addresses(result);
                 right.expression.record_heap_addresses(result);
             }
-            Expression::Neg { operand } | Expression::Not { operand } => {
+            Expression::Neg { operand } | Expression::LogicalNot { operand } => {
                 operand.expression.record_heap_addresses(result);
             }
             Expression::Reference(path) => path.record_heap_addresses(result),

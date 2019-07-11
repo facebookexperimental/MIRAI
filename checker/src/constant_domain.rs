@@ -227,6 +227,18 @@ impl ConstantDomain {
         }
     }
 
+    /// Returns a constant that is "!self" where self is an integer.
+    #[logfn_inputs(TRACE)]
+    pub fn bit_not(&self, result_type: ExpressionType) -> Self {
+        match self {
+            ConstantDomain::I128(val) => ConstantDomain::I128(!*val),
+            ConstantDomain::U128(val) => {
+                ConstantDomain::U128(!*val).bit_and(&result_type.max_value())
+            }
+            _ => ConstantDomain::Bottom,
+        }
+    }
+
     /// Returns a constant that is "self | other".
     #[logfn_inputs(TRACE)]
     pub fn bit_or(&self, other: &Self) -> Self {
@@ -539,9 +551,9 @@ impl ConstantDomain {
         .into()
     }
 
-    /// Returns a constant that is "!self".
+    /// Returns a constant that is "!self" where self is a bool.
     #[logfn_inputs(TRACE)]
-    pub fn not(&self) -> Self {
+    pub fn logical_not(&self) -> Self {
         match &self {
             ConstantDomain::False => ConstantDomain::True,
             ConstantDomain::True => ConstantDomain::False,
