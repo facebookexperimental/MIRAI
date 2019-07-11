@@ -16,7 +16,7 @@ pub const MAX_BYTE_ARRAY_LENGTH: u128 = 10;
 pub const MAX_INFERRED_PRECONDITIONS: usize = 50;
 
 /// If Expressions get too large they become too costly to refine.
-pub const MAX_EXPRESSION_SIZE: u64 = 10_000;
+pub const MAX_EXPRESSION_SIZE: u64 = 1_000;
 
 /// Double the observed maximum used in practice.
 pub const MAX_FIXPOINT_ITERATIONS: usize = 50;
@@ -27,5 +27,5 @@ pub const MAX_OUTER_FIXPOINT_ITERATIONS: usize = 4;
 /// Prevents the outer fixed point loop from creating ever more new abstract values of type Expression::Variable.
 pub const MAX_PATH_LENGTH: usize = 30;
 
-/// Refining values with a path condition that is a really big expression leads to exponential blow up.
+/// Refining values with a path condition that is a really deep expression leads to exponential blow up.
 pub const MAX_REFINE_DEPTH: usize = 9;
