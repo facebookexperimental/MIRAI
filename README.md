@@ -43,16 +43,18 @@ for instructions on how to build, run and debug MIRAI.
 * [Further reading](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/FurtherReading.md).
 
 ## Road map
-* Set up visitor infrastructure for MIR (Early December)
-* Provide a way to store and retrieve function summaries (Late December)
-* State tracking and memory operations (January)
-* Design Abstract Domain abstraction and implement some domains (February)
-* Full scale Abstract Interpreter (March, April)
-* Expression simplifier
-* Hook up SMT solver
-* Work on scalability
-* Deploy MIRAI in the build system of a large project
-* More domains and refined diagnostics
+* Stabilize MIRAI and get rid of crashing bugs and OOMs
+* Explicit post conditions
+* Quantifiers
+* Explicit loop invariants
+* Structure invariants
+* More standard library contracts
+* Upgrade log message that affect soundness into compiler warnings 
+* Publish MIRAI to crates.io
+* Support linting interfaces
+* Tutorials and worked examples
+* Loop invariant inference
+* Make MIRAI work on Linux
 
 ## Join the MIRAI community
 <!-- * Website:
