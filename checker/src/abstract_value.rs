@@ -199,6 +199,7 @@ pub trait AbstractValueTrait: Sized {
     fn as_bool_if_known(&self) -> Option<bool>;
     fn as_int_if_known(&self) -> Option<Rc<AbstractValue>>;
     fn bit_and(&self, other: Self) -> Self;
+    fn bit_not(&self, target_type: ExpressionType) -> Self;
     fn bit_or(&self, other: Self) -> Self;
     fn bit_xor(&self, other: Self) -> Self;
     fn cast(&self, target_type: ExpressionType) -> Self;
@@ -406,6 +407,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         })
     }
 
+    /// Returns an element that is "!self" where self is an integer.
+    #[logfn_inputs(TRACE)]
+    fn bit_not(&self, result_type: ExpressionType) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = v1.bit_not(result_type.clone());
+            if result != ConstantDomain::Bottom {
+                return Rc::new(result.into());
+            }
+        };
+        AbstractValue::make_typed_unary(self.clone(), result_type, |operand, result_type| {
+            Expression::BitNot {
+                operand,
+                result_type,
+            }
+        })
+    }
+
     /// Returns an element that is "self | other".
     #[logfn_inputs(TRACE)]
     fn bit_or(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
@@ -595,7 +613,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             // !x == 0 is the same as x when x is Boolean. Canonicalize it to the latter.
             (
-                Expression::Not { operand },
+                Expression::LogicalNot { operand },
                 Expression::CompileTimeConstant(ConstantDomain::U128(val)),
             ) => {
                 if *val == 0 && operand.expression.infer_type() == ExpressionType::Bool {
@@ -699,7 +717,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return true;
         };
         // !x => !x
-        if let Expression::Not { ref operand } = self.expression {
+        if let Expression::LogicalNot { ref operand } = self.expression {
             return (**operand).eq(other);
         }
         false
@@ -811,6 +829,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         })
     }
 
+    /// Returns an element that is "!self" where self is a bool.
+    #[logfn_inputs(TRACE)]
+    fn logical_not(&self) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = v1.logical_not();
+            if result != ConstantDomain::Bottom {
+                return Rc::new(result.into());
+            }
+        };
+        match &self.expression {
+            Expression::Bottom => self.clone(),
+            Expression::LogicalNot { operand } => operand.clone(),
+            _ => AbstractValue::make_unary(self.clone(), |operand| Expression::LogicalNot {
+                operand,
+            }),
+        }
+    }
+
     /// Returns an element that is "self * other".
     #[logfn_inputs(TRACE)]
     fn multiply(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
@@ -876,22 +912,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         })
     }
 
-    /// Returns an element that is "!self".
-    #[logfn_inputs(TRACE)]
-    fn logical_not(&self) -> Rc<AbstractValue> {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.not();
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
-        match &self.expression {
-            Expression::Bottom => self.clone(),
-            Expression::Not { operand } => operand.clone(),
-            _ => AbstractValue::make_unary(self.clone(), |operand| Expression::Not { operand }),
-        }
-    }
-
     /// Returns an element that is "self.other".
     #[logfn_inputs(TRACE)]
     fn offset(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
@@ -919,7 +939,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return other;
             }
             // (!x || x) = true
-            if let Expression::Not { operand } = &self.expression {
+            if let Expression::LogicalNot { operand } = &self.expression {
                 if operand.eq(&other) {
                     return Rc::new(TRUE);
                 }
@@ -929,8 +949,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return self.clone();
             }
             match (&self.expression, &other.expression) {
-                (Expression::Not { ref operand }, _) if (**operand).eq(&other) => Rc::new(TRUE),
-                (_, Expression::Not { ref operand }) if (**operand).eq(&self) => Rc::new(TRUE),
+                (Expression::LogicalNot { ref operand }, _) if (**operand).eq(&other) => {
+                    Rc::new(TRUE)
+                }
+                (_, Expression::LogicalNot { ref operand }) if (**operand).eq(&self) => {
+                    Rc::new(TRUE)
+                }
                 //(x && y) || (x && !y) = x
                 (
                     Expression::And {
@@ -1348,6 +1372,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::BitAnd { left, right } => left
                 .refine_paths(environment)
                 .bit_and(right.refine_paths(environment)),
+            Expression::BitNot {
+                operand,
+                result_type,
+            } => operand
+                .refine_paths(environment)
+                .bit_not(result_type.clone()),
             Expression::BitOr { left, right } => left
                 .refine_paths(environment)
                 .bit_or(right.refine_paths(environment)),
@@ -1402,7 +1432,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .refine_paths(environment)
                 .not_equals(right.refine_paths(environment)),
             Expression::Neg { operand } => operand.refine_paths(environment).negate(),
-            Expression::Not { operand } => operand.refine_paths(environment).logical_not(),
+            Expression::LogicalNot { operand } => operand.refine_paths(environment).logical_not(),
             Expression::Offset { left, right } => left
                 .refine_paths(environment)
                 .offset(right.refine_paths(environment)),
@@ -1530,6 +1560,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::BitAnd { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .bit_and(right.refine_parameters(arguments, fresh)),
+            Expression::BitNot {
+                operand,
+                result_type,
+            } => operand
+                .refine_parameters(arguments, fresh)
+                .bit_not(result_type.clone()),
             Expression::BitOr { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .bit_or(right.refine_parameters(arguments, fresh)),
@@ -1574,6 +1610,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::LessThan { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .less_than(right.refine_parameters(arguments, fresh)),
+            Expression::LogicalNot { operand } => {
+                operand.refine_parameters(arguments, fresh).logical_not()
+            }
             Expression::Mul { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .multiply(right.refine_parameters(arguments, fresh)),
@@ -1589,9 +1628,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .refine_parameters(arguments, fresh)
                 .not_equals(right.refine_parameters(arguments, fresh)),
             Expression::Neg { operand } => operand.refine_parameters(arguments, fresh).negate(),
-            Expression::Not { operand } => {
-                operand.refine_parameters(arguments, fresh).logical_not()
-            }
             Expression::Offset { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .offset(right.refine_parameters(arguments, fresh)),
@@ -1720,6 +1756,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::BitAnd { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .bit_and(right.refine_with(path_condition, depth + 1)),
+            Expression::BitNot {
+                operand,
+                result_type,
+            } => operand
+                .refine_with(path_condition, depth + 1)
+                .bit_not(result_type.clone()),
             Expression::BitOr { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .bit_or(right.refine_with(path_condition, depth + 1)),
@@ -1789,7 +1831,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .refine_with(path_condition, depth + 1)
                 .not_equals(right.refine_with(path_condition, depth + 1)),
             Expression::Neg { operand } => operand.refine_with(path_condition, depth + 1).negate(),
-            Expression::Not { operand } => {
+            Expression::LogicalNot { operand } => {
                 if path_condition.implies(&operand) {
                     Rc::new(FALSE)
                 } else if path_condition.implies_not(&operand) {
