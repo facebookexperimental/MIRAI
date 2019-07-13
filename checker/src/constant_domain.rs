@@ -100,6 +100,8 @@ pub enum KnownFunctionNames {
     MiraiAssume,
     /// mirai_annotations.mirai_get_model_field
     MiraiGetModelField,
+    /// mirai_annotations.mirai_postcondition
+    MiraiPostcondition,
     /// mirai_annotations.mirai_precondition
     MiraiPrecondition,
     /// mirai_annotations.mirai_result
@@ -125,19 +127,21 @@ impl ConstantDomain {
         tcx: &'a TyCtxt<'tcx>,
         summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
     ) -> ConstantDomain {
+        use KnownFunctionNames::*;
         let summary_cache_key = summary_cache.get_summary_key_for(def_id).to_owned();
         let argument_type_key = utils::argument_types_key_str(tcx, generic_args);
         let known_name = match summary_cache_key.as_str() {
-            "core.slice.implement.len" => KnownFunctionNames::CoreSliceLen,
-            "core.str.implement_str.len" => KnownFunctionNames::CoreStrLen,
-            "mirai_annotations.mirai_assume" => KnownFunctionNames::MiraiAssume,
-            "mirai_annotations.mirai_get_model_field" => KnownFunctionNames::MiraiGetModelField,
-            "mirai_annotations.mirai_precondition" => KnownFunctionNames::MiraiPrecondition,
-            "mirai_annotations.mirai_result" => KnownFunctionNames::MiraiResult,
-            "mirai_annotations.mirai_set_model_field" => KnownFunctionNames::MiraiSetModelField,
-            "mirai_annotations.mirai_shallow_clone" => KnownFunctionNames::MiraiShallowClone,
-            "mirai_annotations.mirai_verify" => KnownFunctionNames::MiraiVerify,
-            "std.panicking.begin_panic" => KnownFunctionNames::StdBeginPanic,
+            "core.slice.implement.len" => CoreSliceLen,
+            "core.str.implement_str.len" => CoreStrLen,
+            "mirai_annotations.mirai_assume" => MiraiAssume,
+            "mirai_annotations.mirai_get_model_field" => MiraiGetModelField,
+            "mirai_annotations.mirai_postcondition" => MiraiPostcondition,
+            "mirai_annotations.mirai_precondition" => MiraiPrecondition,
+            "mirai_annotations.mirai_result" => MiraiResult,
+            "mirai_annotations.mirai_set_model_field" => MiraiSetModelField,
+            "mirai_annotations.mirai_shallow_clone" => MiraiShallowClone,
+            "mirai_annotations.mirai_verify" => MiraiVerify,
+            "std.panicking.begin_panic" => StdBeginPanic,
             _ => KnownFunctionNames::None,
         };
         ConstantDomain::Function {

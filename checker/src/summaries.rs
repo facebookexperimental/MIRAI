@@ -77,11 +77,11 @@ pub struct Summary {
     // side-effects of the call.
     pub side_effects: Vec<(Rc<Path>, Rc<AbstractValue>)>,
 
-    // Conditions that should hold subsequent to the call.
+    // A condition that should hold subsequent to a call that completes normally.
     // Callers should substitute parameter values with argument values and simplify the results
-    // under the current path condition. The resulting values should be treated as true, so any
-    // value that is not the actual value true, should be added to the current path conditions.
-    pub post_conditions: Vec<Rc<AbstractValue>>,
+    // under the current path condition.
+    // The resulting value should be conjoined to the current path condition.
+    pub post_condition: Option<Rc<AbstractValue>>,
 
     // Condition that if true implies that the call to the function will not complete normally
     // and thus cause the cleanup block of the call to execute (unwinding).
@@ -218,7 +218,7 @@ impl Summary {
             preconditions: other.preconditions.clone(),
             result,
             side_effects,
-            post_conditions: other.post_conditions.clone(),
+            post_condition: other.post_condition.clone(),
             unwind_condition: None,
             unwind_side_effects,
         }
@@ -267,7 +267,7 @@ pub fn summarize(
     argument_count: usize,
     exit_environment: &Environment,
     preconditions: &[Precondition],
-    post_conditions: &[Rc<AbstractValue>],
+    post_condition: &Option<Rc<AbstractValue>>,
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: &Environment,
     tcx: TyCtxt<'_>,
@@ -275,12 +275,10 @@ pub fn summarize(
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
     let result = exit_environment.value_at(&Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into()));
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
-    let mut post_conditions: Vec<Rc<AbstractValue>> = post_conditions.to_owned();
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
 
     preconditions.sort();
     side_effects.sort();
-    post_conditions.sort();
     unwind_side_effects.sort();
 
     Summary {
@@ -288,7 +286,7 @@ pub fn summarize(
         preconditions,
         result: result.cloned(),
         side_effects,
-        post_conditions,
+        post_condition: post_condition.clone(),
         unwind_condition,
         unwind_side_effects,
     }
