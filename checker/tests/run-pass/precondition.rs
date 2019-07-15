@@ -25,3 +25,10 @@ pub fn bad_foo(arr: &mut [i32; 2], i: usize) {
     }
     arr[i] = 12;
 }
+
+pub fn good_foo(a: &[i32; 2], i: usize) {
+    precondition!({
+        let j = if i == 0 { 1 } else { 0 };
+        a[j] > 50
+    });
+}

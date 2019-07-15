@@ -66,6 +66,7 @@ pub struct MirVisitor<'a, 'b, 'tcx, E> {
 
     already_report_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     check_for_errors: bool,
+    check_for_unconditional_precondition: bool,
     current_environment: Environment,
     current_location: mir::Location,
     current_span: syntax_pos::Span,
@@ -105,6 +106,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
             already_report_errors_for_call_to: HashSet::new(),
             check_for_errors: false,
+            check_for_unconditional_precondition: true,
             current_environment: Environment::default(),
             current_location: mir::Location::START,
             current_span: syntax_pos::DUMMY_SP,
@@ -124,6 +126,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn reset_visitor_state(&mut self) {
         self.already_report_errors_for_call_to = HashSet::new();
         self.check_for_errors = false;
+        self.check_for_unconditional_precondition = true;
         self.current_environment = Environment::default();
         self.current_location = mir::Location::START;
         self.current_span = syntax_pos::DUMMY_SP;
@@ -1040,6 +1043,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 self.handle_post_condition(&actual_args, destination);
                 return true;
             }
+            KnownFunctionNames::MiraiPreconditionStart => {
+                self.handle_precondition_start(destination);
+                return true;
+            }
             KnownFunctionNames::MiraiPrecondition => {
                 checked_assume!(actual_args.len() == 2);
                 self.handle_precondition(&actual_args);
@@ -1227,24 +1234,45 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         }
     }
 
+    /// It is bad style for a precondition to be reached conditionally, since well, that condition
+    /// should be part of the precondition.
+    #[logfn_inputs(TRACE)]
+    fn handle_precondition_start(
+        &mut self,
+        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+    ) {
+        if self.check_for_errors
+            && self.check_for_unconditional_precondition
+            && !self
+                .current_environment
+                .entry_condition
+                .as_bool_if_known()
+                .unwrap_or(false)
+        {
+            let span = self.current_span;
+            let warning = self
+                .session
+                .struct_span_warn(span, "preconditions should be reached unconditionally");
+            self.emit_diagnostic(warning);
+            self.check_for_unconditional_precondition = false;
+        }
+        let exit_condition = self.current_environment.entry_condition.clone();
+        if let Some((_, target)) = destination {
+            self.current_environment.exit_conditions = self
+                .current_environment
+                .exit_conditions
+                .insert(*target, exit_condition);
+        } else {
+            unreachable!();
+        }
+    }
+
     /// Adds the first and only value in actual_args to the current list of preconditions.
     /// No check is performed, since we get to assume the caller has verified this condition.
     #[logfn_inputs(TRACE)]
     fn handle_precondition(&mut self, actual_args: &[(Rc<Path>, Rc<AbstractValue>)]) {
         precondition!(actual_args.len() == 2);
         if self.check_for_errors {
-            if !self
-                .current_environment
-                .entry_condition
-                .as_bool_if_known()
-                .unwrap_or(false)
-            {
-                let span = self.current_span;
-                let warning = self
-                    .session
-                    .struct_span_warn(span, "preconditions should be reached unconditionally");
-                self.emit_diagnostic(warning);
-            }
             let condition = actual_args[0].1.clone();
             let message = self.coerce_to_string(&actual_args[1].1);
             let precondition = Precondition {

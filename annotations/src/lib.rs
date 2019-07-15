@@ -361,16 +361,19 @@ macro_rules! debug_checked_postcondition_ne {
 macro_rules! precondition {
     ($condition:expr) => {
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($condition, "unsatisfied precondition")
         }
     };
     ($condition:expr, $message:literal) => {
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($condition, concat!("unsatisfied precondition: ", $message))
         }
     };
     ($condition:expr, $($arg:tt)*) => {
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($condition, concat!("unsatisfied precondition: ", stringify!($($arg)*)));
         }
     };
@@ -384,6 +387,7 @@ macro_rules! precondition {
 macro_rules! checked_precondition {
     ($condition:expr) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($condition, "unsatisfied precondition")
         } else {
             assert!($condition);
@@ -391,6 +395,7 @@ macro_rules! checked_precondition {
     );
     ($condition:expr, $message:literal) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($condition, concat!("unsatisfied precondition: ", $message))
         } else {
             assert!($condition, $message);
@@ -398,6 +403,7 @@ macro_rules! checked_precondition {
     );
     ($condition:expr, $($arg:tt)*) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($condition, concat!("unsatisfied precondition: ", stringify!($($arg)*)));
         } else {
             assert!($condition, $($arg)*);
@@ -413,6 +419,7 @@ macro_rules! checked_precondition {
 macro_rules! checked_precondition_eq {
     ($left:expr, $right:expr) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left == $right, concat!("unsatisfied precondition: ", stringify!($left == $right)))
         } else {
             assert_eq!($left, $right);
@@ -420,6 +427,7 @@ macro_rules! checked_precondition_eq {
     );
     ($left:expr, $right:expr, $message:literal) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left == $right, concat!("unsatisfied precondition: ", stringify!($left == $right), ", ", $message))
         } else {
             assert_eq!($left, $right, $message);
@@ -427,6 +435,7 @@ macro_rules! checked_precondition_eq {
     );
     ($left:expr, $right:expr, $($arg:tt)*) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left == $right, concat!("unsatisfied precondition: ", stringify!($left == $right), ", ", stringify!($($arg)*)));
         } else {
             assert_eq!($left, $right, $($arg)*);
@@ -442,6 +451,7 @@ macro_rules! checked_precondition_eq {
 macro_rules! checked_precondition_ne {
     ($left:expr, $right:expr) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left != $right, concat!("unsatisfied precondition: ", stringify!($left != $right)))
         } else {
             assert_ne!($left, $right);
@@ -449,6 +459,7 @@ macro_rules! checked_precondition_ne {
     );
     ($left:expr, $right:expr, $message:literal) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left != $right, concat!("unsatisfied precondition: ", stringify!($left != $right), ", ", $message))
         } else {
             assert_ne!($left, $right, $message);
@@ -456,6 +467,7 @@ macro_rules! checked_precondition_ne {
     );
     ($left:expr, $right:expr, $($arg:tt)*) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left != $right, concat!("unsatisfied precondition: ", stringify!($left != $right), ", ", stringify!($($arg)*)));
         } else {
             assert_ne!($left, $right, $($arg)*);
@@ -471,6 +483,7 @@ macro_rules! checked_precondition_ne {
 macro_rules! debug_checked_precondition {
     ($condition:expr) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($condition, "unsatisfied precondition")
         } else {
             debug_assert!($condition);
@@ -478,6 +491,7 @@ macro_rules! debug_checked_precondition {
     );
     ($condition:expr, $message:literal) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($condition, concat!("unsatisfied precondition: ", $message))
         } else {
             debug_assert!($condition, $message);
@@ -485,6 +499,7 @@ macro_rules! debug_checked_precondition {
     );
     ($condition:expr, $($arg:tt)*) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($condition, concat!("unsatisfied precondition: ", stringify!($($arg)*)));
         } else {
             debug_assert!($condition, $($arg)*);
@@ -500,6 +515,7 @@ macro_rules! debug_checked_precondition {
 macro_rules! debug_checked_precondition_eq {
     ($left:expr, $right:expr) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left == $right, concat!("unsatisfied precondition: ", stringify!($left == $right)))
         } else {
             debug_assert_eq!($left, $right);
@@ -507,6 +523,7 @@ macro_rules! debug_checked_precondition_eq {
     );
     ($left:expr, $right:expr, $message:literal) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left == $right, concat!("unsatisfied precondition: ", stringify!($left == $right), ", ", $message))
         } else {
             debug_assert_eq!($left, $right, $message);
@@ -514,6 +531,7 @@ macro_rules! debug_checked_precondition_eq {
     );
     ($left:expr, $right:expr, $($arg:tt)*) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left == $right, concat!("unsatisfied precondition: ", stringify!($left == $right), ", ", stringify!($($arg)*)));
         } else {
             debug_assert_eq!($left, $right, $($arg)*);
@@ -529,6 +547,7 @@ macro_rules! debug_checked_precondition_eq {
 macro_rules! debug_checked_precondition_ne {
     ($left:expr, $right:expr) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left != $right, concat!("unsatisfied precondition: ", stringify!($left != $right)))
         } else {
             debug_assert_ne!($left, $right);
@@ -536,6 +555,7 @@ macro_rules! debug_checked_precondition_ne {
     );
     ($left:expr, $right:expr, $message:literal) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left != $right, concat!("unsatisfied precondition: ", stringify!($left != $right), ", ", $message))
         } else {
             debug_assert_ne!($left, $right, $message);
@@ -543,6 +563,7 @@ macro_rules! debug_checked_precondition_ne {
     );
     ($left:expr, $right:expr, $($arg:tt)*) => (
         if cfg!(mirai) {
+            mirai_annotations::mirai_precondition_start();
             mirai_annotations::mirai_precondition($left != $right, concat!("unsatisfied precondition: ", stringify!($left != $right), ", ", stringify!($($arg)*)));
         } else {
             debug_assert_ne!($left, $right, $($arg)*);
@@ -779,6 +800,10 @@ pub fn mirai_assume(_condition: bool) {}
 // Helper function for MIRAI. Should only be called via the postcondition macros.
 #[doc(hidden)]
 pub fn mirai_postcondition(_condition: bool, _assumed: bool, _message: &str) {}
+
+// Helper function for MIRAI. Should only be called via the precondition macros.
+#[doc(hidden)]
+pub fn mirai_precondition_start() {}
 
 // Helper function for MIRAI. Should only be called via the precondition macros.
 #[doc(hidden)]
