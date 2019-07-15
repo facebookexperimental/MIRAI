@@ -8,6 +8,7 @@ They add value by allowing [MIRAI](https://github.com/facebookexperimental/MIRAI
 
 From this it follows that we have three families of macros:
 * assume macros
+* postcondition macros (like verify wehre defined and like assume for callers)
 * precondition macros (like assume where defined and like verify for callers)
 * verify macros
 
@@ -16,7 +17,7 @@ Each of these has three kinds
 * always checked at runtime ('checked_macro')
 * checked at runtime only for debug builds ('debug_checked_macro')
 
-Additionally, the runtime checked kinds provides eq and ne varieties, leaving us with:
+Additionally, the runtime checked kinds provides eq and ne varieties, leaving us (for assume) with:
 * assume!
 * checked_assume!
 * checked_assume_eq!
@@ -24,20 +25,10 @@ Additionally, the runtime checked kinds provides eq and ne varieties, leaving us
 * debug_checked_assume!
 * debug_checked_assume_eq!
 * debug_checked_assume_ne!
-* precondition!
-* checked_precondition!
-* checked_precondition_eq!
-* checked_precondition_ne!
-* debug_checked_precondition!
-* debug_checked_precondition_eq!
-* debug_checked_precondition_ne!
-* verify!
-* checked_verify!
-* checked_verify_eq!
-* checked_verify_ne!
-* debug_checked_verify!
-* debug_checked_verify_eq!
-* debug_checked_verify_ne!
+
+Likewise for postcondition! precondition! and verify!
+
+Additionally there is also assumed_postcondition! which is an assume at the definition site, rather than a verify.
 
 This crate also provides macros for describing and constraining abstract state that only has meaning to MIRAI. These are:
 * get_model_field!
