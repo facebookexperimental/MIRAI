@@ -176,9 +176,18 @@ pub mod core {
 
         pub mod implement_usize {
             pub fn max_value() -> usize {
-                if cfg!(any(target_arch = "x86", tagret_arch = "mips", tagret_arch = "powerpc", tagret_arch = "arm")) {
+                if cfg!(any(
+                    target_arch = "x86",
+                    tagret_arch = "mips",
+                    tagret_arch = "powerpc",
+                    tagret_arch = "arm"
+                )) {
                     4294967295
-                } else if cfg!(any(target_arch = "x86_64", tagret_arch = "powerpc64", tagret_arch = "aarch64")) {
+                } else if cfg!(any(
+                    target_arch = "x86_64",
+                    tagret_arch = "powerpc64",
+                    tagret_arch = "aarch64"
+                )) {
                     18446744073709551615
                 } else {
                     panic!("Unsupported architecture");
@@ -498,9 +507,19 @@ pub mod core {
     }
 
     pub mod usize {
-        #[cfg(any(target_arch = "x86", target_arch = "mips", target_arch = "mips", target_arch = "powerpc", target_arch = "arm"))]
+        #[cfg(any(
+            target_arch = "x86",
+            target_arch = "mips",
+            target_arch = "mips",
+            target_arch = "powerpc",
+            target_arch = "arm"
+        ))]
         pub const MAX: usize = 4294967295;
-        #[cfg(any(target_arch = "x86_64", target_arch = "powerpc64", target_arch = "aarch64"))]
+        #[cfg(any(
+            target_arch = "x86_64",
+            target_arch = "powerpc64",
+            target_arch = "aarch64"
+        ))]
         pub const MAX: usize = 18446744073709551615;
         pub const MIN: usize = 0;
     }
