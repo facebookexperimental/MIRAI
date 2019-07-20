@@ -6,6 +6,9 @@
 
 # Use this script to update the seed summary store in mirai/binaries/summary_store.tar
 
+# Exit immediately if a command exits with a non-zero status.
+set -e
+
 # start clean
 cargo clean
 
