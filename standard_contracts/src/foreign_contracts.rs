@@ -176,10 +176,19 @@ pub mod core {
 
         pub mod implement_usize {
             pub fn max_value() -> usize {
-                4294967295
+                if cfg!(any(target_arch = "x86", tagret_arch = "mips", tagret_arch = "powerpc", tagret_arch = "arm")) {
+                    4294967295
+                } else if cfg!(any(target_arch = "x86_64", tagret_arch = "powerpc64", tagret_arch = "aarch64")) {
+                    18446744073709551615
+                } else {
+                    panic!("Unsupported architecture");
+                }
             }
             pub fn min_value() -> usize {
                 0
+            }
+            pub fn checked_add(_self: usize, value: usize) -> Option<usize> {
+                _self.checked_add(value)
             }
         }
 
@@ -189,6 +198,9 @@ pub mod core {
             }
             pub fn min_value() -> u8 {
                 0
+            }
+            pub fn checked_add(_self: u8, value: u8) -> Option<u8> {
+                _self.checked_add(value)
             }
         }
 
@@ -486,7 +498,10 @@ pub mod core {
     }
 
     pub mod usize {
+        #[cfg(any(target_arch = "x86", target_arch = "mips", target_arch = "mips", target_arch = "powerpc", target_arch = "arm"))]
         pub const MAX: usize = 4294967295;
+        #[cfg(any(target_arch = "x86_64", target_arch = "powerpc64", target_arch = "aarch64"))]
+        pub const MAX: usize = 18446744073709551615;
         pub const MIN: usize = 0;
     }
 
@@ -577,6 +592,11 @@ pub mod alloc {
                 self.len += 1;
             }
 
+            pub fn append(&mut self, other: &mut Vec<T>) {
+                precondition!(self.len <= usize::max_value() - other.len());
+                self.len += other.len;
+            }
+
             pub fn pop(&mut self) -> Option<T> {
                 if self.len == 0 {
                     None
@@ -588,6 +608,10 @@ pub mod alloc {
 
             pub fn is_empty(&self) -> bool {
                 self.len == 0
+            }
+
+            pub fn clear(&mut self) {
+                self.len = 0;
             }
         }
     }
