@@ -11,10 +11,10 @@ use crate::expression::{Expression, ExpressionType};
 use crate::interval_domain::{self, IntervalDomain};
 use crate::k_limits;
 use crate::path::PathRefinement;
-use crate::path::{Path, PathEnum};
+use crate::path::{Path, PathEnum, PathSelector};
 
 use log_derive::{logfn, logfn_inputs};
-use mirai_annotations::checked_precondition;
+use mirai_annotations::{checked_assume, checked_precondition};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -211,6 +211,7 @@ pub trait AbstractValueTrait: Sized {
     fn bit_xor(&self, other: Self) -> Self;
     fn cast(&self, target_type: ExpressionType) -> Self;
     fn conditional_expression(&self, consequent: Self, alternate: Self) -> Self;
+    fn dereference(&self, target_type: ExpressionType) -> Self;
     fn divide(&self, other: Self) -> Self;
     fn equals(&self, other: Self) -> Self;
     fn greater_or_equal(&self, other: Self) -> Self;
@@ -239,6 +240,7 @@ pub trait AbstractValueTrait: Sized {
     fn subtract(&self, other: Self) -> Self;
     fn sub_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn subset(&self, other: &Self) -> bool;
+    fn try_to_retype_as(&self, target_type: &ExpressionType) -> Self;
     fn try_to_simplify_binary_op(
         &self,
         other: Self,
@@ -502,8 +504,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn conditional_expression(
         &self,
-        consequent: Rc<AbstractValue>,
-        alternate: Rc<AbstractValue>,
+        mut consequent: Rc<AbstractValue>,
+        mut alternate: Rc<AbstractValue>,
     ) -> Rc<AbstractValue> {
         if self.is_bottom() {
             // If the condition is impossible so is the expression.
@@ -512,13 +514,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if self.is_top() {
             return self.clone();
         }
-        if consequent.is_top() {
-            return consequent.clone();
-        }
         if consequent.is_bottom() {
-            return alternate.clone();
-        }
-        if alternate.is_top() {
             return alternate.clone();
         }
         if alternate.is_bottom() {
@@ -555,6 +551,26 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             .expression_size
             .saturating_add(consequent.expression_size)
             .saturating_add(alternate.expression_size);
+        let mut consequent_type = consequent.expression.infer_type();
+        let mut alternate_type = alternate.expression.infer_type();
+        // In this context not primitive is expected to indicate that the value is a default value obtained
+        // via an unspecialized summary from a generic function.
+        if !consequent_type.is_primitive() && alternate_type.is_primitive() {
+            consequent = consequent.try_to_retype_as(&alternate_type);
+            consequent_type = consequent.expression.infer_type();
+        } else if consequent_type.is_primitive() && !alternate_type.is_primitive() {
+            alternate = alternate.try_to_retype_as(&consequent_type);
+            alternate_type = alternate.expression.infer_type();
+        };
+        if consequent_type != alternate_type
+            && !(consequent_type.is_integer() && alternate_type.is_integer())
+            && !(consequent.is_top() || alternate.is_top())
+        {
+            unreachable!(
+                "conditional with mismatched types  {:?}: {:?}     {:?}: {:?}",
+                consequent_type, consequent, alternate_type, alternate
+            );
+        }
         AbstractValue::make_from(
             ConditionalExpression {
                 condition: self.clone(),
@@ -563,6 +579,116 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             },
             expression_size,
         )
+    }
+
+    // Attempts to construct an equivalent expression to self, but with the difference that
+    // the type inferred for the resulting expression will be the target type.
+    // If this is not possible, the original expression is returned.
+    // The need for this function arises from the difficulty of correctly typing variables that have
+    // generic types when constructed, but then leak out to caller contexts via summaries.
+    #[logfn_inputs(TRACE)]
+    fn try_to_retype_as(&self, target_type: &ExpressionType) -> Rc<AbstractValue> {
+        match &self.expression {
+            Expression::Add { left, right } => left
+                .try_to_retype_as(target_type)
+                .addition(right.try_to_retype_as(target_type)),
+            Expression::BitAnd { left, right } => left
+                .try_to_retype_as(target_type)
+                .bit_and(right.try_to_retype_as(target_type)),
+            Expression::BitOr { left, right } => left
+                .try_to_retype_as(target_type)
+                .bit_or(right.try_to_retype_as(target_type)),
+            Expression::BitXor { left, right } => left
+                .try_to_retype_as(target_type)
+                .bit_xor(right.try_to_retype_as(target_type)),
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                let consequent = consequent.try_to_retype_as(target_type);
+                let alternate = alternate.try_to_retype_as(target_type);
+                condition.conditional_expression(consequent, alternate)
+            }
+            Expression::Div { left, right } => left
+                .try_to_retype_as(target_type)
+                .divide(right.try_to_retype_as(target_type)),
+            Expression::Join { path, left, right } => left
+                .try_to_retype_as(target_type)
+                .join(right.try_to_retype_as(target_type), &path),
+            Expression::Mul { left, right } => left
+                .try_to_retype_as(target_type)
+                .multiply(right.try_to_retype_as(target_type)),
+            Expression::Rem { left, right } => left
+                .try_to_retype_as(target_type)
+                .remainder(right.try_to_retype_as(target_type)),
+            Expression::Shl { left, right } => left
+                .try_to_retype_as(target_type)
+                .shift_left(right.try_to_retype_as(target_type)),
+            Expression::Sub { left, right } => left
+                .try_to_retype_as(target_type)
+                .subtract(right.try_to_retype_as(target_type)),
+            Expression::Neg { operand } => operand.try_to_retype_as(target_type).negate(),
+            Expression::Variable { path, .. } => AbstractValue::make_from(
+                Expression::Variable {
+                    path: path.clone(),
+                    var_type: target_type.clone(),
+                },
+                1,
+            ),
+            Expression::Widen { path, operand, .. } => {
+                operand.try_to_retype_as(target_type).widen(&path)
+            }
+
+            _ => self.clone(),
+        }
+    }
+
+    /// Returns an element that is "*self".
+    #[logfn_inputs(TRACE)]
+    fn dereference(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
+        match &self.expression {
+            Expression::AbstractHeapAddress(..) => self.clone(),
+            Expression::Cast {
+                operand,
+                target_type: cast_type,
+            } => {
+                checked_assume!(*cast_type == ExpressionType::Reference);
+                operand.dereference(target_type)
+            }
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => condition.conditional_expression(
+                consequent.dereference(target_type.clone()),
+                alternate.dereference(target_type),
+            ),
+            Expression::Join { path, left, right } => left
+                .dereference(target_type.clone())
+                .join(right.dereference(target_type), path),
+            Expression::Reference(path) => AbstractValue::make_from(
+                Expression::Variable {
+                    path: path.clone(),
+                    var_type: target_type,
+                },
+                1,
+            ),
+            Expression::Variable { path, .. } => AbstractValue::make_from(
+                Expression::Variable {
+                    path: Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
+                    var_type: target_type,
+                },
+                1,
+            ),
+            Expression::Widen { path, operand } => operand.dereference(target_type).widen(path),
+            _ => {
+                unreachable!(
+                    "found unhandled expression that is of type reference: {:?}",
+                    self.expression
+                );
+            }
+        }
     }
 
     /// Returns an element that is "self / other".
