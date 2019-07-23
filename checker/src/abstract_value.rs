@@ -783,7 +783,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if self.is_bottom() {
             return other;
         }
-        // TOP union y is jut TOP
+        // TOP union y is just TOP
         if self.is_top() {
             return self.clone();
         }
