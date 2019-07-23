@@ -61,7 +61,7 @@ impl Environment {
     /// Updates the path to value map so that the given path now points to the given value.
     #[logfn_inputs(TRACE)]
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
-        if value.is_bottom() {
+        if value.is_bottom() || value.is_top() {
             self.value_map = self.value_map.remove(&path);
             return;
         }
@@ -150,8 +150,8 @@ impl Environment {
     #[logfn_inputs(TRACE)]
     pub fn join(&self, other: &Environment, join_condition: &Rc<AbstractValue>) -> Environment {
         self.join_or_widen(other, join_condition, |x, y, c, p| {
-            if Some(true) == c.as_bool_if_known() {
-                // If the join condition is known to be true, we have two unconditional branches joining
+            if Some(true) == c.as_bool_if_known() || c.is_top() {
+                // If the join condition is known to be true (or top), we have two unconditional branches joining
                 // up here and no way to tell which one brought us here. This can happen for an infinite
                 // loop, where the dominator of the loop anchor unconditionally branches to the anchor
                 // and the backward branch also unconditionally branches to the anchor.

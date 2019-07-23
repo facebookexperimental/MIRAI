@@ -11,7 +11,7 @@ cargo clean -p mirai
 # Run format checks
 cargo fmt --all
 # Run lint checks
-cargo audit
+#cargo audit
 cargo clippy -- -D warnings
 # Build
 cd checker; cargo rustc --lib -- -D rust-2018-idioms

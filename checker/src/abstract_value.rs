@@ -135,6 +135,12 @@ impl AbstractValue {
         right: Rc<AbstractValue>,
         operation: fn(Rc<AbstractValue>, Rc<AbstractValue>) -> Expression,
     ) -> Rc<AbstractValue> {
+        if left.is_top() {
+            return left;
+        }
+        if right.is_top() {
+            return right;
+        }
         let expression_size = left.expression_size.saturating_add(right.expression_size);
         Self::make_from(operation(left, right), expression_size)
     }
@@ -502,6 +508,21 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // If the condition is impossible so is the expression.
             return consequent;
         }
+        if self.is_top() {
+            return self.clone();
+        }
+        if consequent.is_top() {
+            return consequent.clone();
+        }
+        if consequent.is_bottom() {
+            return alternate.clone();
+        }
+        if alternate.is_top() {
+            return alternate.clone();
+        }
+        if alternate.is_bottom() {
+            return consequent.clone();
+        }
         if consequent.expression == alternate.expression {
             // c ? x : x is just x
             return consequent;
@@ -762,12 +783,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if self.is_bottom() {
             return other;
         }
+        // TOP union y is just TOP
+        if self.is_top() {
+            return self.clone();
+        }
         // x union {} is just x
         if other.is_bottom() {
             return self.clone();
         }
         // x union x is just x
         if (*self) == other {
+            return other;
+        }
+        // x union TOP is just TOP
+        if other.is_top() {
             return other;
         }
         // widened(x) union y is just widened(x)
@@ -929,9 +958,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
         if self.as_bool_if_known().unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
             Rc::new(TRUE)
-        } else if self.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
+        } else if other.is_top() || self.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
             other
-        } else if other.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
+        } else if self.is_top() || other.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
             self.clone()
         } else {
             // x |\ x = x
@@ -1923,6 +1952,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::AbstractHeapAddress(..)
             | Expression::CompileTimeConstant(..)
             | Expression::Reference(..)
+            | Expression::Top
             | Expression::Variable { .. } => self.clone(),
             _ => AbstractValue::make_from(
                 Expression::Widen {
