@@ -21,7 +21,7 @@ use log_derive::logfn_inputs;
 use mirai_annotations::{assume, checked_assume, checked_assume_eq, precondition, verify};
 use rustc::session::Session;
 use rustc::ty::subst::SubstsRef;
-use rustc::ty::{Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
+use rustc::ty::{AdtDef, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use rustc_data_structures::graph::dominators::Dominators;
 use std::borrow::Borrow;
@@ -252,30 +252,21 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         result
     }
 
-    // Path is required to be a temporary used to track a checked operation result.
+    // Path is required to be rooted in a temporary used to track a checked operation result.
     // The result type of the local will be a tuple (t, bool).
     // The result of this function is the t part.
     #[logfn_inputs(TRACE)]
     fn get_first_part_of_target_path_type_tuple(&mut self, path: &Rc<Path>) -> ExpressionType {
-        match &path.value {
-            PathEnum::LocalVariable { ordinal } => {
-                let loc = &self.mir.local_decls[mir::Local::from(*ordinal)];
-                match loc.ty.sty {
-                    TyKind::Tuple(types) => (&types[0].expect_ty().sty).into(),
-                    _ => unreachable!(),
-                }
-            }
+        match self.get_path_rustc_type(path) {
+            TyKind::Tuple(types) => (&types[0].expect_ty().sty).into(),
             _ => unreachable!(),
         }
     }
 
-    // Path is required to be a temporary used to track an operation result.
+    // Path is required to be rooted in a temporary used to track an operation result.
     #[logfn_inputs(TRACE)]
     fn get_target_path_type(&mut self, path: &Rc<Path>) -> ExpressionType {
-        match &path.value {
-            PathEnum::LocalVariable { ordinal } => self.get_type_for_local(*ordinal),
-            _ => unreachable!(),
-        }
+        self.get_path_rustc_type(path).into()
     }
 
     /// Lookups up the local definition for this ordinal and maps the type information
@@ -3129,6 +3120,51 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::Place::Projection(_boxed_place_projection) => {
                 self.get_type_for_projection_element(place)
             }
+        }
+    }
+
+    /// This is a hacky and brittle way to navigate the Rust compiler's type system.
+    /// Eventually it should be replaced with a comprehensive and principled mapping.
+    fn get_path_rustc_type(&mut self, path: &Rc<Path>) -> &'tcx TyKind<'tcx> {
+        match &path.value {
+            PathEnum::LocalVariable { ordinal } => {
+                let loc = &self.mir.local_decls[mir::Local::from(*ordinal)];
+                &loc.ty.sty
+            }
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } => {
+                let t = self.get_path_rustc_type(qualifier);
+                if let PathSelector::Field(ordinal) = **selector {
+                    let adt = Self::get_dereferenced_type(t);
+                    if let TyKind::Adt(AdtDef { variants, .. }, substs) = adt {
+                        if let Some(variant_index) = variants.last() {
+                            assume!(variant_index.index() == 0);
+                            let variant = &variants[variant_index];
+                            let field = &variant.fields[ordinal];
+                            let field_ty = field.ty(*self.tcx, substs);
+                            return &field_ty.sty;
+                        }
+                    }
+                }
+                info!("t is {:?}", t);
+                info!("selector is {:?}", selector);
+                unreachable!()
+            }
+            _ => {
+                info!("path.value is {:?}", path.value);
+                unreachable!()
+            }
+        }
+    }
+
+    /// Returns the target type of a reference type.
+    fn get_dereferenced_type(ty: &'tcx TyKind<'tcx>) -> &'tcx TyKind<'tcx> {
+        match ty {
+            TyKind::Ref(_, t, _) => &t.sty,
+            _ => ty,
         }
     }
 
