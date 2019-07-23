@@ -6,8 +6,8 @@
 use log::debug;
 use log_derive::{logfn, logfn_inputs};
 use rustc::hir::def_id::DefId;
-use rustc::hir::ItemKind;
-use rustc::hir::Node;
+use rustc::hir::map::DefPathData;
+use rustc::hir::{ItemKind, Node};
 use rustc::ty::subst::{SubstsRef, UnpackedKind};
 use rustc::ty::{DefIdTree, Ty, TyCtxt, TyKind};
 use std::rc::Rc;
@@ -39,6 +39,10 @@ pub fn find_sysroot() -> String {
 pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_>) -> bool {
     if let Some(node) = tcx.hir().get_if_local(def_id) {
         match node {
+            Node::Expr(rustc::hir::Expr {
+                node: rustc::hir::ExprKind::Closure(..),
+                ..
+            }) => false,
             Node::Item(item) => {
                 if let ItemKind::Fn(..) = item.node {
                     return item.vis.node.is_pub();
@@ -119,9 +123,40 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
                 }
             }
         }
+        Closure(def_id, subs) => {
+            str.push_str("closure_");
+            str.push_str(qualified_type_name(tcx, def_id).as_str());
+            for sub in subs.substs {
+                if let UnpackedKind::Type(ty) = sub.unpack() {
+                    str.push('_');
+                    append_mangled_type(str, ty, tcx);
+                }
+            }
+        }
+        Dynamic(..) => str.push_str(&format!("dyn_{:?}", ty)),
         Foreign(def_id) => {
             str.push_str("extern_type_");
             str.push_str(qualified_type_name(tcx, def_id).as_str());
+        }
+        FnDef(def_id, subs) => {
+            str.push_str("fn_");
+            str.push_str(qualified_type_name(tcx, def_id).as_str());
+            for sub in subs {
+                if let UnpackedKind::Type(ty) = sub.unpack() {
+                    str.push('_');
+                    append_mangled_type(str, ty, tcx);
+                }
+            }
+        }
+        Opaque(def_id, subs) => {
+            str.push_str("impl_");
+            str.push_str(qualified_type_name(tcx, def_id).as_str());
+            for sub in subs {
+                if let UnpackedKind::Type(ty) = sub.unpack() {
+                    str.push('_');
+                    append_mangled_type(str, ty, tcx);
+                }
+            }
         }
         Str => str.push_str("str"),
         Array(ty, _) => {
@@ -166,8 +201,15 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
                 append_mangled_type(str, pty, tcx);
             }
         }
+        Projection(projection_ty) => {
+            append_mangled_type(str, projection_ty.self_ty(), tcx);
+            str.push_str("_as_");
+            str.push_str(qualified_type_name(tcx, projection_ty.item_def_id).as_str());
+        }
         _ => {
             //todo: add cases as the need arises, meanwhile make the need obvious.
+            debug!("{:?}", ty);
+            debug!("{:?}", ty.sty);
             str.push_str(&format!("default formatted {:?}", ty))
         }
     }
@@ -232,14 +274,10 @@ pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
         } else {
             name.push('.');
         }
-        let component_name = component.data.as_interned_str().as_str();
-        let component_name = component_name.get();
-        let saw_implement = if component_name == "{{impl}}" {
-            name.push_str("implement");
-            true
-        } else {
-            name.push_str(component_name);
-            false
+        push_component_name(&component.data, &mut name);
+        let saw_implement = match component.data {
+            DefPathData::Impl => true,
+            _ => false,
         };
         if component.disambiguator != 0 {
             name.push('_');
@@ -255,4 +293,23 @@ pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
         }
     }
     Rc::new(name)
+}
+
+fn push_component_name(component_data: &DefPathData, target: &mut String) {
+    use DefPathData::*;
+    match component_data {
+        TypeNs(name) | ValueNs(name) | MacroNs(name) | LifetimeNs(name) | GlobalMetaData(name) => {
+            target.push_str(name.as_str().get());
+        }
+        _ => target.push_str(match component_data {
+            CrateRoot => "crate_root",
+            Impl => "implement",
+            Misc => "miscellaneous",
+            ClosureExpr => "closure",
+            Ctor => "ctor",
+            AnonConst => "constant",
+            ImplTrait => "implement_trait",
+            _ => unreachable!(),
+        }),
+    };
 }
