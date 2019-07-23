@@ -163,7 +163,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .value_at(&path)
                 .unwrap_or(&bottom)
                 .clone();
-            local_val.refine_with(&self.current_environment.entry_condition, 0)
+            if self
+                .current_environment
+                .entry_condition
+                .as_bool_if_known()
+                .is_none()
+            {
+                local_val.refine_with(&self.current_environment.entry_condition, 0)
+            } else {
+                local_val
+            }
         };
         let result = if refined_val.is_bottom() {
             // Not found locally, so try statics.
@@ -1362,11 +1371,19 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ) {
         verify!(self.check_for_errors);
         for precondition in &function_summary.preconditions {
-            let refined_condition = precondition
+            let mut refined_condition = precondition
                 .condition
                 .refine_parameters(actual_args, self.fresh_variable_offset)
-                .refine_paths(&self.current_environment)
-                .refine_with(&self.current_environment.entry_condition, 0);
+                .refine_paths(&self.current_environment);
+            if self
+                .current_environment
+                .entry_condition
+                .as_bool_if_known()
+                .is_none()
+            {
+                refined_condition =
+                    refined_condition.refine_with(&self.current_environment.entry_condition, 0);
+            }
             let (refined_precondition_as_bool, entry_cond_as_bool) =
                 self.check_condition_value_and_reachability(&refined_condition);
 
