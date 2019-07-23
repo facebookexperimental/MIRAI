@@ -423,7 +423,9 @@ impl Debug for Expression {
             Expression::UnknownModelField { path, default } => {
                 f.write_fmt(format_args!("({:?}).default(({:?})", path, default))
             }
-            Expression::Variable { path, .. } => path.fmt(f),
+            Expression::Variable { path, var_type } => {
+                f.write_fmt(format_args!("{:?}: {:?}", path, var_type))
+            }
             Expression::Widen { path, operand } => {
                 f.write_fmt(format_args!("widen({:?}) at {:?}", operand, path))
             }
