@@ -66,6 +66,7 @@ impl Debug for ConstantDomain {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             ConstantDomain::Bottom => f.write_str("BOTTOM"),
+            ConstantDomain::Char(ch) if (*ch as u32) == 0 => f.write_fmt(format_args!("'null'")),
             ConstantDomain::Char(ch) => f.write_fmt(format_args!("'{}'", ch)),
             ConstantDomain::False => f.write_str("false"),
             ConstantDomain::Function {
@@ -77,8 +78,8 @@ impl Debug for ConstantDomain {
                 summary_cache_key, argument_type_key
             )),
             ConstantDomain::I128(val) => val.fmt(f),
-            ConstantDomain::F64(val) => val.fmt(f),
-            ConstantDomain::F32(val) => val.fmt(f),
+            ConstantDomain::F64(val) => (f64::from_bits(*val)).fmt(f),
+            ConstantDomain::F32(val) => (f32::from_bits(*val)).fmt(f),
             ConstantDomain::Str(str_val) => str_val.fmt(f),
             ConstantDomain::True => f.write_str("true"),
             ConstantDomain::U128(val) => val.fmt(f),
@@ -304,6 +305,7 @@ impl ConstantDomain {
                     ConstantDomain::U128(1)
                 }
             }
+
             ConstantDomain::U128(val) => {
                 if *target_type == ExpressionType::Char {
                     ConstantDomain::Char((*val as u8) as char)
@@ -315,6 +317,8 @@ impl ConstantDomain {
                         ExpressionType::U16 => ConstantDomain::U128((*val as u16) as u128),
                         ExpressionType::U32 => ConstantDomain::U128((*val as u32) as u128),
                         ExpressionType::U64 => ConstantDomain::U128((*val as u64) as u128),
+                        ExpressionType::F32 => ConstantDomain::F32((*val as f32).to_bits()),
+                        ExpressionType::F64 => ConstantDomain::F64((*val as f64).to_bits()),
                         _ => self.clone(),
                     }
                 }
@@ -328,6 +332,8 @@ impl ConstantDomain {
                         ExpressionType::I16 => ConstantDomain::I128((*val as i16) as i128),
                         ExpressionType::I32 => ConstantDomain::I128((*val as i32) as i128),
                         ExpressionType::I64 => ConstantDomain::I128((*val as i64) as i128),
+                        ExpressionType::F32 => ConstantDomain::F32((*val as f32).to_bits()),
+                        ExpressionType::F64 => ConstantDomain::F64((*val as f64).to_bits()),
                         _ => self.clone(),
                     }
                 }

@@ -1250,6 +1250,7 @@ impl Z3Solver {
                 alternate,
             } => self.bv_conditional(num_bits, condition, consequent, alternate),
             Expression::Join { path, .. } => self.bv_join(num_bits, path),
+            Expression::Neg { operand } => self.bv_neg(num_bits, operand),
             Expression::Reference(path) => self.bv_reference(num_bits, path),
             Expression::Shl { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvshl)
@@ -1281,6 +1282,12 @@ impl Z3Solver {
         let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
         let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
         unsafe { operation(self.z3_context, left_ast, right_ast) }
+    }
+
+    #[logfn_inputs(TRACE)]
+    fn bv_neg(&self, num_bits: u32, operand: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
+        let ast = self.get_as_bv_z3_ast(&(**operand).expression, num_bits);
+        unsafe { z3_sys::Z3_mk_bvneg(self.z3_context, ast) }
     }
 
     #[logfn_inputs(TRACE)]
