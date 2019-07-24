@@ -14,6 +14,7 @@ use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum};
 
 use log_derive::{logfn, logfn_inputs};
+use mirai_annotations::checked_precondition;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -1754,6 +1755,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// the result is simply a clone of this domain.
     #[logfn_inputs(TRACE)]
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Rc<AbstractValue> {
+        //do not use false path conditions to refine things
+        checked_precondition!(path_condition.as_bool_if_known().is_none());
         if depth >= k_limits::MAX_REFINE_DEPTH {
             return self.clone();
         }
@@ -1815,8 +1818,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     alternate.refine_with(path_condition, depth + 1)
                 } else {
                     let refined_condition = condition.refine_with(path_condition, depth + 1);
+                    let refined_condition_as_bool = refined_condition.as_bool_if_known();
                     let refined_consequent = consequent.refine_with(path_condition, depth + 1);
+                    if refined_condition_as_bool.unwrap_or(false) {
+                        return refined_consequent;
+                    }
                     let refined_alternate = alternate.refine_with(path_condition, depth + 1);
+                    if !refined_condition_as_bool.unwrap_or(true) {
+                        return refined_alternate;
+                    }
                     let refined_consequent =
                         refined_consequent.refine_with(&refined_condition, depth + 1);
                     let refined_alternate =
