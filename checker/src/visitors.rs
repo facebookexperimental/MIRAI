@@ -1821,9 +1821,20 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .clone()
                 .refine_parameters(arguments, self.fresh_variable_offset)
                 .refine_paths(&self.current_environment);
+            if let Expression::Variable { path, .. } = &rvalue.expression {
+                if let PathEnum::LocalVariable { ordinal } = &path.value {
+                    if *ordinal >= self.fresh_variable_offset {
+                        // A fresh variable from the callee adds no information that is not
+                        // already inherent in the target location.
+                        self.current_environment.value_map =
+                            self.current_environment.value_map.remove(&tpath);
+                        continue;
+                    }
+                }
+            }
             for (arg_path, arg_val) in arguments.iter() {
                 if arg_val.eq(&rvalue) {
-                    let rtype = rvalue.expression.infer_type();
+                    let rtype = arg_val.expression.infer_type();
                     self.copy_or_move_elements(tpath.clone(), arg_path.clone(), rtype, false);
                     break;
                 }
@@ -2510,7 +2521,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     #[logfn_inputs(TRACE)]
     fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         let discriminant_path = Path::new_discriminant(self.visit_place(place));
-        let discriminant_type = self.get_place_type(place);
+        let discriminant_type = ExpressionType::Isize;
         let discriminant_value =
             self.lookup_path_and_refine_result(discriminant_path, discriminant_type);
         self.current_environment

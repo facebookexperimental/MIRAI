@@ -6,6 +6,7 @@
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::environment::Environment;
+use crate::expression::Expression;
 use crate::path::{Path, PathEnum};
 use crate::utils;
 
@@ -342,9 +343,16 @@ fn extract_side_effects(
             .iter()
             .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
         {
-            path.record_heap_addresses(&mut heap_roots);
-            value.record_heap_addresses(&mut heap_roots);
-            result.push((path.clone(), value.clone()));
+            match &value.expression {
+                Expression::Variable { path: p, .. } | Expression::Reference(p) if path.eq(p) => {
+                    continue; // Not a side effect, just the original value of the parameter
+                }
+                _ => {
+                    path.record_heap_addresses(&mut heap_roots);
+                    value.record_heap_addresses(&mut heap_roots);
+                    result.push((path.clone(), value.clone()));
+                }
+            }
         }
     }
     extract_reachable_heap_allocations(env, &mut heap_roots, &mut result);
