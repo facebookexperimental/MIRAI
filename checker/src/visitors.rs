@@ -314,6 +314,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 already_added,
             );
         }
+        assume!(block_indices.len() < std::usize::MAX); // We'll run out of memory long  before this overflows
         block_indices.push(root_block);
     }
 
@@ -518,8 +519,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 // We update out_state anyway, since exit conditions may have changed.
                 // This is particularly a problem when the current entry is the dummy entry
                 // and the current state is empty except for the exit condition.
-                out_state.get_mut(bb).unwrap().exit_conditions =
-                    self.current_environment.exit_conditions.clone();
+                out_state
+                    .get_mut(bb)
+                    .expect("incorrectly initialized out_state")
+                    .exit_conditions = self.current_environment.exit_conditions.clone();
             }
         }
         changed
@@ -558,9 +561,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             predecessor_states_and_conditions.reverse();
             let (p_state, pred_exit_condition) = predecessor_states_and_conditions[0];
             let mut i_state = p_state.clone();
-            i_state.entry_condition = pred_exit_condition.unwrap().clone();
+            i_state.entry_condition = pred_exit_condition
+                .expect("something went wrong with filter")
+                .clone();
             for (p_state, pred_exit_condition) in predecessor_states_and_conditions.iter().skip(1) {
-                let mut path_condition = pred_exit_condition.unwrap().clone();
+                let mut path_condition = pred_exit_condition
+                    .expect("something went wrong with filter")
+                    .clone();
                 if path_condition.as_bool_if_known().unwrap_or(false) {
                     // A true path condition tells us nothing. If we are already widening,
                     // then replace the true condition with equalities from the corresponding

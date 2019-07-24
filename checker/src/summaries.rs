@@ -11,6 +11,7 @@ use crate::path::{Path, PathEnum};
 use crate::utils;
 
 use log_derive::{logfn, logfn_inputs};
+use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use rustc_errors::SourceMapper;
@@ -231,6 +232,7 @@ impl Summary {
         e2: &[(Rc<Path>, Rc<AbstractValue>)],
         mut acc: Vec<(Rc<Path>, Rc<AbstractValue>)>,
     ) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {
+        assume!(acc.len() < std::usize::MAX); // We'll run out of memory long before this overflows
         if e1.is_empty() {
             if e2.is_empty() {
                 return acc;
@@ -564,6 +566,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             Some(id) => {
                 let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
                 if !dependents.contains(&id) {
+                    assume!(dependents.len() < std::usize::MAX); // We'll run out of memory long  before this overflows
                     dependents.push(id);
                 }
             }
@@ -598,10 +601,12 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     ) -> &Summary {
         let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
         if !dependents.contains(&dependent_def_id) {
+            assume!(dependents.len() < std::usize::MAX); // We'll run out of memory long  before this overflows
             dependents.push(dependent_def_id);
         }
         if self.typed_cache.contains_key(&function_id) {
-            self.typed_cache.get(&function_id).unwrap()
+            let result = self.typed_cache.get(&function_id);
+            result.expect("value disappeared from typed_cache")
         } else {
             let db = &self.db;
             if let Some(summary) = Self::get_persistent_summary_using_arg_types_if_possible(
