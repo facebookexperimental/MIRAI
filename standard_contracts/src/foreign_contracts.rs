@@ -20,12 +20,22 @@ pub mod core {
             fn lt__ref_i32_ref_i32(x: &i32, y: &i32) -> bool {
                 (*x) < (*y)
             }
+            fn ge<T>(_a: &T, _b: &T) -> bool { result!() }
+            fn gt<T>(_a: &T, _b: &T) -> bool { result!() }
+            fn le<T>(_a: &T, _b: &T) -> bool { result!() }
+            fn lt<T>(_a: &T, _b: &T) -> bool { result!() }
         }
 
         pub trait Ord {
             fn cmp<T>(_a: &T, _b: &T) -> Ordering {
                 result!()
             }
+            fn min<T>(_a: &T, _b: &T) -> T { result!() }
+        }
+
+        pub trait PartialEq {
+            fn eq<T>(_a: &T, _b: &T) -> bool { result!() }
+            fn ne<T>(_a: &T, _b: &T) -> bool { result!() }
         }
     }
 
@@ -70,6 +80,7 @@ pub mod core {
         pub mod implement_core_fmt_Arguments {
             use crate::foreign_contracts::core::fmt::ArgumentV1;
             use crate::foreign_contracts::core::fmt::Arguments;
+            use crate::foreign_contracts::core::fmt::rt;
 
             pub fn new_v1<'a>(
                 _pieces: &'a [&'a str],
@@ -77,10 +88,76 @@ pub mod core {
             ) -> Arguments<'a> {
                 result!()
             }
+
+            pub fn new_v1_formatted<'a>(pieces: &'a [&'a str],
+                                    _args: &'a [ArgumentV1<'a>],
+                                    fmt: &'a [rt::v1::Argument]) -> Arguments<'a> {
+                precondition!(pieces.len() >= fmt.len());
+                result!()
+            }
         }
 
         pub struct Formatter<'a> {
             phantom: PhantomData<&'a str>,
+        }
+
+        pub trait Debug {
+            fn fmt(&self, f: &mut Formatter<'_>) -> Result;
+        }
+
+        pub struct DebugTuple {}
+        pub struct DebugStruct {}
+
+        pub mod builders {
+            pub mod implement_core_fmt_builders_DebugStruct {
+                use crate::foreign_contracts::core::fmt;
+                use crate::foreign_contracts::core::fmt::DebugStruct;
+
+                pub fn field<'a>(_self : &'a mut DebugStruct, _name: &str, _value: &dyn fmt::Debug) -> &'a mut DebugStruct {
+                    result!()
+                }
+
+                pub fn finish(_self : &mut DebugStruct) -> fmt::Result {
+                    result!()
+                }
+            }
+
+            pub mod implement_core_fmt_builders_DebugTuple {
+                use crate::foreign_contracts::core::fmt;
+                use crate::foreign_contracts::core::fmt::DebugTuple;
+
+                pub fn field<'a>(_self : &'a mut DebugTuple, _value: &dyn fmt::Debug) -> &'a mut DebugTuple {
+                    result!()
+                }
+
+                pub fn finish(_self : &mut DebugTuple) -> fmt::Result {
+                    result!()
+                }
+            }
+        }
+
+        pub mod implement_core_fmt_Formatter {
+            use crate::foreign_contracts::core::fmt::Arguments;
+            use crate::foreign_contracts::core::fmt::DebugStruct;
+            use crate::foreign_contracts::core::fmt::DebugTuple;
+            use crate::foreign_contracts::core::fmt::Formatter;
+            use crate::foreign_contracts::core::fmt::Result;
+
+            pub fn write_str(_self : &mut Formatter, _s: &str) -> Result {
+                result!()
+            }
+
+            pub fn write_fmt(mut _self: &mut Formatter, _args: Arguments<'_>) -> Result {
+                result!()
+            }
+
+            pub fn debug_tuple(_self : & mut Formatter, _name: &str) -> DebugTuple {
+                result!()
+            }
+
+            pub fn debug_struct(_self : & mut Formatter, _name: &str) -> DebugStruct {
+                result!()
+            }
         }
 
         pub struct Result {}
@@ -412,6 +489,17 @@ pub mod core {
             pub struct Rev__Range_usize {
                 pub range: Range_usize,
             }
+
+            pub struct Enumerate<I> {
+                iter: I,
+                count: usize,
+            }
+
+            impl<I> Enumerate<I> {
+                pub(super) fn new(iter: I) -> Enumerate<I> {
+                    Enumerate { iter, count: 0 }
+                }
+            }
         }
 
         pub mod traits {
@@ -446,6 +534,7 @@ pub mod core {
                 use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
                 use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
                 use crate::foreign_contracts::core::slice::Iter;
+                use crate::foreign_contracts::core::iter::adapters::Enumerate;
 
                 pub trait Iterator {
                     fn enumerate__core_slice_Iter_bool(iter: Iter<bool>) -> Enumerator_slice<bool> {
@@ -515,7 +604,40 @@ pub mod core {
                     fn rev__core_ops_range_Range_usize(range: Range_usize) -> Rev__Range_usize {
                         Rev__Range_usize { range }
                     }
+
+                    fn enumerate(self) -> Enumerate<Self> where Self: Sized {
+                        Enumerate::new(self)
+                    }
                 }
+            }
+        }
+    }
+
+    pub mod time {
+        pub struct Duration {}
+
+        impl Duration {
+            pub fn as_micros(&self) -> u128 {
+                result!()
+            }
+            pub fn as_millis(&self) -> u128 {
+                result!()
+            }
+
+            pub fn checked_sub(self, rhs: Duration) -> Option<Duration> {
+                result!()
+            }
+
+            pub const fn from_micros(micros: u64) -> Duration {
+                Duration { }
+            }
+
+            pub const fn from_millis(millis: u64) -> Duration {
+                Duration { }
+            }
+
+            pub const fn from_secs(secs: u64) -> Duration {
+                Duration { }
             }
         }
     }
