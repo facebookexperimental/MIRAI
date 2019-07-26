@@ -514,13 +514,16 @@ pub mod core {
             }
 
             pub struct Enumerate<I> {
-                iter: I,
-                count: usize,
+                _iter: I,
+                _count: usize,
             }
 
             impl<I> Enumerate<I> {
                 pub(super) fn new(iter: I) -> Enumerate<I> {
-                    Enumerate { iter, count: 0 }
+                    Enumerate {
+                        _iter: iter,
+                        _count: 0,
+                    }
                 }
             }
         }
