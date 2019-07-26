@@ -20,22 +20,36 @@ pub mod core {
             fn lt__ref_i32_ref_i32(x: &i32, y: &i32) -> bool {
                 (*x) < (*y)
             }
-            fn ge<T>(_a: &T, _b: &T) -> bool { result!() }
-            fn gt<T>(_a: &T, _b: &T) -> bool { result!() }
-            fn le<T>(_a: &T, _b: &T) -> bool { result!() }
-            fn lt<T>(_a: &T, _b: &T) -> bool { result!() }
+            fn ge<T>(_a: &T, _b: &T) -> bool {
+                result!()
+            }
+            fn gt<T>(_a: &T, _b: &T) -> bool {
+                result!()
+            }
+            fn le<T>(_a: &T, _b: &T) -> bool {
+                result!()
+            }
+            fn lt<T>(_a: &T, _b: &T) -> bool {
+                result!()
+            }
         }
 
         pub trait Ord {
             fn cmp<T>(_a: &T, _b: &T) -> Ordering {
                 result!()
             }
-            fn min<T>(_a: &T, _b: &T) -> T { result!() }
+            fn min<T>(_a: &T, _b: &T) -> T {
+                result!()
+            }
         }
 
         pub trait PartialEq {
-            fn eq<T>(_a: &T, _b: &T) -> bool { result!() }
-            fn ne<T>(_a: &T, _b: &T) -> bool { result!() }
+            fn eq<T>(_a: &T, _b: &T) -> bool {
+                result!()
+            }
+            fn ne<T>(_a: &T, _b: &T) -> bool {
+                result!()
+            }
         }
     }
 
@@ -78,9 +92,9 @@ pub mod core {
         }
 
         pub mod implement_core_fmt_Arguments {
+            use crate::foreign_contracts::core::fmt::rt;
             use crate::foreign_contracts::core::fmt::ArgumentV1;
             use crate::foreign_contracts::core::fmt::Arguments;
-            use crate::foreign_contracts::core::fmt::rt;
 
             pub fn new_v1<'a>(
                 _pieces: &'a [&'a str],
@@ -89,9 +103,11 @@ pub mod core {
                 result!()
             }
 
-            pub fn new_v1_formatted<'a>(pieces: &'a [&'a str],
-                                    _args: &'a [ArgumentV1<'a>],
-                                    fmt: &'a [rt::v1::Argument]) -> Arguments<'a> {
+            pub fn new_v1_formatted<'a>(
+                pieces: &'a [&'a str],
+                _args: &'a [ArgumentV1<'a>],
+                fmt: &'a [rt::v1::Argument],
+            ) -> Arguments<'a> {
                 precondition!(pieces.len() >= fmt.len());
                 result!()
             }
@@ -113,11 +129,15 @@ pub mod core {
                 use crate::foreign_contracts::core::fmt;
                 use crate::foreign_contracts::core::fmt::DebugStruct;
 
-                pub fn field<'a>(_self : &'a mut DebugStruct, _name: &str, _value: &dyn fmt::Debug) -> &'a mut DebugStruct {
+                pub fn field<'a>(
+                    _self: &'a mut DebugStruct,
+                    _name: &str,
+                    _value: &dyn fmt::Debug,
+                ) -> &'a mut DebugStruct {
                     result!()
                 }
 
-                pub fn finish(_self : &mut DebugStruct) -> fmt::Result {
+                pub fn finish(_self: &mut DebugStruct) -> fmt::Result {
                     result!()
                 }
             }
@@ -126,11 +146,14 @@ pub mod core {
                 use crate::foreign_contracts::core::fmt;
                 use crate::foreign_contracts::core::fmt::DebugTuple;
 
-                pub fn field<'a>(_self : &'a mut DebugTuple, _value: &dyn fmt::Debug) -> &'a mut DebugTuple {
+                pub fn field<'a>(
+                    _self: &'a mut DebugTuple,
+                    _value: &dyn fmt::Debug,
+                ) -> &'a mut DebugTuple {
                     result!()
                 }
 
-                pub fn finish(_self : &mut DebugTuple) -> fmt::Result {
+                pub fn finish(_self: &mut DebugTuple) -> fmt::Result {
                     result!()
                 }
             }
@@ -143,7 +166,7 @@ pub mod core {
             use crate::foreign_contracts::core::fmt::Formatter;
             use crate::foreign_contracts::core::fmt::Result;
 
-            pub fn write_str(_self : &mut Formatter, _s: &str) -> Result {
+            pub fn write_str(_self: &mut Formatter, _s: &str) -> Result {
                 result!()
             }
 
@@ -151,11 +174,11 @@ pub mod core {
                 result!()
             }
 
-            pub fn debug_tuple(_self : & mut Formatter, _name: &str) -> DebugTuple {
+            pub fn debug_tuple(_self: &mut Formatter, _name: &str) -> DebugTuple {
                 result!()
             }
 
-            pub fn debug_struct(_self : & mut Formatter, _name: &str) -> DebugStruct {
+            pub fn debug_struct(_self: &mut Formatter, _name: &str) -> DebugStruct {
                 result!()
             }
         }
@@ -605,7 +628,10 @@ pub mod core {
                         Rev__Range_usize { range }
                     }
 
-                    fn enumerate(self) -> Enumerate<Self> where Self: Sized {
+                    fn enumerate(self) -> Enumerate<Self>
+                    where
+                        Self: Sized,
+                    {
                         Enumerate::new(self)
                     }
                 }
@@ -624,20 +650,20 @@ pub mod core {
                 result!()
             }
 
-            pub fn checked_sub(self, rhs: Duration) -> Option<Duration> {
+            pub fn checked_sub(self, _rhs: Duration) -> Option<Duration> {
                 result!()
             }
 
-            pub const fn from_micros(micros: u64) -> Duration {
-                Duration { }
+            pub const fn from_micros(_micros: u64) -> Duration {
+                Duration {}
             }
 
-            pub const fn from_millis(millis: u64) -> Duration {
-                Duration { }
+            pub const fn from_millis(_millis: u64) -> Duration {
+                Duration {}
             }
 
-            pub const fn from_secs(secs: u64) -> Duration {
-                Duration { }
+            pub const fn from_secs(_secs: u64) -> Duration {
+                Duration {}
             }
         }
     }
