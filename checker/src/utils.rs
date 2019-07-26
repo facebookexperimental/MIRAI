@@ -230,7 +230,7 @@ fn qualified_type_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
     };
     for component in &tcx.def_path(def_id).data {
         name.push('_');
-        name.push_str(component.data.as_interned_str().as_str().get());
+        push_component_name(&component.data, &mut name);
         if component.disambiguator != 0 {
             name.push('_');
             let da = component.disambiguator.to_string();
