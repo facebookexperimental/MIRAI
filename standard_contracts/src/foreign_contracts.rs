@@ -412,6 +412,20 @@ pub mod core {
             pub struct Rev__Range_usize {
                 pub range: Range_usize,
             }
+
+            pub struct Enumerate<I> {
+                _iter: I,
+                _count: usize,
+            }
+
+            impl<I> Enumerate<I> {
+                pub(super) fn new(iter: I) -> Enumerate<I> {
+                    Enumerate {
+                        _iter: iter,
+                        _count: 0,
+                    }
+                }
+            }
         }
 
         pub mod traits {
@@ -446,6 +460,7 @@ pub mod core {
                 use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
                 use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
                 use crate::foreign_contracts::core::slice::Iter;
+                use crate::foreign_contracts::core::iter::adapters::Enumerate;
 
                 pub trait Iterator {
                     fn enumerate__core_slice_Iter_bool(iter: Iter<bool>) -> Enumerator_slice<bool> {
@@ -514,6 +529,13 @@ pub mod core {
 
                     fn rev__core_ops_range_Range_usize(range: Range_usize) -> Rev__Range_usize {
                         Rev__Range_usize { range }
+                    }
+
+                    fn enumerate(self) -> Enumerate<Self>
+                    where
+                        Self: Sized,
+                    {
+                        Enumerate::new(self)
                     }
                 }
             }
