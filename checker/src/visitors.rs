@@ -277,6 +277,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         (&loc.ty.sty).into()
     }
 
+    /// Returns None if the type of the return local is () (i.e. void)
+    fn get_return_type(&self) -> Option<ExpressionType> {
+        let return_loc = &self.mir.local_decls[mir::Local::from(0u32)];
+        if let TyKind::Tuple(fields) = return_loc.ty.sty {
+            if fields.is_empty() {
+                return None;
+            }
+        }
+        Some((&return_loc.ty.sty).into())
+    }
+
     /// Do a topological sort, breaking loops by preferring lower block indices, using dominance
     /// to determine if there is a loop (if a is predecessor of b and b dominates a then they
     /// form a loop and we'll emit the one with the lower index first).
@@ -361,6 +372,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         // Now create a summary of the body that can be in-lined into call sites.
         let mut summary = summaries::summarize(
             self.mir.arg_count,
+            self.get_return_type(),
             &self.exit_environment,
             &self.preconditions,
             &self.post_condition,

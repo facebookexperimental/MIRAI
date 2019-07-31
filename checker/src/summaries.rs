@@ -6,7 +6,7 @@
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::environment::Environment;
-use crate::expression::Expression;
+use crate::expression::{Expression, ExpressionType};
 use crate::path::{Path, PathEnum};
 use crate::utils;
 
@@ -266,8 +266,10 @@ impl Summary {
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
 #[logfn(TRACE)]
+#[allow(clippy::too_many_arguments)]
 pub fn summarize(
     argument_count: usize,
+    return_type: Option<ExpressionType>,
     exit_environment: &Environment,
     preconditions: &[Precondition],
     post_condition: &Option<Rc<AbstractValue>>,
@@ -275,8 +277,9 @@ pub fn summarize(
     unwind_environment: &Environment,
     tcx: TyCtxt<'_>,
 ) -> Summary {
+    let return_path = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
-    let result = exit_environment.value_at(&Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into()));
+    let mut result = exit_environment.value_at(&return_path).cloned();
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
 
@@ -284,10 +287,20 @@ pub fn summarize(
     side_effects.sort();
     unwind_side_effects.sort();
 
+    if result.is_none() && return_type.is_some() {
+        result = Some(AbstractValue::make_from(
+            Expression::Variable {
+                path: return_path,
+                var_type: return_type.unwrap().clone(),
+            },
+            1,
+        ));
+    }
+
     Summary {
         is_not_default: true,
         preconditions,
-        result: result.cloned(),
+        result,
         side_effects,
         post_condition: post_condition.clone(),
         unwind_condition,
@@ -343,18 +356,11 @@ fn extract_side_effects(
         for (path, value) in env
             .value_map
             .iter()
-            .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
+            .filter(|(p, _)| (ordinal == 0 && (**p) == root) || p.is_rooted_by(&root))
         {
-            match &value.expression {
-                Expression::Variable { path: p, .. } | Expression::Reference(p) if path.eq(p) => {
-                    continue; // Not a side effect, just the original value of the parameter
-                }
-                _ => {
-                    path.record_heap_addresses(&mut heap_roots);
-                    value.record_heap_addresses(&mut heap_roots);
-                    result.push((path.clone(), value.clone()));
-                }
-            }
+            path.record_heap_addresses(&mut heap_roots);
+            value.record_heap_addresses(&mut heap_roots);
+            result.push((path.clone(), value.clone()));
         }
     }
     extract_reachable_heap_allocations(env, &mut heap_roots, &mut result);
