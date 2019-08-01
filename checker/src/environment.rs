@@ -8,7 +8,7 @@ use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::expression::Expression;
 use crate::k_limits;
-use crate::path::{Path, PathEnum};
+use crate::path::{Path, PathEnum, PathRefinement};
 
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::checked_assume;
@@ -136,8 +136,14 @@ impl Environment {
                     Rc::new(PathEnum::AbstractHeapAddress { ordinal: *addr1 }.into()),
                     Rc::new(PathEnum::AbstractHeapAddress { ordinal: *addr2 }.into()),
                 )),
-                (Expression::Reference(path1), Expression::Reference(path2)) => {
-                    Some((condition.clone(), path1.clone(), path2.clone()))
+                (Expression::Reference(path1), Expression::Reference(path2))
+                    if path1 != path && path2 != path =>
+                {
+                    Some((
+                        condition.clone(),
+                        path1.refine_paths(&self),
+                        path2.refine_paths(&self),
+                    ))
                 }
                 _ => None,
             },
@@ -206,13 +212,17 @@ impl Environment {
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
-                    let val2 = AbstractValue::make_from(
-                        Expression::Variable {
-                            path: path.clone(),
-                            var_type: val1.expression.infer_type(),
-                        },
-                        1,
-                    );
+                    let val2 = if val1.is_top() {
+                        val1.clone()
+                    } else {
+                        AbstractValue::make_from(
+                            Expression::Variable {
+                                path: path.clone(),
+                                var_type: val1.expression.infer_type(),
+                            },
+                            1,
+                        )
+                    };
                     value_map =
                         value_map.insert(p, join_or_widen(val1, &val2, &join_condition, &path));
                 }
@@ -221,13 +231,17 @@ impl Environment {
         for (path, val2) in value_map2.iter() {
             if !value_map1.contains_key(path) {
                 checked_assume!(!val2.is_bottom());
-                let val1 = AbstractValue::make_from(
-                    Expression::Variable {
-                        path: path.clone(),
-                        var_type: val2.expression.infer_type(),
-                    },
-                    1,
-                );
+                let val1 = if val2.is_top() {
+                    val2.clone()
+                } else {
+                    AbstractValue::make_from(
+                        Expression::Variable {
+                            path: path.clone(),
+                            var_type: val2.expression.infer_type(),
+                        },
+                        1,
+                    )
+                };
                 value_map = value_map.insert(
                     path.clone(),
                     join_or_widen(&val1, val2, &join_condition, &path),

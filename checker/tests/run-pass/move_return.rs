@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that calls std::intrinsics::unreachable conditionally.
+// A test that checks that non primitive values can move through a generic copy.
 
 #[macro_use]
 extern crate mirai_annotations;

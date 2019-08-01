@@ -283,19 +283,21 @@ pub fn summarize(
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
 
-    preconditions.sort();
-    side_effects.sort();
-    unwind_side_effects.sort();
-
     if result.is_none() && return_type.is_some() {
-        result = Some(AbstractValue::make_from(
+        let return_value = AbstractValue::make_from(
             Expression::Variable {
-                path: return_path,
+                path: return_path.clone(),
                 var_type: return_type.unwrap().clone(),
             },
             1,
-        ));
+        );
+        side_effects.push((return_path, return_value.clone()));
+        result = Some(return_value);
     }
+
+    preconditions.sort();
+    side_effects.sort();
+    unwind_side_effects.sort();
 
     Summary {
         is_not_default: true,
@@ -360,6 +362,12 @@ fn extract_side_effects(
         {
             path.record_heap_addresses(&mut heap_roots);
             value.record_heap_addresses(&mut heap_roots);
+            if let Expression::Variable { path: vpath, .. } = &value.expression {
+                if vpath.eq(path) {
+                    // The is not an update, but just what was there at function entry.
+                    continue;
+                }
+            }
             result.push((path.clone(), value.clone()));
         }
     }
