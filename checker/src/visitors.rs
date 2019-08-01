@@ -64,7 +64,7 @@ pub struct MirVisitor<'a, 'b, 'tcx, E> {
     buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
     outer_fixed_point_iteration: usize,
 
-    already_report_errors_for_call_to: HashSet<Rc<AbstractValue>>,
+    already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     check_for_errors: bool,
     check_for_unconditional_precondition: bool,
     current_environment: Environment,
@@ -104,7 +104,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             buffered_diagnostics: crate_context.buffered_diagnostics,
             outer_fixed_point_iteration: crate_context.outer_fixed_point_iteration,
 
-            already_report_errors_for_call_to: HashSet::new(),
+            already_reported_errors_for_call_to: HashSet::new(),
             check_for_errors: false,
             check_for_unconditional_precondition: true,
             current_environment: Environment::default(),
@@ -124,7 +124,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Restores the method only state to its initial state.
     #[logfn_inputs(TRACE)]
     fn reset_visitor_state(&mut self) {
-        self.already_report_errors_for_call_to = HashSet::new();
+        self.already_reported_errors_for_call_to = HashSet::new();
         self.check_for_errors = false;
         self.check_for_unconditional_precondition = true;
         self.current_environment = Environment::default();
@@ -989,7 +989,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let function_summary = self.get_function_summary(&func_to_call);
         if self.check_for_errors
             && !self
-                .already_report_errors_for_call_to
+                .already_reported_errors_for_call_to
                 .contains(&func_to_call)
         {
             self.check_function_preconditions(&actual_args, &function_summary, &func_to_call);
@@ -1421,11 +1421,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     // If this function is not meant to be called, it should add an explicit
                     // false precondition of its own.
                     if !self
-                        .already_report_errors_for_call_to
+                        .already_reported_errors_for_call_to
                         .contains(func_to_call)
                     {
                         self.emit_diagnostic_for_precondition(precondition, false);
-                        self.already_report_errors_for_call_to
+                        self.already_reported_errors_for_call_to
                             .insert(func_to_call.clone());
                     }
                 } else {
@@ -1480,11 +1480,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
             if !self
-                .already_report_errors_for_call_to
+                .already_reported_errors_for_call_to
                 .contains(func_to_call)
             {
                 self.emit_diagnostic_for_precondition(precondition, true);
-                self.already_report_errors_for_call_to
+                self.already_reported_errors_for_call_to
                     .insert(func_to_call.clone());
             }
         } else {
