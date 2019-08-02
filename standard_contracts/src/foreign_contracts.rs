@@ -669,6 +669,7 @@ pub mod alloc {
     pub mod vec {
         pub struct Vec<T> {
             _phantom: std::marker::PhantomData<T>,
+            capacity: usize,
             len: usize,
         }
 
@@ -676,22 +677,33 @@ pub mod alloc {
             pub fn new() -> Vec<T> {
                 Vec {
                     _phantom: std::marker::PhantomData,
+                    capacity: 0,
                     len: 0,
                 }
             }
 
+            pub fn append(&mut self, other: &mut Vec<T>) {
+                precondition!(
+                    self.len <= usize::max_value() - other.len(),
+                    "exceeds max vector length"
+                );
+                self.len += other.len;
+            }
+
+            pub fn capacity(&self) -> usize {
+                self.capacity
+            }
+
+            pub fn clear(&mut self) {
+                self.len = 0;
+            }
+
+            pub fn is_empty(&self) -> bool {
+                self.len == 0
+            }
+
             pub fn len(&self) -> usize {
                 self.len
-            }
-
-            pub fn push(&mut self, _value: T) {
-                precondition!(self.len < usize::max_value());
-                self.len += 1;
-            }
-
-            pub fn append(&mut self, other: &mut Vec<T>) {
-                precondition!(self.len <= usize::max_value() - other.len());
-                self.len += other.len;
             }
 
             pub fn pop(&mut self) -> Option<T> {
@@ -703,12 +715,20 @@ pub mod alloc {
                 }
             }
 
-            pub fn is_empty(&self) -> bool {
-                self.len == 0
+            pub fn push(&mut self, _value: T) {
+                precondition!(self.len < usize::max_value(), "exceeds max vector length");
+                self.len += 1;
             }
 
-            pub fn clear(&mut self) {
-                self.len = 0;
+            pub fn reserve(&mut self, additional: usize) {
+                precondition!(
+                    self.len < usize::max_value() - additional,
+                    "exceeds max vector capacity"
+                );
+                let new_capacity = self.len + additional;
+                if new_capacity > self.capacity {
+                    self.capacity = new_capacity;
+                }
             }
         }
     }
