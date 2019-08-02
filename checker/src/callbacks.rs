@@ -123,6 +123,34 @@ impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
     fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: &TyCtxt<'_>) {
+        // missing case in type mangling code
+        if self.file_name.contains("/nix")
+            || self.file_name.contains("/xml-rs")
+            || self.file_name.contains("/clap")
+            || self.file_name.contains("/proptest")
+            || self.file_name.contains("/ring")
+        {
+            return;
+        }
+        // runs out of memory
+        if self.file_name.contains("/rustc-serialize")
+            || self.file_name.contains("/protobuf")
+            || self.file_name.contains("/rust-crypto")
+            || self.file_name.contains("/h2-0.1.25")
+            || self.file_name.contains("/regex")
+            || self.file_name.contains("/csv")
+        {
+            return;
+        }
+        // fails to map a MIRAI path to the corresponding Rustc type value
+        if self.file_name.contains("/futures-util-preview") || self.file_name.contains("/backtrace")
+        {
+            return;
+        }
+        // non termination
+        if self.file_name.contains("/crc32fast") {
+            return;
+        }
         let summary_store_path = String::from(self.output_directory.to_str().unwrap());
         info!(
             "storing summaries for {} at {}/.summary_store.sled",

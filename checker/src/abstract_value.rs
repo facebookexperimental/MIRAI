@@ -566,7 +566,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             && !(consequent_type.is_integer() && alternate_type.is_integer())
             && !(consequent.is_top() || alternate.is_top())
         {
-            unreachable!(
+            info!(
                 "conditional with mismatched types  {:?}: {:?}     {:?}: {:?}",
                 consequent_type, consequent, alternate_type, alternate
             );
@@ -2090,13 +2090,25 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Reference(..)
             | Expression::Top
             | Expression::Variable { .. } => self.clone(),
-            _ => AbstractValue::make_from(
-                Expression::Widen {
-                    path: path.clone(),
-                    operand: self.clone(),
-                },
-                1,
-            ),
+            _ => {
+                if self.expression_size > 1000 {
+                    AbstractValue::make_from(
+                        Expression::Variable {
+                            path: path.clone(),
+                            var_type: self.expression.infer_type(),
+                        },
+                        1,
+                    )
+                } else {
+                    AbstractValue::make_from(
+                        Expression::Widen {
+                            path: path.clone(),
+                            operand: self.clone(),
+                        },
+                        3,
+                    )
+                }
+            }
         }
     }
 }
