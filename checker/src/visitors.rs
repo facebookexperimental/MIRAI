@@ -1446,11 +1446,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 // Promote the callee precondition to a precondition of the current function.
                 // Unless, of course, if the precondition is already a precondition of the
                 // current function.
-                if self
-                    .preconditions
-                    .iter()
-                    .any(|pc| pc.spans.last() == precondition.spans.last())
-                {
+                let seen_precondition = self.preconditions.iter().any(|pc| {
+                    pc.spans.last() == precondition.spans.last()
+                        || pc.provenance == precondition.provenance
+                });
+                if seen_precondition {
                     continue;
                 }
                 let promoted_condition = self
