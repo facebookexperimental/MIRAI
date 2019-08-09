@@ -30,7 +30,7 @@ pub mod core {
 
         pub fn max__u64(v1: u64, v2: u64) -> u64 {
             if v1 >= v2 {
-                return  v1;
+                return v1;
             }
             return v2;
         }
