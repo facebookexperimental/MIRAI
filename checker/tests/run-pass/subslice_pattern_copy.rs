@@ -6,26 +6,16 @@
 
 // A test that visits the ProjectionElem::Subslice case of Visitor::visit_projection_elem
 
-#![feature(box_syntax)]
 #![feature(slice_patterns)]
 
 #[macro_use]
 extern crate mirai_annotations;
 
 pub fn main() {
-    subslice_pattern(true);
-    subslice_pattern(false);
 }
 
-pub fn subslice_pattern(from_start: bool) {
+pub fn subslice_pattern() {
     let a = [[10], [20], [30]];
-    if from_start {
-        let [x.., _] = a;
-        verify!(x[0][0] == 10);
-        verify!(x[1][0] == 20);
-    } else {
-        let[_, y..] = a;
-        verify!(y[0][0] == 20);
-        verify!(y[1][0] == 30);
-    }
+    let [x @ .., _] = a;
+    verify!(x[0][0] == 10);
 }

@@ -93,7 +93,6 @@ pub mod core {
         pub struct Result {}
 
         pub struct Void {}
-
     }
 
     pub mod isize {
