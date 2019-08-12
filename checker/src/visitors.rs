@@ -1737,11 +1737,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     //
                     // We **do** have to push a precondition since this is the probable intent.
                     let condition = self.current_environment.entry_condition.logical_not();
-                    let mut maybe_message = String::from("possible error: ");
-                    maybe_message.push_str(msg.as_str());
                     let precondition = Precondition {
                         condition,
-                        message: Rc::new(maybe_message),
+                        message: msg,
                         provenance: None,
                         spans: vec![self.current_span],
                     };
