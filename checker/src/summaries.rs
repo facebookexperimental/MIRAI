@@ -283,16 +283,18 @@ pub fn summarize(
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
 
-    if result.is_none() && return_type.is_some() {
-        let return_value = AbstractValue::make_from(
-            Expression::Variable {
-                path: return_path.clone(),
-                var_type: return_type.unwrap().clone(),
-            },
-            1,
-        );
-        side_effects.push((return_path, return_value.clone()));
-        result = Some(return_value);
+    if result.is_none() {
+        if let Some(return_type) = return_type {
+            let return_value = AbstractValue::make_from(
+                Expression::Variable {
+                    path: return_path.clone(),
+                    var_type: return_type.clone(),
+                },
+                1,
+            );
+            side_effects.push((return_path, return_value.clone()));
+            result = Some(return_value);
+        }
     }
 
     preconditions.sort();
@@ -637,7 +639,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             self.cache.entry(def_id).or_insert_with(|| {
                 let summary = Self::get_persistent_summary_for_db(db, &persistent_key);
                 if !def_id.is_local() && summary.is_none() {
-                    warn!(
+                    info!(
                         "Summary store has no entry for {}{}",
                         persistent_key, arg_types_key
                     );
