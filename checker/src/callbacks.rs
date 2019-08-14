@@ -129,15 +129,6 @@ impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
     fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: &TyCtxt<'_>) {
-        // missing case in type mangling code
-        if self.file_name.contains("/nix")
-            || self.file_name.contains("/xml-rs")
-            || self.file_name.contains("/clap")
-            || self.file_name.contains("/proptest")
-            || self.file_name.contains("/ring")
-        {
-            return;
-        }
         // runs out of memory
         if self.file_name.contains("/rustc-serialize")
             || self.file_name.contains("/protobuf")
