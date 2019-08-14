@@ -8,7 +8,7 @@
 
 pub fn main() {
     let mut a = [1, 2];
-    foo(&mut a, 3); //~ possible error: assertion failed: i < 2
+    foo(&mut a, 3); //~ assertion failed: i < 2
 }
 
 fn foo(arr: &mut [i32; 2], i: usize) {
