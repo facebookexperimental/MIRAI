@@ -93,7 +93,7 @@ fn run_directory(directory_path: PathBuf, annotations_path: String) -> usize {
             output_dir_path_buf.into_os_string().into_string().unwrap(),
         ));
     }
-    if !cfg!(target_os = "linux") {
+    if cfg!(target_os = "linux") {
         files_and_temp_dirs
             .into_iter()
             .fold(0, |acc, (file_name, temp_dir_path)| {

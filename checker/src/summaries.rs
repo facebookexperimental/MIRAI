@@ -691,7 +691,9 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     pub fn set_summary_for(&mut self, def_id: DefId, mut summary: Summary) -> Option<Summary> {
         let persistent_key = utils::summary_key_str(self.type_context, def_id);
         let serialized_summary = bincode::serialize(&summary).unwrap();
-        let result = self.db.set(persistent_key.as_bytes(), serialized_summary);
+        let result = self
+            .db
+            .insert(persistent_key.as_bytes(), serialized_summary);
         if result.is_err() {
             println!("unable to set key in summary database: {:?}", result);
         }

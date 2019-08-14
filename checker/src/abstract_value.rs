@@ -218,6 +218,7 @@ pub trait AbstractValueTrait: Sized {
     fn greater_than(&self, other: Self) -> Self;
     fn implies(&self, other: &Self) -> bool;
     fn implies_not(&self, other: &Self) -> bool;
+    fn inverse_implies(&self, other: &Rc<AbstractValue>) -> bool;
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool;
     fn is_bottom(&self) -> bool;
     fn is_top(&self) -> bool;
@@ -363,18 +364,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 other
             }
         } else if other_bool.unwrap_or(false)
-            || self.is_top()
+            || other.is_top()
             || self.is_bottom() && other.is_bottom()
         {
             self.clone()
-        } else if other.is_top() {
+        } else if self.is_top() {
             other
         } else {
             // todo: #32 more simplifications
-            AbstractValue::make_binary(self.clone(), other, |left, right| Expression::And {
-                left,
-                right,
-            })
+            let result = AbstractValue::make_binary(self.clone(), other.clone(), |left, right| {
+                Expression::And { left, right }
+            });
+            if result.is_top() {
+                // The expression overflowed in size
+                other
+            } else {
+                result
+            }
         }
     }
 
@@ -871,6 +877,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         false
     }
 
+    /// Returns true if "!self => other" is known at compile time to be true.
+    /// Returning false does not imply the implication is false, just that we do not know.
+    #[logfn_inputs(TRACE)]
+    fn inverse_implies(&self, other: &Rc<AbstractValue>) -> bool {
+        if let Expression::LogicalNot { operand } = &self.expression {
+            return operand.implies(other);
+        }
+        if let Expression::LogicalNot { operand } = &other.expression {
+            return self.inverse_implies_not(operand);
+        }
+        // x => true, is always true
+        // false => x, is always true
+        if other.as_bool_if_known().unwrap_or(false) || self.as_bool_if_known().unwrap_or(false) {
+            return true;
+        }
+        false
+    }
+
     /// Returns true if "!self => !other" is known at compile time to be true.
     /// Returning false does not imply the implication is false, just that we do not know.
     #[logfn_inputs(TRACE)]
@@ -1090,16 +1114,27 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         } else if self.is_top() || other.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
             self.clone()
         } else {
-            // x |\ x = x
+            // x || x = x
             if self.expression == other.expression {
                 return other;
             }
             // (!x || x) = true
             if let Expression::LogicalNot { operand } = &self.expression {
-                if operand.eq(&other) {
+                if is_contained_in(operand, &other) {
                     return Rc::new(TRUE);
                 }
+                fn is_contained_in(x: &Rc<AbstractValue>, y: &Rc<AbstractValue>) -> bool {
+                    if x.eq(y) {
+                        return true;
+                    }
+                    if let Expression::Or { left, right } = &y.expression {
+                        is_contained_in(x, left) || is_contained_in(x, right)
+                    } else {
+                        false
+                    }
+                }
             }
+
             // (x || (x && y)) = x, etc.
             if self.inverse_implies_not(&other) {
                 return self.clone();
@@ -1111,7 +1146,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 (_, Expression::LogicalNot { ref operand }) if (**operand).eq(&self) => {
                     Rc::new(TRUE)
                 }
-                //(x && y) || (x && !y) = x
+
+                // ((x && y) || (x && !y)) = x
+                // ((x && y1) || (x && y2)) = (x && (y1 || y2))
+                // ((x && y1) || ((x && x3) && y2)) = x && (y1 || (x3 && y2))
                 (
                     Expression::And {
                         left: x1,
@@ -1121,7 +1159,27 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         left: x2,
                         right: y2,
                     },
-                ) if x1 == x2 && y1.logical_not().eq(y2) => x1.clone(),
+                ) => {
+                    if x1 == x2 {
+                        if y1.logical_not().eq(y2) {
+                            x1.clone()
+                        } else {
+                            x1.and(y1.or(y2.clone()))
+                        }
+                    } else {
+                        if let Expression::And {
+                            left: x2,
+                            right: x3,
+                        } = &x2.expression
+                        {
+                            if x1 == x2 {
+                                return x1.and(y1.or(x3.and(y2.clone())));
+                            }
+                        }
+                        unsimplified(self, other)
+                    }
+                }
+
                 // (((c ? e : 1) == 1) || ((c ? e : 1) == 0)) = !c || e == 0 || e == 1
                 (
                     Expression::Equals {
@@ -1148,6 +1206,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                     unsimplified(self, other)
                 }
+
+                // (x || (!x && z)) = (x || z)
+                (_, Expression::And { left: y, right: z }) if self.inverse_implies(y) => {
+                    self.or(z.clone())
+                }
+
                 _ => unsimplified(self, other),
             }
         }

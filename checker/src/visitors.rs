@@ -106,7 +106,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
             already_reported_errors_for_call_to: HashSet::new(),
             check_for_errors: false,
-            check_for_unconditional_precondition: true,
+            check_for_unconditional_precondition: false, // logging + new mir code gen breaks this for now
             current_environment: Environment::default(),
             current_location: mir::Location::START,
             current_span: syntax_pos::DUMMY_SP,
@@ -126,7 +126,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn reset_visitor_state(&mut self) {
         self.already_reported_errors_for_call_to = HashSet::new();
         self.check_for_errors = false;
-        self.check_for_unconditional_precondition = true;
+        self.check_for_unconditional_precondition = false;
         self.current_environment = Environment::default();
         self.current_location = mir::Location::START;
         self.current_span = syntax_pos::DUMMY_SP;
@@ -558,6 +558,22 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             i_state.entry_condition = Rc::new(abstract_value::TOP);
             i_state
         } else {
+            // Remove predecessors that cannot reach this block
+            predecessor_states_and_conditions = predecessor_states_and_conditions
+                .into_iter()
+                .filter(|(_, pred_exit_condition)| {
+                    if let Some(cond) = pred_exit_condition {
+                        cond.as_bool_if_known().unwrap_or(true)
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+            if predecessor_states_and_conditions.is_empty() {
+                let mut i_state = in_state[&bb].clone();
+                i_state.entry_condition = Rc::new(abstract_value::FALSE);
+                return i_state;
+            }
             // We want to do right associative operations and that is easier if we reverse.
             predecessor_states_and_conditions.reverse();
             let (p_state, pred_exit_condition) = predecessor_states_and_conditions[0];

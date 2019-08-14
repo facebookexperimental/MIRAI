@@ -12,10 +12,19 @@
 extern crate mirai_annotations;
 
 pub fn main() {
+    subslice_pattern(true);
+    subslice_pattern(false);
 }
 
-pub fn subslice_pattern() {
+pub fn subslice_pattern(from_start: bool) {
     let a = [[10], [20], [30]];
-    let [x @ .., _] = a;
-    verify!(x[0][0] == 10);
+    if from_start {
+        let [x @ .., _] = a;
+        verify!(x[0][0] == 10);
+        verify!(x[1][0] == 20);
+    } else {
+        let [_, y @ ..] = a;
+        verify!(y[0][0] == 20);
+        verify!(y[1][0] == 30);
+    }
 }
