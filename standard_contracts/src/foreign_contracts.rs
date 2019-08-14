@@ -666,6 +666,22 @@ pub mod std {
 }
 
 pub mod alloc {
+    pub mod slice {
+        pub struct Slice<T: Clone> {
+            len: usize,
+            data: T,
+        }
+        impl<T: Clone> Slice<T> {
+            pub fn into_vec(self: Box<Self>) -> Vec<T>
+            where
+                T: Clone,
+            {
+                let mut v = Vec::with_capacity(self.len);
+                v.resize(self.len, self.data);
+                v
+            }
+        }
+    }
     pub mod vec {
         pub struct Vec<T> {
             _phantom: std::marker::PhantomData<T>,
@@ -678,6 +694,14 @@ pub mod alloc {
                 Vec {
                     _phantom: std::marker::PhantomData,
                     capacity: 0,
+                    len: 0,
+                }
+            }
+
+            pub fn with_capacity(capacity: usize) -> Vec<T> {
+                Vec {
+                    _phantom: std::marker::PhantomData,
+                    capacity: capacity,
                     len: 0,
                 }
             }
@@ -729,6 +753,10 @@ pub mod alloc {
                 if new_capacity > self.capacity {
                     self.capacity = new_capacity;
                 }
+            }
+
+            pub fn resize(&mut self, new_len: usize, _value: T) {
+                self.len = new_len
             }
         }
     }
