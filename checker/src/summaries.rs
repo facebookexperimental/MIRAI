@@ -639,7 +639,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             self.cache.entry(def_id).or_insert_with(|| {
                 let summary = Self::get_persistent_summary_for_db(db, &persistent_key);
                 if !def_id.is_local() && summary.is_none() {
-                    info!(
+                    warn!(
                         "Summary store has no entry for {}{}",
                         persistent_key, arg_types_key
                     );
