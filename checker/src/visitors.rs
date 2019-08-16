@@ -106,7 +106,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
             already_reported_errors_for_call_to: HashSet::new(),
             check_for_errors: false,
-            check_for_unconditional_precondition: false, // logging + new mir code gen breaks this for now
+            check_for_unconditional_precondition: true,
             current_environment: Environment::default(),
             current_location: mir::Location::START,
             current_span: syntax_pos::DUMMY_SP,
@@ -126,7 +126,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn reset_visitor_state(&mut self) {
         self.already_reported_errors_for_call_to = HashSet::new();
         self.check_for_errors = false;
-        self.check_for_unconditional_precondition = false;
+        self.check_for_unconditional_precondition = true;
         self.current_environment = Environment::default();
         self.current_location = mir::Location::START;
         self.current_span = syntax_pos::DUMMY_SP;
@@ -1937,7 +1937,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     }
                     // If we always get here if called, give an error.
                     if entry_cond_as_bool.is_some() && entry_cond_as_bool.unwrap() {
-                        let error = get_assert_msg_description(msg);
+                        let error = msg.description();
                         let span = self.current_span;
                         // For now emit a warning since path conditions are not properly widened
                         // during loops and thus may result in false negatives.
@@ -1956,7 +1956,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     // We expect public functions to have programmer supplied preconditions
                     // that preclude any assertions from failing. So, if at this stage we get to
                     // complain a bit.
-                    let warning = format!("possible {}", get_assert_msg_description(msg));
+                    let warning = format!("possible {}", msg.description());
                     let span = self.current_span;
                     let warning = self.session.struct_span_warn(span, warning.as_str());
                     self.emit_diagnostic(warning);
@@ -1980,7 +1980,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         .entry_condition
                         .logical_not()
                         .or(expected_cond);
-                    let message = Rc::new(String::from(get_assert_msg_description(msg)));
+                    let message = Rc::new(String::from(msg.description()));
                     let precondition = Precondition {
                         condition,
                         message,
@@ -1991,14 +1991,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
             }
         };
-
-        fn get_assert_msg_description<'tcx>(msg: &mir::AssertMessage<'tcx>) -> &'tcx str {
-            match msg {
-                mir::interpret::PanicInfo::BoundsCheck { .. } => "index out of bounds",
-                mir::interpret::PanicInfo::Panic { .. } => "panic",
-                _ => msg.description(),
-            }
-        }
     }
 
     /// Checks the given condition value and also checks if the current entry condition can be true.
@@ -3081,58 +3073,43 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// can be serialized and used as a cache key.
     #[logfn_inputs(TRACE)]
     fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
-        let base_path = match &place.base {
-            mir::PlaceBase::Local(local) => {
-                let ordinal = local.as_usize();
-                let result: Rc<Path> = Rc::new(PathEnum::LocalVariable { ordinal }.into());
-                if place.projection.is_none() {
+        match place {
+            mir::Place::Base(base_place) => match base_place {
+                mir::PlaceBase::Local(local) => {
+                    let ordinal = local.as_usize();
+                    let result: Rc<Path> = Rc::new(PathEnum::LocalVariable { ordinal }.into());
                     let ty = self.get_rustc_place_type(place);
                     if let TyKind::Array(_, len) = ty {
                         let len_val = self.visit_constant(len.ty, None, &len.val);
                         let len_path = Path::new_length(result.clone(), &self.current_environment);
                         self.current_environment.update_value_at(len_path, len_val);
                     }
+                    result
                 }
-                result
-            }
-            mir::PlaceBase::Static(boxed_static) => match boxed_static.kind {
-                mir::StaticKind::Promoted(promoted) => {
-                    let index = promoted.index();
-                    Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
-                }
-                mir::StaticKind::Static(def_id) => {
-                    let name = utils::summary_key_str(&self.tcx, def_id);
-                    Rc::new(
-                        PathEnum::StaticVariable {
-                            def_id: Some(def_id),
-                            summary_cache_key: name,
-                            expression_type: self.get_place_type(place),
-                        }
-                        .into(),
-                    )
-                }
+                mir::PlaceBase::Static(boxed_static) => match boxed_static.kind {
+                    mir::StaticKind::Promoted(promoted) => {
+                        let index = promoted.index();
+                        Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
+                    }
+                    mir::StaticKind::Static(def_id) => {
+                        let name = utils::summary_key_str(&self.tcx, def_id);
+                        Rc::new(
+                            PathEnum::StaticVariable {
+                                def_id: Some(def_id),
+                                summary_cache_key: name,
+                                expression_type: self.get_place_type(place),
+                            }
+                            .into(),
+                        )
+                    }
+                },
             },
-        };
-        if let Some(boxed_projection) = &place.projection {
-            self.visit_projection(base_path, &boxed_projection)
-        } else {
-            base_path
+            mir::Place::Projection(boxed_place_projection) => {
+                let base = self.visit_place(&boxed_place_projection.base);
+                let selector = self.visit_projection_elem(&boxed_place_projection.elem);
+                Path::new_qualified(base, Rc::new(selector)).refine_paths(&self.current_environment)
+            }
         }
-    }
-
-    /// Returns a path that is qualified by the selector corresponding to projection.elem.
-    /// If projection has a base, the give base_path is first qualified with the base.
-    #[logfn_inputs(TRACE)]
-    fn visit_projection(
-        &mut self,
-        mut base_path: Rc<Path>,
-        projection: &mir::Projection<'tcx>,
-    ) -> Rc<Path> {
-        if let Some(boxed_projection) = &projection.base {
-            base_path = self.visit_projection(base_path, &boxed_projection);
-        }
-        let selector = self.visit_projection_elem(&projection.elem);
-        Path::new_qualified(base_path, Rc::new(selector)).refine_paths(&self.current_environment)
     }
 
     /// Returns a PathSelector instance that is essentially the same as the ProjectionElem instance
@@ -3182,18 +3159,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Returns the rustc TyKind of the given place in memory.
     #[logfn_inputs(TRACE)]
     fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> &'tcx TyKind<'tcx> {
-        let base_type = match &place.base {
-            mir::PlaceBase::Local(local) => {
-                let loc = &self.mir.local_decls[mir::Local::from(local.as_usize())];
-                &loc.ty.sty
+        match place {
+            mir::Place::Base(base_place) => match base_place {
+                mir::PlaceBase::Local(local) => {
+                    let loc = &self.mir.local_decls[mir::Local::from(local.as_usize())];
+                    &loc.ty.sty
+                }
+                mir::PlaceBase::Static(boxed_static) => &boxed_static.ty.sty,
+            },
+            mir::Place::Projection(_boxed_place_projection) => {
+                self.get_type_for_projection_element(place)
             }
-            mir::PlaceBase::Static(boxed_static) => &boxed_static.ty.sty,
-        };
-        match &place.projection {
-            Some(boxed_projection) => {
-                self.get_type_for_projection_element(base_type, boxed_projection)
-            }
-            None => base_type,
         }
     }
 
@@ -3242,49 +3218,37 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         }
     }
 
-    /// Returns the element type of an array or slice type.
-    fn get_element_type(ty: &'tcx TyKind<'tcx>) -> &'tcx TyKind<'tcx> {
-        match ty {
-            TyKind::Array(t, _) => &t.sty,
-            TyKind::Slice(t) => &t.sty,
-            _ => ty,
-        }
-    }
-
     /// Returns the rustc TyKind of the element selected by projection_elem.
     #[logfn_inputs(TRACE)]
-    fn get_type_for_projection_element(
-        &self,
-        mut base_ty: &'tcx TyKind<'tcx>,
-        boxed_place_projection: &rustc::mir::Projection<'tcx>,
-    ) -> &'tcx TyKind<'tcx> {
-        if let Some(boxed_base_projection) = &boxed_place_projection.base {
-            base_ty = self.get_type_for_projection_element(base_ty, &boxed_base_projection);
-        };
-        match boxed_place_projection.elem {
-            mir::ProjectionElem::Deref => match base_ty {
-                TyKind::Adt(..) => base_ty,
-                TyKind::RawPtr(ty_and_mut) => &ty_and_mut.ty.sty,
-                TyKind::Ref(_, ty, _) => &ty.sty,
-                _ => unreachable!(
-                    "span: {:?}\nelem: {:?} type: {:?}",
-                    self.current_span, boxed_place_projection.elem, base_ty
-                ),
-            },
-            mir::ProjectionElem::Field(_, ty) => &ty.sty,
-            mir::ProjectionElem::Index(_)
-            | mir::ProjectionElem::ConstantIndex { .. }
-            | mir::ProjectionElem::Subslice { .. } => match base_ty {
-                TyKind::Adt(..) => base_ty,
-                TyKind::Array(ty, _) => &ty.sty,
-                TyKind::Ref(_, ty, _) => Self::get_element_type(&ty.sty),
-                TyKind::Slice(ty) => &ty.sty,
-                _ => unreachable!(
-                    "span: {:?}\nelem: {:?} type: {:?}",
-                    self.current_span, boxed_place_projection.elem, base_ty
-                ),
-            },
-            mir::ProjectionElem::Downcast(..) => base_ty,
+    fn get_type_for_projection_element(&self, place: &mir::Place<'tcx>) -> &'tcx TyKind<'tcx> {
+        if let mir::Place::Projection(boxed_place_projection) = place {
+            let base_ty = self.get_rustc_place_type(&boxed_place_projection.base);
+            match boxed_place_projection.elem {
+                mir::ProjectionElem::Deref => match base_ty {
+                    TyKind::Adt(..) => base_ty,
+                    TyKind::RawPtr(ty_and_mut) => &ty_and_mut.ty.sty,
+                    TyKind::Ref(_, ty, _) => &ty.sty,
+                    _ => unreachable!(
+                        "span: {:?}\nelem: {:?}",
+                        self.current_span, boxed_place_projection.elem
+                    ),
+                },
+                mir::ProjectionElem::Field(_, ty) => &ty.sty,
+                mir::ProjectionElem::Index(_)
+                | mir::ProjectionElem::ConstantIndex { .. }
+                | mir::ProjectionElem::Subslice { .. } => match base_ty {
+                    TyKind::Adt(..) => base_ty,
+                    TyKind::Array(ty, _) => &ty.sty,
+                    TyKind::Slice(ty) => &ty.sty,
+                    _ => unreachable!(
+                        "span: {:?}\nelem: {:?}",
+                        self.current_span, boxed_place_projection.elem
+                    ),
+                },
+                mir::ProjectionElem::Downcast(..) => base_ty,
+            }
+        } else {
+            unreachable!("span: {:?}\nplace: {:?}", self.current_span, place)
         }
     }
 }

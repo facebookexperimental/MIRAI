@@ -24,11 +24,11 @@ struct Foo {
 pub fn subslice_pattern(from_start: bool) {
     let a = [Foo { f: 10 }, Foo { f: 20 }, Foo { f: 30 }];
     if from_start {
-        let [x @ .., _] = a;
+        let [x.., _] = a;
         verify!(x[0].f == 10);
         verify!(x[1].f == 20);
     } else {
-        let [_, y @ ..] = a;
+        let [_, y..] = a;
         verify!(y[0].f == 20);
         verify!(y[1].f == 30);
     }
