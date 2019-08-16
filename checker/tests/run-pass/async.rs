@@ -6,6 +6,8 @@
 
 // A test that adds a precondition to an async function
 
+#![feature(async_await)]
+
 #[macro_use]
 extern crate mirai_annotations;
 

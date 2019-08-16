@@ -156,7 +156,7 @@ fn test10() {
 }
 
 fn test11(arr: &[String]) {
-    let e = &arr[1]; //~ possible index out of bounds
+    let e = &arr[1]; //~ possible array index out of bounds
 }
 
 fn test12() {

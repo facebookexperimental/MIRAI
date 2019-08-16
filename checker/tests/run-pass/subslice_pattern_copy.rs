@@ -19,11 +19,11 @@ pub fn main() {
 pub fn subslice_pattern(from_start: bool) {
     let a = [[10], [20], [30]];
     if from_start {
-        let [x @ .., _] = a;
+        let [x.., _] = a;
         verify!(x[0][0] == 10);
         verify!(x[1][0] == 20);
     } else {
-        let [_, y @ ..] = a;
+        let [_, y..] = a;
         verify!(y[0][0] == 20);
         verify!(y[1][0] == 30);
     }

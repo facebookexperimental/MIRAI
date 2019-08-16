@@ -16,7 +16,6 @@ use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
-use rustc_driver::Compilation;
 use rustc_interface::interface;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
@@ -92,7 +91,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     /// interpretation of all of the functions that will end up in the compiler output.
     /// If this method returns false, the compilation will stop.
     #[logfn(TRACE)]
-    fn after_analysis(&mut self, compiler: &interface::Compiler) -> Compilation {
+    fn after_analysis(&mut self, compiler: &interface::Compiler) -> bool {
         compiler.session().abort_if_errors();
         if self
             .output_directory
@@ -101,20 +100,15 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
             .contains("/build/")
         {
             // No need to analyze a build script, but do generate code.
-            return Compilation::Continue;
+            return true;
         }
         compiler
             .global_ctxt()
             .unwrap()
             .peek_mut()
             .enter(|tcx| self.analyze_with_mirai(compiler, &tcx));
-        if self.test_run {
-            // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
-            Compilation::Stop
-        } else {
-            // Although MIRAI is only a checker, cargo still needs code generation to work.
-            Compilation::Continue
-        }
+        !self.test_run // Although MIRAI is only a checker, cargo still needs code generation to work.
+                       // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
     }
 }
 
