@@ -1,12 +1,34 @@
 # Developer Guide
 
-The instructions assume that you've cloned the mirai repository into your home directory.
+You'll need to install the latest nighly build of the Rust compiler, as well as the Z3 theorem prover. See the
+[installation guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md)
+for details.
 
-## Obtaining the MIRAI sources
 
-You'll need a recent version of the Rust compiler and you'll need to clone the MIRAI source repository.
-See [here](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md) for more detailed instructions.
+## Clone the MIRAI source repository into your home directory
 
+```
+cd ~
+git clone git@github.com:facebookexperimental/MIRAI.git
+```
+
+## Install necessary Rust components for the build
+
+```
+cd ~/MIRAI
+./setup.sh
+```
+
+## Build and install your local MIRAI build into cargo
+
+You'll need to change the nightly version below to the one found in .travis.yml. The install command will also
+build MIRAI.
+
+```
+cd ~/MIRAI
+rustup override set nightly-2019-MM-DD
+cargo install --path ./checker
+```
 
 ## Editing
 
@@ -163,13 +185,18 @@ sources.
 
 ## Testing
 
-Testing is done via `cargo test`. We favor integration tests over unit tests and require every pull request to have 100%
-test coverage.
+Testing is done via `cargo test`. We favor integration tests over unit tests and require every pull request to strive
+for 100% test coverage. (Often this is not possible because the coverage tool is imperfect.)
 
 Before putting up a pull request it is also advisable to run the 'validate.sh' script. This will ensure that the code
 is properly formatted and that Clippy is happy. It also runs MIRAI on itself, which is a kind of stress test.
 
 # Troubleshooting
+
+## Time-outs
+Large complicated functions can result in symbolic expressions that grow unboundly, or fixed point loops that diverge.
+If you run MIRAI with log level set `warn` (`MIRAI_LOG=warn`) you might see diagnostics about time-outs and fixed point
+divergences. If this happens with a small test case, please create an issue.
 
 ## Missing contracts
 Running MIRAI with log level set to `info` (`MIRAI_LOG=info`) gives information on missing contracts with the 
