@@ -34,6 +34,13 @@ pub mod core {
             }
             return v2;
         }
+
+        pub fn max__usize(v1: usize, v2: usize) -> usize {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
     }
 
     pub mod default {
