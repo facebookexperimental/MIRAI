@@ -7,7 +7,7 @@ use log::debug;
 use log_derive::{logfn, logfn_inputs};
 use rustc::hir::def_id::DefId;
 use rustc::hir::map::DefPathData;
-use rustc::hir::{ItemKind, Node};
+use rustc::hir::{ItemKind, Node, TraitItemKind};
 use rustc::ty::subst::{SubstsRef, UnpackedKind};
 use rustc::ty::{DefIdTree, Ty, TyCtxt, TyKind};
 use std::rc::Rc;
@@ -219,18 +219,10 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
 /// the result can be appended to a valid identifier.
 #[logfn(TRACE)]
 fn qualified_type_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
-    let mut name = if def_id.is_local() {
-        tcx.crate_name.as_interned_str().as_str().to_string()
-    } else {
-        let cdata = tcx.crate_data_as_rc_any(def_id.krate);
-        let cdata = cdata
-            .downcast_ref::<rustc_metadata::cstore::CrateMetadata>()
-            .unwrap();
-        cdata.name.as_str().to_string()
-    };
+    let mut name = crate_name(tcx, def_id);
     for component in &tcx.def_path(def_id).data {
         name.push('_');
-        name.push_str(component.data.as_interned_str().as_str().get());
+        push_component_name(&component.data, &mut name);
         if component.disambiguator != 0 {
             name.push('_');
             let da = component.disambiguator.to_string();
@@ -240,13 +232,10 @@ fn qualified_type_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
     name
 }
 
-/// Constructs a string that uniquely identifies a definition to serve as a key to
-/// the summary cache, which is a key value store. The string will always be the same as
-/// long as the definition does not change its name or location, so it can be used to
-/// transfer information from one compilation to the next, making incremental analysis possible.
+/// Constructs a name for the crate that contains the given def_id.
 #[logfn(TRACE)]
-pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
-    let mut name = if def_id.is_local() {
+fn crate_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
+    if def_id.is_local() {
         tcx.crate_name.as_interned_str().as_str().to_string()
     } else {
         // This is both ugly and probably brittle, but I can't find any other
@@ -263,7 +252,16 @@ pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
             .downcast_ref::<rustc_metadata::cstore::CrateMetadata>()
             .unwrap();
         cdata.name.as_str().to_string()
-    };
+    }
+}
+
+/// Constructs a string that uniquely identifies a definition to serve as a key to
+/// the summary cache, which is a key value store. The string will always be the same as
+/// long as the definition does not change its name or location, so it can be used to
+/// transfer information from one compilation to the next, making incremental analysis possible.
+#[logfn(TRACE)]
+pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
+    let mut name = crate_name(tcx, def_id);
     for component in &tcx.def_path(def_id).data {
         if name.ends_with("foreign_contracts") {
             // By stripping off this special prefix, we allow this crate (or module) to define
@@ -283,9 +281,10 @@ pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
             name.push('_');
             if saw_implement {
                 if let Some(parent_def_id) = tcx.parent(def_id) {
-                    let ty = tcx.type_of(parent_def_id);
-                    append_mangled_type(&mut name, ty, tcx);
-                    continue;
+                    if let Some(ty) = type_of(*tcx, parent_def_id) {
+                        append_mangled_type(&mut name, ty, tcx);
+                        continue;
+                    }
                 }
             }
             let da = component.disambiguator.to_string();
@@ -293,6 +292,37 @@ pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
         }
     }
     Rc::new(name)
+}
+
+/// Guards a call to tcx.type_of to avoid cases where it fails.
+fn type_of(tcx: TyCtxt<'_>, def_id: DefId) -> Option<&rustc::ty::TyS<'_>> {
+    let hir_id = match tcx.hir().as_local_hir_id(def_id) {
+        Some(hir_id) => hir_id,
+        None => {
+            return Some(tcx.type_of(def_id));
+        }
+    };
+    match tcx.hir().get(hir_id) {
+        Node::TraitItem(item) => {
+            if let TraitItemKind::Type(_, None) = item.node {
+                return None;
+            }
+        }
+        Node::Item(item) => match item.node {
+            ItemKind::Trait(..)
+            | ItemKind::TraitAlias(..)
+            | ItemKind::Mod(..)
+            | ItemKind::ForeignMod(..)
+            | ItemKind::GlobalAsm(..)
+            | ItemKind::ExternCrate(..)
+            | ItemKind::Use(..) => {
+                return None;
+            }
+            _ => (),
+        },
+        _ => (),
+    }
+    Some(tcx.type_of(def_id))
 }
 
 fn push_component_name(component_data: &DefPathData, target: &mut String) {

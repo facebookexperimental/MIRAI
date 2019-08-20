@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::abstract_value::AbstractValue;
+use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::constant_domain::ConstantDomain;
 use crate::path::Path;
 
@@ -452,8 +452,16 @@ impl Expression {
             Expression::BitXor { left, .. } => left.expression.infer_type(),
             Expression::Cast { target_type, .. } => target_type.clone(),
             Expression::CompileTimeConstant(c) => c.into(),
-            Expression::ConditionalExpression { consequent, .. } => {
-                consequent.expression.infer_type()
+            Expression::ConditionalExpression {
+                consequent,
+                alternate,
+                ..
+            } => {
+                if consequent.is_top() {
+                    alternate.expression.infer_type()
+                } else {
+                    consequent.expression.infer_type()
+                }
             }
             Expression::Div { left, .. } => left.expression.infer_type(),
             Expression::Equals { .. } => Bool,
@@ -473,7 +481,7 @@ impl Expression {
             Expression::Rem { left, .. } => left.expression.infer_type(),
             Expression::Shl { left, .. } => left.expression.infer_type(),
             Expression::ShlOverflows { .. } => Bool,
-            Expression::Shr { left, .. } => left.expression.infer_type(),
+            Expression::Shr { result_type, .. } => result_type.clone(),
             Expression::ShrOverflows { .. } => Bool,
             Expression::Sub { left, .. } => left.expression.infer_type(),
             Expression::SubOverflows { .. } => Bool,

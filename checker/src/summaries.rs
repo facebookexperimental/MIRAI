@@ -6,7 +6,7 @@
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::environment::Environment;
-use crate::expression::Expression;
+use crate::expression::{Expression, ExpressionType};
 use crate::path::{Path, PathEnum};
 use crate::utils;
 
@@ -266,8 +266,10 @@ impl Summary {
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
 #[logfn(TRACE)]
+#[allow(clippy::too_many_arguments)]
 pub fn summarize(
     argument_count: usize,
+    return_type: Option<ExpressionType>,
     exit_environment: &Environment,
     preconditions: &[Precondition],
     post_condition: &Option<Rc<AbstractValue>>,
@@ -275,10 +277,25 @@ pub fn summarize(
     unwind_environment: &Environment,
     tcx: TyCtxt<'_>,
 ) -> Summary {
+    let return_path = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
-    let result = exit_environment.value_at(&Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into()));
+    let mut result = exit_environment.value_at(&return_path).cloned();
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
+
+    if result.is_none() {
+        if let Some(return_type) = return_type {
+            let return_value = AbstractValue::make_from(
+                Expression::Variable {
+                    path: return_path.clone(),
+                    var_type: return_type.clone(),
+                },
+                1,
+            );
+            side_effects.push((return_path, return_value.clone()));
+            result = Some(return_value);
+        }
+    }
 
     preconditions.sort();
     side_effects.sort();
@@ -287,7 +304,7 @@ pub fn summarize(
     Summary {
         is_not_default: true,
         preconditions,
-        result: result.cloned(),
+        result,
         side_effects,
         post_condition: post_condition.clone(),
         unwind_condition,
@@ -343,18 +360,17 @@ fn extract_side_effects(
         for (path, value) in env
             .value_map
             .iter()
-            .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
+            .filter(|(p, _)| (ordinal == 0 && (**p) == root) || p.is_rooted_by(&root))
         {
-            match &value.expression {
-                Expression::Variable { path: p, .. } | Expression::Reference(p) if path.eq(p) => {
-                    continue; // Not a side effect, just the original value of the parameter
-                }
-                _ => {
-                    path.record_heap_addresses(&mut heap_roots);
-                    value.record_heap_addresses(&mut heap_roots);
-                    result.push((path.clone(), value.clone()));
+            path.record_heap_addresses(&mut heap_roots);
+            value.record_heap_addresses(&mut heap_roots);
+            if let Expression::Variable { path: vpath, .. } = &value.expression {
+                if vpath.eq(path) {
+                    // The is not an update, but just what was there at function entry.
+                    continue;
                 }
             }
+            result.push((path.clone(), value.clone()));
         }
     }
     extract_reachable_heap_allocations(env, &mut heap_roots, &mut result);
@@ -675,7 +691,9 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     pub fn set_summary_for(&mut self, def_id: DefId, mut summary: Summary) -> Option<Summary> {
         let persistent_key = utils::summary_key_str(self.type_context, def_id);
         let serialized_summary = bincode::serialize(&summary).unwrap();
-        let result = self.db.set(persistent_key.as_bytes(), serialized_summary);
+        let result = self
+            .db
+            .insert(persistent_key.as_bytes(), serialized_summary);
         if result.is_err() {
             println!("unable to set key in summary database: {:?}", result);
         }

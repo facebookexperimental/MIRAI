@@ -93,7 +93,6 @@ pub mod core {
         pub struct Result {}
 
         pub struct Void {}
-
     }
 
     pub mod isize {
@@ -419,6 +418,20 @@ pub mod core {
             pub struct Rev__Range_usize {
                 pub range: Range_usize,
             }
+
+            pub struct Enumerate<I> {
+                _iter: I,
+                _count: usize,
+            }
+
+            impl<I> Enumerate<I> {
+                pub(super) fn new(iter: I) -> Enumerate<I> {
+                    Enumerate {
+                        _iter: iter,
+                        _count: 0,
+                    }
+                }
+            }
         }
 
         pub mod traits {
@@ -453,6 +466,7 @@ pub mod core {
                 use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
                 use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
                 use crate::foreign_contracts::core::slice::Iter;
+                use crate::foreign_contracts::core::iter::adapters::Enumerate;
 
                 pub trait Iterator {
                     fn enumerate__core_slice_Iter_bool(iter: Iter<bool>) -> Enumerator_slice<bool> {
@@ -521,6 +535,13 @@ pub mod core {
 
                     fn rev__core_ops_range_Range_usize(range: Range_usize) -> Rev__Range_usize {
                         Rev__Range_usize { range }
+                    }
+
+                    fn enumerate(self) -> Enumerate<Self>
+                    where
+                        Self: Sized,
+                    {
+                        Enumerate::new(self)
                     }
                 }
             }
@@ -651,9 +672,26 @@ pub mod std {
 }
 
 pub mod alloc {
+    pub mod slice {
+        pub struct Slice<T: Clone> {
+            len: usize,
+            data: T,
+        }
+        impl<T: Clone> Slice<T> {
+            pub fn into_vec(self: Box<Self>) -> Vec<T>
+            where
+                T: Clone,
+            {
+                let mut v = Vec::with_capacity(self.len);
+                v.resize(self.len, self.data);
+                v
+            }
+        }
+    }
     pub mod vec {
         pub struct Vec<T> {
             _phantom: std::marker::PhantomData<T>,
+            capacity: usize,
             len: usize,
         }
 
@@ -661,22 +699,41 @@ pub mod alloc {
             pub fn new() -> Vec<T> {
                 Vec {
                     _phantom: std::marker::PhantomData,
+                    capacity: 0,
                     len: 0,
                 }
             }
 
-            pub fn len(&self) -> usize {
-                self.len
-            }
-
-            pub fn push(&mut self, _value: T) {
-                precondition!(self.len < usize::max_value());
-                self.len += 1;
+            pub fn with_capacity(capacity: usize) -> Vec<T> {
+                Vec {
+                    _phantom: std::marker::PhantomData,
+                    capacity: capacity,
+                    len: 0,
+                }
             }
 
             pub fn append(&mut self, other: &mut Vec<T>) {
-                precondition!(self.len <= usize::max_value() - other.len());
+                precondition!(
+                    self.len <= usize::max_value() - other.len(),
+                    "exceeds max vector length"
+                );
                 self.len += other.len;
+            }
+
+            pub fn capacity(&self) -> usize {
+                self.capacity
+            }
+
+            pub fn clear(&mut self) {
+                self.len = 0;
+            }
+
+            pub fn is_empty(&self) -> bool {
+                self.len == 0
+            }
+
+            pub fn len(&self) -> usize {
+                self.len
             }
 
             pub fn pop(&mut self) -> Option<T> {
@@ -688,12 +745,24 @@ pub mod alloc {
                 }
             }
 
-            pub fn is_empty(&self) -> bool {
-                self.len == 0
+            pub fn push(&mut self, _value: T) {
+                precondition!(self.len < usize::max_value(), "exceeds max vector length");
+                self.len += 1;
             }
 
-            pub fn clear(&mut self) {
-                self.len = 0;
+            pub fn reserve(&mut self, additional: usize) {
+                precondition!(
+                    self.len < usize::max_value() - additional,
+                    "exceeds max vector capacity"
+                );
+                let new_capacity = self.len + additional;
+                if new_capacity > self.capacity {
+                    self.capacity = new_capacity;
+                }
+            }
+
+            pub fn resize(&mut self, new_len: usize, _value: T) {
+                self.len = new_len
             }
         }
     }

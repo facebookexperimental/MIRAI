@@ -2,15 +2,14 @@
 MIRAI is an abstract interpreter for the [Rust](https://www.rust-lang.org/) compiler's [mid-level intermediate
 representation](https://github.com/rust-lang/rfcs/blob/master/text/1211-mir.md) (MIR).
 It is intended to become a widely used static analysis tool for Rust.
-The initial focus will be on taint analysis.
 
 ## Using MIRAI
 
 You'll need to install MIRAI as described [here](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md).
 
 To run mirai, use cargo with `RUSTC_WRAPPER` set to `mirai`.
-Use `rustup override` to make Cargo use the same version of Rust as MIRAI as
-described in the [Installation Guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md).
+Use `rustup override set nightly-2019-MM-DD` to make Cargo use the same version of Rust as MIRAI. If you forget to do
+that you'll see an error message complaining about a dynamic load library not being found.
 
 The easiest way to get started is to first build your project in the normal way.
 Refer [this link](https://doc.rust-lang.org/1.30.0/book/first-edition/getting-started.html) for details
@@ -18,9 +17,12 @@ on compiling a cargo project.
 When there are no compile errors,
 no lint errors and no test failures, you can proceed to the next step and run MIRAI. For example:
 ```
-cargo clean -p my_crate_name
+touch src/lib.rs
 RUSTC_WRAPPER=mirai cargo check
 ```
+
+The touch command (which needs to reference a real file in your project) forces Cargo to re-run rustc and to not assume
+that it's cached error messages are still correct.
 
 This will likely produce a lot of warnings, which you can then fix by adding annotations using this
  [crate](https://crates.io/crates/mirai-annotations). Keep running cargo check as above until there are no more warnings.

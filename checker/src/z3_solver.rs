@@ -614,8 +614,8 @@ impl Z3Solver {
             ConstantDomain::False => unsafe { z3_sys::Z3_mk_false(self.z3_context) },
             ConstantDomain::I128(v) => unsafe {
                 let v64 = i64::try_from(*v);
-                if v64.is_ok() {
-                    z3_sys::Z3_mk_int64(self.z3_context, v64.unwrap(), self.int_sort)
+                if let Ok(v64) = v64 {
+                    z3_sys::Z3_mk_int64(self.z3_context, v64, self.int_sort)
                 } else {
                     let num_str = format!("{}", *v);
                     let c_string = CString::new(num_str).unwrap();
@@ -632,8 +632,8 @@ impl Z3Solver {
             },
             ConstantDomain::U128(v) => unsafe {
                 let v64 = u64::try_from(*v);
-                if v64.is_ok() {
-                    z3_sys::Z3_mk_unsigned_int64(self.z3_context, v64.unwrap(), self.int_sort)
+                if let Ok(v64) = v64 {
+                    z3_sys::Z3_mk_unsigned_int64(self.z3_context, v64, self.int_sort)
                 } else {
                     let num_str = format!("{}", *v);
                     let c_string = CString::new(num_str).unwrap();

@@ -8,7 +8,7 @@
 
 pub fn main() {
     let mut a = [1, 2];
-    foo(&mut a, 3); //~ array index out of bounds
+    foo(&mut a, 3); //~ index out of bounds
 }
 
 fn foo(arr: &mut [i32], i: usize) {

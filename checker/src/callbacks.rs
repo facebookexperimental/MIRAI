@@ -15,6 +15,7 @@ use log::{info, warn};
 use log_derive::{logfn, logfn_inputs};
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
+use rustc_driver::Compilation;
 use rustc_interface::interface;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
@@ -89,19 +90,24 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     /// interpretation of all of the functions that will end up in the compiler output.
     /// If this method returns false, the compilation will stop.
     #[logfn(TRACE)]
-    fn after_analysis(&mut self, compiler: &interface::Compiler) -> bool {
+    fn after_analysis(&mut self, compiler: &interface::Compiler) -> Compilation {
         compiler.session().abort_if_errors();
         if self.output_directory.to_str().unwrap().contains("/build/") {
             // No need to analyze a build script, but do generate code.
-            return true;
+            return Compilation::Continue;
         }
         compiler
             .global_ctxt()
             .unwrap()
             .peek_mut()
             .enter(|tcx| self.analyze_with_mirai(compiler, &tcx));
-        !self.test_run // Although MIRAI is only a checker, cargo still needs code generation to work.
-                       // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
+        if self.test_run {
+            // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
+            Compilation::Stop
+        } else {
+            // Although MIRAI is only a checker, cargo still needs code generation to work.
+            Compilation::Continue
+        }
     }
 }
 
@@ -123,6 +129,25 @@ impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
     fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: &TyCtxt<'_>) {
+        // runs out of memory
+        if self.file_name.contains("/rustc-serialize")
+            || self.file_name.contains("/protobuf")
+            || self.file_name.contains("/rust-crypto")
+            || self.file_name.contains("/h2-0.1.25")
+            || self.file_name.contains("/regex")
+            || self.file_name.contains("/csv")
+        {
+            return;
+        }
+        // fails to map a MIRAI path to the corresponding Rustc type value
+        if self.file_name.contains("/futures-util-preview") || self.file_name.contains("/backtrace")
+        {
+            return;
+        }
+        // non termination
+        if self.file_name.contains("/crc32fast") {
+            return;
+        }
         let summary_store_path = String::from(self.output_directory.to_str().unwrap());
         info!(
             "storing summaries for {} at {}/.summary_store.sled",
