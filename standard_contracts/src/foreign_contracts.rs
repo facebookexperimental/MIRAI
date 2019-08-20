@@ -28,7 +28,84 @@ pub mod core {
             }
         }
 
+        pub fn max__i8(v1: i8, v2: i8) -> i8 {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
+        pub fn max__i16(v1: i16, v2: i16) -> i16 {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
+        pub fn max__i32(v1: i32, v2: i32) -> i32 {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
+        pub fn max__i64(v1: i64, v2: i64) -> i64 {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
+        pub fn max__i128(v1: i128, v2: i128) -> i128 {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
+        pub fn max__isize(v1: isize, v2: isize) -> isize {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
+        pub fn max__u8(v1: u8, v2: u8) -> u8 {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
+        pub fn max__u16(v1: u16, v2: u16) -> u16 {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
+        pub fn max__u32(v1: u32, v2: u32) -> u32 {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
         pub fn max__u64(v1: u64, v2: u64) -> u64 {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
+        pub fn max__u128(v1: u128, v2: u128) -> u128 {
+            if v1 >= v2 {
+                return v1;
+            }
+            return v2;
+        }
+
+        pub fn max__usize(v1: usize, v2: usize) -> usize {
             if v1 >= v2 {
                 return v1;
             }
