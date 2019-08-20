@@ -136,6 +136,18 @@ impl MiraiCallbacks {
             || self.file_name.contains("/h2-0.1.25")
             || self.file_name.contains("/regex")
             || self.file_name.contains("/csv")
+            || self.file_name.contains("/unicode-segmentation")
+            || self.file_name.contains("/radix_trie")
+            || self.file_name.contains("/xml-rs")
+            || self.file_name.contains("/num-integer")
+            || self.file_name.contains("/tokio-io")
+            || self.file_name.contains("/hyper")
+            || self.file_name.contains("/encoding_rs")
+            || self.file_name.contains("/aho-corasick")
+            || self.file_name.contains("/noise")
+            || self.file_name.contains("/rayon")
+            || self.file_name.contains("/miniz_oxide")
+            || self.file_name.contains("/rusoto_credential")
         {
             return;
         }
@@ -145,7 +157,10 @@ impl MiraiCallbacks {
             return;
         }
         // non termination
-        if self.file_name.contains("/crc32fast") {
+        if self.file_name.contains("/crc32fast")
+            || self.file_name.contains("/http")
+            || self.file_name.contains("/serde_derive")
+        {
             return;
         }
         let summary_store_path = String::from(self.output_directory.to_str().unwrap());
