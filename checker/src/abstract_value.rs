@@ -2020,7 +2020,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     let refined_consequent =
                         refined_consequent.refine_with(&refined_condition, depth + 1);
                     let refined_alternate =
-                        refined_alternate.refine_with(&refined_condition, depth + 1);
+                        refined_alternate.refine_with(&refined_condition.logical_not(), depth + 1);
                     refined_condition.conditional_expression(refined_consequent, refined_alternate)
                 }
             }
