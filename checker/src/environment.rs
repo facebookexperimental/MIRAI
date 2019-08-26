@@ -166,7 +166,23 @@ impl Environment {
                 // conditional once widening kicks in.
                 x.join(y.clone(), p)
             } else {
-                let cond_expr = c.conditional_expression(x.clone(), y.clone());
+                let cond_expr = {
+                    match (&x.expression, &y.expression) {
+                        (Expression::ConditionalExpression { condition, .. }, _)
+                            if *condition == *c =>
+                        {
+                            // In a loop, so keeping the condition around is not useful and
+                            // it leads to information loss because of refinement.
+                            x.join(y.clone(), p)
+                        }
+                        (_, Expression::ConditionalExpression { condition, .. })
+                            if *condition == *c =>
+                        {
+                            x.join(y.clone(), p)
+                        }
+                        _ => c.conditional_expression(x.clone(), y.clone()),
+                    }
+                };
                 if cond_expr.is_top() {
                     x.join(y.clone(), p).widen(p)
                 } else {
