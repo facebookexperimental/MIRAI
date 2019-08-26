@@ -3121,7 +3121,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns a path that is qualified by the selector corresponding to projection.elem.
-    /// If projection has a base, the give base_path is first qualified with the base.ß
+    /// If projection has a base, the give base_path is first qualified with the base.
     #[logfn_inputs(TRACE)]
     fn visit_projection(
         &mut self,
