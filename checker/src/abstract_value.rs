@@ -246,9 +246,15 @@ pub trait AbstractValueTrait: Sized {
         &self,
         other: Self,
         const_op: fn(&ConstantDomain, &ConstantDomain) -> ConstantDomain,
+        recursive_op: fn(&Self, Self) -> Self,
         operation: fn(Self, Self) -> Self,
     ) -> Self;
-    fn try_to_distribute_binary_op(&self, other: Self, operation: fn(Self, Self) -> Self) -> Self;
+    fn try_to_distribute_binary_op(
+        &self,
+        other: Self,
+        recursive_op: fn(&Self, Self) -> Self,
+        operation: fn(Self, Self) -> Self,
+    ) -> Self;
     fn get_cached_interval(&self) -> Rc<IntervalDomain>;
     fn get_as_interval(&self) -> IntervalDomain;
     fn refine_paths(&self, environment: &Environment) -> Self;
@@ -271,7 +277,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        self.try_to_simplify_binary_op(other, ConstantDomain::add, |l, r| {
+        self.try_to_simplify_binary_op(other, ConstantDomain::add, Self::addition, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Add { left, right })
         })
     }
@@ -700,7 +706,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self / other".
     #[logfn_inputs(TRACE)]
     fn divide(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        self.try_to_simplify_binary_op(other, ConstantDomain::div, |l, r| {
+        self.try_to_simplify_binary_op(other, ConstantDomain::div, Self::divide, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Div { left, right })
         })
     }
@@ -1030,7 +1036,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self * other".
     #[logfn_inputs(TRACE)]
     fn multiply(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        self.try_to_simplify_binary_op(other, ConstantDomain::mul, |l, r| {
+        self.try_to_simplify_binary_op(other, ConstantDomain::mul, Self::multiply, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Mul { left, right })
         })
     }
@@ -1226,7 +1232,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self % other".
     #[logfn_inputs(TRACE)]
     fn remainder(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        self.try_to_simplify_binary_op(other, ConstantDomain::rem, |l, r| {
+        self.try_to_simplify_binary_op(other, ConstantDomain::rem, Self::remainder, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Rem { left, right })
         })
     }
@@ -1336,7 +1342,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self - other".
     #[logfn_inputs(TRACE)]
     fn subtract(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        self.try_to_simplify_binary_op(other, ConstantDomain::sub, |l, r| {
+        self.try_to_simplify_binary_op(other, ConstantDomain::sub, Self::subtract, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Sub { left, right })
         })
     }
@@ -1439,27 +1445,29 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         &self,
         other: Rc<AbstractValue>,
         const_op: fn(&ConstantDomain, &ConstantDomain) -> ConstantDomain,
+        recursive_op: fn(&Rc<AbstractValue>, Rc<AbstractValue>) -> Rc<AbstractValue>,
         operation: fn(Rc<AbstractValue>, Rc<AbstractValue>) -> Rc<AbstractValue>,
     ) -> Rc<AbstractValue> {
         match (&self.expression, &other.expression) {
             (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) => {
                 let result = const_op(v1, v2);
                 if result == ConstantDomain::Bottom {
-                    self.try_to_distribute_binary_op(other, operation)
+                    self.try_to_distribute_binary_op(other, recursive_op, operation)
                 } else {
                     Rc::new(result.into())
                 }
             }
-            _ => self.try_to_distribute_binary_op(other, operation),
+            _ => self.try_to_distribute_binary_op(other, recursive_op, operation),
         }
     }
 
     /// Tries to distribute the operation over self and/or other.
     /// Return operation(self, other) if no simplification is possible.
-    #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
     fn try_to_distribute_binary_op(
         &self,
         other: Rc<AbstractValue>,
+        recursive_op: fn(&Rc<AbstractValue>, Rc<AbstractValue>) -> Rc<AbstractValue>,
         operation: fn(Rc<AbstractValue>, Rc<AbstractValue>) -> Rc<AbstractValue>,
     ) -> Rc<AbstractValue> {
         if let ConditionalExpression {
@@ -1469,8 +1477,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         } = &self.expression
         {
             return condition.conditional_expression(
-                operation(consequent.clone(), other.clone()),
-                operation(alternate.clone(), other.clone()),
+                recursive_op(consequent, other.clone()),
+                recursive_op(alternate, other.clone()),
             );
         };
         if let ConditionalExpression {
@@ -1480,17 +1488,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         } = &other.expression
         {
             return condition.conditional_expression(
-                operation(self.clone(), consequent.clone()),
-                operation(self.clone(), alternate.clone()),
+                recursive_op(self, consequent.clone()),
+                recursive_op(self, alternate.clone()),
             );
         };
         if let Join { left, right, path } = &self.expression {
-            return operation(left.clone(), other.clone())
-                .join(operation(right.clone(), other), &path);
+            return operation(left.clone(), other.clone()).join(recursive_op(right, other), &path);
         }
         if let Join { left, right, path } = &other.expression {
             return operation(self.clone(), left.clone())
-                .join(operation(self.clone(), right.clone()), &path);
+                .join(recursive_op(self, right.clone()), &path);
         }
         match (&self.expression, &other.expression) {
             (Widen { .. }, _) => self.clone(),
