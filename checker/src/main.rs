@@ -55,10 +55,16 @@ fn main() {
         command_line_arguments.remove(1);
     }
 
-    // Tell compiler where to find the std library and so on.
-    // The compiler relies on the standard rustc driver to tell it, so we have to do likewise.
-    command_line_arguments.push(String::from("--sysroot"));
-    command_line_arguments.push(utils::find_sysroot());
+    let sysroot: String = "--sysroot".into();
+    if !command_line_arguments
+        .iter()
+        .any(|arg| arg.starts_with(&sysroot))
+    {
+        // Tell compiler where to find the std library and so on.
+        // The compiler relies on the standard rustc driver to tell it, so we have to do likewise.
+        command_line_arguments.push(sysroot);
+        command_line_arguments.push(utils::find_sysroot());
+    }
 
     let result = rustc_driver::report_ices_to_stderr_if_any(move || {
         let callbacks = &mut callbacks::MiraiCallbacks::default();
