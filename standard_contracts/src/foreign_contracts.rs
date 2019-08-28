@@ -642,14 +642,14 @@ pub mod core {
         pub mod implement {
 
             use crate::foreign_contracts::core::slice::Iter;
-            pub fn iter__bool(collection: &[bool]) -> Iter<bool> {
+            pub fn iter<T>(collection: &[T]) -> Iter<T> {
                 Iter {
                     collection,
                     index: 0,
                 }
             }
 
-            pub fn get__u32_usize(collection: &[u32], index: usize) -> Option<&u32> {
+            pub fn get<T>(collection: &[T], index: usize) -> Option<&T> {
                 if index >= collection.len() {
                     None
                 } else {
