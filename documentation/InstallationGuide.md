@@ -23,14 +23,27 @@ If that works, you're done. If not, you can find pre-built binaries for Z3
 [here](https://github.com/Z3Prover/z3/releases). There are also binary libraries
 for linux, macOS and Windows included in the binaries directory of MIRAI.
 
-For macOS, the binary will have to be placed somewhere where it can be 
-found and dynamically loaded by the Rust runtime. This can be done by copying the binary into `/usr/local/lib`.
+For macOS and Windows, the binary will have to be placed somewhere where it can be 
+found and dynamically loaded by the Rust runtime. 
+
+For macOs this can be done by copying the binary into `/usr/local/lib`.
 
 ```
 cp binaries/libz3.dylib /usr/local/lib
 ```
 
-For Windows, the binary does not have to be moved.
+For Windows, this can be done by copying the binary into `System32`.
+
+```
+copy binaries\libz3.dll %SYSTEM32%
+```
+
+Alternatively copy it into the same directory where the MIRAI executable has been placed. To find the directory use the
+where command. For example:
+
+```
+where /r c:\ mirai.exe 
+```
 
 For Linux, if the bundled library does not work, you'll have to build a
 customized Z3 [yourself](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Z3AndLinux.md).

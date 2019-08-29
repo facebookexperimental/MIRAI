@@ -18,14 +18,14 @@ When there are no compile errors,
 no lint errors and no test failures, you can proceed to the next step and run MIRAI. For example:
 ```
 touch src/lib.rs
-RUSTC_WRAPPER=mirai cargo check
+RUSTC_WRAPPER=mirai cargo build
 ```
 
 The touch command (which needs to reference a real file in your project) forces Cargo to re-run rustc and to not assume
 that it's cached error messages are still correct.
 
 This will likely produce a lot of warnings, which you can then fix by adding annotations using this
- [crate](https://crates.io/crates/mirai-annotations). Keep running cargo check as above until there are no more warnings.
+ [crate](https://crates.io/crates/mirai-annotations). Keep running cargo build as above until there are no more warnings.
 
 At this stage your code will be better documented and more readable. Perhaps you'll also have found and fixed a few bugs.
 
