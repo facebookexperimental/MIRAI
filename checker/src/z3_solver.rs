@@ -1311,7 +1311,7 @@ impl Z3Solver {
             c: z3_sys::Z3_context,
             t1: z3_sys::Z3_ast,
             t2: z3_sys::Z3_ast,
-            signed: z3_sys::Z3_bool,
+            signed: bool,
         ) -> z3_sys::Z3_ast,
         no_underflow: unsafe extern "C" fn(
             c: z3_sys::Z3_context,

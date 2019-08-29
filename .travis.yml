@@ -1,7 +1,9 @@
-os: osx
+os:
+  - linux
+  - osx
 language: rust
 rust:
-- nightly-2019-08-27
+- nightly
 
 before_install:
 - if [ ${TRAVIS_OS_NAME} == "osx" ]; then curl -L https://github.com/mozilla/grcov/releases/download/v0.4.3/grcov-osx-x86_64.tar.bz2 | tar jxf -; fi
@@ -14,6 +16,7 @@ before_script:
 # install audit
 - cargo install --force cargo-audit || true
 # install z3
+- if [ ${TRAVIS_OS_NAME} == "linux" ]; then export RUSTFLAGS='-Clink-arg=-L./binaries -Clink-arg=-lstdc++'; fi
 - if [ ${TRAVIS_OS_NAME} == "osx" ]; then cp binaries/libz3.dylib /usr/local/lib; fi
 
 script:
