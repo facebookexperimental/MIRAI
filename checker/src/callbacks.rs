@@ -169,7 +169,8 @@ impl MiraiCallbacks {
             "storing summaries for {} at {}/.summary_store.sled",
             self.file_name, summary_store_path
         );
-        let persistent_summary_cache = PersistentSummaryCache::new(tcx, summary_store_path);
+        let mut persistent_summary_cache = PersistentSummaryCache::new(tcx, summary_store_path);
+        let defs = Self::get_defs(*tcx, &mut persistent_summary_cache);
         let constant_value_cache = ConstantValueCache::default();
         let def_sets = DefSets {
             defs_to_analyze: HashSet::from_iter(tcx.body_owners()),
@@ -185,11 +186,11 @@ impl MiraiCallbacks {
             analyze_single_func: self.analyze_single_func.to_owned(),
         };
         if self.analyze_single_func.is_some() {
-            Self::analyze_bodies(compiler, tcx, &mut analysis_info, 1);
+            Self::analyze_bodies(compiler, tcx, &defs, &mut analysis_info, 1);
         } else {
             for iteration_count in 1..=k_limits::MAX_OUTER_FIXPOINT_ITERATIONS {
                 info!("outer fixed point iteration {}", iteration_count);
-                Self::analyze_bodies(compiler, tcx, &mut analysis_info, iteration_count);
+                Self::analyze_bodies(compiler, tcx, &defs, &mut analysis_info, iteration_count);
                 if analysis_info.def_sets.defs_to_reanalyze.is_empty() {
                     info!("done with analysis");
                     break;
@@ -206,6 +207,53 @@ impl MiraiCallbacks {
         self.emit_or_check_diagnostics(&mut analysis_info.diagnostics_for);
     }
 
+    /// Traverse the entire call graph and collect the def ids of all called functions
+    /// and functions they call, and add them to the list of def ids defined in the current
+    /// crate (i.e. the type context) (unless, of course, if the summary cache already has
+    /// a non default summary for the called function def id).
+    fn get_defs<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        persistent_summary_cache: &mut PersistentSummaryCache<'_, '_>,
+    ) -> Vec<DefId> {
+        use std::borrow::Borrow;
+
+        let mut defs_to_analyze = Vec::from_iter(tcx.body_owners());
+        let mut known_defs: HashSet<DefId> = HashSet::from_iter(tcx.body_owners());
+        let mut i: usize = 0;
+        while i < defs_to_analyze.len() {
+            let caller_def_id = defs_to_analyze[i];
+            if tcx.is_mir_available(caller_def_id) {
+                let mir = tcx.optimized_mir(caller_def_id);
+                for bb in mir.basic_blocks().indices() {
+                    let rustc::mir::BasicBlockData { ref terminator, .. } = &mir[bb];
+                    if let Some(rustc::mir::Terminator { ref kind, .. }) = *terminator {
+                        if let rustc::mir::TerminatorKind::Call { func, .. } = kind {
+                            if let rustc::mir::Operand::Constant(constant) = func {
+                                let rustc::mir::Constant { literal, .. } = constant.borrow();
+                                if let rustc::ty::TyKind::FnDef(def_id, ..) = &literal.ty.sty {
+                                    if known_defs.insert(*def_id) {
+                                        let summary_key = persistent_summary_cache
+                                            .get_summary_key_for(*def_id)
+                                            .clone();
+                                        let summary = persistent_summary_cache
+                                            .get_persistent_summary_for(&summary_key);
+                                        if !summary.is_not_default {
+                                            defs_to_analyze.push(*def_id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                info!("no mir for {:?}", caller_def_id);
+            }
+            i += 1;
+        }
+        defs_to_analyze
+    }
+
     /// Analyze each function body in the crate that does not yet have a summary that has reached
     /// a fixed point and add them to. The set of such functions are provided by def_sets.defs_to_analyze.
     /// Also analyze function bodies in the def_sets.defs_to_check set, which are those bodies
@@ -218,10 +266,11 @@ impl MiraiCallbacks {
     fn analyze_bodies<'a, 'tcx>(
         compiler: &'a interface::Compiler,
         tcx: &'a TyCtxt<'tcx>,
+        defs: &[DefId],
         mut analysis_info: &mut AnalysisInfo<'a, 'tcx>,
         iteration_count: usize,
     ) {
-        for def_id in tcx.body_owners() {
+        for def_id in defs.iter() {
             if analysis_info
                 .def_sets
                 .defs_to_not_reanalyze
@@ -232,7 +281,7 @@ impl MiraiCallbacks {
                 // now.
                 continue;
             }
-            if !analysis_info.def_sets.defs_to_analyze.contains(&def_id) {
+            if !analysis_info.def_sets.defs_to_analyze.contains(def_id) {
                 // The function summary reached a fixed point in the previous iteration
                 // as have all of the function summaries that this function depends on.
                 continue;
@@ -241,7 +290,7 @@ impl MiraiCallbacks {
                 &mut analysis_info.persistent_summary_cache,
                 analysis_info.analyze_single_func.is_none(),
                 iteration_count,
-                def_id,
+                *def_id,
             );
             if let Some(fname) = &analysis_info.analyze_single_func {
                 // If the SINGLE_FUNC=fname option was provided, skip the analysis of all
@@ -253,7 +302,7 @@ impl MiraiCallbacks {
             let old_summary_if_changed = {
                 let mut buffered_diagnostics: Vec<DiagnosticBuilder<'_>> = vec![];
                 let (r, analysis_time_in_seconds) = Self::visit_body(
-                    def_id,
+                    *def_id,
                     &name,
                     compiler,
                     tcx,
@@ -268,7 +317,7 @@ impl MiraiCallbacks {
                         name, analysis_time_in_seconds,
                     );
                     // Prevent the function from being analyzed again.
-                    analysis_info.def_sets.defs_to_not_reanalyze.insert(def_id);
+                    analysis_info.def_sets.defs_to_not_reanalyze.insert(*def_id);
                 }
                 // We want diagnostics even for function that are not yet a fixed point, since
                 // the outer fixed point loop currently diverges in many cases.
@@ -277,7 +326,7 @@ impl MiraiCallbacks {
                 }
                 if let Some(old_diags) = analysis_info
                     .diagnostics_for
-                    .insert(def_id, buffered_diagnostics)
+                    .insert(*def_id, buffered_diagnostics)
                 {
                     old_diags.into_iter().for_each(cancel)
                 }
@@ -286,7 +335,7 @@ impl MiraiCallbacks {
             MiraiCallbacks::select_defs_to_reanalyze(
                 &mut analysis_info.persistent_summary_cache,
                 &mut analysis_info.def_sets.defs_to_reanalyze,
-                def_id,
+                *def_id,
                 old_summary_if_changed,
             )
         }
