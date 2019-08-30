@@ -148,6 +148,7 @@ impl MiraiCallbacks {
             || self.file_name.contains("/rayon")
             || self.file_name.contains("/miniz_oxide")
             || self.file_name.contains("/rusoto_credential")
+            || self.file_name.contains("/webpki")
         {
             return;
         }
