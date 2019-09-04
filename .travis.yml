@@ -1,9 +1,10 @@
 os:
   - linux
   - osx
+  - windows
 language: rust
 rust:
-- nightly
+- nightly-2019-08-27
 
 before_install:
 - if [ ${TRAVIS_OS_NAME} == "osx" ]; then curl -L https://github.com/mozilla/grcov/releases/download/v0.4.3/grcov-osx-x86_64.tar.bz2 | tar jxf -; fi
@@ -30,12 +31,13 @@ script:
 - cargo clippy -- -D warnings
 # Build
 - cargo build
+- if [ ${TRAVIS_OS_NAME} == "windows" ]; then cp binaries/libz3.dll target/debug; fi
 # Run unit and integration tests
 - RUST_BACKTRACE=1 cargo test
 # Run code coverage tests
 - |
   if [ ${TRAVIS_OS_NAME} == "osx" ]
-  then 
+  then
     export CARGO_INCREMENTAL=0
     export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads"
     cargo build
