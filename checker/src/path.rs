@@ -188,6 +188,12 @@ impl Path {
         Self::new_qualified(collection_path, selector).refine_paths(environment)
     }
 
+    /// Creates a path to the local variable corresponding to the ordinal.
+    #[logfn_inputs(TRACE)]
+    pub fn new_local(ordinal: usize) -> Rc<Path> {
+        Rc::new(PathEnum::LocalVariable { ordinal }.into())
+    }
+
     /// Creates a path the selects the length of the array at the given path.
     #[logfn_inputs(TRACE)]
     pub fn new_length(array_path: Rc<Path>, environment: &Environment) -> Rc<Path> {
@@ -283,12 +289,7 @@ impl PathRefinement for Rc<Path> {
                 if 0 < *ordinal && *ordinal <= arguments.len() {
                     arguments[*ordinal - 1].0.clone()
                 } else {
-                    Rc::new(
-                        PathEnum::LocalVariable {
-                            ordinal: ordinal + fresh,
-                        }
-                        .into(),
-                    )
+                    Path::new_local(ordinal + fresh)
                 }
             }
             PathEnum::QualifiedPath {

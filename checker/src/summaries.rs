@@ -210,7 +210,7 @@ impl Summary {
             &other.unwind_side_effects[0..],
             vec![],
         );
-        let result_path = &Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
+        let result_path = &Path::new_local(0);
         let result = side_effects
             .iter()
             .find(|&(p, _)| p.eq(result_path))
@@ -278,7 +278,7 @@ pub fn summarize(
     unwind_environment: &Environment,
     tcx: TyCtxt<'_>,
 ) -> Summary {
-    let return_path = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
+    let return_path = Path::new_local(0);
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
     let mut result = exit_environment.value_at(&return_path).cloned();
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
@@ -357,7 +357,7 @@ fn extract_side_effects(
     let mut result = Vec::new();
     for ordinal in 0..=argument_count {
         // remember that 0 is the result
-        let root = Rc::new(PathEnum::LocalVariable { ordinal }.into());
+        let root = Path::new_local(ordinal);
         for (path, value) in env
             .value_map
             .iter()
