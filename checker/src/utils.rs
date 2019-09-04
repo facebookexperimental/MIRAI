@@ -182,8 +182,14 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
             }
             append_mangled_type(str, ty, tcx);
         }
-        FnPtr(psig) => {
-            str.push_str(&format!("FnPtr {:?}", psig));
+        FnPtr(poly_fn_sig) => {
+            let fn_sig = poly_fn_sig.skip_binder();
+            str.push_str("fn_ptr_");
+            for arg_type in fn_sig.inputs() {
+                append_mangled_type(str, arg_type, tcx);
+                str.push_str("_");
+            }
+            append_mangled_type(str, fn_sig.output(), tcx);
         }
         Tuple(types) => {
             str.push_str("tuple_");
