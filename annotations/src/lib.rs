@@ -6,7 +6,7 @@
 // A set of macros and functions to use for annotating source files that are being checked with MIRAI
 
 /// Equivalent to a no op when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition unless it can
+/// When compiled with MIRAI, this causes MIRAI to assume the condition unless it can
 /// prove it to be false.
 #[macro_export]
 macro_rules! assume {
@@ -18,7 +18,7 @@ macro_rules! assume {
 }
 
 /// Equivalent to the standard assert! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition unless it can
+/// When compiled with MIRAI, this causes MIRAI to assume the condition unless it can
 /// prove it to be false.
 #[macro_export]
 macro_rules! checked_assume {
@@ -39,7 +39,7 @@ macro_rules! checked_assume {
 }
 
 /// Equivalent to the standard assert_eq! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition unless it can
+/// When compiled with MIRAI, this causes MIRAI to assume the condition unless it can
 /// prove it to be false.
 #[macro_export]
 macro_rules! checked_assume_eq {
@@ -60,7 +60,7 @@ macro_rules! checked_assume_eq {
 }
 
 /// Equivalent to the standard assert_ne! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition unless it can
+/// When compiled with MIRAI, this causes MIRAI to assume the condition unless it can
 /// prove it to be false.
 #[macro_export]
 macro_rules! checked_assume_ne {
@@ -81,7 +81,7 @@ macro_rules! checked_assume_ne {
 }
 
 /// Equivalent to the standard debug_assert! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition unless it can
+/// When compiled with MIRAI, this causes MIRAI to assume the condition unless it can
 /// prove it to be false.
 #[macro_export]
 macro_rules! debug_checked_assume {
@@ -102,7 +102,7 @@ macro_rules! debug_checked_assume {
 }
 
 /// Equivalent to the standard debug_assert_eq! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition unless it can
+/// When compiled with MIRAI, this causes MIRAI to assume the condition unless it can
 /// prove it to be false.
 #[macro_export]
 macro_rules! debug_checked_assume_eq {
@@ -123,7 +123,7 @@ macro_rules! debug_checked_assume_eq {
 }
 
 /// Equivalent to the standard debug_assert_ne! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition unless it can
+/// When compiled with MIRAI, this causes MIRAI to assume the condition unless it can
 /// prove it to be false.
 #[macro_export]
 macro_rules! debug_checked_assume_ne {
@@ -144,7 +144,7 @@ macro_rules! debug_checked_assume_ne {
 }
 
 /// Equivalent to a no op when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// When compiled with MIRAI, this causes MIRAI to verify the condition at the
 /// point where it appears in a function, but to also add it a postcondition that can
 /// be assumed by the caller of the function.
 #[macro_export]
@@ -167,7 +167,7 @@ macro_rules! postcondition {
 }
 
 /// Equivalent to a no op when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition at the
+/// When compiled with MIRAI, this causes MIRAI to assume the condition at the
 /// point where it appears in a function, but to also add it a postcondition that can
 /// be assumed by the caller of the function.
 #[macro_export]
@@ -180,7 +180,7 @@ macro_rules! assumed_postcondition {
 }
 
 /// Equivalent to the standard assert! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// When compiled with MIRAI, this causes MIRAI to verify the condition at the
 /// point where it appears in a function, but to also add it a postcondition that can
 /// be assumed by the caller of the function.
 #[macro_export]
@@ -209,7 +209,7 @@ macro_rules! checked_postcondition {
 }
 
 /// Equivalent to the standard assert_eq! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// When compiled with MIRAI, this causes MIRAI to verify the condition at the
 /// point where it appears in a function, but to also add it a postcondition that can
 /// be assumed by the caller of the function.
 #[macro_export]
@@ -238,7 +238,7 @@ macro_rules! checked_postcondition_eq {
 }
 
 /// Equivalent to the standard assert_ne! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// When compiled with MIRAI, this causes MIRAI to verify the condition at the
 /// point where it appears in a function, but to also add it a postcondition that can
 /// be assumed by the caller of the function.
 #[macro_export]
@@ -267,7 +267,7 @@ macro_rules! checked_postcondition_ne {
 }
 
 /// Equivalent to the standard debug_assert! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// When compiled with MIRAI, this causes MIRAI to verify the condition at the
 /// point where it appears in a function, but to also add it a postcondition that can
 /// be assumed by the caller of the function.
 #[macro_export]
@@ -296,7 +296,7 @@ macro_rules! debug_checked_postcondition {
 }
 
 /// Equivalent to the standard debug_assert_eq! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// When compiled with MIRAI, this causes MIRAI to verify the condition at the
 /// point where it appears in a function, but to also add it a postcondition that can
 /// be assumed by the caller of the function.
 #[macro_export]
@@ -325,7 +325,7 @@ macro_rules! debug_checked_postcondition_eq {
 }
 
 /// Equivalent to the standard debug_assert_ne! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to verify the condition at the
+/// When compiled with MIRAI, this causes MIRAI to verify the condition at the
 /// point where it appears in a function, but to also add it a postcondition that can
 /// be assumed by the caller of the function.
 #[macro_export]
@@ -354,7 +354,7 @@ macro_rules! debug_checked_postcondition_ne {
 }
 
 /// Equivalent to a no op when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition at the
+/// When compiled with MIRAI, this causes MIRAI to assume the condition at the
 /// point where it appears in a function, but to also add it a precondition that must
 /// be verified by the caller of the function.
 #[macro_export]
@@ -380,7 +380,7 @@ macro_rules! precondition {
 }
 
 /// Equivalent to the standard assert! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition at the
+/// When compiled with MIRAI, this causes MIRAI to assume the condition at the
 /// point where it appears in a function, but to also add it a precondition that must
 /// be verified by the caller of the function.
 #[macro_export]
@@ -412,7 +412,7 @@ macro_rules! checked_precondition {
 }
 
 /// Equivalent to the standard assert_eq! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition at the
+/// When compiled with MIRAI, this causes MIRAI to assume the condition at the
 /// point where it appears in a function, but to also add it a precondition that must
 /// be verified by the caller of the function.
 #[macro_export]
@@ -444,7 +444,7 @@ macro_rules! checked_precondition_eq {
 }
 
 /// Equivalent to the standard assert_ne! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition at the
+/// When compiled with MIRAI, this causes MIRAI to assume the condition at the
 /// point where it appears in a function, but to also add it a precondition that must
 /// be verified by the caller of the function.
 #[macro_export]
@@ -476,7 +476,7 @@ macro_rules! checked_precondition_ne {
 }
 
 /// Equivalent to the standard debug_assert! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition at the
+/// When compiled with MIRAI, this causes MIRAI to assume the condition at the
 /// point where it appears in a function, but to also add it a precondition that must
 /// be verified by the caller of the function.
 #[macro_export]
@@ -508,7 +508,7 @@ macro_rules! debug_checked_precondition {
 }
 
 /// Equivalent to the standard debug_assert_eq! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition at the
+/// When compiled with MIRAI, this causes MIRAI to assume the condition at the
 /// point where it appears in a function, but to also add it a precondition that must
 /// be verified by the caller of the function.
 #[macro_export]
@@ -540,7 +540,7 @@ macro_rules! debug_checked_precondition_eq {
 }
 
 /// Equivalent to the standard debug_assert_ne! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to assume the condition at the
+/// When compiled with MIRAI, this causes MIRAI to assume the condition at the
 /// point where it appears in a function, but to also add it a precondition that must
 /// be verified by the caller of the function.
 #[macro_export]
@@ -572,7 +572,7 @@ macro_rules! debug_checked_precondition_ne {
 }
 
 /// Equivalent to a no op when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to check the condition and
+/// When compiled with MIRAI, this causes MIRAI to check the condition and
 /// emit a diagnostic unless it can prove it to be true.
 #[macro_export]
 macro_rules! verify {
@@ -584,7 +584,7 @@ macro_rules! verify {
 }
 
 /// Equivalent to the standard assert! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to check the condition and
+/// When compiled with MIRAI, this causes MIRAI to check the condition and
 /// emit a diagnostic unless it can prove it to be true.
 #[macro_export]
 macro_rules! checked_verify {
@@ -612,7 +612,7 @@ macro_rules! checked_verify {
 }
 
 /// Equivalent to the standard assert_eq! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to check the condition and
+/// When compiled with MIRAI, this causes MIRAI to check the condition and
 /// emit a diagnostic unless it can prove it to be true.
 #[macro_export]
 macro_rules! checked_verify_eq {
@@ -640,7 +640,7 @@ macro_rules! checked_verify_eq {
 }
 
 /// Equivalent to the standard assert_eq! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to check the condition and
+/// When compiled with MIRAI, this causes MIRAI to check the condition and
 /// emit a diagnostic unless it can prove it to be true.
 #[macro_export]
 macro_rules! checked_verify_ne {
@@ -668,7 +668,7 @@ macro_rules! checked_verify_ne {
 }
 
 /// Equivalent to the standard debug_assert! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to check the condition and
+/// When compiled with MIRAI, this causes MIRAI to check the condition and
 /// emit a diagnostic unless it can prove it to be true.
 #[macro_export]
 macro_rules! debug_checked_verify {
@@ -696,7 +696,7 @@ macro_rules! debug_checked_verify {
 }
 
 /// Equivalent to the standard debug_assert_eq! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to check the condition and
+/// When compiled with MIRAI, this causes MIRAI to check the condition and
 /// emit a diagnostic unless it can prove it to be true.
 #[macro_export]
 macro_rules! debug_checked_verify_eq {
@@ -724,7 +724,7 @@ macro_rules! debug_checked_verify_eq {
 }
 
 /// Equivalent to the standard debug_assert_ne! when used with an unmodified Rust compiler.
-/// When compiled with MIRAI, this causes the compiler to check the condition and
+/// When compiled with MIRAI, this causes MIRAI to check the condition and
 /// emit a diagnostic unless it can prove it to be true.
 #[macro_export]
 macro_rules! debug_checked_verify_ne {
@@ -789,6 +789,48 @@ macro_rules! set_model_field {
     ($target:expr, $field_name:ident, $value:expr) => {
         if cfg!(mirai) {
             mirai_annotations::mirai_set_model_field($target, stringify!($field_name), $value);
+        }
+    };
+}
+
+/// Equivalent to unreachable! when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes MIRAI to assume that the annotation statement cannot be reached.
+#[macro_export]
+macro_rules! assume_unreachable {
+    () => {
+        unreachable!()
+    };
+    ($message:literal) => {
+        unreachable!($message)
+    };
+    (($fmt:expr, $($arg:tt)*)) => {
+        unreachable!($fmt, $($arg)*)
+    };
+}
+
+/// Equivalent to unreachable! when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes MIRAI to verify that the annotation statement cannot be reached.
+#[macro_export]
+macro_rules! verify_unreachable {
+    () => {
+        if cfg!(mirai) {
+            panic!("statement is reachable");
+        } else {
+            unreachable!()
+        }
+    };
+    ($message:literal) => {
+        if cfg!(mirai) {
+            panic!($message);
+        } else {
+            unreachable!($message)
+        }
+    };
+    (($fmt:expr, $($arg:tt)*)) => {
+        if cfg!(mirai) {
+            panic!($fmt, $($arg)*);
+        } else {
+            unreachable!($fmt, $($arg)*)
         }
     };
 }

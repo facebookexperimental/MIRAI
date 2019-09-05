@@ -117,6 +117,8 @@ pub enum KnownFunctionNames {
     MiraiVerify,
     /// std.panicking.begin_panic
     StdBeginPanic,
+    /// std.panicking.begin_panic_fmt
+    StdBeginPanicFmt,
 }
 
 /// Constructors
@@ -146,6 +148,7 @@ impl ConstantDomain {
             "mirai_annotations.mirai_shallow_clone" => MiraiShallowClone,
             "mirai_annotations.mirai_verify" => MiraiVerify,
             "std.panicking.begin_panic" => StdBeginPanic,
+            "std.panicking.begin_panic_fmt" => StdBeginPanicFmt,
             _ => KnownFunctionNames::None,
         };
         ConstantDomain::Function {
