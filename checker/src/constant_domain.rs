@@ -29,23 +29,7 @@ pub enum ConstantDomain {
     /// The Boolean value false.
     False,
     /// A reference to a function.
-    Function {
-        /// The crate specific key that is used to identify the function in the current crate.
-        /// This is not available for functions returned by calls to functions from other crates,
-        /// since the def id the other crates use have no meaning for the current crate.
-        #[serde(skip)]
-        def_id: Option<DefId>,
-        #[serde(skip)]
-        function_id: Option<usize>,
-        /// Indicates if the function is known to be treated specially by the Rust compiler
-        known_name: KnownFunctionNames,
-        /// The key to use when retrieving a summary for the function from the summary cache
-        summary_cache_key: Rc<String>,
-        /// To be appended to summary_cache_key when searching for a type specific version of
-        /// a summary. This is necessary when a trait method cannot be accurately summarized
-        /// in a generic way. For example std::ops::eq.
-        argument_type_key: Rc<String>,
-    },
+    Function(Rc<FunctionReference>),
     /// Signed 16 byte integer.
     I128(i128),
     /// 64 bit floating point, stored as a u64 to make it comparable.
@@ -69,13 +53,9 @@ impl Debug for ConstantDomain {
             ConstantDomain::Char(ch) if (*ch as u32) == 0 => f.write_fmt(format_args!("'null'")),
             ConstantDomain::Char(ch) => f.write_fmt(format_args!("'{}'", ch)),
             ConstantDomain::False => f.write_str("false"),
-            ConstantDomain::Function {
-                summary_cache_key,
-                argument_type_key,
-                ..
-            } => f.write_fmt(format_args!(
+            ConstantDomain::Function(func_ref) => f.write_fmt(format_args!(
                 "fn {}{}",
-                summary_cache_key, argument_type_key
+                func_ref.summary_cache_key, func_ref.argument_type_key
             )),
             ConstantDomain::I128(val) => val.fmt(f),
             ConstantDomain::F64(val) => (f64::from_bits(*val)).fmt(f),
@@ -119,6 +99,27 @@ pub enum KnownFunctionNames {
     StdBeginPanic,
 }
 
+/// Information that identifies a function or generic function instance.
+/// Used to find cached function summaries.
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash, Ord)]
+pub struct FunctionReference {
+    /// The crate specific key that is used to identify the function in the current crate.
+    /// This is not available for functions returned by calls to functions from other crates,
+    /// since the def id the other crates use have no meaning for the current crate.
+    #[serde(skip)]
+    pub def_id: Option<DefId>,
+    #[serde(skip)]
+    pub function_id: Option<usize>,
+    /// Indicates if the function is known to be treated specially by the Rust compiler
+    pub known_name: KnownFunctionNames,
+    /// The key to use when retrieving a summary for the function from the summary cache
+    pub summary_cache_key: Rc<String>,
+    /// To be appended to summary_cache_key when searching for a type specific version of
+    /// a summary. This is necessary when a trait method cannot be accurately summarized
+    /// in a generic way. For example std::ops::eq.
+    pub argument_type_key: Rc<String>,
+}
+
 /// Constructors
 impl ConstantDomain {
     /// Returns a constant value that is a reference to a function
@@ -148,13 +149,13 @@ impl ConstantDomain {
             "std.panicking.begin_panic" => StdBeginPanic,
             _ => KnownFunctionNames::None,
         };
-        ConstantDomain::Function {
+        ConstantDomain::Function(Rc::new(FunctionReference {
             def_id: Some(def_id),
             function_id: Some(function_id),
             known_name,
             summary_cache_key,
             argument_type_key,
-        }
+        }))
     }
 }
 
