@@ -5,6 +5,7 @@
 
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
+use crate::constant_domain::FunctionReference;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::path::{Path, PathEnum};
@@ -412,6 +413,8 @@ pub struct PersistentSummaryCache<'a, 'tcx> {
     db: Db,
     cache: HashMap<DefId, Summary>,
     typed_cache: HashMap<usize, Summary>,
+    reference_cache: HashMap<Rc<FunctionReference>, Summary>,
+    typed_reference_cache: HashMap<Rc<FunctionReference>, Summary>,
     dependencies: HashMap<DefId, Vec<DefId>>,
     key_cache: HashMap<DefId, Rc<String>>,
     type_context: &'a TyCtxt<'tcx>,
@@ -479,6 +482,8 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             db,
             cache: HashMap::new(),
             typed_cache: HashMap::new(),
+            reference_cache: HashMap::new(),
+            typed_reference_cache: HashMap::new(),
             key_cache: HashMap::new(),
             dependencies: HashMap::new(),
             type_context,
@@ -598,54 +603,93 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         })
     }
 
-    /// Returns the cached summary corresponding to function_id, or creates a default for it.
+    /// Returns the cached summary corresponding to the function reference.
     /// The optional dependent_def_id is the definition that refers to the returned summary.
     /// The cache tracks all such dependents so that they can be retrieved and re-analyzed
-    /// if the cache is updated with a new summary for def_id.
-    /// Note that function_id is derived from the location where the function is referenced
-    /// and that this location may augment a generic function with type parameter information for,
-    /// whereas def_id refers to the generic function itself.
-    /// This matters if a useful function summary can only be written for specific generic instantiations.
+    /// if the cache is updated with a new summary for a def_id.
+    /// If the reference has no def_id (and hence no function_id), the entire reference used
+    /// as the key, which requires more cache instances and the hard to extract
+    /// and unify, duplicated code.
     #[logfn_inputs(TRACE)]
     pub fn get_summary_for_function_constant(
         &mut self,
-        def_id: DefId,
-        function_id: usize,
-        persistent_key: &str,
-        arg_types_key: &str,
+        func_ref: &Rc<FunctionReference>,
         dependent_def_id: DefId,
     ) -> &Summary {
-        let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
-        if !dependents.contains(&dependent_def_id) {
-            assume!(dependents.len() < std::usize::MAX); // We'll run out of memory long  before this overflows
-            dependents.push(dependent_def_id);
-        }
-        if self.typed_cache.contains_key(&function_id) {
-            let result = self.typed_cache.get(&function_id);
-            result.expect("value disappeared from typed_cache")
-        } else {
-            let db = &self.db;
-            if let Some(summary) = Self::get_persistent_summary_using_arg_types_if_possible(
-                db,
-                persistent_key,
-                arg_types_key,
-            ) {
-                return self.typed_cache.entry(function_id).or_insert(summary);
-            }
+        match (func_ref.def_id, func_ref.function_id) {
+            // Use the ids as keys if they are available, since they make much better keys.
+            (Some(def_id), Some(function_id)) => {
+                let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
+                if !dependents.contains(&dependent_def_id) {
+                    assume!(dependents.len() < std::usize::MAX); // We'll run out of memory long  before this overflows
+                    dependents.push(dependent_def_id);
+                }
+                if self.typed_cache.contains_key(&function_id) {
+                    let result = self.typed_cache.get(&function_id);
+                    result.expect("value disappeared from typed_cache")
+                } else {
+                    let db = &self.db;
+                    if let Some(summary) = Self::get_persistent_summary_using_arg_types_if_possible(
+                        db,
+                        &func_ref.summary_cache_key,
+                        &func_ref.argument_type_key,
+                    ) {
+                        return self.typed_cache.entry(function_id).or_insert(summary);
+                    }
 
-            // In this case we default to the summary that is not argument type specific, but
-            // we need to take care not to cache this summary in self.typed_cache because updating
-            // self.cache will not also update self.typed_cache.
-            self.cache.entry(def_id).or_insert_with(|| {
-                let summary = Self::get_persistent_summary_for_db(db, &persistent_key);
-                if !def_id.is_local() && summary.is_none() {
-                    info!(
-                        "Summary store has no entry for {}{}",
-                        persistent_key, arg_types_key
-                    );
-                };
-                summary.unwrap_or_default()
-            })
+                    // In this case we default to the summary that is not argument type specific, but
+                    // we need to take care not to cache this summary in self.typed_cache because updating
+                    // self.cache will not also update self.typed_cache.
+                    self.cache.entry(def_id).or_insert_with(|| {
+                        let summary =
+                            Self::get_persistent_summary_for_db(db, &func_ref.summary_cache_key);
+                        if !def_id.is_local() && summary.is_none() {
+                            info!(
+                                "Summary store has no entry for {}{}",
+                                &func_ref.summary_cache_key, &func_ref.argument_type_key
+                            );
+                        };
+                        summary.unwrap_or_default()
+                    })
+                }
+            }
+            // Use the full function reference structs as keys. This is the slow path and it
+            // is only needed for function references that are obtained via deserialization of
+            // function summaries.
+            _ => {
+                let db = &self.db;
+                if self.typed_reference_cache.contains_key(func_ref) {
+                    let result = self.typed_reference_cache.get(func_ref);
+                    result.expect("value disappeared from typed_reference_cache")
+                } else {
+                    if let Some(summary) = Self::get_persistent_summary_using_arg_types_if_possible(
+                        db,
+                        &func_ref.summary_cache_key,
+                        &func_ref.argument_type_key,
+                    ) {
+                        return self
+                            .typed_reference_cache
+                            .entry(func_ref.clone())
+                            .or_insert(summary);
+                    }
+
+                    self.reference_cache
+                        .entry(func_ref.clone())
+                        .or_insert_with(|| {
+                            let summary = Self::get_persistent_summary_for_db(
+                                db,
+                                &func_ref.summary_cache_key,
+                            );
+                            if summary.is_none() {
+                                info!(
+                                    "Summary store has no entry for {}{}",
+                                    &func_ref.summary_cache_key, &func_ref.argument_type_key
+                                );
+                            };
+                            summary.unwrap_or_default()
+                        })
+                }
+            }
         }
     }
 

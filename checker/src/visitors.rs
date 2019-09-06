@@ -987,8 +987,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.fresh_variable_offset += 1_000_000;
         let func_to_call = self.visit_operand(func);
         let known_name = if let Expression::CompileTimeConstant(fun) = &func_to_call.expression {
-            if let ConstantDomain::Function { known_name, .. } = fun {
-                known_name
+            if let ConstantDomain::Function(func_ref) = fun {
+                &func_ref.known_name
             } else {
                 &KnownFunctionNames::None
             }
@@ -1374,26 +1374,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Returns a summary of the function to call, obtained from the summary cache.
     #[logfn_inputs(TRACE)]
     fn get_function_summary(&mut self, func_to_call: &Rc<AbstractValue>) -> Summary {
-        if let Expression::CompileTimeConstant(ConstantDomain::Function {
-            def_id: Some(def_id),
-            function_id: Some(function_id),
-            summary_cache_key,
-            argument_type_key,
-            ..
-        }) = &func_to_call.expression
+        if let Expression::CompileTimeConstant(ConstantDomain::Function(func_ref)) =
+            &func_to_call.expression
         {
-            self.summary_cache
-                .get_summary_for_function_constant(
-                    *def_id,
-                    *function_id,
-                    summary_cache_key,
-                    argument_type_key,
-                    self.def_id,
-                )
-                .clone()
-        } else {
-            Summary::default()
+            if func_ref.def_id.is_some() && func_ref.function_id.is_some() {
+                return self
+                    .summary_cache
+                    .get_summary_for_function_constant(func_ref, self.def_id)
+                    .clone();
+            }
         }
+        Summary::default()
     }
 
     /// Checks if the preconditions obtained from the summary of the function being called
