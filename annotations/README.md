@@ -6,9 +6,9 @@ They add value by allowing [MIRAI](https://github.com/facebookexperimental/MIRAI
 * distinguish between conditions that it should assume as true and conditions that it should verify
 * check conditions at compile time that should not be checked at runtime because they are too expensive
 
-From this it follows that we have three families of macros:
+From these considerations we get these families of macros:
 * assume macros
-* postcondition macros (like verify wehre defined and like assume for callers)
+* postcondition macros (like verify where defined and like assume for callers)
 * precondition macros (like assume where defined and like verify for callers)
 * verify macros
 
@@ -28,7 +28,10 @@ Additionally, the runtime checked kinds provides eq and ne varieties, leaving us
 
 Likewise for postcondition! precondition! and verify!
 
-Additionally there is also assumed_postcondition! which is an assume at the definition site, rather than a verify.
+Additionally we also have:
+* assumed_postcondition! which is an assume at the definition site, rather than a verify.
+* assume_unreachable! which assumes that it is unreachable for reasons beyond what MIRAI can reason about.
+* verify_unreachable! which requires MIRAI to verify that it is not unreachable.
 
 This crate also provides macros for describing and constraining abstract state that only has meaning to MIRAI. These are:
 * get_model_field!

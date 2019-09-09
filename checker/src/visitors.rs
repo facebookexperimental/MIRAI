@@ -1694,7 +1694,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     }
                 }
             }
-            KnownFunctionNames::StdBeginPanic => {
+            KnownFunctionNames::StdBeginPanic | KnownFunctionNames::StdBeginPanicFmt => {
+                assume!(!actual_args.is_empty()); // The type checker ensures this.
                 let mut path_cond = self.current_environment.entry_condition.as_bool_if_known();
                 if path_cond.is_none() {
                     // Try the SMT solver
@@ -1771,7 +1772,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         // If we never get here, rather call unreachable!()
         if !entry_cond_as_bool.unwrap_or(true) {
             let span = self.current_span;
-            let message = "this is unreachable, mark it as such by using the unreachable! macro";
+            let message =
+                "this is unreachable, mark it as such by using the verify_unreachable! macro";
             let warning = self.session.struct_span_warn(span, message);
             self.emit_diagnostic(warning);
             return None;

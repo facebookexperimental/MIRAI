@@ -25,7 +25,7 @@ fn foo(x: i32, y: f32) {
     if x == x {
         verify!(true);
     } else {
-        verify!(false); //~ this is unreachable, mark it as such by using the unreachable! macro
+        verify!(false); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
     }
     if y == y {
         verify!(true);

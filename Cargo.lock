@@ -281,7 +281,7 @@ dependencies = [
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "log-derive 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "mirai-annotations 1.3.1",
+ "mirai-annotations 1.4.0",
  "rand 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rpds 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.99 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -293,13 +293,13 @@ dependencies = [
 
 [[package]]
 name = "mirai-annotations"
-version = "1.3.1"
+version = "1.4.0"
 
 [[package]]
 name = "mirai-standard-contracts"
 version = "0.0.1"
 dependencies = [
- "mirai-annotations 1.3.1",
+ "mirai-annotations 1.4.0",
 ]
 
 [[package]]
