@@ -1010,7 +1010,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         {
             self.check_function_preconditions(&actual_args, &function_summary, &func_to_call);
         }
-        self.transfer_and_refine_normal_return_state(destination, &actual_args, &function_summary);
+        self.transfer_and_refine_normal_return_state(
+            destination,
+            &actual_args,
+            &function_summary,
+            func_to_call,
+        );
         self.transfer_and_refine_cleanup_state(cleanup, &actual_args, &function_summary);
     }
 
@@ -1530,42 +1535,64 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
         function_summary: &Summary,
+        callee: Rc<AbstractValue>,
     ) {
         if let Some((place, target)) = destination {
             // Assign function result to place
             let target_path = self.visit_place(place);
             let return_value_path = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
+
             // Transfer side effects
-
-            // Effects on the call result
-            self.transfer_and_refine(
-                &function_summary.side_effects,
-                target_path,
-                &return_value_path,
-                actual_args,
-            );
-
-            // Effects on the call arguments
-            for (i, (target_path, _)) in actual_args.iter().enumerate() {
-                let parameter_path = Rc::new(PathEnum::LocalVariable { ordinal: i + 1 }.into());
+            if function_summary.is_not_default {
+                // Effects on the call result
                 self.transfer_and_refine(
                     &function_summary.side_effects,
-                    target_path.clone(),
-                    &parameter_path,
+                    target_path,
+                    &return_value_path,
                     actual_args,
                 );
-            }
 
-            // Effects on the heap
-            for (path, value) in function_summary.side_effects.iter() {
-                if path.is_rooted_by_abstract_heap_address() {
-                    let rvalue = value
-                        .clone()
-                        .refine_parameters(actual_args, self.fresh_variable_offset)
-                        .refine_paths(&self.current_environment);
-                    self.current_environment
-                        .update_value_at(path.clone(), rvalue);
+                // Effects on the call arguments
+                for (i, (target_path, _)) in actual_args.iter().enumerate() {
+                    let parameter_path = Rc::new(PathEnum::LocalVariable { ordinal: i + 1 }.into());
+                    self.transfer_and_refine(
+                        &function_summary.side_effects,
+                        target_path.clone(),
+                        &parameter_path,
+                        actual_args,
+                    );
                 }
+
+                // Effects on the heap
+                for (path, value) in function_summary.side_effects.iter() {
+                    if path.is_rooted_by_abstract_heap_address() {
+                        let rvalue = value
+                            .clone()
+                            .refine_parameters(actual_args, self.fresh_variable_offset)
+                            .refine_paths(&self.current_environment);
+                        self.current_environment
+                            .update_value_at(path.clone(), rvalue);
+                    }
+                }
+            } else {
+                // We don't know anything other than the return value type.
+                // We'll assume there were no side effects and no preconditions (but check this later if possible).
+                let result_type = self.get_place_type(place);
+                let result = AbstractValue::make_from(
+                    Expression::UninterpretedCall {
+                        callee,
+                        arguments: actual_args.iter().map(|(_, arg)| arg.clone()).collect(),
+                        result_type,
+                        path: return_value_path.clone(),
+                    },
+                    1,
+                );
+                self.transfer_and_refine(
+                    &[(return_value_path.clone(), result)],
+                    target_path,
+                    &return_value_path,
+                    actual_args,
+                );
             }
 
             // Add post conditions to entry condition

@@ -149,6 +149,10 @@ impl MiraiCallbacks {
             || self.file_name.contains("/miniz_oxide")
             || self.file_name.contains("/rusoto_credential")
             || self.file_name.contains("/webpki")
+            || self.file_name.contains("/rustc-demangle")
+            || self.file_name.contains("/keccak")
+            || self.file_name.contains("/h2")
+            || self.file_name.contains("/chrono")
         {
             return;
         }

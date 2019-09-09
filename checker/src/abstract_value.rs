@@ -1707,6 +1707,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => left
                 .refine_paths(environment)
                 .sub_overflows(right.refine_paths(environment), result_type.clone()),
+            Expression::UninterpretedCall { .. } => self.clone(),
             Expression::UnknownModelField { path, default } => {
                 if let Some(val) = environment.value_at(&path) {
                     // This environment has a value for the model field.
@@ -1917,6 +1918,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 right.refine_parameters(arguments, fresh),
                 result_type.clone(),
             ),
+            Expression::UninterpretedCall {
+                result_type, path, ..
+            } => {
+                //todo: try to find a summary for the callee and use and check it
+                let refined_path = path.refine_parameters(arguments, fresh);
+                if let PathEnum::Constant { value } = &refined_path.value {
+                    value.clone()
+                } else {
+                    AbstractValue::make_from(
+                        Expression::Variable {
+                            path: refined_path,
+                            var_type: result_type.clone(),
+                        },
+                        1,
+                    )
+                }
+            }
             Expression::UnknownModelField { path, default } => {
                 let refined_path = path.refine_parameters(arguments, fresh);
                 AbstractValue::make_from(
@@ -2131,6 +2149,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 right.refine_with(path_condition, depth + 1),
                 result_type.clone(),
             ),
+            Expression::UninterpretedCall { .. } => self.clone(),
             Expression::UnknownModelField { .. } => self.clone(),
             Expression::Variable { .. } => {
                 if path_condition.implies(&self) {

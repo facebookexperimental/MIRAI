@@ -276,7 +276,12 @@ impl Z3Solver {
                 right, result_type, ..
             } => self.general_shift_overflows(right, result_type),
             Expression::Top | Expression::Bottom => self.general_fresh_const(),
-            Expression::Variable { path, var_type } => self.general_variable(path, &var_type),
+            Expression::UninterpretedCall {
+                result_type: var_type,
+                path,
+                ..
+            }
+            | Expression::Variable { path, var_type } => self.general_variable(path, &var_type),
             Expression::Widen { path, operand } => {
                 self.get_ast_for_widened(path, operand, operand.expression.infer_type())
             }
@@ -731,7 +736,12 @@ impl Z3Solver {
             Expression::Shl { left, right } => self.numeric_shl(left, right),
             Expression::Shr { left, right, .. } => self.numeric_shr(left, right),
             Expression::Top | Expression::Bottom => self.numeric_fresh_const(),
-            Expression::Variable { path, var_type } => {
+            Expression::UninterpretedCall {
+                result_type: var_type,
+                path,
+                ..
+            }
+            | Expression::Variable { path, var_type } => {
                 self.numeric_variable(expression, path, var_type)
             }
             Expression::Widen { path, operand } => self.numeric_widen(path, operand),
@@ -1145,7 +1155,12 @@ impl Z3Solver {
             Expression::Top | Expression::Bottom => unsafe {
                 z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.bool_sort)
             },
-            Expression::Variable { path, var_type } => {
+            Expression::UninterpretedCall {
+                result_type: var_type,
+                path,
+                ..
+            }
+            | Expression::Variable { path, var_type } => {
                 if *var_type != ExpressionType::Bool {
                     debug!("path {:?}, type {:?}", path, var_type);
                 }
@@ -1261,7 +1276,12 @@ impl Z3Solver {
                 result_type,
             } => self.bv_shr_by(num_bits, left, right, result_type),
             Expression::Top | Expression::Bottom => self.bv_fresh_const(num_bits),
-            Expression::Variable { path, var_type } => self.bv_variable(path, var_type, num_bits),
+            Expression::UninterpretedCall {
+                result_type: var_type,
+                path,
+                ..
+            }
+            | Expression::Variable { path, var_type } => self.bv_variable(path, var_type, num_bits),
             Expression::Widen { path, operand } => self.bv_widen(path, operand, num_bits),
             _ => self.get_as_z3_ast(expression),
         }

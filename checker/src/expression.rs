@@ -287,6 +287,25 @@ pub enum Expression {
         result_type: ExpressionType,
     },
 
+    /// An expression that represents the result of calling an unknown function.
+    /// Typically this will be a trait method, function parameter, or an intrinsic/foreign function.
+    /// In the case of a trait method or a function parameter, the caller might be able to refine
+    /// this expression into a normal call.
+    UninterpretedCall {
+        // The unknown function to call. This can be just a reference to a location rooted in a parameter
+        // (in which case it can be specialized) or it can be a constant, in which case it may be
+        // possible to map it implementation method defined on the value of the self parameter,
+        // during call site refinement.
+        callee: Rc<AbstractValue>,
+        // The argument values used for the call. These will be refined if the callee can be resolved
+        // at the call site.
+        arguments: Vec<Rc<AbstractValue>>,
+        /// The type of the call result.
+        result_type: ExpressionType,
+        /// The path where the result is stored
+        path: Rc<Path>,
+    },
+
     /// Like a variable, but during refinement the default value is used
     /// when the qualifier becomes a known value without a defined value for the model field.
     UnknownModelField {
@@ -420,6 +439,18 @@ impl Debug for Expression {
             Expression::SubOverflows { left, right, .. } => {
                 f.write_fmt(format_args!("overflows(({:?}) - ({:?}))", left, right))
             }
+            Expression::UninterpretedCall {
+                callee,
+                arguments,
+                result_type,
+                path,
+            } => {
+                let _callee_txt = format!("{:?}", callee);
+                f.write_fmt(format_args!(
+                    "uninterpreted_call({:?}({:?}) -> {:?}) at {:?}",
+                    callee, arguments, result_type, path
+                ))
+            }
             Expression::UnknownModelField { path, default } => {
                 f.write_fmt(format_args!("({:?}).default(({:?})", path, default))
             }
@@ -485,6 +516,7 @@ impl Expression {
             Expression::ShrOverflows { .. } => Bool,
             Expression::Sub { left, .. } => left.expression.infer_type(),
             Expression::SubOverflows { .. } => Bool,
+            Expression::UninterpretedCall { result_type, .. } => result_type.clone(),
             Expression::UnknownModelField { default, .. } => default.expression.infer_type(),
             Expression::Variable { var_type, .. } => var_type.clone(),
             Expression::Widen { operand, .. } => operand.expression.infer_type(),
