@@ -23,7 +23,7 @@ use mirai_annotations::{
 };
 use rustc::session::Session;
 use rustc::ty::subst::SubstsRef;
-use rustc::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
+use rustc::ty::{AdtDef, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use rustc_data_structures::graph::dominators::Dominators;
 use std::borrow::Borrow;
@@ -684,7 +684,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let mut state_with_parameters = Environment::default();
         let saved_mir = self.mir;
         let result_root: Rc<Path> = Path::new_local(0);
-        for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
+        for (ordinal, constant_mir) in self.mir.promoted.iter().enumerate() {
             self.mir = constant_mir;
             let result_type = self.get_type_for_local(0);
             self.visit_promoted_constants_block(function_name);
@@ -2224,9 +2224,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             }
             mir::Operand::Constant(constant) => {
                 let mir::Constant {
-                    user_ty, literal, ..
+                    ty,
+                    user_ty,
+                    literal,
+                    ..
                 } = constant.borrow();
-                let const_value = self.visit_constant(*user_ty, &literal);
+                let const_value = self.visit_constant(ty, *user_ty, &literal.val);
                 match &const_value.expression {
                     Expression::AbstractHeapAddress(ordinal) => {
                         let rtype = ExpressionType::Reference;
@@ -2520,7 +2523,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let len_value = if let TyKind::Array(_, len) = &place_ty.sty {
             // We only get here if "-Z mir-opt-level=0" was specified.
             // todo: #52 Add a way to run an integration test with a non default compiler option.
-            self.visit_constant(None, &len)
+            let usize_type = self.tcx.types.usize;
+            self.visit_constant(usize_type, None, &len.val)
         } else {
             let value_path = self.visit_place(place);
             self.get_len(value_path)
@@ -2758,9 +2762,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             }
             mir::Operand::Constant(constant) => {
                 let mir::Constant {
-                    user_ty, literal, ..
+                    ty,
+                    user_ty,
+                    literal,
+                    ..
                 } = constant.borrow();
-                let const_value = self.visit_constant(*user_ty, &literal);
+                let const_value = self.visit_constant(ty, *user_ty, &literal.val);
                 self.current_environment
                     .update_value_at(target_path, const_value);
             }
@@ -2790,9 +2797,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::Operand::Move(place) => self.visit_move(place),
             mir::Operand::Constant(constant) => {
                 let mir::Constant {
-                    user_ty, literal, ..
+                    ty,
+                    user_ty,
+                    literal,
+                    ..
                 } = constant.borrow();
-                self.visit_constant(*user_ty, &literal)
+                self.visit_constant(ty, *user_ty, &literal.val)
             }
         }
     }
@@ -2824,13 +2834,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     #[logfn_inputs(TRACE)]
     fn visit_constant(
         &mut self,
+        ty: Ty<'tcx>,
         user_ty: Option<UserTypeAnnotationIndex>,
-        literal: &Const<'tcx>,
+        literal: &mir::interpret::ConstValue<'tcx>,
     ) -> Rc<AbstractValue> {
         use rustc::mir::interpret::Scalar;
-        let ty = literal.ty;
 
-        match &literal.val {
+        match literal {
             mir::interpret::ConstValue::Unevaluated(def_id, ..) => {
                 let name = utils::summary_key_str(&self.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.sty);
@@ -2848,7 +2858,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 let result;
                 match ty.sty {
                     TyKind::Bool => {
-                        result = match &literal.val {
+                        result = match literal {
                             mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }) => {
                                 if *data == 0 {
                                     &ConstantDomain::False
@@ -2863,7 +2873,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         result = if let mir::interpret::ConstValue::Scalar(Scalar::Raw {
                             data,
                             ..
-                        }) = &literal.val
+                        }) = literal
                         {
                             &mut self
                                 .constant_value_cache
@@ -2873,7 +2883,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         };
                     }
                     TyKind::Float(..) => {
-                        result = match &literal.val {
+                        result = match literal {
                             mir::interpret::ConstValue::Scalar(Scalar::Raw { data, size }) => {
                                 match *size {
                                     4 => &mut self.constant_value_cache.get_f32_for(*data as u32),
@@ -2887,7 +2897,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         result = self.visit_function_reference(def_id, ty, generic_args);
                     }
                     TyKind::Int(..) => {
-                        result = match &literal.val {
+                        result = match literal {
                             mir::interpret::ConstValue::Scalar(Scalar::Raw { data, size }) => {
                                 let value: i128 = match *size {
                                     1 => i128::from(*data as i8),
@@ -2909,7 +2919,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         _,
                     ) => {
                         result = if let mir::interpret::ConstValue::Slice { data, start, end } =
-                            &literal.val
+                            literal
                         {
                             let slice = &data.bytes[*start..*end];
                             let s = std::str::from_utf8(slice).expect("non utf8 str");
@@ -2951,7 +2961,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                                     self.current_span
                                 );
                             }
-                            match &literal.val {
+                            match literal {
                                 mir::interpret::ConstValue::Slice { data, start, end } => {
                                     let slice = &data.bytes[*start..*end];
                                     return self.deconstruct_constant_array(
@@ -2993,7 +3003,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             ..
                         },
                         _,
-                    ) => match &literal.val {
+                    ) => match literal {
                         mir::interpret::ConstValue::Slice { data, start, end } => {
                             let slice = &data.bytes[*start..*end];
                             let e_type = ExpressionType::from(&elem_type.sty);
@@ -3008,7 +3018,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         }
                     },
                     TyKind::Uint(..) => {
-                        result = match &literal.val {
+                        result = match literal {
                             mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }) => {
                                 &mut self.constant_value_cache.get_u128_for(*data)
                             }
@@ -3180,7 +3190,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let ty = self.get_rustc_place_type(place);
                     match &ty.sty {
                         TyKind::Array(_, len) => {
-                            let len_val = self.visit_constant(None, &len);
+                            let len_val = self.visit_constant(len.ty, None, &len.val);
                             let len_path =
                                 Path::new_length(result.clone(), &self.current_environment);
                             self.current_environment.update_value_at(len_path, len_val);
@@ -3203,15 +3213,15 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 result
             }
             mir::PlaceBase::Static(boxed_static) => match boxed_static.kind {
-                mir::StaticKind::Promoted(promoted, _) => {
+                mir::StaticKind::Promoted(promoted) => {
                     let index = promoted.index();
                     Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
                 }
-                mir::StaticKind::Static => {
-                    let name = utils::summary_key_str(&self.tcx, boxed_static.def_id);
+                mir::StaticKind::Static(def_id) => {
+                    let name = utils::summary_key_str(&self.tcx, def_id);
                     Rc::new(
                         PathEnum::StaticVariable {
-                            def_id: Some(boxed_static.def_id),
+                            def_id: Some(def_id),
                             summary_cache_key: name,
                             expression_type: self.get_place_type(place),
                         }
