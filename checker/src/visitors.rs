@@ -2911,22 +2911,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         result = if let mir::interpret::ConstValue::Slice { data, start, end } =
                             &literal.val
                         {
-                            // The rust compiler should ensure this.
-                            assume!(*end >= *start);
-                            let slice_len = *end - *start;
-                            let bytes = data
-                                .get_bytes(
-                                    self.tcx,
-                                    // invent a pointer, only the offset is relevant anyway
-                                    mir::interpret::Pointer::new(
-                                        mir::interpret::AllocId(0),
-                                        rustc::ty::layout::Size::from_bytes(*start as u64),
-                                    ),
-                                    rustc::ty::layout::Size::from_bytes(slice_len as u64),
-                                )
-                                .unwrap();
-
-                            let slice = &bytes[*start..*end];
+                            let slice = &data.bytes[*start..*end];
                             let s = std::str::from_utf8(slice).expect("non utf8 str");
                             let len_val: Rc<AbstractValue> =
                                 Rc::new(ConstantDomain::U128(s.len() as u128).into());
@@ -2955,7 +2940,51 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         },
                         _,
                     ) => {
-                        return self.visit_reference_to_array_constant(literal, elem_type, length);
+                        if let mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }, ..) =
+                            &length.val
+                        {
+                            let len = *data;
+                            let e_type = ExpressionType::from(&elem_type.sty);
+                            if e_type != ExpressionType::U8 {
+                                info!(
+                                    "Untested case of mir::interpret::ConstValue::Scalar found at {:?}",
+                                    self.current_span
+                                );
+                            }
+                            match &literal.val {
+                                mir::interpret::ConstValue::Slice { data, start, end } => {
+                                    let slice = &data.bytes[*start..*end];
+                                    return self.deconstruct_constant_array(
+                                        slice,
+                                        e_type,
+                                        Some(len),
+                                    );
+                                }
+                                mir::interpret::ConstValue::ByRef { alloc, .. } => {
+                                    return self.deconstruct_constant_array(
+                                        &alloc.bytes,
+                                        e_type,
+                                        Some(len),
+                                    );
+                                }
+                                mir::interpret::ConstValue::Scalar(
+                                    mir::interpret::Scalar::Ptr(ptr),
+                                ) => {
+                                    let alloc =
+                                        self.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
+                                    return self.deconstruct_constant_array(
+                                        &alloc.bytes,
+                                        e_type,
+                                        Some(len),
+                                    );
+                                }
+                                _ => {
+                                    unimplemented!("unsupported val of type Ref: {:?}", literal);
+                                }
+                            }
+                        } else {
+                            unimplemented!("unsupported array length: {:?}", length);
+                        };
                     }
                     TyKind::Ref(
                         _,
@@ -2966,50 +2995,16 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         _,
                     ) => match &literal.val {
                         mir::interpret::ConstValue::Slice { data, start, end } => {
-                            // The rust compiler should ensure this.
-                            assume!(*end >= *start);
-                            let slice_len = *end - *start;
-                            let bytes = data
-                                .get_bytes(
-                                    self.tcx,
-                                    // invent a pointer, only the offset is relevant anyway
-                                    mir::interpret::Pointer::new(
-                                        mir::interpret::AllocId(0),
-                                        rustc::ty::layout::Size::from_bytes(*start as u64),
-                                    ),
-                                    rustc::ty::layout::Size::from_bytes(slice_len as u64),
-                                )
-                                .unwrap();
-
-                            let slice = &bytes[*start..*end];
+                            let slice = &data.bytes[*start..*end];
                             let e_type = ExpressionType::from(&elem_type.sty);
                             return self.deconstruct_constant_array(slice, e_type, None);
                         }
-                        mir::interpret::ConstValue::ByRef { alloc, offset } => {
+                        mir::interpret::ConstValue::ByRef { alloc, .. } => {
                             let e_type = ExpressionType::from(&elem_type.sty);
-                            let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
-                            let len = alloc.len() as u64;
-                            let offset_in_bytes: u64 = offset.bytes();
-                            // The rust compiler should ensure this.
-                            assume!(len > offset_in_bytes);
-                            let num_bytes = len - offset_in_bytes;
-                            let ptr = mir::interpret::Pointer::new(id, *offset);
-                            //todo: this is all wrong. It gets the bytes that contains the reference,
-                            // not the bytes that the reference points to.
-                            // Right now it is not clear how to implement this.
-                            // Keeping this wrong behavior maintains the currently incorrect status quo.
-                            let bytes = alloc
-                                .get_bytes_with_undef_and_ptr(
-                                    self.tcx,
-                                    ptr,
-                                    rustc::ty::layout::Size::from_bytes(num_bytes),
-                                )
-                                .unwrap();
-                            return self.deconstruct_constant_array(&bytes, e_type, None);
+                            return self.deconstruct_constant_array(&alloc.bytes, e_type, None);
                         }
                         _ => {
-                            debug!("unsupported val of type Ref: {:?}", literal);
-                            unimplemented!();
+                            unimplemented!("unsupported val of type Ref: {:?}", literal);
                         }
                     },
                     TyKind::Uint(..) => {
@@ -3017,7 +3012,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }) => {
                                 &mut self.constant_value_cache.get_u128_for(*data)
                             }
-                            _ => assume_unreachable!(),
+                            _ => unreachable!(),
                         };
                     }
                     _ => {
@@ -3028,93 +3023,6 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     }
                 };
                 Rc::new(result.clone().into())
-            }
-        }
-    }
-
-    /// Synthesizes a reference to a constant array.
-    #[logfn_inputs(TRACE)]
-    fn visit_reference_to_array_constant(
-        &mut self,
-        literal: &rustc::ty::Const<'tcx>,
-        elem_type: &rustc::ty::TyS<'tcx>,
-        length: &rustc::ty::Const<'tcx>,
-    ) -> Rc<AbstractValue> {
-        use rustc::mir::interpret::Scalar;
-
-        if let mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }, ..) = &length.val {
-            let len = *data;
-            let e_type = ExpressionType::from(&elem_type.sty);
-            if e_type != ExpressionType::U8 {
-                info!(
-                    "Untested case of mir::interpret::ConstValue::Scalar found at {:?}",
-                    self.current_span
-                );
-            }
-            match &literal.val {
-                mir::interpret::ConstValue::Slice { data, start, end } => {
-                    // The Rust compiler should ensure this.
-                    assume!(*end > *start);
-                    let slice_len = *end - *start;
-                    let bytes = data
-                        .get_bytes(
-                            self.tcx,
-                            // invent a pointer, only the offset is relevant anyway
-                            mir::interpret::Pointer::new(
-                                mir::interpret::AllocId(0),
-                                rustc::ty::layout::Size::from_bytes(*start as u64),
-                            ),
-                            rustc::ty::layout::Size::from_bytes(slice_len as u64),
-                        )
-                        .unwrap();
-                    let slice = &bytes[*start..*end];
-                    self.deconstruct_constant_array(slice, e_type, Some(len))
-                }
-                mir::interpret::ConstValue::ByRef { alloc, offset } => {
-                    //todo: there is no test coverage for this case
-                    let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
-                    let alloc_len = alloc.len() as u64;
-                    let offset_bytes = offset.bytes();
-                    // The Rust compiler should ensure this.
-                    assume!(alloc_len > offset_bytes);
-                    let num_bytes = alloc_len - offset_bytes;
-                    let ptr = mir::interpret::Pointer::new(
-                        id,
-                        rustc::ty::layout::Size::from_bytes(offset.bytes()),
-                    );
-                    //todo: this is all wrong. It gets the bytes that contains the reference,
-                    // not the bytes that the reference points to.
-                    // Right now it is not clear how to implement this.
-                    // Keeping this wrong behavior maintains the currently incorrect status quo.
-                    let bytes = alloc
-                        .get_bytes_with_undef_and_ptr(
-                            self.tcx,
-                            ptr,
-                            rustc::ty::layout::Size::from_bytes(num_bytes),
-                        )
-                        .unwrap();
-                    self.deconstruct_constant_array(&bytes, e_type, Some(len))
-                }
-                mir::interpret::ConstValue::Scalar(mir::interpret::Scalar::Ptr(ptr)) => {
-                    let alloc = self.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
-                    let alloc_len = alloc.len() as u64;
-                    let offset_bytes = ptr.offset.bytes();
-                    // The Rust compiler should ensure this.
-                    assume!(alloc_len > offset_bytes);
-                    let num_bytes = alloc_len - offset_bytes;
-                    let bytes = alloc
-                        .get_bytes(
-                            self.tcx,
-                            *ptr,
-                            rustc::ty::layout::Size::from_bytes(num_bytes),
-                        )
-                        .unwrap();
-                    self.deconstruct_constant_array(&bytes, e_type, Some(len))
-                }
-                _ => {
-                    debug!("unsupported val of type Ref: {:?}", literal);
-                    unimplemented!();
-                }
             }
         } else {
             debug!("unsupported array length: {:?}", length);
