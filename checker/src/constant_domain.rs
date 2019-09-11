@@ -95,6 +95,8 @@ pub enum KnownFunctionNames {
     MiraiShallowClone,
     /// mirai_annotations.mirai_verify
     MiraiVerify,
+    /// std.future.from_generator
+    StdFutureFromGenerator,
     /// std.panicking.begin_panic
     StdBeginPanic,
     /// std.panicking.begin_panic_fmt
@@ -110,7 +112,10 @@ pub struct FunctionReference {
     /// since the def id the other crates use have no meaning for the current crate.
     #[serde(skip)]
     pub def_id: Option<DefId>,
-    #[serde(skip)]
+    /// A unique identifier for this function reference, derived from the def_id and the
+    /// instantiated type of the reference. I.e. every unique instantiation of a generic
+    /// function will have a different function_id but the same def_id.
+    #[serde(skip)] // because it is derived from def_id
     pub function_id: Option<usize>,
     /// Indicates if the function is known to be treated specially by the Rust compiler
     pub known_name: KnownFunctionNames,
@@ -148,6 +153,7 @@ impl ConstantDomain {
             "mirai_annotations.mirai_set_model_field" => MiraiSetModelField,
             "mirai_annotations.mirai_shallow_clone" => MiraiShallowClone,
             "mirai_annotations.mirai_verify" => MiraiVerify,
+            "std.future.from_generator" => StdFutureFromGenerator,
             "std.panicking.begin_panic" => StdBeginPanic,
             "std.panicking.begin_panic_fmt" => StdBeginPanicFmt,
             _ => KnownFunctionNames::None,

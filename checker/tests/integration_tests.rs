@@ -137,6 +137,7 @@ fn invoke_driver(
         file_name.clone(),
         String::from("--crate-type"),
         String::from("lib"),
+        String::from("--edition=2018"),
         String::from("-C"),
         String::from("debuginfo=2"),
         String::from("--out-dir"),

@@ -65,6 +65,7 @@ pub struct MirVisitor<'a, 'b, 'tcx, E> {
     outer_fixed_point_iteration: usize,
 
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
+    async_fn_summary: Option<Summary>,
     check_for_errors: bool,
     check_for_unconditional_precondition: bool,
     current_environment: Environment,
@@ -105,6 +106,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             outer_fixed_point_iteration: crate_context.outer_fixed_point_iteration,
 
             already_reported_errors_for_call_to: HashSet::new(),
+            async_fn_summary: None,
             check_for_errors: false,
             check_for_unconditional_precondition: false, // logging + new mir code gen breaks this for now
             current_environment: Environment::default(),
@@ -255,7 +257,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     // The result of this function is the t part.
     #[logfn_inputs(TRACE)]
     fn get_first_part_of_target_path_type_tuple(&mut self, path: &Rc<Path>) -> ExpressionType {
-        match self.get_path_rustc_type(path) {
+        match &self.get_path_rustc_type(path).sty {
             TyKind::Tuple(types) => (&types[0].expect_ty().sty).into(),
             _ => unreachable!(),
         }
@@ -264,7 +266,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     // Path is required to be rooted in a temporary used to track an operation result.
     #[logfn_inputs(TRACE)]
     fn get_target_path_type(&mut self, path: &Rc<Path>) -> ExpressionType {
-        self.get_path_rustc_type(path).into()
+        (&self.get_path_rustc_type(path).sty).into()
     }
 
     /// Lookups up the local definition for this ordinal and maps the type information
@@ -368,6 +370,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.check_for_errors(&block_indices, &in_state);
 
         // Now create a summary of the body that can be in-lined into call sites.
+        if self.async_fn_summary.is_some() {
+            self.preconditions = self.translate_async_preconditions();
+            // todo: also translate side-effects, return result and post-condition
+        };
+
         let mut summary = summaries::summarize(
             self.mir.arg_count,
             self.get_return_type(),
@@ -378,6 +385,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             &self.unwind_environment,
             *self.tcx,
         );
+
         let changed = {
             let old_summary = self.summary_cache.get_summary_for(self.def_id, None);
             if self.outer_fixed_point_iteration > 2 {
@@ -397,6 +405,57 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             self.summary_cache.set_summary_for(self.def_id, summary);
             (None, elapsed_time_in_seconds)
         }
+    }
+
+    /// Rewrite roots of the form local_1.0 into local_1, local_1.1 into local_2 and so on.
+    fn translate_async_preconditions(&mut self) -> Vec<Precondition> {
+        let root_value = self.get_new_heap_address();
+        let root_path: Rc<Path> = match &root_value.expression {
+            Expression::AbstractHeapAddress(ordinal) => {
+                Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into())
+            }
+            _ => unreachable!(),
+        };
+        let discriminant = Path::new_discriminant(
+            Path::new_field(root_path.clone(), 0, &self.current_environment),
+            &self.current_environment,
+        );
+        let discriminant_val = Rc::new(self.constant_value_cache.get_u128_for(0).clone().into());
+        self.current_environment
+            .update_value_at(discriminant, discriminant_val);
+        for (i, loc) in self.mir.local_decls.iter().skip(1).enumerate() {
+            let qualifier = root_path.clone();
+            let closure_path = Path::new_field(
+                Path::new_field(qualifier, 0, &self.current_environment),
+                i,
+                &self.current_environment,
+            );
+            let param_path = Path::new_local(i + 1);
+            let ty: ExpressionType = (&loc.ty.sty).into();
+            let value = self.lookup_path_and_refine_result(param_path, ty);
+            self.current_environment
+                .update_value_at(closure_path, value);
+        }
+
+        let actual_args = vec![(root_path, root_value)];
+        self.async_fn_summary
+            .as_ref()
+            .unwrap()
+            .preconditions
+            .iter()
+            .map(|precondition| {
+                let refined_condition = precondition
+                    .condition
+                    .refine_parameters(&actual_args, self.fresh_variable_offset)
+                    .refine_paths(&self.current_environment);
+                Precondition {
+                    condition: refined_condition,
+                    message: precondition.message.clone(),
+                    provenance: precondition.provenance.clone(),
+                    spans: precondition.spans.clone(),
+                }
+            })
+            .collect()
     }
 
     /// Compute a fixed point, which is a value of out_state that will not grow with more iterations.
@@ -620,7 +679,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn promote_constants(&mut self, function_name: &str) -> Environment {
         let mut state_with_parameters = Environment::default();
         let saved_mir = self.mir;
-        let result_root: Rc<Path> = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
+        let result_root: Rc<Path> = Path::new_local(0);
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
             self.mir = constant_mir;
             let result_type = self.get_type_for_local(0);
@@ -768,12 +827,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// End the current live range for the storage of the local.
     #[logfn_inputs(TRACE)]
     fn visit_storage_dead(&mut self, local: mir::Local) {
-        let path = Rc::new(
-            PathEnum::LocalVariable {
-                ordinal: local.as_usize(),
-            }
-            .into(),
-        );
+        let path = Path::new_local(local.as_usize());
         self.current_environment
             .update_value_at(path, abstract_value::BOTTOM.into());
     }
@@ -1136,7 +1190,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 if let Some((place, target)) = destination {
                     let target_path = self.visit_place(place);
                     let target_type = self.get_place_type(place);
-                    let return_value_path = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
+                    let return_value_path = Path::new_local(0);
                     let return_value =
                         self.lookup_path_and_refine_result(return_value_path, target_type);
                     self.current_environment
@@ -1157,6 +1211,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     self.report_calls_to_special_functions(known_name, actual_args);
                 }
                 self.handle_assume(&actual_args[0..1], destination, cleanup);
+                return true;
+            }
+            KnownFunctionNames::StdFutureFromGenerator => {
+                checked_assume!(actual_args.len() == 1);
+                self.async_fn_summary = Some(self.get_function_summary(&actual_args[0].1));
                 return true;
             }
             KnownFunctionNames::StdBeginPanic => {
@@ -1382,12 +1441,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if let Expression::CompileTimeConstant(ConstantDomain::Function(func_ref)) =
             &func_to_call.expression
         {
-            if func_ref.def_id.is_some() && func_ref.function_id.is_some() {
-                return self
-                    .summary_cache
-                    .get_summary_for_function_constant(func_ref, self.def_id)
-                    .clone();
-            }
+            return self
+                .summary_cache
+                .get_summary_for_function_constant(func_ref, self.def_id)
+                .clone();
         }
         Summary::default()
     }
@@ -1540,7 +1597,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if let Some((place, target)) = destination {
             // Assign function result to place
             let target_path = self.visit_place(place);
-            let return_value_path = Rc::new(PathEnum::LocalVariable { ordinal: 0 }.into());
+            let return_value_path = Path::new_local(0);
 
             // Transfer side effects
             if function_summary.is_not_default {
@@ -1554,7 +1611,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
                 // Effects on the call arguments
                 for (i, (target_path, _)) in actual_args.iter().enumerate() {
-                    let parameter_path = Rc::new(PathEnum::LocalVariable { ordinal: i + 1 }.into());
+                    let parameter_path = Path::new_local(i + 1);
                     self.transfer_and_refine(
                         &function_summary.side_effects,
                         target_path.clone(),
@@ -1624,7 +1681,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     ) {
         if let Some(cleanup_target) = cleanup {
             for (i, (target_path, _)) in actual_args.iter().enumerate() {
-                let parameter_path = Rc::new(PathEnum::LocalVariable { ordinal: i + 1 }.into());
+                let parameter_path = Path::new_local(i + 1);
                 self.transfer_and_refine(
                     &function_summary.unwind_side_effects,
                     target_path.clone(),
@@ -2440,7 +2497,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     #[logfn_inputs(TRACE)]
     fn visit_len(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         let place_ty = self.get_rustc_place_type(place);
-        let len_value = if let TyKind::Array(_, len) = place_ty {
+        let len_value = if let TyKind::Array(_, len) = &place_ty.sty {
             // We only get here if "-Z mir-opt-level=0" was specified.
             // todo: #52 Add a way to run an integration test with a non default compiler option.
             self.visit_constant(None, &len)
@@ -3172,13 +3229,29 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let base_path = match &place.base {
             mir::PlaceBase::Local(local) => {
                 let ordinal = local.as_usize();
-                let result: Rc<Path> = Rc::new(PathEnum::LocalVariable { ordinal }.into());
+                let result: Rc<Path> = Path::new_local(ordinal);
                 if place.projection.is_none() {
                     let ty = self.get_rustc_place_type(place);
-                    if let TyKind::Array(_, len) = ty {
-                        let len_val = self.visit_constant(None, &len);
-                        let len_path = Path::new_length(result.clone(), &self.current_environment);
-                        self.current_environment.update_value_at(len_path, len_val);
+                    match &ty.sty {
+                        TyKind::Array(_, len) => {
+                            let len_val = self.visit_constant(None, &len);
+                            let len_path =
+                                Path::new_length(result.clone(), &self.current_environment);
+                            self.current_environment.update_value_at(len_path, len_val);
+                        }
+                        TyKind::Generator(def_id, generic_args, ..) => {
+                            let func_const = self.constant_value_cache.get_function_constant_for(
+                                *def_id,
+                                ty,
+                                generic_args.substs,
+                                self.tcx,
+                                self.summary_cache,
+                            );
+                            let func_val = Rc::new(func_const.clone().into());
+                            self.current_environment
+                                .update_value_at(result.clone(), func_val);
+                        }
+                        _ => (),
                     }
                 }
                 result
@@ -3234,12 +3307,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, _) => PathSelector::Field(field.index()),
             mir::ProjectionElem::Index(local) => {
-                let local_path = Rc::new(
-                    PathEnum::LocalVariable {
-                        ordinal: local.as_usize(),
-                    }
-                    .into(),
-                );
+                let local_path = Path::new_local(local.as_usize());
                 let index_value =
                     self.lookup_path_and_refine_result(local_path, ExpressionType::Usize);
                 PathSelector::Index(index_value)
@@ -3264,18 +3332,17 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Returns an ExpressionType value corresponding to the Rustc type of the place.
     #[logfn_inputs(TRACE)]
     fn get_place_type(&mut self, place: &mir::Place<'tcx>) -> ExpressionType {
-        (self.get_rustc_place_type(place)).into()
+        (&self.get_rustc_place_type(place).sty).into()
     }
 
     /// Returns the rustc TyKind of the given place in memory.
     #[logfn_inputs(TRACE)]
-    fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> &'tcx TyKind<'tcx> {
+    fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> Ty<'tcx> {
         let base_type = match &place.base {
             mir::PlaceBase::Local(local) => {
-                let loc = &self.mir.local_decls[mir::Local::from(local.as_usize())];
-                &loc.ty.sty
+                self.mir.local_decls[mir::Local::from(local.as_usize())].ty
             }
-            mir::PlaceBase::Static(boxed_static) => &boxed_static.ty.sty,
+            mir::PlaceBase::Static(boxed_static) => boxed_static.ty,
         };
         match &place.projection {
             Some(boxed_projection) => {
@@ -3287,11 +3354,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
     /// This is a hacky and brittle way to navigate the Rust compiler's type system.
     /// Eventually it should be replaced with a comprehensive and principled mapping.
-    fn get_path_rustc_type(&mut self, path: &Rc<Path>) -> &'tcx TyKind<'tcx> {
+    fn get_path_rustc_type(&mut self, path: &Rc<Path>) -> Ty<'tcx> {
         match &path.value {
             PathEnum::LocalVariable { ordinal } => {
-                let loc = &self.mir.local_decls[mir::Local::from(*ordinal)];
-                &loc.ty.sty
+                self.mir.local_decls[mir::Local::from(*ordinal)].ty
             }
             PathEnum::QualifiedPath {
                 qualifier,
@@ -3301,13 +3367,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 let t = self.get_path_rustc_type(qualifier);
                 if let PathSelector::Field(ordinal) = **selector {
                     let adt = Self::get_dereferenced_type(t);
-                    if let TyKind::Adt(AdtDef { variants, .. }, substs) = adt {
+                    if let TyKind::Adt(AdtDef { variants, .. }, substs) = &adt.sty {
                         if let Some(variant_index) = variants.last() {
                             assume!(variant_index.index() == 0);
                             let variant = &variants[variant_index];
                             let field = &variant.fields[ordinal];
-                            let field_ty = field.ty(*self.tcx, substs);
-                            return &field_ty.sty;
+                            return field.ty(*self.tcx, substs);
                         }
                     }
                 }
@@ -3323,18 +3388,18 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     /// Returns the target type of a reference type.
-    fn get_dereferenced_type(ty: &'tcx TyKind<'tcx>) -> &'tcx TyKind<'tcx> {
-        match ty {
-            TyKind::Ref(_, t, _) => &t.sty,
+    fn get_dereferenced_type(ty: Ty<'tcx>) -> Ty<'tcx> {
+        match &ty.sty {
+            TyKind::Ref(_, t, _) => *t,
             _ => ty,
         }
     }
 
     /// Returns the element type of an array or slice type.
-    fn get_element_type(ty: &'tcx TyKind<'tcx>) -> &'tcx TyKind<'tcx> {
-        match ty {
-            TyKind::Array(t, _) => &t.sty,
-            TyKind::Slice(t) => &t.sty,
+    fn get_element_type(ty: Ty<'tcx>) -> Ty<'tcx> {
+        match &ty.sty {
+            TyKind::Array(t, _) => *t,
+            TyKind::Slice(t) => *t,
             _ => ty,
         }
     }
@@ -3343,30 +3408,30 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     #[logfn_inputs(TRACE)]
     fn get_type_for_projection_element(
         &self,
-        mut base_ty: &'tcx TyKind<'tcx>,
+        mut base_ty: Ty<'tcx>,
         boxed_place_projection: &rustc::mir::Projection<'tcx>,
-    ) -> &'tcx TyKind<'tcx> {
+    ) -> Ty<'tcx> {
         if let Some(boxed_base_projection) = &boxed_place_projection.base {
             base_ty = self.get_type_for_projection_element(base_ty, &boxed_base_projection);
         };
         match boxed_place_projection.elem {
-            mir::ProjectionElem::Deref => match base_ty {
+            mir::ProjectionElem::Deref => match &base_ty.sty {
                 TyKind::Adt(..) => base_ty,
-                TyKind::RawPtr(ty_and_mut) => &ty_and_mut.ty.sty,
-                TyKind::Ref(_, ty, _) => &ty.sty,
+                TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
+                TyKind::Ref(_, ty, _) => *ty,
                 _ => unreachable!(
                     "span: {:?}\nelem: {:?} type: {:?}",
                     self.current_span, boxed_place_projection.elem, base_ty
                 ),
             },
-            mir::ProjectionElem::Field(_, ty) => &ty.sty,
+            mir::ProjectionElem::Field(_, ty) => ty,
             mir::ProjectionElem::Index(_)
             | mir::ProjectionElem::ConstantIndex { .. }
-            | mir::ProjectionElem::Subslice { .. } => match base_ty {
+            | mir::ProjectionElem::Subslice { .. } => match &base_ty.sty {
                 TyKind::Adt(..) => base_ty,
-                TyKind::Array(ty, _) => &ty.sty,
-                TyKind::Ref(_, ty, _) => Self::get_element_type(&ty.sty),
-                TyKind::Slice(ty) => &ty.sty,
+                TyKind::Array(ty, _) => *ty,
+                TyKind::Ref(_, ty, _) => Self::get_element_type(*ty),
+                TyKind::Slice(ty) => *ty,
                 _ => unreachable!(
                     "span: {:?}\nelem: {:?} type: {:?}",
                     self.current_span, boxed_place_projection.elem, base_ty

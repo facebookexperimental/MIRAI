@@ -148,6 +148,22 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
                 }
             }
         }
+        Generator(def_id, subs, ..) => {
+            str.push_str("generator_");
+            str.push_str(qualified_type_name(tcx, def_id).as_str());
+            for sub in subs.substs {
+                if let UnpackedKind::Type(ty) = sub.unpack() {
+                    str.push('_');
+                    append_mangled_type(str, ty, tcx);
+                }
+            }
+        }
+        GeneratorWitness(binder) => {
+            for ty in binder.skip_binder().iter() {
+                str.push('_');
+                append_mangled_type(str, ty, tcx)
+            }
+        }
         Opaque(def_id, subs) => {
             str.push_str("impl_");
             str.push_str(qualified_type_name(tcx, def_id).as_str());
