@@ -1,20 +1,9 @@
 # Building and installing Z3 on Linux
 
-## Installing Z3 for Fedora
-
-The simplest case is when your Linux distribution has a pre-packaged recent version of Z3.
-Unfortunately Fedora seems to be the only distribution where this is the case.
-
-`dnf install z3-devel`
-
-This should work without any further special customization.
-
-## Installing Z3 from source for the non Fedora case
-
 On Linux, Z3 must be linked statically into MIRAI, otherwise there'll be a conflict between MIRAI and the rust compiler.
 
 The statically linked library that comes from the [prebuilt Z3 distributions](https://github.com/Z3Prover/z3/releases)
-do not work for MIRAI. To fix that the library must be using the PIC format.
+does not work for MIRAI. To fix that the library must be using the PIC format.
 
 To obtain such binary (if the one provided in the binaries directory does not work for you, or you are the poor soul
 who has to update the binaries directory), do the following:
