@@ -5,14 +5,15 @@ It is intended to become a widely used static analysis tool for Rust.
 
 ## Using MIRAI
 
-You'll need to install MIRAI as described [here](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md).
+You'll need to install MIRAI as described here for [MacOx and Windows](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md)
+and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Linux.md).
 
 To run mirai, use cargo with `RUSTC_WRAPPER` set to `mirai`.
 Use `rustup override set nightly-2019-MM-DD` to make Cargo use the same version of Rust as MIRAI. If you forget to do
 that you'll see an error message complaining about a dynamic load library not being found.
 
 The easiest way to get started is to first build your project in the normal way.
-Refer [this link](https://doc.rust-lang.org/1.30.0/book/first-edition/getting-started.html) for details
+Refer [this link](https://doc.rust-lang.org/1.30.0/book/2018-edition/ch01-00-getting-started.html) for details
 on compiling a cargo project.
 When there are no compile errors,
 no lint errors and no test failures, you can proceed to the next step and run MIRAI. For example:
@@ -24,8 +25,9 @@ RUSTC_WRAPPER=mirai cargo build
 The touch command (which needs to reference a real file in your project) forces Cargo to re-run rustc and to not assume
 that it's cached error messages are still correct.
 
-This will likely produce a lot of warnings, which you can then fix by adding annotations using this
- [crate](https://crates.io/crates/mirai-annotations). Keep running cargo build as above until there are no more warnings.
+This will likely produce a lot of warnings, which you can then fix by adding annotations declared in this
+[crate](https://crates.io/crates/mirai-annotations). Keep re-touching and running cargo build as above until
+there are no more warnings.
 
 At this stage your code will be better documented and more readable. Perhaps you'll also have found and fixed a few bugs.
 
@@ -57,7 +59,6 @@ for instructions on how to build, run and debug MIRAI.
 * Tutorials and worked examples
 * Loop discovery
 * Loop invariant inference
-* Make MIRAI work on Linux
 
 ## Join the MIRAI community
 <!-- * Website:

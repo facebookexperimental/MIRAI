@@ -1,4 +1,4 @@
-# Installation Guide
+# Installation Guide for MacOs and Windows
 
 In order to use MIRAI, you need to install Rust, install Z3, and install MIRAI into cargo.
 
@@ -45,10 +45,6 @@ where command. For example:
 where /r c:\ mirai.exe 
 ```
 
-For Linux, if the bundled library does not work, you'll have to build a
-customized Z3 [yourself](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Z3AndLinux.md).
-
-
 ## Installing MIRAI into cargo
 
 If you just want to use MIRAI you can simply do:
@@ -56,9 +52,6 @@ If you just want to use MIRAI you can simply do:
 cargo install --git https://github.com/facebookexperimental/MIRAI --force --version 1.0.3 mirai
 ```
 
-If you are running on Linux (not Fedora) you'll have to arrange for static linking of Z3:
-```
-export RUSTFLAGS='-Clink-arg=-L./binaries -Clink-arg=-lstdc++'
-```
+## Contributing to MIRAI
 
 If you want to help develop MIRAI see the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/DeveloperGuide.md)
