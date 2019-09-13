@@ -435,7 +435,7 @@ pub enum PathSelector {
 
     /// "Downcast" to a variant of an ADT. Currently, MIR only introduces
     /// this for ADTs with more than one variant. The value is the ordinal of the variant.
-    Downcast(usize),
+    Downcast(Rc<String>, usize),
 
     /// Select the struct model field with the given name.
     /// A model field is a specification construct used during MIRAI verification
@@ -460,7 +460,9 @@ impl Debug for PathSelector {
                 offset, min_length, from_end
             )),
             PathSelector::Subslice { from, to } => f.write_fmt(format_args!("[{} : {}]", from, to)),
-            PathSelector::Downcast(ordinal) => f.write_fmt(format_args!(" as {}", ordinal)),
+            PathSelector::Downcast(name, index) => {
+                f.write_fmt(format_args!(" as {}({})", name, *index))
+            }
             PathSelector::ModelField(name) => name.fmt(f),
         }
     }

@@ -3325,7 +3325,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 from: *from,
                 to: *to,
             },
-            mir::ProjectionElem::Downcast(_, index) => PathSelector::Downcast(index.as_usize()),
+            mir::ProjectionElem::Downcast(name, index) => {
+                use std::ops::Deref;
+                let name_str = match name {
+                    None => format!("variant#{}", index.as_usize()),
+                    Some(name) => String::from(name.as_str().deref()),
+                };
+                PathSelector::Downcast(Rc::new(name_str), index.as_usize())
+            }
         }
     }
 
