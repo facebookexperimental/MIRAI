@@ -153,6 +153,10 @@ impl MiraiCallbacks {
             || self.file_name.contains("/keccak")
             || self.file_name.contains("/h2")
             || self.file_name.contains("/chrono")
+            || self.file_name.contains("/proc-macro2")
+            || self.file_name.contains("/parking_lot")
+            || self.file_name.contains("/serde")
+            || self.file_name.contains("/sled")
         {
             return;
         }
