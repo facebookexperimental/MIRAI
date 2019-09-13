@@ -16,7 +16,6 @@
 #![feature(box_syntax)]
 #![feature(const_vec_new)]
 #![feature(vec_remove_item)]
-#![feature(bind_by_move_pattern_guards)]
 
 extern crate rustc;
 extern crate rustc_data_structures;
