@@ -348,10 +348,11 @@ fn type_of(tcx: TyCtxt<'_>, def_id: DefId) -> Option<&rustc::ty::TyS<'_>> {
 }
 
 fn push_component_name(component_data: &DefPathData, target: &mut String) {
+    use std::ops::Deref;
     use DefPathData::*;
     match component_data {
         TypeNs(name) | ValueNs(name) | MacroNs(name) | LifetimeNs(name) | GlobalMetaData(name) => {
-            target.push_str(name.as_str().get());
+            target.push_str(name.as_str().deref());
         }
         _ => target.push_str(match component_data {
             CrateRoot => "crate_root",
