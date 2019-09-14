@@ -498,13 +498,15 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
 
         let directory_path = Path::new(summary_store_directory_str);
         let store_path = directory_path.join(".summary_store.sled");
-        if !store_path.exists() && env::var("MIRAI_START_FRESH").is_err() {
+        if !store_path.exists() || env::var("MIRAI_SHARE_PERSIST_STORE").is_err() {
             let tar_path = directory_path.join(".summary_store.tar");
             if let Ok(mut f) = File::create(tar_path.clone()) {
-                info!("creating a non default new summary store");
-                {
-                    let bytes = include_bytes!("../../binaries/summary_store.tar");
-                    f.write_all(bytes).unwrap();
+                if env::var("MIRAI_START_FRESH").is_err() {
+                    info!("creating a non default new summary store");
+                    {
+                        let bytes = include_bytes!("../../binaries/summary_store.tar");
+                        f.write_all(bytes).unwrap();
+                    }
                 }
             }
             let mut ar = Archive::new(File::open(tar_path).unwrap());

@@ -23,6 +23,7 @@ use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::rc::Rc;
 use syntax::errors::DiagnosticBuilder;
+use tempdir::TempDir;
 
 /// Private state used to implement the callbacks.
 pub struct MiraiCallbacks {
@@ -172,7 +173,13 @@ impl MiraiCallbacks {
         {
             return;
         }
-        let summary_store_path = String::from(self.output_directory.to_str().unwrap());
+        let output_dir = String::from(self.output_directory.to_str().unwrap());
+        let summary_store_path = if std::env::var("MIRAI_SHARE_PERSIST_STORE").is_ok() {
+            output_dir
+        } else {
+            let temp_dir = TempDir::new("mirai_temp_dir").expect("failed to create a temp dir");
+            String::from(temp_dir.into_path().to_str().unwrap())
+        };
         info!(
             "storing summaries for {} at {}/.summary_store.sled",
             self.file_name, summary_store_path
