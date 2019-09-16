@@ -1218,7 +1218,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 self.async_fn_summary = Some(self.get_function_summary(&actual_args[0].1));
                 return true;
             }
-            KnownFunctionNames::StdBeginPanic => {
+            KnownFunctionNames::StdBeginPanic | KnownFunctionNames::StdBeginPanicFmt => {
                 if self.check_for_errors {
                     self.report_calls_to_special_functions(known_name, actual_args);
                 }
@@ -1484,7 +1484,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             };
             if !refined_precondition_as_bool.unwrap_or(true) {
                 // The precondition is definitely false.
-                if entry_cond_as_bool.unwrap_or(false) && is_public(self.def_id, &self.tcx) {
+                if entry_cond_as_bool.unwrap_or(false)
+                    && self.function_being_analyzed_is_public_or_root()
+                {
                     // If this function is called, we always get to this call.
                     // Since this function is public, we have assume that it will get called.
                     // If this function is not meant to be called, it should add an explicit
@@ -1545,7 +1547,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// be true at this point and/or the call is not known to be unreachable.
     #[logfn_inputs(TRACE)]
     fn warn_if_public(&mut self, func_to_call: &Rc<AbstractValue>, precondition: &Precondition) {
-        if is_public(self.def_id, &self.tcx)
+        if self.function_being_analyzed_is_public_or_root()
             || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
             if !self
@@ -1801,6 +1803,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         // We treat unreachable!() as an assumption rather than an assertion to prove.
                         return;
                     } else {
+                        if path_cond.is_none() && msg.as_str() == "statement is reachable" {
+                            // verify_unreachable should always complain if possibly reachable
+                            // and the current function is public or root.
+                            path_cond = Some(true);
+                        }
                         msg.clone()
                     }
                 } else {
@@ -1808,7 +1815,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 };
                 let span = self.current_span;
 
-                if path_cond.unwrap_or(false) && is_public(self.def_id, &self.tcx) {
+                if path_cond.unwrap_or(false) && self.function_being_analyzed_is_public_or_root() {
                     // We always get to this call and we have to assume that the function will
                     // get called, so keep the message certain.
                     let err = self.session.struct_span_warn(span, msg.as_str());
@@ -1897,7 +1904,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
-        if is_public(self.def_id, &self.tcx)
+        if self.function_being_analyzed_is_public_or_root()
             || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
             // We expect public functions to have programmer supplied preconditions
@@ -1909,6 +1916,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         }
 
         Some(warning)
+    }
+
+    /// Returns true if the function being analyzed is public or if it is a call tree root.
+    #[logfn_inputs(TRACE)]
+    fn function_being_analyzed_is_public_or_root(&mut self) -> bool {
+        is_public(self.def_id, &self.tcx)
+            || self.summary_cache.get_dependents(&self.def_id).is_empty()
     }
 
     /// Adds a (rpath, rvalue) pair to the current environment for every pair in effects
@@ -2027,7 +2041,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
                 // At this point, we don't know that this assert is unreachable and we don't know
                 // that the condition is as expected, so we need to warn about it somewhere.
-                if is_public(self.def_id, &self.tcx)
+                if self.function_being_analyzed_is_public_or_root()
                     || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
                 {
                     // We expect public functions to have programmer supplied preconditions
