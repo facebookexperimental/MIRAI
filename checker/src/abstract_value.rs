@@ -14,7 +14,7 @@ use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
 
 use log_derive::{logfn, logfn_inputs};
-use mirai_annotations::{checked_assume, checked_precondition};
+use mirai_annotations::{assume_unreachable, checked_assume, checked_precondition};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -695,10 +695,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ),
             Expression::Widen { path, operand } => operand.dereference(target_type).widen(path),
             _ => {
-                unreachable!(
+                debug!(
                     "found unhandled expression that is of type reference: {:?}",
                     self.expression
                 );
+                assume_unreachable!();
             }
         }
     }
@@ -1510,12 +1511,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn get_cached_interval(&self) -> Rc<IntervalDomain> {
         {
-            let mut cache = self.interval.borrow_mut();
-            if cache.is_some() {
-                return cache.as_ref().unwrap().clone();
+            let mut cached_interval = self.interval.borrow_mut();
+            let interval_opt = cached_interval.as_ref();
+            if let Some(interval) = interval_opt {
+                return interval.clone();
             }
             let interval = self.get_as_interval();
-            *cache = Some(Rc::new(interval));
+            *cached_interval = Some(Rc::new(interval));
         }
         self.get_cached_interval()
     }
@@ -1727,7 +1729,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         )
                     }
                 } else {
-                    unreachable!()
+                    assume_unreachable!()
                 }
             }
             Expression::Variable { path, var_type } => {
@@ -1768,9 +1770,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     ) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Top | Expression::Bottom => self.clone(),
-            Expression::AbstractHeapAddress(ordinal) => {
-                AbstractValue::make_from(Expression::AbstractHeapAddress(*ordinal + fresh), 1)
-            }
+            Expression::AbstractHeapAddress(ordinal) => AbstractValue::make_from(
+                Expression::AbstractHeapAddress(ordinal.wrapping_add(fresh)),
+                1,
+            ),
             Expression::Add { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .addition(right.refine_parameters(arguments, fresh)),
