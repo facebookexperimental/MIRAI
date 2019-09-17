@@ -844,3 +844,88 @@ pub mod alloc {
         }
     }
 }
+
+pub mod rand {
+    pub mod rngs {
+        pub mod std {
+            pub struct StdRng {
+                _value: usize,
+            }
+            impl StdRng {
+                pub fn new() -> StdRng {
+                    StdRng { _value: 0 }
+                }
+            }
+        }
+    }
+    pub mod Rng {
+        use crate::foreign_contracts::rand::rngs;
+        pub fn gen_range__rand_rngs_std_StdRng_usize_usize_usize(
+            _self: &rngs::std::StdRng,
+            lower: usize,
+            upper: usize,
+        ) -> usize {
+            let res = result!();
+            assume!(res >= lower && res < upper);
+            res
+        }
+        pub fn gen_range__rand_rngs_std_StdRng_u8_u8_u8(
+            _self: &rngs::std::StdRng,
+            lower: u8,
+            upper: u8,
+        ) -> u8 {
+            let res = result!();
+            assume!(res >= lower && res < upper);
+            res
+        }
+        pub fn gen_range__rand_rngs_std_StdRng_u16_u16_u16(
+            _self: &rngs::std::StdRng,
+            lower: u16,
+            upper: u16,
+        ) -> u16 {
+            let res = result!();
+            assume!(res >= lower && res < upper);
+            res
+        }
+        pub fn gen_range__rand_rngs_std_StdRng_u32_u32_u32(
+            _self: &rngs::std::StdRng,
+            lower: u32,
+            upper: u32,
+        ) -> u32 {
+            let res = result!();
+            assume!(res >= lower && res < upper);
+            res
+        }
+        pub fn gen_range__rand_rngs_std_StdRng_u64_u64_u64(
+            _self: &rngs::std::StdRng,
+            lower: u64,
+            upper: u64,
+        ) -> u64 {
+            let res = result!();
+            assume!(res >= lower && res < upper);
+            res
+        }
+        pub fn gen_range__rand_rngs_std_StdRng_f32_f32_f32(
+            _self: &rngs::std::StdRng,
+            lower: f32,
+            upper: f32,
+        ) -> f32 {
+            let res = result!();
+            assume!(res >= lower && res < upper);
+            res
+        }
+        pub fn gen_range__rand_rngs_std_StdRng_f64_f64_f64(
+            _self: &rngs::std::StdRng,
+            lower: f64,
+            upper: f64,
+        ) -> f64 {
+            let res = result!();
+            assume!(res >= lower && res < upper);
+            res
+        }
+        pub fn gen_bool__rand_rngs_std_StdRng(_self: &rngs::std::StdRng, probability: f64) -> bool {
+            precondition!(probability >= 0.0 && probability <= 1.0);
+            result!()
+        }
+    }
+}

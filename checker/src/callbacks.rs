@@ -174,7 +174,7 @@ impl MiraiCallbacks {
             return;
         }
         let output_dir = String::from(self.output_directory.to_str().unwrap());
-        let summary_store_path = if std::env::var("MIRAI_SHARE_PERSIST_STORE").is_ok() {
+        let summary_store_path = if std::env::var("MIRAI_SHARE_PERSISTENT_STORE").is_ok() {
             output_dir
         } else {
             let temp_dir = TempDir::new("mirai_temp_dir").expect("failed to create a temp dir");

@@ -438,13 +438,14 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     ) -> PersistentSummaryCache<'a, 'tcx> {
         use fs2::FileExt;
         use rand::{thread_rng, Rng};
+        use std::path::Path;
         use std::thread;
         use std::time::Duration;
 
         let mut rng = thread_rng();
         let summary_store_path =
             Self::create_default_summary_store_if_needed(&summary_store_directory_str);
-        let lock_path = summary_store_path.join("lock");
+        let lock_path = Path::new(&summary_store_directory_str).join("lock");
         let mut options = fs::OpenOptions::new();
         options.create(true);
         options.read(true);
@@ -498,7 +499,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
 
         let directory_path = Path::new(summary_store_directory_str);
         let store_path = directory_path.join(".summary_store.sled");
-        if !store_path.exists() || env::var("MIRAI_SHARE_PERSIST_STORE").is_err() {
+        if !store_path.exists() || env::var("MIRAI_SHARE_PERSISTENT_STORE").is_err() {
             let tar_path = directory_path.join(".summary_store.tar");
             if let Ok(mut f) = File::create(tar_path.clone()) {
                 if env::var("MIRAI_START_FRESH").is_err() {
