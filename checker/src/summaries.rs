@@ -12,7 +12,7 @@ use crate::path::{Path, PathEnum};
 use crate::utils;
 
 use log_derive::{logfn, logfn_inputs};
-use mirai_annotations::assume;
+use mirai_annotations::{assume, assume_unreachable};
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use rustc_errors::SourceMapper;
@@ -294,6 +294,8 @@ pub fn summarize(
                 },
                 1,
             );
+            // We are extracting a subset of information out of env, which has not overflowed.
+            assume!(side_effects.len() < usize::max_value());
             side_effects.push((return_path, return_value.clone()));
             result = Some(return_value);
         }
@@ -319,19 +321,22 @@ pub fn summarize(
 /// crate, or a different version of the current crate.
 #[logfn(TRACE)]
 fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precondition> {
-    let mut result = vec![];
-    for precondition in preconditions.iter() {
-        let mut precond = precondition.clone();
-        if !precondition.spans.is_empty() {
-            let span = tcx
-                .sess
-                .source_map()
-                .call_span_if_macro(*precondition.spans.last().unwrap());
-            precond.provenance = Some(Rc::new(tcx.sess.source_map().span_to_string(span)));
-        }
-        result.push(precond);
-    }
-    result
+    preconditions
+        .iter()
+        .map(|precondition| {
+            let mut precond = precondition.clone();
+            if !precondition.spans.is_empty() {
+                let last_span = precondition.spans.last();
+                assume!(last_span.is_some());
+                let span = tcx
+                    .sess
+                    .source_map()
+                    .call_span_if_macro(*last_span.unwrap());
+                precond.provenance = Some(Rc::new(tcx.sess.source_map().span_to_string(span)));
+            }
+            precond
+        })
+        .collect()
 }
 
 /// When a precondition is used during the compilation of the crate in which it is defined, we
@@ -372,6 +377,8 @@ fn extract_side_effects(
                     continue;
                 }
             }
+            // We are extracting a subset of information out of env, which has not overflowed.
+            assume!(result.len() < usize::max_value());
             result.push((path.clone(), value.clone()));
         }
     }
@@ -399,6 +406,8 @@ fn extract_reachable_heap_allocations(
                 {
                     path.record_heap_addresses(&mut new_roots);
                     value.record_heap_addresses(&mut new_roots);
+                    // We are extracting a subset of information out of env, which has not overflowed.
+                    assume!(result.len() < usize::max_value());
                     result.push((path.clone(), value.clone()));
                 }
             }
@@ -464,13 +473,17 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
                     // Fall through to the random sleep interval below.
                 }
                 Err(e) => {
-                    panic!("Could not open lock file: {}", e);
+                    debug!("Could not open lock file: {}", e);
+                    assume_unreachable!();
                 }
             }
             let num_millis = rng.gen_range(100, 200);
             thread::sleep(Duration::from_millis(num_millis));
         }
-        let db = Db::start(config).unwrap_or_else(|err| unreachable!(format!("{} ", err)));
+        let db = Db::start(config).unwrap_or_else(|err| {
+            debug!("{} ", err);
+            assume_unreachable!();
+        });
         PersistentSummaryCache {
             db,
             cache: HashMap::new(),

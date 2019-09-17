@@ -13,6 +13,7 @@ use crate::z3_solver::Z3Solver;
 
 use log::{info, warn};
 use log_derive::{logfn, logfn_inputs};
+use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use rustc_driver::Compilation;
@@ -93,7 +94,12 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     #[logfn(TRACE)]
     fn after_analysis(&mut self, compiler: &interface::Compiler) -> Compilation {
         compiler.session().abort_if_errors();
-        if self.output_directory.to_str().unwrap().contains("/build/") {
+        if self
+            .output_directory
+            .to_str()
+            .expect("valid string")
+            .contains("/build/")
+        {
             // No need to analyze a build script, but do generate code.
             return Compilation::Continue;
         }
@@ -173,12 +179,12 @@ impl MiraiCallbacks {
         {
             return;
         }
-        let output_dir = String::from(self.output_directory.to_str().unwrap());
+        let output_dir = String::from(self.output_directory.to_str().expect("valid string"));
         let summary_store_path = if std::env::var("MIRAI_SHARE_PERSISTENT_STORE").is_ok() {
             output_dir
         } else {
             let temp_dir = TempDir::new("mirai_temp_dir").expect("failed to create a temp dir");
-            String::from(temp_dir.into_path().to_str().unwrap())
+            String::from(temp_dir.into_path().to_str().expect("valid string"))
         };
         info!(
             "storing summaries for {} at {}/.summary_store.sled",
@@ -219,7 +225,9 @@ impl MiraiCallbacks {
                 info!(" ");
             }
         }
-        self.emit_or_check_diagnostics(&mut analysis_info.diagnostics_for);
+        if !self.emit_or_check_diagnostics(&mut analysis_info.diagnostics_for) {
+            compiler.session().fatal("test failed");
+        }
     }
 
     /// Traverse the entire call graph and collect the def ids of all called functions
@@ -253,6 +261,9 @@ impl MiraiCallbacks {
                                         let summary = persistent_summary_cache
                                             .get_persistent_summary_for(&summary_key);
                                         if !summary.is_not_default {
+                                            // We can safely assume that rustc will have run out of
+                                            // memory long before this vector overflows.
+                                            assume!(defs_to_analyze.len() < usize::max_value());
                                             defs_to_analyze.push(*def_id);
                                         }
                                     }
@@ -402,7 +413,7 @@ impl MiraiCallbacks {
     fn emit_or_check_diagnostics(
         &mut self,
         diagnostics_for: &mut HashMap<DefId, Vec<DiagnosticBuilder<'_>>>,
-    ) {
+    ) -> bool {
         if self.test_run {
             let mut expected_errors = expected_errors::ExpectedErrors::new(self.file_name.as_str());
             let mut diags = vec![];
@@ -410,12 +421,13 @@ impl MiraiCallbacks {
                 db.cancel();
                 db.clone().buffer(&mut diags)
             });
-            expected_errors.check_messages(diags);
+            expected_errors.check_messages(diags)
         } else {
             fn emit(db: &mut DiagnosticBuilder<'_>) {
                 db.emit();
             }
             diagnostics_for.values_mut().flatten().for_each(emit);
+            true
         }
     }
 

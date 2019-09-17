@@ -5,6 +5,7 @@
 
 use log::debug;
 use log_derive::{logfn, logfn_inputs};
+use mirai_annotations::assume_unreachable;
 use rustc::hir::def_id::DefId;
 use rustc::hir::map::DefPathData;
 use rustc::hir::{ItemKind, Node, TraitItemKind};
@@ -278,7 +279,7 @@ fn crate_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
         let cdata = tcx.crate_data_as_rc_any(def_id.krate);
         let cdata = cdata
             .downcast_ref::<rustc_metadata::cstore::CrateMetadata>()
-            .unwrap();
+            .expect("expected tcx to provide an actual crate");
         cdata.name.as_str().to_string()
     }
 }
@@ -368,7 +369,7 @@ fn push_component_name(component_data: &DefPathData, target: &mut String) {
             Ctor => "ctor",
             AnonConst => "constant",
             ImplTrait => "implement_trait",
-            _ => unreachable!(),
+            _ => assume_unreachable!(),
         }),
     };
 }

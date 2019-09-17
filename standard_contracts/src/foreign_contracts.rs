@@ -396,6 +396,13 @@ pub mod core {
         }
 
         impl<T> Option<T> {
+            pub fn as_ref(&self) -> core::option::Option<&T> {
+                match self {
+                    Self::None => core::option::Option::None,
+                    _ => Some(result!()),
+                }
+            }
+
             pub fn is_none(&self) -> bool {
                 match self {
                     Self::None => true,
@@ -661,6 +668,14 @@ pub mod core {
                 collection.len() == 0
             }
 
+            pub fn last<T>(collection: &[T]) -> Option<&T> {
+                if collection.len() == 0 {
+                    None
+                } else {
+                    Some(&collection[collection.len() - 1])
+                }
+            }
+
             pub fn len<T>(collection: &[T]) -> usize {
                 collection.len()
             }
@@ -738,6 +753,19 @@ pub mod core {
 }
 
 pub mod std {
+    pub mod fmt {
+        pub struct Arguments<'a> {
+            // Format string pieces to print.
+            pub pieces: &'a [&'a str],
+        }
+
+        impl<'a> Arguments<'a> {
+            pub fn new_v1(pieces: &'a [&'a str]) -> Arguments<'a> {
+                Arguments { pieces }
+            }
+        }
+    }
+
     pub mod io {
         pub mod stdio {
             use crate::foreign_contracts::core::fmt;
@@ -809,6 +837,14 @@ pub mod alloc {
                 self.len == 0
             }
 
+            pub fn last(&mut self) -> Option<T> {
+                if self.len == 0 {
+                    None
+                } else {
+                    Some(result!())
+                }
+            }
+
             pub fn len(&self) -> usize {
                 self.len
             }
@@ -818,7 +854,7 @@ pub mod alloc {
                     None
                 } else {
                     self.len -= 1;
-                    result!()
+                    Some(result!())
                 }
             }
 
