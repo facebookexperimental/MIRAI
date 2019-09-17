@@ -21,6 +21,7 @@ use sled::{ConfigBuilder, Db};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
 use std::fs;
+use std::fs::File;
 use std::ops::Deref;
 use std::rc::Rc;
 use syntax_pos;
@@ -418,6 +419,7 @@ pub struct PersistentSummaryCache<'a, 'tcx> {
     dependencies: HashMap<DefId, Vec<DefId>>,
     key_cache: HashMap<DefId, Rc<String>>,
     type_context: &'a TyCtxt<'tcx>,
+    pub lock_file: File,
 }
 
 impl<'a, 'tcx> Debug for PersistentSummaryCache<'a, 'tcx> {
@@ -442,36 +444,26 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         let mut rng = thread_rng();
         let summary_store_path =
             Self::create_default_summary_store_if_needed(&summary_store_directory_str);
-        let db_path = summary_store_path.join("db");
+        let lock_path = summary_store_path.join("lock");
         let mut options = fs::OpenOptions::new();
         options.create(true);
         options.read(true);
         options.write(true);
         let config_builder = ConfigBuilder::new().path(summary_store_path.clone());
         let config;
+        let lock_file;
         loop {
-            match options.open(&db_path) {
+            match options.open(&lock_path) {
                 Ok(file) => {
                     if file.try_lock_exclusive().is_ok() {
-                        // Give other processes a chance to fail to get the lock and go to sleep.
-                        thread::sleep(Duration::from_millis(1));
-                        // Have to let the lock go, otherwise config_builder.build() fails.
-                        file.unlock().unwrap();
-                        // The call to build will still panic if another process intervenes,
-                        // but the Sled API provides no way to prevent that.
-                        // At this point, however, it is somewhat unlikely.
+                        lock_file = file;
                         config = config_builder.build();
                         break;
                     }
                     // Fall through to the random sleep interval below.
                 }
-                Err(..) => {
-                    // Probably the file does not yet exist because MIRAI_START_FRESH
-                    // has been specified. So just try to create it via config_builder.build().
-                    // If there is another reason for failure, it will probably show up in the
-                    // panic from build.
-                    config = config_builder.build();
-                    break;
+                Err(e) => {
+                    panic!("Could not open lock file: {}", e);
                 }
             }
             let num_millis = rng.gen_range(100, 200);
@@ -487,6 +479,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             key_cache: HashMap::new(),
             dependencies: HashMap::new(),
             type_context,
+            lock_file,
         }
     }
 
