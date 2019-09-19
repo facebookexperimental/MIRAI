@@ -164,6 +164,8 @@ impl MiraiCallbacks {
             || self.file_name.contains("/parking_lot")
             || self.file_name.contains("/serde")
             || self.file_name.contains("/sled")
+            || self.file_name.contains("types/src")
+            || self.file_name.contains("/clap")
         {
             return;
         }

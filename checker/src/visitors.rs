@@ -972,7 +972,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if self.check_for_errors {
             // Done with fixed point, so prepare to summarize.
             let return_guard = self.current_environment.entry_condition.as_bool_if_known();
-            if return_guard.unwrap_or(false) {
+            if return_guard.unwrap_or(false) || self.exit_environment.value_map.is_empty() {
                 self.exit_environment = self.current_environment.clone();
             } else if return_guard.unwrap_or(true) {
                 self.exit_environment = self.current_environment.join(
@@ -1996,15 +1996,12 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let not_cond_val = cond_val.logical_not();
         // Propagate the entry condition to the successor blocks, conjoined with cond (or !cond).
         if let Some(cleanup_target) = cleanup {
-            let cleanup_condition = self.current_environment.entry_condition.and(if expected {
-                not_cond_val.clone()
-            } else {
-                cond_val.clone()
-            });
+            // Assume that the assertion does not fail. The code below will add a precondition
+            // to assure that.
             self.current_environment.exit_conditions = self
                 .current_environment
                 .exit_conditions
-                .insert(cleanup_target, cleanup_condition);
+                .insert(cleanup_target, abstract_value::FALSE.into());
         };
         let exit_condition = self.current_environment.entry_condition.and(if expected {
             cond_val.clone()
