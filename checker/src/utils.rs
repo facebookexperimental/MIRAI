@@ -42,7 +42,13 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_>) -> bool {
             Node::Expr(rustc::hir::Expr {
                 node: rustc::hir::ExprKind::Closure(..),
                 ..
-            }) => false,
+            }) => {
+                if let Some(parent_def_id) = tcx.parent(def_id) {
+                    is_public(parent_def_id, tcx)
+                } else {
+                    false
+                }
+            }
             Node::Item(item) => {
                 if let ItemKind::Fn(..) = item.node {
                     return item.vis.node.is_pub();

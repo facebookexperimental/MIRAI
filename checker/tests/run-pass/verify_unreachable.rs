@@ -6,6 +6,8 @@
 
 // A test that uses built-in contracts for the Vec struct.
 
+#![allow(unused)]
+
 #[macro_use]
 extern crate mirai_annotations;
 
@@ -17,12 +19,8 @@ fn foo1(i: i32) {
 
 fn foo2(i: i32) {
     if i < 10 {
-        verify_unreachable!(); //~ related location
+        verify_unreachable!(); //~ statement is reachable
     }
 }
 
-pub fn main() {
-    foo1(1);
-    foo2(2); //~ statement is reachable
-    foo2(10);
-}
+pub fn main() {}
