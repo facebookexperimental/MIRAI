@@ -212,7 +212,7 @@ impl ConstantDomain {
                 ExpressionType::I32 => i32::overflowing_add(*val1 as i32, *val2 as i32).1,
                 ExpressionType::I16 => i16::overflowing_add(*val1 as i16, *val2 as i16).1,
                 ExpressionType::I8 => i8::overflowing_add(*val1 as i8, *val2 as i8).1,
-                _ => unreachable!("{:?}", target_type),
+                _ => return ConstantDomain::Bottom,
             }
             .into(),
             (ConstantDomain::U128(val1), ConstantDomain::U128(val2)) => match target_type {
@@ -222,7 +222,7 @@ impl ConstantDomain {
                 ExpressionType::U32 => u32::overflowing_add(*val1 as u32, *val2 as u32).1,
                 ExpressionType::U16 => u16::overflowing_add(*val1 as u16, *val2 as u16).1,
                 ExpressionType::U8 => u8::overflowing_add(*val1 as u8, *val2 as u8).1,
-                _ => unreachable!("{:?}", target_type),
+                _ => return ConstantDomain::Bottom,
             }
             .into(),
             _ => ConstantDomain::Bottom,
@@ -519,7 +519,7 @@ impl ConstantDomain {
                     ExpressionType::I32 => i32::overflowing_mul(*val1 as i32, *val2 as i32).1,
                     ExpressionType::I16 => i16::overflowing_mul(*val1 as i16, *val2 as i16).1,
                     ExpressionType::I8 => i8::overflowing_mul(*val1 as i8, *val2 as i8).1,
-                    _ => unreachable!("target_type {:?}", target_type),
+                    _ => return ConstantDomain::Bottom,
                 };
                 result.into()
             }
@@ -533,7 +533,7 @@ impl ConstantDomain {
                     ExpressionType::U32 => u32::overflowing_mul(*val1 as u32, *val2 as u32).1,
                     ExpressionType::U16 => u16::overflowing_mul(*val1 as u16, *val2 as u16).1,
                     ExpressionType::U8 => u8::overflowing_mul(*val1 as u8, *val2 as u8).1,
-                    _ => unreachable!("target_type {:?}", target_type),
+                    _ => return ConstantDomain::Bottom,
                 };
                 result.into()
             }
@@ -649,7 +649,7 @@ impl ConstantDomain {
                 ExpressionType::I32 => i32::overflowing_shl(*val1 as i32, val2).1,
                 ExpressionType::I16 => i16::overflowing_shl(*val1 as i16, val2).1,
                 ExpressionType::I8 => i8::overflowing_shl(*val1 as i8, val2).1,
-                _ => unreachable!("{:?}", target_type),
+                _ => return ConstantDomain::Bottom,
             }
             .into(),
             (ConstantDomain::U128(val1), Some(val2)) => match target_type {
@@ -659,7 +659,7 @@ impl ConstantDomain {
                 ExpressionType::U32 => u32::overflowing_shl(*val1 as u32, val2).1,
                 ExpressionType::U16 => u16::overflowing_shl(*val1 as u16, val2).1,
                 ExpressionType::U8 => u8::overflowing_shl(*val1 as u8, val2).1,
-                _ => unreachable!("{:?}", target_type),
+                _ => return ConstantDomain::Bottom,
             }
             .into(),
             _ => ConstantDomain::Bottom,
@@ -701,7 +701,7 @@ impl ConstantDomain {
                 ExpressionType::I32 => i32::overflowing_shr(*val1 as i32, val2).1,
                 ExpressionType::I16 => i16::overflowing_shr(*val1 as i16, val2).1,
                 ExpressionType::I8 => i8::overflowing_shr(*val1 as i8, val2).1,
-                _ => unreachable!("{:?}", target_type),
+                _ => return ConstantDomain::Bottom,
             }
             .into(),
             (ConstantDomain::U128(val1), Some(val2)) => match target_type {
@@ -711,7 +711,7 @@ impl ConstantDomain {
                 ExpressionType::U32 => u32::overflowing_shr(*val1 as u32, val2).1,
                 ExpressionType::U16 => u16::overflowing_shr(*val1 as u16, val2).1,
                 ExpressionType::U8 => u8::overflowing_shr(*val1 as u8, val2).1,
-                _ => unreachable!("{:?}", target_type),
+                _ => return ConstantDomain::Bottom,
             }
             .into(),
             _ => ConstantDomain::Bottom,
@@ -751,7 +751,7 @@ impl ConstantDomain {
                 ExpressionType::I32 => i32::overflowing_sub(*val1 as i32, *val2 as i32).1,
                 ExpressionType::I16 => i16::overflowing_sub(*val1 as i16, *val2 as i16).1,
                 ExpressionType::I8 => i8::overflowing_sub(*val1 as i8, *val2 as i8).1,
-                _ => unreachable!("{:?}", target_type),
+                _ => return ConstantDomain::Bottom,
             }
             .into(),
             (ConstantDomain::U128(val1), ConstantDomain::U128(val2)) => match target_type {
@@ -761,7 +761,7 @@ impl ConstantDomain {
                 ExpressionType::U32 => u32::overflowing_sub(*val1 as u32, *val2 as u32).1,
                 ExpressionType::U16 => u16::overflowing_sub(*val1 as u16, *val2 as u16).1,
                 ExpressionType::U8 => u8::overflowing_sub(*val1 as u8, *val2 as u8).1,
-                _ => unreachable!("{:?}", target_type),
+                _ => return ConstantDomain::Bottom,
             }
             .into(),
             _ => ConstantDomain::Bottom,

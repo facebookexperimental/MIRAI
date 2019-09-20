@@ -18,7 +18,9 @@ use crate::summaries::{PersistentSummaryCache, Precondition, Summary};
 use crate::utils::{self, is_public};
 
 use log_derive::logfn_inputs;
-use mirai_annotations::{assume, checked_assume, checked_assume_eq, precondition, verify};
+use mirai_annotations::{
+    assume, assume_unreachable, checked_assume, checked_assume_eq, precondition, verify,
+};
 use rustc::session::Session;
 use rustc::ty::subst::SubstsRef;
 use rustc::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
@@ -259,7 +261,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     fn get_first_part_of_target_path_type_tuple(&mut self, path: &Rc<Path>) -> ExpressionType {
         match &self.get_path_rustc_type(path).sty {
             TyKind::Tuple(types) => (&types[0].expect_ty().sty).into(),
-            _ => unreachable!(),
+            _ => assume_unreachable!(),
         }
     }
 
@@ -414,7 +416,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             Expression::AbstractHeapAddress(ordinal) => {
                 Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into())
             }
-            _ => unreachable!(),
+            _ => assume_unreachable!(),
         };
         let discriminant = Path::new_discriminant(
             Path::new_field(root_path.clone(), 0, &self.current_environment),
@@ -430,6 +432,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 i,
                 &self.current_environment,
             );
+            // skip(1) above ensures this
+            assume!(i < usize::max_value());
             let param_path = Path::new_local(i + 1);
             let ty: ExpressionType = (&loc.ty.sty).into();
             let value = self.lookup_path_and_refine_result(param_path, ty);
@@ -780,7 +784,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         self.current_span = source_info.span;
         match kind {
             mir::StatementKind::Assign(place, rvalue) => self.visit_assign(place, rvalue.borrow()),
-            mir::StatementKind::FakeRead(..) => unreachable!(),
+            mir::StatementKind::FakeRead(..) => assume_unreachable!(),
             mir::StatementKind::SetDiscriminant {
                 place,
                 variant_index,
@@ -789,7 +793,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             mir::StatementKind::StorageDead(local) => self.visit_storage_dead(*local),
             mir::StatementKind::InlineAsm(inline_asm) => self.visit_inline_asm(inline_asm),
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
-            mir::StatementKind::AscribeUserType(..) => unreachable!(),
+            mir::StatementKind::AscribeUserType(..) => assume_unreachable!(),
             mir::StatementKind::Nop => (),
         }
     }
@@ -880,7 +884,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 target,
                 unwind,
             } => self.visit_drop(location, *target, *unwind),
-            mir::TerminatorKind::DropAndReplace { .. } => unreachable!(),
+            mir::TerminatorKind::DropAndReplace { .. } => assume_unreachable!(),
             mir::TerminatorKind::Call {
                 func,
                 args,
@@ -895,10 +899,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 target,
                 cleanup,
             } => self.visit_assert(cond, *expected, msg, *target, *cleanup),
-            mir::TerminatorKind::Yield { .. } => unreachable!(),
-            mir::TerminatorKind::GeneratorDrop => unreachable!(),
-            mir::TerminatorKind::FalseEdges { .. } => unreachable!(),
-            mir::TerminatorKind::FalseUnwind { .. } => unreachable!(),
+            mir::TerminatorKind::Yield { .. } => assume_unreachable!(),
+            mir::TerminatorKind::GeneratorDrop => assume_unreachable!(),
+            mir::TerminatorKind::FalseEdges { .. } => assume_unreachable!(),
+            mir::TerminatorKind::FalseUnwind { .. } => assume_unreachable!(),
         }
     }
 
@@ -1139,7 +1143,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         .exit_conditions
                         .insert(*target, exit_condition);
                 } else {
-                    unreachable!();
+                    assume_unreachable!();
                 }
                 return true;
             }
@@ -1165,7 +1169,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 if let Some((_, target)) = destination {
                     self.handle_set_model_field(&actual_args, *target);
                 } else {
-                    unreachable!();
+                    assume_unreachable!();
                 }
                 return true;
             }
@@ -1182,7 +1186,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         .exit_conditions
                         .insert(*target, exit_condition);
                 } else {
-                    unreachable!();
+                    assume_unreachable!();
                 }
                 return true;
             }
@@ -1201,7 +1205,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         .exit_conditions
                         .insert(*target, exit_condition);
                 } else {
-                    unreachable!();
+                    assume_unreachable!();
                 }
                 return true;
             }
@@ -1308,7 +1312,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .exit_conditions
                 .insert(*target, exit_condition);
         } else {
-            unreachable!();
+            assume_unreachable!();
         }
         if let Some(cleanup_target) = cleanup {
             self.current_environment.exit_conditions = self
@@ -1332,7 +1336,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .exit_conditions
                 .insert(*target, exit_condition);
         } else {
-            unreachable!();
+            assume_unreachable!();
         }
     }
 
@@ -1365,7 +1369,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 .exit_conditions
                 .insert(*target, exit_condition);
         } else {
-            unreachable!();
+            assume_unreachable!();
         }
     }
 
@@ -1799,8 +1803,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
                     actual_args[0].1.expression
                 {
-                    if msg.contains("entered unreachable code") {
+                    if msg.contains("entered unreachable code")
+                        || msg.contains("not yet implemented")
+                    {
                         // We treat unreachable!() as an assumption rather than an assertion to prove.
+                        // unimplemented!() is unlikely to be a programmer mistake, so need to fixate on that either.
                         return;
                     } else {
                         if path_cond.is_none() && msg.as_str() == "statement is reachable" {
@@ -1845,7 +1852,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     self.preconditions.push(precondition);
                 }
             }
-            _ => unreachable!(),
+            _ => assume_unreachable!(),
         }
     }
 
@@ -2294,7 +2301,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         {
                             (*len) - u128::from(offset)
                         } else {
-                            unreachable!("PathSelector::ConstantIndex implies the length of the value is known")
+                            debug!("PathSelector::ConstantIndex implies the length of the value is known");
+                            assume_unreachable!();
                         }
                     } else {
                         u128::from(offset)
@@ -2322,9 +2330,10 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         {
                             u32::try_from(*len).unwrap() - to
                         } else {
-                            unreachable!(
+                            debug!(
                                 "PathSelector::Subslice implies the length of the value is known"
-                            )
+                            );
+                            assume_unreachable!();
                         }
                     };
                     let slice_value = self.get_new_heap_address();
@@ -2332,7 +2341,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         if let Expression::AbstractHeapAddress(ordinal) = &slice_value.expression {
                             *ordinal
                         } else {
-                            unreachable!()
+                            assume_unreachable!()
                         };
                     self.current_environment
                         .update_value_at(target_path.clone(), slice_value);
@@ -2619,7 +2628,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 left.subtract(right.clone()),
                 left.sub_overflows(right, target_type),
             ),
-            _ => unreachable!(),
+            _ => assume_unreachable!(),
         };
         let path0 = Path::new_field(path.clone(), 0, &self.current_environment);
         self.current_environment.update_value_at(path0, result);
@@ -2850,7 +2859,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                                     &ConstantDomain::True
                                 }
                             }
-                            _ => unreachable!(),
+                            _ => assume_unreachable!(),
                         };
                     }
                     TyKind::Char => {
@@ -2863,7 +2872,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                                 .constant_value_cache
                                 .get_char_for(char::try_from(*data as u32).unwrap())
                         } else {
-                            unreachable!()
+                            assume_unreachable!()
                         };
                     }
                     TyKind::Float(..) => {
@@ -2874,7 +2883,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                                     _ => &mut self.constant_value_cache.get_f64_for(*data as u64),
                                 }
                             }
-                            _ => unreachable!(),
+                            _ => assume_unreachable!(),
                         };
                     }
                     TyKind::FnDef(def_id, generic_args) => {
@@ -2892,7 +2901,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                                 };
                                 &mut self.constant_value_cache.get_i128_for(value)
                             }
-                            _ => unreachable!(),
+                            _ => assume_unreachable!(),
                         };
                     }
                     TyKind::Ref(
@@ -2905,6 +2914,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         result = if let mir::interpret::ConstValue::Slice { data, start, end } =
                             &literal.val
                         {
+                            // The rust compiler should ensure this.
+                            assume!(*end >= *start);
                             let slice_len = *end - *start;
                             let bytes = data
                                 .get_bytes(
@@ -2935,7 +2946,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
                             res
                         } else {
-                            unimplemented!("unsupported val of type Ref: {:?}", literal);
+                            debug!("unsupported val of type Ref: {:?}", literal);
+                            unimplemented!();
                         };
                     }
                     TyKind::Ref(
@@ -2946,89 +2958,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         },
                         _,
                     ) => {
-                        if let mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }, ..) =
-                            &length.val
-                        {
-                            let len = *data;
-                            let e_type = ExpressionType::from(&elem_type.sty);
-                            if e_type != ExpressionType::U8 {
-                                info!(
-                                    "Untested case of mir::interpret::ConstValue::Scalar found at {:?}",
-                                    self.current_span
-                                );
-                            }
-                            match &literal.val {
-                                mir::interpret::ConstValue::Slice { data, start, end } => {
-                                    let slice_len = *end - *start;
-                                    let bytes = data
-                                        .get_bytes(
-                                            self.tcx,
-                                            // invent a pointer, only the offset is relevant anyway
-                                            mir::interpret::Pointer::new(
-                                                mir::interpret::AllocId(0),
-                                                rustc::ty::layout::Size::from_bytes(*start as u64),
-                                            ),
-                                            rustc::ty::layout::Size::from_bytes(slice_len as u64),
-                                        )
-                                        .unwrap();
-                                    let slice = &bytes[*start..*end];
-                                    return self.deconstruct_constant_array(
-                                        slice,
-                                        e_type,
-                                        Some(len),
-                                    );
-                                }
-                                mir::interpret::ConstValue::ByRef { alloc, offset } => {
-                                    //todo: there is no test coverage for this case
-                                    let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
-                                    let num_bytes = (alloc.len() as u64) - offset.bytes();
-                                    let ptr = mir::interpret::Pointer::new(
-                                        id,
-                                        rustc::ty::layout::Size::from_bytes(offset.bytes()),
-                                    );
-                                    //todo: this is all wrong. It gets the bytes that contains the reference,
-                                    // not the bytes that the reference points to.
-                                    // Right now it is not clear how to implement this.
-                                    // Keeping this wrong behavior maintains the currently incorrect status quo.
-                                    let bytes = alloc
-                                        .get_bytes_with_undef_and_ptr(
-                                            self.tcx,
-                                            ptr,
-                                            rustc::ty::layout::Size::from_bytes(num_bytes),
-                                        )
-                                        .unwrap();
-                                    return self.deconstruct_constant_array(
-                                        &bytes,
-                                        e_type,
-                                        Some(len),
-                                    );
-                                }
-                                mir::interpret::ConstValue::Scalar(
-                                    mir::interpret::Scalar::Ptr(ptr),
-                                ) => {
-                                    let alloc =
-                                        self.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
-                                    let num_bytes = (alloc.len() as u64) - ptr.offset.bytes();
-                                    let bytes = alloc
-                                        .get_bytes(
-                                            self.tcx,
-                                            *ptr,
-                                            rustc::ty::layout::Size::from_bytes(num_bytes),
-                                        )
-                                        .unwrap();
-                                    return self.deconstruct_constant_array(
-                                        &bytes,
-                                        e_type,
-                                        Some(len),
-                                    );
-                                }
-                                _ => {
-                                    unimplemented!("unsupported val of type Ref: {:?}", literal);
-                                }
-                            }
-                        } else {
-                            unimplemented!("unsupported array length: {:?}", length);
-                        };
+                        return self.visit_reference_to_array_constant(literal, elem_type, length);
                     }
                     TyKind::Ref(
                         _,
@@ -3039,6 +2969,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         _,
                     ) => match &literal.val {
                         mir::interpret::ConstValue::Slice { data, start, end } => {
+                            // The rust compiler should ensure this.
+                            assume!(*end >= *start);
                             let slice_len = *end - *start;
                             let bytes = data
                                 .get_bytes(
@@ -3059,7 +2991,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         mir::interpret::ConstValue::ByRef { alloc, offset } => {
                             let e_type = ExpressionType::from(&elem_type.sty);
                             let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
-                            let num_bytes = (alloc.len() as u64) - offset.bytes();
+                            let len = alloc.len() as u64;
+                            let offset_in_bytes: u64 = offset.bytes();
+                            // The rust compiler should ensure this.
+                            assume!(len > offset_in_bytes);
+                            let num_bytes = len - offset_in_bytes;
                             let ptr = mir::interpret::Pointer::new(id, *offset);
                             //todo: this is all wrong. It gets the bytes that contains the reference,
                             // not the bytes that the reference points to.
@@ -3075,7 +3011,8 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             return self.deconstruct_constant_array(&bytes, e_type, None);
                         }
                         _ => {
-                            unimplemented!("unsupported val of type Ref: {:?}", literal);
+                            debug!("unsupported val of type Ref: {:?}", literal);
+                            unimplemented!();
                         }
                     },
                     TyKind::Uint(..) => {
@@ -3083,7 +3020,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }) => {
                                 &mut self.constant_value_cache.get_u128_for(*data)
                             }
-                            _ => unreachable!(),
+                            _ => assume_unreachable!(),
                         };
                     }
                     _ => {
@@ -3095,6 +3032,96 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 };
                 Rc::new(result.clone().into())
             }
+        }
+    }
+
+    /// Synthesizes a reference to a constant array.
+    #[logfn_inputs(TRACE)]
+    fn visit_reference_to_array_constant(
+        &mut self,
+        literal: &rustc::ty::Const<'tcx>,
+        elem_type: &rustc::ty::TyS<'tcx>,
+        length: &rustc::ty::Const<'tcx>,
+    ) -> Rc<AbstractValue> {
+        use rustc::mir::interpret::Scalar;
+
+        if let mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }, ..) = &length.val {
+            let len = *data;
+            let e_type = ExpressionType::from(&elem_type.sty);
+            if e_type != ExpressionType::U8 {
+                info!(
+                    "Untested case of mir::interpret::ConstValue::Scalar found at {:?}",
+                    self.current_span
+                );
+            }
+            match &literal.val {
+                mir::interpret::ConstValue::Slice { data, start, end } => {
+                    // The Rust compiler should ensure this.
+                    assume!(*end > *start);
+                    let slice_len = *end - *start;
+                    let bytes = data
+                        .get_bytes(
+                            self.tcx,
+                            // invent a pointer, only the offset is relevant anyway
+                            mir::interpret::Pointer::new(
+                                mir::interpret::AllocId(0),
+                                rustc::ty::layout::Size::from_bytes(*start as u64),
+                            ),
+                            rustc::ty::layout::Size::from_bytes(slice_len as u64),
+                        )
+                        .unwrap();
+                    let slice = &bytes[*start..*end];
+                    self.deconstruct_constant_array(slice, e_type, Some(len))
+                }
+                mir::interpret::ConstValue::ByRef { alloc, offset } => {
+                    //todo: there is no test coverage for this case
+                    let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
+                    let alloc_len = alloc.len() as u64;
+                    let offset_bytes = offset.bytes();
+                    // The Rust compiler should ensure this.
+                    assume!(alloc_len > offset_bytes);
+                    let num_bytes = alloc_len - offset_bytes;
+                    let ptr = mir::interpret::Pointer::new(
+                        id,
+                        rustc::ty::layout::Size::from_bytes(offset.bytes()),
+                    );
+                    //todo: this is all wrong. It gets the bytes that contains the reference,
+                    // not the bytes that the reference points to.
+                    // Right now it is not clear how to implement this.
+                    // Keeping this wrong behavior maintains the currently incorrect status quo.
+                    let bytes = alloc
+                        .get_bytes_with_undef_and_ptr(
+                            self.tcx,
+                            ptr,
+                            rustc::ty::layout::Size::from_bytes(num_bytes),
+                        )
+                        .unwrap();
+                    self.deconstruct_constant_array(&bytes, e_type, Some(len))
+                }
+                mir::interpret::ConstValue::Scalar(mir::interpret::Scalar::Ptr(ptr)) => {
+                    let alloc = self.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
+                    let alloc_len = alloc.len() as u64;
+                    let offset_bytes = ptr.offset.bytes();
+                    // The Rust compiler should ensure this.
+                    assume!(alloc_len > offset_bytes);
+                    let num_bytes = alloc_len - offset_bytes;
+                    let bytes = alloc
+                        .get_bytes(
+                            self.tcx,
+                            *ptr,
+                            rustc::ty::layout::Size::from_bytes(num_bytes),
+                        )
+                        .unwrap();
+                    self.deconstruct_constant_array(&bytes, e_type, Some(len))
+                }
+                _ => {
+                    debug!("unsupported val of type Ref: {:?}", literal);
+                    unimplemented!();
+                }
+            }
+        } else {
+            debug!("unsupported array length: {:?}", length);
+            unimplemented!();
         }
     }
 
@@ -3123,7 +3150,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let ordinal = if let Expression::AbstractHeapAddress(ordinal) = array_value.expression {
             ordinal
         } else {
-            unreachable!()
+            assume_unreachable!()
         };
         let array_path: Rc<Path> = Rc::new(PathEnum::AbstractHeapAddress { ordinal }.into());
         let mut last_index: u128 = 0;
@@ -3183,7 +3210,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     4 => i128::from(i32::from_ne_bytes(bytes.try_into().unwrap())),
                     8 => i128::from(i64::from_ne_bytes(bytes.try_into().unwrap())),
                     16 => i128::from_ne_bytes(bytes.try_into().unwrap()),
-                    _ => unreachable!(),
+                    _ => assume_unreachable!(),
                 }
             }
 
@@ -3199,7 +3226,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     4 => u128::from(u32::from_ne_bytes(bytes.try_into().unwrap())),
                     8 => u128::from(u64::from_ne_bytes(bytes.try_into().unwrap())),
                     16 => u128::from_ne_bytes(bytes.try_into().unwrap()),
-                    _ => unreachable!(),
+                    _ => assume_unreachable!(),
                 }
             }
 
@@ -3399,11 +3426,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 }
                 info!("t is {:?}", t);
                 info!("selector is {:?}", selector);
-                unreachable!()
+                assume_unreachable!()
             }
             _ => {
                 info!("path.value is {:?}", path.value);
-                unreachable!()
+                assume_unreachable!()
             }
         }
     }
@@ -3440,10 +3467,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 TyKind::Adt(..) => base_ty,
                 TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
                 TyKind::Ref(_, ty, _) => *ty,
-                _ => unreachable!(
-                    "span: {:?}\nelem: {:?} type: {:?}",
-                    self.current_span, boxed_place_projection.elem, base_ty
-                ),
+                _ => {
+                    debug!(
+                        "span: {:?}\nelem: {:?} type: {:?}",
+                        self.current_span, boxed_place_projection.elem, base_ty
+                    );
+                    assume_unreachable!();
+                }
             },
             mir::ProjectionElem::Field(_, ty) => ty,
             mir::ProjectionElem::Index(_)
@@ -3453,10 +3483,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 TyKind::Array(ty, _) => *ty,
                 TyKind::Ref(_, ty, _) => Self::get_element_type(*ty),
                 TyKind::Slice(ty) => *ty,
-                _ => unreachable!(
-                    "span: {:?}\nelem: {:?} type: {:?}",
-                    self.current_span, boxed_place_projection.elem, base_ty
-                ),
+                _ => {
+                    debug!(
+                        "span: {:?}\nelem: {:?} type: {:?}",
+                        self.current_span, boxed_place_projection.elem, base_ty
+                    );
+                    assume_unreachable!();
+                }
             },
             mir::ProjectionElem::Downcast(..) => base_ty,
         }

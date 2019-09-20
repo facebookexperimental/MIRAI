@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use log_derive::logfn_inputs;
+use mirai_annotations::assume;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -28,24 +29,32 @@ impl ExpectedErrors {
 
     /// Checks if the given set of diagnostics matches the expected diagnostics.
     #[logfn_inputs(TRACE)]
-    pub fn check_messages(&mut self, diagnostics: Vec<Diagnostic>) {
-        diagnostics.iter().for_each(|diag| {
-            self.remove_message(&diag.message());
-            for child in &diag.children {
-                self.remove_message(&child.message());
+    pub fn check_messages(&mut self, diagnostics: Vec<Diagnostic>) -> bool {
+        for diag in diagnostics.iter() {
+            if !self.remove_message(&diag.message()) {
+                return false;
             }
-        });
-        if !self.messages.is_empty() {
-            panic!("Expected errors not reported: {:?}", self.messages);
+            for child in &diag.children {
+                if !self.remove_message(&child.message()) {
+                    return false;
+                }
+            }
         }
+        if !self.messages.is_empty() {
+            println!("Expected errors not reported: {:?}", self.messages);
+            return false;
+        }
+        true
     }
 
     /// Removes the first element of self.messages and checks if it matches msg.
     #[logfn_inputs(TRACE)]
-    fn remove_message(&mut self, msg: &str) {
+    fn remove_message(&mut self, msg: &str) -> bool {
         if self.messages.remove_item(&String::from(msg)).is_none() {
-            panic!("Unexpected error: {} Expected: {:?}", msg, self.messages);
+            println!("Unexpected error: {} Expected: {:?}", msg, self.messages);
+            return false;
         }
+        true
     }
 }
 
@@ -64,6 +73,9 @@ fn load_errors(testfile: &Path) -> Vec<String> {
 /// Returns the message part of the pattern "//~ message" if there is a match, otherwise None.
 #[logfn_inputs(TRACE)]
 fn parse_expected(line: &str, tag: &str) -> Option<String> {
-    let start = line.find(tag)? + tag.len();
+    let tag_start = line.find(tag)?;
+    // If the tag has been found this following must be true.
+    assume!(tag_start < usize::max_value() - tag.len());
+    let start = tag_start + tag.len();
     Some(String::from(line[start..].trim()))
 }
