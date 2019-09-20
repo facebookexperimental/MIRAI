@@ -843,6 +843,67 @@ pub mod alloc {
             }
         }
     }
+    pub mod collections {
+        pub mod vec_deque {
+            pub struct VecDeque {
+                len: usize,
+            }
+
+            pub mod implement_alloc_collections_vec_deque_VecDeque_T {
+                use crate::foreign_contracts::alloc::collections::vec_deque::VecDeque;
+
+                pub fn new() -> VecDeque {
+                    VecDeque { len: 0 }
+                }
+
+                pub fn len(_self: &VecDeque) -> usize {
+                    _self.len
+                }
+
+                pub fn is_empty(_self: &VecDeque) -> bool {
+                    _self.len == 0
+                }
+
+                pub fn pop_front<T>(_self: &mut VecDeque) -> Option<T> {
+                    if _self.len == 0 {
+                        None
+                    } else {
+                        _self.len -= 1;
+                        result!()
+                    }
+                }
+
+                pub fn pop_back<T>(_self: &mut VecDeque) -> Option<T> {
+                    if _self.len == 0 {
+                        None
+                    } else {
+                        _self.len -= 1;
+                        result!()
+                    }
+                }
+
+                pub fn push_front<T>(_self: &mut VecDeque, _value: T) {
+                    precondition!(
+                        _self.len < usize::max_value(),
+                        "exceeds max VecDeque length"
+                    );
+                    _self.len += 1;
+                }
+
+                pub fn push_back<T>(_self: &mut VecDeque, _value: T) {
+                    precondition!(
+                        _self.len < usize::max_value(),
+                        "exceeds max VecDeque length"
+                    );
+                    _self.len += 1;
+                }
+
+                pub fn contains<T>(_self: &VecDeque, _value: T) -> bool {
+                    result!()
+                }
+            }
+        }
+    }
 }
 
 pub mod rand {
