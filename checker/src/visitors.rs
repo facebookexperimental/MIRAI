@@ -2417,7 +2417,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             value_map = value_map.insert(qualified_path, value.clone());
             no_children = false;
         }
-        if rtype != ExpressionType::NonPrimitive || (no_children && move_elements) {
+        if rtype != ExpressionType::NonPrimitive || no_children {
             // Just copy/move (rpath, value) itself.
             let value = self.lookup_path_and_refine_result(rpath.clone(), rtype);
             if move_elements {

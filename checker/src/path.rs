@@ -317,7 +317,15 @@ impl PathRefinement for Rc<Path> {
             // use canonical paths as keys. The value at the canonical key, however, could just
             // be a reference to another path, which is something that happens during refinement.
             return match &val.expression {
-                Expression::Variable { path, .. } | Expression::Widen { path, .. } => path.clone(),
+                Expression::Variable { path, .. } | Expression::Widen { path, .. } => {
+                    if let PathEnum::QualifiedPath { selector, .. } = &path.value {
+                        if *selector.as_ref() == PathSelector::Deref {
+                            // If the path is a deref, it is not just an alias for self, so keep self
+                            return self.clone();
+                        }
+                    }
+                    path.clone()
+                }
                 Expression::AbstractHeapAddress(ordinal) => {
                     Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into())
                 }
