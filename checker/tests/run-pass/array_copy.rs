@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that checks that arrays passed as parameters are copied
+// A test that checks that fixed size arrays passed as parameters are copied when de-referenced
 #[macro_use]
 extern crate mirai_annotations;
 
