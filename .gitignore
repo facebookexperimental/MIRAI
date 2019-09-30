@@ -2,5 +2,5 @@
 .idea/
 target/
 examples/
-!examples/foreign_contracts.rs
 !examples/shopping_cart.rs
+!examples/taint/*.*

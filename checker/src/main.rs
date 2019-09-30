@@ -17,11 +17,14 @@
 
 extern crate env_logger;
 extern crate mirai;
+extern crate rustc;
 extern crate rustc_driver;
 extern crate rustc_interface;
 
 use mirai::callbacks;
 use mirai::utils;
+use rustc::session::config::ErrorOutputType;
+use rustc::session::early_error;
 use std::env;
 use std::path::Path;
 
@@ -44,48 +47,63 @@ fn main() {
         None
     };
 
-    // Get command line arguments from environment and massage them a bit.
-    let mut command_line_arguments: Vec<_> = env::args().collect();
+    rustc_driver::install_ice_hook();
+    let result = rustc_driver::catch_fatal_errors(|| {
+        // Get command line arguments from environment and massage them a bit.
+        let mut command_line_arguments = env::args_os()
+            .enumerate()
+            .map(|(i, arg)| {
+                arg.into_string().unwrap_or_else(|arg| {
+                    early_error(
+                        ErrorOutputType::default(),
+                        &format!("Argument {} is not valid Unicode: {:?}", i, arg),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
 
-    // Setting RUSTC_WRAPPER causes Cargo to pass 'rustc' as the first argument.
-    // We're invoking the compiler programmatically, so we remove it if present.
-    if command_line_arguments.len() > 1
-        && Path::new(&command_line_arguments[1]).file_stem() == Some("rustc".as_ref())
-    {
-        command_line_arguments.remove(1);
-    }
+        // Setting RUSTC_WRAPPER causes Cargo to pass 'rustc' as the first argument.
+        // We're invoking the compiler programmatically, so we remove it if present.
+        if command_line_arguments.len() > 1
+            && Path::new(&command_line_arguments[1]).file_stem() == Some("rustc".as_ref())
+        {
+            command_line_arguments.remove(1);
+        }
 
-    let sysroot: String = "--sysroot".into();
-    if !command_line_arguments
-        .iter()
-        .any(|arg| arg.starts_with(&sysroot))
-    {
-        // Tell compiler where to find the std library and so on.
-        // The compiler relies on the standard rustc driver to tell it, so we have to do likewise.
-        command_line_arguments.push(sysroot);
-        command_line_arguments.push(utils::find_sysroot());
-    }
+        let sysroot: String = "--sysroot".into();
+        if !command_line_arguments
+            .iter()
+            .any(|arg| arg.starts_with(&sysroot))
+        {
+            // Tell compiler where to find the std library and so on.
+            // The compiler relies on the standard rustc driver to tell it, so we have to do likewise.
+            command_line_arguments.push(sysroot);
+            command_line_arguments.push(utils::find_sysroot());
+        }
 
-    let always_encode_mir: String = "always-encode-mir".into();
-    if !command_line_arguments
-        .iter()
-        .any(|arg| arg.ends_with(&always_encode_mir))
-    {
-        // Tell compiler to emit MIR into crate for every function with a body.
-        command_line_arguments.push("-Z".into());
-        command_line_arguments.push(always_encode_mir);
-    }
+        let always_encode_mir: String = "always-encode-mir".into();
+        if !command_line_arguments
+            .iter()
+            .any(|arg| arg.ends_with(&always_encode_mir))
+        {
+            // Tell compiler to emit MIR into crate for every function with a body.
+            command_line_arguments.push("-Z".into());
+            command_line_arguments.push(always_encode_mir);
+        }
 
-    let result = rustc_driver::report_ices_to_stderr_if_any(move || {
-        let callbacks = &mut callbacks::MiraiCallbacks::default();
+        let mut callbacks = callbacks::MiraiCallbacks::default();
         callbacks.analyze_single_func = analyze_single_func;
         rustc_driver::run_compiler(
             &command_line_arguments,
-            callbacks,
+            &mut callbacks,
             None, // use default file loader
             None, // emit output to default destination
         )
     })
     .and_then(|result| result);
-    std::process::exit(result.is_err() as i32);
+    let exit_code = match result {
+        Ok(_) => rustc_driver::EXIT_SUCCESS,
+        Err(_) => rustc_driver::EXIT_FAILURE,
+    };
+    std::process::exit(exit_code);
 }

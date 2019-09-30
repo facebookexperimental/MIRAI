@@ -1,5 +1,5 @@
 [package]
-name = "taint_test"
+name = "taint-error"
 version = "0.1.0"
 authors = ["Herman Venter <hermanv@fb.com>"]
 edition = "2018"
@@ -7,4 +7,4 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-taint-error = { path = "./taint_error" }
+mirai-annotations = "1.4.0"
