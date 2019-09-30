@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="CPP_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/taint_lib/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/taint_lib/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/taint_lib/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/taint_lib/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/untrusted/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/untrusted/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/untrusted/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/untrusted/benches" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/taint_lib/target" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+      <excludeFolder url="file://$MODULE_DIR$/untrusted/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

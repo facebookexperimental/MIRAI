@@ -196,7 +196,7 @@ impl MiraiCallbacks {
         let defs = Self::get_defs(*tcx, &mut persistent_summary_cache);
         let constant_value_cache = ConstantValueCache::default();
         let def_sets = DefSets {
-            defs_to_analyze: HashSet::from_iter(tcx.body_owners()),
+            defs_to_analyze: HashSet::from_iter(defs.clone().into_iter()),
             defs_to_reanalyze: HashSet::new(),
             defs_to_not_reanalyze: HashSet::new(),
         };
@@ -262,7 +262,8 @@ impl MiraiCallbacks {
                                             .clone();
                                         let summary = persistent_summary_cache
                                             .get_persistent_summary_for(&summary_key);
-                                        if !summary.is_not_default {
+                                        if !summary.is_not_default && tcx.is_mir_available(*def_id)
+                                        {
                                             // We can safely assume that rustc will have run out of
                                             // memory long before this vector overflows.
                                             assume!(defs_to_analyze.len() < usize::max_value());
