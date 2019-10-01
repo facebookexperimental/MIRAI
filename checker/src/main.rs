@@ -66,6 +66,16 @@ fn main() {
         command_line_arguments.push(utils::find_sysroot());
     }
 
+    let always_encode_mir: String = "always-encode-mir".into();
+    if !command_line_arguments
+        .iter()
+        .any(|arg| arg.ends_with(&always_encode_mir))
+    {
+        // Tell compiler to emit MIR into crate for every function with a body.
+        command_line_arguments.push("-Z".into());
+        command_line_arguments.push(always_encode_mir);
+    }
+
     let result = rustc_driver::report_ices_to_stderr_if_any(move || {
         let callbacks = &mut callbacks::MiraiCallbacks::default();
         callbacks.analyze_single_func = analyze_single_func;

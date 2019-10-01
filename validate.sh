@@ -20,6 +20,7 @@ cd ..; cargo build
 cargo uninstall mirai || true
 cargo install --path ./checker
 # Run mirai on itself
-rm -rf target/debug/deps/.summary_store.sled
+cargo clean
+RUSTFLAGS="-Z always_encode_mir" cargo build
 touch checker/src/lib.rs
 RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn cargo build --lib -p mirai
