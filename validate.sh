@@ -16,11 +16,29 @@ cargo clippy -- -D warnings
 # Build
 cd checker; cargo rustc --lib -- -D rust-2018-idioms
 cd ..; cargo build
+
 # Install MIRAI into cargo
 cargo uninstall mirai || true
 cargo install --path ./checker
+
+# build the mirai-standard-contracts crate
+touch standard_contracts/src/lib.rs
+RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn MIRAI_START_FRESH=true MIRAI_SHARE_PERSISTENT_STORE=true cargo build --lib -p mirai-standard-contracts
+
+# collect the summary store into a tar file
+cd target/debug/deps
+tar -c -f ../../../binaries/summary_store.tar .summary_store.sled
+cd ../../..
+
+# Install MIRAI into cargo again, so that this time it uses the new sumary store
+cargo uninstall mirai || true
+cargo install --path ./checker
+
+# Run cargo test
+cargo test
+
 # Run mirai on itself
 cargo clean
 RUSTFLAGS="-Z always_encode_mir" cargo build
 touch checker/src/lib.rs
-RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn cargo build --lib -p mirai
+RUSTFLAGS="-Z always_encode_mir" RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn cargo build --lib -p mirai

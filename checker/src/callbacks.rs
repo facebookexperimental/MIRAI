@@ -241,44 +241,48 @@ impl MiraiCallbacks {
         persistent_summary_cache: &mut PersistentSummaryCache<'_, '_>,
     ) -> Vec<DefId> {
         use std::borrow::Borrow;
+        use std::env;
 
         let mut defs_to_analyze = Vec::from_iter(tcx.body_owners());
-        let mut known_defs: HashSet<DefId> = HashSet::from_iter(tcx.body_owners());
-        let mut i: usize = 0;
-        while i < defs_to_analyze.len() {
-            let caller_def_id = defs_to_analyze[i];
-            if tcx.is_mir_available(caller_def_id) {
-                let mir = tcx.optimized_mir(caller_def_id);
-                for bb in mir.basic_blocks().indices() {
-                    let rustc::mir::BasicBlockData { ref terminator, .. } = &mir[bb];
-                    if let Some(rustc::mir::Terminator { ref kind, .. }) = *terminator {
-                        if let rustc::mir::TerminatorKind::Call { func, .. } = kind {
-                            if let rustc::mir::Operand::Constant(constant) = func {
-                                let rustc::mir::Constant { literal, .. } = constant.borrow();
-                                if let rustc::ty::TyKind::FnDef(def_id, ..) = &literal.ty.kind {
-                                    if known_defs.insert(*def_id) {
-                                        let summary_key = persistent_summary_cache
-                                            .get_summary_key_for(*def_id)
-                                            .clone();
-                                        let summary = persistent_summary_cache
-                                            .get_persistent_summary_for(&summary_key);
-                                        if !summary.is_not_default && tcx.is_mir_available(*def_id)
-                                        {
-                                            // We can safely assume that rustc will have run out of
-                                            // memory long before this vector overflows.
-                                            assume!(defs_to_analyze.len() < usize::max_value());
-                                            defs_to_analyze.push(*def_id);
+        if env::var("MIRAI_START_FRESH").is_err() {
+            let mut known_defs: HashSet<DefId> = HashSet::from_iter(tcx.body_owners());
+            let mut i: usize = 0;
+            while i < defs_to_analyze.len() {
+                let caller_def_id = defs_to_analyze[i];
+                if tcx.is_mir_available(caller_def_id) {
+                    let mir = tcx.optimized_mir(caller_def_id);
+                    for bb in mir.basic_blocks().indices() {
+                        let rustc::mir::BasicBlockData { ref terminator, .. } = &mir[bb];
+                        if let Some(rustc::mir::Terminator { ref kind, .. }) = *terminator {
+                            if let rustc::mir::TerminatorKind::Call { func, .. } = kind {
+                                if let rustc::mir::Operand::Constant(constant) = func {
+                                    let rustc::mir::Constant { literal, .. } = constant.borrow();
+                                    if let rustc::ty::TyKind::FnDef(def_id, ..) = &literal.ty.kind {
+                                        if known_defs.insert(*def_id) {
+                                            let summary_key = persistent_summary_cache
+                                                .get_summary_key_for(*def_id)
+                                                .clone();
+                                            let summary = persistent_summary_cache
+                                                .get_persistent_summary_for(&summary_key);
+                                            if !summary.is_not_default
+                                                && tcx.is_mir_available(*def_id)
+                                            {
+                                                // We can safely assume that rustc will have run out of
+                                                // memory long before this vector overflows.
+                                                assume!(defs_to_analyze.len() < usize::max_value());
+                                                defs_to_analyze.push(*def_id);
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
+                } else {
+                    info!("no mir for {:?}", caller_def_id);
                 }
-            } else {
-                info!("no mir for {:?}", caller_def_id);
+                i += 1;
             }
-            i += 1;
         }
         defs_to_analyze
     }
