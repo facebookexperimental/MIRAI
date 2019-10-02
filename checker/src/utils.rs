@@ -9,7 +9,7 @@ use mirai_annotations::assume_unreachable;
 use rustc::hir::def_id::DefId;
 use rustc::hir::map::DefPathData;
 use rustc::hir::{ItemKind, Node, TraitItemKind};
-use rustc::ty::subst::{SubstsRef, UnpackedKind};
+use rustc::ty::subst::{GenericArgKind, SubstsRef};
 use rustc::ty::{DefIdTree, Ty, TyCtxt, TyKind};
 use std::rc::Rc;
 
@@ -41,7 +41,7 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_>) -> bool {
     if let Some(node) = tcx.hir().get_if_local(def_id) {
         match node {
             Node::Expr(rustc::hir::Expr {
-                node: rustc::hir::ExprKind::Closure(..),
+                kind: rustc::hir::ExprKind::Closure(..),
                 ..
             }) => {
                 if let Some(parent_def_id) = tcx.parent(def_id) {
@@ -51,10 +51,10 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_>) -> bool {
                 }
             }
             Node::Item(item) => {
-                if let ItemKind::Fn(..) = item.node {
+                if let ItemKind::Fn(..) = item.kind {
                     return item.vis.node.is_pub();
                 }
-                debug!("def_id is not a function item {:?}", item.node);
+                debug!("def_id is not a function item {:?}", item.kind);
                 false
             }
             Node::ImplItem(item) => item.vis.node.is_pub(),
@@ -92,7 +92,7 @@ pub fn argument_types_key_str<'tcx>(
 fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>) {
     use syntax::ast;
     use TyKind::*;
-    match ty.sty {
+    match ty.kind {
         Bool => str.push_str("bool"),
         Char => str.push_str("char"),
         Int(int_ty) => {
@@ -124,7 +124,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
         Adt(def, subs) => {
             str.push_str(qualified_type_name(tcx, def.did).as_str());
             for sub in subs {
-                if let UnpackedKind::Type(ty) = sub.unpack() {
+                if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
                 }
@@ -134,7 +134,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
             str.push_str("closure_");
             str.push_str(qualified_type_name(tcx, def_id).as_str());
             for sub in subs.substs {
-                if let UnpackedKind::Type(ty) = sub.unpack() {
+                if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
                 }
@@ -149,7 +149,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
             str.push_str("fn_");
             str.push_str(qualified_type_name(tcx, def_id).as_str());
             for sub in subs {
-                if let UnpackedKind::Type(ty) = sub.unpack() {
+                if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
                 }
@@ -159,7 +159,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
             str.push_str("generator_");
             str.push_str(qualified_type_name(tcx, def_id).as_str());
             for sub in subs.substs {
-                if let UnpackedKind::Type(ty) = sub.unpack() {
+                if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
                 }
@@ -175,7 +175,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
             str.push_str("impl_");
             str.push_str(qualified_type_name(tcx, def_id).as_str());
             for sub in subs {
-                if let UnpackedKind::Type(ty) = sub.unpack() {
+                if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
                 }
@@ -238,7 +238,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
         _ => {
             //todo: add cases as the need arises, meanwhile make the need obvious.
             debug!("{:?}", ty);
-            debug!("{:?}", ty.sty);
+            debug!("{:?}", ty.kind);
             str.push_str(&format!("default formatted {:?}", ty))
         }
     }
@@ -333,11 +333,11 @@ fn type_of(tcx: TyCtxt<'_>, def_id: DefId) -> Option<&rustc::ty::TyS<'_>> {
     };
     match tcx.hir().get(hir_id) {
         Node::TraitItem(item) => {
-            if let TraitItemKind::Type(_, None) = item.node {
+            if let TraitItemKind::Type(_, None) = item.kind {
                 return None;
             }
         }
-        Node::Item(item) => match item.node {
+        Node::Item(item) => match item.kind {
             ItemKind::Trait(..)
             | ItemKind::TraitAlias(..)
             | ItemKind::Mod(..)

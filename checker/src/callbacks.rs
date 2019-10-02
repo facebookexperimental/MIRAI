@@ -255,7 +255,7 @@ impl MiraiCallbacks {
                         if let rustc::mir::TerminatorKind::Call { func, .. } = kind {
                             if let rustc::mir::Operand::Constant(constant) = func {
                                 let rustc::mir::Constant { literal, .. } = constant.borrow();
-                                if let rustc::ty::TyKind::FnDef(def_id, ..) = &literal.ty.sty {
+                                if let rustc::ty::TyKind::FnDef(def_id, ..) = &literal.ty.kind {
                                     if known_defs.insert(*def_id) {
                                         let summary_key = persistent_summary_cache
                                             .get_summary_key_for(*def_id)
