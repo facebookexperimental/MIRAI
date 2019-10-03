@@ -166,6 +166,23 @@ impl MiraiCallbacks {
             || self.file_name.contains("/sled")
             || self.file_name.contains("types/src")
             || self.file_name.contains("/clap")
+            || self.file_name.contains("/grpcio-client")
+            || self.file_name.contains("/datatest-stable")
+            || self.file_name.contains("/crypto")
+            || self.file_name.contains("/ir_to_bytecode/syntax")
+            || self.file_name.contains("/storage_proto")
+            || self.file_name.contains("network/src")
+            || self.file_name.contains("language/compiler/ir_to_bytecode")
+            || self.file_name.contains("mempool/src")
+            || self.file_name.contains("language/stdlib")
+            || self.file_name.contains("language/compiler")
+            || self
+                .file_name
+                .contains("language/stackless_bytecode/bytecode-to-boogie")
+            || self.file_name.contains("client/src")
+            || self.file_name.contains("testsuite/cluster-test")
+            || self.file_name.contains("language/e2e_tests")
+            || self.file_name.contains("language/functional_tests")
         {
             return;
         }
@@ -178,6 +195,9 @@ impl MiraiCallbacks {
         if self.file_name.contains("/crc32fast")
             || self.file_name.contains("/http")
             || self.file_name.contains("/serde_derive")
+            || self
+                .file_name
+                .contains("admission_control/admission_control_proto")
         {
             return;
         }
