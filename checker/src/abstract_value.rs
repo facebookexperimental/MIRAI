@@ -668,6 +668,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 checked_assume!(*cast_type == ExpressionType::Reference);
                 operand.dereference(target_type)
             }
+            Expression::CompileTimeConstant(..) => self.clone(),
             Expression::ConditionalExpression {
                 condition,
                 consequent,

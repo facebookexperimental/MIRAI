@@ -6,5 +6,9 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+test = false # we have no unit tests
+doctest = false # and no doc tests
+
 [dependencies]
 mirai-annotations = "1.4.0"

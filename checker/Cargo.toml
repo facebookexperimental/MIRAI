@@ -17,6 +17,8 @@ doctest = false # and no doc tests
 [[bin]]
 name = "mirai"
 path = "src/main.rs"
+test = false # we have no unit tests
+doctest = false # and no doc tests
 
 [dependencies]
 bincode = { version = "*", features = ["i128"] }

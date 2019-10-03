@@ -1,10 +1,15 @@
 [package]
-name = "taint_test"
+name = "taint"
 version = "0.1.0"
 authors = ["Herman Venter <hermanv@fb.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "taint"
+test = false # we have no unit tests
+doctest = false # and no doc tests
 
 [dependencies]
 taint-error = { path = "./taint_error" }

@@ -581,17 +581,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "taint"
+version = "0.1.0"
+dependencies = [
+ "taint-error 0.1.0",
+]
+
+[[package]]
 name = "taint-error"
 version = "0.1.0"
 dependencies = [
  "mirai-annotations 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "taint_test"
-version = "0.1.0"
-dependencies = [
- "taint-error 0.1.0",
 ]
 
 [[package]]
