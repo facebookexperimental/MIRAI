@@ -136,25 +136,49 @@ impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
     fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: &TyCtxt<'_>) {
+        let mut max_fixed_point_iterations = k_limits::MAX_OUTER_FIXPOINT_ITERATIONS;
+
         // runs out of memory
-        if self.file_name.contains("/rustc-serialize")
+        if self.file_name.contains("/aho-corasick")
+            || self.file_name.contains("/cookie_store")
+            || self.file_name.contains("/criterion")
+            || self.file_name.contains("/reqwest")
+        {
+            return;
+        } else if self.file_name.contains("/noise")
+            || self.file_name.contains("/cexpr")
+            || self.file_name.contains("client/src")
+            || self.file_name.contains("/cluster-test")
+            || self.file_name.contains("/encoding_rs")
+            || self.file_name.contains("/hyper")
+            || self.file_name.contains("/parity-multiaddr")
             || self.file_name.contains("/protobuf")
+            || self.file_name.contains("/publicsuffix")
+            || self.file_name.contains("/rayon")
+        {
+            max_fixed_point_iterations -= 3;
+        } else if self.file_name.contains("/rustc-serialize")
             || self.file_name.contains("/rust-crypto")
             || self.file_name.contains("/h2-0.1.25")
             || self.file_name.contains("/regex")
+            || self.file_name.contains("/bindgen")
             || self.file_name.contains("/csv")
+            || self.file_name.contains("/curve25519-dalek")
+            || self.file_name.contains("/diff")
+            || self.file_name.contains("/docopt")
+            || self.file_name.contains("/env_logger")
+            || self.file_name.contains("/filecheck")
+            || self.file_name.contains("/flate2")
+            || self.file_name.contains("/glob")
+            || self.file_name.contains("/hyper")
             || self.file_name.contains("/unicode-segmentation")
             || self.file_name.contains("/radix_trie")
             || self.file_name.contains("/xml-rs")
-            || self.file_name.contains("/num-integer")
             || self.file_name.contains("/tokio-io")
-            || self.file_name.contains("/hyper")
-            || self.file_name.contains("/encoding_rs")
-            || self.file_name.contains("/aho-corasick")
-            || self.file_name.contains("/noise")
-            || self.file_name.contains("/rayon")
+            || self.file_name.contains("/lalrpop")
+            || self.file_name.contains("/mime")
             || self.file_name.contains("/miniz_oxide")
-            || self.file_name.contains("/rusoto_credential")
+            || self.file_name.contains("/rusoto")
             || self.file_name.contains("/webpki")
             || self.file_name.contains("/rustc-demangle")
             || self.file_name.contains("/keccak")
@@ -162,8 +186,11 @@ impl MiraiCallbacks {
             || self.file_name.contains("/chrono")
             || self.file_name.contains("/proc-macro2")
             || self.file_name.contains("/parking_lot")
+            || self.file_name.contains("/rustls")
             || self.file_name.contains("/serde")
             || self.file_name.contains("/sled")
+            || self.file_name.contains("/slog-envlogger")
+            || self.file_name.contains("/url")
             || self.file_name.contains("types/src")
             || self.file_name.contains("/clap")
             || self.file_name.contains("/grpcio-client")
@@ -173,33 +200,37 @@ impl MiraiCallbacks {
             || self.file_name.contains("/storage_proto")
             || self.file_name.contains("network/src")
             || self.file_name.contains("language/compiler/ir_to_bytecode")
+            || self.file_name.contains("language/tools/cost-synthesis")
             || self.file_name.contains("mempool/src")
             || self.file_name.contains("language/stdlib")
             || self.file_name.contains("language/compiler")
             || self
                 .file_name
                 .contains("language/stackless_bytecode/bytecode-to-boogie")
-            || self.file_name.contains("client/src")
-            || self.file_name.contains("testsuite/cluster-test")
             || self.file_name.contains("language/e2e_tests")
             || self.file_name.contains("language/functional_tests")
         {
-            return;
+            max_fixed_point_iterations -= 2;
         }
         // fails to map a MIRAI path to the corresponding Rustc type value
         if self.file_name.contains("/futures-util-preview") || self.file_name.contains("/backtrace")
         {
             return;
         }
+        // causes invalid memory reference (in Z3 probably)
+        if self.file_name.contains("/num-integer") {
+            return;
+        }
         // non termination
         if self.file_name.contains("/crc32fast")
             || self.file_name.contains("/http")
+            || self.file_name.contains("/prometheus")
             || self.file_name.contains("/serde_derive")
             || self
                 .file_name
                 .contains("admission_control/admission_control_proto")
         {
-            return;
+            max_fixed_point_iterations -= 2;
         }
         let output_dir = String::from(self.output_directory.to_str().expect("valid string"));
         let summary_store_path = if std::env::var("MIRAI_SHARE_PERSISTENT_STORE").is_ok() {
@@ -231,7 +262,7 @@ impl MiraiCallbacks {
         if self.analyze_single_func.is_some() {
             Self::analyze_bodies(compiler, tcx, &defs, &mut analysis_info, 1);
         } else {
-            for iteration_count in 1..=k_limits::MAX_OUTER_FIXPOINT_ITERATIONS {
+            for iteration_count in 1..=max_fixed_point_iterations {
                 info!("outer fixed point iteration {}", iteration_count);
                 Self::analyze_bodies(compiler, tcx, &defs, &mut analysis_info, iteration_count);
                 if analysis_info.def_sets.defs_to_reanalyze.is_empty() {
