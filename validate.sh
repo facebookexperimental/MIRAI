@@ -35,6 +35,7 @@ cargo uninstall mirai || true
 cargo install --path ./checker
 
 # Run cargo test
+cargo build
 cargo test
 
 # Run mirai on itself

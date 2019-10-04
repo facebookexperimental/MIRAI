@@ -79,6 +79,8 @@ pub enum KnownFunctionNames {
     CoreStrLen,
     /// mirai_annotations.mirai_assume
     MiraiAssume,
+    /// mirai_annotations.mirai_assume_preconditions
+    MiraiAssumePreconditions,
     /// mirai_annotations.mirai_get_model_field
     MiraiGetModelField,
     /// mirai_annotations.mirai_postcondition
@@ -145,6 +147,7 @@ impl ConstantDomain {
             "core.slice.implement.len" => CoreSliceLen,
             "core.str.implement_str.len" => CoreStrLen,
             "mirai_annotations.mirai_assume" => MiraiAssume,
+            "mirai_annotations.mirai_assume_preconditions" => MiraiAssumePreconditions,
             "mirai_annotations.mirai_get_model_field" => MiraiGetModelField,
             "mirai_annotations.mirai_postcondition" => MiraiPostcondition,
             "mirai_annotations.mirai_precondition_start" => MiraiPreconditionStart,

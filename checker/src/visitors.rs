@@ -67,6 +67,7 @@ pub struct MirVisitor<'a, 'b, 'tcx, E> {
     outer_fixed_point_iteration: usize,
 
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
+    assume_preconditions_of_next_call: bool,
     async_fn_summary: Option<Summary>,
     check_for_errors: bool,
     check_for_unconditional_precondition: bool,
@@ -108,6 +109,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             outer_fixed_point_iteration: crate_context.outer_fixed_point_iteration,
 
             already_reported_errors_for_call_to: HashSet::new(),
+            assume_preconditions_of_next_call: false,
             async_fn_summary: None,
             check_for_errors: false,
             check_for_unconditional_precondition: false, // logging + new mir code gen breaks this for now
@@ -1064,11 +1066,14 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         }
         let function_summary = self.get_function_summary(&func_to_call);
         if self.check_for_errors
+            && !self.assume_preconditions_of_next_call
             && !self
                 .already_reported_errors_for_call_to
                 .contains(&func_to_call)
         {
             self.check_function_preconditions(&actual_args, &function_summary, &func_to_call);
+        } else {
+            self.assume_preconditions_of_next_call = false;
         }
         self.transfer_and_refine_normal_return_state(
             destination,
@@ -1099,54 +1104,13 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 self.handle_assume(&actual_args, destination, cleanup);
                 return true;
             }
+            KnownFunctionNames::MiraiAssumePreconditions => {
+                checked_assume!(actual_args.is_empty());
+                self.assume_preconditions_of_next_call = true;
+                return true;
+            }
             KnownFunctionNames::MiraiGetModelField => {
-                if let Some((place, target)) = destination {
-                    let rtype = self.get_place_type(place);
-                    checked_assume!(actual_args.len() == 3);
-
-                    // The current value, if any, of the model field are a set of (path, value) pairs
-                    // where each path is rooted by qualifier.model_field(..)
-                    let qualifier = actual_args[0].0.clone();
-                    let field_name = self.coerce_to_string(&actual_args[1].1);
-                    let rpath =
-                        Path::new_model_field(qualifier, field_name, &self.current_environment)
-                            .refine_paths(&self.current_environment);
-
-                    let target_path = self.visit_place(place);
-                    if self.current_environment.value_at(&rpath).is_some() {
-                        // Move the model field (path, val) pairs to the target (i.e. the place where
-                        // the return value of call to the mirai_get_model_field function would go if
-                        // it were a normal call.
-                        self.copy_or_move_elements(target_path, rpath, rtype, true);
-                    } else {
-                        // If there is no value for the model field in the environment, we should
-                        // use the default value, but only the qualifier is not rooted in a parameter
-                        // value since only the caller will know what the values of the fields are.
-                        match &actual_args[0].1.expression {
-                            Expression::Variable { .. } | Expression::Reference(..) => {
-                                let rval = AbstractValue::make_from(
-                                    Expression::UnknownModelField {
-                                        path: rpath,
-                                        default: actual_args[2].1.clone(),
-                                    },
-                                    1,
-                                );
-                                self.current_environment.update_value_at(target_path, rval);
-                            }
-                            _ => {
-                                let rpath = actual_args[2].0.clone();
-                                self.copy_or_move_elements(target_path, rpath, rtype, true);
-                            }
-                        }
-                    }
-                    let exit_condition = self.current_environment.entry_condition.clone();
-                    self.current_environment.exit_conditions = self
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
-                } else {
-                    assume_unreachable!();
-                }
+                self.handle_get_model_field(&actual_args, destination);
                 return true;
             }
             KnownFunctionNames::MiraiPostcondition => {
@@ -1256,6 +1220,62 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         false
     }
 
+    /// Update the state so that the call result is the value of the model field (or the default
+    /// value if there is no field).
+    fn handle_get_model_field(
+        &mut self,
+        actual_args: &&[(Rc<Path>, Rc<AbstractValue>)],
+        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+    ) {
+        if let Some((place, target)) = destination {
+            let rtype = self.get_place_type(place);
+            checked_assume!(actual_args.len() == 3);
+
+            // The current value, if any, of the model field are a set of (path, value) pairs
+            // where each path is rooted by qualifier.model_field(..)
+            let qualifier = actual_args[0].0.clone();
+            let field_name = self.coerce_to_string(&actual_args[1].1);
+            let rpath = Path::new_model_field(qualifier, field_name, &self.current_environment)
+                .refine_paths(&self.current_environment);
+
+            let target_path = self.visit_place(place);
+            if self.current_environment.value_at(&rpath).is_some() {
+                // Move the model field (path, val) pairs to the target (i.e. the place where
+                // the return value of call to the mirai_get_model_field function would go if
+                // it were a normal call.
+                self.copy_or_move_elements(target_path, rpath, rtype, true);
+            } else {
+                // If there is no value for the model field in the environment, we should
+                // use the default value, but only the qualifier is not rooted in a parameter
+                // value since only the caller will know what the values of the fields are.
+                match &actual_args[0].1.expression {
+                    Expression::Variable { .. } | Expression::Reference(..) => {
+                        let rval = AbstractValue::make_from(
+                            Expression::UnknownModelField {
+                                path: rpath,
+                                default: actual_args[2].1.clone(),
+                            },
+                            1,
+                        );
+                        self.current_environment.update_value_at(target_path, rval);
+                    }
+                    _ => {
+                        let rpath = actual_args[2].0.clone();
+                        self.copy_or_move_elements(target_path, rpath, rtype, true);
+                    }
+                }
+            }
+            let exit_condition = self.current_environment.entry_condition.clone();
+            self.current_environment.exit_conditions = self
+                .current_environment
+                .exit_conditions
+                .insert(*target, exit_condition);
+        } else {
+            assume_unreachable!();
+        }
+    }
+
+    /// Update the state to reflect the assignment of the model field.
     fn handle_set_model_field(
         &mut self,
         actual_args: &&[(Rc<Path>, Rc<AbstractValue>)],
