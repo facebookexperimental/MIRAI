@@ -30,6 +30,7 @@ Likewise for postcondition! precondition! and verify!
 
 Additionally we also have:
 * assumed_postcondition! which is an assume at the definition site, rather than a verify.
+* assume_preconditions! which assumes that the caller has satisfied all (inferred) preconditions of the next call.
 * assume_unreachable! which assumes that it is unreachable for reasons beyond what MIRAI can reason about.
 * verify_unreachable! which requires MIRAI to verify that it is not unreachable.
 

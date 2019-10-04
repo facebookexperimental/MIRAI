@@ -45,11 +45,11 @@ fn run_pass() {
 }
 
 fn find_annotations_path() -> String {
-    let mut deps_path = PathBuf::from_str("../target/debug/deps").unwrap();
+    let mut deps_path = PathBuf::from_str("../target/debug").unwrap();
     if !deps_path.exists() {
-        deps_path = PathBuf::from_str("target/debug/deps").unwrap();
+        deps_path = PathBuf::from_str("target/debug").unwrap();
     }
-    for entry in fs::read_dir(deps_path).expect("failed to read target/debug/deps dir") {
+    for entry in fs::read_dir(deps_path).expect("failed to read target/debug dir") {
         let entry = entry.unwrap();
         if !entry.file_type().unwrap().is_file() {
             continue;

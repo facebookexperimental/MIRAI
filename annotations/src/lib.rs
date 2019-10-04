@@ -17,6 +17,22 @@ macro_rules! assume {
     };
 }
 
+/// Equivalent to a no op when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes MIRAI to assume that the preconditions of the next
+/// function call have been met.
+/// This is to be used when the precondition has been inferred and involves private state that
+/// cannot be constrained by a normal assumption.
+/// Note that it is bad style for an API to rely on preconditions that cannot be checked by the
+/// caller, so this is only here for supporting legacy APIs.
+#[macro_export]
+macro_rules! assume_preconditions {
+    () => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_assume_preconditions()
+        }
+    };
+}
+
 /// Equivalent to the standard assert! when used with an unmodified Rust compiler.
 /// When compiled with MIRAI, this causes MIRAI to assume the condition unless it can
 /// prove it to be false.
@@ -838,6 +854,10 @@ macro_rules! verify_unreachable {
 // Helper function for MIRAI. Should only be called via the assume macros.
 #[doc(hidden)]
 pub fn mirai_assume(_condition: bool) {}
+
+// Helper function for MIRAI. Should only be called via the assume_precondition macro.
+#[doc(hidden)]
+pub fn mirai_assume_preconditions() {}
 
 // Helper function for MIRAI. Should only be called via the postcondition macros.
 #[doc(hidden)]
