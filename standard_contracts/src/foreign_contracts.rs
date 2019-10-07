@@ -395,30 +395,37 @@ pub mod core {
             Some(T),
         }
 
-        impl<T> Option<T> {
-            pub fn as_ref(&self) -> core::option::Option<&T> {
-                match self {
-                    Self::None => core::option::Option::None,
+        pub mod implement {
+            pub fn as_ref<T>(self_: &Option<T>) -> core::option::Option<&T> {
+                match self_ {
+                    Option::None => core::option::Option::None,
                     _ => Some(result!()),
                 }
             }
 
-            pub fn is_none(&self) -> bool {
-                match self {
-                    Self::None => true,
+            pub fn is_none<T>(self_: &Option<T>) -> bool {
+                match self_ {
+                    Option::None => true,
                     _ => false,
                 }
             }
 
-            pub fn is_some(&self) -> bool {
-                match self {
-                    Self::None => false,
+            pub fn is_some<T>(self_: &Option<T>) -> bool {
+                match self_ {
+                    Option::None => false,
                     _ => true,
                 }
             }
 
-            pub fn unwrap(self) -> T {
-                precondition!(self.is_some(), "self may not be None");
+            pub fn take<T>(self_: &Option<T>) -> core::option::Option<T> {
+                match self_ {
+                    Option::None => core::option::Option::None,
+                    _ => Some(result!()),
+                }
+            }
+
+            pub fn unwrap<T>(self_: Option<T>) -> T {
+                precondition!(self_.is_some(), "self may not be None");
                 result!()
             }
         }

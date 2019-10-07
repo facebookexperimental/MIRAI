@@ -637,9 +637,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
                     let result = self.typed_cache.get(&function_id);
                     result.expect("value disappeared from typed_cache")
                 } else {
-                    let db = &self.db;
-                    if let Some(summary) = Self::get_persistent_summary_using_arg_types_if_possible(
-                        db,
+                    if let Some(summary) = self.get_persistent_summary_using_arg_types_if_possible(
                         &func_ref.summary_cache_key,
                         &func_ref.argument_type_key,
                     ) {
@@ -649,6 +647,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
                     // In this case we default to the summary that is not argument type specific, but
                     // we need to take care not to cache this summary in self.typed_cache because updating
                     // self.cache will not also update self.typed_cache.
+                    let db = &self.db;
                     self.cache.entry(def_id).or_insert_with(|| {
                         let summary =
                             Self::get_persistent_summary_for_db(db, &func_ref.summary_cache_key);
@@ -666,13 +665,11 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             // is only needed for function references that are obtained via deserialization of
             // function summaries.
             _ => {
-                let db = &self.db;
                 if self.typed_reference_cache.contains_key(func_ref) {
                     let result = self.typed_reference_cache.get(func_ref);
                     result.expect("value disappeared from typed_reference_cache")
                 } else {
-                    if let Some(summary) = Self::get_persistent_summary_using_arg_types_if_possible(
-                        db,
+                    if let Some(summary) = self.get_persistent_summary_using_arg_types_if_possible(
                         &func_ref.summary_cache_key,
                         &func_ref.argument_type_key,
                     ) {
@@ -682,6 +679,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
                             .or_insert(summary);
                     }
 
+                    let db = &self.db;
                     self.reference_cache
                         .entry(func_ref.clone())
                         .or_insert_with(|| {
@@ -706,8 +704,8 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
     /// of persistent_key with arg_types_key as the cache key and falling back to just the
     /// persistent_key if arg_types_key is None.
     #[logfn(TRACE)]
-    fn get_persistent_summary_using_arg_types_if_possible(
-        db: &Db,
+    pub fn get_persistent_summary_using_arg_types_if_possible(
+        &self,
         persistent_key: &str,
         arg_types_key: &str,
     ) -> Option<Summary> {
@@ -715,7 +713,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             let mut mangled_key = String::new();
             mangled_key.push_str(persistent_key);
             mangled_key.push_str(arg_types_key);
-            Self::get_persistent_summary_for_db(db, mangled_key.as_str())
+            Self::get_persistent_summary_for_db(&self.db, mangled_key.as_str())
         } else {
             None
         }

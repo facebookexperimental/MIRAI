@@ -8,6 +8,7 @@ use crate::constant_domain::ConstantValueCache;
 use crate::expected_errors;
 use crate::k_limits;
 use crate::summaries::{PersistentSummaryCache, Summary};
+use crate::utils;
 use crate::visitors::{MirVisitor, MirVisitorCrateContext};
 use crate::z3_solver::Z3Solver;
 
@@ -308,13 +309,24 @@ impl MiraiCallbacks {
                             if let rustc::mir::TerminatorKind::Call { func, .. } = kind {
                                 if let rustc::mir::Operand::Constant(constant) = func {
                                     let rustc::mir::Constant { literal, .. } = constant.borrow();
-                                    if let rustc::ty::TyKind::FnDef(def_id, ..) = &literal.ty.kind {
+                                    if let rustc::ty::TyKind::FnDef(def_id, generic_args) =
+                                        &literal.ty.kind
+                                    {
                                         if known_defs.insert(*def_id) {
                                             let summary_key = persistent_summary_cache
                                                 .get_summary_key_for(*def_id)
                                                 .clone();
+                                            let args_key =
+                                                utils::argument_types_key_str(&tcx, generic_args);
                                             let summary = persistent_summary_cache
-                                                .get_persistent_summary_for(&summary_key);
+                                                .get_persistent_summary_using_arg_types_if_possible(
+                                                    &summary_key,
+                                                    &args_key,
+                                                )
+                                                .unwrap_or_else(|| {
+                                                    persistent_summary_cache
+                                                        .get_persistent_summary_for(&summary_key)
+                                                });
                                             if !summary.is_not_default
                                                 && tcx.is_mir_available(*def_id)
                                             {

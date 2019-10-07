@@ -1115,6 +1115,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         fn unsimplified(x: &Rc<AbstractValue>, y: Rc<AbstractValue>) -> Rc<AbstractValue> {
             AbstractValue::make_binary(x.clone(), y, |left, right| Expression::Or { left, right })
         }
+        fn is_contained_in(x: &Rc<AbstractValue>, y: &Rc<AbstractValue>) -> bool {
+            if *x == *y {
+                return true;
+            }
+            if let Expression::Or { left, right } = &y.expression {
+                is_contained_in(x, left) || is_contained_in(x, right)
+            } else {
+                false
+            }
+        }
+
         if self.as_bool_if_known().unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
             Rc::new(TRUE)
         } else if other.is_top() || self.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
@@ -1126,20 +1137,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             if self.expression == other.expression {
                 return other;
             }
+
             // (!x || x) = true
             if let Expression::LogicalNot { operand } = &self.expression {
                 if is_contained_in(operand, &other) {
                     return Rc::new(TRUE);
                 }
-                fn is_contained_in(x: &Rc<AbstractValue>, y: &Rc<AbstractValue>) -> bool {
-                    if x.eq(y) {
-                        return true;
-                    }
-                    if let Expression::Or { left, right } = &y.expression {
-                        is_contained_in(x, left) || is_contained_in(x, right)
-                    } else {
-                        false
-                    }
+            }
+
+            // (x || !x) = true
+            if let Expression::LogicalNot { operand } = &other.expression {
+                if is_contained_in(operand, &self) {
+                    return Rc::new(TRUE);
                 }
             }
 
@@ -1218,6 +1227,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // (x || (!x && z)) = (x || z)
                 (_, Expression::And { left: y, right: z }) if self.inverse_implies(y) => {
                     self.or(z.clone())
+                }
+
+                // (x && y) || (!x || !y) = true
+                (Expression::And { left: x, right: y }, Expression::Or { left, right })
+                    if x.inverse_implies(left) && y.inverse_implies(right) =>
+                {
+                    Rc::new(TRUE)
                 }
 
                 _ => unsimplified(self, other),
