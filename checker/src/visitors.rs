@@ -976,7 +976,9 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         if self.check_for_errors {
             // Done with fixed point, so prepare to summarize.
             let return_guard = self.current_environment.entry_condition.as_bool_if_known();
-            if return_guard.unwrap_or(false) || self.exit_environment.value_map.is_empty() {
+            if return_guard.unwrap_or(false)
+                || (self.exit_environment.value_map.is_empty() && self.post_condition.is_some())
+            {
                 self.exit_environment = self.current_environment.clone();
             } else if return_guard.unwrap_or(true) {
                 self.exit_environment = self.current_environment.join(
