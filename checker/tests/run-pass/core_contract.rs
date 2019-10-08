@@ -10,5 +10,5 @@ pub fn main() {
     let x: Option<i64> = Some(1);
     let _y = x.unwrap();
     let z: Option<i64> = None;
-    let _ = z.unwrap(); //~ unsatisfied precondition: self may not be None, defined in standard_contracts/src/foreign_contracts.rs:421:17: 421:71
+    let _ = z.unwrap(); //~ unsatisfied precondition: self may not be None, defined in standard_contracts/src/foreign_contracts.rs:428:17: 428:72
 }
