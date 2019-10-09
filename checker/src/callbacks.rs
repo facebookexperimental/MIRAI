@@ -19,12 +19,14 @@ use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use rustc_driver::Compilation;
 use rustc_interface::interface;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
 use std::iter::FromIterator;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::rc::Rc;
-use syntax::errors::DiagnosticBuilder;
+use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use tempdir::TempDir;
 
 /// Private state used to implement the callbacks.
@@ -480,9 +482,9 @@ impl MiraiCallbacks {
     /// The outer fixed point loop has been terminated, so emit any diagnostics or, if testing,
     /// check that they are as expected.
     #[logfn_inputs(TRACE)]
-    fn emit_or_check_diagnostics(
+    fn emit_or_check_diagnostics<'a>(
         &mut self,
-        diagnostics_for: &mut HashMap<DefId, Vec<DiagnosticBuilder<'_>>>,
+        diagnostics_for: &mut HashMap<DefId, Vec<DiagnosticBuilder<'a>>>,
     ) -> bool {
         if self.test_run {
             let mut expected_errors = expected_errors::ExpectedErrors::new(self.file_name.as_str());
@@ -493,10 +495,27 @@ impl MiraiCallbacks {
             });
             expected_errors.check_messages(diags)
         } else {
+            let mut diagnostics: Vec<&mut DiagnosticBuilder<'a>> =
+                diagnostics_for.values_mut().flatten().collect();
+            fn compare_diagnostics<'a>(
+                x: &&mut DiagnosticBuilder<'a>,
+                y: &&mut DiagnosticBuilder<'a>,
+            ) -> Ordering {
+                let xd: &Diagnostic = x.deref();
+                let yd: &Diagnostic = y.deref();
+                if xd.span.primary_spans().lt(&yd.span.primary_spans()) {
+                    Ordering::Less
+                } else if xd.span.primary_spans().gt(&yd.span.primary_spans()) {
+                    Ordering::Greater
+                } else {
+                    Ordering::Equal
+                }
+            }
+            diagnostics.sort_by(compare_diagnostics);
             fn emit(db: &mut DiagnosticBuilder<'_>) {
                 db.emit();
             }
-            diagnostics_for.values_mut().flatten().for_each(emit);
+            diagnostics.into_iter().for_each(emit);
             true
         }
     }

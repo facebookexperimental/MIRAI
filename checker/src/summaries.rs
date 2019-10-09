@@ -345,7 +345,9 @@ fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precon
 #[logfn_inputs(TRACE)]
 fn remove_provenance(preconditions: &mut Vec<Precondition>) {
     for precondition in preconditions.iter_mut() {
-        precondition.provenance = None;
+        if !precondition.spans.is_empty() {
+            precondition.provenance = None;
+        }
     }
 }
 

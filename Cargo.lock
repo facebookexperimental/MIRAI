@@ -296,11 +296,6 @@ dependencies = [
 
 [[package]]
 name = "mirai-annotations"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "mirai-annotations"
 version = "1.5.0"
 
 [[package]]
@@ -591,7 +586,7 @@ dependencies = [
 name = "taint-error"
 version = "0.1.0"
 dependencies = [
- "mirai-annotations 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mirai-annotations 1.5.0",
 ]
 
 [[package]]
@@ -724,7 +719,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum log-derive 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "af5ac4192220bd122fe6589742bf3873f7207ef5f39d82d036b424448f3434c7"
 "checksum memchr 2.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "88579771288728879b57485cc7d6b07d648c9f0141eb955f8ab7f9d45394468e"
 "checksum memoffset 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "ce6075db033bbbb7ee5a0bbd3a3186bbae616f57fb001c485c7ff77955f8177f"
-"checksum mirai-annotations 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "04d2c9c31e9c7fb10c69843da5a44c19f1e2b2896036e0ed3cb526829f53e529"
 "checksum nodrop 0.1.13 (registry+https://github.com/rust-lang/crates.io-index)" = "2f9667ddcc6cc8a43afc9b7917599d7216aa09c463919ea32c59ed6cac8bc945"
 "checksum pagecache 0.19.4 (registry+https://github.com/rust-lang/crates.io-index)" = "3a3cb2f80e81d64e087e9de0dedd9d95c4360aae2822917d5e4994bf1b2e0070"
 "checksum parking_lot 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f842b1982eb6c2fe34036a4fbfb06dd185a3f5c8edfaacdf7d1ea10b07de6252"

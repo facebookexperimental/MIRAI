@@ -157,8 +157,8 @@ impl ConstantDomain {
             "mirai_annotations.mirai_shallow_clone" => MiraiShallowClone,
             "mirai_annotations.mirai_verify" => MiraiVerify,
             "std.future.from_generator" => StdFutureFromGenerator,
-            "std.panicking.begin_panic" => StdBeginPanic,
-            "std.panicking.begin_panic_fmt" => StdBeginPanicFmt,
+            "core.panicking.panic" | "std.panicking.begin_panic" => StdBeginPanic,
+            "core.panicking.panic_fmt" | "std.panicking.begin_panic_fmt" => StdBeginPanicFmt,
             _ => KnownFunctionNames::None,
         };
         ConstantDomain::Function(Rc::new(FunctionReference {
