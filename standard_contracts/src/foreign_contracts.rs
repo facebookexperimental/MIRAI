@@ -872,18 +872,12 @@ pub mod alloc {
                 }
 
                 pub fn push_front<T>(_self: &mut VecDeque, _value: T) {
-                    precondition!(
-                        _self.len < usize::max_value(),
-                        "exceeds max VecDeque length"
-                    );
+                    assume!(_self.len < usize::max_value());
                     _self.len += 1;
                 }
 
                 pub fn push_back<T>(_self: &mut VecDeque, _value: T) {
-                    precondition!(
-                        _self.len < usize::max_value(),
-                        "exceeds max VecDeque length"
-                    );
+                    assume!(_self.len < usize::max_value());
                     _self.len += 1;
                 }
 
