@@ -13,7 +13,7 @@ extern crate mirai_annotations;
 
 fn foo1(i: i32) {
     if i < 10 {
-        assume_unreachable!();
+        assume_unreachable!("do assume!");
     }
 }
 
@@ -23,4 +23,6 @@ fn foo2(i: i32) {
     }
 }
 
-pub fn main() {}
+pub fn main() {
+    foo1(2);
+}

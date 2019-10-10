@@ -814,13 +814,32 @@ macro_rules! set_model_field {
 #[macro_export]
 macro_rules! assume_unreachable {
     () => {
-        unreachable!()
+        if cfg!(mirai) {
+            unreachable!()
+        } else {
+            unreachable!()
+        }
     };
     ($message:literal) => {
-        unreachable!($message)
+        if cfg!(mirai) {
+            unreachable!()
+        } else {
+            unreachable!($message)
+        }
     };
-    (($fmt:expr, $($arg:tt)*)) => {
-        unreachable!($fmt, $($arg)*)
+    ($msg:expr,) => ({
+        if cfg!(mirai) {
+            unreachable!()
+        } else {
+            unreachable!($msg)
+        }
+    });
+    ($fmt:expr, $($arg:tt)*) => {
+        if cfg!(mirai) {
+            unreachable!()
+        } else {
+            unreachable!($fmt, $($arg)*)
+        }
     };
 }
 
@@ -842,7 +861,14 @@ macro_rules! verify_unreachable {
             unreachable!($message)
         }
     };
-    (($fmt:expr, $($arg:tt)*)) => {
+    ($msg:expr,) => ({
+        if cfg!(mirai) {
+            panic!($message)
+        } else {
+            unreachable!($msg)
+        }
+    });
+    ($fmt:expr, $($arg:tt)*) => {
         if cfg!(mirai) {
             panic!($fmt, $($arg)*);
         } else {
