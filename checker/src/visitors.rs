@@ -1871,7 +1871,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         condition,
                         message: msg,
                         provenance: None,
-                        spans: vec![self.current_span],
+                        spans: if self.def_id.is_local() {
+                            vec![span]
+                        } else {
+                            vec![] // The span is likely inside a standard macro
+                        },
                     };
                     self.preconditions.push(precondition);
                 }

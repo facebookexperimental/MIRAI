@@ -11,4 +11,4 @@ test = false # we have no unit tests
 doctest = false # and no doc tests
 
 [dependencies]
-mirai-annotations = "1.4.0"
+mirai-annotations = { path = "../../../annotations" }

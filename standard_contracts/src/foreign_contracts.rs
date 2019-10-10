@@ -389,59 +389,6 @@ pub mod core {
         }
     }
 
-    pub mod option {
-        pub enum Option<T> {
-            None,
-            Some(T),
-        }
-
-        pub mod implement {
-            pub fn as_ref<T>(self_: &Option<T>) -> core::option::Option<&T> {
-                match self_ {
-                    Option::None => core::option::Option::None,
-                    _ => Some(result!()),
-                }
-            }
-
-            pub fn is_none<T>(self_: &Option<T>) -> bool {
-                match self_ {
-                    Option::None => true,
-                    _ => false,
-                }
-            }
-
-            pub fn is_some<T>(self_: &Option<T>) -> bool {
-                match self_ {
-                    Option::None => false,
-                    _ => true,
-                }
-            }
-
-            pub fn take<T>(self_: &Option<T>) -> core::option::Option<T> {
-                match self_ {
-                    Option::None => core::option::Option::None,
-                    _ => Some(result!()),
-                }
-            }
-
-            pub fn unwrap<T>(self_: Option<T>) -> T {
-                precondition!(self_.is_some(), "self may not be None");
-                result!()
-            }
-        }
-
-        pub mod implement_core_option_Option_T {
-            use crate::foreign_contracts::core::option::Option;
-
-            pub fn unwrap_or_default<T: Default>(v: Option<T>) -> T {
-                match v {
-                    Option::None => Default::default(),
-                    Option::Some(v) => v,
-                }
-            }
-        }
-    }
-
     pub mod ops {
         pub mod range {
             pub mod implement_core_ops_range_RangeInclusive_Idx {
