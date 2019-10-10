@@ -660,7 +660,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn dereference(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::AbstractHeapAddress(..) => self.clone(),
+            Expression::AbstractHeapAddress(..) | Expression::Bottom | Expression::Top => {
+                self.clone()
+            }
             Expression::Cast {
                 operand,
                 target_type: cast_type,
