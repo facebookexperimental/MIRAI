@@ -234,7 +234,6 @@ impl Summary {
         e2: &[(Rc<Path>, Rc<AbstractValue>)],
         mut acc: Vec<(Rc<Path>, Rc<AbstractValue>)>,
     ) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {
-        assume!(acc.len() < std::usize::MAX); // We'll run out of memory long before this overflows
         if e1.is_empty() {
             if e2.is_empty() {
                 return acc;
@@ -294,8 +293,6 @@ pub fn summarize(
                 },
                 1,
             );
-            // We are extracting a subset of information out of env, which has not overflowed.
-            assume!(side_effects.len() < usize::max_value());
             side_effects.push((return_path, return_value.clone()));
             result = Some(return_value);
         }
@@ -380,7 +377,6 @@ fn extract_side_effects(
                 }
             }
             // We are extracting a subset of information out of env, which has not overflowed.
-            assume!(result.len() < usize::max_value());
             result.push((path.clone(), value.clone()));
         }
     }
@@ -408,8 +404,6 @@ fn extract_reachable_heap_allocations(
                 {
                     path.record_heap_addresses(&mut new_roots);
                     value.record_heap_addresses(&mut new_roots);
-                    // We are extracting a subset of information out of env, which has not overflowed.
-                    assume!(result.len() < usize::max_value());
                     result.push((path.clone(), value.clone()));
                 }
             }
@@ -598,7 +592,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             Some(id) => {
                 let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
                 if !dependents.contains(&id) {
-                    assume!(dependents.len() < std::usize::MAX); // We'll run out of memory long  before this overflows
                     dependents.push(id);
                 }
             }
@@ -632,7 +625,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
             (Some(def_id), Some(function_id)) => {
                 let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
                 if !dependents.contains(&dependent_def_id) {
-                    assume!(dependents.len() < std::usize::MAX); // We'll run out of memory long  before this overflows
                     dependents.push(dependent_def_id);
                 }
                 if self.typed_cache.contains_key(&function_id) {

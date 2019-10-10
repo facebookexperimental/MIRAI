@@ -1,3 +1,8 @@
+// Copyright (c) Facebook, Inc. and its affiliates.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(unknown_lints)]
@@ -772,10 +777,7 @@ pub mod alloc {
             }
 
             pub fn append(&mut self, other: &mut Vec<T>) {
-                precondition!(
-                    self.len <= usize::max_value() - other.len(),
-                    "exceeds max vector length"
-                );
+                assume!(self.len <= usize::max_value() - other.len());
                 self.len += other.len;
             }
 
@@ -813,15 +815,12 @@ pub mod alloc {
             }
 
             pub fn push(&mut self, _value: T) {
-                precondition!(self.len < usize::max_value(), "exceeds max vector length");
+                assume!(self.len < usize::max_value());
                 self.len += 1;
             }
 
             pub fn reserve(&mut self, additional: usize) {
-                precondition!(
-                    self.len < usize::max_value() - additional,
-                    "exceeds max vector capacity"
-                );
+                assume!(self.len < usize::max_value() - additional);
                 let new_capacity = self.len + additional;
                 if new_capacity > self.capacity {
                     self.capacity = new_capacity;
