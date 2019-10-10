@@ -695,13 +695,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 1,
             ),
             Expression::Widen { path, operand } => operand.dereference(target_type).widen(path),
-            _ => {
-                debug!(
-                    "found unhandled expression that is of type reference: {:?}",
-                    self.expression
-                );
-                assume_unreachable!();
-            }
+            _ => assume_unreachable!(
+                "found unhandled expression that is of type reference: {:?}",
+                self.expression
+            ),
         }
     }
 
