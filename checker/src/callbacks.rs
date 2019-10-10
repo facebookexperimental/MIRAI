@@ -14,7 +14,6 @@ use crate::z3_solver::Z3Solver;
 
 use log::{info, warn};
 use log_derive::{logfn, logfn_inputs};
-use mirai_annotations::assume;
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
 use rustc_driver::Compilation;
@@ -332,9 +331,6 @@ impl MiraiCallbacks {
                                             if !summary.is_not_default
                                                 && tcx.is_mir_available(*def_id)
                                             {
-                                                // We can safely assume that rustc will have run out of
-                                                // memory long before this vector overflows.
-                                                assume!(defs_to_analyze.len() < usize::max_value());
                                                 defs_to_analyze.push(*def_id);
                                             }
                                         }
