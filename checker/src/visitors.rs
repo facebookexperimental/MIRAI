@@ -1276,20 +1276,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
             .collect();
-        if self.handled_as_special_function_call(known_name, &actual_args, destination, cleanup) {
+        if self.handled_as_special_function_call(
+            &func_to_call,
+            known_name,
+            &actual_args,
+            destination,
+            cleanup,
+        ) {
             return;
         }
         let function_summary = self.get_function_summary(&func_to_call, &actual_args);
-        if self.check_for_errors
-            && !self.assume_preconditions_of_next_call
-            && !self
-                .already_reported_errors_for_call_to
-                .contains(&func_to_call)
-        {
-            self.check_function_preconditions(&actual_args, &function_summary, &func_to_call);
-        } else {
-            self.assume_preconditions_of_next_call = false;
-        }
+        self.check_preconditions_if_necessary(&func_to_call, &actual_args, &function_summary);
         self.transfer_and_refine_normal_return_state(
             destination,
             &actual_args,
@@ -1299,18 +1296,50 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.transfer_and_refine_cleanup_state(cleanup, &actual_args, &function_summary);
     }
 
+    /// If we are checking for errors and have not assumed the preconditions of the called function
+    /// and we are not in angelic mode and have not already reported an error for this call,
+    /// then check the preconditions and report any conditions that are not known to hold at this point.
+    fn check_preconditions_if_necessary(
+        &mut self,
+        func_to_call: &Rc<AbstractValue>,
+        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        function_summary: &Summary,
+    ) {
+        if self.check_for_errors
+            && !self.assume_preconditions_of_next_call
+            && !self
+                .already_reported_errors_for_call_to
+                .contains(func_to_call)
+        {
+            self.check_function_preconditions(actual_args, function_summary, func_to_call);
+        } else {
+            self.assume_preconditions_of_next_call = false;
+        }
+    }
+
     /// If the current call is to a well known function for which we don't have a cached summary,
     /// this function will update the environment as appropriate and return true. If the return
     /// result is false, just carry on with the normal logic.
     #[logfn_inputs(TRACE)]
     fn handled_as_special_function_call(
         &mut self,
+        func_to_call: &Rc<AbstractValue>,
         known_name: &KnownFunctionNames,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
     ) -> bool {
         match *known_name {
+            KnownFunctionNames::CoreFnOnce => {
+                self.try_to_inline_standard_ops_func(
+                    func_to_call,
+                    known_name,
+                    &actual_args,
+                    destination,
+                    cleanup,
+                );
+                return true;
+            }
             KnownFunctionNames::MiraiAssume => {
                 checked_assume!(actual_args.len() == 1);
                 if self.check_for_errors {
@@ -1416,7 +1445,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 return true;
             }
             _ => {
-                let result = self.try_to_inline_standard_ops_func(known_name, &actual_args);
+                let result = self.try_to_inline_standard_ops_func(
+                    func_to_call,
+                    known_name,
+                    &actual_args,
+                    destination,
+                    cleanup,
+                );
                 if !result.is_bottom() {
                     if let Some((place, target)) = destination {
                         let target_path = self.visit_place(place);
@@ -1636,44 +1671,89 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn try_to_inline_standard_ops_func(
         &mut self,
+        func_to_call: &Rc<AbstractValue>,
         known_name: &KnownFunctionNames,
         args: &[(Rc<Path>, Rc<AbstractValue>)],
+        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+        cleanup: Option<mir::BasicBlock>,
     ) -> Rc<AbstractValue> {
-        if *known_name == KnownFunctionNames::CoreSliceLen {
-            checked_assume!(args.len() == 1);
-            let slice_val = &args[0].1;
-            let qualifier = match &slice_val.expression {
-                Expression::Reference(path) => Some(path.clone()),
-                Expression::Variable { path, .. } => Some(path.clone()),
-                Expression::AbstractHeapAddress(ordinal) => Some(Rc::new(
-                    PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into(),
-                )),
-                _ => None,
-            };
-            if let Some(qualifier) = qualifier {
-                let len_path = Path::new_length(qualifier, &self.current_environment);
-                return self.lookup_path_and_refine_result(len_path, ExpressionType::Usize);
-            }
-        }
-        if *known_name == KnownFunctionNames::CoreStrLen {
-            checked_assume!(args.len() == 1);
-            let str_val = &args[0].1;
-            let qualifier = match &str_val.expression {
-                Expression::Reference(path) | Expression::Variable { path, .. } => {
-                    let len_path = Path::new_string_length(path.clone(), &self.current_environment);
-                    let res = self.lookup_path_and_refine_result(len_path, ExpressionType::U128);
-                    Some(res)
+        match known_name {
+            KnownFunctionNames::CoreFnOnce => {
+                checked_assume!(destination.is_some());
+                checked_assume!(args.len() == 2);
+                let callee = args[0].1.clone();
+                let actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)>;
+                if let Expression::CompileTimeConstant(ConstantDomain::Function(func_ref)) =
+                    &func_to_call.expression
+                {
+                    actual_args = func_ref
+                        .generic_arguments
+                        .iter()
+                        .enumerate()
+                        .map(|(i, t)| {
+                            let arg_path =
+                                Path::new_field(args[1].0.clone(), i, &self.current_environment);
+                            let arg_val =
+                                self.lookup_path_and_refine_result(arg_path.clone(), t.clone());
+                            (arg_path, arg_val)
+                        })
+                        .collect();
+                } else {
+                    assume_unreachable!(); // The only way to have a known name is via a function reference
                 }
-                Expression::CompileTimeConstant(ConstantDomain::Str(s)) => {
-                    Some(Rc::new(ConstantDomain::U128(s.len() as u128).into()))
-                }
-                _ => None,
-            };
-            if let Some(qualifier) = qualifier {
-                return qualifier;
+                let function_summary = self.get_function_summary(&callee, &actual_args);
+                self.check_preconditions_if_necessary(
+                    func_to_call,
+                    &actual_args,
+                    &function_summary,
+                );
+                self.transfer_and_refine_normal_return_state(
+                    destination,
+                    &actual_args,
+                    &function_summary,
+                    callee,
+                );
+                self.transfer_and_refine_cleanup_state(cleanup, &actual_args, &function_summary);
+                abstract_value::BOTTOM.into()
             }
+            KnownFunctionNames::CoreSliceLen => {
+                checked_assume!(args.len() == 1);
+                let slice_val = &args[0].1;
+                let qualifier = match &slice_val.expression {
+                    Expression::Reference(path) => Some(path.clone()),
+                    Expression::Variable { path, .. } => Some(path.clone()),
+                    Expression::AbstractHeapAddress(ordinal) => Some(Rc::new(
+                        PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into(),
+                    )),
+                    _ => None,
+                };
+                qualifier
+                    .map(|qualifier| {
+                        let len_path = Path::new_length(qualifier, &self.current_environment);
+                        self.lookup_path_and_refine_result(len_path, ExpressionType::Usize)
+                    })
+                    .unwrap_or_else(|| abstract_value::BOTTOM.into())
+            }
+            KnownFunctionNames::CoreStrLen => {
+                checked_assume!(args.len() == 1);
+                let str_val = &args[0].1;
+                let qualifier = match &str_val.expression {
+                    Expression::Reference(path) | Expression::Variable { path, .. } => {
+                        let len_path =
+                            Path::new_string_length(path.clone(), &self.current_environment);
+                        let res =
+                            self.lookup_path_and_refine_result(len_path, ExpressionType::U128);
+                        Some(res)
+                    }
+                    Expression::CompileTimeConstant(ConstantDomain::Str(s)) => {
+                        Some(Rc::new(ConstantDomain::U128(s.len() as u128).into()))
+                    }
+                    _ => None,
+                };
+                qualifier.unwrap_or_else(|| abstract_value::BOTTOM.into())
+            }
+            _ => abstract_value::BOTTOM.into(),
         }
-        abstract_value::BOTTOM.into()
     }
 
     /// Returns a summary of the function to call, obtained from the summary cache.
@@ -1916,12 +1996,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     },
                     1,
                 );
-                self.transfer_and_refine(
-                    &[(return_value_path.clone(), result)],
-                    target_path,
-                    &return_value_path,
-                    actual_args,
-                );
+                self.current_environment
+                    .update_value_at(return_value_path, result);
             }
 
             // Add post conditions to entry condition

@@ -73,6 +73,8 @@ impl Debug for ConstantDomain {
 pub enum KnownFunctionNames {
     /// This is not a known function
     None,
+    /// core.ops.function.FnOnce.call_once
+    CoreFnOnce,
     /// core.slice.impl.len
     CoreSliceLen,
     /// core.str.implement_str.len
@@ -119,6 +121,8 @@ pub struct FunctionReference {
     /// function will have a different function_id but the same def_id.
     #[serde(skip)] // because it is derived from def_id
     pub function_id: Option<usize>,
+    /// The generic argument types with which the referenced function was instantiated, if generic.
+    pub generic_arguments: Vec<ExpressionType>,
     /// Indicates if the function is known to be treated specially by the Rust compiler
     pub known_name: KnownFunctionNames,
     /// The key to use when retrieving a summary for the function from the summary cache
@@ -143,7 +147,9 @@ impl ConstantDomain {
         use KnownFunctionNames::*;
         let summary_cache_key = summary_cache.get_summary_key_for(def_id).to_owned();
         let argument_type_key = utils::argument_types_key_str(tcx, generic_args);
+        let generic_arguments = generic_args.types().map(|t| (&t.kind).into()).collect();
         let known_name = match summary_cache_key.as_str() {
+            "core.ops.function.FnOnce.call_once" => CoreFnOnce,
             "core.slice.implement.len" => CoreSliceLen,
             "core.str.implement_str.len" => CoreStrLen,
             "mirai_annotations.mirai_assume" => MiraiAssume,
@@ -164,6 +170,7 @@ impl ConstantDomain {
         ConstantDomain::Function(Rc::new(FunctionReference {
             def_id: Some(def_id),
             function_id: Some(function_id),
+            generic_arguments,
             known_name,
             summary_cache_key,
             argument_type_key,
