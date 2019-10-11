@@ -9,8 +9,9 @@ You'll need to install MIRAI as described here for [MacOx and Windows](https://g
 and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Linux.md).
 
 To run mirai, use cargo with `RUSTC_WRAPPER` set to `mirai`.
-Use `rustup override set nightly-2019-MM-DD` to make Cargo use the same version of Rust as MIRAI. If you forget to do
-that you'll see an error message complaining about a dynamic load library not being found.
+Use `rustup override set nightly-YYYY-MM-DD` to make Cargo use the same version of Rust as MIRAI. See the above installation
+instruction to determine which version to use. If you forget to do that or use the wrong version,
+you'll see an error message complaining about a dynamic load library not being found. 
 
 The easiest way to get started is to first build your project in the normal way.
 Refer [this link](https://doc.rust-lang.org/1.30.0/book/2018-edition/ch01-00-getting-started.html) for details
