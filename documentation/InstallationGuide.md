@@ -7,6 +7,14 @@ In order to use MIRAI, you need to install Rust, install Z3, and install MIRAI i
 You should install rustup and then use it to get hold of the latest Rust compiler.
 See [here](https://doc.rust-lang.org/book/ch01-01-installation.html) for instructions.
 
+Before installing and running MIRAI you should set the current compiler to be same as the compiler
+listed in the MIRAI [rust-toolchain] (https://github.com/facebookexperimental/MIRAI/blob/master/rust-toolchain).
+
+For example:
+```
+rustup override set nightly-2019-10-04
+```
+
 ## Installing Z3
 
 The simplest way to install Z3 on a (non linux) system with brew is just
@@ -49,7 +57,8 @@ where /r c:\ mirai.exe
 
 If you just want to use MIRAI you can simply do:
 ```
-cargo install --git https://github.com/facebookexperimental/MIRAI --force --version 1.0.3 mirai
+# Remember to rustup set override nightly-YYYY-MM-DD in this directory (or a parent)
+cargo install --git https://github.com/facebookexperimental/MIRAI
 ```
 
 ## Contributing to MIRAI
