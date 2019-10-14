@@ -289,7 +289,7 @@ pub fn summarize(
             let return_value = AbstractValue::make_from(
                 Expression::Variable {
                     path: return_path.clone(),
-                    var_type: return_type.clone(),
+                    var_type: return_type,
                 },
                 1,
             );
@@ -455,7 +455,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
         options.create(true);
         options.read(true);
         options.write(true);
-        let config_builder = ConfigBuilder::new().path(summary_store_path.clone());
+        let config_builder = ConfigBuilder::new().path(summary_store_path);
         let config;
         let lock_file;
         loop {
