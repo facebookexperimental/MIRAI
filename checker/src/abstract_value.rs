@@ -527,10 +527,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return self.clone();
         }
         if consequent.is_bottom() {
-            return alternate.clone();
+            return alternate;
         }
         if alternate.is_bottom() {
-            return consequent.clone();
+            return consequent;
         }
         if consequent.expression == alternate.expression {
             // c ? x : x is just x
@@ -1082,7 +1082,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
-        AbstractValue::make_unary(self.clone(), |operand| Expression::Neg { operand })
+        AbstractValue::make_unary(self, |operand| Expression::Neg { operand })
     }
 
     /// Returns an element that is "self != other".

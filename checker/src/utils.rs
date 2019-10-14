@@ -133,7 +133,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
         Closure(def_id, subs) => {
             str.push_str("closure_");
             str.push_str(qualified_type_name(tcx, def_id).as_str());
-            for sub in subs.substs {
+            for sub in subs.as_closure().substs {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
@@ -158,7 +158,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
         Generator(def_id, subs, ..) => {
             str.push_str("generator_");
             str.push_str(qualified_type_name(tcx, def_id).as_str());
-            for sub in subs.substs {
+            for sub in subs.as_generator().substs {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
@@ -265,23 +265,15 @@ fn qualified_type_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
 #[logfn(TRACE)]
 fn crate_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
     if def_id.is_local() {
-        tcx.crate_name.as_interned_str().as_str().to_string()
+        tcx.crate_name.as_interned_str().as_str()
     } else {
-        // This is both ugly and probably brittle, but I can't find any other
-        // way to retrieve the crate name from a def_id that is not local.
-        // tcx.crate_data_as_rc_any returns an untracked value, which is potentially problematic
-        // as per the comments on the function:
-        // "Note that this is *untracked* and should only be used within the query
-        // system if the result is otherwise tracked through queries"
-        // For now, this seems OK since we are only using the crate name.
-        // Of course, should a crate name change in an incremental scenario this
-        // is going to be the least of our worries.
         let cdata = tcx.crate_data_as_rc_any(def_id.krate);
-        let cdata = cdata
+        let metadata = cdata
             .downcast_ref::<rustc_metadata::cstore::CrateMetadata>()
-            .expect("expected tcx to provide an actual crate");
-        cdata.name.as_str().to_string()
+            .expect("tcx to provide an actual crate");
+        metadata.root.name.as_str()
     }
+    .to_string()
 }
 
 /// Constructs a string that uniquely identifies a definition to serve as a key to

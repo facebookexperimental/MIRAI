@@ -2034,7 +2034,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let exit_condition = self.current_environment.entry_condition.and(if expected {
             cond_val.clone()
         } else {
-            not_cond_val.clone()
+            not_cond_val
         });
         self.current_environment.exit_conditions = self
             .current_environment
@@ -2336,12 +2336,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                         Rc::new(self.constant_value_cache.get_u128_for(index).clone().into());
                     let index_path =
                         Path::new_index(qualifier.clone(), index_val, &self.current_environment);
-                    self.copy_or_move_elements(
-                        target_path,
-                        index_path,
-                        rtype.clone(),
-                        move_elements,
-                    );
+                    self.copy_or_move_elements(target_path, index_path, rtype, move_elements);
                     return;
                 }
                 PathSelector::Subslice { from, to } => {
@@ -2516,7 +2511,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                 let rval = self
                     .lookup_path_and_refine_result(qualifier.clone(), ExpressionType::Reference);
                 self.copy_or_move_elements(
-                    path.clone(),
+                    path,
                     qualifier.clone(),
                     rval.expression.infer_type(),
                     false,
@@ -3309,7 +3304,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             let func_const = self.constant_value_cache.get_function_constant_for(
                                 *def_id,
                                 ty,
-                                generic_args.substs,
+                                generic_args.as_generator().substs,
                                 self.tcx,
                                 self.summary_cache,
                             );

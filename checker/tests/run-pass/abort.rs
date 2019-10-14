@@ -6,8 +6,10 @@
 
 // A test that calls Visitor::visit_abort
 
-use std::{panic};
+use std::panic;
 
 pub extern "C" fn panic_in_ffi() {
-    panic!("Test");  //~ Test
+    panic!("Test"); //~ Test
 }
+
+pub fn main() {}
