@@ -341,7 +341,11 @@ pub mod core {
                 0
             }
             pub fn checked_add(_self: usize, value: usize) -> Option<usize> {
-                _self.checked_add(value)
+                if _self > max_value() - value {
+                    None
+                } else {
+                    Some(_self + value)
+                }
             }
         }
 
@@ -353,7 +357,11 @@ pub mod core {
                 0
             }
             pub fn checked_add(_self: u8, value: u8) -> Option<u8> {
-                _self.checked_add(value)
+                if _self > max_value() - value {
+                    None
+                } else {
+                    Some(_self + value)
+                }
             }
         }
 
@@ -752,6 +760,7 @@ pub mod alloc {
             }
         }
     }
+
     pub mod vec {
         pub struct Vec<T> {
             _phantom: std::marker::PhantomData<T>,
@@ -832,6 +841,7 @@ pub mod alloc {
             }
         }
     }
+
     pub mod collections {
         pub mod vec_deque {
             pub struct VecDeque {
@@ -902,6 +912,7 @@ pub mod rand {
             }
         }
     }
+
     pub mod Rng {
         use crate::foreign_contracts::rand::rngs;
         pub fn gen_range__rand_rngs_std_StdRng_usize_usize_usize(
