@@ -15,13 +15,6 @@
 #[macro_use]
 extern crate mirai_annotations;
 
-pub fn foo<T: Foo>(bar: &T) {
-    let i: i32 = 0;
-    verify!(bar.one(i) == 2);
-    let d: i64 = 0;
-    verify!(bar.one(d) == 3);
-}
-
 pub mod foreign_contracts {
     pub mod def_id_not_unique {
         pub trait Foo {
@@ -34,6 +27,13 @@ pub mod foreign_contracts {
             }
         }
     }
+}
+
+pub fn foo<T: Foo>(bar: &T) {
+    let i: i32 = 0;
+    verify!(bar.one(i) == 2);
+    let d: i64 = 0;
+    verify!(bar.one(d) == 3);
 }
 
 pub trait Foo {

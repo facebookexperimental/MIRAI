@@ -109,7 +109,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
             .global_ctxt()
             .unwrap()
             .peek_mut()
-            .enter(|tcx| self.analyze_with_mirai(compiler, tcx));
+            .enter(|tcx| self.analyze_top_down_with_mirai(compiler, tcx));
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
             Compilation::Stop
@@ -137,7 +137,7 @@ struct AnalysisInfo<'compilation, 'tcx> {
 impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
-    fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'_>) {
+    pub fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'_>) {
         let mut max_fixed_point_iterations = k_limits::MAX_OUTER_FIXPOINT_ITERATIONS;
 
         // runs out of memory
@@ -544,5 +544,151 @@ impl MiraiCallbacks {
             outer_fixed_point_iteration: iteration_count,
         });
         mir_visitor.visit_body(&name)
+    }
+
+    /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
+    #[logfn(TRACE)]
+    fn analyze_top_down_with_mirai(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'_>) {
+        if self.file_name.contains("/compiler")
+            || self.file_name.contains("/ir-to-bytecode")
+            || self.file_name.contains("/libradb")
+            || self.file_name.contains("/noise")
+            || self.file_name.contains("/stdlib")
+        {
+            return;
+        }
+        let output_dir = String::from(self.output_directory.to_str().expect("valid string"));
+        let summary_store_path = if std::env::var("MIRAI_SHARE_PERSISTENT_STORE").is_ok() {
+            output_dir
+        } else {
+            let temp_dir = TempDir::new("mirai_temp_dir").expect("failed to create a temp dir");
+            String::from(temp_dir.into_path().to_str().expect("valid string"))
+        };
+        info!(
+            "storing summaries for {} at {}/.summary_store.sled",
+            self.file_name, summary_store_path
+        );
+        let persistent_summary_cache = PersistentSummaryCache::new(tcx, summary_store_path);
+        let defs = Vec::from_iter(tcx.body_owners());
+        let constant_value_cache = ConstantValueCache::default();
+        let def_sets = DefSets {
+            defs_to_analyze: HashSet::from_iter(defs.clone().into_iter()),
+            defs_to_reanalyze: HashSet::new(),
+            defs_to_not_reanalyze: HashSet::new(),
+        };
+        let diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'_>>> = HashMap::new();
+        let mut analysis_info = AnalysisInfo {
+            persistent_summary_cache,
+            constant_value_cache,
+            def_sets,
+            diagnostics_for,
+            analyze_single_func: self.analyze_single_func.to_owned(),
+        };
+        Self::analyze_bodies_top_down(compiler, tcx, &defs, &mut analysis_info);
+        if !self.emit_or_check_diagnostics(&mut analysis_info.diagnostics_for) {
+            compiler.session().fatal("test failed");
+        }
+    }
+
+    #[logfn(TRACE)]
+    fn analyze_bodies_top_down<'analysis, 'tcx>(
+        compiler: &'analysis interface::Compiler,
+        tcx: TyCtxt<'tcx>,
+        defs: &[DefId],
+        analysis_info: &mut AnalysisInfo<'analysis, 'tcx>,
+    ) {
+        // Analyze all public methods
+        for def_id in defs.iter() {
+            if !utils::is_public(*def_id, tcx) {
+                continue;
+            }
+            MiraiCallbacks::analyze_body_top_down(compiler, tcx, analysis_info, *def_id);
+        }
+        // Analyze non public methods that have not been called in this crate.
+        for def_id in defs.iter() {
+            if !utils::is_public(*def_id, tcx)
+                && analysis_info
+                    .persistent_summary_cache
+                    .get_dependents(def_id)
+                    .is_empty()
+            {
+                MiraiCallbacks::analyze_body_top_down(compiler, tcx, analysis_info, *def_id);
+            }
+        }
+    }
+
+    fn analyze_body_top_down<'analysis, 'tcx>(
+        compiler: &'analysis interface::Compiler,
+        tcx: TyCtxt<'tcx>,
+        analysis_info: &mut AnalysisInfo<'analysis, 'tcx>,
+        def_id: DefId,
+    ) {
+        if !utils::is_foreign_contract(tcx, def_id) {
+            let summary = analysis_info
+                .persistent_summary_cache
+                .get_summary_for(def_id, None);
+            if summary.is_not_default {
+                return;
+            }
+        }
+        let name = MiraiCallbacks::get_and_log_name(
+            &mut analysis_info.persistent_summary_cache,
+            analysis_info.analyze_single_func.is_none(),
+            1,
+            def_id,
+        );
+        if let Some(fname) = &analysis_info.analyze_single_func {
+            // If the SINGLE_FUNC=fname option was provided, skip the analysis of all
+            // functions whose names don't match fname.
+            if *fname != name.to_string() {
+                return;
+            }
+        };
+        let mut buffered_diagnostics: Vec<DiagnosticBuilder<'_>> = vec![];
+        Self::visit_body_top_down(
+            def_id,
+            &name,
+            compiler,
+            tcx,
+            analysis_info,
+            &mut buffered_diagnostics,
+        );
+        fn cancel(mut db: DiagnosticBuilder<'_>) {
+            db.cancel();
+        }
+        if let Some(old_diags) = analysis_info
+            .diagnostics_for
+            .insert(def_id, buffered_diagnostics)
+        {
+            old_diags.into_iter().for_each(cancel)
+        }
+    }
+
+    /// Run the abstract interpreter over the function body and produce a summary of its effects
+    /// and collect any diagnostics into the buffer.
+    #[logfn(TRACE)]
+    fn visit_body_top_down<'analysis, 'compilation, 'tcx>(
+        def_id: DefId,
+        name: &str,
+        compiler: &'compilation interface::Compiler,
+        tcx: TyCtxt<'tcx>,
+        analysis_info: &'analysis mut AnalysisInfo<'compilation, 'tcx>,
+        mut buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
+    ) {
+        let mir = tcx.optimized_mir(def_id);
+        let mut smt_solver = Z3Solver::default();
+        analysis_info.constant_value_cache.reset_heap_counter();
+        let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
+            session: compiler.session(),
+            tcx,
+            def_id,
+            mir,
+            summary_cache: &mut analysis_info.persistent_summary_cache,
+            constant_value_cache: &mut analysis_info.constant_value_cache,
+            smt_solver: &mut smt_solver,
+            buffered_diagnostics: &mut buffered_diagnostics,
+            outer_fixed_point_iteration: 1,
+        });
+        mir_visitor.visit_body_top_down(&name);
     }
 }
