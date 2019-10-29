@@ -109,7 +109,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
             .global_ctxt()
             .unwrap()
             .peek_mut()
-            .enter(|tcx| self.analyze_with_mirai(compiler, &tcx));
+            .enter(|tcx| self.analyze_with_mirai(compiler, tcx));
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
             Compilation::Stop
@@ -126,18 +126,18 @@ struct DefSets {
     defs_to_not_reanalyze: HashSet<DefId>,
 }
 
-struct AnalysisInfo<'a, 'tcx> {
-    persistent_summary_cache: PersistentSummaryCache<'a, 'tcx>,
+struct AnalysisInfo<'compilation, 'tcx> {
+    persistent_summary_cache: PersistentSummaryCache<'tcx>,
     constant_value_cache: ConstantValueCache<'tcx>,
     def_sets: DefSets,
-    diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'a>>>,
+    diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'compilation>>>,
     analyze_single_func: Option<String>,
 }
 
 impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
-    fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: &TyCtxt<'_>) {
+    fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'_>) {
         let mut max_fixed_point_iterations = k_limits::MAX_OUTER_FIXPOINT_ITERATIONS;
 
         // runs out of memory
@@ -246,7 +246,7 @@ impl MiraiCallbacks {
             self.file_name, summary_store_path
         );
         let mut persistent_summary_cache = PersistentSummaryCache::new(tcx, summary_store_path);
-        let defs = Self::get_defs(*tcx, &mut persistent_summary_cache);
+        let defs = Self::get_defs(tcx, &mut persistent_summary_cache);
         let constant_value_cache = ConstantValueCache::default();
         let def_sets = DefSets {
             defs_to_analyze: HashSet::from_iter(defs.clone().into_iter()),
@@ -291,7 +291,7 @@ impl MiraiCallbacks {
     /// a non default summary for the called function def id).
     fn get_defs<'tcx>(
         tcx: TyCtxt<'tcx>,
-        persistent_summary_cache: &mut PersistentSummaryCache<'_, '_>,
+        persistent_summary_cache: &mut PersistentSummaryCache<'tcx>,
     ) -> Vec<DefId> {
         use std::borrow::Borrow;
         use std::env;
@@ -318,7 +318,7 @@ impl MiraiCallbacks {
                                                 .get_summary_key_for(*def_id)
                                                 .clone();
                                             let args_key =
-                                                utils::argument_types_key_str(&tcx, generic_args);
+                                                utils::argument_types_key_str(tcx, generic_args);
                                             let summary = persistent_summary_cache
                                                 .get_persistent_summary_using_arg_types_if_possible(
                                                     &summary_key,
@@ -357,11 +357,11 @@ impl MiraiCallbacks {
     /// the def_id of the function, as well as the def_id of any function that calls the function,
     /// to def_sets.defs_to_reanalyze.
     #[logfn(TRACE)]
-    fn analyze_bodies<'a, 'tcx>(
-        compiler: &'a interface::Compiler,
-        tcx: &'a TyCtxt<'tcx>,
+    fn analyze_bodies<'compilation, 'tcx>(
+        compiler: &'compilation interface::Compiler,
+        tcx: TyCtxt<'tcx>,
         defs: &[DefId],
-        mut analysis_info: &mut AnalysisInfo<'a, 'tcx>,
+        mut analysis_info: &mut AnalysisInfo<'compilation, 'tcx>,
         iteration_count: usize,
     ) {
         for def_id in defs.iter() {
@@ -439,7 +439,7 @@ impl MiraiCallbacks {
     /// newly produced summary.
     #[logfn_inputs(TRACE)]
     fn select_defs_to_reanalyze(
-        persistent_summary_cache: &mut PersistentSummaryCache<'_, '_>,
+        persistent_summary_cache: &mut PersistentSummaryCache<'_>,
         defs_to_reanalyze: &mut HashSet<DefId>,
         def_id: DefId,
         old_summary_if_changed: Option<Summary>,
@@ -456,7 +456,7 @@ impl MiraiCallbacks {
     /// Logs the summary key of the function that is about to be analyzed.
     #[logfn_inputs(TRACE)]
     fn get_and_log_name(
-        persistent_summary_cache: &mut PersistentSummaryCache<'_, '_>,
+        persistent_summary_cache: &mut PersistentSummaryCache<'_>,
         log_it: bool,
         iteration_count: usize,
         def_id: DefId,
@@ -478,9 +478,9 @@ impl MiraiCallbacks {
     /// The outer fixed point loop has been terminated, so emit any diagnostics or, if testing,
     /// check that they are as expected.
     #[logfn_inputs(TRACE)]
-    fn emit_or_check_diagnostics<'a>(
+    fn emit_or_check_diagnostics<'compilation>(
         &mut self,
-        diagnostics_for: &mut HashMap<DefId, Vec<DiagnosticBuilder<'a>>>,
+        diagnostics_for: &mut HashMap<DefId, Vec<DiagnosticBuilder<'compilation>>>,
     ) -> bool {
         if self.test_run {
             let mut expected_errors = expected_errors::ExpectedErrors::new(self.file_name.as_str());
@@ -491,11 +491,11 @@ impl MiraiCallbacks {
             });
             expected_errors.check_messages(diags)
         } else {
-            let mut diagnostics: Vec<&mut DiagnosticBuilder<'a>> =
+            let mut diagnostics: Vec<&mut DiagnosticBuilder<'compilation>> =
                 diagnostics_for.values_mut().flatten().collect();
-            fn compare_diagnostics<'a>(
-                x: &&mut DiagnosticBuilder<'a>,
-                y: &&mut DiagnosticBuilder<'a>,
+            fn compare_diagnostics<'compilation>(
+                x: &&mut DiagnosticBuilder<'compilation>,
+                y: &&mut DiagnosticBuilder<'compilation>,
             ) -> Ordering {
                 let xd: &Diagnostic = x.deref();
                 let yd: &Diagnostic = y.deref();
@@ -519,13 +519,13 @@ impl MiraiCallbacks {
     /// Run the abstract interpreter over the function body and produce a summary of its effects
     /// and collect any diagnostics into the buffer.
     #[logfn(TRACE)]
-    fn visit_body<'a, 'b, 'tcx>(
+    fn visit_body<'compilation, 'tcx>(
         def_id: DefId,
         name: &str,
-        compiler: &'b interface::Compiler,
-        tcx: &'b TyCtxt<'tcx>,
-        analysis_info: &'a mut AnalysisInfo<'b, 'tcx>,
-        mut buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
+        compiler: &'compilation interface::Compiler,
+        tcx: TyCtxt<'tcx>,
+        analysis_info: &mut AnalysisInfo<'compilation, 'tcx>,
+        mut buffered_diagnostics: &mut Vec<DiagnosticBuilder<'compilation>>,
         iteration_count: usize,
     ) -> (Option<Summary>, u64) {
         let mir = tcx.optimized_mir(def_id);
