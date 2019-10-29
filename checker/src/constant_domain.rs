@@ -137,8 +137,8 @@ impl ConstantDomain {
         function_id: usize,
         def_id: DefId,
         generic_args: SubstsRef<'tcx>,
-        tcx: &'a TyCtxt<'tcx>,
-        summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
+        tcx: TyCtxt<'tcx>,
+        summary_cache: &mut PersistentSummaryCache<'tcx>,
     ) -> ConstantDomain {
         use KnownFunctionNames::*;
         let summary_cache_key = summary_cache.get_summary_key_for(def_id).to_owned();
@@ -864,13 +864,13 @@ impl<'tcx> ConstantValueCache<'tcx> {
 
     /// Given the MIR DefId of a function return the unique (cached) ConstantDomain that corresponds
     /// to the function identified by that DefId.
-    pub fn get_function_constant_for<'a>(
+    pub fn get_function_constant_for(
         &mut self,
         def_id: DefId,
         ty: Ty<'tcx>,
         generic_args: SubstsRef<'tcx>,
-        tcx: &'a TyCtxt<'tcx>,
-        summary_cache: &mut PersistentSummaryCache<'a, 'tcx>,
+        tcx: TyCtxt<'tcx>,
+        summary_cache: &mut PersistentSummaryCache<'tcx>,
     ) -> &ConstantDomain {
         let function_id = self.function_cache.len();
         self.function_cache.entry((def_id, ty)).or_insert_with(|| {

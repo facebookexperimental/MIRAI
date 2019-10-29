@@ -415,7 +415,7 @@ fn extract_reachable_heap_allocations(
 /// A persistent map from summary key to Summary, along with a transient cache from DefId to
 /// Summary. The latter is cleared after every outer fixed point loop iteration.
 /// Also tracks which definitions depend on (use) any particular Summary.
-pub struct PersistentSummaryCache<'a, 'tcx> {
+pub struct PersistentSummaryCache<'tcx> {
     db: Db,
     cache: HashMap<DefId, Summary>,
     typed_cache: HashMap<usize, Summary>,
@@ -423,24 +423,24 @@ pub struct PersistentSummaryCache<'a, 'tcx> {
     typed_reference_cache: HashMap<Rc<FunctionReference>, Summary>,
     dependencies: HashMap<DefId, Vec<DefId>>,
     key_cache: HashMap<DefId, Rc<String>>,
-    type_context: &'a TyCtxt<'tcx>,
+    type_context: TyCtxt<'tcx>,
     pub lock_file: File,
 }
 
-impl<'a, 'tcx> Debug for PersistentSummaryCache<'a, 'tcx> {
+impl<'tcx> Debug for PersistentSummaryCache<'tcx> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "PersistentSummaryCache".fmt(f)
     }
 }
 
-impl<'a, 'tcx: 'a> PersistentSummaryCache<'a, 'tcx> {
+impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
     /// Creates a new persistent summary cache, using (or creating) a Sled data base at the given
     /// directory path.
     #[logfn(TRACE)]
     pub fn new(
-        type_context: &'a TyCtxt<'tcx>,
+        type_context: TyCtxt<'tcx>,
         summary_store_directory_str: String,
-    ) -> PersistentSummaryCache<'a, 'tcx> {
+    ) -> PersistentSummaryCache<'tcx> {
         use fs2::FileExt;
         use rand::{thread_rng, Rng};
         use std::path::Path;

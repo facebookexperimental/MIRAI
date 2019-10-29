@@ -36,34 +36,39 @@ use std::time::Instant;
 use syntax::errors::DiagnosticBuilder;
 use syntax_pos;
 
-pub struct MirVisitorCrateContext<'a, 'b, 'tcx, E> {
-    pub session: &'b Session,
-    pub tcx: &'b TyCtxt<'tcx>,
+// 'compilation is the lifetime of compiler interface object supplied to the after_analysis call back.
+// 'tcx is the lifetime of the type context created during the lifetime of the after_analysis call back.
+// 'analysis is the life time of the analyze_with_mirai call back that is invoked with the type context.
+pub struct MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E> {
+    pub session: &'compilation Session,
+    pub tcx: TyCtxt<'tcx>,
     pub def_id: hir::def_id::DefId,
-    pub mir: &'a mir::Body<'tcx>,
-    pub constant_value_cache: &'a mut ConstantValueCache<'tcx>,
-    pub summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
-    pub smt_solver: &'a mut dyn SmtSolver<E>,
-    pub buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
+    pub mir: &'analysis mir::Body<'tcx>,
+    pub constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
+    pub summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
+    pub smt_solver: &'analysis mut dyn SmtSolver<E>,
+    pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
     pub outer_fixed_point_iteration: usize,
 }
 
-impl<'a, 'b: 'a, 'tcx: 'b, E> Debug for MirVisitorCrateContext<'a, 'b, 'tcx, E> {
+impl<'analysis, 'compilation, 'tcx, E> Debug
+    for MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E>
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "MirVisitorCrateContext".fmt(f)
     }
 }
 
 /// Holds the state for the MIR test visitor.
-pub struct MirVisitor<'a, 'b, 'tcx, E> {
-    session: &'b Session,
-    tcx: &'b TyCtxt<'tcx>,
+pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
+    session: &'compilation Session,
+    tcx: TyCtxt<'tcx>,
     def_id: hir::def_id::DefId,
-    mir: &'a mir::Body<'tcx>,
-    constant_value_cache: &'a mut ConstantValueCache<'tcx>,
-    summary_cache: &'a mut PersistentSummaryCache<'b, 'tcx>,
-    smt_solver: &'a mut dyn SmtSolver<E>,
-    buffered_diagnostics: &'a mut Vec<DiagnosticBuilder<'b>>,
+    mir: &'analysis mir::Body<'tcx>,
+    constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
+    summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
+    smt_solver: &'analysis mut dyn SmtSolver<E>,
+    buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
     outer_fixed_point_iteration: usize,
 
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
@@ -84,7 +89,7 @@ pub struct MirVisitor<'a, 'b, 'tcx, E> {
     fresh_variable_offset: usize,
 }
 
-impl<'a, 'b: 'a, 'tcx: 'b, E> Debug for MirVisitor<'a, 'b, 'tcx, E> {
+impl<'analysis, 'compilation, 'tcx, E> Debug for MirVisitor<'analysis, 'compilation, 'tcx, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "MirVisitor".fmt(f)
     }
@@ -92,11 +97,11 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> Debug for MirVisitor<'a, 'b, 'tcx, E> {
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
 /// so that we can test a call to every default implementation of the MirVisitor trait.
-impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
+impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx, E> {
     #[logfn_inputs(TRACE)]
     pub fn new(
-        crate_context: MirVisitorCrateContext<'a, 'b, 'tcx, E>,
-    ) -> MirVisitor<'a, 'b, 'tcx, E> {
+        crate_context: MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E>,
+    ) -> MirVisitor<'analysis, 'compilation, 'tcx, E> {
         MirVisitor {
             session: crate_context.session,
             tcx: crate_context.tcx,
@@ -147,7 +152,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     }
 
     #[logfn_inputs(TRACE)]
-    fn emit_diagnostic(&mut self, diagnostic_builder: DiagnosticBuilder<'b>) {
+    fn emit_diagnostic(&mut self, diagnostic_builder: DiagnosticBuilder<'compilation>) {
         self.buffered_diagnostics.push(diagnostic_builder);
     }
 
@@ -350,7 +355,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let mut block_indices = self.get_sorted_block_indices();
 
         let (mut in_state, mut out_state) =
-            <MirVisitor<'a, 'b, 'tcx, E>>::initialize_state_maps(&block_indices);
+            <MirVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
 
         // The entry block has no predecessors and its initial state is the function parameters
         // (which we omit here so that we can lazily provision them with additional context)
@@ -387,7 +392,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
             &self.post_condition,
             self.unwind_condition.clone(),
             &self.unwind_environment,
-            *self.tcx,
+            self.tcx,
         );
 
         let changed = {
@@ -733,7 +738,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
         let mut block_indices = self.get_sorted_block_indices();
 
         let (mut in_state, mut out_state) =
-            <MirVisitor<'a, 'b, 'tcx, E>>::initialize_state_maps(&block_indices);
+            <MirVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
 
         // The entry block has no predecessors and its initial state is the function parameters
         // (which we omit here so that we can lazily provision them with additional context).
@@ -1956,7 +1961,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
     /// Returns true if the function being analyzed is public or if it is a call tree root.
     #[logfn_inputs(TRACE)]
     fn function_being_analyzed_is_public_or_root(&mut self) -> bool {
-        is_public(self.def_id, &self.tcx)
+        is_public(self.def_id, self.tcx)
             || self.summary_cache.get_dependents(&self.def_id).is_empty()
     }
 
@@ -2855,7 +2860,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
 
         match &literal.val {
             mir::interpret::ConstValue::Unevaluated(def_id, ..) => {
-                let name = utils::summary_key_str(&self.tcx, *def_id);
+                let name = utils::summary_key_str(self.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
                 let path = Rc::new(
                     PathEnum::StaticVariable {
@@ -2939,7 +2944,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             let slice_len = *end - *start;
                             let bytes = data
                                 .get_bytes(
-                                    self.tcx,
+                                    &self.tcx,
                                     // invent a pointer, only the offset is relevant anyway
                                     mir::interpret::Pointer::new(
                                         mir::interpret::AllocId(0),
@@ -2994,7 +2999,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             let slice_len = *end - *start;
                             let bytes = data
                                 .get_bytes(
-                                    self.tcx,
+                                    &self.tcx,
                                     // invent a pointer, only the offset is relevant anyway
                                     mir::interpret::Pointer::new(
                                         mir::interpret::AllocId(0),
@@ -3023,7 +3028,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             // Keeping this wrong behavior maintains the currently incorrect status quo.
                             let bytes = alloc
                                 .get_bytes_with_undef_and_ptr(
-                                    self.tcx,
+                                    &self.tcx,
                                     ptr,
                                     rustc::ty::layout::Size::from_bytes(num_bytes),
                                 )
@@ -3081,7 +3086,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let slice_len = *end - *start;
                     let bytes = data
                         .get_bytes(
-                            self.tcx,
+                            &self.tcx,
                             // invent a pointer, only the offset is relevant anyway
                             mir::interpret::Pointer::new(
                                 mir::interpret::AllocId(0),
@@ -3111,7 +3116,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     // Keeping this wrong behavior maintains the currently incorrect status quo.
                     let bytes = alloc
                         .get_bytes_with_undef_and_ptr(
-                            self.tcx,
+                            &self.tcx,
                             ptr,
                             rustc::ty::layout::Size::from_bytes(num_bytes),
                         )
@@ -3127,7 +3132,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     let num_bytes = alloc_len - offset_bytes;
                     let bytes = alloc
                         .get_bytes(
-                            self.tcx,
+                            &self.tcx,
                             *ptr,
                             rustc::ty::layout::Size::from_bytes(num_bytes),
                         )
@@ -3323,7 +3328,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                     Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
                 }
                 mir::StaticKind::Static => {
-                    let name = utils::summary_key_str(&self.tcx, boxed_static.def_id);
+                    let name = utils::summary_key_str(self.tcx, boxed_static.def_id);
                     Rc::new(
                         PathEnum::StaticVariable {
                             def_id: Some(boxed_static.def_id),
@@ -3431,7 +3436,7 @@ impl<'a, 'b: 'a, 'tcx: 'b, E> MirVisitor<'a, 'b, 'tcx, E> {
                             assume!(variant_index.index() == 0);
                             let variant = &variants[variant_index];
                             let field = &variant.fields[ordinal];
-                            return field.ty(*self.tcx, substs);
+                            return field.ty(self.tcx, substs);
                         }
                     }
                 }

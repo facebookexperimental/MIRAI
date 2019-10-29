@@ -37,7 +37,7 @@ pub fn find_sysroot() -> String {
 
 /// Returns true if the function identified by def_id is a public function.
 #[logfn(TRACE)]
-pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_>) -> bool {
+pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
     if let Some(node) = tcx.hir().get_if_local(def_id) {
         match node {
             Node::Expr(rustc::hir::Expr {
@@ -74,7 +74,7 @@ pub fn is_public(def_id: DefId, tcx: &TyCtxt<'_>) -> bool {
 /// the string representations of the given list of generic argument types.
 #[logfn(TRACE)]
 pub fn argument_types_key_str<'tcx>(
-    tcx: &TyCtxt<'tcx>,
+    tcx: TyCtxt<'tcx>,
     generic_args: SubstsRef<'tcx>,
 ) -> Rc<String> {
     let mut result = "_".to_string();
@@ -89,7 +89,7 @@ pub fn argument_types_key_str<'tcx>(
 /// be a valid identifier (so that core library contracts can be written for type specialized
 /// generic trait methods).
 #[logfn(TRACE)]
-fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>) {
+fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) {
     use syntax::ast;
     use TyKind::*;
     match ty.kind {
@@ -223,7 +223,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
             });
         }
         Param(param_ty) => {
-            let pty: Ty<'tcx> = param_ty.to_ty(*tcx);
+            let pty: Ty<'tcx> = param_ty.to_ty(tcx);
             if ty.eq(pty) {
                 str.push_str(&format!("{:?}", ty));
             } else {
@@ -247,7 +247,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: &TyCtxt<'tcx>)
 /// Pretty much the same as summary_key_str but with _ used rather than . so that
 /// the result can be appended to a valid identifier.
 #[logfn(TRACE)]
-fn qualified_type_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
+fn qualified_type_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
     let mut name = crate_name(tcx, def_id);
     for component in &tcx.def_path(def_id).data {
         name.push('_');
@@ -263,7 +263,7 @@ fn qualified_type_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
 
 /// Constructs a name for the crate that contains the given def_id.
 #[logfn(TRACE)]
-fn crate_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
+fn crate_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
     if def_id.is_local() {
         tcx.crate_name.as_interned_str().as_str()
     } else {
@@ -281,7 +281,7 @@ fn crate_name(tcx: &TyCtxt<'_>, def_id: DefId) -> String {
 /// long as the definition does not change its name or location, so it can be used to
 /// transfer information from one compilation to the next, making incremental analysis possible.
 #[logfn(TRACE)]
-pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
+pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
     let mut name = crate_name(tcx, def_id);
     for component in &tcx.def_path(def_id).data {
         if name.ends_with("foreign_contracts") {
@@ -302,7 +302,7 @@ pub fn summary_key_str(tcx: &TyCtxt<'_>, def_id: DefId) -> Rc<String> {
             name.push('_');
             if saw_implement {
                 if let Some(parent_def_id) = tcx.parent(def_id) {
-                    if let Some(ty) = type_of(*tcx, parent_def_id) {
+                    if let Some(ty) = type_of(tcx, parent_def_id) {
                         append_mangled_type(&mut name, ty, tcx);
                         continue;
                     }
