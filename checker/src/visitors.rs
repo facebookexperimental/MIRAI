@@ -6,7 +6,9 @@
 use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
-use crate::constant_domain::{ConstantDomain, ConstantValueCache, KnownFunctionNames};
+use crate::constant_domain::{
+    ConstantDomain, ConstantValueCache, FunctionReference, KnownFunctionNames,
+};
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::k_limits;
@@ -71,6 +73,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
     outer_fixed_point_iteration: usize,
 
+    active_calls: Vec<hir::def_id::DefId>,
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     assume_preconditions_of_next_call: bool,
     async_fn_summary: Option<Summary>,
@@ -87,6 +90,55 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
     fresh_variable_offset: usize,
+    summarize_on_demand: bool,
+}
+
+struct SavedVisitorState<'analysis, 'tcx> {
+    def_id: hir::def_id::DefId,
+    mir: &'analysis mir::Body<'tcx>,
+
+    already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
+    assume_preconditions_of_next_call: bool,
+    async_fn_summary: Option<Summary>,
+    check_for_errors: bool,
+    check_for_unconditional_precondition: bool,
+    current_environment: Environment,
+    current_location: mir::Location,
+    current_span: syntax_pos::Span,
+    exit_environment: Environment,
+    heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
+    post_condition: Option<Rc<AbstractValue>>,
+    preconditions: Vec<Precondition>,
+    unwind_condition: Option<Rc<AbstractValue>>,
+    unwind_environment: Environment,
+    fresh_variable_offset: usize,
+}
+
+impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
+    pub fn new(
+        def_id: hir::def_id::DefId,
+        mir: &'analysis mir::Body<'tcx>,
+    ) -> SavedVisitorState<'analysis, 'tcx> {
+        SavedVisitorState {
+            def_id,
+            mir,
+            already_reported_errors_for_call_to: HashSet::new(),
+            assume_preconditions_of_next_call: false,
+            async_fn_summary: None,
+            check_for_errors: false,
+            check_for_unconditional_precondition: false, // logging + new mir code gen breaks this for now
+            current_environment: Environment::default(),
+            current_location: mir::Location::START,
+            current_span: syntax_pos::DUMMY_SP,
+            exit_environment: Environment::default(),
+            heap_addresses: HashMap::default(),
+            post_condition: None,
+            preconditions: Vec::new(),
+            unwind_condition: None,
+            unwind_environment: Environment::default(),
+            fresh_variable_offset: 0,
+        }
+    }
 }
 
 impl<'analysis, 'compilation, 'tcx, E> Debug for MirVisitor<'analysis, 'compilation, 'tcx, E> {
@@ -113,6 +165,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             buffered_diagnostics: crate_context.buffered_diagnostics,
             outer_fixed_point_iteration: crate_context.outer_fixed_point_iteration,
 
+            active_calls: Vec::new(),
             already_reported_errors_for_call_to: HashSet::new(),
             assume_preconditions_of_next_call: false,
             async_fn_summary: None,
@@ -129,6 +182,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             unwind_condition: None,
             unwind_environment: Environment::default(),
             fresh_variable_offset: 0,
+            summarize_on_demand: false,
         }
     }
 
@@ -149,6 +203,145 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.unwind_condition = None;
         self.unwind_environment = Environment::default();
         self.fresh_variable_offset = 1000;
+    }
+
+    fn swap_visitor_state(&mut self, saved_state: &mut SavedVisitorState<'analysis, 'tcx>) {
+        std::mem::swap(&mut self.def_id, &mut saved_state.def_id);
+        std::mem::swap(&mut self.mir, &mut saved_state.mir);
+        std::mem::swap(
+            &mut self.already_reported_errors_for_call_to,
+            &mut saved_state.already_reported_errors_for_call_to,
+        );
+        std::mem::swap(
+            &mut self.assume_preconditions_of_next_call,
+            &mut saved_state.assume_preconditions_of_next_call,
+        );
+        std::mem::swap(
+            &mut self.async_fn_summary,
+            &mut saved_state.async_fn_summary,
+        );
+        std::mem::swap(
+            &mut self.check_for_errors,
+            &mut saved_state.check_for_errors,
+        );
+        std::mem::swap(
+            &mut self.check_for_unconditional_precondition,
+            &mut saved_state.check_for_unconditional_precondition,
+        );
+        std::mem::swap(
+            &mut self.current_environment,
+            &mut saved_state.current_environment,
+        );
+        std::mem::swap(
+            &mut self.current_location,
+            &mut saved_state.current_location,
+        );
+        std::mem::swap(&mut self.current_span, &mut saved_state.current_span);
+        std::mem::swap(
+            &mut self.exit_environment,
+            &mut saved_state.exit_environment,
+        );
+        std::mem::swap(&mut self.heap_addresses, &mut saved_state.heap_addresses);
+        std::mem::swap(&mut self.post_condition, &mut saved_state.post_condition);
+        std::mem::swap(&mut self.preconditions, &mut saved_state.preconditions);
+        std::mem::swap(
+            &mut self.unwind_condition,
+            &mut saved_state.unwind_condition,
+        );
+        std::mem::swap(
+            &mut self.unwind_environment,
+            &mut saved_state.unwind_environment,
+        );
+        std::mem::swap(
+            &mut self.fresh_variable_offset,
+            &mut saved_state.fresh_variable_offset,
+        );
+    }
+
+    /// Analyze the body and store a summary of its behavior in self.summary_cache.
+    /// Returns true if the newly computed summary is different from the summary (if any)
+    /// that is already in the cache.
+    #[logfn_inputs(TRACE)]
+    pub fn visit_body_top_down(&mut self, function_name: &str) {
+        self.active_calls.push(self.def_id);
+        self.summarize_on_demand = true;
+        let mut block_indices = self.get_sorted_block_indices();
+
+        let (mut in_state, mut out_state) =
+            <MirVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
+
+        // The entry block has no predecessors and its initial state is the function parameters
+        // (which we omit here so that we can lazily provision them with additional context)
+        // as well any promoted constants.
+        let first_state = self.promote_constants(function_name);
+
+        let elapsed_time_in_seconds = self.compute_fixed_point(
+            function_name,
+            &mut block_indices,
+            &mut in_state,
+            &mut out_state,
+            &first_state,
+        );
+
+        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+            // This body is beyond MIRAI for now
+            warn!(
+                "analysis of {} timed out after {} seconds",
+                function_name, elapsed_time_in_seconds,
+            );
+            return;
+        }
+
+        // Now traverse the blocks again, doing checks and emitting diagnostics.
+        // in_state[bb] is now complete for every basic block bb in the body.
+        self.check_for_errors(&block_indices, &in_state);
+
+        // Now create a summary of the body that can be in-lined into call sites.
+        if self.async_fn_summary.is_some() {
+            self.preconditions = self.translate_async_preconditions();
+            // todo: also translate side-effects, return result and post-condition
+        };
+
+        let summary = summaries::summarize(
+            self.mir.arg_count,
+            self.get_return_type(),
+            &self.exit_environment,
+            &self.preconditions,
+            &self.post_condition,
+            self.unwind_condition.clone(),
+            &self.unwind_environment,
+            self.tcx,
+        );
+        self.summary_cache.set_summary_for(self.def_id, summary);
+
+        self.active_calls.pop();
+    }
+
+    fn create_and_cache_function_summary(&mut self, func_ref: &Rc<FunctionReference>) -> Summary {
+        debug!("on demand analysis of {:?}", func_ref);
+        precondition!(func_ref.def_id.is_some());
+        let def_id = func_ref.def_id.unwrap();
+        self.create_and_cache_def_id_summary(def_id)
+    }
+
+    fn create_and_cache_def_id_summary(&mut self, def_id: hir::def_id::DefId) -> Summary {
+        if self.tcx.is_mir_available(def_id) {
+            let elapsed_time = self.start_instant.elapsed();
+            let mut saved_state = SavedVisitorState::new(self.def_id, self.mir);
+            self.swap_visitor_state(&mut saved_state);
+            self.def_id = def_id;
+            self.mir = self.tcx.optimized_mir(def_id);
+            self.start_instant = Instant::now();
+            let function_name = self.summary_cache.get_summary_key_for(def_id).clone();
+            self.visit_body_top_down(&function_name);
+            self.swap_visitor_state(&mut saved_state);
+            self.start_instant = Instant::now() - elapsed_time;
+        } else {
+            debug!("no mir available");
+        }
+        self.summary_cache
+            .get_summary_for(def_id, Some(self.def_id))
+            .clone()
     }
 
     #[logfn_inputs(TRACE)]
@@ -194,8 +387,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             {
                 let summary;
                 let summary = if let Some(def_id) = def_id {
-                    self.summary_cache
-                        .get_summary_for(*def_id, Some(self.def_id))
+                    let cached_summary = self
+                        .summary_cache
+                        .get_summary_for(*def_id, Some(self.def_id));
+                    if !self.summarize_on_demand || cached_summary.is_not_default {
+                        cached_summary
+                    } else {
+                        summary = self.create_and_cache_def_id_summary(*def_id);
+                        &summary
+                    }
                 } else {
                     summary = self
                         .summary_cache
@@ -1474,10 +1674,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if let Expression::CompileTimeConstant(ConstantDomain::Function(func_ref)) =
             &func_to_call.expression
         {
-            return self
+            let result = self
                 .summary_cache
                 .get_summary_for_function_constant(func_ref, self.def_id)
                 .clone();
+            if result.is_not_default || !self.summarize_on_demand || func_ref.def_id.is_none() {
+                return result;
+            }
+            if !self.active_calls.contains(&func_ref.def_id.unwrap()) {
+                return self.create_and_cache_function_summary(func_ref);
+            }
         }
         Summary::default()
     }

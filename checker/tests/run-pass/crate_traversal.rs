@@ -160,11 +160,11 @@ fn test11(arr: &[String]) {
 }
 
 fn test12() {
-    let x = 200u8 * 4;
-} //~ attempt to multiply with overflow
+    let x = 200u8 * 4; //~ attempt to multiply with overflow
+}
 
 fn test13(i: i64) {
-    let x = box -i;
+    let x = box -i; //~ possible attempt to negate with overflow
 }
 
 fn test14(a: i32, b: i32) -> Option<i32> {

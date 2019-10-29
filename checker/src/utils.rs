@@ -7,7 +7,7 @@ use log::debug;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::assume_unreachable;
 use rustc::hir::def_id::DefId;
-use rustc::hir::map::DefPathData;
+use rustc::hir::map::{DefPathData, DisambiguatedDefPathData};
 use rustc::hir::{ItemKind, Node, TraitItemKind};
 use rustc::ty::subst::{GenericArgKind, SubstsRef};
 use rustc::ty::{DefIdTree, Ty, TyCtxt, TyKind};
@@ -50,15 +50,16 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
                     false
                 }
             }
-            Node::Item(item) => {
-                if let ItemKind::Fn(..) = item.kind {
-                    return item.vis.node.is_pub();
+            Node::Item(item) => match item.kind {
+                ItemKind::Fn(..) | ItemKind::Const(..) => item.vis.node.is_pub(),
+                _ => {
+                    debug!("def_id is unsupported item kind {:?}", item.kind);
+                    false
                 }
-                debug!("def_id is not a function item {:?}", item.kind);
-                false
-            }
+            },
             Node::ImplItem(item) => item.vis.node.is_pub(),
             Node::TraitItem(..) => true,
+            Node::AnonConst(..) => false,
             _ => {
                 debug!("def_id is not an item {:?}", node);
                 false
@@ -313,6 +314,19 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
         }
     }
     Rc::new(name)
+}
+
+/// Returns true if the first component is a module named "foreign_contracts".
+pub fn is_foreign_contract(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
+    if let Some(DisambiguatedDefPathData {
+        data: DefPathData::TypeNs(name),
+        ..
+    }) = &tcx.def_path(def_id).data.first()
+    {
+        name.as_str() == "foreign_contracts"
+    } else {
+        false
+    }
 }
 
 /// Guards a call to tcx.type_of to avoid cases where it fails.
