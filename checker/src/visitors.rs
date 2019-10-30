@@ -1748,8 +1748,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
         let span = self.current_span;
         let mut err = self.session.struct_span_warn(span, diagnostic.as_str());
-        if !precondition.spans.is_empty() {
-            err.span_note(precondition.spans.clone(), "related location");
+        for pc_span in precondition.spans.iter() {
+            err.span_note(pc_span.clone(), "related location");
         }
         self.emit_diagnostic(err);
     }

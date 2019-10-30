@@ -241,17 +241,6 @@ impl MiraiCallbacks {
         analysis_info: &mut AnalysisInfo<'analysis, 'tcx>,
         def_id: DefId,
     ) {
-        // No need to analyze a body for which we already have a non default summary.
-        // We do, however, have to allow local foreign contract functions to override
-        // the standard summaries that are already in the cache.
-        if !utils::is_foreign_contract(tcx, def_id) {
-            let summary = analysis_info
-                .persistent_summary_cache
-                .get_summary_for(def_id, None);
-            if summary.is_not_default {
-                return;
-            }
-        }
         let name = MiraiCallbacks::get_and_log_name(
             &mut analysis_info.persistent_summary_cache,
             analysis_info.analyze_single_func.is_none(),
@@ -264,7 +253,19 @@ impl MiraiCallbacks {
             if *fname != name.to_string() {
                 return;
             }
-        };
+        } else {
+            // No need to analyze a body for which we already have a non default summary.
+            // We do, however, have to allow local foreign contract functions to override
+            // the standard summaries that are already in the cache.
+            if !utils::is_foreign_contract(tcx, def_id) {
+                let summary = analysis_info
+                    .persistent_summary_cache
+                    .get_summary_for(def_id, None);
+                if summary.is_not_default {
+                    return;
+                }
+            }
+        }
         let mut buffered_diagnostics: Vec<DiagnosticBuilder<'_>> = vec![];
         Self::visit_body(
             def_id,

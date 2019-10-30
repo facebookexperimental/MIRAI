@@ -613,6 +613,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::BitXor { left, right } => left
                 .try_to_retype_as(target_type)
                 .bit_xor(right.try_to_retype_as(target_type)),
+            Expression::Cast {
+                operand,
+                target_type: tt,
+            } if *tt == ExpressionType::Reference => operand.try_to_retype_as(target_type),
             Expression::ConditionalExpression {
                 condition,
                 consequent,
