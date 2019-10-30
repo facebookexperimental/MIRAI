@@ -50,7 +50,6 @@ pub struct MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E> {
     pub summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
     pub smt_solver: &'analysis mut dyn SmtSolver<E>,
     pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
-    pub outer_fixed_point_iteration: usize,
 }
 
 impl<'analysis, 'compilation, 'tcx, E> Debug
@@ -71,7 +70,6 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
     smt_solver: &'analysis mut dyn SmtSolver<E>,
     buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
-    outer_fixed_point_iteration: usize,
 
     active_calls: Vec<hir::def_id::DefId>,
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
@@ -163,7 +161,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             summary_cache: crate_context.summary_cache,
             smt_solver: crate_context.smt_solver,
             buffered_diagnostics: crate_context.buffered_diagnostics,
-            outer_fixed_point_iteration: crate_context.outer_fixed_point_iteration,
 
             active_calls: Vec::new(),
             already_reported_errors_for_call_to: HashSet::new(),
@@ -262,7 +259,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Returns true if the newly computed summary is different from the summary (if any)
     /// that is already in the cache.
     #[logfn_inputs(TRACE)]
-    pub fn visit_body_top_down(&mut self, function_name: &str) {
+    pub fn visit_body(&mut self, function_name: &str) {
         self.active_calls.push(self.def_id);
         self.summarize_on_demand = true;
         let mut block_indices = self.get_sorted_block_indices();
@@ -333,7 +330,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.mir = self.tcx.optimized_mir(def_id);
             self.start_instant = Instant::now();
             let function_name = self.summary_cache.get_summary_key_for(def_id).clone();
-            self.visit_body_top_down(&function_name);
+            self.visit_body(&function_name);
             self.swap_visitor_state(&mut saved_state);
             self.start_instant = Instant::now() - elapsed_time;
         } else {
@@ -545,75 +542,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             );
         }
         block_indices
-    }
-
-    /// Analyze the body and store a summary of its behavior in self.summary_cache.
-    /// Returns true if the newly computed summary is different from the summary (if any)
-    /// that is already in the cache.
-    #[logfn_inputs(TRACE)]
-    pub fn visit_body(&mut self, function_name: &str) -> (Option<Summary>, u64) {
-        let mut block_indices = self.get_sorted_block_indices();
-
-        let (mut in_state, mut out_state) =
-            <MirVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
-
-        // The entry block has no predecessors and its initial state is the function parameters
-        // (which we omit here so that we can lazily provision them with additional context)
-        // as well any promoted constants.
-        let first_state = self.promote_constants(function_name);
-
-        let elapsed_time_in_seconds = self.compute_fixed_point(
-            function_name,
-            &mut block_indices,
-            &mut in_state,
-            &mut out_state,
-            &first_state,
-        );
-
-        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            return (None, elapsed_time_in_seconds);
-        }
-
-        // Now traverse the blocks again, doing checks and emitting diagnostics.
-        // in_state[bb] is now complete for every basic block bb in the body.
-        self.check_for_errors(&block_indices, &in_state);
-
-        // Now create a summary of the body that can be in-lined into call sites.
-        if self.async_fn_summary.is_some() {
-            self.preconditions = self.translate_async_preconditions();
-            // todo: also translate side-effects, return result and post-condition
-        };
-
-        let mut summary = summaries::summarize(
-            self.mir.arg_count,
-            self.get_return_type(),
-            &self.exit_environment,
-            &self.preconditions,
-            &self.post_condition,
-            self.unwind_condition.clone(),
-            &self.unwind_environment,
-            self.tcx,
-        );
-
-        let changed = {
-            let old_summary = self.summary_cache.get_summary_for(self.def_id, None);
-            if self.outer_fixed_point_iteration > 2 {
-                summary = old_summary.widen_with(&summary);
-            }
-            !summary.is_subset_of(old_summary)
-        };
-        if changed && elapsed_time_in_seconds < k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            (
-                self.summary_cache.set_summary_for(self.def_id, summary),
-                elapsed_time_in_seconds,
-            )
-        } else {
-            // Even if the summary has not changed from its previous version, we still
-            // update because summary equality ignores provenance (and it does that because
-            // we don't have a way to persist provenance across compilations).
-            self.summary_cache.set_summary_for(self.def_id, summary);
-            (None, elapsed_time_in_seconds)
-        }
     }
 
     /// Rewrite roots of the form local_1.0 into local_1, local_1.1 into local_2 and so on.
