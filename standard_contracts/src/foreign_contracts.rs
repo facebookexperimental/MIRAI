@@ -745,18 +745,17 @@ pub mod std {
 
 pub mod alloc {
     pub mod slice {
+        use crate::foreign_contracts::alloc::vec::Vec;
+
         pub struct Slice<T: Clone> {
-            len: usize,
-            data: T,
+            _phantom: std::marker::PhantomData<T>,
         }
         impl<T: Clone> Slice<T> {
-            pub fn into_vec(self: Box<Self>) -> Vec<T>
+            pub fn into_vec(self_: Box<[T]>) -> Vec<T>
             where
                 T: Clone,
             {
-                let mut v = Vec::with_capacity(self.len);
-                v.resize(self.len, self.data);
-                v
+                Vec::with_len(self_.len())
             }
         }
     }
@@ -785,7 +784,21 @@ pub mod alloc {
                 }
             }
 
+            pub(crate) fn with_len(len: usize) -> Vec<T> {
+                Vec {
+                    _phantom: std::marker::PhantomData,
+                    capacity: len,
+                    len,
+                }
+            }
+
+            pub fn len(&self) -> usize {
+                self.len
+            }
+
             pub fn append(&mut self, other: &mut Vec<T>) {
+                use crate::foreign_contracts::core::usize;
+
                 assume!(self.len <= usize::max_value() - other.len());
                 self.len += other.len;
             }
@@ -808,10 +821,6 @@ pub mod alloc {
                 } else {
                     Some(result!())
                 }
-            }
-
-            pub fn len(&self) -> usize {
-                self.len
             }
 
             pub fn pop(&mut self) -> Option<T> {
