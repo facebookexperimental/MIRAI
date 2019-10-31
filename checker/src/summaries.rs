@@ -645,12 +645,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
                     self.cache.entry(def_id).or_insert_with(|| {
                         let summary =
                             Self::get_persistent_summary_for_db(db, &func_ref.summary_cache_key);
-                        if !def_id.is_local() && summary.is_none() {
-                            info!(
-                                "Summary store has no entry for {}{}",
-                                &func_ref.summary_cache_key, &func_ref.argument_type_key
-                            );
-                        };
                         summary.unwrap_or_default()
                     })
                 }

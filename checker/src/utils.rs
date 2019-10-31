@@ -66,7 +66,6 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
             }
         }
     } else {
-        debug!("def_id is not local {}", summary_key_str(tcx, def_id));
         false
     }
 }
