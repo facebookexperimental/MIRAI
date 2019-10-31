@@ -744,6 +744,10 @@ pub mod std {
 }
 
 pub mod alloc {
+    pub mod alloc {
+        pub fn box_free() {}
+    }
+
     pub mod slice {
         use crate::foreign_contracts::alloc::vec::Vec;
 

@@ -73,6 +73,8 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
 
     active_calls: Vec<hir::def_id::DefId>,
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
+    // True if the current function cannot be analyzed and hence is just assumed to be correct.
+    assume_function_is_angelic: bool,
     assume_preconditions_of_next_call: bool,
     async_fn_summary: Option<Summary>,
     check_for_errors: bool,
@@ -104,12 +106,12 @@ struct SavedVisitorState<'analysis, 'tcx> {
     current_location: mir::Location,
     current_span: syntax_pos::Span,
     exit_environment: Environment,
+    fresh_variable_offset: usize,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     post_condition: Option<Rc<AbstractValue>>,
     preconditions: Vec<Precondition>,
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
-    fresh_variable_offset: usize,
 }
 
 impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
@@ -129,12 +131,12 @@ impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
             current_location: mir::Location::START,
             current_span: syntax_pos::DUMMY_SP,
             exit_environment: Environment::default(),
+            fresh_variable_offset: 0,
             heap_addresses: HashMap::default(),
             post_condition: None,
             preconditions: Vec::new(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
-            fresh_variable_offset: 0,
         }
     }
 }
@@ -143,6 +145,40 @@ impl<'analysis, 'compilation, 'tcx, E> Debug for MirVisitor<'analysis, 'compilat
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "MirVisitor".fmt(f)
     }
+}
+
+/// If the currently analyzed function has been marked as angelic because was discovered
+/// to do something that cannot be analyzed, or if the time taken to analyze the current
+/// function exceeded k_limits::MAX_ANALYSIS_TIME_FOR_BODY, break out of the current loop.
+/// When a timeout happens, currently analyzed function is marked as angelic.
+macro_rules! check_for_early_break {
+    ($sel:ident) => {
+        if $sel.assume_function_is_angelic {
+            break;
+        }
+        let elapsed_time_in_seconds = $sel.start_instant.elapsed().as_secs();
+        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+            $sel.assume_function_is_angelic = true;
+            break;
+        }
+    };
+}
+
+/// If the currently analyzed function has been marked as angelic because was discovered
+/// to do something that cannot be analyzed, or if the time taken to analyze the current
+/// function exceeded k_limits::MAX_ANALYSIS_TIME_FOR_BODY, return to the caller.
+/// When a timeout happens, currently analyzed function is marked as angelic.
+macro_rules! check_for_early_return {
+    ($sel:ident) => {
+        if $sel.assume_function_is_angelic {
+            return;
+        }
+        let elapsed_time_in_seconds = $sel.start_instant.elapsed().as_secs();
+        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+            $sel.assume_function_is_angelic = true;
+            return;
+        }
+    };
 }
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
@@ -164,6 +200,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
             active_calls: Vec::new(),
             already_reported_errors_for_call_to: HashSet::new(),
+            assume_function_is_angelic: false,
             assume_preconditions_of_next_call: false,
             async_fn_summary: None,
             check_for_errors: false,
@@ -187,6 +224,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn reset_visitor_state(&mut self) {
         self.already_reported_errors_for_call_to = HashSet::new();
+        self.assume_function_is_angelic = false;
         self.check_for_errors = false;
         self.check_for_unconditional_precondition = false;
         self.current_environment = Environment::default();
@@ -289,27 +327,29 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             return;
         }
 
-        // Now traverse the blocks again, doing checks and emitting diagnostics.
-        // in_state[bb] is now complete for every basic block bb in the body.
-        self.check_for_errors(&block_indices, &in_state);
+        if !self.assume_function_is_angelic {
+            // Now traverse the blocks again, doing checks and emitting diagnostics.
+            // in_state[bb] is now complete for every basic block bb in the body.
+            self.check_for_errors(&block_indices, &in_state);
 
-        // Now create a summary of the body that can be in-lined into call sites.
-        if self.async_fn_summary.is_some() {
-            self.preconditions = self.translate_async_preconditions();
-            // todo: also translate side-effects, return result and post-condition
-        };
+            // Now create a summary of the body that can be in-lined into call sites.
+            if self.async_fn_summary.is_some() {
+                self.preconditions = self.translate_async_preconditions();
+                // todo: also translate side-effects, return result and post-condition
+            };
 
-        let summary = summaries::summarize(
-            self.mir.arg_count,
-            self.get_return_type(),
-            &self.exit_environment,
-            &self.preconditions,
-            &self.post_condition,
-            self.unwind_condition.clone(),
-            &self.unwind_environment,
-            self.tcx,
-        );
-        self.summary_cache.set_summary_for(self.def_id, summary);
+            let summary = summaries::summarize(
+                self.mir.arg_count,
+                self.get_return_type(),
+                &self.exit_environment,
+                &self.preconditions,
+                &self.post_condition,
+                self.unwind_condition.clone(),
+                &self.unwind_environment,
+                self.tcx,
+            );
+            self.summary_cache.set_summary_for(self.def_id, summary);
+        }
 
         self.active_calls.pop();
     }
@@ -334,7 +374,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.swap_visitor_state(&mut saved_state);
             self.start_instant = Instant::now() - elapsed_time;
         } else {
-            debug!("no mir available");
+            // No summary for the called function, so we can't trust the analysis of this
+            // function either.
+            self.assume_function_is_angelic = true;
+            info!(
+                "function {:?} can't be analyzed because it calls function {:?} which has no body and no summary",
+                self.def_id, def_id
+            );
         }
         self.summary_cache
             .get_summary_for(def_id, Some(self.def_id))
@@ -607,7 +653,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         mut out_state: &mut HashMap<mir::BasicBlock, Environment>,
         first_state: &Environment,
     ) -> u64 {
-        let mut elapsed_time_in_seconds = 0;
         let mut iteration_count = 0;
         let mut changed = true;
         while changed {
@@ -619,12 +664,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 &first_state,
                 iteration_count,
             );
-            elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
-            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-                break;
-            }
+            check_for_early_break!(self);
             if iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
-                warn!("fixed point loop diverged in body of {}", function_name);
                 break;
             }
             iteration_count += 1;
@@ -634,13 +675,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 "Fixed point loop took {} iterations for {}.",
                 iteration_count, function_name
             );
+        } else {
+            trace!(
+                "Fixed point loop took {} iterations for {}.",
+                iteration_count,
+                function_name
+            );
         }
-        trace!(
-            "Fixed point loop took {} iterations for {}, now checking for errors.",
-            iteration_count,
-            function_name
-        );
-        elapsed_time_in_seconds
+        self.start_instant.elapsed().as_secs()
     }
 
     #[logfn_inputs(TRACE)]
@@ -689,10 +731,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) -> bool {
         let mut changed = false;
         for bb in block_indices.iter() {
-            let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
-            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-                break;
-            }
+            check_for_early_break!(self);
 
             // Merge output states of predecessors of bb
             let i_state = if bb.index() == 0 {
@@ -896,9 +935,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         while location.statement_index < terminator_index {
             self.visit_statement(location, &statements[location.statement_index]);
-            if self.start_instant.elapsed().as_secs() >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-                return;
-            }
+            check_for_early_return!(self);
             location.statement_index += 1;
         }
 
@@ -2140,10 +2177,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     break;
                 }
             }
-            let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
-            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-                return;
-            }
+            check_for_early_return!(self);
             self.current_environment.update_value_at(tpath, rvalue);
         }
     }
@@ -2439,10 +2473,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         rtype: ExpressionType,
         move_elements: bool,
     ) {
-        let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
-        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            return;
-        }
+        check_for_early_return!(self);
         let mut value_map = self.current_environment.value_map.clone();
         // Some qualified rpaths are patterns that represent collections of values.
         // We need to expand the patterns before doing the actual moves.
@@ -2546,10 +2577,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             rtype.clone(),
                             move_elements,
                         );
-                        let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
-                        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-                            return;
+                        if self.assume_function_is_angelic {
+                            break;
                         }
+                        check_for_early_return!(self);
                     }
                     return;
                 }
@@ -2565,10 +2596,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .filter(|(p, _)| p.is_rooted_by(&rpath))
         {
-            let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
-            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-                return;
-            }
+            check_for_early_return!(self);
             let qualified_path = path.replace_root(&rpath, target_path.clone());
             if move_elements {
                 trace!("moving {:?} to {:?}", value, qualified_path);
