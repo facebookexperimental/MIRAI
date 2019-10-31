@@ -130,14 +130,6 @@ impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
     fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'_>) {
-        if self.file_name.contains("/compiler")
-            || self.file_name.contains("/ir-to-bytecode")
-            || self.file_name.contains("/libradb")
-            || self.file_name.contains("/noise")
-            || self.file_name.contains("/stdlib")
-        {
-            return;
-        }
         let output_dir = String::from(self.output_directory.to_str().expect("valid string"));
         let summary_store_path = if std::env::var("MIRAI_SHARE_PERSISTENT_STORE").is_ok() {
             output_dir
