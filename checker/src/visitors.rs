@@ -297,7 +297,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Returns true if the newly computed summary is different from the summary (if any)
     /// that is already in the cache.
     #[logfn_inputs(TRACE)]
-    pub fn visit_body(&mut self, function_name: &str) {
+    pub fn visit_body(
+        &mut self,
+        function_name: &str,
+        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+    ) {
         self.active_calls.push(self.def_id);
         self.summarize_on_demand = true;
         let mut block_indices = self.get_sorted_block_indices();
@@ -310,12 +314,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // as well any promoted constants.
         let first_state = self.promote_constants(function_name);
 
+        // If this body is being analyzed in the context of actual arguments (because it is not a root)
+        // initialize the first state with the parameter bindings for any function constants
+        let state_with_function_constants = self.add_function_constants(first_state, actual_args);
+
         let elapsed_time_in_seconds = self.compute_fixed_point(
             function_name,
             &mut block_indices,
             &mut in_state,
             &mut out_state,
-            &first_state,
+            &state_with_function_constants,
         );
 
         if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
@@ -354,14 +362,46 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.active_calls.pop();
     }
 
-    fn create_and_cache_function_summary(&mut self, func_ref: &Rc<FunctionReference>) -> Summary {
-        debug!("on demand analysis of {:?}", func_ref);
-        precondition!(func_ref.def_id.is_some());
-        let def_id = func_ref.def_id.unwrap();
-        self.create_and_cache_def_id_summary(def_id)
+    /// If the actual arguments contain function constants, add these to the initial environment
+    /// so that any calls to the corresponding parameters can be summarized by using a known function.
+    #[logfn_inputs(TRACE)]
+    fn add_function_constants(
+        &self,
+        mut environment: Environment,
+        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+    ) -> Environment {
+        for (i, (_, arg)) in actual_args.iter().enumerate() {
+            if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &arg.expression {
+                let param_path = Path::new_local(i + 1);
+                environment.value_map = environment.value_map.insert(param_path, arg.clone());
+            }
+        }
+        environment
     }
 
-    fn create_and_cache_def_id_summary(&mut self, def_id: hir::def_id::DefId) -> Summary {
+    /// Summarize the referenced function, specialized by its argument types and the actual
+    /// values of any function parameters.
+    #[logfn_inputs(TRACE)]
+    fn create_and_cache_function_summary(
+        &mut self,
+        func_ref: &Rc<FunctionReference>,
+        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+    ) -> Summary {
+        precondition!(func_ref.def_id.is_some());
+        let def_id = func_ref.def_id.unwrap();
+        self.create_and_cache_def_id_summary(def_id, actual_args)
+    }
+
+    /// Summarize the referenced function, specialized by its argument types and the actual
+    /// values of any function parameters.
+    /// This is unbundled from the function above so that we can reuse it to summarize compiler
+    /// produced functions that calculate the values of promoted constants.
+    #[logfn_inputs(TRACE)]
+    fn create_and_cache_def_id_summary(
+        &mut self,
+        def_id: hir::def_id::DefId,
+        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+    ) -> Summary {
         if self.tcx.is_mir_available(def_id) {
             let elapsed_time = self.start_instant.elapsed();
             let mut saved_state = SavedVisitorState::new(self.def_id, self.mir);
@@ -370,7 +410,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.mir = self.tcx.optimized_mir(def_id);
             self.start_instant = Instant::now();
             let function_name = self.summary_cache.get_summary_key_for(def_id).clone();
-            self.visit_body(&function_name);
+            self.visit_body(&function_name, actual_args);
             self.swap_visitor_state(&mut saved_state);
             self.start_instant = Instant::now() - elapsed_time;
         } else {
@@ -387,6 +427,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .clone()
     }
 
+    /// Adds the given diagnostic builder to the buffer.
+    /// Buffering diagnostics gives us the chance to sort them before printing them out,
+    /// which is desirable for tools that compare the diagnostics from one run of MIRAI with another.
     #[logfn_inputs(TRACE)]
     fn emit_diagnostic(&mut self, diagnostic_builder: DiagnosticBuilder<'compilation>) {
         self.buffered_diagnostics.push(diagnostic_builder);
@@ -436,7 +479,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if !self.summarize_on_demand || cached_summary.is_not_default {
                         cached_summary
                     } else {
-                        summary = self.create_and_cache_def_id_summary(*def_id);
+                        summary = self.create_and_cache_def_id_summary(*def_id, &[]);
                         &summary
                     }
                 } else {
@@ -855,7 +898,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Use the visitor to compute the state corresponding to promoted constants.
     #[logfn_inputs(TRACE)]
     fn promote_constants(&mut self, function_name: &str) -> Environment {
-        let mut state_with_parameters = Environment::default();
+        let mut environment = Environment::default();
         let saved_mir = self.mir;
         let result_root: Rc<Path> = Path::new_local(0);
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
@@ -874,9 +917,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     .iter()
                     .filter(|(p, _)| p.is_rooted_by(&heap_root))
                 {
-                    state_with_parameters.update_value_at(path.clone(), value.clone());
+                    environment.update_value_at(path.clone(), value.clone());
                 }
-                state_with_parameters.update_value_at(promoted_root.clone(), value.clone());
+                environment.update_value_at(promoted_root.clone(), value.clone());
             } else {
                 for (path, value) in self
                     .exit_environment
@@ -885,18 +928,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     .filter(|(p, _)| p.is_rooted_by(&result_root))
                 {
                     let promoted_path = path.replace_root(&result_root, promoted_root.clone());
-                    state_with_parameters.update_value_at(promoted_path, value.clone());
+                    environment.update_value_at(promoted_path, value.clone());
                 }
                 if let Expression::Variable { .. } = &value.expression {
                     // The constant is a stack allocated struct. No need for a separate entry.
                 } else {
-                    state_with_parameters.update_value_at(promoted_root.clone(), value.clone());
+                    environment.update_value_at(promoted_root.clone(), value.clone());
                 }
             }
             self.reset_visitor_state();
         }
         self.mir = saved_mir;
-        state_with_parameters
+        environment
     }
 
     /// Computes a fixed point over the blocks of the MIR for a promoted constant block
@@ -1236,7 +1279,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if self.handled_as_special_function_call(known_name, &actual_args, destination, cleanup) {
             return;
         }
-        let function_summary = self.get_function_summary(&func_to_call);
+        let function_summary = self.get_function_summary(&func_to_call, &actual_args);
         if self.check_for_errors
             && !self.assume_preconditions_of_next_call
             && !self
@@ -1357,7 +1400,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             KnownFunctionNames::StdFutureFromGenerator => {
                 checked_assume!(actual_args.len() == 1);
-                self.async_fn_summary = Some(self.get_function_summary(&actual_args[0].1));
+                self.async_fn_summary = Some(self.get_function_summary(&actual_args[0].1, &[]));
                 return true;
             }
             KnownFunctionNames::StdBeginPanic | KnownFunctionNames::StdBeginPanicFmt => {
@@ -1635,19 +1678,42 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// Returns a summary of the function to call, obtained from the summary cache.
     #[logfn_inputs(TRACE)]
-    fn get_function_summary(&mut self, func_to_call: &Rc<AbstractValue>) -> Summary {
-        if let Expression::CompileTimeConstant(ConstantDomain::Function(func_ref)) =
-            &func_to_call.expression
-        {
+    fn get_function_summary(
+        &mut self,
+        func_to_call: &Rc<AbstractValue>,
+        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+    ) -> Summary {
+        fn get_func_ref(val: &Rc<AbstractValue>) -> Option<&Rc<FunctionReference>> {
+            match &val.expression {
+                Expression::CompileTimeConstant(ConstantDomain::Function(func_ref)) => {
+                    Some(func_ref)
+                }
+                _ => None,
+            }
+        }
+        if let Some(func_ref) = get_func_ref(func_to_call) {
+            let func_args: Option<Vec<Rc<FunctionReference>>> = if !actual_args.is_empty()
+                && actual_args.iter().any(|(_, v)| get_func_ref(v).is_some())
+            {
+                Some(
+                    actual_args
+                        .iter()
+                        .filter_map(|(_, v)| get_func_ref(v).cloned())
+                        .collect(),
+                )
+            } else {
+                // common case
+                None
+            };
             let result = self
                 .summary_cache
-                .get_summary_for_function_constant(func_ref, self.def_id)
+                .get_summary_for_function_constant(func_ref, func_args, self.def_id)
                 .clone();
             if result.is_not_default || !self.summarize_on_demand || func_ref.def_id.is_none() {
                 return result;
             }
             if !self.active_calls.contains(&func_ref.def_id.unwrap()) {
-                return self.create_and_cache_function_summary(func_ref);
+                return self.create_and_cache_function_summary(func_ref, actual_args);
             }
         }
         Summary::default()

@@ -324,6 +324,6 @@ impl MiraiCallbacks {
             smt_solver: &mut smt_solver,
             buffered_diagnostics: &mut buffered_diagnostics,
         });
-        mir_visitor.visit_body(&name);
+        mir_visitor.visit_body(&name, &[]);
     }
 }

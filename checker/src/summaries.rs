@@ -419,6 +419,7 @@ pub struct PersistentSummaryCache<'tcx> {
     db: Db,
     cache: HashMap<DefId, Summary>,
     typed_cache: HashMap<usize, Summary>,
+    typed_cache_table: HashMap<Vec<Rc<FunctionReference>>, HashMap<usize, Summary>>,
     reference_cache: HashMap<Rc<FunctionReference>, Summary>,
     typed_reference_cache: HashMap<Rc<FunctionReference>, Summary>,
     dependencies: HashMap<DefId, Vec<DefId>>,
@@ -484,6 +485,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
             db,
             cache: HashMap::new(),
             typed_cache: HashMap::new(),
+            typed_cache_table: HashMap::new(),
             reference_cache: HashMap::new(),
             typed_reference_cache: HashMap::new(),
             key_cache: HashMap::new(),
@@ -523,40 +525,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
             ar.unpack(directory_path).unwrap();
         };
         store_path
-    }
-
-    /// Any summaries that are still in a default state will be for functions in the foreign_contracts
-    /// module and their definitions use DefIds that are different from the ids at the call sites.
-    #[logfn_inputs(TRACE)]
-    pub fn invalidate_default_summaries(&mut self) {
-        let keys_to_remove: Vec<usize> = self
-            .typed_cache
-            .iter()
-            .filter_map(|(id, summary)| {
-                if summary.is_not_default {
-                    None
-                } else {
-                    Some(*id)
-                }
-            })
-            .collect();
-        for key in keys_to_remove {
-            self.typed_cache.remove(&key);
-        }
-        let keys_to_remove: Vec<DefId> = self
-            .cache
-            .iter()
-            .filter_map(|(def_id, summary)| {
-                if summary.is_not_default {
-                    None
-                } else {
-                    Some(*def_id)
-                }
-            })
-            .collect();
-        for key in keys_to_remove {
-            self.cache.remove(&key);
-        }
     }
 
     /// Returns a list of DefIds for all functions in the current crate that are known
@@ -618,6 +586,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
     pub fn get_summary_for_function_constant(
         &mut self,
         func_ref: &Rc<FunctionReference>,
+        func_args: Option<Vec<Rc<FunctionReference>>>,
         dependent_def_id: DefId,
     ) -> &Summary {
         match (func_ref.def_id, func_ref.function_id) {
@@ -626,6 +595,14 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
                 let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
                 if !dependents.contains(&dependent_def_id) {
                     dependents.push(dependent_def_id);
+                }
+                if let Some(func_args) = func_args {
+                    return self
+                        .typed_cache_table
+                        .entry(func_args)
+                        .or_insert_with(HashMap::new)
+                        .entry(function_id)
+                        .or_insert_with(Summary::default);
                 }
                 if self.typed_cache.contains_key(&function_id) {
                     let result = self.typed_cache.get(&function_id);
