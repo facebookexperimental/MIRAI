@@ -10,5 +10,5 @@ pub fn main() {
     let x: Option<i64> = Some(1);
     let _y = x.unwrap();
     let z: Option<i64> = None;
-    let _ = z.unwrap(); //~ execution panic
+    let _ = z.unwrap(); //~ called `Option::unwrap()` on a `None` value
 }
