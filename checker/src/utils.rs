@@ -8,7 +8,7 @@ use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::assume_unreachable;
 use rustc::hir::def_id::DefId;
 use rustc::hir::map::{DefPathData, DisambiguatedDefPathData};
-use rustc::hir::{ItemKind, Node, TraitItemKind};
+use rustc::hir::{ItemKind, Node};
 use rustc::ty::subst::{GenericArgKind, SubstsRef};
 use rustc::ty::{DefIdTree, Ty, TyCtxt, TyKind};
 use std::rc::Rc;
@@ -264,16 +264,7 @@ fn qualified_type_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 /// Constructs a name for the crate that contains the given def_id.
 #[logfn(TRACE)]
 fn crate_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
-    if def_id.is_local() {
-        tcx.crate_name.as_interned_str().as_str()
-    } else {
-        let cdata = tcx.crate_data_as_rc_any(def_id.krate);
-        let metadata = cdata
-            .downcast_ref::<rustc_metadata::cstore::CrateMetadata>()
-            .expect("tcx to provide an actual crate");
-        metadata.root.name.as_str()
-    }
-    .to_string()
+    tcx.crate_name(def_id.krate).as_str().to_string()
 }
 
 /// Constructs a string that uniquely identifies a definition to serve as a key to
@@ -283,6 +274,7 @@ fn crate_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 #[logfn(TRACE)]
 pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
     let mut name = crate_name(tcx, def_id);
+    let mut type_ns: Option<String> = None;
     for component in &tcx.def_path(def_id).data {
         if name.ends_with("foreign_contracts") {
             // By stripping off this special prefix, we allow this crate (or module) to define
@@ -294,18 +286,27 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
             name.push('.');
         }
         push_component_name(&component.data, &mut name);
-        let saw_implement = match component.data {
-            DefPathData::Impl => true,
-            _ => false,
-        };
+        if let DefPathData::TypeNs(sym) = component.data {
+            type_ns = Some(sym.as_str().to_string());
+        }
         if component.disambiguator != 0 {
             name.push('_');
-            if saw_implement {
+            if component.data == DefPathData::Impl {
                 if let Some(parent_def_id) = tcx.parent(def_id) {
-                    if let Some(ty) = type_of(tcx, parent_def_id) {
+                    if let Some(ty) = rustc_typeck::checked_type_of(tcx, parent_def_id, false) {
                         append_mangled_type(&mut name, ty, tcx);
                         continue;
                     }
+                    if let Some(type_ns) = &type_ns {
+                        if type_ns == "num" {
+                            append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
+                            continue;
+                        }
+                    }
+                }
+                if let Some(type_ns) = &type_ns {
+                    name.push_str(&type_ns);
+                    continue;
                 }
             }
             let da = component.disambiguator.to_string();
@@ -326,37 +327,6 @@ pub fn is_foreign_contract(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
     } else {
         false
     }
-}
-
-/// Guards a call to tcx.type_of to avoid cases where it fails.
-fn type_of(tcx: TyCtxt<'_>, def_id: DefId) -> Option<&rustc::ty::TyS<'_>> {
-    let hir_id = match tcx.hir().as_local_hir_id(def_id) {
-        Some(hir_id) => hir_id,
-        None => {
-            return Some(tcx.type_of(def_id));
-        }
-    };
-    match tcx.hir().get(hir_id) {
-        Node::TraitItem(item) => {
-            if let TraitItemKind::Type(_, None) = item.kind {
-                return None;
-            }
-        }
-        Node::Item(item) => match item.kind {
-            ItemKind::Trait(..)
-            | ItemKind::TraitAlias(..)
-            | ItemKind::Mod(..)
-            | ItemKind::ForeignMod(..)
-            | ItemKind::GlobalAsm(..)
-            | ItemKind::ExternCrate(..)
-            | ItemKind::Use(..) => {
-                return None;
-            }
-            _ => (),
-        },
-        _ => (),
-    }
-    Some(tcx.type_of(def_id))
 }
 
 fn push_component_name(component_data: &DefPathData, target: &mut String) {
