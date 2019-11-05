@@ -4,16 +4,17 @@ os:
   - windows
 language: rust
 rust:
-- nightly-2019-10-24
+- nightly-2019-10-25
 
 before_install:
+- rustup component add rustc-dev
 - if [ ${TRAVIS_OS_NAME} == "osx" ]; then curl -L https://github.com/mozilla/grcov/releases/download/v0.4.3/grcov-osx-x86_64.tar.bz2 | tar jxf -; fi
 
 before_script:
 # install formatter
 - rustup component add rustfmt
 # install linter
-- rustup component add clippy
+#- rustup component add clippy
 # install audit
 - cargo install --force cargo-audit || true
 # install z3
@@ -28,7 +29,7 @@ script:
 # Run format checks
 - cargo fmt --all -- --check
 # Run lint checks
-- cargo clippy -- -D warnings
+#- cargo clippy -- -D warnings
 # Build
 - cargo build
 - if [ ${TRAVIS_OS_NAME} == "windows" ]; then cp binaries/libz3.dll target/debug; fi
