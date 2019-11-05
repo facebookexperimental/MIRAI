@@ -251,7 +251,7 @@ fn qualified_type_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
     let mut name = crate_name(tcx, def_id);
     for component in &tcx.def_path(def_id).data {
         name.push('_');
-        push_component_name(&component.data, &mut name);
+        push_component_name(component.data, &mut name);
         if component.disambiguator != 0 {
             name.push('_');
             let da = component.disambiguator.to_string();
@@ -285,7 +285,7 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
         } else {
             name.push('.');
         }
-        push_component_name(&component.data, &mut name);
+        push_component_name(component.data, &mut name);
         if let DefPathData::TypeNs(sym) = component.data {
             type_ns = Some(sym.as_str().to_string());
         }
@@ -329,7 +329,7 @@ pub fn is_foreign_contract(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
     }
 }
 
-fn push_component_name(component_data: &DefPathData, target: &mut String) {
+fn push_component_name(component_data: DefPathData, target: &mut String) {
     use std::ops::Deref;
     use DefPathData::*;
     match component_data {
