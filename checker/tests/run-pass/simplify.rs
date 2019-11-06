@@ -9,11 +9,93 @@
 #[macro_use]
 extern crate mirai_annotations;
 
-pub fn main() {
-    foo(true);
-}
-
-fn foo(b: bool) {
+pub fn f1(b: bool) {
     verify!(b || !b);
     verify!(!b || b);
 }
+
+pub fn f2(x: bool, y: bool) {
+    let z = (x || y) && x;
+    verify!(z == x);
+    let z = (x || y) && y;
+    verify!(z == y);
+}
+
+pub fn f3(x: bool, y: bool) {
+    let z = (x || y) && (!x);
+    verify!(z == y);
+}
+
+pub fn f4(x: bool, y: bool) {
+    let z = (x || y) && (!y);
+    verify!(z == x);
+}
+
+pub fn f5(x: bool, y: bool) {
+    let z = (x && y) || x;
+    verify!(z == x);
+}
+
+pub fn f6(x: bool, y: bool) {
+    let z = (x && y) || y;
+    verify!(z == y);
+}
+
+pub fn f7(x: bool, y: bool) {
+    let z = (x && !y) || y;
+    verify!(z == (y || x));
+}
+
+pub fn f8(x: bool, y: bool, a: i32, b: i32) {
+    let z = if x || y {
+        if x {
+            a
+        } else {
+            b
+        }
+    } else {
+        b
+    };
+    verify!(z == if x { a } else { b });
+}
+
+pub fn f9(x: bool, y: bool, a: i32, b: i32) {
+    let z = if x || y {
+        if y {
+            a
+        } else {
+            b
+        }
+    } else {
+        b
+    };
+    verify!(z == if y { a } else { b });
+}
+
+pub fn f10(x: bool, y: bool, a: i32, b: i32) {
+    let z = if x || y {
+        if x {
+            a
+        } else {
+            b
+        }
+    } else {
+        a
+    };
+    verify!(z == if y { b } else { a });
+}
+
+pub fn f11(x: bool, y: bool, a: i32, b: i32) {
+    let z = if x || y {
+        if y {
+            a
+        } else {
+            b
+        }
+    } else {
+        a
+    };
+    verify!(z == if x { b } else { a });
+}
+
+pub fn main() {}
