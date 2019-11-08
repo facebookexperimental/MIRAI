@@ -13,21 +13,21 @@ use mirai_annotations::*;
 pub struct Item {
     // TODO(wrwg): make this String once supported
     name: &'static str,
-    price: f64,
+    price: u64,
 }
 
 impl Item {
     // Invariant for the Item struct. We define those invariants via functions
     // so they can easily be referenced from attributes.
     fn invariant(&self) -> bool {
-        self.name.len() > 0 && self.price > 0.0
+        !self.name.is_empty() && self.price > 0
     }
 
     // Creates a new Item, satisfying the invariant. Notice we can't use
     // the `#[invariant]` attribute for new because this requires a `self` argument.
-    #[pre(name.len() > 0 && price > 0.0)]
+    #[pre(!name.is_empty() && price > 0)]
     #[post(ret.invariant())]
-    fn new(name: &'static str, price: f64) -> Item {
+    fn new(name: &'static str, price: u64) -> Item {
         Item { name, price }
     }
 }
@@ -36,7 +36,7 @@ impl Item {
 // all the items in the cart.
 pub struct ShoppingCart {
     items: Vec<Item>,
-    total: f64,
+    total: u64,
 }
 
 impl ShoppingCart {
@@ -46,15 +46,15 @@ impl ShoppingCart {
         // function DefId(2:1711 ~ core[5a18]::ops[0]::deref[0]::Deref[0]::deref[0])
         // Comment the code out to see other issues with this code.
         self.items.iter().all(|x| x.invariant())
-            && self.items.iter().map(|x| x.price).sum::<f64>() == self.total
+            && self.items.iter().map(|x| x.price).sum::<u64>() == self.total
     }
 
     #[post(ret.invariant())]
     fn new() -> ShoppingCart {
-        return ShoppingCart {
+        ShoppingCart {
             items: vec![],
-            total: 0.0,
-        };
+            total: 0,
+        }
     }
 }
 
@@ -84,9 +84,9 @@ impl ShoppingCart {
     // TODO(wrwg): This currently can not be handled by MIRAI:
     // DefId(2:1739 ~ core[5a18]::ops[0]::function[0]::FnMut[0]::call_mut[0])
     #[post(ret == old(self.total))]
-    fn checkout(&mut self) -> f64 {
+    fn checkout(&mut self) -> u64 {
         let bill = self.total;
-        self.total = 0.0;
+        self.total = 0;
         self.items.clear();
         bill
     }
@@ -96,8 +96,8 @@ impl ShoppingCart {
 pub fn main() {
     let mut cart = ShoppingCart::new();
     // The below should fail because pre-condition of Item::new is violated.
-    cart.add(Item::new("free lunch", 0.0));
-    checked_verify!(cart.checkout() == 0.0);
+    cart.add(Item::new("free lunch", 0));
+    checked_verify!(cart.checkout() == 0);
 }
 
 #[cfg(test)]
@@ -109,9 +109,9 @@ mod tests {
     #[test]
     fn ok() {
         let mut cart = ShoppingCart::new();
-        cart.add(Item::new("ipad pro", 899.0));
-        cart.add(Item::new("ipad folio", 169.0));
-        checked_verify_eq!(cart.checkout(), 899.0 + 169.0);
+        cart.add(Item::new("ipad pro", 899));
+        cart.add(Item::new("ipad folio", 169));
+        checked_verify_eq!(cart.checkout(), 899 + 169);
     }
 
     #[test]
@@ -119,15 +119,15 @@ mod tests {
     fn fail_item_new() {
         let mut cart = ShoppingCart::new();
         // Below violates precondition of Item::new
-        cart.add(Item::new("free lunch", 0.0));
-        checked_verify_eq!(cart.checkout(), 0.0);
+        cart.add(Item::new("free lunch", 0));
+        checked_verify_eq!(cart.checkout(), 0);
     }
 
     #[test]
     #[should_panic(expected = "Invariant of add_broken_invariant violated")]
     fn fail_add_invariant() {
         let mut cart = ShoppingCart::new();
-        cart.add_broken_invariant(Item::new("ipad pro", 899.0));
-        checked_verify_eq!(cart.checkout(), 899.0);
+        cart.add_broken_invariant(Item::new("ipad pro", 899));
+        checked_verify_eq!(cart.checkout(), 899);
     }
 }
