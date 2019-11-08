@@ -50,15 +50,18 @@ impl ShoppingCart {
 
     #[post(ret.invariant())]
     fn new() -> ShoppingCart {
-        return ShoppingCart { items: vec!(), total: 0.0 };
+        return ShoppingCart {
+            items: vec![],
+            total: 0.0,
+        };
     }
 }
 
-// Implements methods of the shopping cart. By attaching the the `#[invariant]` attribute
-// all methods in the impl which work on a self parameter get automatically injected
-// the invariant both as pre and post condition, in addition to what the state
+// Implements methods of the shopping cart. By attaching the `#[invariant]` attribute
+// all methods in the impl which work on `self` get automatically injected
+// the invariant both as pre and post condition, in addition to what they state
 // individually.
-// TODO(wrwg): having both an invariant here and a post below is not supported
+// TODO(wrwg): having both an invariant here and a post below is currently not supported
 // by MIRAI: "only one post condition is supported"
 #[invariant(self.invariant())]
 impl ShoppingCart {
@@ -88,10 +91,10 @@ impl ShoppingCart {
     }
 }
 
-// A main entry point which violates the invariant.
+// A main entry point which violates conditions.
 pub fn main() {
     let mut cart = ShoppingCart::new();
-    // The above should fail because pre-condition of Item::new is violated.
+    // The below should fail because pre-condition of Item::new is violated.
     cart.add(Item::new("free lunch", 0.0));
     checked_verify!(cart.checkout() == 0.0);
 }
@@ -111,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Post-condition of new violated")]
+    #[should_panic(expected = "Pre-condition of new violated")]
     fn fail_item_new() {
         let mut cart = ShoppingCart::new();
         // Below violates precondition of Item::new
