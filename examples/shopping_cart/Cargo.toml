@@ -1,0 +1,13 @@
+[package]
+name = "shopping_cart"
+version = "0.1.0"
+authors = ["Wolfgang Grieskamp <wrwg@fb.com>"]
+edition = "2018"
+
+[[bin]]
+name = "shopping_cart"
+
+[dependencies]
+mirai-annotations = { path = "../../annotations" }
+# TODO(wrwg): replace with crates.io reference once landed
+contracts = { git = "https://gitlab.com/wrwg/contracts.git", branch = "mirai", features = [ "mirai_assertions" ]}
