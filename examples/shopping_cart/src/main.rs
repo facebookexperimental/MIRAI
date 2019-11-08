@@ -25,6 +25,7 @@ impl Item {
 
     // Creates a new Item, satisfying the invariant. Notice we can't use
     // the `#[invariant]` attribute for new because this requires a `self` argument.
+    #[pre(name.len() > 0 && price > 0.0)]
     #[post(ret.invariant())]
     fn new(name: &'static str, price: f64) -> Item {
         Item { name, price }
