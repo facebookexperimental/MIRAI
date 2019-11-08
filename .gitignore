@@ -2,6 +2,3 @@
 .vscode/
 .idea/
 target/
-examples/
-!examples/shopping_cart.rs
-!examples/taint/*.*
