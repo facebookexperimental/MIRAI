@@ -2084,23 +2084,24 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
             }
             KnownFunctionNames::MiraiPostcondition => {
-                if self.post_condition.is_some() {
-                    let span = self.current_span;
-                    let warning = self
-                        .session
-                        .struct_span_warn(span, "only one post condition is supported");
-                    self.emit_diagnostic(warning);
-                }
+                let extend_post_condition = |current: &Option<Rc<AbstractValue>>, cond| {
+                    if let Some(current_cond) = current {
+                        Some(current_cond.and(cond))
+                    } else {
+                        Some(cond)
+                    }
+                };
                 assume!(actual_args.len() == 3); // The type checker ensures this.
                 let (_, assumption) = &actual_args[1];
                 let (_, cond) = &actual_args[0];
                 if !assumption.as_bool_if_known().unwrap_or(false) {
                     let message = self.coerce_to_string(&actual_args[2].1);
                     if self.check_condition(cond, message, true).is_none() {
-                        self.post_condition = Some(cond.clone());
+                        self.post_condition =
+                            extend_post_condition(&self.post_condition, cond.clone());
                     }
                 } else {
-                    self.post_condition = Some(cond.clone());
+                    self.post_condition = extend_post_condition(&self.post_condition, cond.clone());
                 }
             }
             KnownFunctionNames::MiraiVerify => {

@@ -24,12 +24,12 @@ pub fn foo(bl: Block) {
     verify!(ret < std::u64::MAX - 1);
 }
 
-pub fn bad(c: bool) -> u64 {
+pub fn bar(c: bool) -> u64 {
     let result = result!();
     if c {
         assumed_postcondition!(result < 5);
     } else {
-        assumed_postcondition!(result > 10); //~ only one post condition is supported
+        assumed_postcondition!(result > 10);
     }
     result
 }
