@@ -9,6 +9,7 @@ use mirai_annotations::assume_unreachable;
 use rustc::hir::def_id::DefId;
 use rustc::hir::map::{DefPathData, DisambiguatedDefPathData};
 use rustc::hir::{ItemKind, Node};
+use rustc::ty::print::{FmtPrinter, Printer};
 use rustc::ty::subst::{GenericArgKind, SubstsRef};
 use rustc::ty::{DefIdTree, Ty, TyCtxt, TyKind};
 use std::rc::Rc;
@@ -347,4 +348,17 @@ fn push_component_name(component_data: DefPathData, target: &mut String) {
             _ => assume_unreachable!(),
         }),
     };
+}
+
+/// Returns a readable display name for a DefId. This name may not be unique.
+pub fn def_id_display_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
+    struct PrettyDefId<'tcx>(DefId, TyCtxt<'tcx>);
+    impl std::fmt::Debug for PrettyDefId<'_> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            FmtPrinter::new(self.1, f, rustc::hir::def::Namespace::ValueNS)
+                .print_def_path(self.0, &[])?;
+            Ok(())
+        }
+    }
+    format!("{:?}", PrettyDefId(def_id, tcx))
 }

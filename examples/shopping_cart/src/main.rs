@@ -66,6 +66,7 @@ impl ShoppingCart {
 // by MIRAI: "only one post condition is supported"
 #[invariant(self.invariant())]
 impl ShoppingCart {
+    #[pre(self.total <= std::u64::MAX - item.price && self.items.len() < std::usize::MAX)]
     #[post(self.items.len() == old(self.items.len()) + 1)]
     fn add(&mut self, item: Item) {
         self.total += item.price;
