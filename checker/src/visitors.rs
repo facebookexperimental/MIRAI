@@ -389,18 +389,20 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) -> Summary {
         precondition!(func_ref.def_id.is_some());
         let def_id = func_ref.def_id.unwrap();
-        self.create_and_cache_def_id_summary(def_id, actual_args)
+        self.create_and_cache_def_id_summary(def_id, actual_args, Some(func_ref.clone()))
     }
 
     /// Summarize the referenced function, specialized by its argument types and the actual
     /// values of any function parameters.
     /// This is unbundled from the function above so that we can reuse it to summarize compiler
     /// produced functions that calculate the values of promoted constants.
+    /// An optional func_ref is passed for diagnostic purposes.
     #[logfn_inputs(TRACE)]
     fn create_and_cache_def_id_summary(
         &mut self,
         def_id: hir::def_id::DefId,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        func_ref: Option<Rc<FunctionReference>>,
     ) -> Summary {
         if self.tcx.is_mir_available(def_id) {
             let elapsed_time = self.start_instant.elapsed();
@@ -417,9 +419,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             // No summary for the called function, so we can't trust the analysis of this
             // function either.
             self.assume_function_is_angelic = true;
+            let argument_type_hint = if let Some(func) = func_ref {
+                format!(" (foreign fn argument key: {})", func.argument_type_key)
+            } else {
+                "".to_string()
+            };
             info!(
-                "function {:?} can't be analyzed because it calls function {:?} which has no body and no summary",
-                self.def_id, def_id
+                "function {} can't be analyzed because it calls function {} which has no body and no summary{}",
+                utils::def_id_display_name(self.tcx, self.def_id),
+                utils::def_id_display_name(self.tcx, def_id),
+                argument_type_hint,
             );
         }
         self.summary_cache
@@ -493,7 +502,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if !self.summarize_on_demand || cached_summary.is_not_default {
                         cached_summary
                     } else {
-                        summary = self.create_and_cache_def_id_summary(*def_id, &[]);
+                        summary = self.create_and_cache_def_id_summary(*def_id, &[], None);
                         &summary
                     }
                 } else {
