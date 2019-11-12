@@ -722,7 +722,10 @@ impl Z3Solver {
                 operand,
                 result_type,
             } => self.numeric_bitwise_not(operand, result_type),
-            Expression::Cast { target_type, .. } => self.numeric_cast(expression, target_type),
+            Expression::Cast {
+                operand,
+                target_type,
+            } => self.numeric_cast(&operand.expression, target_type),
             Expression::CompileTimeConstant(const_domain) => {
                 self.numeric_const(expression, const_domain)
             }
@@ -943,10 +946,16 @@ impl Z3Solver {
                     true,
                     z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.f64_sort),
                 ),
-                _ => (
-                    false,
-                    z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.int_sort),
-                ),
+                _ => {
+                    if target_type.is_integer() {
+                        self.get_as_numeric_z3_ast(expression)
+                    } else {
+                        (
+                            false,
+                            z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.int_sort),
+                        )
+                    }
+                }
             }
         }
     }
