@@ -438,23 +438,6 @@ pub mod core {
                 }
             }
         }
-
-        pub mod deref {
-            pub trait Deref {
-                fn deref__alloc_vec_Vec_i32(vec: &Vec<i32>) -> &[i32] {
-                    let old_len = vec.len();
-                    let res: &[i32] = result!();
-                    assume!(res.len() == old_len);
-                    res
-                }
-                fn deref__alloc_vec_Vec_u32(vec: &Vec<u32>) -> &[u32] {
-                    let old_len = vec.len();
-                    let res: &[u32] = result!();
-                    assume!(res.len() == old_len);
-                    res
-                }
-            }
-        }
     }
 
     pub mod iter {

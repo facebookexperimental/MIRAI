@@ -101,6 +101,12 @@ pub enum KnownFunctionNames {
     MiraiVerify,
     /// std.future.from_generator
     StdFutureFromGenerator,
+    /// std::intrinsics::transmute
+    StdIntrinsicsTransmute,
+    /// std.ops.deref.Deref.deref
+    StdOpsDeref,
+    /// std.ops.deref.Deref.deref_mut
+    StdOpsDerefMut,
     /// std.panicking.begin_panic
     StdBeginPanic,
     /// std.panicking.begin_panic_fmt
@@ -162,9 +168,16 @@ impl ConstantDomain {
             "mirai_annotations.mirai_set_model_field" => MiraiSetModelField,
             "mirai_annotations.mirai_shallow_clone" => MiraiShallowClone,
             "mirai_annotations.mirai_verify" => MiraiVerify,
-            "std.future.from_generator" => StdFutureFromGenerator,
+            "core.future.from_generator" | "std.future.from_generator" => StdFutureFromGenerator,
+            "core.ops.deref.Deref.deref"
+            | "std.ops.deref.Deref.deref"
+            | "core.ops.deref.Deref.deref_mut"
+            | "std.ops.deref.Deref.deref_mut" => StdOpsDeref,
             "core.panicking.panic" | "std.panicking.begin_panic" => StdBeginPanic,
             "core.panicking.panic_fmt" | "std.panicking.begin_panic_fmt" => StdBeginPanicFmt,
+            "core.intrinsics._1.transmute" | "std.intrinsics._1.transmute" => {
+                StdIntrinsicsTransmute
+            }
             _ => KnownFunctionNames::None,
         };
         ConstantDomain::Function(Rc::new(FunctionReference {
