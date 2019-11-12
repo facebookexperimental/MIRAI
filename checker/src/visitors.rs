@@ -427,7 +427,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             info!(
                 "function {} can't be analyzed because it calls function {} which has no body and no summary{}",
                 utils::def_id_display_name(self.tcx, self.def_id),
-                utils::def_id_display_name(self.tcx, def_id),
+                utils::summary_key_str(self.tcx, def_id),
                 argument_type_hint,
             );
         }
@@ -1774,6 +1774,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     _ => None,
                 };
                 qualifier.unwrap_or_else(|| abstract_value::BOTTOM.into())
+            }
+            KnownFunctionNames::StdOpsDeref => {
+                checked_assume!(args.len() == 1);
+                checked_assume!(destination.is_some()); // MIR should always have a destination for this
+                let target_type = self.get_place_type(&destination.as_ref().unwrap().0);
+                args[0].1.dereference(target_type)
+            }
+            KnownFunctionNames::StdIntrinsicsTransmute => {
+                checked_assume!(args.len() == 1);
+                args[0].1.clone()
             }
             _ => abstract_value::BOTTOM.into(),
         }
