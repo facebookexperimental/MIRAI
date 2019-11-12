@@ -54,8 +54,8 @@ impl Debug for ConstantDomain {
             ConstantDomain::Char(ch) => f.write_fmt(format_args!("'{}'", ch)),
             ConstantDomain::False => f.write_str("false"),
             ConstantDomain::Function(func_ref) => f.write_fmt(format_args!(
-                "fn {}{}",
-                func_ref.summary_cache_key, func_ref.argument_type_key
+                "fn {}{}<{:?}>",
+                func_ref.summary_cache_key, func_ref.argument_type_key, func_ref.generic_arguments
             )),
             ConstantDomain::I128(val) => val.fmt(f),
             ConstantDomain::F64(val) => (f64::from_bits(*val)).fmt(f),
@@ -171,8 +171,8 @@ impl ConstantDomain {
             "core.future.from_generator" | "std.future.from_generator" => StdFutureFromGenerator,
             "core.ops.deref.Deref.deref"
             | "std.ops.deref.Deref.deref"
-            | "core.ops.deref.Deref.deref_mut"
-            | "std.ops.deref.Deref.deref_mut" => StdOpsDeref,
+            | "core.ops.deref.DerefMut.deref_mut"
+            | "std.ops.deref.DerefMut.deref_mut" => StdOpsDeref,
             "core.panicking.panic" | "std.panicking.begin_panic" => StdBeginPanic,
             "core.panicking.panic_fmt" | "std.panicking.begin_panic_fmt" => StdBeginPanicFmt,
             "core.intrinsics._1.transmute" | "std.intrinsics._1.transmute" => {
