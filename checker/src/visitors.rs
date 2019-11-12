@@ -3,27 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
-use std::convert::TryInto;
-use std::fmt::{Debug, Formatter, Result};
-use std::rc::Rc;
-use std::time::Instant;
-
-use log_derive::logfn_inputs;
-
-use mirai_annotations::{
-    assume, assume_unreachable, checked_assume, checked_assume_eq, precondition, verify,
-};
-use rustc::session::Session;
-use rustc::ty::subst::SubstsRef;
-use rustc::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
-use rustc::{hir, mir};
-use rustc_data_structures::graph::dominators::Dominators;
-use syntax::errors::DiagnosticBuilder;
-use syntax_pos;
-
 use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
@@ -39,6 +18,25 @@ use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries;
 use crate::summaries::{PersistentSummaryCache, Precondition, Summary};
 use crate::utils::{self, is_public};
+
+use log_derive::logfn_inputs;
+use mirai_annotations::{
+    assume, assume_unreachable, checked_assume, checked_assume_eq, precondition, verify,
+};
+use rustc::session::Session;
+use rustc::ty::subst::SubstsRef;
+use rustc::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
+use rustc::{hir, mir};
+use rustc_data_structures::graph::dominators::Dominators;
+use std::borrow::Borrow;
+use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
+use std::convert::TryInto;
+use std::fmt::{Debug, Formatter, Result};
+use std::rc::Rc;
+use std::time::Instant;
+use syntax::errors::DiagnosticBuilder;
+use syntax_pos;
 
 // 'compilation is the lifetime of compiler interface object supplied to the after_analysis call back.
 // 'tcx is the lifetime of the type context created during the lifetime of the after_analysis call back.
