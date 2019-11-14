@@ -84,6 +84,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     current_span: syntax_pos::Span,
     start_instant: Instant,
     exit_environment: Environment,
+    generic_arguments: Option<Vec<ExpressionType>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     post_condition: Option<Rc<AbstractValue>>,
     preconditions: Vec<Precondition>,
@@ -107,6 +108,7 @@ struct SavedVisitorState<'analysis, 'tcx> {
     current_span: syntax_pos::Span,
     exit_environment: Environment,
     fresh_variable_offset: usize,
+    generic_arguments: Option<Vec<ExpressionType>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     post_condition: Option<Rc<AbstractValue>>,
     preconditions: Vec<Precondition>,
@@ -132,6 +134,7 @@ impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
             current_span: syntax_pos::DUMMY_SP,
             exit_environment: Environment::default(),
             fresh_variable_offset: 0,
+            generic_arguments: None,
             heap_addresses: HashMap::default(),
             post_condition: None,
             preconditions: Vec::new(),
@@ -210,6 +213,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             current_span: syntax_pos::DUMMY_SP,
             start_instant: Instant::now(),
             exit_environment: Environment::default(),
+            generic_arguments: None,
             heap_addresses: HashMap::default(),
             post_condition: None,
             preconditions: Vec::new(),
@@ -232,6 +236,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.current_span = syntax_pos::DUMMY_SP;
         self.start_instant = Instant::now();
         self.exit_environment = Environment::default();
+        self.generic_arguments = None;
         self.heap_addresses = HashMap::default();
         self.post_condition = None;
         self.preconditions = Vec::new();
@@ -275,6 +280,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         std::mem::swap(
             &mut self.exit_environment,
             &mut saved_state.exit_environment,
+        );
+        std::mem::swap(
+            &mut self.generic_arguments,
+            &mut saved_state.generic_arguments,
         );
         std::mem::swap(&mut self.heap_addresses, &mut saved_state.heap_addresses);
         std::mem::swap(&mut self.post_condition, &mut saved_state.post_condition);
@@ -397,7 +406,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// This is unbundled from the function above so that we can reuse it to summarize compiler
     /// produced functions that calculate the values of promoted constants.
     /// An optional func_ref is passed for diagnostic purposes.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn create_and_cache_def_id_summary(
         &mut self,
         def_id: hir::def_id::DefId,
@@ -408,6 +417,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let elapsed_time = self.start_instant.elapsed();
             let mut saved_state = SavedVisitorState::new(self.def_id, self.mir);
             self.swap_visitor_state(&mut saved_state);
+            if let Some(fr) = func_ref {
+                if !fr.generic_arguments.is_empty() {
+                    self.generic_arguments = Some(fr.generic_arguments.clone());
+                }
+            };
             self.def_id = def_id;
             self.mir = self.tcx.optimized_mir(def_id);
             self.start_instant = Instant::now();
@@ -3738,10 +3752,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Returns an ExpressionType value corresponding to the Rustc type of the place.
     #[logfn_inputs(TRACE)]
     fn get_place_type(&mut self, place: &mir::Place<'tcx>) -> ExpressionType {
-        (&self.get_rustc_place_type(place).kind).into()
+        let rust_ty = &self.get_rustc_place_type(place).kind;
+        if let TyKind::Param(t_par) = rust_ty {
+            if let Some(generic_args) = &self.generic_arguments {
+                if let Some(arg_type) = generic_args.get(t_par.index as usize) {
+                    return arg_type.clone();
+                }
+            }
+        }
+        rust_ty.into()
     }
 
-    /// Returns the rustc TyKind of the given place in memory.
+    /// Returns the rustc Ty of the given place in memory.
     #[logfn_inputs(TRACE)]
     fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> Ty<'tcx> {
         let base_type = match &place.base {
