@@ -406,7 +406,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// This is unbundled from the function above so that we can reuse it to summarize compiler
     /// produced functions that calculate the values of promoted constants.
     /// An optional func_ref is passed for diagnostic purposes.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn create_and_cache_def_id_summary(
         &mut self,
         def_id: hir::def_id::DefId,
@@ -432,6 +432,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else {
             // No summary for the called function, so we can't trust the analysis of this
             // function either.
+            if let Some(devirtualized_summary) = self.try_to_devirtualize(def_id, actual_args) {
+                return devirtualized_summary;
+            }
             self.assume_function_is_angelic = true;
             let argument_type_hint = if let Some(func) = func_ref {
                 format!(" (foreign fn argument key: {})", func.argument_type_key)
@@ -448,6 +451,36 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.summary_cache
             .get_summary_for(def_id, Some(self.def_id))
             .clone()
+    }
+
+    /// If the def_id is a trait (virtual) method and the first argument has a concrete type
+    /// that implements the trait, get the def_id of the concrete method that implements the
+    /// given virtual method and return the summary of that, computing it if necessary.
+    /// todo: most of this function is currently unimplemented.
+    #[logfn_inputs(TRACE)]
+    fn try_to_devirtualize(
+        &mut self,
+        def_id: hir::def_id::DefId,
+        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+    ) -> Option<Summary> {
+        if !actual_args.is_empty() {
+            // todo: create a more efficient way to check if def_id is a closure trait call method
+            let key = utils::summary_key_str(self.tcx, def_id);
+            if key.starts_with("core.ops.function.Fn") && key.ends_with(".call") {
+                let arg0_path = &actual_args[0].0;
+                let arg_type = self.get_path_rustc_type(arg0_path);
+                if let TyKind::Ref(_, ty, _) = arg_type.kind {
+                    if let TyKind::Closure(closure_def_id, ..) = ty.kind {
+                        return Some(self.create_and_cache_def_id_summary(
+                            closure_def_id,
+                            actual_args,
+                            None,
+                        ));
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Adds the given diagnostic builder to the buffer.
