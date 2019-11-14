@@ -31,50 +31,60 @@ use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tempdir::TempDir;
+use walkdir::WalkDir;
 
 // Run the tests in the tests/run-pass directory.
 // Eventually, there will be separate test cases for other directories such as compile-fail.
 #[test]
 fn run_pass() {
-    let annotations_path = find_annotations_path();
+    let extern_deps = vec![
+        (
+            "mirai_annotations",
+            find_extern_library("libmirai_annotations"),
+        ),
+        ("contracts", find_extern_library("libcontracts")),
+    ];
     let mut run_pass_path = PathBuf::from_str("tests/run-pass").unwrap();
     if !run_pass_path.exists() {
         run_pass_path = PathBuf::from_str("checker/tests/run-pass").unwrap();
     }
-    assert_eq!(run_directory(run_pass_path, annotations_path), 0);
+    assert_eq!(run_directory(run_pass_path, extern_deps), 0);
 }
 
-fn find_annotations_path() -> String {
+fn find_extern_library(base_name: &str) -> String {
     let mut deps_path = PathBuf::from_str("../target/debug").unwrap();
     if !deps_path.exists() {
         deps_path = PathBuf::from_str("target/debug").unwrap();
     }
-    for entry in fs::read_dir(deps_path).expect("failed to read target/debug dir") {
-        let entry = entry.unwrap();
-        if !entry.file_type().unwrap().is_file() {
+
+    for entry in WalkDir::new(deps_path)
+        .contents_first(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().is_file() {
             continue;
         };
-        let file_path = entry.path();
-        let file_name = entry.file_name();
-        if !file_name
-            .to_str()
-            .unwrap_or("")
-            .starts_with("libmirai_annotations")
-        {
+        let file_name = entry.file_name().to_str().unwrap_or("");
+        if !file_name.starts_with(base_name) {
             continue;
         }
-        if !file_name.to_str().unwrap_or("").ends_with(".rlib") {
+        if entry.path().to_str().unwrap().contains(".dylib.dSYM/") {
             continue;
         }
-        return file_path.into_os_string().into_string().unwrap();
+        if !file_name.ends_with(".rlib") && !file_name.ends_with(".dylib") {
+            continue;
+        }
+        println!("resolving {}", entry.path().to_str().unwrap());
+        return entry.path().to_str().unwrap().to_string();
     }
-    unreachable!("could not find the annotations library");
+    unreachable!("could not find the `{}` library", base_name);
 }
 
 // Iterates through the files in the directory at the given path and runs each as a separate test
 // case. For each case, a temporary output directory is created. The cases are then iterated in
 // parallel and run via invoke_driver.
-fn run_directory(directory_path: PathBuf, annotations_path: String) -> usize {
+fn run_directory(directory_path: PathBuf, extern_deps: Vec<(&str, String)>) -> usize {
     let sys_root = utils::find_sysroot();
     let mut files_and_temp_dirs = Vec::new();
     for entry in fs::read_dir(directory_path).expect("failed to read run-pass dir") {
@@ -101,7 +111,7 @@ fn run_directory(directory_path: PathBuf, annotations_path: String) -> usize {
                     file_name,
                     temp_dir_path,
                     sys_root.clone(),
-                    annotations_path.clone(),
+                    extern_deps.clone(),
                 )
             })
     } else {
@@ -114,7 +124,7 @@ fn run_directory(directory_path: PathBuf, annotations_path: String) -> usize {
                         file_name,
                         temp_dir_path,
                         sys_root.clone(),
-                        annotations_path.clone(),
+                        extern_deps.clone(),
                     )
                 },
             )
@@ -128,11 +138,9 @@ fn invoke_driver(
     file_name: String,
     temp_dir_path: String,
     sys_root: String,
-    annotations_path: String,
+    extern_deps: Vec<(&str, String)>,
 ) -> usize {
-    let mut annotations_option = String::from("mirai_annotations=");
-    annotations_option.push_str(&annotations_path);
-    let command_line_arguments: Vec<String> = vec![
+    let mut command_line_arguments: Vec<String> = vec![
         String::from("--crate-name mirai"),
         file_name.clone(),
         String::from("--crate-type"),
@@ -150,9 +158,11 @@ fn invoke_driver(
         String::from("mir-emit-retag"),
         String::from("-Z"),
         String::from("mir-opt-level=0"),
-        String::from("--extern"),
-        annotations_option,
     ];
+    for extern_dep in extern_deps {
+        command_line_arguments.push("--extern".to_string());
+        command_line_arguments.push(format!("{}={}", extern_dep.0, extern_dep.1));
+    }
 
     let mut call_backs = callbacks::MiraiCallbacks::test_runner();
     let result = std::panic::catch_unwind(move || {
