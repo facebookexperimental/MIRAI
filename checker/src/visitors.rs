@@ -466,7 +466,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if !actual_args.is_empty() {
             // todo: create a more efficient way to check if def_id is a closure trait call method
             let key = utils::summary_key_str(self.tcx, def_id);
-            if key.starts_with("core.ops.function.Fn") && key.ends_with(".call") {
+            if key.starts_with("core.ops.function.Fn")
+                && (key.ends_with(".call") || key.ends_with(".call_mut"))
+            {
                 let arg0_path = &actual_args[0].0;
                 let arg_type = self.get_path_rustc_type(arg0_path);
                 if let TyKind::Ref(_, ty, _) = arg_type.kind {

@@ -11,6 +11,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use syntax::errors::Diagnostic;
+use syntax_pos::MultiSpan;
 
 /// A collection of error strings that are expected for a test case.
 #[derive(Debug)]
@@ -31,11 +32,11 @@ impl ExpectedErrors {
     #[logfn_inputs(TRACE)]
     pub fn check_messages(&mut self, diagnostics: Vec<Diagnostic>) -> bool {
         for diag in diagnostics.iter() {
-            if !self.remove_message(&diag.message()) {
+            if !self.remove_message(&diag.span, &diag.message()) {
                 return false;
             }
             for child in &diag.children {
-                if !self.remove_message(&child.message()) {
+                if !self.remove_message(&child.span, &child.message()) {
                     return false;
                 }
             }
@@ -49,12 +50,26 @@ impl ExpectedErrors {
 
     /// Removes the first element of self.messages and checks if it matches msg.
     #[logfn_inputs(TRACE)]
-    fn remove_message(&mut self, msg: &str) -> bool {
-        if self.messages.remove_item(&String::from(msg)).is_none() {
-            println!("Unexpected error: {} Expected: {:?}", msg, self.messages);
-            return false;
+    fn remove_message(&mut self, span: &MultiSpan, msg: &str) -> bool {
+        let mut cand: Option<String> = None;
+        for expected in self.messages.to_owned() {
+            if msg.contains(expected.as_str()) {
+                // Take care of finding the longest match
+                if cand.is_none() || cand.as_ref().unwrap().len() < expected.len() {
+                    cand = Some(expected);
+                }
+            }
         }
-        true
+        if let Some(expected) = cand {
+            self.messages.remove_item(&expected);
+            true
+        } else {
+            println!(
+                "Unexpected error: \"{}\". Expected: {:?} (at {:?})",
+                msg, self.messages, span,
+            );
+            false
+        }
     }
 }
 
