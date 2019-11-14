@@ -94,7 +94,8 @@ struct S {
     x: i32,
 }
 
-#[debug_invariant(self.x > 0)]
+#[debug_invariant(self.x > 0)] //~ only one post condition is supported
+                               //~ related location
 impl S {
     #[pre(self.x < std::i32::MAX)]
     #[post(ret == old(self.x))]
@@ -108,5 +109,5 @@ impl S {
 
 fn use_invariant() {
     let mut s = S { x: 1 };
-    checked_verify!(s.get_and_decrement() == 1);
+    checked_verify!(s.get_and_decrement() == 1); //~ possible unsatisfied precondition
 }
