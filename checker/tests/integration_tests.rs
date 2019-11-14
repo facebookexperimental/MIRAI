@@ -40,9 +40,9 @@ fn run_pass() {
     let extern_deps = vec![
         (
             "mirai_annotations",
-            find_extern_library("libmirai_annotations"),
+            find_extern_library("mirai_annotations"),
         ),
-        ("contracts", find_extern_library("libcontracts")),
+        ("contracts", find_extern_library("contracts")),
     ];
     let mut run_pass_path = PathBuf::from_str("tests/run-pass").unwrap();
     if !run_pass_path.exists() {
@@ -66,10 +66,15 @@ fn find_extern_library(base_name: &str) -> String {
             continue;
         };
         let file_name = entry.file_name().to_str().unwrap_or("");
-        if !file_name.starts_with(base_name) {
+        // On Windows we have either lib{base_name}.rlib or {base_name}.dll. We match any form.
+        if !file_name.starts_with(format!("lib{}", base_name).as_str())
+            && !file_name.starts_with(base_name)
+        {
             continue;
         }
         if entry.path().to_str().unwrap().contains(".dSYM/") {
+            // There might be a directory .dSYM which contains the same library file
+            // but for different purpose. Skip this.
             continue;
         }
         if !file_name.ends_with(".rlib")

@@ -23,7 +23,7 @@ pub fn main() {
 
 #[pre(x > 0)]
 #[post(ret >= x)]
-pub fn pre_post(x: i32) -> i32 {
+fn pre_post(x: i32) -> i32 {
     return x;
 }
 
