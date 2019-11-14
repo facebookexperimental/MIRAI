@@ -69,10 +69,14 @@ fn find_extern_library(base_name: &str) -> String {
         if !file_name.starts_with(base_name) {
             continue;
         }
-        if entry.path().to_str().unwrap().contains(".dylib.dSYM/") {
+        if entry.path().to_str().unwrap().contains(".dSYM/") {
             continue;
         }
-        if !file_name.ends_with(".rlib") && !file_name.ends_with(".dylib") {
+        if !file_name.ends_with(".rlib")
+            && !file_name.ends_with(".dylib")
+            && !file_name.ends_with(".so")
+            && !file_name.ends_with(".dll")
+        {
             continue;
         }
         println!("resolving {}", entry.path().to_str().unwrap());

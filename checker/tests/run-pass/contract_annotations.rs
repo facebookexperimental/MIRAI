@@ -28,7 +28,7 @@ pub fn pre_post(x: i32) -> i32 {
 }
 
 fn use_pre_post() {
-    verify!(pre_post(1) >= 1);
+    checked_verify!(pre_post(1) >= 1);
 }
 
 // Trait pre/post
@@ -67,9 +67,9 @@ impl Adder for MyAdder {
 
 fn use_trait() {
     let mut a = MyAdder { x: 1 };
-    verify!(a.get() == 1);
-    verify!(a.get_and_add(2) == 1);
-    verify!(a.get() == 3);
+    checked_verify!(a.get() == 1);
+    checked_verify!(a.get_and_add(2) == 1);
+    checked_verify!(a.get() == 3);
 }
 
 // Invariants
@@ -93,5 +93,5 @@ impl S {
 
 fn use_invariant() {
     let mut s = S { x: 1 };
-    verify!(s.get_and_decrement() == 1);
+    checked_verify!(s.get_and_decrement() == 1);
 }
