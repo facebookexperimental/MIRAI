@@ -14,4 +14,12 @@ pub fn main() {
     let f = || x << 1;
     let g = f();
     verify!(g == 2);
+
+    let mut mx = 4;
+    let mut mf = || {
+        mx = mx / 2;
+        mx
+    };
+    let mr = mf();
+    verify!(mr == 2)
 }
