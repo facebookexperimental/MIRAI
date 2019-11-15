@@ -24,14 +24,44 @@ pub fn foo(bl: Block) {
     verify!(ret < std::u64::MAX - 1);
 }
 
-pub fn bar(c: bool) -> u64 {
+pub fn non_joinable_post(c: bool) -> u64 {
     let result = result!();
     if c {
+        //~ multiple post conditions must be on the same execution path
         assumed_postcondition!(result < 5);
     } else {
         assumed_postcondition!(result > 10);
     }
     result
+}
+
+pub fn joinable_post() -> u64 {
+    let result = result!();
+    assumed_postcondition!(result > 0);
+    assumed_postcondition!(result < 10);
+    assumed_postcondition!(result % 2 == 0);
+    result
+}
+
+pub fn test_joinable_post() {
+    let x = joinable_post();
+    // TODO: the below currently fails. However, apparently this is not related
+    // to the post-condition feature but to the result! macro, as joinable_post_v2
+    // illustrates, which does the same wo/ result!
+    verify!(x > 0 && x < 12 && x % 2 == 0); //~ possible false verification condition
+}
+
+pub fn joinable_post_v2(x: u64) -> u64 {
+    let y = x;
+    assumed_postcondition!(y > 0);
+    assumed_postcondition!(y < 10);
+    assumed_postcondition!(y % 2 == 0);
+    return y;
+}
+
+pub fn test_joinable_post_v2(x: u64) {
+    let y = joinable_post_v2(x);
+    verify!(y > 0 && y < 12 && y % 2 == 0);
 }
 
 pub fn main() {}

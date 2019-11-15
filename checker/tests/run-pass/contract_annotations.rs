@@ -94,8 +94,7 @@ struct S {
     x: i32,
 }
 
-#[debug_invariant(self.x > 0)] //~ only one post condition is supported
-                               //~ related location
+#[debug_invariant(self.x > 0)] //~ related location
 impl S {
     #[pre(self.x < std::i32::MAX)]
     #[post(ret == old(self.x))]
