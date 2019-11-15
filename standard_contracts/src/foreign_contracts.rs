@@ -177,6 +177,14 @@ pub mod core {
         pub struct Void {}
     }
 
+    pub mod intrinsics {
+        pub mod _1 {
+            pub fn caller_location<T>() -> T {
+                result!()
+            }
+        }
+    }
+
     pub mod isize {
         #[cfg(any(
             target_arch = "x86",
