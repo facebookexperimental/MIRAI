@@ -5,6 +5,7 @@
 #![allow(clippy::float_cmp)]
 
 use crate::expression::{Expression, ExpressionType};
+use crate::known_names::{KnownNames, KnownNamesCache};
 use crate::summaries::PersistentSummaryCache;
 use crate::utils;
 
@@ -68,51 +69,6 @@ impl Debug for ConstantDomain {
     }
 }
 
-/// Well known functions that are treated in special ways.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash, Ord)]
-pub enum KnownFunctionNames {
-    /// This is not a known function
-    None,
-    /// core.ops.function.FnOnce.call_once
-    CoreFnOnce,
-    /// core.slice.impl.len
-    CoreSliceLen,
-    /// core.str.implement_str.len
-    CoreStrLen,
-    /// mirai_annotations.mirai_assume
-    MiraiAssume,
-    /// mirai_annotations.mirai_assume_preconditions
-    MiraiAssumePreconditions,
-    /// mirai_annotations.mirai_get_model_field
-    MiraiGetModelField,
-    /// mirai_annotations.mirai_postcondition
-    MiraiPostcondition,
-    /// mirai_annotations.mirai_precondition_start
-    MiraiPreconditionStart,
-    /// mirai_annotations.mirai_precondition
-    MiraiPrecondition,
-    /// mirai_annotations.mirai_result
-    MiraiResult,
-    /// mirai_annotations.mirai_set_model_field
-    MiraiSetModelField,
-    /// mirai_annotations.mirai_shallow_clone
-    MiraiShallowClone,
-    /// mirai_annotations.mirai_verify
-    MiraiVerify,
-    /// std.future.from_generator
-    StdFutureFromGenerator,
-    /// std::intrinsics::transmute
-    StdIntrinsicsTransmute,
-    /// std.ops.deref.Deref.deref
-    StdOpsDeref,
-    /// std.ops.deref.Deref.deref_mut
-    StdOpsDerefMut,
-    /// std.panicking.begin_panic
-    StdBeginPanic,
-    /// std.panicking.begin_panic_fmt
-    StdBeginPanicFmt,
-}
-
 /// Information that identifies a function or generic function instance.
 /// Used to find cached function summaries.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialOrd, PartialEq, Hash, Ord)]
@@ -130,7 +86,7 @@ pub struct FunctionReference {
     /// The generic argument types with which the referenced function was instantiated, if generic.
     pub generic_arguments: Vec<ExpressionType>,
     /// Indicates if the function is known to be treated specially by the Rust compiler
-    pub known_name: KnownFunctionNames,
+    pub known_name: KnownNames,
     /// The key to use when retrieving a summary for the function from the summary cache
     pub summary_cache_key: Rc<String>,
     /// To be appended to summary_cache_key when searching for a type specific version of
@@ -148,38 +104,13 @@ impl ConstantDomain {
         def_id: DefId,
         generic_args: SubstsRef<'tcx>,
         tcx: TyCtxt<'tcx>,
+        known_names_cache: &mut KnownNamesCache,
         summary_cache: &mut PersistentSummaryCache<'tcx>,
     ) -> ConstantDomain {
-        use KnownFunctionNames::*;
         let summary_cache_key = summary_cache.get_summary_key_for(def_id).to_owned();
         let argument_type_key = utils::argument_types_key_str(tcx, generic_args);
         let generic_arguments = generic_args.types().map(|t| (&t.kind).into()).collect();
-        let known_name = match summary_cache_key.as_str() {
-            "core.ops.function.FnOnce.call_once" => CoreFnOnce,
-            "core.slice.implement.len" => CoreSliceLen,
-            "core.str.implement_str.len" => CoreStrLen,
-            "mirai_annotations.mirai_assume" => MiraiAssume,
-            "mirai_annotations.mirai_assume_preconditions" => MiraiAssumePreconditions,
-            "mirai_annotations.mirai_get_model_field" => MiraiGetModelField,
-            "mirai_annotations.mirai_postcondition" => MiraiPostcondition,
-            "mirai_annotations.mirai_precondition_start" => MiraiPreconditionStart,
-            "mirai_annotations.mirai_precondition" => MiraiPrecondition,
-            "mirai_annotations.mirai_result" => MiraiResult,
-            "mirai_annotations.mirai_set_model_field" => MiraiSetModelField,
-            "mirai_annotations.mirai_shallow_clone" => MiraiShallowClone,
-            "mirai_annotations.mirai_verify" => MiraiVerify,
-            "core.future.from_generator" | "std.future.from_generator" => StdFutureFromGenerator,
-            "core.ops.deref.Deref.deref"
-            | "std.ops.deref.Deref.deref"
-            | "core.ops.deref.DerefMut.deref_mut"
-            | "std.ops.deref.DerefMut.deref_mut" => StdOpsDeref,
-            "core.panicking.panic" | "std.panicking.begin_panic" => StdBeginPanic,
-            "core.panicking.panic_fmt" | "std.panicking.begin_panic_fmt" => StdBeginPanicFmt,
-            "core.intrinsics._1.transmute" | "std.intrinsics._1.transmute" => {
-                StdIntrinsicsTransmute
-            }
-            _ => KnownFunctionNames::None,
-        };
+        let known_name = known_names_cache.get(tcx, def_id);
         ConstantDomain::Function(Rc::new(FunctionReference {
             def_id: Some(def_id),
             function_id: Some(function_id),
@@ -890,11 +821,19 @@ impl<'tcx> ConstantValueCache<'tcx> {
         ty: Ty<'tcx>,
         generic_args: SubstsRef<'tcx>,
         tcx: TyCtxt<'tcx>,
+        known_names_cache: &mut KnownNamesCache,
         summary_cache: &mut PersistentSummaryCache<'tcx>,
     ) -> &ConstantDomain {
         let function_id = self.function_cache.len();
         self.function_cache.entry((def_id, ty)).or_insert_with(|| {
-            ConstantDomain::for_function(function_id, def_id, generic_args, tcx, summary_cache)
+            ConstantDomain::for_function(
+                function_id,
+                def_id,
+                generic_args,
+                tcx,
+                known_names_cache,
+                summary_cache,
+            )
         })
     }
 

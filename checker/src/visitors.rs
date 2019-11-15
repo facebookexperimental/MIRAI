@@ -6,12 +6,11 @@
 use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
-use crate::constant_domain::{
-    ConstantDomain, ConstantValueCache, FunctionReference, KnownFunctionNames,
-};
+use crate::constant_domain::{ConstantDomain, ConstantValueCache, FunctionReference};
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::k_limits;
+use crate::known_names::{KnownNames, KnownNamesCache};
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
 use crate::smt_solver::{SmtResult, SmtSolver};
@@ -47,6 +46,7 @@ pub struct MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E> {
     pub def_id: hir::def_id::DefId,
     pub mir: &'analysis mir::Body<'tcx>,
     pub constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
+    pub known_names_cache: &'analysis mut KnownNamesCache,
     pub summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
     pub smt_solver: &'analysis mut dyn SmtSolver<E>,
     pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
@@ -67,6 +67,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     def_id: hir::def_id::DefId,
     mir: &'analysis mir::Body<'tcx>,
     constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
+    known_names_cache: &'analysis mut KnownNamesCache,
     summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
     smt_solver: &'analysis mut dyn SmtSolver<E>,
     buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
@@ -200,6 +201,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             def_id: crate_context.def_id,
             mir: crate_context.mir,
             constant_value_cache: crate_context.constant_value_cache,
+            known_names_cache: crate_context.known_names_cache,
             summary_cache: crate_context.summary_cache,
             smt_solver: crate_context.smt_solver,
             buffered_diagnostics: crate_context.buffered_diagnostics,
@@ -473,22 +475,23 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
     ) -> Option<Summary> {
         if !actual_args.is_empty() {
-            // todo: create a more efficient way to check if def_id is a closure trait call method
-            let key = utils::summary_key_str(self.tcx, def_id);
-            if key.starts_with("core.ops.function.Fn")
-                && (key.ends_with(".call") || key.ends_with(".call_mut"))
-            {
-                let arg0_path = &actual_args[0].0;
-                let arg_type = self.get_path_rustc_type(arg0_path);
-                if let TyKind::Ref(_, ty, _) = arg_type.kind {
-                    if let TyKind::Closure(closure_def_id, ..) = ty.kind {
-                        return Some(self.create_and_cache_def_id_summary(
-                            closure_def_id,
-                            actual_args,
-                            None,
-                        ));
+            match self.known_names_cache.get(self.tcx, def_id) {
+                KnownNames::StdOpsFunctionFnCall
+                | KnownNames::StdOpsFunctionFnMutCallMut
+                | KnownNames::StdOpsFunctionFnOnceCallOnce => {
+                    let arg0_path = &actual_args[0].0;
+                    let arg_type = self.get_path_rustc_type(arg0_path);
+                    if let TyKind::Ref(_, ty, _) = arg_type.kind {
+                        if let TyKind::Closure(closure_def_id, ..) = ty.kind {
+                            return Some(self.create_and_cache_def_id_summary(
+                                closure_def_id,
+                                actual_args,
+                                None,
+                            ));
+                        }
                     }
                 }
+                _ => (),
             }
         }
         None
@@ -1346,12 +1349,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let func_to_call = self.visit_operand(func);
         let known_name = if let Expression::CompileTimeConstant(fun) = &func_to_call.expression {
             if let ConstantDomain::Function(func_ref) = fun {
-                &func_ref.known_name
+                func_ref.known_name
             } else {
-                &KnownFunctionNames::None
+                KnownNames::None
             }
         } else {
-            &KnownFunctionNames::None
+            KnownNames::None
         };
         let actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = args
             .iter()
@@ -1405,13 +1408,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn handled_as_special_function_call(
         &mut self,
         func_to_call: &Rc<AbstractValue>,
-        known_name: &KnownFunctionNames,
+        known_name: KnownNames,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
     ) -> bool {
-        match *known_name {
-            KnownFunctionNames::CoreFnOnce => {
+        match known_name {
+            KnownNames::StdOpsFunctionFnOnceCallOnce => {
                 self.try_to_inline_standard_ops_func(
                     func_to_call,
                     known_name,
@@ -1421,7 +1424,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 );
                 return true;
             }
-            KnownFunctionNames::MiraiAssume => {
+            KnownNames::MiraiAssume => {
                 checked_assume!(actual_args.len() == 1);
                 if self.check_for_errors {
                     self.report_calls_to_special_functions(known_name, actual_args);
@@ -1429,16 +1432,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.handle_assume(&actual_args, destination, cleanup);
                 return true;
             }
-            KnownFunctionNames::MiraiAssumePreconditions => {
+            KnownNames::MiraiAssumePreconditions => {
                 checked_assume!(actual_args.is_empty());
                 self.assume_preconditions_of_next_call = true;
                 return true;
             }
-            KnownFunctionNames::MiraiGetModelField => {
+            KnownNames::MiraiGetModelField => {
                 self.handle_get_model_field(&actual_args, destination);
                 return true;
             }
-            KnownFunctionNames::MiraiPostcondition => {
+            KnownNames::MiraiPostcondition => {
                 checked_assume!(actual_args.len() == 3);
                 if self.check_for_errors {
                     self.report_calls_to_special_functions(known_name, actual_args);
@@ -1446,17 +1449,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.handle_post_condition(&actual_args, destination);
                 return true;
             }
-            KnownFunctionNames::MiraiPreconditionStart => {
+            KnownNames::MiraiPreconditionStart => {
                 self.handle_precondition_start(destination);
                 return true;
             }
-            KnownFunctionNames::MiraiPrecondition => {
+            KnownNames::MiraiPrecondition => {
                 checked_assume!(actual_args.len() == 2);
                 self.handle_precondition(&actual_args);
                 self.handle_assume(&actual_args, destination, cleanup);
                 return true;
             }
-            KnownFunctionNames::MiraiSetModelField => {
+            KnownNames::MiraiSetModelField => {
                 if let Some((_, target)) = destination {
                     self.handle_set_model_field(&actual_args, *target);
                 } else {
@@ -1464,7 +1467,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
                 return true;
             }
-            KnownFunctionNames::MiraiShallowClone => {
+            KnownNames::MiraiShallowClone => {
                 if let Some((place, target)) = destination {
                     checked_assume!(actual_args.len() == 1);
                     let rpath = actual_args[0].0.clone();
@@ -1481,7 +1484,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
                 return true;
             }
-            KnownFunctionNames::MiraiResult => {
+            KnownNames::MiraiResult => {
                 if let Some((place, target)) = destination {
                     let target_path = self.visit_place(place);
                     let target_type = self.get_place_type(place);
@@ -1500,7 +1503,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
                 return true;
             }
-            KnownFunctionNames::MiraiVerify => {
+            KnownNames::MiraiVerify => {
                 checked_assume!(actual_args.len() == 2);
                 if self.check_for_errors {
                     self.report_calls_to_special_functions(known_name, actual_args);
@@ -1508,12 +1511,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.handle_assume(&actual_args[0..1], destination, cleanup);
                 return true;
             }
-            KnownFunctionNames::StdFutureFromGenerator => {
+            KnownNames::StdFutureFromGenerator => {
                 checked_assume!(actual_args.len() == 1);
                 self.async_fn_summary = Some(self.get_function_summary(&actual_args[0].1, &[]));
                 return true;
             }
-            KnownFunctionNames::StdBeginPanic | KnownFunctionNames::StdBeginPanicFmt => {
+            KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
                 if self.check_for_errors {
                     self.report_calls_to_special_functions(known_name, actual_args);
                 }
@@ -1753,13 +1756,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn try_to_inline_standard_ops_func(
         &mut self,
         func_to_call: &Rc<AbstractValue>,
-        known_name: &KnownFunctionNames,
+        known_name: KnownNames,
         args: &[(Rc<Path>, Rc<AbstractValue>)],
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
     ) -> Rc<AbstractValue> {
         match known_name {
-            KnownFunctionNames::CoreFnOnce => {
+            KnownNames::StdOpsFunctionFnOnceCallOnce => {
                 checked_assume!(destination.is_some());
                 checked_assume!(args.len() == 2);
                 let callee = args[0].1.clone();
@@ -1797,7 +1800,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.transfer_and_refine_cleanup_state(cleanup, &actual_args, &function_summary);
                 abstract_value::BOTTOM.into()
             }
-            KnownFunctionNames::CoreSliceLen => {
+            KnownNames::StdSliceLen => {
                 checked_assume!(args.len() == 1);
                 let slice_val = &args[0].1;
                 let qualifier = match &slice_val.expression {
@@ -1815,7 +1818,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     })
                     .unwrap_or_else(|| abstract_value::BOTTOM.into())
             }
-            KnownFunctionNames::CoreStrLen => {
+            KnownNames::StdStrLen => {
                 checked_assume!(args.len() == 1);
                 let str_val = &args[0].1;
                 let qualifier = match &str_val.expression {
@@ -1833,13 +1836,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 };
                 qualifier.unwrap_or_else(|| abstract_value::BOTTOM.into())
             }
-            KnownFunctionNames::StdOpsDeref => {
+            KnownNames::StdOpsDeref => {
                 checked_assume!(args.len() == 1);
                 checked_assume!(destination.is_some()); // MIR should always have a destination for this
                 let target_type = self.get_place_type(&destination.as_ref().unwrap().0);
                 args[0].1.dereference(target_type)
             }
-            KnownFunctionNames::StdIntrinsicsTransmute => {
+            KnownNames::StdIntrinsicsTransmute => {
                 checked_assume!(args.len() == 1);
                 args[0].1.clone()
             }
@@ -2144,12 +2147,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn report_calls_to_special_functions(
         &mut self,
-        known_name: &KnownFunctionNames,
+        known_name: KnownNames,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
     ) {
         verify!(self.check_for_errors);
         match known_name {
-            KnownFunctionNames::MiraiAssume => {
+            KnownNames::MiraiAssume => {
                 assume!(actual_args.len() == 1);
                 let (_, cond) = &actual_args[0];
                 let (cond_as_bool, entry_cond_as_bool) =
@@ -2174,7 +2177,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     self.emit_diagnostic(warning);
                 }
             }
-            KnownFunctionNames::MiraiPostcondition => {
+            KnownNames::MiraiPostcondition => {
                 assume!(actual_args.len() == 3); // The type checker ensures this.
                 let (_, assumption) = &actual_args[1];
                 let (_, cond) = &actual_args[0];
@@ -2187,7 +2190,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     self.try_extend_post_condition(&cond);
                 }
             }
-            KnownFunctionNames::MiraiVerify => {
+            KnownNames::MiraiVerify => {
                 assume!(actual_args.len() == 2); // The type checker ensures this.
                 let (_, cond) = &actual_args[0];
                 let message = self.coerce_to_string(&actual_args[1].1);
@@ -2210,7 +2213,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                 }
             }
-            KnownFunctionNames::StdBeginPanic | KnownFunctionNames::StdBeginPanicFmt => {
+            KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
                 assume!(!actual_args.is_empty()); // The type checker ensures this.
                 let mut path_cond = self.current_environment.entry_condition.as_bool_if_known();
                 if path_cond.is_none() {
@@ -3702,7 +3705,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             ty,
             generic_args,
             self.tcx,
-            &mut self.summary_cache,
+            self.known_names_cache,
+            self.summary_cache,
         )
     }
 
@@ -3729,6 +3733,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 ty,
                                 generic_args.as_generator().substs,
                                 self.tcx,
+                                self.known_names_cache,
                                 self.summary_cache,
                             );
                             let func_val = Rc::new(func_const.clone().into());
