@@ -87,6 +87,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     generic_arguments: Option<Vec<ExpressionType>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     post_condition: Option<Rc<AbstractValue>>,
+    post_condition_block: Option<mir::BasicBlock>,
     preconditions: Vec<Precondition>,
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
@@ -111,6 +112,7 @@ struct SavedVisitorState<'analysis, 'tcx> {
     generic_arguments: Option<Vec<ExpressionType>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     post_condition: Option<Rc<AbstractValue>>,
+    post_condition_block: Option<mir::BasicBlock>,
     preconditions: Vec<Precondition>,
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
@@ -137,6 +139,7 @@ impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
             generic_arguments: None,
             heap_addresses: HashMap::default(),
             post_condition: None,
+            post_condition_block: None,
             preconditions: Vec::new(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
@@ -216,6 +219,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             generic_arguments: None,
             heap_addresses: HashMap::default(),
             post_condition: None,
+            post_condition_block: None,
             preconditions: Vec::new(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
@@ -239,6 +243,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.generic_arguments = None;
         self.heap_addresses = HashMap::default();
         self.post_condition = None;
+        self.post_condition_block = None;
         self.preconditions = Vec::new();
         self.unwind_condition = None;
         self.unwind_environment = Environment::default();
@@ -287,6 +292,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
         std::mem::swap(&mut self.heap_addresses, &mut saved_state.heap_addresses);
         std::mem::swap(&mut self.post_condition, &mut saved_state.post_condition);
+        std::mem::swap(
+            &mut self.post_condition_block,
+            &mut saved_state.post_condition_block,
+        );
         std::mem::swap(&mut self.preconditions, &mut saved_state.preconditions);
         std::mem::swap(
             &mut self.unwind_condition,
@@ -2166,23 +2175,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
             }
             KnownFunctionNames::MiraiPostcondition => {
-                if self.post_condition.is_some() {
-                    let span = self.current_span;
-                    let warning = self
-                        .session
-                        .struct_span_warn(span, "only one post condition is supported");
-                    self.emit_diagnostic(warning);
-                }
                 assume!(actual_args.len() == 3); // The type checker ensures this.
                 let (_, assumption) = &actual_args[1];
                 let (_, cond) = &actual_args[0];
                 if !assumption.as_bool_if_known().unwrap_or(false) {
                     let message = self.coerce_to_string(&actual_args[2].1);
                     if self.check_condition(cond, message, true).is_none() {
-                        self.post_condition = Some(cond.clone());
+                        self.try_extend_post_condition(&cond);
                     }
                 } else {
-                    self.post_condition = Some(cond.clone());
+                    self.try_extend_post_condition(&cond);
                 }
             }
             KnownFunctionNames::MiraiVerify => {
@@ -2281,6 +2283,36 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
             }
             _ => assume_unreachable!(),
+        }
+    }
+
+    /// Extend the current post condition by the given `cond`. If none was set before,
+    /// this will just set it for the first time. If there is already a post condition.
+    /// we check whether it is safe to extend it. It is considered safe if the block where
+    /// it was set dominates the existing one.
+    fn try_extend_post_condition(&mut self, cond: &Rc<AbstractValue>) {
+        let this_block = self.current_location.block;
+        match (self.post_condition.clone(), self.post_condition_block) {
+            (Some(last_cond), Some(last_block)) => {
+                let dominators = self.mir.dominators();
+                if dominators.is_dominated_by(this_block, last_block) {
+                    // We can extend the last condition as all paths to this condition
+                    // lead over it
+                    self.post_condition = Some(last_cond.and(cond.clone()));
+                    self.post_condition_block = Some(this_block);
+                } else {
+                    let span = self.current_span;
+                    let warning = self.session.struct_span_warn(
+                        span,
+                        "multiple post conditions must be on the same execution path",
+                    );
+                    self.emit_diagnostic(warning);
+                }
+            }
+            (_, _) => {
+                self.post_condition = Some(cond.clone());
+                self.post_condition_block = Some(this_block);
+            }
         }
     }
 

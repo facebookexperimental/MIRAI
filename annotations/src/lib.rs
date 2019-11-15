@@ -166,17 +166,17 @@ macro_rules! debug_checked_assume_ne {
 #[macro_export]
 macro_rules! postcondition {
     ($condition:expr) => {
-        if cfg!(mirai) {
-            mirai_annotations::mirai_postcondition($condition, false, "unsatisfied postcondition")
+        #[cfg(mirai)] {
+            mirai_annotations::mirai_postcondition($condition, false, "unsatisfied postcondition");
         }
     };
     ($condition:expr, $message:literal) => {
-        if cfg!(mirai) {
-            mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", $message))
+        #[cfg(mirai)] {
+            mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", $message));
         }
     };
     ($condition:expr, $($arg:tt)*) => {
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", stringify!($($arg)*)));
         }
     };
@@ -189,7 +189,8 @@ macro_rules! postcondition {
 #[macro_export]
 macro_rules! assumed_postcondition {
     ($condition:expr) => {
-        if cfg!(mirai) {
+        #[cfg(mirai)]
+        {
             mirai_annotations::mirai_postcondition($condition, true, "")
         }
     };
@@ -202,26 +203,29 @@ macro_rules! assumed_postcondition {
 #[macro_export]
 macro_rules! checked_postcondition {
     ($condition:expr) => (
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($condition, false,  "unsatisfied postcondition")
-        } else {
+        }
+        #[cfg(not(mirai))] {
             assert!($condition);
         }
     );
-    ($condition:expr, $message:literal) => (
-        if cfg!(mirai) {
+    ($condition:expr, $message:literal) => {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", $message))
-        } else {
+        }
+        #[cfg(not(mirai))] {
             assert!($condition, $message);
         }
-    );
-    ($condition:expr, $($arg:tt)*) => (
-        if cfg!(mirai) {
+    };
+    ($condition:expr, $($arg:tt)*) => {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", stringify!($($arg)*)));
-        } else {
+        }
+        #[cfg(not(mirai))] {
             assert!($condition, $($arg)*);
         }
-    );
+    };
 }
 
 /// Equivalent to the standard assert_eq! when used with an unmodified Rust compiler.
@@ -289,23 +293,26 @@ macro_rules! checked_postcondition_ne {
 #[macro_export]
 macro_rules! debug_checked_postcondition {
     ($condition:expr) => (
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($condition, false,  "unsatisfied postcondition")
-        } else {
+        }
+        #[cfg(not(mirai))] {
             debug_assert!($condition);
         }
     );
     ($condition:expr, $message:literal) => (
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", $message))
-        } else {
+        }
+        #[cfg(not(mirai))] {
             debug_assert!($condition, $message);
         }
     );
     ($condition:expr, $($arg:tt)*) => (
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($condition, false,  concat!("unsatisfied postcondition: ", stringify!($($arg)*)));
-        } else {
+        }
+        #[cfg(not(mirai))] {
             debug_assert!($condition, $($arg)*);
         }
     );
@@ -318,23 +325,26 @@ macro_rules! debug_checked_postcondition {
 #[macro_export]
 macro_rules! debug_checked_postcondition_eq {
     ($left:expr, $right:expr) => (
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($left == $right, false,  concat!("unsatisfied postcondition: ", stringify!($left == $right)))
-        } else {
+        }
+        #[cfg(not(mirai))] {
             debug_assert_eq!($left, $right);
         }
     );
     ($left:expr, $right:expr, $message:literal) => (
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($left == $right, false,  concat!("unsatisfied postcondition: ", stringify!($left == $right), ", ", $message))
-        } else {
+        }
+        #[cfg(not(mirai))] {
             debug_assert_eq!($left, $right, $message);
         }
     );
     ($left:expr, $right:expr, $($arg:tt)*) => (
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($left == $right, false,  concat!("unsatisfied postcondition: ", stringify!($left == $right), ", ", stringify!($($arg)*)));
-        } else {
+        }
+        #[cfg(not(mirai))] {
             debug_assert_eq!($left, $right, $($arg)*);
         }
     );
@@ -347,23 +357,26 @@ macro_rules! debug_checked_postcondition_eq {
 #[macro_export]
 macro_rules! debug_checked_postcondition_ne {
     ($left:expr, $right:expr) => (
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($left != $right, false,  concat!("unsatisfied postcondition: ", stringify!($left != $right)))
-        } else {
+        }
+        #[cfg(not(mirai))] {
             debug_assert_ne!($left, $right);
         }
     );
     ($left:expr, $right:expr, $message:literal) => (
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($left != $right, false,  concat!("unsatisfied postcondition: ", stringify!($left != $right), ", ", $message))
-        } else {
+        }
+        #[cfg(not(mirai))] {
             debug_assert_ne!($left, $right, $message);
         }
     );
     ($left:expr, $right:expr, $($arg:tt)*) => (
-        if cfg!(mirai) {
+        #[cfg(mirai)] {
             mirai_annotations::mirai_postcondition($left != $right, false,  concat!("unsatisfied postcondition: ", stringify!($left != $right), ", ", stringify!($($arg)*)));
-        } else {
+        }
+        #[cfg(not(mirai))] {
             debug_assert_ne!($left, $right, $($arg)*);
         }
     );
