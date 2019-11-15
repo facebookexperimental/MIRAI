@@ -194,14 +194,14 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         RawPtr(ty_and_mut) => {
             str.push_str("pointer_");
             match ty_and_mut.mutbl {
-                rustc::hir::MutMutable => str.push_str("mut_"),
-                rustc::hir::MutImmutable => str.push_str("const_"),
+                rustc::hir::Mutability::Mutable => str.push_str("mut_"),
+                rustc::hir::Mutability::Immutable => str.push_str("const_"),
             }
             append_mangled_type(str, ty_and_mut.ty, tcx);
         }
         Ref(_, ty, mutability) => {
             str.push_str("ref_");
-            if mutability == rustc::hir::MutMutable {
+            if mutability == rustc::hir::Mutability::Mutable {
                 str.push_str("mut_");
             }
             append_mangled_type(str, ty, tcx);
@@ -294,10 +294,6 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
             name.push('_');
             if component.data == DefPathData::Impl {
                 if let Some(parent_def_id) = tcx.parent(def_id) {
-                    if let Some(ty) = rustc_typeck::checked_type_of(tcx, parent_def_id, false) {
-                        append_mangled_type(&mut name, ty, tcx);
-                        continue;
-                    }
                     if let Some(type_ns) = &type_ns {
                         if type_ns == "num" {
                             append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
@@ -334,7 +330,7 @@ fn push_component_name(component_data: DefPathData, target: &mut String) {
     use std::ops::Deref;
     use DefPathData::*;
     match component_data {
-        TypeNs(name) | ValueNs(name) | MacroNs(name) | LifetimeNs(name) | GlobalMetaData(name) => {
+        TypeNs(name) | ValueNs(name) | MacroNs(name) | LifetimeNs(name) => {
             target.push_str(name.as_str().deref());
         }
         _ => target.push_str(match component_data {
