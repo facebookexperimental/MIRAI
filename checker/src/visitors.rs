@@ -2286,6 +2286,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
+    /// Extend the current post condition by the given `cond`. If none was set before,
+    /// this will just set it for the first time. If there is already a post condition.
+    /// we check whether it is safe to extend it. It is considered safe if the block where
+    /// it was set dominates the existing one.
     fn try_extend_post_condition(&mut self, cond: &Rc<AbstractValue>) {
         let this_block = self.current_location.block;
         match (self.post_condition.clone(), self.post_condition_block) {
