@@ -6,6 +6,7 @@
 
 use crate::constant_domain::ConstantValueCache;
 use crate::expected_errors;
+use crate::known_names::KnownNamesCache;
 use crate::summaries::PersistentSummaryCache;
 use crate::utils;
 use crate::visitors::{MirVisitor, MirVisitorCrateContext};
@@ -123,6 +124,7 @@ struct AnalysisInfo<'compilation, 'tcx> {
     persistent_summary_cache: PersistentSummaryCache<'tcx>,
     constant_value_cache: ConstantValueCache<'tcx>,
     diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'compilation>>>,
+    known_names_cache: KnownNamesCache,
     analyze_single_func: Option<String>,
 }
 
@@ -145,10 +147,12 @@ impl MiraiCallbacks {
         let defs = Vec::from_iter(tcx.body_owners());
         let constant_value_cache = ConstantValueCache::default();
         let diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'_>>> = HashMap::new();
+        let known_names_cache = KnownNamesCache::create_cache_from_language_items();
         let mut analysis_info = AnalysisInfo {
             persistent_summary_cache,
             constant_value_cache,
             diagnostics_for,
+            known_names_cache,
             analyze_single_func: self.analyze_single_func.to_owned(),
         };
         Self::analyze_bodies(compiler, tcx, &defs, &mut analysis_info);
@@ -321,6 +325,7 @@ impl MiraiCallbacks {
             mir,
             summary_cache: &mut analysis_info.persistent_summary_cache,
             constant_value_cache: &mut analysis_info.constant_value_cache,
+            known_names_cache: &mut analysis_info.known_names_cache,
             smt_solver: &mut smt_solver,
             buffered_diagnostics: &mut buffered_diagnostics,
         });
