@@ -42,8 +42,8 @@ walkdir = "2"
 # Dependencies for tests which aren't already included by the checker.
 # Note if you add one here it also needs to be added to the command line
 # of the cargo command using it, e.g.
-# `--extern contracts=$PROJECT_DIR$/target/debug/deps/libcontracts-c8ea818f33e46907.dylib`
+# `--extern contracts=$PROJECT_DIR$/target/debug/deps/libcontracts-315a4a2ecd1498c3.dylib`
 # or similar, and to integration_tests.rs (search for extern_deps there).
 # We set the dep to a specific revision so we don't get paths as above not longer working after update of the repo
 # and the Cargo.lock.
-contracts = { git = "https://gitlab.com/wrwg/contracts.git", rev = "2ec52df5", features = [ "mirai_assertions" ]}
+contracts = { git = "https://gitlab.com/karroffel/contracts.git", rev = "c8d08307", features = [ "mirai_assertions" ]}
