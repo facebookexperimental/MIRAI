@@ -45,10 +45,7 @@ pub fn joinable_post() -> u64 {
 
 pub fn test_joinable_post() {
     let x = joinable_post();
-    // TODO: the below currently fails. However, apparently this is not related
-    // to the post-condition feature but to the result! macro, as joinable_post_v2
-    // illustrates, which does the same wo/ result!
-    verify!(x > 0 && x < 12 && x % 2 == 0); //~ possible false verification condition
+    verify!(x > 0 && x < 12 && x % 2 == 0);
 }
 
 pub fn joinable_post_v2(x: u64) -> u64 {
