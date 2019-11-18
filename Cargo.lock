@@ -82,17 +82,7 @@ dependencies = [
 [[package]]
 name = "contracts"
 version = "0.3.0"
-source = "git+https://gitlab.com/wrwg/contracts.git?branch=mirai#07cf1b8b0e67f7c1b905c9c901beb11ceeff71cc"
-dependencies = [
- "proc-macro2 0.4.30 (registry+https://github.com/rust-lang/crates.io-index)",
- "quote 0.6.13 (registry+https://github.com/rust-lang/crates.io-index)",
- "syn 0.15.44 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "contracts"
-version = "0.3.0"
-source = "git+https://gitlab.com/wrwg/contracts.git?rev=2ec52df5#2ec52df5ea1068783c9eeb59fdc57ee3de32ec4e"
+source = "git+https://gitlab.com/wrwg/contracts.git?branch=mirai#c8d083074e022eb23887714718297f014d5762c8"
 dependencies = [
  "proc-macro2 0.4.30 (registry+https://github.com/rust-lang/crates.io-index)",
  "quote 0.6.13 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -303,7 +293,7 @@ name = "mirai"
 version = "1.0.5"
 dependencies = [
  "bincode 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "contracts 0.3.0 (git+https://gitlab.com/wrwg/contracts.git?rev=2ec52df5)",
+ "contracts 0.3.0 (git+https://gitlab.com/wrwg/contracts.git?branch=mirai)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "fs2 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -772,7 +762,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum cfg-if 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)" = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 "checksum cloudabi 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)" = "ddfc5b9aa5d4507acaf872de71051dfd0e309860e88966e1051e462a077aac4f"
 "checksum contracts 0.3.0 (git+https://gitlab.com/wrwg/contracts.git?branch=mirai)" = "<none>"
-"checksum contracts 0.3.0 (git+https://gitlab.com/wrwg/contracts.git?rev=2ec52df5)" = "<none>"
 "checksum crc32fast 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ba125de2af0df55319f41944744ad91c71113bf74a4646efff39afe1f6842db1"
 "checksum crossbeam-channel 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)" = "c8ec7fcd21571dc78f96cc96243cab8d8f035247c3efd16c687be154c3fa9efa"
 "checksum crossbeam-epoch 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)" = "fedcd6772e37f3da2a9af9bf12ebe046c0dfe657992377b4df982a2b54cd37a9"

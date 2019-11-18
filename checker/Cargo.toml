@@ -46,4 +46,4 @@ walkdir = "2"
 # or similar, and to integration_tests.rs (search for extern_deps there).
 # We set the dep to a specific revision so we don't get paths as above not longer working after update of the repo
 # and the Cargo.lock.
-contracts = { git = "https://gitlab.com/wrwg/contracts.git", rev = "2ec52df5", features = [ "mirai_assertions" ]}
+contracts = { git = "https://gitlab.com/wrwg/contracts.git", branch = "mirai", features = [ "mirai_assertions" ]}
