@@ -598,31 +598,37 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return operand.conditional_expression(alternate, consequent);
         }
         if let Expression::Or { left: x, right: y } = &self.expression {
-            if let Expression::ConditionalExpression {
-                condition,
-                consequent: a,
-                alternate: b,
-            } = &consequent.expression
-            {
-                // [if x || y { if x {a} else {b} } else {b}] -> if x {a} else {b}
-                if *x == *condition && *b == alternate {
-                    return x.conditional_expression(a.clone(), alternate);
+            match &consequent.expression {
+                Expression::LogicalNot { operand } if *x == *operand => {
+                    // [if x || y { !x } else { z }] -> [!x && y || !x && z] -> !x && (y || z)
+                    return consequent.and(y.or(alternate));
                 }
+                Expression::ConditionalExpression {
+                    condition,
+                    consequent: a,
+                    alternate: b,
+                } => {
+                    // [if x || y { if x {a} else {b} } else {b}] -> if x {a} else {b}
+                    if *x == *condition && *b == alternate {
+                        return x.conditional_expression(a.clone(), alternate);
+                    }
 
-                // [if x || y { if y {a} else {b} } else {b}] -> if y {a} else {b}
-                if *y == *condition && *b == alternate {
-                    return y.conditional_expression(a.clone(), alternate);
-                }
+                    // [if x || y { if y {a} else {b} } else {b}] -> if y {a} else {b}
+                    if *y == *condition && *b == alternate {
+                        return y.conditional_expression(a.clone(), alternate);
+                    }
 
-                // [if x || y { if x {a} else {b} } else {a}] -> if y {b} else {a}
-                if *x == *condition && *a == alternate {
-                    return y.conditional_expression(b.clone(), alternate);
-                }
+                    // [if x || y { if x {a} else {b} } else {a}] -> if y {b} else {a}
+                    if *x == *condition && *a == alternate {
+                        return y.conditional_expression(b.clone(), alternate);
+                    }
 
-                // [if x || y { if y {a} else {b} } else {a}] -> if x {b} else {a}
-                if *y == *condition && *a == alternate {
-                    return x.conditional_expression(b.clone(), alternate);
+                    // [if x || y { if y {a} else {b} } else {a}] -> if x {b} else {a}
+                    if *y == *condition && *a == alternate {
+                        return x.conditional_expression(b.clone(), alternate);
+                    }
                 }
+                _ => (),
             }
         }
 
@@ -863,6 +869,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
+            // [(if x { y } else { z }) == z]  -> [if x { y == z } else { true }] -> !x || y == z
+            (
+                Expression::ConditionalExpression {
+                    condition: x,
+                    consequent: y,
+                    alternate: z,
+                },
+                _,
+            ) if *z == other => {
+                return x.logical_not().or(y.equals(z.clone()));
+            }
+
             (x, y) => {
                 // If self and other are the same expression and the expression could not result in NaN
                 // and the expression represents exactly one value, we can simplify this to true.
