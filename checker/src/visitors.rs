@@ -2050,7 +2050,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 // Effects on the call result
                 self.transfer_and_refine(
                     &function_summary.side_effects,
-                    target_path,
+                    target_path.clone(),
                     &return_value_path,
                     actual_args,
                 );
@@ -2100,8 +2100,21 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 exit_condition = exit_condition.and(unwind_condition.logical_not());
             }
             if let Some(post_condition) = &function_summary.post_condition {
+                let mut return_value_env = Environment::default();
+                let var_type = self.get_place_type(place);
+                let result_val = AbstractValue::make_from(
+                    Expression::Variable {
+                        path: target_path,
+                        var_type,
+                    },
+                    1,
+                );
+                let return_value_path = Path::new_local(self.fresh_variable_offset);
+
+                return_value_env.update_value_at(return_value_path, result_val);
                 let refined_post_condition = post_condition
                     .refine_parameters(actual_args, self.fresh_variable_offset)
+                    .refine_paths(&return_value_env)
                     .refine_paths(&self.current_environment);
                 exit_condition = exit_condition.and(refined_post_condition);
             }
