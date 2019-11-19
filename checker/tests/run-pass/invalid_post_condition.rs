@@ -14,7 +14,7 @@ impl Block {
 
 pub fn voting_rule(proposed_block: Block) -> () {
     let _ret = proposed_block.round();
-    verify!(_ret < std::u64::MAX); //~ possible false verification condition
+    verify!(_ret < std::u64::MAX); // verifies because the post condition is assumed here.
 }
 
 pub fn main() {}
