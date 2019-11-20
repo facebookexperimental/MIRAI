@@ -24,9 +24,3 @@ RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn MIRAI_START_FRESH=true MIRAI
 cd target/debug/deps
 tar -c -f ../../../binaries/summary_store.tar .summary_store.sled
 cd ../../..
-
-# rebuild mirai
-cargo build
-cargo uninstall mirai
-cargo install --path ./checker
-

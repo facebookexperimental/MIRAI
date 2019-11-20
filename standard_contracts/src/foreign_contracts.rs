@@ -6,6 +6,7 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(unknown_lints)]
+#![allow(unused)]
 #![allow(clippy::all)]
 
 pub mod core {
@@ -179,9 +180,559 @@ pub mod core {
 
     pub mod intrinsics {
         pub mod _1 {
+            pub fn atomic_cxchg<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchg_acq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchg_rel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchg_acqrel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchg_relaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchg_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchg_failacq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchg_acq_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchg_acqrel_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchgweak<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchgweak_acq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchgweak_rel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchgweak_acqrel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchgweak_relaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchgweak_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchgweak_failacq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchgweak_acq_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_cxchgweak_acqrel_failrelaxed<T>(
+                dst: *mut T,
+                old: T,
+                src: T,
+            ) -> (T, bool) {
+                result!()
+            }
+            pub fn atomic_load<T>(src: *const T) -> T {
+                result!()
+            }
+            pub fn atomic_load_acq<T>(src: *const T) -> T {
+                result!()
+            }
+            pub fn atomic_load_relaxed<T>(src: *const T) -> T {
+                result!()
+            }
+            pub fn atomic_load_unordered<T>(src: *const T) -> T {
+                result!()
+            }
+            pub fn atomic_store<T>(dst: *mut T, val: T) {}
+            pub fn atomic_store_rel<T>(dst: *mut T, val: T) {}
+            pub fn atomic_store_relaxed<T>(dst: *mut T, val: T) {}
+            pub fn atomic_store_unordered<T>(dst: *mut T, val: T) {}
+            pub fn atomic_xchg<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xchg_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xchg_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xchg_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xchg_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xadd<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xadd_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xadd_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xadd_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xadd_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xsub<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xsub_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xsub_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xsub_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xsub_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_and<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_and_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_and_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_and_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_and_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_nand<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_nand_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_nand_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_nand_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_nand_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_or<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_or_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_or_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_or_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_or_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xor<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xor_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xor_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xor_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_xor_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_max<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_max_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_max_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_max_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_max_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_min<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_min_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_min_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_min_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_min_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_umin<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_umin_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_umin_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_umin_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_umin_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_umax<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_umax_acq<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_umax_rel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_umax_acqrel<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn atomic_umax_relaxed<T>(dst: *mut T, src: T) -> T {
+                result!()
+            }
+            pub fn prefetch_read_data<T>(data: *const T, locality: i32) {}
+            pub fn prefetch_write_data<T>(data: *const T, locality: i32) {}
+            pub fn prefetch_read_instruction<T>(data: *const T, locality: i32) {}
+            pub fn prefetch_write_instruction<T>(data: *const T, locality: i32) {}
+
+            pub fn atomic_fence() {}
+            pub fn atomic_fence_acq() {}
+            pub fn atomic_fence_rel() {}
+            pub fn atomic_fence_acqrel() {}
+            pub fn atomic_singlethreadfence() {}
+            pub fn atomic_singlethreadfence_acq() {}
+            pub fn atomic_singlethreadfence_rel() {}
+            pub fn atomic_singlethreadfence_acqrel() {}
+            pub fn rustc_peek<T>(_: T) -> T {
+                result!()
+            }
+            pub fn abort() {}
+            pub fn unreachable() {}
+            pub fn assume(b: bool) {}
+            pub fn likely(b: bool) -> bool {
+                result!()
+            }
+            pub fn unlikely(b: bool) -> bool {
+                result!()
+            }
+            pub fn breakpoint() {}
+            pub fn size_of<T>() -> usize {
+                result!()
+            }
+            pub fn move_val_init<T>(dst: *mut T, src: T) {}
+            pub fn min_align_of<T>() -> usize {
+                result!()
+            }
+            pub fn pref_align_of<T>() -> usize {
+                result!()
+            }
+            pub fn size_of_val<T: ?Sized>(_: &T) -> usize {
+                result!()
+            }
+            pub fn min_align_of_val<T: ?Sized>(_: &T) -> usize {
+                result!()
+            }
+            pub fn type_name<T: ?Sized>() -> &'static str {
+                result!()
+            }
+            pub fn type_id<T: ?Sized + 'static>() -> u64 {
+                result!()
+            }
+            pub fn panic_if_uninhabited<T>() {}
             pub fn caller_location<T>() -> T {
                 result!()
             }
+            pub fn init<T>() -> T {
+                result!()
+            }
+            pub fn uninit<T>() -> T {
+                result!()
+            }
+            pub fn forget<T>(_: T) {}
+            pub fn transmute<T, U>(e: T) -> U {
+                result!()
+            }
+            pub fn needs_drop<T>() -> bool {
+                result!()
+            }
+            pub fn offset<T>(dst: *const T, offset: isize) -> *const T {
+                result!()
+            }
+            pub fn arith_offset<T>(dst: *const T, offset: isize) -> *const T {
+                result!()
+            }
+            pub fn volatile_copy_nonoverlapping_memory<T>(
+                dst: *mut T,
+                src: *const T,
+                count: usize,
+            ) {
+            }
+            pub fn volatile_copy_memory<T>(dst: *mut T, src: *const T, count: usize) {}
+            pub fn volatile_set_memory<T>(dst: *mut T, val: u8, count: usize) {}
+            pub fn volatile_load<T>(src: *const T) -> T {
+                result!()
+            }
+            pub fn volatile_store<T>(dst: *mut T, val: T) {}
+            pub fn unaligned_volatile_load<T>(src: *const T) -> T {
+                result!()
+            }
+            pub fn unaligned_volatile_store<T>(dst: *mut T, val: T) {}
+            pub fn sqrtf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn sqrtf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn powif32(a: f32, x: i32) -> f32 {
+                result!()
+            }
+            pub fn powif64(a: f64, x: i32) -> f64 {
+                result!()
+            }
+            pub fn sinf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn sinf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn cosf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn cosf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn powf32(a: f32, x: f32) -> f32 {
+                result!()
+            }
+            pub fn powf64(a: f64, x: f64) -> f64 {
+                result!()
+            }
+            pub fn expf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn expf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn exp2f32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn exp2f64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn logf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn logf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn log10f32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn log10f64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn log2f32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn log2f64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn fmaf32(a: f32, b: f32, c: f32) -> f32 {
+                result!()
+            }
+            pub fn fmaf64(a: f64, b: f64, c: f64) -> f64 {
+                result!()
+            }
+            pub fn fabsf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn fabsf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn minnumf32(x: f32, y: f32) -> f32 {
+                result!()
+            }
+            pub fn minnumf64(x: f64, y: f64) -> f64 {
+                result!()
+            }
+            pub fn maxnumf32(x: f32, y: f32) -> f32 {
+                result!()
+            }
+            pub fn maxnumf64(x: f64, y: f64) -> f64 {
+                result!()
+            }
+            pub fn copysignf32(x: f32, y: f32) -> f32 {
+                result!()
+            }
+            pub fn copysignf64(x: f64, y: f64) -> f64 {
+                result!()
+            }
+            pub fn floorf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn floorf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn ceilf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn ceilf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn truncf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn truncf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn rintf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn rintf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn nearbyintf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn nearbyintf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn roundf32(x: f32) -> f32 {
+                result!()
+            }
+            pub fn roundf64(x: f64) -> f64 {
+                result!()
+            }
+            pub fn fadd_fast<T>(a: T, b: T) -> T {
+                result!()
+            }
+            pub fn fsub_fast<T>(a: T, b: T) -> T {
+                result!()
+            }
+            pub fn fmul_fast<T>(a: T, b: T) -> T {
+                result!()
+            }
+            pub fn fdiv_fast<T>(a: T, b: T) -> T {
+                result!()
+            }
+            pub fn frem_fast<T>(a: T, b: T) -> T {
+                result!()
+            }
+            pub fn ctpop<T>(x: T) -> T {
+                result!()
+            }
+            pub fn ctlz<T>(x: T) -> T {
+                result!()
+            }
+            pub fn ctlz_nonzero<T>(x: T) -> T {
+                result!()
+            }
+            pub fn cttz<T>(x: T) -> T {
+                result!()
+            }
+            pub fn cttz_nonzero<T>(x: T) -> T {
+                result!()
+            }
+            pub fn bswap<T>(x: T) -> T {
+                result!()
+            }
+            pub fn bitreverse<T>(x: T) -> T {
+                result!()
+            }
+            pub fn add_with_overflow<T>(x: T, y: T) -> (T, bool) {
+                result!()
+            }
+            pub fn sub_with_overflow<T>(x: T, y: T) -> (T, bool) {
+                result!()
+            }
+            pub fn mul_with_overflow<T>(x: T, y: T) -> (T, bool) {
+                result!()
+            }
+            pub fn exact_div<T>(x: T, y: T) -> T {
+                result!()
+            }
+            pub fn unchecked_div<T>(x: T, y: T) -> T {
+                result!()
+            }
+            pub fn unchecked_rem<T>(x: T, y: T) -> T {
+                result!()
+            }
+            pub fn unchecked_shl<T>(x: T, y: T) -> T {
+                result!()
+            }
+            pub fn unchecked_shr<T>(x: T, y: T) -> T {
+                result!()
+            }
+            pub fn unchecked_add<T>(x: T, y: T) -> T {
+                result!()
+            }
+            pub fn unchecked_sub<T>(x: T, y: T) -> T {
+                result!()
+            }
+            pub fn unchecked_mul<T>(x: T, y: T) -> T {
+                result!()
+            }
+            pub fn rotate_left<T>(x: T, y: T) -> T {
+                result!()
+            }
+            pub fn rotate_right<T>(x: T, y: T) -> T {
+                result!()
+            }
+            pub fn wrapping_add<T>(a: T, b: T) -> T {
+                result!()
+            }
+            pub fn wrapping_sub<T>(a: T, b: T) -> T {
+                result!()
+            }
+            pub fn wrapping_mul<T>(a: T, b: T) -> T {
+                result!()
+            }
+            pub fn saturating_add<T>(a: T, b: T) -> T {
+                result!()
+            }
+            pub fn saturating_sub<T>(a: T, b: T) -> T {
+                result!()
+            }
+            pub fn discriminant_value<T>(v: &T) -> u64 {
+                result!()
+            }
+            pub fn r#try(f: fn(*mut u8), data: *mut u8, local_ptr: *mut u8) -> i32 {
+                result!()
+            }
+            pub fn nontemporal_store<T>(ptr: *mut T, val: T) {}
+            pub fn ptr_offset_from<T>(ptr: *const T, base: *const T) -> isize {
+                result!()
+            }
+            pub fn miri_start_panic<T>(data: T) {}
         }
     }
 
