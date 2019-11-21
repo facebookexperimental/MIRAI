@@ -26,8 +26,6 @@ pub enum KnownNames {
     MiraiVerify,
     StdFutureFromGenerator,
     StdIntrinsicsTransmute,
-    StdOpsDeref,
-    StdOpsDerefMut,
     StdOpsFunctionFnCall,
     StdOpsFunctionFnMutCallMut,
     StdOpsFunctionFnOnceCallOnce,
@@ -118,21 +116,6 @@ impl KnownNamesCache {
                 .unwrap_or(KnownNames::None)
         };
 
-        let get_known_name_for_ops_deref_namespace = |mut def_path_data_iter: Iter<'_>| {
-            get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
-                    "Deref" | "DerefMut" => get_path_data_elem_name(def_path_data_iter.next())
-                        .map(|n| match n.as_str().deref() {
-                            "deref" => KnownNames::StdOpsDeref,
-                            "deref_mut" => KnownNames::StdOpsDerefMut,
-                            _ => KnownNames::None,
-                        })
-                        .unwrap_or(KnownNames::None),
-                    _ => KnownNames::None,
-                })
-                .unwrap_or(KnownNames::None)
-        };
-
         let get_known_name_for_ops_function_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
@@ -152,7 +135,6 @@ impl KnownNamesCache {
         let get_known_name_for_ops_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
-                    "deref" => get_known_name_for_ops_deref_namespace(def_path_data_iter),
                     "function" => get_known_name_for_ops_function_namespace(def_path_data_iter),
                     _ => KnownNames::None,
                 })

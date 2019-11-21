@@ -15,10 +15,7 @@ pub fn main() {
 fn call(x: i32) {
     checked_assume!(x > 0);
     let f = || {
-        // The below should not be needed and inferred from the context, but it does not
-        // work:
-        // checked_assume!(x > 0);
-        checked_verify!(x > 0); //~ possible false verification condition
+        checked_verify!(x > 0);
     };
     f()
 }

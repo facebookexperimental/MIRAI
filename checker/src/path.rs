@@ -312,10 +312,13 @@ impl PathRefinement for Rc<Path> {
     /// and not have more than one path for the same location.
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<Path> {
-        if let Some(val) = environment.value_at(&self) {
+        if let Some(mut val) = environment.value_at(&self) {
             // If the environment has self as a key, then self is canonical, since we should only
             // use canonical paths as keys. The value at the canonical key, however, could just
             // be a reference to another path, which is something that happens during refinement.
+            if let Expression::Cast { operand, .. } = &val.expression {
+                val = operand;
+            }
             return match &val.expression {
                 Expression::Variable { path, .. } | Expression::Widen { path, .. } => {
                     if let PathEnum::QualifiedPath { selector, .. } = &path.value {
@@ -357,6 +360,35 @@ impl PathRefinement for Rc<Path> {
                 }
             }
             if let Some(val) = environment.value_at(&refined_qualifier) {
+                match &val.expression {
+                    Expression::Variable { path, .. } => {
+                        // if path is a deref we just drop it because it becomes implicit
+                        if let PathEnum::QualifiedPath {
+                            qualifier,
+                            selector: var_path_selector,
+                            ..
+                        } = &path.value
+                        {
+                            if let PathSelector::Deref = var_path_selector.as_ref() {
+                                // drop the explicit deref
+                                return Path::new_qualified(qualifier.clone(), selector.clone());
+                            }
+                        }
+                    }
+                    Expression::Reference(path) => {
+                        match refined_selector.as_ref() {
+                            PathSelector::Deref => {
+                                // if selector is a deref we can just drop the &* sequence
+                                return path.clone();
+                            }
+                            _ => {
+                                // drop the explicit reference
+                                return Path::new_qualified(path.clone(), selector.clone());
+                            }
+                        }
+                    }
+                    _ => (),
+                }
                 if let Expression::Reference(path) = &val.expression {
                     match refined_selector.as_ref() {
                         PathSelector::Deref => {
