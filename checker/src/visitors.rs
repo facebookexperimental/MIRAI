@@ -1267,22 +1267,20 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_abort(&self) {}
 
-    /// Indicates a normal return. The return place should have been filled in by now.
+    /// Indicates a normal return. The return place should have
+    /// been filled in by now. This should occur at most once.
     #[logfn_inputs(TRACE)]
     fn visit_return(&mut self) {
         if self.check_for_errors {
             // Done with fixed point, so prepare to summarize.
-            let return_guard = self.current_environment.entry_condition.as_bool_if_known();
-            if return_guard.unwrap_or(false)
-                || (self.exit_environment.value_map.is_empty() && self.post_condition.is_some())
-            {
-                self.exit_environment = self.current_environment.clone();
-            } else if return_guard.unwrap_or(true) {
-                self.exit_environment = self.current_environment.join(
-                    &self.exit_environment,
-                    &self.current_environment.entry_condition,
-                );
+            if self.post_condition.is_none() && !self.current_environment.entry_condition.is_top() {
+                let return_guard = self.current_environment.entry_condition.as_bool_if_known();
+                if return_guard.is_none() {
+                    self.post_condition = Some(self.current_environment.entry_condition.clone());
+                }
             }
+            // When the summary is prepared the current environment might be different, so remember this one.
+            self.exit_environment = self.current_environment.clone();
         }
     }
 
@@ -1370,6 +1368,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             return;
         }
         let function_summary = self.get_function_summary(&func_to_call, &actual_args);
+        debug!("calling {:?}", func_to_call);
+        debug!("summary {:?}", function_summary);
+        debug!("actual arguments {:?}", actual_args);
+        debug!("pre env {:?}", self.current_environment);
+        debug!("entry cond {:?}", self.current_environment.entry_condition);
         self.check_preconditions_if_necessary(&func_to_call, &actual_args, &function_summary);
         self.transfer_and_refine_normal_return_state(
             destination,
@@ -3147,7 +3150,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         let discriminant_path =
             Path::new_discriminant(self.visit_place(place), &self.current_environment);
-        let discriminant_type = ExpressionType::Isize;
+        let discriminant_type = ExpressionType::U128;
         let discriminant_value =
             self.lookup_path_and_refine_result(discriminant_path, discriminant_type);
         self.current_environment
