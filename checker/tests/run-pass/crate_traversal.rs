@@ -155,7 +155,7 @@ fn test10() {
     };
 }
 
-fn test11(arr: &[String]) {
+pub fn test11(arr: &[String]) {
     let e = &arr[1]; //~ possible index out of bounds
 }
 
@@ -163,7 +163,7 @@ fn test12() {
     let x = 200u8 * 4; //~ attempt to multiply with overflow
 }
 
-fn test13(i: i64) {
+pub fn test13(i: i64) {
     let x = box -i; //~ possible attempt to negate with overflow
 }
 

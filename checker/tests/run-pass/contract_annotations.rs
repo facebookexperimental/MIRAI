@@ -6,9 +6,6 @@
 
 // Tests for annotations from the contracts crate.
 
-// TODO: those tests currently do not do anything because all relevant functions are marked
-// as angelic. Once this is not longer the case, real assertion logic should be added.
-
 use contracts::*;
 use mirai_annotations::*;
 
@@ -54,27 +51,6 @@ impl Adder for MyAdder {
     }
     fn get_and_add(&mut self, x: i32) -> i32 {
         let c = self.x;
-        // The below is currently needed because of the compilation of pre/post into lambdas.
-        // Simplified example:
-        //
-        // #[pre(std::i32::MAX - x >= y)]
-        //  fn(x,y) { x + y }
-        //
-        //  ====v=====
-        //
-        //  fn(x,y) {
-        //    checked_precondition(std::i32::MAX - x >= y)]
-        //    let f = || x + y;
-        //    let ret = f();
-        //    ...
-        //    return ret;
-        //  }
-        //
-        // Mirai is not propagating constraints on x and y into the lambda. Therefore we
-        // get a potential arithmetic overflow warning if we do not have the assume below.
-        // TODO: find a way to fix this as it is a general problem
-        checked_assume!(self.get() <= std::i32::MAX - x);
-
         self.x = self.x + x;
         return c;
     }
@@ -94,13 +70,12 @@ struct S {
     x: i32,
 }
 
-#[debug_invariant(self.x > 0)] //~ related location
+#[debug_invariant(self.x > 0)]
 impl S {
     #[pre(self.x < std::i32::MAX)]
     #[post(ret == old(self.x))]
     fn get_and_decrement(&mut self) -> i32 {
         let c = self.x;
-        checked_assume!(self.x < std::i32::MAX); // see above
         self.x = self.x + 1;
         return c;
     }
@@ -108,5 +83,5 @@ impl S {
 
 fn use_invariant() {
     let mut s = S { x: 1 };
-    checked_verify!(s.get_and_decrement() == 1); //~ possible unsatisfied precondition
+    checked_verify!(s.get_and_decrement() == 1);
 }

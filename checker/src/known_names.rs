@@ -98,6 +98,15 @@ impl KnownNamesCache {
                 }
             };
 
+        let path_data_elem_as_disambiguator =
+            |def_path_data_elem: Option<&rustc::hir::map::DisambiguatedDefPathData>| {
+                if let Some(DisambiguatedDefPathData { disambiguator, .. }) = def_path_data_elem {
+                    Some(*disambiguator)
+                } else {
+                    None
+                }
+            };
+
         let get_known_name_for_future_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
@@ -108,12 +117,16 @@ impl KnownNamesCache {
         };
 
         let get_known_name_for_intrinsics_namespace = |mut def_path_data_iter: Iter<'_>| {
-            get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
-                    "transmute" => KnownNames::StdIntrinsicsTransmute,
-                    _ => KnownNames::None,
-                })
-                .unwrap_or(KnownNames::None)
+            if let Some(1) = path_data_elem_as_disambiguator(def_path_data_iter.next()) {
+                get_path_data_elem_name(def_path_data_iter.next())
+                    .map(|n| match n.as_str().deref() {
+                        "transmute" => KnownNames::StdIntrinsicsTransmute,
+                        _ => KnownNames::None,
+                    })
+                    .unwrap_or(KnownNames::None)
+            } else {
+                KnownNames::None
+            }
         };
 
         let get_known_name_for_ops_function_namespace = |mut def_path_data_iter: Iter<'_>| {
