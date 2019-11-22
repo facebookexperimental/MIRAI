@@ -16,10 +16,12 @@ pub fn main() {
     verify!(g == 2);
 
     let mut mx = 4;
-    let mut mf = || {
-        mx = mx / 2;
-        mx
+    let mut mf = |i, j| {
+        mx = i;
+        j
     };
-    let mr = mf();
-    verify!(mr == 2)
+    let mr = mf(1, 2);
+    verify!(mx == 1);
+    verify!(mr == 2);
+    verify!(x == 2); //~ provably false verification condition
 }
