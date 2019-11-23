@@ -58,7 +58,7 @@ where /r c:\ mirai.exe
 If you just want to use MIRAI you can simply do:
 ```
 # Remember to rustup set override nightly-YYYY-MM-DD in this directory (or a parent)
-cargo install --git https://github.com/facebookexperimental/MIRAI
+cargo install --git https://github.com/facebookexperimental/MIRAI mirai --force
 ```
 
 ## Contributing to MIRAI
