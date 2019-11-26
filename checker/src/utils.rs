@@ -52,7 +52,9 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
                 }
             }
             Node::Item(item) => match item.kind {
-                ItemKind::Fn(..) | ItemKind::Const(..) => item.vis.node.is_pub(),
+                ItemKind::Fn(..) | ItemKind::Const(..) | ItemKind::Static(..) => {
+                    item.vis.node.is_pub()
+                }
                 _ => {
                     debug!("def_id is unsupported item kind {:?}", item.kind);
                     false
