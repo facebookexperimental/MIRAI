@@ -4,25 +4,23 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that uses built-in contracts for the Vec struct.
+// A test that checks the behavior of unreachable annotations.
 
 #![allow(unused)]
 
 #[macro_use]
 extern crate mirai_annotations;
 
-fn foo1(i: i32) {
+pub fn foo1(i: i32) {
     if i < 10 {
         assume_unreachable!("do assume!");
     }
 }
 
-fn foo2(i: i32) {
+pub fn foo2(i: i32) {
     if i < 10 {
         verify_unreachable!(); //~ statement is reachable
     }
 }
 
-pub fn main() {
-    foo1(2);
-}
+pub fn main() {}

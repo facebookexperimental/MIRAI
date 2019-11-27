@@ -24,7 +24,7 @@ use mirai_annotations::{
 };
 use rustc::mir::interpret::{ConstValue, Scalar};
 use rustc::session::Session;
-use rustc::ty::subst::SubstsRef;
+use rustc::ty::subst::{InternalSubsts, SubstsRef};
 use rustc::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use rustc_data_structures::graph::dominators::Dominators;
@@ -74,6 +74,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
 
     active_calls: Vec<hir::def_id::DefId>,
+    actual_argument_types: Vec<Ty<'tcx>>,
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     // True if the current function cannot be analyzed and hence is just assumed to be correct.
     assume_function_is_angelic: bool,
@@ -101,6 +102,7 @@ struct SavedVisitorState<'analysis, 'tcx> {
     def_id: hir::def_id::DefId,
     mir: &'analysis mir::Body<'tcx>,
 
+    actual_argument_types: Vec<Ty<'tcx>>,
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     assume_preconditions_of_next_call: bool,
     async_fn_summary: Option<Summary>,
@@ -128,6 +130,7 @@ impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
         SavedVisitorState {
             def_id,
             mir,
+            actual_argument_types: vec![],
             already_reported_errors_for_call_to: HashSet::new(),
             assume_preconditions_of_next_call: false,
             async_fn_summary: None,
@@ -208,6 +211,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             buffered_diagnostics: crate_context.buffered_diagnostics,
 
             active_calls: Vec::new(),
+            actual_argument_types: vec![],
             already_reported_errors_for_call_to: HashSet::new(),
             assume_function_is_angelic: false,
             assume_preconditions_of_next_call: false,
@@ -256,6 +260,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn swap_visitor_state(&mut self, saved_state: &mut SavedVisitorState<'analysis, 'tcx>) {
         std::mem::swap(&mut self.def_id, &mut saved_state.def_id);
         std::mem::swap(&mut self.mir, &mut saved_state.mir);
+        std::mem::swap(
+            &mut self.actual_argument_types,
+            &mut saved_state.actual_argument_types,
+        );
         std::mem::swap(
             &mut self.already_reported_errors_for_call_to,
             &mut saved_state.already_reported_errors_for_call_to,
@@ -407,6 +415,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &mut self,
         func_ref: &Rc<FunctionReference>,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        actual_argument_types: &[Ty<'tcx>],
         generic_args: Option<SubstsRef<'tcx>>,
     ) -> Summary {
         precondition!(func_ref.def_id.is_some());
@@ -414,6 +423,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.create_and_cache_def_id_summary(
             def_id,
             actual_args,
+            actual_argument_types,
             generic_args,
             Some(func_ref.clone()),
         )
@@ -429,6 +439,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &mut self,
         def_id: hir::def_id::DefId,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        actual_argument_types: &[Ty<'tcx>],
         generic_args: Option<SubstsRef<'tcx>>,
         func_ref: Option<Rc<FunctionReference>>,
     ) -> Summary {
@@ -443,6 +454,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             };
             self.def_id = def_id;
             self.mir = self.tcx.optimized_mir(def_id);
+            self.actual_argument_types = actual_argument_types.into();
             self.start_instant = Instant::now();
             let function_name = self.summary_cache.get_summary_key_for(def_id).clone();
             self.visit_body(&function_name, actual_args);
@@ -451,6 +463,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else {
             // No summary for the called function, so we can't trust the analysis of this
             // function either.
+            if let Some(devirtualized_summary) =
+                self.try_to_devirtualize(def_id, actual_args, actual_argument_types, generic_args)
+            {
+                return devirtualized_summary;
+            }
             self.assume_function_is_angelic = true;
             let argument_type_hint = if let Some(func) = func_ref {
                 format!(" (foreign fn argument key: {})", func.argument_type_key)
@@ -467,6 +484,69 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.summary_cache
             .get_summary_for(def_id, Some(self.def_id))
             .clone()
+    }
+
+    /// If the def_id is a trait (virtual) method and the first argument has a concrete type
+    /// that implements the trait, get the def_id of the concrete method that implements the
+    /// given virtual method and return the summary of that, computing it if necessary.
+    #[logfn_inputs(TRACE)]
+    fn try_to_devirtualize(
+        &mut self,
+        def_id: hir::def_id::DefId,
+        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        actual_argument_types: &[Ty<'tcx>],
+        generic_args: Option<SubstsRef<'tcx>>,
+    ) -> Option<Summary> {
+        let mut result = None;
+        if !actual_args.is_empty() && !self.tcx.is_closure(self.def_id) {
+            if let Expression::Variable { path, .. } = &actual_args[0].1.expression {
+                let mut self_ty = self.get_path_rustc_type(path);
+                if let TyKind::Ref(_, ty, _) = self_ty.kind {
+                    self_ty = ty;
+                }
+                match self_ty.kind {
+                    TyKind::Adt(..) => (),
+                    _ => {
+                        return None;
+                    }
+                }
+                let mut might_resolve = true;
+                let substs = InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
+                    match param_def.kind {
+                        rustc::ty::GenericParamDefKind::Lifetime
+                        | rustc::ty::GenericParamDefKind::Const => {}
+                        rustc::ty::GenericParamDefKind::Type { .. } => {
+                            if param_def.index == 0 {
+                                return self_ty.into();
+                            } else {
+                                might_resolve = false;
+                            }
+                        }
+                    }
+                    self.tcx.mk_param_from_def(param_def)
+                });
+                if might_resolve {
+                    let param_env = self.tcx.param_env(self.def_id);
+                    debug!("devirt param_env {:?}", param_env);
+                    debug!("devirt def_id {:?}", def_id);
+                    debug!("devirt substs {:?}", substs);
+                    if let Some(instance) =
+                        rustc::ty::Instance::resolve(self.tcx, param_env, def_id, substs)
+                    {
+                        if self.tcx.is_mir_available(instance.def.def_id()) {
+                            result = Some(self.create_and_cache_def_id_summary(
+                                instance.def.def_id(),
+                                actual_args,
+                                actual_argument_types,
+                                generic_args,
+                                None,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        result
     }
 
     /// Adds the given diagnostic builder to the buffer.
@@ -535,7 +615,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if !self.summarize_on_demand || cached_summary.is_not_default {
                         cached_summary
                     } else {
-                        summary = self.create_and_cache_def_id_summary(*def_id, &[], None, None);
+                        summary =
+                            self.create_and_cache_def_id_summary(*def_id, &[], &[], None, None);
                         &summary
                     }
                 } else {
@@ -1331,10 +1412,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
             .collect();
+        let actual_argument_types: Vec<Ty<'tcx>> = args
+            .iter()
+            .map(|arg| self.get_operand_rustc_type(arg))
+            .collect();
         if self.handled_as_special_function_call(
             &func_to_call,
             known_name,
             &actual_args,
+            &actual_argument_types,
             generic_args,
             destination,
             cleanup,
@@ -1342,7 +1428,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             return;
         }
         let function_summary = self
-            .get_function_summary(&func_to_call, &actual_args, generic_args)
+            .get_function_summary(
+                &func_to_call,
+                &actual_args,
+                &actual_argument_types,
+                generic_args,
+            )
             .unwrap_or_else(Summary::default);
         debug!("calling {:?}", func_to_call);
         debug!("summary {:?}", function_summary);
@@ -1362,10 +1453,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// Returns a summary of the function to call, obtained from the summary cache.
     #[logfn_inputs(TRACE)]
+    #[allow(clippy::too_many_arguments)]
     fn get_function_summary(
         &mut self,
         func_to_call: &Rc<AbstractValue>,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        actual_argument_types: &[Ty<'tcx>],
         generic_args: Option<SubstsRef<'tcx>>,
     ) -> Option<Summary> {
         if let Some(func_ref) = Self::get_func_ref(func_to_call) {
@@ -1399,6 +1492,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 return Some(self.create_and_cache_function_summary(
                     func_ref,
                     actual_args,
+                    actual_argument_types,
                     generic_args,
                 ));
             }
@@ -1440,11 +1534,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// this function will update the environment as appropriate and return true. If the return
     /// result is false, just carry on with the normal logic.
     #[logfn_inputs(TRACE)]
+    #[allow(clippy::too_many_arguments)]
     fn handled_as_special_function_call(
         &mut self,
         func_to_call: &Rc<AbstractValue>,
         known_name: KnownNames,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        actual_argument_types: &[Ty<'tcx>],
         generic_args: Option<SubstsRef<'tcx>>,
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
@@ -1457,6 +1553,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     func_to_call,
                     known_name,
                     &actual_args,
+                    actual_argument_types,
                     generic_args,
                     destination,
                     cleanup,
@@ -1552,7 +1649,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             KnownNames::StdFutureFromGenerator => {
                 checked_assume!(actual_args.len() == 1);
-                self.async_fn_summary = self.get_function_summary(&actual_args[0].1, &[], None);
+                self.async_fn_summary =
+                    self.get_function_summary(&actual_args[0].1, &[], &[], None);
                 return true;
             }
             KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
@@ -1572,6 +1670,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     func_to_call,
                     known_name,
                     &actual_args,
+                    actual_argument_types,
                     generic_args,
                     destination,
                     cleanup,
@@ -1793,11 +1892,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Right now, that means core::slice::len becomes a path with the ArrayLength selector
     /// since there is no way to write a summary to that effect in Rust itself.
     #[logfn_inputs(TRACE)]
+    #[allow(clippy::too_many_arguments)]
     fn try_to_inline_standard_ops_func(
         &mut self,
         func_to_call: &Rc<AbstractValue>,
         known_name: KnownNames,
         args: &[(Rc<Path>, Rc<AbstractValue>)],
+        actual_argument_types: &[Ty<'tcx>],
         generic_args: Option<SubstsRef<'tcx>>,
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
@@ -1814,6 +1915,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     self.try_to_inline_indirectly_called_function(
                         func_to_call,
                         &args,
+                        actual_argument_types,
                         generic_args,
                         destination,
                         cleanup,
@@ -1876,10 +1978,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// In the case of calling a closure, the closure signature includes the closure as the first argument.
     ///
     /// All of this happens in code that is not encoded as MIR, so MIRAI needs built in support for it.
+    #[logfn_inputs(TRACE)]
+    #[allow(clippy::too_many_arguments)]
     fn try_to_inline_indirectly_called_function(
         &mut self,
         func_to_call: &Rc<AbstractValue>,
         args: &&[(Rc<Path>, Rc<AbstractValue>)],
+        actual_argument_types: &[Ty<'tcx>],
         generic_args: Option<SubstsRef<'tcx>>,
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
@@ -1907,6 +2012,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             func_ref,
             &callee,
             &actual_args,
+            actual_argument_types,
             generic_args,
         );
         self.check_preconditions_if_necessary(func_to_call, &actual_args, &function_summary);
@@ -1926,10 +2032,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         caller_func_ref: &Rc<FunctionReference>,
         func_to_call: &Rc<AbstractValue>,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        actual_argument_types: &[Ty<'tcx>],
         generic_args: Option<SubstsRef<'tcx>>,
     ) -> Summary {
         // First see if func_to_call is a function constant.
-        if let Some(summary) = self.get_function_summary(func_to_call, actual_args, generic_args) {
+        if let Some(summary) = self.get_function_summary(
+            func_to_call,
+            actual_args,
+            actual_argument_types,
+            generic_args,
+        ) {
             return summary;
         }
         // func_to_call is not a function constant, so it should be a closure.
@@ -1959,6 +2071,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         return self.create_and_cache_function_summary(
                             func_ref,
                             actual_args,
+                            actual_argument_types,
                             Some(generic_args),
                         );
                     }
@@ -2004,9 +2117,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             };
             if !refined_precondition_as_bool.unwrap_or(true) {
                 // The precondition is definitely false.
-                if entry_cond_as_bool.unwrap_or(false)
-                    && self.function_being_analyzed_is_public_or_root()
-                {
+                if entry_cond_as_bool.unwrap_or(false) && self.function_being_analyzed_is_public() {
                     // If this function is called, we always get to this call.
                     // Since this function is public, we have assume that it will get called.
                     // If this function is not meant to be called, it should add an explicit
@@ -2067,7 +2178,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// be true at this point and/or the call is not known to be unreachable.
     #[logfn_inputs(TRACE)]
     fn warn_if_public(&mut self, func_to_call: &Rc<AbstractValue>, precondition: &Precondition) {
-        if self.function_being_analyzed_is_public_or_root()
+        if self.function_being_analyzed_is_public()
             || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
             if !self
@@ -2340,7 +2451,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 };
                 let span = self.current_span;
 
-                if path_cond.unwrap_or(false) && self.function_being_analyzed_is_public_or_root() {
+                if path_cond.unwrap_or(false) && self.function_being_analyzed_is_public() {
                     // We always get to this call and we have to assume that the function will
                     // get called, so keep the message certain.
                     let err = self.session.struct_span_warn(span, msg.as_str());
@@ -2463,7 +2574,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
-        if self.function_being_analyzed_is_public_or_root()
+        if self.function_being_analyzed_is_public()
             || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
             // We expect public functions to have programmer supplied preconditions
@@ -2477,11 +2588,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         Some(warning)
     }
 
-    /// Returns true if the function being analyzed is public or if it is a call tree root.
+    /// Returns true if the function being analyzed is public.
     #[logfn_inputs(TRACE)]
-    fn function_being_analyzed_is_public_or_root(&mut self) -> bool {
+    fn function_being_analyzed_is_public(&mut self) -> bool {
         is_public(self.def_id, self.tcx)
-            || self.summary_cache.get_dependents(&self.def_id).is_empty()
     }
 
     /// Adds a (rpath, rvalue) pair to the current environment for every pair in effects
@@ -2594,7 +2704,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
                 // At this point, we don't know that this assert is unreachable and we don't know
                 // that the condition is as expected, so we need to warn about it somewhere.
-                if self.function_being_analyzed_is_public_or_root()
+                if self.function_being_analyzed_is_public()
                     || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
                 {
                     // We expect public functions to have programmer supplied preconditions
@@ -3332,6 +3442,20 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
                 .into(),
             ),
+        }
+    }
+
+    /// Returns the rustc Ty of the given operand.
+    #[logfn_inputs(TRACE)]
+    fn get_operand_rustc_type(&mut self, operand: &mir::Operand<'tcx>) -> Ty<'tcx> {
+        match operand {
+            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+                self.get_rustc_place_type(place)
+            }
+            mir::Operand::Constant(constant) => {
+                let mir::Constant { literal, .. } = constant.borrow();
+                literal.ty
+            }
         }
     }
 
@@ -4159,7 +4283,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn get_path_rustc_type(&mut self, path: &Rc<Path>) -> Ty<'tcx> {
         match &path.value {
             PathEnum::LocalVariable { ordinal } => {
-                self.mir.local_decls[mir::Local::from(*ordinal)].ty
+                if *ordinal > 0 && *ordinal <= self.actual_argument_types.len() {
+                    self.actual_argument_types[*ordinal - 1]
+                } else {
+                    self.mir.local_decls[mir::Local::from(*ordinal)].ty
+                }
             }
             PathEnum::QualifiedPath {
                 qualifier,
@@ -4167,16 +4295,28 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 ..
             } => {
                 let t = self.get_path_rustc_type(qualifier);
-                if let PathSelector::Field(ordinal) = **selector {
-                    let adt = Self::get_dereferenced_type(t);
-                    if let TyKind::Adt(AdtDef { variants, .. }, substs) = &adt.kind {
-                        if let Some(variant_index) = variants.last() {
-                            assume!(variant_index.index() == 0);
-                            let variant = &variants[variant_index];
-                            let field = &variant.fields[ordinal];
-                            return field.ty(self.tcx, substs);
+                match **selector {
+                    PathSelector::Field(ordinal) => {
+                        let bt = Self::get_dereferenced_type(t);
+                        match &bt.kind {
+                            TyKind::Adt(AdtDef { variants, .. }, substs) => {
+                                if let Some(variant_index) = variants.last() {
+                                    assume!(variant_index.index() == 0);
+                                    let variant = &variants[variant_index];
+                                    let field = &variant.fields[ordinal];
+                                    return field.ty(self.tcx, substs);
+                                }
+                            }
+                            TyKind::Closure(.., subs) => {
+                                return subs.as_ref()[ordinal + 4].expect_ty();
+                            }
+                            _ => (),
                         }
                     }
+                    PathSelector::Deref => {
+                        return Self::get_dereferenced_type(t);
+                    }
+                    _ => {}
                 }
                 info!("t is {:?}", t);
                 info!("selector is {:?}", selector);
