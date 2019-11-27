@@ -15,14 +15,12 @@ use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::{assume, assume_unreachable};
 use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
-use rustc_errors::SourceMapper;
 use serde::{Deserialize, Serialize};
 use sled::{Config, Db};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
 use std::ops::Deref;
 use std::rc::Rc;
-use syntax_pos;
 
 /// A summary is a declarative abstract specification of what a function does.
 /// This is calculated once per function and is used by callers of the function.

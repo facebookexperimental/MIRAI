@@ -9,6 +9,15 @@
 #[macro_use]
 extern crate mirai_annotations;
 
+pub enum Foo {
+    Bar,
+    Bas,
+}
+
+pub fn get_bar() -> Foo {
+    Foo::Bar
+}
+
 pub static A: bool = true;
 pub static B: bool = false;
 pub static C: char = 'A';
@@ -19,4 +28,9 @@ pub fn main() {
     verify!(B == false);
     verify!(C == 'A');
     //verify!(D == "foo"); //todo: #2 enable this when we have summaries for the standard library
+    verify!(if let Foo::Bar = get_bar() {
+        true
+    } else {
+        false
+    });
 }

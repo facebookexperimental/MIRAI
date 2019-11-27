@@ -22,6 +22,7 @@ use log_derive::logfn_inputs;
 use mirai_annotations::{
     assume, assume_unreachable, checked_assume, checked_assume_eq, precondition, verify,
 };
+use rustc::mir::interpret::{ConstValue, Scalar};
 use rustc::session::Session;
 use rustc::ty::subst::SubstsRef;
 use rustc::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
@@ -3389,18 +3390,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.lookup_path_and_refine_result(path, place_type)
     }
 
-    /// Synthesizes a constant value.
+    /// Synthesizes a constant value. Also used for static variable values.
     #[logfn_inputs(TRACE)]
     fn visit_constant(
         &mut self,
         user_ty: Option<UserTypeAnnotationIndex>,
         literal: &Const<'tcx>,
     ) -> Rc<AbstractValue> {
-        use rustc::mir::interpret::Scalar;
         let ty = literal.ty;
 
         match &literal.val {
-            mir::interpret::ConstValue::Unevaluated(def_id, ..) => {
+            rustc::ty::ConstKind::Unevaluated(def_id, ..) => {
                 let name = utils::summary_key_str(self.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
                 let path = Rc::new(
@@ -3413,62 +3413,29 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 );
                 self.lookup_path_and_refine_result(path, expression_type)
             }
+
             _ => {
                 let result;
                 match ty.kind {
-                    TyKind::Bool => {
-                        result = match &literal.val {
-                            mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }) => {
-                                if *data == 0 {
-                                    &ConstantDomain::False
-                                } else {
-                                    &ConstantDomain::True
-                                }
-                            }
-                            _ => assume_unreachable!(),
-                        };
-                    }
-                    TyKind::Char => {
-                        result = if let mir::interpret::ConstValue::Scalar(Scalar::Raw {
+                    TyKind::Bool
+                    | TyKind::Char
+                    | TyKind::Float(..)
+                    | TyKind::Int(..)
+                    | TyKind::Uint(..) => {
+                        if let rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
                             data,
-                            ..
-                        }) = &literal.val
+                            size,
+                        })) = &literal.val
                         {
-                            &mut self
-                                .constant_value_cache
-                                .get_char_for(char::try_from(*data as u32).unwrap())
+                            result = self.get_constant_from_scalar(&ty.kind, *data, *size);
                         } else {
                             assume_unreachable!()
-                        };
+                        }
                     }
-                    TyKind::Float(..) => {
-                        result = match &literal.val {
-                            mir::interpret::ConstValue::Scalar(Scalar::Raw { data, size }) => {
-                                match *size {
-                                    4 => &mut self.constant_value_cache.get_f32_for(*data as u32),
-                                    _ => &mut self.constant_value_cache.get_f64_for(*data as u64),
-                                }
-                            }
-                            _ => assume_unreachable!(),
-                        };
-                    }
-                    TyKind::FnDef(def_id, generic_args) => {
+                    TyKind::FnDef(def_id, generic_args)
+                    | TyKind::Closure(def_id, generic_args)
+                    | TyKind::Generator(def_id, generic_args, ..) => {
                         result = self.visit_function_reference(def_id, ty, generic_args);
-                    }
-                    TyKind::Int(..) => {
-                        result = match &literal.val {
-                            mir::interpret::ConstValue::Scalar(Scalar::Raw { data, size }) => {
-                                let value: i128 = match *size {
-                                    1 => i128::from(*data as i8),
-                                    2 => i128::from(*data as i16),
-                                    4 => i128::from(*data as i32),
-                                    8 => i128::from(*data as i64),
-                                    _ => *data as i128,
-                                };
-                                &mut self.constant_value_cache.get_i128_for(value)
-                            }
-                            _ => assume_unreachable!(),
-                        };
                     }
                     TyKind::Ref(
                         _,
@@ -3477,8 +3444,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         },
                         _,
                     ) => {
-                        result = if let mir::interpret::ConstValue::Slice { data, start, end } =
-                            &literal.val
+                        result = if let rustc::ty::ConstKind::Value(ConstValue::Slice {
+                            data,
+                            start,
+                            end,
+                        }) = &literal.val
                         {
                             // The rust compiler should ensure this.
                             assume!(*end >= *start);
@@ -3534,7 +3504,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         },
                         _,
                     ) => match &literal.val {
-                        mir::interpret::ConstValue::Slice { data, start, end } => {
+                        rustc::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
                             // The rust compiler should ensure this.
                             assume!(*end >= *start);
                             let slice_len = *end - *start;
@@ -3554,7 +3524,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             let e_type = ExpressionType::from(&elem_type.kind);
                             return self.deconstruct_constant_array(slice, e_type, None);
                         }
-                        mir::interpret::ConstValue::ByRef { alloc, offset } => {
+                        rustc::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                             let e_type = ExpressionType::from(&elem_type.kind);
                             let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
                             let len = alloc.len() as u64;
@@ -3581,23 +3551,218 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             unimplemented!();
                         }
                     },
-                    TyKind::Uint(..) => {
-                        result = match &literal.val {
-                            mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }) => {
-                                &mut self.constant_value_cache.get_u128_for(*data)
+                    TyKind::RawPtr(rustc::ty::TypeAndMut {
+                        ty,
+                        mutbl: rustc::hir::Mutability::Mutable,
+                    })
+                    | TyKind::Ref(_, ty, rustc::hir::Mutability::Mutable) => match &literal.val {
+                        rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
+                            let summary_cache_key = format!("{:?}", p).into();
+                            let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
+                            let path = Rc::new(
+                                PathEnum::StaticVariable {
+                                    def_id: None,
+                                    summary_cache_key,
+                                    expression_type: expression_type.clone(),
+                                }
+                                .into(),
+                            );
+                            return self.lookup_path_and_refine_result(path, expression_type);
+                        }
+                        _ => assume_unreachable!(),
+                    },
+                    TyKind::Ref(_, ty, rustc::hir::Mutability::Immutable) => {
+                        return self.get_reference_to_constant(literal, ty);
+                    }
+                    TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
+                        return self.get_enum_variant_as_constant(literal, ty);
+                    }
+                    TyKind::Tuple(..) | TyKind::Adt(..) => {
+                        match &literal.val {
+                            rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
+                                size: 0,
+                                ..
+                            })) => {
+                                return self.get_new_heap_address();
                             }
-                            _ => assume_unreachable!(),
+                            _ => {
+                                debug!("span: {:?}", self.current_span);
+                                debug!("type kind {:?}", ty.kind);
+                                debug!("unimplemented constant {:?}", literal);
+                                result = &ConstantDomain::Unimplemented;
+                            }
                         };
                     }
                     _ => {
-                        println!("span: {:?}", self.current_span);
-                        println!("type kind {:?}", ty.kind);
-                        println!("unimplemented constant {:?}", literal);
+                        debug!("span: {:?}", self.current_span);
+                        debug!("type kind {:?}", ty.kind);
+                        debug!("unimplemented constant {:?}", literal);
                         result = &ConstantDomain::Unimplemented;
                     }
                 };
                 Rc::new(result.clone().into())
             }
+        }
+    }
+
+    /// Use for constants that are accessed via references
+    fn get_reference_to_constant(
+        &mut self,
+        literal: &rustc::ty::Const<'tcx>,
+        ty: Ty<'tcx>,
+    ) -> Rc<AbstractValue> {
+        match &literal.val {
+            rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
+                if let Some(rustc::mir::interpret::GlobalAlloc::Static(def_id)) =
+                    self.tcx.alloc_map.lock().get(p.alloc_id)
+                {
+                    let name = utils::summary_key_str(self.tcx, def_id);
+                    let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
+                    let path = Rc::new(
+                        PathEnum::StaticVariable {
+                            def_id: Some(def_id),
+                            summary_cache_key: name,
+                            expression_type,
+                        }
+                        .into(),
+                    );
+                    return AbstractValue::make_from(Expression::Reference(path), 1);
+                }
+                debug!("span: {:?}", self.current_span);
+                debug!("type kind {:?}", ty.kind);
+                debug!("ptr {:?}", p);
+                assume_unreachable!();
+            }
+            rustc::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
+                self.get_value_from_slice(&ty.kind, *data, *start, *end)
+            }
+            _ => {
+                debug!("span: {:?}", self.current_span);
+                debug!("type kind {:?}", ty.kind);
+                debug!("unimplemented constant {:?}", literal);
+                assume_unreachable!();
+            }
+        }
+    }
+
+    /// Used for enum typed constants. Currently only simple variants are understood.
+    fn get_enum_variant_as_constant(
+        &mut self,
+        literal: &rustc::ty::Const<'tcx>,
+        ty: Ty<'tcx>,
+    ) -> Rc<AbstractValue> {
+        let result;
+        match &literal.val {
+            rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw { data, size }))
+                if *size == 1 =>
+            {
+                let e = self.get_new_heap_address();
+                if let Expression::AbstractHeapAddress(ordinal) = &e.expression {
+                    let p = Path::new_discriminant(
+                        Rc::new(Path::from(PathEnum::AbstractHeapAddress {
+                            ordinal: *ordinal,
+                        })),
+                        &self.current_environment,
+                    );
+                    let d = Rc::new(self.constant_value_cache.get_u128_for(*data).clone().into());
+                    self.current_environment.update_value_at(p, d);
+                    return e;
+                }
+                debug!("span: {:?}", self.current_span);
+                debug!("type kind {:?}", ty.kind);
+                debug!("unimplemented constant {:?}", literal);
+                result = &ConstantDomain::Unimplemented;
+            }
+            _ => {
+                debug!("span: {:?}", self.current_span);
+                debug!("type kind {:?}", ty.kind);
+                debug!("unimplemented constant {:?}", literal);
+                result = &ConstantDomain::Unimplemented;
+            }
+        };
+        Rc::new(result.clone().into())
+    }
+
+    /// Used only for types with `layout::abi::Scalar` ABI and ZSTs.
+    fn get_constant_from_scalar(
+        &mut self,
+        ty: &TyKind<'tcx>,
+        data: u128,
+        size: u8,
+    ) -> &ConstantDomain {
+        match ty {
+            TyKind::Bool => {
+                if data == 0 {
+                    &ConstantDomain::False
+                } else {
+                    &ConstantDomain::True
+                }
+            }
+            TyKind::Char => &mut self
+                .constant_value_cache
+                .get_char_for(char::try_from(data as u32).unwrap()),
+            TyKind::Float(..) => match size {
+                4 => &mut self.constant_value_cache.get_f32_for(data as u32),
+                _ => &mut self.constant_value_cache.get_f64_for(data as u64),
+            },
+            TyKind::Int(..) => {
+                let value: i128 = match size {
+                    1 => i128::from(data as i8),
+                    2 => i128::from(data as i16),
+                    4 => i128::from(data as i32),
+                    8 => i128::from(data as i64),
+                    _ => data as i128,
+                };
+                &mut self.constant_value_cache.get_i128_for(value)
+            }
+            TyKind::Uint(..) => &mut self.constant_value_cache.get_u128_for(data),
+            _ => assume_unreachable!(),
+        }
+    }
+
+    /// Used only for `&[u8]` and `&str`
+    fn get_value_from_slice(
+        &mut self,
+        ty: &TyKind<'tcx>,
+        data: &'tcx mir::interpret::Allocation,
+        start: usize,
+        end: usize,
+    ) -> Rc<AbstractValue> {
+        // The rust compiler should ensure this.
+        assume!(end >= start);
+        let slice_len = end - start;
+        let bytes = data
+            .get_bytes(
+                &self.tcx,
+                // invent a pointer, only the offset is relevant anyway
+                mir::interpret::Pointer::new(
+                    mir::interpret::AllocId(0),
+                    rustc::ty::layout::Size::from_bytes(start as u64),
+                ),
+                rustc::ty::layout::Size::from_bytes(slice_len as u64),
+            )
+            .unwrap();
+        let slice = &bytes[start..end];
+        match ty {
+            TyKind::Ref(_, ty, _) => match ty.kind {
+                TyKind::Array(elem_type, ..) | TyKind::Slice(elem_type) => {
+                    self.deconstruct_constant_array(slice, (&elem_type.kind).into(), None)
+                }
+                TyKind::Str => {
+                    let s = std::str::from_utf8(slice).expect("non utf8 str");
+                    let len_val: Rc<AbstractValue> =
+                        Rc::new(ConstantDomain::U128(s.len() as u128).into());
+                    let res: Rc<AbstractValue> =
+                        Rc::new(self.constant_value_cache.get_string_for(s).clone().into());
+
+                    let path: Rc<Path> = Rc::new(PathEnum::Constant { value: res.clone() }.into());
+                    let len_path = Path::new_string_length(path, &self.current_environment);
+                    self.current_environment.update_value_at(len_path, len_val);
+                    res
+                }
+                _ => assume_unreachable!(),
+            },
+            _ => assume_unreachable!(),
         }
     }
 
@@ -3609,19 +3774,21 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         elem_type: &rustc::ty::TyS<'tcx>,
         length: &rustc::ty::Const<'tcx>,
     ) -> Rc<AbstractValue> {
-        use rustc::mir::interpret::Scalar;
+        use rustc::mir::interpret::{ConstValue, Scalar};
 
-        if let mir::interpret::ConstValue::Scalar(Scalar::Raw { data, .. }, ..) = &length.val {
+        if let rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw { data, .. }, ..)) =
+            &length.val
+        {
             let len = *data;
             let e_type = ExpressionType::from(&elem_type.kind);
             if e_type != ExpressionType::U8 {
                 info!(
-                    "Untested case of mir::interpret::ConstValue::Scalar found at {:?}",
+                    "Untested case of rustc::ty::ConstKind::Scalar found at {:?}",
                     self.current_span
                 );
             }
             match &literal.val {
-                mir::interpret::ConstValue::Slice { data, start, end } => {
+                rustc::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
                     // The Rust compiler should ensure this.
                     assume!(*end > *start);
                     let slice_len = *end - *start;
@@ -3639,7 +3806,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     let slice = &bytes[*start..*end];
                     self.deconstruct_constant_array(slice, e_type, Some(len))
                 }
-                mir::interpret::ConstValue::ByRef { alloc, offset } => {
+                rustc::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                     //todo: there is no test coverage for this case
                     let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
                     let alloc_len = alloc.len() as u64;
@@ -3664,7 +3831,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         .unwrap();
                     self.deconstruct_constant_array(&bytes, e_type, Some(len))
                 }
-                mir::interpret::ConstValue::Scalar(mir::interpret::Scalar::Ptr(ptr)) => {
+                rustc::ty::ConstKind::Value(ConstValue::Scalar(mir::interpret::Scalar::Ptr(
+                    ptr,
+                ))) => {
                     let alloc = self.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
                     let alloc_len = alloc.len() as u64;
                     let offset_bytes = ptr.offset.bytes();
@@ -3820,11 +3989,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         ty: Ty<'tcx>,
         mut generic_args: SubstsRef<'tcx>,
     ) -> &ConstantDomain {
-        if !self.tcx.is_mir_available(def_id) {
+        if !self.tcx.is_mir_available(def_id) && self.tcx.trait_of_item(def_id).is_some() {
             let known_name = self.known_names_cache.get(self.tcx, def_id);
-            if known_name == KnownNames::None {
+            if known_name == KnownNames::None && !self.tcx.is_closure(self.def_id) {
                 debug!("original def_id {:?}", def_id);
+                debug!("trait of def_id {:?}", self.tcx.trait_of_item(def_id));
                 let param_env = self.tcx.param_env(self.def_id);
+                debug!("param_env {:?}", param_env);
                 if let Some(instance) =
                     rustc::ty::Instance::resolve(self.tcx, param_env, def_id, generic_args)
                 {
