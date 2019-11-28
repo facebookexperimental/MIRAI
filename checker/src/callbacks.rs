@@ -7,6 +7,7 @@
 use crate::constant_domain::ConstantValueCache;
 use crate::expected_errors;
 use crate::known_names::KnownNamesCache;
+use crate::options::Options;
 use crate::summaries::PersistentSummaryCache;
 use crate::utils;
 use crate::visitors::{MirVisitor, MirVisitorCrateContext};
@@ -14,7 +15,10 @@ use crate::z3_solver::Z3Solver;
 
 use log::info;
 use log_derive::{logfn, logfn_inputs};
-use rustc::hir::def_id::DefId;
+use rustc::hir::def_id::{DefId, LOCAL_CRATE};
+use rustc::mir;
+use rustc::session::config::ErrorOutputType;
+use rustc::session::early_error;
 use rustc::ty::TyCtxt;
 use rustc_driver::Compilation;
 use rustc_interface::interface;
@@ -24,39 +28,38 @@ use std::fmt::{Debug, Formatter, Result};
 use std::iter::FromIterator;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::rc::Rc;
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use tempdir::TempDir;
 
 /// Private state used to implement the callbacks.
 pub struct MiraiCallbacks {
+    /// Options provided to the analysis.
+    options: Options,
     /// The relative path of the file being compiled.
     file_name: String,
     /// A path to the directory where analysis output, such as the summary cache, should be stored.
     output_directory: PathBuf,
     /// True if this run is done via cargo test
     test_run: bool,
-    /// If a function name is given, only analyze that function
-    pub analyze_single_func: Option<String>,
 }
 
 /// Constructors
 impl MiraiCallbacks {
-    pub fn new() -> MiraiCallbacks {
+    pub fn new(options: Options) -> MiraiCallbacks {
         MiraiCallbacks {
+            options,
             file_name: String::new(),
             output_directory: PathBuf::default(),
             test_run: false,
-            analyze_single_func: None,
         }
     }
 
-    pub fn test_runner() -> MiraiCallbacks {
+    pub fn test_runner(options: Options) -> MiraiCallbacks {
         MiraiCallbacks {
+            options,
             file_name: String::new(),
             output_directory: PathBuf::default(),
             test_run: true,
-            analyze_single_func: None,
         }
     }
 }
@@ -69,7 +72,7 @@ impl Debug for MiraiCallbacks {
 
 impl Default for MiraiCallbacks {
     fn default() -> Self {
-        Self::new()
+        Self::new(Options::default())
     }
 }
 
@@ -121,11 +124,13 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
 }
 
 struct AnalysisInfo<'compilation, 'tcx> {
+    options: &'compilation Options,
     persistent_summary_cache: PersistentSummaryCache<'tcx>,
     constant_value_cache: ConstantValueCache<'tcx>,
     diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'compilation>>>,
     known_names_cache: KnownNamesCache,
-    analyze_single_func: Option<String>,
+    // Functions to include in analysis. If None, all functions are included.
+    function_whitelist: Option<Vec<String>>,
 }
 
 impl MiraiCallbacks {
@@ -184,17 +189,19 @@ impl MiraiCallbacks {
             "storing summaries for {} at {}/.summary_store.sled",
             self.file_name, summary_store_path
         );
+        let options = std::mem::replace(&mut self.options, Options::default());
         let persistent_summary_cache = PersistentSummaryCache::new(tcx, summary_store_path);
         let defs = Vec::from_iter(tcx.body_owners());
         let constant_value_cache = ConstantValueCache::default();
         let diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'_>>> = HashMap::new();
         let known_names_cache = KnownNamesCache::create_cache_from_language_items();
         let mut analysis_info = AnalysisInfo {
+            options: &options,
             persistent_summary_cache,
             constant_value_cache,
             diagnostics_for,
             known_names_cache,
-            analyze_single_func: self.analyze_single_func.to_owned(),
+            function_whitelist: None,
         };
         Self::analyze_bodies(compiler, tcx, &defs, &mut analysis_info);
         if !self.emit_or_check_diagnostics(&mut analysis_info.diagnostics_for) {
@@ -250,6 +257,28 @@ impl MiraiCallbacks {
         defs: &[DefId],
         analysis_info: &mut AnalysisInfo<'analysis, 'tcx>,
     ) {
+        // Determine the functions we want to analyze.
+        if let Some(fname) = &analysis_info.options.single_func {
+            analysis_info.function_whitelist = Some(vec![fname.clone()]);
+        } else if analysis_info.options.test_only {
+            // Extract test functions from the main test runner.
+            if let Some((entry_def_id, _)) = tcx.entry_fn(LOCAL_CRATE) {
+                let fns = Self::extract_test_fns(tcx, entry_def_id);
+                if fns.is_empty() {
+                    early_error(
+                        ErrorOutputType::default(),
+                        "Could not extract any tests from main entry point",
+                    );
+                }
+                analysis_info.function_whitelist = Some(fns);
+            } else {
+                early_error(
+                    ErrorOutputType::default(),
+                    "Did not find main entry point to identify tests",
+                );
+            }
+        }
+
         // Analyze all public methods
         for def_id in defs.iter() {
             if !utils::is_public(*def_id, tcx) {
@@ -278,31 +307,36 @@ impl MiraiCallbacks {
         analysis_info: &mut AnalysisInfo<'analysis, 'tcx>,
         def_id: DefId,
     ) {
-        let name = MiraiCallbacks::get_and_log_name(
-            &mut analysis_info.persistent_summary_cache,
-            analysis_info.analyze_single_func.is_none(),
-            1,
-            def_id,
-        );
-        if let Some(fname) = &analysis_info.analyze_single_func {
-            // If the SINGLE_FUNC=fname option was provided, skip the analysis of all
-            // functions whose names don't match fname.
-            if *fname != name.to_string() {
+        // Determine whether this function is included in the analysis.
+        let name = &analysis_info
+            .persistent_summary_cache
+            .get_summary_key_for(def_id)
+            .to_string();
+        if let Some(ref fns) = analysis_info.function_whitelist {
+            let display_name = utils::def_id_display_name(tcx, def_id);
+            // We check both for display name and summary key name.
+            if !fns.contains(&display_name) && !fns.contains(name) {
+                info!(
+                    "skipping function {} as it is not selected for analysis",
+                    name
+                );
                 return;
             }
-        } else {
-            // No need to analyze a body for which we already have a non default summary.
-            // We do, however, have to allow local foreign contract functions to override
-            // the standard summaries that are already in the cache.
-            if !utils::is_foreign_contract(tcx, def_id) {
-                let summary = analysis_info
-                    .persistent_summary_cache
-                    .get_summary_for(def_id, None);
-                if summary.is_not_default {
-                    return;
-                }
+        }
+
+        // No need to analyze a body for which we already have a non default summary.
+        // We do, however, have to allow local foreign contract functions to override
+        // the standard summaries that are already in the cache.
+        if !utils::is_foreign_contract(tcx, def_id) {
+            let summary = analysis_info
+                .persistent_summary_cache
+                .get_summary_for(def_id, None);
+            if summary.is_not_default {
+                return;
             }
         }
+
+        Self::log_name(name, 1);
         let mut buffered_diagnostics: Vec<DiagnosticBuilder<'_>> = vec![];
         Self::visit_body(
             def_id,
@@ -325,24 +359,12 @@ impl MiraiCallbacks {
 
     /// Logs the summary key of the function that is about to be analyzed.
     #[logfn_inputs(TRACE)]
-    fn get_and_log_name(
-        persistent_summary_cache: &mut PersistentSummaryCache<'_>,
-        log_it: bool,
-        iteration_count: usize,
-        def_id: DefId,
-    ) -> Rc<String> {
-        let name: Rc<String>;
-        {
-            name = persistent_summary_cache.get_summary_key_for(def_id).clone();
-            if log_it {
-                if iteration_count == 1 {
-                    info!("analyzing({:?})", name);
-                } else {
-                    info!("reanalyzing({:?})", name);
-                }
-            }
+    fn log_name(name: &str, iteration_count: usize) {
+        if iteration_count == 1 {
+            info!("analyzing({:?})", name);
+        } else {
+            info!("reanalyzing({:?})", name);
         }
-        name
     }
 
     /// Run the abstract interpreter over the function body and produce a summary of its effects
@@ -360,6 +382,7 @@ impl MiraiCallbacks {
         let mut smt_solver = Z3Solver::default();
         analysis_info.constant_value_cache.reset_heap_counter();
         let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
+            options: analysis_info.options,
             session: compiler.session(),
             tcx,
             def_id,
@@ -371,5 +394,52 @@ impl MiraiCallbacks {
             buffered_diagnostics: &mut buffered_diagnostics,
         });
         mir_visitor.visit_body(&name, &[]);
+    }
+
+    /// Extract test functions from the promoted constants of a test runner main function.
+    ///
+    /// Currently, the #[test] attribute generates code like this:
+    ///  
+    ///     extern crate test;
+    ///
+    ///     pub fn main() -> () {
+    ///       test::test_main_static(&[&test, ...)...])
+    ///     }
+    ///
+    ///     pub const test: test:TestDescAndFn = TestDecAndFn{
+    ///       ...,
+    ///       testfn: test::StaticTestFn(|| test::assert_test_result(test())
+    ///     };
+    ///
+    ///     pub fn test() { <original user test code> }
+    ///  
+    /// We can thus find the names (but not def def_id's) of the test functions in the main
+    /// method (via const test in the example). However, the constant slice in main will be promoted
+    /// into a constant initializer function in MIR, so we need to look there.
+    /// We therefore iterate overall promoted functions belonging to the main function, looking for
+    /// a statement like `_n = const <test name>` which loads the constant for a given test.
+    ///
+    /// This method is indeed not very stable and may break on changes to the compilation
+    /// scheme or the test framework.
+    fn extract_test_fns(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<String> {
+        let mut result = vec![];
+        for body in tcx.promoted_mir(def_id).iter() {
+            for b in body.basic_blocks().iter() {
+                for s in &b.statements {
+                    // The statement we are looking for has the form
+                    // `Assign(_, Rvalue(Constant(Unevaluated(def_id)))))`
+                    if let mir::StatementKind::Assign(box (
+                        _,
+                        mir::Rvalue::Use(mir::Operand::Constant(box ref con)),
+                    )) = s.kind
+                    {
+                        if let rustc::ty::ConstKind::Unevaluated(def_id, _) = con.literal.val {
+                            result.push(utils::def_id_display_name(tcx, def_id));
+                        }
+                    }
+                }
+            }
+        }
+        result
     }
 }

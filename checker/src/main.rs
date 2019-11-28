@@ -21,7 +21,9 @@ extern crate rustc;
 extern crate rustc_driver;
 extern crate rustc_interface;
 
+use log::info;
 use mirai::callbacks;
+use mirai::options::Options;
 use mirai::utils;
 use rustc::session::config::ErrorOutputType;
 use rustc::session::early_error;
@@ -40,12 +42,18 @@ fn main() {
         env_logger::init_from_env(e);
     }
 
-    // Configure the analysis to just run on a single function if set
-    let analyze_single_func = if env::var("SINGLE_FUNC").is_ok() {
-        env::var("SINGLE_FUNC").ok()
+    // Get MIRAI options from environment variable. For now, we do not pass them
+    // on the command line because `RUSTC_WRAPPER=mirai cargo build` does not accept any
+    // options and arguments which it does not known about (even though we could remove them in
+    // this code here and not pass on to rustc). Once we have cargo integration
+    // of MIRAI we may want to change this.
+    let mut options = Options::default();
+    let rustc_args = if env::var("MIRAI_FLAGS").is_ok() {
+        options.parse_from_str(&env::var("MIRAI_FLAGS").ok().unwrap())
     } else {
-        None
+        vec![]
     };
+    info!("Options: {:?}", options);
 
     rustc_driver::install_ice_hook();
     let result = rustc_driver::catch_fatal_errors(|| {
@@ -91,8 +99,10 @@ fn main() {
             command_line_arguments.push(always_encode_mir);
         }
 
-        let mut callbacks = callbacks::MiraiCallbacks::default();
-        callbacks.analyze_single_func = analyze_single_func;
+        // Add any arguments obtained from MIRAI_FLAGS following `--`
+        command_line_arguments.extend(rustc_args);
+
+        let mut callbacks = callbacks::MiraiCallbacks::new(options);
         rustc_driver::run_compiler(
             &command_line_arguments,
             &mut callbacks,

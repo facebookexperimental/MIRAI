@@ -24,11 +24,14 @@ extern crate syntax;
 extern crate tempdir;
 
 use mirai::callbacks;
+use mirai::options::Options;
 use mirai::utils;
+use regex::Regex;
 use rustc_rayon::iter::IntoParallelIterator;
 use rustc_rayon::iter::ParallelIterator;
 use std::fs;
-use std::path::PathBuf;
+use std::fs::read_to_string;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tempdir::TempDir;
 use walkdir::WalkDir;
@@ -149,6 +152,18 @@ fn invoke_driver(
     sys_root: String,
     extern_deps: Vec<(&str, String)>,
 ) -> usize {
+    // Read MIRAI options from file content.
+    let mut options = Options::default();
+    let mut rustc_args = vec![]; // any arguments after `--` for rustc
+    {
+        let file_content = read_to_string(&Path::new(&file_name)).unwrap();
+        let options_re = Regex::new(r"(?m)^\s*//\s*MIRAI_FLAGS\s(?P<flags>.*)$").unwrap();
+        if let Some(captures) = options_re.captures(&file_content) {
+            rustc_args = options.parse_from_str(&captures["flags"]);
+        }
+    }
+
+    // Setup rustc call.
     let mut command_line_arguments: Vec<String> = vec![
         String::from("--crate-name mirai"),
         file_name.clone(),
@@ -168,12 +183,17 @@ fn invoke_driver(
         String::from("-Z"),
         String::from("mir-opt-level=0"),
     ];
+    command_line_arguments.extend(rustc_args);
+    if options.test_only {
+        // #[test] will be ignored unless we enable this.
+        command_line_arguments.push("--test".to_string());
+    }
     for extern_dep in extern_deps {
         command_line_arguments.push("--extern".to_string());
         command_line_arguments.push(format!("{}={}", extern_dep.0, extern_dep.1));
     }
 
-    let mut call_backs = callbacks::MiraiCallbacks::test_runner();
+    let mut call_backs = callbacks::MiraiCallbacks::test_runner(options);
     let result = std::panic::catch_unwind(move || {
         rustc_driver::run_compiler(
             &command_line_arguments,
