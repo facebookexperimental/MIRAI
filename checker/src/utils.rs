@@ -11,7 +11,7 @@ use rustc::hir::map::{DefPathData, DisambiguatedDefPathData};
 use rustc::hir::{ItemKind, Node};
 use rustc::ty::print::{FmtPrinter, Printer};
 use rustc::ty::subst::{GenericArgKind, SubstsRef};
-use rustc::ty::{DefIdTree, Ty, TyCtxt, TyKind};
+use rustc::ty::{DefIdTree, ProjectionTy, Ty, TyCtxt, TyKind};
 use std::rc::Rc;
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
@@ -359,4 +359,39 @@ pub fn def_id_display_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
         }
     }
     format!("{:?}", PrettyDefId(def_id, tcx))
+}
+
+/// Returns false if any of the generic arguments are themselves generic
+pub fn are_concrete(gen_args: SubstsRef<'_>) -> bool {
+    for gen_arg in gen_args.iter() {
+        if let GenericArgKind::Type(ty) = gen_arg.unpack() {
+            if !is_concrete(&ty.kind) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+/// Determines if the given type is fully concrete.
+pub fn is_concrete(ty: &TyKind<'_>) -> bool {
+    match ty {
+        TyKind::Bound(..) | TyKind::Param(..) | TyKind::Infer(..) | TyKind::Error => false,
+        TyKind::Adt(_, gen_args)
+        | TyKind::Closure(_, gen_args)
+        | TyKind::FnDef(_, gen_args)
+        | TyKind::Generator(_, gen_args, _)
+        | TyKind::Opaque(_, gen_args)
+        | TyKind::Projection(ProjectionTy {
+            substs: gen_args, ..
+        })
+        | TyKind::UnnormalizedProjection(ProjectionTy {
+            substs: gen_args, ..
+        })
+        | TyKind::Tuple(gen_args) => are_concrete(gen_args),
+        TyKind::Ref(_, ty, _) => is_concrete(&ty.kind),
+        _ => true,
+    }
 }
