@@ -119,6 +119,14 @@ pub mod core {
         }
     }
 
+    pub mod convert {
+        pub mod implement_convert {
+            pub fn try_into__ref_slice_u8_array_u8(arg: &[u8]) -> &[u8] {
+                arg
+            }
+        }
+    }
+
     pub mod default {
         pub trait Default {
             fn default__T() {
@@ -1171,6 +1179,11 @@ pub mod core {
                 } else {
                     Some(&collection[index])
                 }
+            }
+
+            // todo: handle this inside MIRAI
+            pub fn get_unchecked_mut<T>(collection: &[T], index: usize) -> &mut T {
+                result!()
             }
 
             pub fn is_empty<T>(collection: &[T]) -> bool {
