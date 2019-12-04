@@ -24,7 +24,7 @@ use mirai_annotations::{
 };
 use rustc::mir::interpret::{ConstValue, Scalar};
 use rustc::session::Session;
-use rustc::ty::subst::{InternalSubsts, SubstsRef};
+use rustc::ty::subst::{GenericArgKind, InternalSubsts, SubstsRef};
 use rustc::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use rustc_data_structures::graph::dominators::Dominators;
@@ -87,7 +87,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     current_span: syntax_pos::Span,
     start_instant: Instant,
     exit_environment: Environment,
-    generic_arguments: Option<Vec<ExpressionType>>,
+    generic_arguments: Option<SubstsRef<'tcx>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     post_condition: Option<Rc<AbstractValue>>,
     post_condition_block: Option<mir::BasicBlock>,
@@ -113,7 +113,7 @@ struct SavedVisitorState<'analysis, 'tcx> {
     current_span: syntax_pos::Span,
     exit_environment: Environment,
     fresh_variable_offset: usize,
-    generic_arguments: Option<Vec<ExpressionType>>,
+    generic_arguments: Option<SubstsRef<'tcx>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     post_condition: Option<Rc<AbstractValue>>,
     post_condition_block: Option<mir::BasicBlock>,
@@ -447,14 +447,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let elapsed_time = self.start_instant.elapsed();
             let mut saved_state = SavedVisitorState::new(self.def_id, self.mir);
             self.swap_visitor_state(&mut saved_state);
-            if let Some(fr) = func_ref {
-                if !fr.generic_arguments.is_empty() {
-                    self.generic_arguments = Some(fr.generic_arguments.clone());
-                }
-            };
             self.def_id = def_id;
             self.mir = self.tcx.optimized_mir(def_id);
             self.actual_argument_types = actual_argument_types.into();
+            self.generic_arguments = generic_args;
             self.start_instant = Instant::now();
             let function_name = self.summary_cache.get_summary_key_for(def_id).clone();
             self.visit_body(&function_name, actual_args);
@@ -497,44 +493,22 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         actual_argument_types: &[Ty<'tcx>],
         generic_args: Option<SubstsRef<'tcx>>,
     ) -> Option<Summary> {
-        let mut result = None;
+        debug!("devirt def_id {:?}", def_id);
+        debug!("devirt generic_args {:?}", generic_args);
         if !actual_args.is_empty() && !self.tcx.is_closure(self.def_id) {
-            if let Expression::Variable { path, .. } = &actual_args[0].1.expression {
-                let mut self_ty = self.get_path_rustc_type(path);
-                if let TyKind::Ref(_, ty, _) = self_ty.kind {
-                    self_ty = ty;
-                }
-                match self_ty.kind {
-                    TyKind::Adt(..) => (),
-                    _ => {
-                        return None;
-                    }
-                }
-                let mut might_resolve = true;
-                let substs = InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
-                    match param_def.kind {
-                        rustc::ty::GenericParamDefKind::Lifetime
-                        | rustc::ty::GenericParamDefKind::Const => {}
-                        rustc::ty::GenericParamDefKind::Type { .. } => {
-                            if param_def.index == 0 {
-                                return self_ty.into();
-                            } else {
-                                might_resolve = false;
-                            }
-                        }
-                    }
-                    self.tcx.mk_param_from_def(param_def)
-                });
-                if might_resolve {
+            if let Some(gen_args) = generic_args {
+                // Sadly Instance::resolve panics if the arguments are not to its liking and
+                // there is no obvious way to make sure the arguments are to its liking.
+                // It seems, however, that concrete arguments are more likely than not to be OK.
+                if utils::are_concrete(&gen_args) {
+                    debug!("devirt gen_args {:?}", gen_args);
                     let param_env = self.tcx.param_env(self.def_id);
                     debug!("devirt param_env {:?}", param_env);
-                    debug!("devirt def_id {:?}", def_id);
-                    debug!("devirt substs {:?}", substs);
                     if let Some(instance) =
-                        rustc::ty::Instance::resolve(self.tcx, param_env, def_id, substs)
+                        rustc::ty::Instance::resolve(self.tcx, param_env, def_id, gen_args)
                     {
                         if self.tcx.is_mir_available(instance.def.def_id()) {
-                            result = Some(self.create_and_cache_def_id_summary(
+                            return Some(self.create_and_cache_def_id_summary(
                                 instance.def.def_id(),
                                 actual_args,
                                 actual_argument_types,
@@ -546,7 +520,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
             }
         }
-        result
+        None
     }
 
     /// Adds the given diagnostic builder to the buffer.
@@ -1398,7 +1372,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // a million local variables.
         self.fresh_variable_offset += 1_000_000;
         let func_to_call = self.visit_operand(func);
-        let generic_args = self.get_generic_arguments(func);
         let known_name = if let Expression::CompileTimeConstant(fun) = &func_to_call.expression {
             if let ConstantDomain::Function(func_ref) = fun {
                 func_ref.known_name
@@ -1416,6 +1389,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .map(|arg| self.get_operand_rustc_type(arg))
             .collect();
+        let generic_args = self.get_generic_arguments(func);
         if self.handled_as_special_function_call(
             &func_to_call,
             known_name,
@@ -1438,6 +1412,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         debug!("calling {:?}", func_to_call);
         debug!("summary {:?}", function_summary);
         debug!("actual arguments {:?}", actual_args);
+        debug!("generic arguments {:?}", generic_args);
         debug!("pre env {:?}", self.current_environment);
         debug!("entry cond {:?}", self.current_environment.entry_condition);
         self.check_preconditions_if_necessary(&func_to_call, &actual_args, &function_summary);
@@ -1776,11 +1751,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         match &value.expression {
             Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s.clone(),
             _ => {
-                let error = self.session.struct_span_err(
-                    self.current_span,
-                    "this argument should be a string literal, do not call this function directly",
-                );
-                self.emit_diagnostic(error);
+                if self.check_for_errors {
+                    let error = self.session.struct_span_err(
+                        self.current_span,
+                        "this argument should be a string literal, do not call this function directly",
+                    );
+                    self.emit_diagnostic(error);
+                }
                 Rc::new("dummy argument".to_string())
             }
         }
@@ -2048,7 +2025,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // In that case the rust compiler should be able to resolve caller_func_ref.def_id into
         // the actual closure method
         if let (Some(caller_def_id), Some(generic_args)) = (caller_func_ref.def_id, generic_args) {
+            debug!("indirect original def_id {:?}", caller_def_id);
+            debug!(
+                "indirect trait of def_id {:?}",
+                self.tcx.trait_of_item(caller_def_id)
+            );
+            debug!("indirect actual_args {:?}", actual_args);
+            debug!("indirect actual_argument_types {:?}", actual_argument_types);
+            debug!("indirect generic_args {:?}", generic_args);
             let param_env = self.tcx.param_env(self.def_id);
+            debug!("indirect param_env {:?}", param_env);
             if let Some(instance) =
                 rustc::ty::Instance::resolve(self.tcx, param_env, caller_def_id, generic_args)
             {
@@ -3483,7 +3469,38 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if let mir::Operand::Constant(constant) = operand {
             let mir::Constant { literal, .. } = constant.borrow();
             match literal.ty.kind {
-                TyKind::FnDef(_def_id, generic_args) => Some(generic_args),
+                TyKind::FnDef(def_id, generic_args) => {
+                    if let Some(caller_generics) = self.generic_arguments {
+                        // If the calling function is generic, use it's generic arguments to
+                        // specialize the generic arguments of the called function.
+                        // (This really ought to be the responsibility of tcx.get_optimized_mir...)
+                        let caller_generics = caller_generics.as_ref();
+                        let mut substitutions: HashMap<syntax_pos::Symbol, Ty<'_>> = HashMap::new();
+                        InternalSubsts::for_item(self.tcx, self.def_id, |param_def, _| {
+                            if let Some(gen_arg) = caller_generics.get(param_def.index as usize) {
+                                if let GenericArgKind::Type(ty) = gen_arg.unpack() {
+                                    substitutions.insert(param_def.name, ty);
+                                }
+                            }
+                            self.tcx.mk_param_from_def(param_def) // not used
+                        });
+                        let specialized_substs =
+                            InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
+                                if let Some(ty) = substitutions.get(&param_def.name) {
+                                    debug!("substituting param_def {:?}", param_def);
+                                    debug!("new type {:?}", ty);
+                                    (*ty).into()
+                                } else {
+                                    debug!("retaining param_def {:?}", param_def);
+                                    generic_args[param_def.index as usize]
+                                }
+                            });
+                        debug!("using specialized substs {:?}", specialized_substs);
+                        Some(specialized_substs)
+                    } else {
+                        Some(generic_args)
+                    }
+                }
                 _ => None,
             }
         } else {
@@ -4116,17 +4133,25 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if !self.tcx.is_mir_available(def_id) && self.tcx.trait_of_item(def_id).is_some() {
             let known_name = self.known_names_cache.get(self.tcx, def_id);
             if known_name == KnownNames::None && !self.tcx.is_closure(self.def_id) {
-                debug!("original def_id {:?}", def_id);
-                debug!("trait of def_id {:?}", self.tcx.trait_of_item(def_id));
+                debug!("func_ref original def_id {:?}", def_id);
+                debug!(
+                    "func_ref trait of def_id {:?}",
+                    self.tcx.trait_of_item(def_id)
+                );
+                debug!("func_ref generic_args {:?}", generic_args);
                 let param_env = self.tcx.param_env(self.def_id);
-                debug!("param_env {:?}", param_env);
+                debug!("func_ref param_env {:?}", param_env);
                 if let Some(instance) =
                     rustc::ty::Instance::resolve(self.tcx, param_env, def_id, generic_args)
                 {
                     def_id = instance.def.def_id();
-                    debug!("resolved def_id {:?}", def_id);
+                    debug!("func_ref resolved def_id {:?}", def_id);
                     generic_args = instance.substs;
-                    debug!("mir available {:?}", self.tcx.is_mir_available(def_id));
+                    debug!("func_ref resolved generic_args {:?}", generic_args);
+                    debug!(
+                        "func_ref mir available {:?}",
+                        self.tcx.is_mir_available(def_id)
+                    );
                 }
             }
         }
@@ -4257,9 +4282,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn get_place_type(&mut self, place: &mir::Place<'tcx>) -> ExpressionType {
         let rust_ty = &self.get_rustc_place_type(place).kind;
         if let TyKind::Param(t_par) = rust_ty {
-            if let Some(generic_args) = &self.generic_arguments {
-                if let Some(arg_type) = generic_args.get(t_par.index as usize) {
-                    return arg_type.clone();
+            if let Some(generic_args) = self.generic_arguments {
+                if let Some(gen_arg) = generic_args.as_ref().get(t_par.index as usize) {
+                    return (&gen_arg.expect_ty().kind).into();
                 }
             }
         }
