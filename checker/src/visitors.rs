@@ -24,8 +24,8 @@ use mirai_annotations::{
 };
 use rustc::mir::interpret::{ConstValue, Scalar};
 use rustc::session::Session;
-use rustc::ty::subst::{GenericArgKind, InternalSubsts, SubstsRef};
-use rustc::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
+use rustc::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
+use rustc::ty::{AdtDef, Const, GenericParamDef, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc::{hir, mir};
 use rustc_data_structures::graph::dominators::Dominators;
 use std::borrow::Borrow;
@@ -443,6 +443,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         generic_args: Option<SubstsRef<'tcx>>,
         func_ref: Option<Rc<FunctionReference>>,
     ) -> Summary {
+        debug!("summarizing {:?}", def_id);
         if self.tcx.is_mir_available(def_id) {
             let elapsed_time = self.start_instant.elapsed();
             let mut saved_state = SavedVisitorState::new(self.def_id, self.mir);
@@ -494,6 +495,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         generic_args: Option<SubstsRef<'tcx>>,
     ) -> Option<Summary> {
         debug!("devirt def_id {:?}", def_id);
+        debug!(
+            "devirt trait of def_id {:?}",
+            self.tcx.trait_of_item(def_id)
+        );
         debug!("devirt generic_args {:?}", generic_args);
         if !actual_args.is_empty() && !self.tcx.is_closure(self.def_id) {
             if let Some(gen_args) = generic_args {
@@ -501,6 +506,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 // there is no obvious way to make sure the arguments are to its liking.
                 // It seems, however, that concrete arguments are more likely than not to be OK.
                 if utils::are_concrete(&gen_args) {
+                    // Of course, likely is not surety and it seems that resolve panics when asked
+                    // to resolve to an instance that has not been loaded into the compiler's cache,
+                    // which sometimes happen for generic functions that are not concretely
+                    // instantiated by the crate under analysis.
+                    // For now, the only way past this is to provide built-in summaries for any
+                    // function that causes resolve to fail.
                     debug!("devirt gen_args {:?}", gen_args);
                     let param_env = self.tcx.param_env(self.def_id);
                     debug!("devirt param_env {:?}", param_env);
@@ -1389,7 +1400,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .map(|arg| self.get_operand_rustc_type(arg))
             .collect();
-        let generic_args = self.get_generic_arguments(func);
+        let generic_args = self.get_generic_arguments(func, &actual_argument_types);
         if self.handled_as_special_function_call(
             &func_to_call,
             known_name,
@@ -1412,6 +1423,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         debug!("calling {:?}", func_to_call);
         debug!("summary {:?}", function_summary);
         debug!("actual arguments {:?}", actual_args);
+        debug!("actual arguments types {:?}", actual_argument_types);
         debug!("generic arguments {:?}", generic_args);
         debug!("pre env {:?}", self.current_environment);
         debug!("entry cond {:?}", self.current_environment.entry_condition);
@@ -3465,7 +3477,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// the generic parameter substitutions (type arguments) that are used by
     /// the call instruction whose operand this is.
     #[logfn_inputs(TRACE)]
-    fn get_generic_arguments(&self, operand: &mir::Operand<'tcx>) -> Option<SubstsRef<'tcx>> {
+    fn get_generic_arguments(
+        &self,
+        operand: &mir::Operand<'tcx>,
+        actual_argument_types: &[Ty<'tcx>],
+    ) -> Option<SubstsRef<'tcx>> {
         if let mir::Operand::Constant(constant) = operand {
             let mir::Constant { literal, .. } = constant.borrow();
             match literal.ty.kind {
@@ -3491,14 +3507,26 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                     debug!("new type {:?}", ty);
                                     (*ty).into()
                                 } else {
-                                    debug!("retaining param_def {:?}", param_def);
-                                    generic_args[param_def.index as usize]
+                                    Self::specialize_self(
+                                        &actual_argument_types,
+                                        &generic_args,
+                                        param_def,
+                                    )
                                 }
                             });
                         debug!("using specialized substs {:?}", specialized_substs);
                         Some(specialized_substs)
                     } else {
-                        Some(generic_args)
+                        let specialized_substs =
+                            InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
+                                Self::specialize_self(
+                                    &actual_argument_types,
+                                    &generic_args,
+                                    param_def,
+                                )
+                            });
+                        debug!("using specialized substs {:?}", specialized_substs);
+                        Some(specialized_substs)
                     }
                 }
                 _ => None,
@@ -3506,6 +3534,30 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else {
             None
         }
+    }
+
+    /// If the given generic parameter definition is "Self" then substitute actual_argument_types[0]
+    /// for it. Otherwise just return the corresponding generic_arg entry.
+    #[logfn_inputs(DEBUG)]
+    fn specialize_self(
+        actual_argument_types: &[Ty<'tcx>],
+        generic_args: SubstsRef<'tcx>,
+        param_def: &GenericParamDef,
+    ) -> GenericArg<'tcx> {
+        if !actual_argument_types.is_empty()
+            && param_def.name.as_str() == "Self"
+            && utils::is_concrete(&actual_argument_types[0].kind)
+        {
+            if let TyKind::Ref(_, ty, _) = actual_argument_types[0].kind {
+                debug!("Self deref self ty {:?}", ty.kind);
+                return ty.into();
+            } else {
+                debug!("Self deref self ty {:?}", actual_argument_types[0].kind);
+                return actual_argument_types[0].into();
+            }
+        }
+        debug!("retaining param_def {:?}", param_def);
+        generic_args[param_def.index as usize]
     }
 
     /// Copy: The value must be available for use afterwards.
@@ -4280,27 +4332,42 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Returns an ExpressionType value corresponding to the Rustc type of the place.
     #[logfn_inputs(TRACE)]
     fn get_place_type(&mut self, place: &mir::Place<'tcx>) -> ExpressionType {
-        let rust_ty = &self.get_rustc_place_type(place).kind;
-        if let TyKind::Param(t_par) = rust_ty {
-            if let Some(generic_args) = self.generic_arguments {
-                if let Some(gen_arg) = generic_args.as_ref().get(t_par.index as usize) {
-                    return (&gen_arg.expect_ty().kind).into();
-                }
-            }
-        }
-        rust_ty.into()
+        (&self.get_rustc_place_type(place).kind).into()
     }
 
     /// Returns the rustc Ty of the given place in memory.
     #[logfn_inputs(TRACE)]
     fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> Ty<'tcx> {
-        let base_type = match &place.base {
-            mir::PlaceBase::Local(local) => {
-                self.mir.local_decls[mir::Local::from(local.as_usize())].ty
-            }
-            mir::PlaceBase::Static(boxed_static) => boxed_static.ty,
+        let result = {
+            let base_type = match &place.base {
+                mir::PlaceBase::Local(local) => {
+                    self.mir.local_decls[mir::Local::from(local.as_usize())].ty
+                }
+                mir::PlaceBase::Static(boxed_static) => boxed_static.ty,
+            };
+            self.get_type_for_projection_element(base_type, &place.projection)
         };
-        self.get_type_for_projection_element(base_type, &place.projection)
+        match result.kind {
+            TyKind::Param(t_par) => {
+                if let Some(generic_args) = self.generic_arguments {
+                    if let Some(gen_arg) = generic_args.as_ref().get(t_par.index as usize) {
+                        return gen_arg.expect_ty();
+                    }
+                    if t_par.name.as_str() == "Self" && !self.actual_argument_types.is_empty() {
+                        return self.actual_argument_types[0];
+                    }
+                }
+            }
+            TyKind::Ref(_, ty, _) => {
+                if let TyKind::Param(t_par) = ty.kind {
+                    if t_par.name.as_str() == "Self" && !self.actual_argument_types.is_empty() {
+                        return self.actual_argument_types[0];
+                    }
+                }
+            }
+            _ => {}
+        }
+        result
     }
 
     /// This is a hacky and brittle way to navigate the Rust compiler's type system.
