@@ -4,6 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
+#![feature(allocator_api)]
+
 #[macro_use]
 extern crate mirai_annotations;
 

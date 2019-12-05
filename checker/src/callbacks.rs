@@ -133,12 +133,43 @@ impl MiraiCallbacks {
     #[logfn(TRACE)]
     fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'_>) {
         if self.file_name.contains("/bounded-executor")
+            || self.file_name.contains("threshold_crypto")
             || self.file_name.contains("/libra-types")
             || self.file_name.contains("/accumulator")
             || self.file_name.contains("/libradb")
+            || self.file_name.contains("client/src/main")
+            || self.file_name.contains("config/src")
+            || self.file_name.contains("config/config-builder/src/lib")
+            || self.file_name.contains("common/grpc-helpers")
+            || self.file_name.contains("common/metrics")
+            || self.file_name.contains("common/nibble")
+            || self.file_name.contains("common/lcs")
+            || self.file_name.contains("consensus/src/lib")
+            || self.file_name.contains("crypto/crypto")
             || self.file_name.contains("/storage-service")
             || self.file_name.contains("/noise")
             || self.file_name.contains("network")
+            || self.file_name.contains("/tiny-keccak")
+            || self.file_name.contains("types/src")
+            || self.file_name.contains("mempool/mempool-shared-proto")
+            || self.file_name.contains("language/vm")
+            || self
+                .file_name
+                .contains("language/compiler/ir-to-bytecode/syntax")
+            || self.file_name.contains("storage/jellyfish-merkle")
+            || self.file_name.contains("client/libra_wallet")
+            || self
+                .file_name
+                .contains("admission_control/admission-control-proto")
+            || self.file_name.contains("storage/storage-client")
+            || self
+                .file_name
+                .contains("language/compiler/bytecode-source-map")
+            || self.file_name.contains("language/compiler/ir-to-bytecode")
+            || self.file_name.contains("libra-node/src")
+            || self.file_name.contains("client/src/lib")
+            || self.file_name.contains("language/compiler/src/main")
+            || self.file_name.contains("state-synchronizer/src")
         {
             return;
         }

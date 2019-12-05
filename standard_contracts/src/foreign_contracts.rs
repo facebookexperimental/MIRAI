@@ -10,6 +10,32 @@
 #![allow(clippy::all)]
 
 pub mod core {
+    pub mod alloc {
+        pub mod Alloc {
+            pub fn alloc(
+                _self: &mut dyn std::alloc::Alloc,
+                _layout: std::alloc::Layout,
+            ) -> Result<std::ptr::NonNull<u8>, std::alloc::AllocErr> {
+                result!()
+            }
+
+            pub fn dealloc() {}
+        }
+
+        pub mod raw_vec {
+            pub fn capacity_overflow() {
+                assume_unreachable!("capacity overflow");
+            }
+        }
+    }
+
+    pub mod clone {
+        pub mod Clone {
+            pub fn clone<T>() -> T {
+                result!()
+            }
+        }
+    }
 
     pub mod cmp {
 
@@ -22,9 +48,18 @@ pub mod core {
             Greater = 1,
         }
 
+        pub trait PartialEq<Rhs: ?Sized = Self> {
+            fn eq() -> bool {
+                result!()
+            }
+        }
+
         pub trait PartialOrd<Rhs: ?Sized = Self> {
             fn lt__ref_i32_ref_i32(x: &i32, y: &i32) -> bool {
                 (*x) < (*y)
+            }
+            fn partial_cmp(&self, other: &Rhs) -> Option<Ordering> {
+                result!()
             }
         }
 
@@ -742,6 +777,10 @@ pub mod core {
             }
             pub fn miri_start_panic<T>(data: T) {}
         }
+
+        pub fn copy_nonoverlapping<T>() {}
+
+        pub fn write_bytes<T>(_dst: *mut T, _val: u8, _count: usize) {}
     }
 
     pub mod isize {
@@ -970,6 +1009,14 @@ pub mod core {
     }
 
     pub mod ops {
+        pub mod arith {
+            pub mod Add {
+                pub fn add__usize_usize(x: usize, y: usize) -> usize {
+                    x + y
+                }
+            }
+        }
+
         pub mod range {
             pub mod implement_core_ops_range_RangeInclusive_Idx {
                 pub struct Range_usize {
@@ -1147,6 +1194,29 @@ pub mod core {
                 }
             }
         }
+
+        pub mod r#try {
+            pub mod Try {
+                pub fn from_error<T>() -> T {
+                    result!()
+                }
+
+                pub fn into_result<T>() -> T {
+                    result!()
+                }
+            }
+        }
+
+        pub mod result {
+            pub fn unwrap_failed(_msg: &str, _error: &dyn std::fmt::Debug) {
+                // todo: put something here that compiles OK here, but causes a diagnostic in the caller
+                // i.e. something like a false precondition
+            }
+        }
+
+        pub mod raw_vec {
+            pub fn capacity_overflow() {}
+        }
     }
 
     pub mod slice {
@@ -1161,6 +1231,11 @@ pub mod core {
             pub fn enumerate(self) -> Enumerator_slice<'a, T> {
                 Enumerator_slice { iterator: self }
             }
+        }
+
+        pub struct IterMut<'a, T: 'a> {
+            pub collection: &'a mut [T],
+            pub index: usize,
         }
 
         pub mod implement {
@@ -1197,9 +1272,15 @@ pub mod core {
                     Some(&collection[collection.len() - 1])
                 }
             }
+        }
 
-            pub fn len<T>(collection: &[T]) -> usize {
-                collection.len()
+        pub mod SliceIndex {
+            pub fn get<T>() -> T {
+                result!()
+            }
+
+            pub fn get_unchecked<T>() -> T {
+                result!()
             }
         }
     }
@@ -1265,6 +1346,12 @@ pub mod core {
         }
     }
 
+    pub mod result {
+        fn unwrap_failed(msg: &str) -> ! {
+            panic!("{}", msg)
+        }
+    }
+
     pub mod str {
         pub mod implement_str {
             pub fn is_empty(_self: &str) -> bool {
@@ -1301,6 +1388,14 @@ pub mod std {
 pub mod alloc {
     pub mod alloc {
         pub fn box_free() {}
+
+        pub fn handle_alloc_error() {
+            // Not something that can be reasonably detected with static analysis, so ignore.
+        }
+    }
+
+    pub mod raw_vec {
+        pub fn capacity_overflow() {}
     }
 
     pub mod slice {
@@ -1412,6 +1507,15 @@ pub mod alloc {
 
     pub mod collections {
         pub mod vec_deque {
+            pub const INITIAL_CAPACITY: usize = 7; // 2^3 - 1
+            pub const MINIMUM_CAPACITY: usize = 1; // 2 - 1
+            #[cfg(target_pointer_width = "16")]
+            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (16 - 1); // Largest possible power of two
+            #[cfg(target_pointer_width = "32")]
+            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (32 - 1); // Largest possible power of two
+            #[cfg(target_pointer_width = "64")]
+            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (64 - 1); // Largest possible power of two
+
             pub struct VecDeque {
                 len: usize,
             }
