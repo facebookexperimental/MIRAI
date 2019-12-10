@@ -344,7 +344,6 @@ impl MiraiCallbacks {
         let mut buffered_diagnostics: Vec<DiagnosticBuilder<'_>> = vec![];
         Self::visit_body(
             def_id,
-            &name,
             compiler,
             tcx,
             analysis_info,
@@ -376,7 +375,6 @@ impl MiraiCallbacks {
     #[logfn(TRACE)]
     fn visit_body<'analysis, 'compilation, 'tcx>(
         def_id: DefId,
-        name: &str,
         compiler: &'compilation interface::Compiler,
         tcx: TyCtxt<'tcx>,
         analysis_info: &'analysis mut AnalysisInfo<'compilation, 'tcx>,
@@ -397,7 +395,7 @@ impl MiraiCallbacks {
             smt_solver: &mut smt_solver,
             buffered_diagnostics: &mut buffered_diagnostics,
         });
-        mir_visitor.visit_body(&name, &[]);
+        mir_visitor.visit_body(&[]);
     }
 
     /// Extract test functions from the promoted constants of a test runner main function.
