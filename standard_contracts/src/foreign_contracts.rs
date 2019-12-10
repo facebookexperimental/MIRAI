@@ -1516,26 +1516,32 @@ pub mod alloc {
             #[cfg(target_pointer_width = "64")]
             pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (64 - 1); // Largest possible power of two
 
-            pub struct VecDeque {
+            pub struct VecDeque<T> {
+                _phantom: std::marker::PhantomData<T>,
+                capacity: usize,
                 len: usize,
             }
 
-            pub mod implement_alloc_collections_vec_deque_VecDeque_T {
+            pub mod implement_vec_deque {
                 use crate::foreign_contracts::alloc::collections::vec_deque::VecDeque;
 
-                pub fn new() -> VecDeque {
-                    VecDeque { len: 0 }
+                pub fn new<T>() -> VecDeque<T> {
+                    VecDeque {
+                        _phantom: std::marker::PhantomData,
+                        capacity: 0,
+                        len: 0,
+                    }
                 }
 
-                pub fn len(_self: &VecDeque) -> usize {
+                pub fn len<T>(_self: &VecDeque<T>) -> usize {
                     _self.len
                 }
 
-                pub fn is_empty(_self: &VecDeque) -> bool {
+                pub fn is_empty<T>(_self: &VecDeque<T>) -> bool {
                     _self.len == 0
                 }
 
-                pub fn pop_front<T>(_self: &mut VecDeque) -> Option<T> {
+                pub fn pop_front<T>(_self: &mut VecDeque<T>) -> Option<T> {
                     if _self.len == 0 {
                         None
                     } else {
@@ -1544,7 +1550,7 @@ pub mod alloc {
                     }
                 }
 
-                pub fn pop_back<T>(_self: &mut VecDeque) -> Option<T> {
+                pub fn pop_back<T>(_self: &mut VecDeque<T>) -> Option<T> {
                     if _self.len == 0 {
                         None
                     } else {
@@ -1553,17 +1559,17 @@ pub mod alloc {
                     }
                 }
 
-                pub fn push_front<T>(_self: &mut VecDeque, _value: T) {
+                pub fn push_front<T>(_self: &mut VecDeque<T>, _value: T) {
                     assume!(_self.len < usize::max_value());
                     _self.len += 1;
                 }
 
-                pub fn push_back<T>(_self: &mut VecDeque, _value: T) {
+                pub fn push_back<T>(_self: &mut VecDeque<T>, _value: T) {
                     assume!(_self.len < usize::max_value());
                     _self.len += 1;
                 }
 
-                pub fn contains<T>(_self: &VecDeque, _value: T) -> bool {
+                pub fn contains<T>(_self: &VecDeque<T>, _value: T) -> bool {
                     result!()
                 }
             }

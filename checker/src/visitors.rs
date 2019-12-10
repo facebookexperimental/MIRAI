@@ -27,7 +27,10 @@ use rpds::HashTrieMap;
 use rustc::mir::interpret::{ConstValue, Scalar};
 use rustc::session::Session;
 use rustc::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
-use rustc::ty::{AdtDef, Const, GenericParamDef, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
+use rustc::ty::{
+    AdtDef, Const, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig,
+    GenericParamDef, ParamTy, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex,
+};
 use rustc::{hir, mir};
 use rustc_data_structures::graph::dominators::Dominators;
 use std::borrow::Borrow;
@@ -1431,7 +1434,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .collect();
         let actual_argument_types: Vec<Ty<'tcx>> = args
             .iter()
-            .map(|arg| self.get_operand_rustc_type(arg))
+            .enumerate()
+            .map(|(i, arg)| {
+                let arg_ty = self.get_operand_rustc_type(arg);
+                self.specialize_generic_argument_type(arg_ty, &self.generic_argument_map, i)
+            })
             .collect();
         let (callee_generic_arguments, callee_generic_argument_map) =
             self.get_generic_arguments(func, &actual_argument_types);
@@ -3551,6 +3558,183 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
         debug!("retaining param_def {:?}", param_def);
         generic_args[param_def.index as usize]
+    }
+
+    fn specialize_generic_argument(
+        &self,
+        gen_arg: GenericArg<'tcx>,
+        map: &Option<HashMap<syntax_pos::Symbol, Ty<'tcx>>>,
+        index: usize,
+    ) -> GenericArg<'tcx> {
+        match gen_arg.unpack() {
+            GenericArgKind::Type(ty) => {
+                self.specialize_generic_argument_type(ty, map, index).into()
+            }
+            _ => gen_arg,
+        }
+    }
+
+    fn specialize_substs(
+        &self,
+        substs: SubstsRef<'tcx>,
+        map: &Option<HashMap<syntax_pos::Symbol, Ty<'tcx>>>,
+    ) -> SubstsRef<'tcx> {
+        debug!("substs {:?}", substs);
+        let specialized_generic_args: Vec<GenericArg<'_>> = substs
+            .iter()
+            .enumerate()
+            .map(|(i, gen_arg)| self.specialize_generic_argument(*gen_arg, &map, i))
+            .collect();
+        debug!("specialized_generic_args {:?}", specialized_generic_args);
+        let specialized_substs = self.tcx.intern_substs(&specialized_generic_args);
+        debug!("specialized substs {:?}", specialized_substs);
+        specialized_substs
+    }
+
+    fn specialize_generic_argument_type(
+        &self,
+        gen_arg_type: Ty<'tcx>,
+        map: &Option<HashMap<syntax_pos::Symbol, Ty<'tcx>>>,
+        index: usize,
+    ) -> Ty<'tcx> {
+        if map.is_none() {
+            return gen_arg_type;
+        }
+        match gen_arg_type.kind {
+            TyKind::Adt(def, substs) => self.tcx.mk_adt(def, self.specialize_substs(substs, map)),
+            TyKind::Array(elem_ty, _) => {
+                let specialized_elem_ty =
+                    self.specialize_generic_argument_type(elem_ty, map, index);
+                self.tcx.mk_array(specialized_elem_ty, 1) //todo: use the actual value
+            }
+            TyKind::Slice(elem_ty) => {
+                let specialized_elem_ty =
+                    self.specialize_generic_argument_type(elem_ty, map, index);
+                self.tcx.mk_slice(specialized_elem_ty)
+            }
+            TyKind::RawPtr(rustc::ty::TypeAndMut { ty, mutbl }) => {
+                let specialized_ty = self.specialize_generic_argument_type(ty, map, index);
+                self.tcx.mk_ptr(rustc::ty::TypeAndMut {
+                    ty: specialized_ty,
+                    mutbl,
+                })
+            }
+            TyKind::Ref(region, ty, mutbl) => {
+                let specialized_ty = self.specialize_generic_argument_type(ty, map, index);
+                self.tcx.mk_ref(
+                    region,
+                    rustc::ty::TypeAndMut {
+                        ty: specialized_ty,
+                        mutbl,
+                    },
+                )
+            }
+            TyKind::FnDef(def_id, substs) => self
+                .tcx
+                .mk_fn_def(def_id, self.specialize_substs(substs, map)),
+            TyKind::FnPtr(fn_sig) => {
+                let map_fn_sig = |fn_sig: FnSig<'tcx>| {
+                    let specialized_inputs_and_output = self.tcx.mk_type_list(
+                        fn_sig
+                            .inputs_and_output
+                            .iter()
+                            .map(|ty| self.specialize_generic_argument_type(ty, map, index)),
+                    );
+                    FnSig {
+                        inputs_and_output: specialized_inputs_and_output,
+                        c_variadic: fn_sig.c_variadic,
+                        unsafety: fn_sig.unsafety,
+                        abi: fn_sig.abi,
+                    }
+                };
+                let specialized_fn_sig = fn_sig.map_bound(map_fn_sig);
+                self.tcx.mk_fn_ptr(specialized_fn_sig)
+            }
+            TyKind::Dynamic(predicates, region) => {
+                let map_predicates = |predicates: &rustc::ty::List<ExistentialPredicate<'tcx>>| {
+                    self.tcx.mk_existential_predicates(predicates.iter().map(
+                        |pred: &ExistentialPredicate<'tcx>| match pred {
+                            ExistentialPredicate::Trait(ExistentialTraitRef { def_id, substs }) => {
+                                ExistentialPredicate::Trait(ExistentialTraitRef {
+                                    def_id: *def_id,
+                                    substs: self.specialize_substs(substs, map),
+                                })
+                            }
+                            ExistentialPredicate::Projection(ExistentialProjection {
+                                item_def_id,
+                                substs,
+                                ty,
+                            }) => ExistentialPredicate::Projection(ExistentialProjection {
+                                item_def_id: *item_def_id,
+                                substs: self.specialize_substs(substs, map),
+                                ty: self.specialize_generic_argument_type(ty, map, index),
+                            }),
+                            ExistentialPredicate::AutoTrait(_) => *pred,
+                        },
+                    ))
+                };
+                let specialized_predicates = predicates.map_bound(map_predicates);
+                self.tcx.mk_dynamic(specialized_predicates, region)
+            }
+            TyKind::Closure(def_id, substs) => {
+                debug!("specializing closure {:?}", def_id);
+                debug!("closure generics {:?}", self.tcx.generics_of(def_id));
+                debug!("substs {:?}", substs);
+                debug!("map {:?}", map);
+                debug!(
+                    "specialized closure substs {:?}",
+                    self.specialize_substs(substs, map)
+                );
+                self.tcx
+                    .mk_closure(def_id, self.specialize_substs(substs, map))
+            }
+            TyKind::Generator(def_id, substs, movability) => {
+                self.tcx
+                    .mk_generator(def_id, self.specialize_substs(substs, map), movability)
+            }
+            TyKind::GeneratorWitness(bound_types) => {
+                let map_types = |types: &rustc::ty::List<Ty<'tcx>>| {
+                    self.tcx.mk_type_list(
+                        types
+                            .iter()
+                            .map(|ty| self.specialize_generic_argument_type(ty, map, index)),
+                    )
+                };
+                let specialized_types = bound_types.map_bound(map_types);
+                self.tcx.mk_generator_witness(specialized_types)
+            }
+            TyKind::Tuple(substs) => self.tcx.mk_tup(
+                self.specialize_substs(substs, map)
+                    .iter()
+                    .map(|gen_arg| gen_arg.expect_ty()),
+            ),
+            TyKind::Projection(projection) => {
+                let specialized_substs = self.specialize_substs(projection.substs, map);
+                self.tcx
+                    .mk_projection(projection.item_def_id, specialized_substs)
+            }
+            TyKind::Opaque(def_id, substs) => self
+                .tcx
+                .mk_opaque(def_id, self.specialize_substs(substs, map)),
+            TyKind::Param(ParamTy { name, .. }) => {
+                if let Some(ty) = map.as_ref().unwrap().get(&name) {
+                    debug!("substituting {:?} with {:?}", name, ty);
+                    return *ty;
+                } else if index == 0 {
+                    if let Some(ty) = map
+                        .as_ref()
+                        .unwrap()
+                        .get(&syntax_pos::Symbol::intern("Self"))
+                    {
+                        debug!("substituting {:?} as Self with {:?}", name, ty);
+                        return *ty;
+                    }
+                }
+                debug!("no map entry for {:?}", name);
+                gen_arg_type
+            }
+            _ => gen_arg_type,
+        }
     }
 
     /// Copy: The value must be available for use afterwards.
