@@ -93,6 +93,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     exit_environment: Environment,
     function_name: Rc<String>,
     generic_arguments: Option<SubstsRef<'tcx>>,
+    generic_argument_map: Option<HashMap<syntax_pos::Symbol, Ty<'tcx>>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     post_condition: Option<Rc<AbstractValue>>,
     post_condition_block: Option<mir::BasicBlock>,
@@ -120,6 +121,7 @@ struct SavedVisitorState<'analysis, 'tcx> {
     function_name: Rc<String>,
     fresh_variable_offset: usize,
     generic_arguments: Option<SubstsRef<'tcx>>,
+    generic_argument_map: Option<HashMap<syntax_pos::Symbol, Ty<'tcx>>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     post_condition: Option<Rc<AbstractValue>>,
     post_condition_block: Option<mir::BasicBlock>,
@@ -135,6 +137,7 @@ struct CallInfo<'callinfo, 'tcx> {
     callee_fun_val: Rc<AbstractValue>,
     callee_generic_arguments: Option<SubstsRef<'tcx>>,
     callee_known_name: KnownNames,
+    callee_generic_argument_map: Option<HashMap<syntax_pos::Symbol, Ty<'tcx>>>,
     actual_args: &'callinfo [(Rc<Path>, Rc<AbstractValue>)],
     actual_argument_types: &'callinfo [Ty<'tcx>],
     cleanup: Option<mir::BasicBlock>,
@@ -149,6 +152,7 @@ impl<'callinfo, 'tcx> From<&hir::def_id::DefId> for CallInfo<'callinfo, 'tcx> {
             callee_fun_val: abstract_value::BOTTOM.into(),
             callee_generic_arguments: None,
             callee_known_name: KnownNames::None,
+            callee_generic_argument_map: None,
             actual_args: &[],
             actual_argument_types: &[],
             cleanup: None,
@@ -178,6 +182,7 @@ impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
             function_name: Rc::new("".into()),
             fresh_variable_offset: 0,
             generic_arguments: None,
+            generic_argument_map: None,
             heap_addresses: HashMap::default(),
             post_condition: None,
             post_condition_block: None,
@@ -266,6 +271,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             exit_environment: Environment::default(),
             function_name,
             generic_arguments: None,
+            generic_argument_map: None,
             heap_addresses: HashMap::default(),
             post_condition: None,
             post_condition_block: None,
@@ -290,6 +296,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.start_instant = Instant::now();
         self.exit_environment = Environment::default();
         self.generic_arguments = None;
+        self.generic_argument_map = None;
         self.heap_addresses = HashMap::default();
         self.post_condition = None;
         self.post_condition_block = None;
@@ -343,6 +350,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         std::mem::swap(
             &mut self.generic_arguments,
             &mut saved_state.generic_arguments,
+        );
+        std::mem::swap(
+            &mut self.generic_argument_map,
+            &mut saved_state.generic_argument_map,
         );
         std::mem::swap(&mut self.heap_addresses, &mut saved_state.heap_addresses);
         std::mem::swap(&mut self.post_condition, &mut saved_state.post_condition);
@@ -462,6 +473,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .unwrap_read_only();
             self.actual_argument_types = call_info.actual_argument_types.into();
             self.generic_arguments = call_info.callee_generic_arguments;
+            self.generic_argument_map = call_info.callee_generic_argument_map.clone();
             self.start_instant = Instant::now();
             self.function_name = self
                 .summary_cache
@@ -1421,13 +1433,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .map(|arg| self.get_operand_rustc_type(arg))
             .collect();
-        let generic_args = self.get_generic_arguments(func, &actual_argument_types);
+        let (callee_generic_arguments, callee_generic_argument_map) =
+            self.get_generic_arguments(func, &actual_argument_types);
         let call_info = CallInfo {
             callee_def_id: callee_def_id.expect("callee obtained via operand should have def id"),
             callee_func_ref: callee_func_ref.cloned(),
             callee_fun_val: func_to_call,
             callee_known_name,
-            callee_generic_arguments: generic_args,
+            callee_generic_arguments,
+            callee_generic_argument_map,
             actual_args: &actual_args,
             actual_argument_types: &actual_argument_types,
             cleanup,
@@ -3457,7 +3471,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &self,
         operand: &mir::Operand<'tcx>,
         actual_argument_types: &[Ty<'tcx>],
-    ) -> Option<SubstsRef<'tcx>> {
+    ) -> (
+        Option<SubstsRef<'tcx>>,
+        Option<HashMap<syntax_pos::Symbol, Ty<'tcx>>>,
+    ) {
         if let mir::Operand::Constant(constant) = operand {
             let mir::Constant { literal, .. } = constant.borrow();
             match literal.ty.kind {
@@ -3491,7 +3508,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 }
                             });
                         debug!("using specialized substs {:?}", specialized_substs);
-                        Some(specialized_substs)
+                        (Some(specialized_substs), Some(substitutions))
                     } else {
                         let specialized_substs =
                             InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
@@ -3502,13 +3519,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 )
                             });
                         debug!("using specialized substs {:?}", specialized_substs);
-                        Some(specialized_substs)
+                        (Some(specialized_substs), None)
                     }
                 }
-                _ => None,
+                _ => (None, None),
             }
         } else {
-            None
+            (None, None)
         }
     }
 
