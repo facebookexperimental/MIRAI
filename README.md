@@ -35,7 +35,29 @@ At this stage your code will be better documented and more readable. Perhaps you
 Set the verbosity level of output from MIRAI by setting the environment variable `MIRAI_LOG` to one of
 `info`, `warn`, `debug`, or `trace`.
 
-To go beyond this, super lint + better documentation phase, you'll need to be aware of a lot more things.
+You can also use the environment variable `MIRAI_FLAGS` to provide options to MIRAI. The value is a string which
+can contain any of the following flags:
+
+- `--test_only`: instructs MIRAI to analyze only test methods in your crate. You must also provide the `--tests`
+  option to the `cargo build` command to include those tests actually into your build.
+- `--diag=relaxed|strict`: configures level of diagnostics. With `relaxed` (the default) MIRAI
+   will not report errors which are potential 'false positives'. With `strict` it will
+   report such errors. 
+- `--single_func <name>`: the name of a specific function you want to analyze. 
+- `--`: any arguments after this marker are passed on to rustc.
+
+A more comprehensive command line interface for MIRAI is planned, but currently not implemented.
+
+## Using MIRAI together with the contracts crate
+
+Preliminary support for MIRAI is available in the [contracts crate](https://gitlab.com/karroffel/contracts). There
+is currently no official release containing this support on crates.io, so you must directly refer to the gitlab
+repo using a dependency like below in your Cargo.toml:
+```toml
+contracts = { git = "https://gitlab.com/karroffel/contracts.git", branch = "master", features = [ "mirai_assertions" ]}
+```
+
+See the shopping cart example for usage.
 
 ## Developing MIRAI
 See the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation//DeveloperGuide.md)

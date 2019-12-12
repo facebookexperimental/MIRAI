@@ -22,22 +22,26 @@ doctest = false # and no doc tests
 
 [dependencies]
 bincode = { version = "*", features = ["i128"] }
+clap = "*"
 env_logger = "*"
 fs2 = "*"
 lazy_static = "*"
 log = "*"
 log-derive = "*"
 mirai-annotations = { path = "../annotations" }
+itertools = "*"
 rand = "*"
 rpds = { version = "*", features = ["serde"] }
 serde = {version = "*", features = ["derive", "alloc", "rc"] }
 tar = "*"
 sled = "*"
+shellwords = "*"
 tempdir = "*"
 z3-sys = "*"
+regex = "*"
 
 [dev-dependencies]
-walkdir = "2"
+walkdir = "*"
 
 # Dependencies for tests which aren't already included by the checker.
 # Note if you add one here it also needs to be added to the command line
@@ -46,4 +50,4 @@ walkdir = "2"
 # or similar, and to integration_tests.rs (search for extern_deps there).
 # We set the dep to a specific revision so we don't get paths as above not longer working after update of the repo
 # and the Cargo.lock.
-contracts = { git = "https://gitlab.com/wrwg/contracts.git", branch = "mirai", features = [ "mirai_assertions" ]}
+contracts = { git = "https://gitlab.com/karroffel/contracts.git", branch = "master", features = [ "mirai_assertions" ]}

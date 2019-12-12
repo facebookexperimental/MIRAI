@@ -11,6 +11,7 @@ use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::k_limits;
 use crate::known_names::{KnownNames, KnownNamesCache};
+use crate::options::{DiagLevel, Options};
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
 use crate::smt_solver::{SmtResult, SmtSolver};
@@ -42,6 +43,7 @@ use syntax_pos;
 // 'tcx is the lifetime of the type context created during the lifetime of the after_analysis call back.
 // 'analysis is the life time of the analyze_with_mirai call back that is invoked with the type context.
 pub struct MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E> {
+    pub options: &'compilation Options,
     pub session: &'compilation Session,
     pub tcx: TyCtxt<'tcx>,
     pub def_id: hir::def_id::DefId,
@@ -63,6 +65,7 @@ impl<'analysis, 'compilation, 'tcx, E> Debug
 
 /// Holds the state for the MIR test visitor.
 pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
+    options: &'compilation Options,
     session: &'compilation Session,
     tcx: TyCtxt<'tcx>,
     def_id: hir::def_id::DefId,
@@ -200,6 +203,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         crate_context: MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E>,
     ) -> MirVisitor<'analysis, 'compilation, 'tcx, E> {
         MirVisitor {
+            options: crate_context.options,
             session: crate_context.session,
             tcx: crate_context.tcx,
             def_id: crate_context.def_id,
@@ -465,18 +469,25 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             {
                 return devirtualized_summary;
             }
-            self.assume_function_is_angelic = true;
+            // Assume the function as angelic unless we have set the flaky option.
+            self.assume_function_is_angelic = self.options.diag_level == DiagLevel::RELAXED;
             let argument_type_hint = if let Some(func) = func_ref {
                 format!(" (foreign fn argument key: {})", func.argument_type_key)
             } else {
                 "".to_string()
             };
+            let treatment_hint = if self.assume_function_is_angelic {
+                "Excluding this function and its transitive callers from analysis."
+            } else {
+                "Continuing analysis anyway."
+            };
             info!(
-                "function {} can't be analyzed because it calls function {} which has no body and no summary{}",
-                utils::def_id_display_name(self.tcx, self.def_id),
-                utils::summary_key_str(self.tcx, def_id),
-                argument_type_hint,
-            );
+                    "function {} can't be reliably analyzed because it calls function {} which has no body and no summary{}. {}",
+                    utils::def_id_display_name(self.tcx, self.def_id),
+                    utils::summary_key_str(self.tcx, def_id),
+                    argument_type_hint,
+                    treatment_hint,
+                );
         }
         self.summary_cache
             .get_summary_for(def_id, Some(self.def_id))
