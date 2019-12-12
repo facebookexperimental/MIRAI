@@ -21,7 +21,7 @@ use rustc::session::config::ErrorOutputType;
 use rustc::session::early_error;
 use rustc::ty::TyCtxt;
 use rustc_driver::Compilation;
-use rustc_interface::interface;
+use rustc_interface::{interface, Queries};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
@@ -97,7 +97,11 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     /// interpretation of all of the functions that will end up in the compiler output.
     /// If this method returns false, the compilation will stop.
     #[logfn(TRACE)]
-    fn after_analysis(&mut self, compiler: &interface::Compiler) -> Compilation {
+    fn after_analysis<'tcx>(
+        &mut self,
+        compiler: &interface::Compiler,
+        queries: &'tcx Queries<'tcx>,
+    ) -> Compilation {
         compiler.session().abort_if_errors();
         if self
             .output_directory
@@ -108,7 +112,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
             // No need to analyze a build script, but do generate code.
             return Compilation::Continue;
         }
-        compiler
+        queries
             .global_ctxt()
             .unwrap()
             .peek_mut()
@@ -136,7 +140,7 @@ struct AnalysisInfo<'compilation, 'tcx> {
 impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
-    fn analyze_with_mirai(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'_>) {
+    fn analyze_with_mirai<'tcx>(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
         if self.file_name.contains("/bounded-executor")
             || self.file_name.contains("threshold_crypto")
             || self.file_name.contains("/libra-types")
@@ -378,7 +382,7 @@ impl MiraiCallbacks {
         analysis_info: &'analysis mut AnalysisInfo<'compilation, 'tcx>,
         mut buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
     ) {
-        let mir = tcx.optimized_mir(def_id);
+        let mir = tcx.optimized_mir(def_id).unwrap_read_only();
         let mut smt_solver = Z3Solver::default();
         analysis_info.constant_value_cache.reset_heap_counter();
         let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
