@@ -194,18 +194,11 @@ impl Path {
         Rc::new(PathEnum::LocalVariable { ordinal }.into())
     }
 
-    /// Creates a path the selects the length of the array at the given path.
+    /// Creates a path the selects the length of the array/slice/string at the given path.
     #[logfn_inputs(TRACE)]
     pub fn new_length(array_path: Rc<Path>, environment: &Environment) -> Rc<Path> {
-        let selector = Rc::new(PathSelector::ArrayLength);
+        let selector = Rc::new(PathSelector::Length);
         Self::new_qualified(array_path, selector).refine_paths(environment)
-    }
-
-    /// Creates a path the selects the length of the string at the given path.
-    #[logfn_inputs(TRACE)]
-    pub fn new_string_length(string_path: Rc<Path>, environment: &Environment) -> Rc<Path> {
-        let selector = Rc::new(PathSelector::StringLength);
-        Self::new_qualified(string_path, selector).refine_paths(environment)
     }
 
     /// Creates a path the selects the given model field of the value at the given path.
@@ -432,11 +425,8 @@ impl PathRefinement for Rc<Path> {
 /// The selector denotes a de-referenced item, field, or element, or slice.
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PathSelector {
-    /// The length of an array.
-    ArrayLength,
-
-    /// The length of a string.
-    StringLength,
+    /// The length of an array/slice/string.
+    Length,
 
     /// Given a path that denotes a reference, select the thing the reference points to.
     Deref,
@@ -486,7 +476,7 @@ pub enum PathSelector {
 impl Debug for PathSelector {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            PathSelector::ArrayLength | PathSelector::StringLength => f.write_str("len()"),
+            PathSelector::Length => f.write_str("len()"),
             PathSelector::Deref => f.write_str("deref"),
             PathSelector::Discriminant => f.write_str("discr"),
             PathSelector::Field(index) => index.fmt(f),

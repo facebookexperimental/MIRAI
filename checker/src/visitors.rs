@@ -23,6 +23,7 @@ use log_derive::logfn_inputs;
 use mirai_annotations::{
     assume, assume_unreachable, checked_assume, checked_assume_eq, precondition, verify,
 };
+use rpds::HashTrieMap;
 use rustc::mir::interpret::{ConstValue, Scalar};
 use rustc::session::Session;
 use rustc::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
@@ -1152,6 +1153,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_assign(&mut self, place: &mir::Place<'tcx>, rvalue: &mir::Rvalue<'tcx>) {
         let path = self.visit_place(place);
+        debug!("target path {:?}", path);
         self.visit_rvalue(path, rvalue);
     }
 
@@ -1931,6 +1933,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 checked_assume!(args.len() == 1);
                 let slice_val = &args[0].1;
                 let qualifier = match &slice_val.expression {
+                    Expression::CompileTimeConstant(ConstantDomain::Str(s)) => {
+                        return Rc::new(ConstantDomain::U128(s.len() as u128).into());
+                    }
                     Expression::Reference(path) => Some(path.clone()),
                     Expression::Variable { path, .. } => Some(path.clone()),
                     Expression::AbstractHeapAddress(ordinal) => Some(Rc::new(
@@ -1948,10 +1953,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             KnownNames::StdStrLen => {
                 checked_assume!(args.len() == 1);
                 let str_val = &args[0].1;
-                let qualifier = match &str_val.expression {
+                let result = match &str_val.expression {
                     Expression::Reference(path) | Expression::Variable { path, .. } => {
-                        let len_path =
-                            Path::new_string_length(path.clone(), &self.current_environment);
+                        let len_path = Path::new_length(path.clone(), &self.current_environment);
                         let res =
                             self.lookup_path_and_refine_result(len_path, ExpressionType::U128);
                         Some(res)
@@ -1961,7 +1965,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                     _ => None,
                 };
-                qualifier.unwrap_or_else(|| abstract_value::BOTTOM.into())
+                result.unwrap_or_else(|| abstract_value::BOTTOM.into())
             }
             KnownNames::StdIntrinsicsTransmute => {
                 checked_assume!(args.len() == 1);
@@ -3075,8 +3079,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             no_children = false;
         }
         if rtype != ExpressionType::NonPrimitive || no_children {
+            let value = self.lookup_path_and_refine_result(rpath.clone(), rtype.clone());
+            value_map = self.expand_aliased_string_literals(&target_path, rtype, value_map, &value);
             // Just copy/move (rpath, value) itself.
-            let value = self.lookup_path_and_refine_result(rpath.clone(), rtype);
             if move_elements {
                 trace!("moving {:?} to {:?}", value, target_path);
                 value_map = value_map.remove(&rpath);
@@ -3088,6 +3093,40 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             return;
         }
         self.current_environment.value_map = value_map;
+    }
+
+    // Check for assignment of a string literal to a byte array reference
+    fn expand_aliased_string_literals(
+        &mut self,
+        target_path: &Rc<Path>,
+        rtype: ExpressionType,
+        mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>>,
+        value: &Rc<AbstractValue>,
+    ) -> HashTrieMap<Rc<Path>, Rc<AbstractValue>> {
+        if rtype == ExpressionType::Reference {
+            if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
+                if let PathEnum::LocalVariable { .. } = &target_path.value {
+                    let lh_type = self.get_path_rustc_type(&target_path);
+                    if let TyKind::Ref(_, ty, _) = lh_type.kind {
+                        if let TyKind::Slice(elem_ty) = ty.kind {
+                            if let TyKind::Uint(syntax::ast::UintTy::U8) = elem_ty.kind {
+                                for (i, ch) in s.as_bytes().iter().enumerate() {
+                                    let index = Rc::new((i as u128).into());
+                                    let ch_const = Rc::new((*ch as u128).into());
+                                    let path = Path::new_index(
+                                        target_path.clone(),
+                                        index,
+                                        &self.current_environment,
+                                    );
+                                    value_map = value_map.insert(path, ch_const);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        value_map
     }
 
     /// For each (path', value) pair in the environment where path' is rooted in place,
@@ -3192,7 +3231,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let place_ty = self.get_rustc_place_type(place);
         let len_value = if let TyKind::Array(_, len) = &place_ty.kind {
             // We only get here if "-Z mir-opt-level=0" was specified.
-            // todo: #52 Add a way to run an integration test with a non default compiler option.
+            // With more optimization the len instruction becomes a constant.
             self.visit_constant(None, &len)
         } else {
             let value_path = self.visit_place(place);
@@ -3681,7 +3720,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 }
                                 .into(),
                             );
-                            let len_path = Path::new_string_length(path, &self.current_environment);
+                            let len_path = Path::new_length(path, &self.current_environment);
                             self.current_environment.update_value_at(len_path, len_val);
 
                             res
@@ -3960,7 +3999,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         Rc::new(self.constant_value_cache.get_string_for(s).clone().into());
 
                     let path: Rc<Path> = Rc::new(PathEnum::Constant { value: res.clone() }.into());
-                    let len_path = Path::new_string_length(path, &self.current_environment);
+                    let len_path = Path::new_length(path, &self.current_environment);
                     self.current_environment.update_value_at(len_path, len_val);
                     res
                 }
@@ -4233,6 +4272,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// can be serialized and used as a cache key.
     #[logfn_inputs(TRACE)]
     fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
+        let mut is_union = false;
         let base_path = match &place.base {
             mir::PlaceBase::Local(local) => {
                 let ordinal = local.as_usize();
@@ -4261,6 +4301,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         }
                         _ => (),
                     }
+                } else {
+                    let ty = self.mir.local_decls[*local].ty;
+                    is_union = Self::is_union(ty);
                 }
                 result
             }
@@ -4282,7 +4325,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
             },
         };
-        self.visit_projection(base_path, &place.projection)
+        self.visit_projection(base_path, is_union, &place.projection)
+    }
+
+    /// Returns true if the ty is a union.
+    fn is_union(ty: Ty<'_>) -> bool {
+        if let TyKind::Adt(def, ..) = ty.kind {
+            def.is_union()
+        } else {
+            false
+        }
     }
 
     /// Returns a path that is qualified by the selector corresponding to projection.elem.
@@ -4291,10 +4343,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_projection(
         &mut self,
         base_path: Rc<Path>,
+        mut base_is_union: bool,
         projection: &[mir::PlaceElem<'tcx>],
     ) -> Rc<Path> {
         projection.iter().fold(base_path, |base_path, elem| {
-            let selector = self.visit_projection_elem(&elem);
+            let selector = self.visit_projection_elem(&mut base_is_union, &elem);
             Path::new_qualified(base_path, Rc::new(selector))
                 .refine_paths(&self.current_environment)
         })
@@ -4305,11 +4358,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_projection_elem(
         &mut self,
+        base_is_union: &mut bool,
         projection_elem: &mir::ProjectionElem<mir::Local, &rustc::ty::TyS<'tcx>>,
     ) -> PathSelector {
         match projection_elem {
             mir::ProjectionElem::Deref => PathSelector::Deref,
-            mir::ProjectionElem::Field(field, _) => PathSelector::Field(field.index()),
+            mir::ProjectionElem::Field(field, field_ty) => {
+                let r = PathSelector::Field(if *base_is_union { 0 } else { field.index() });
+                *base_is_union = Self::is_union(*field_ty);
+                r
+            }
             mir::ProjectionElem::Index(local) => {
                 let local_path = Path::new_local(local.as_usize());
                 let index_value =
@@ -4398,7 +4456,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 ..
             } => {
                 let t = self.get_path_rustc_type(qualifier);
-                match **selector {
+                match &**selector {
                     PathSelector::Field(ordinal) => {
                         let bt = Self::get_dereferenced_type(t);
                         match &bt.kind {
@@ -4406,12 +4464,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 if let Some(variant_index) = variants.last() {
                                     assume!(variant_index.index() == 0);
                                     let variant = &variants[variant_index];
-                                    let field = &variant.fields[ordinal];
+                                    let field = &variant.fields[*ordinal];
                                     return field.ty(self.tcx, substs);
                                 }
                             }
                             TyKind::Closure(.., subs) => {
-                                return subs.as_ref()[ordinal + 4].expect_ty();
+                                return subs.as_ref()[*ordinal + 4].expect_ty();
+                            }
+                            TyKind::Tuple(types) => {
+                                if let Some(gen_arg) = types.get(*ordinal as usize) {
+                                    return gen_arg.expect_ty();
+                                }
                             }
                             _ => (),
                         }
@@ -4419,6 +4482,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     PathSelector::Deref => {
                         return Self::get_dereferenced_type(t);
                     }
+                    PathSelector::Index(_) => match &t.kind {
+                        TyKind::Array(elem_ty, _) | TyKind::Slice(elem_ty) => {
+                            return elem_ty;
+                        }
+                        _ => (),
+                    },
                     _ => {}
                 }
                 info!("t is {:?}", t);

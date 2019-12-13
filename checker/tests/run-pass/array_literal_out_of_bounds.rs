@@ -6,6 +6,8 @@
 
 // A test that calls visit_aggregate
 
+// MIRAI_FLAGS -- -Z mir-opt-level=0
+
 pub fn main() {
     let x = [1, 2];
     let _y = x[2]; //~ index out of bounds
