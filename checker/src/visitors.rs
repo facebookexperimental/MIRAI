@@ -48,7 +48,7 @@ pub struct MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E> {
     pub session: &'compilation Session,
     pub tcx: TyCtxt<'tcx>,
     pub def_id: hir::def_id::DefId,
-    pub mir: &'analysis mir::Body<'tcx>,
+    pub mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
     pub constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
     pub known_names_cache: &'analysis mut KnownNamesCache,
     pub summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
@@ -70,7 +70,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     session: &'compilation Session,
     tcx: TyCtxt<'tcx>,
     def_id: hir::def_id::DefId,
-    mir: &'analysis mir::Body<'tcx>,
+    mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
     constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
     known_names_cache: &'analysis mut KnownNamesCache,
     summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
@@ -104,7 +104,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
 
 struct SavedVisitorState<'analysis, 'tcx> {
     def_id: hir::def_id::DefId,
-    mir: &'analysis mir::Body<'tcx>,
+    mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
 
     actual_argument_types: Vec<Ty<'tcx>>,
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
@@ -129,7 +129,7 @@ struct SavedVisitorState<'analysis, 'tcx> {
 impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
     pub fn new(
         def_id: hir::def_id::DefId,
-        mir: &'analysis mir::Body<'tcx>,
+        mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
     ) -> SavedVisitorState<'analysis, 'tcx> {
         SavedVisitorState {
             def_id,
@@ -454,7 +454,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let mut saved_state = SavedVisitorState::new(self.def_id, self.mir);
             self.swap_visitor_state(&mut saved_state);
             self.def_id = def_id;
-            self.mir = self.tcx.optimized_mir(def_id);
+            self.mir = self.tcx.optimized_mir(def_id).unwrap_read_only();
             self.actual_argument_types = actual_argument_types.into();
             self.generic_arguments = generic_args;
             self.start_instant = Instant::now();
@@ -470,7 +470,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             {
                 return devirtualized_summary;
             }
-            // Assume the function as angelic unless we have set the flaky option.
             self.assume_function_is_angelic = self.options.diag_level == DiagLevel::RELAXED;
             let argument_type_hint = if let Some(func) = func_ref {
                 format!(" (foreign fn argument key: {})", func.argument_type_key)
@@ -1036,7 +1035,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let saved_mir = self.mir;
         let result_root: Rc<Path> = Path::new_local(0);
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
-            self.mir = constant_mir;
+            self.mir = constant_mir.unwrap_read_only();
             let result_type = self.get_type_for_local(0);
             self.visit_promoted_constants_block(function_name);
 
@@ -2980,79 +2979,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     self.copy_or_move_elements(target_path, index_path, rtype, move_elements);
                     return;
                 }
-                PathSelector::Subslice { from, to } => {
-                    //slice[from:-to] in Python terms.
-                    let len = {
-                        let len_value = self.get_len(qualifier.clone());
-                        if let AbstractValue {
-                            expression: Expression::CompileTimeConstant(ConstantDomain::U128(len)),
-                            ..
-                        } = len_value.as_ref()
-                        {
-                            u32::try_from(*len).unwrap() - to
-                        } else {
-                            debug!(
-                                "PathSelector::Subslice implies the length of the value is known"
-                            );
-                            assume_unreachable!();
-                        }
-                    };
-                    let slice_value = self.get_new_heap_address();
-                    let abstract_heap_address =
-                        if let Expression::AbstractHeapAddress(ordinal) = &slice_value.expression {
-                            *ordinal
-                        } else {
-                            assume_unreachable!()
-                        };
-                    self.current_environment
-                        .update_value_at(target_path.clone(), slice_value);
-                    let slice_path = Rc::new(
-                        PathEnum::AbstractHeapAddress {
-                            ordinal: abstract_heap_address,
-                        }
-                        .into(),
+                PathSelector::Subslice { from, to, from_end } => {
+                    self.copy_or_move_subslice(
+                        target_path,
+                        rtype,
+                        move_elements,
+                        qualifier,
+                        from,
+                        to,
+                        from_end,
                     );
-                    let slice_len_path = Path::new_length(slice_path, &self.current_environment);
-                    let len_const = self
-                        .constant_value_cache
-                        .get_u128_for(u128::from(len - from))
-                        .clone();
-                    self.current_environment
-                        .update_value_at(slice_len_path, Rc::new(len_const.into()));
-                    for i in from..len {
-                        let index_val = Rc::new(
-                            self.constant_value_cache
-                                .get_u128_for(u128::from(i))
-                                .clone()
-                                .into(),
-                        );
-                        let index_path = Path::new_index(
-                            qualifier.clone(),
-                            index_val,
-                            &self.current_environment,
-                        );
-                        let target_index_val = Rc::new(
-                            self.constant_value_cache
-                                .get_u128_for(u128::try_from(i - from).unwrap())
-                                .clone()
-                                .into(),
-                        );
-                        let indexed_target = Path::new_index(
-                            target_path.clone(),
-                            target_index_val,
-                            &self.current_environment,
-                        );
-                        self.copy_or_move_elements(
-                            indexed_target,
-                            index_path,
-                            rtype.clone(),
-                            move_elements,
-                        );
-                        if self.assume_function_is_angelic {
-                            break;
-                        }
-                        check_for_early_return!(self);
-                    }
                     return;
                 }
                 _ => (),
@@ -3093,6 +3029,87 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             return;
         }
         self.current_environment.value_map = value_map;
+    }
+
+    //from_end slice[from:-to] in Python terms.
+    //otherwise slice[from:to]
+    #[logfn_inputs(TRACE)]
+    #[allow(clippy::too_many_arguments)]
+    fn copy_or_move_subslice(
+        &mut self,
+        target_path: Rc<Path>,
+        rtype: ExpressionType,
+        move_elements: bool,
+        qualifier: &Rc<Path>,
+        from: u32,
+        to: u32,
+        from_end: bool,
+    ) {
+        let to = {
+            if from_end {
+                let len_value = self.get_len(qualifier.clone());
+                if let AbstractValue {
+                    expression: Expression::CompileTimeConstant(ConstantDomain::U128(len)),
+                    ..
+                } = len_value.as_ref()
+                {
+                    u32::try_from(*len).unwrap() - to
+                } else {
+                    debug!("PathSelector::Subslice implies the length of the value is known");
+                    assume_unreachable!();
+                }
+            } else {
+                to
+            }
+        };
+        let slice_value = self.get_new_heap_address();
+        let abstract_heap_address =
+            if let Expression::AbstractHeapAddress(ordinal) = &slice_value.expression {
+                *ordinal
+            } else {
+                assume_unreachable!()
+            };
+        self.current_environment
+            .update_value_at(target_path.clone(), slice_value);
+        let slice_path = Rc::new(
+            PathEnum::AbstractHeapAddress {
+                ordinal: abstract_heap_address,
+            }
+            .into(),
+        );
+        let slice_len_path = Path::new_length(slice_path, &self.current_environment);
+        let len_const = self
+            .constant_value_cache
+            .get_u128_for(u128::from(to - from))
+            .clone();
+        self.current_environment
+            .update_value_at(slice_len_path, Rc::new(len_const.into()));
+        for i in from..to {
+            let index_val = Rc::new(
+                self.constant_value_cache
+                    .get_u128_for(u128::from(i))
+                    .clone()
+                    .into(),
+            );
+            let index_path =
+                Path::new_index(qualifier.clone(), index_val, &self.current_environment);
+            let target_index_val = Rc::new(
+                self.constant_value_cache
+                    .get_u128_for(u128::try_from(i - from).unwrap())
+                    .clone()
+                    .into(),
+            );
+            let indexed_target = Path::new_index(
+                target_path.clone(),
+                target_index_val,
+                &self.current_environment,
+            );
+            self.copy_or_move_elements(indexed_target, index_path, rtype.clone(), move_elements);
+            if self.assume_function_is_angelic {
+                break;
+            }
+            check_for_early_return!(self);
+        }
     }
 
     // Check for assignment of a string literal to a byte array reference
@@ -4383,9 +4400,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 min_length: *min_length,
                 from_end: *from_end,
             },
-            mir::ProjectionElem::Subslice { from, to } => PathSelector::Subslice {
+            mir::ProjectionElem::Subslice { from, to, from_end } => PathSelector::Subslice {
                 from: *from,
                 to: *to,
+                from_end: *from_end,
             },
             mir::ProjectionElem::Downcast(name, index) => {
                 use std::ops::Deref;
