@@ -128,6 +128,17 @@ impl From<ConstantDomain> for AbstractValue {
     }
 }
 
+impl From<u128> for AbstractValue {
+    #[logfn_inputs(TRACE)]
+    fn from(cv: u128) -> AbstractValue {
+        AbstractValue {
+            expression: Expression::CompileTimeConstant(ConstantDomain::U128(cv)),
+            expression_size: 1,
+            interval: RefCell::new(None),
+        }
+    }
+}
+
 impl AbstractValue {
     /// Creates an abstract value from a binary expression and keeps track of the size.
     #[logfn_inputs(TRACE)]

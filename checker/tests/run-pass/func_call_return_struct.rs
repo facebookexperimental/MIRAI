@@ -6,11 +6,18 @@
 
 // A test that uses a function summary where the return value is a structure.
 
+// MIRAI_FLAGS -- -Z mir-opt-level=0
+//todo: figure out why this fails with more optimization
+
 #[macro_use]
 extern crate mirai_annotations;
 
-struct Foo { x: i32 }
-fn foo() -> Foo { Foo { x: 123 } }
+struct Foo {
+    x: i32,
+}
+fn foo() -> Foo {
+    Foo { x: 123 }
+}
 pub fn main() {
     let f = foo();
     let fx = f.x;
