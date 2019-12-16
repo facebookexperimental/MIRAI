@@ -29,7 +29,7 @@ use rustc::session::Session;
 use rustc::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc::ty::{
     AdtDef, Const, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig,
-    GenericParamDef, ParamTy, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex,
+    ParamTy, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex,
 };
 use rustc::{hir, mir};
 use rustc_data_structures::graph::dominators::Dominators;
@@ -513,7 +513,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             };
             info!(
                     "function {} can't be reliably analyzed because it calls function {} which has no body and no summary{}. {}",
-                    utils::def_id_display_name(self.tcx, self.def_id),
+                    utils::summary_key_str(self.tcx, self.def_id),
                     utils::summary_key_str(self.tcx, call_info.callee_def_id),
                     argument_type_hint,
                     treatment_hint,
@@ -531,35 +531,34 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn try_to_devirtualize(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Option<Summary> {
         if !call_info.actual_args.is_empty() && !self.tcx.is_closure(self.def_id) {
             if let Some(gen_args) = call_info.callee_generic_arguments {
-                // Sadly Instance::resolve panics if the arguments are not to its liking and
-                // there is no obvious way to make sure the arguments are to its liking.
-                // It seems, however, that concrete arguments are more likely than not to be OK.
-                if utils::are_concrete(&gen_args) {
-                    // Of course, likely is not surety and it seems that resolve panics when asked
-                    // to resolve to an instance that has not been loaded into the compiler's cache,
-                    // which sometimes happen for generic functions that are not concretely
-                    // instantiated by the crate under analysis.
-                    // For now, the only way past this is to provide built-in summaries for any
-                    // function that causes resolve to fail.
-
-                    // The environment of the caller provides a resolution context for the callee.
-                    debug!("devirt gen_args {:?}", gen_args);
-                    let param_env = self.tcx.param_env(self.def_id);
-                    debug!("devirt param_env {:?}", param_env);
-                    if let Some(instance) = rustc::ty::Instance::resolve(
-                        self.tcx,
-                        param_env,
-                        call_info.callee_def_id,
-                        gen_args,
-                    ) {
-                        let resolved_def_id = instance.def.def_id();
-                        if self.tcx.is_mir_available(resolved_def_id) {
-                            let mut devirtualized_call_info = call_info.clone();
-                            devirtualized_call_info.callee_def_id = resolved_def_id;
-                            return Some(
-                                self.create_and_cache_function_summary(&devirtualized_call_info),
-                            );
-                        }
+                // The environment of the caller provides a resolution context for the callee.
+                debug!("devirt gen_args {:?}", gen_args);
+                let param_env = self.tcx.param_env(self.def_id);
+                debug!("devirt param_env {:?}", param_env);
+                if let Some(instance) = rustc::ty::Instance::resolve(
+                    self.tcx,
+                    param_env,
+                    call_info.callee_def_id,
+                    gen_args,
+                ) {
+                    let resolved_def_id = instance.def.def_id();
+                    let result = self
+                        .summary_cache
+                        .get_summary_for(resolved_def_id, Some(self.def_id))
+                        .clone();
+                    if result.is_not_default {
+                        return Some(result);
+                    }
+                    if !self.active_calls.contains(&resolved_def_id)
+                        && self.tcx.is_mir_available(resolved_def_id)
+                    {
+                        let mut devirtualized_call_info = call_info.clone();
+                        devirtualized_call_info.callee_def_id = resolved_def_id;
+                        return Some(
+                            self.create_and_cache_function_summary(&devirtualized_call_info),
+                        );
+                    } else {
+                        return Some(result);
                     }
                 }
             }
@@ -3486,78 +3485,68 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let mir::Constant { literal, .. } = constant.borrow();
             match literal.ty.kind {
                 TyKind::FnDef(def_id, generic_args) => {
-                    if let Some(caller_generics) = self.generic_arguments {
-                        // If the calling function is generic, use it's generic arguments to
-                        // specialize the generic arguments of the called function.
-                        // (This really ought to be the responsibility of tcx.get_optimized_mir...)
-                        let caller_generics = caller_generics.as_ref();
-                        let mut substitutions: HashMap<syntax_pos::Symbol, Ty<'_>> = HashMap::new();
-                        InternalSubsts::for_item(self.tcx, self.def_id, |param_def, _| {
-                            if let Some(gen_arg) = caller_generics.get(param_def.index as usize) {
-                                if let GenericArgKind::Type(ty) = gen_arg.unpack() {
-                                    substitutions.insert(param_def.name, ty);
-                                }
-                            }
-                            self.tcx.mk_param_from_def(param_def) // not used
-                        });
-                        let specialized_substs =
-                            InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
-                                if let Some(ty) = substitutions.get(&param_def.name) {
-                                    debug!("substituting param_def {:?}", param_def);
-                                    debug!("new type {:?}", ty);
-                                    (*ty).into()
-                                } else {
-                                    Self::specialize_self(
-                                        &actual_argument_types,
-                                        &generic_args,
-                                        param_def,
-                                    )
-                                }
-                            });
-                        debug!("using specialized substs {:?}", specialized_substs);
-                        (Some(specialized_substs), Some(substitutions))
-                    } else {
-                        let specialized_substs =
-                            InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
-                                Self::specialize_self(
-                                    &actual_argument_types,
-                                    &generic_args,
-                                    param_def,
-                                )
-                            });
-                        debug!("using specialized substs {:?}", specialized_substs);
-                        (Some(specialized_substs), None)
+                    let mut gen_id = def_id;
+                    loop {
+                        let generics = self.tcx.generics_of(gen_id);
+                        debug!("generics for {:?}: {:?}", gen_id, generics);
+                        if let Some(parent_id) = generics.parent {
+                            gen_id = parent_id;
+                        } else {
+                            break;
+                        }
                     }
+                    if generic_args.is_empty() {
+                        return (None, None);
+                    }
+                    debug!("self.generic_argument_map {:?}", self.generic_argument_map);
+                    let mut map: HashMap<syntax_pos::Symbol, Ty<'tcx>> = HashMap::new();
+
+                    // This iterates over the callee's generic parameter definitions.
+                    // If the parent of the callee is generic, those definitions are iterated
+                    // as well. This applies recursively. Note that a child cannot mask the
+                    // generic parameters of its parent with one of its own, so each parameter
+                    // definition in this iteration will have a unique name.
+                    InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
+                        debug!("param_def {:?}", param_def);
+                        debug!("param_def name {:?}", param_def.name);
+                        if let Some(gen_arg) = generic_args.get(param_def.index as usize) {
+                            debug!("gen_arg {:?}", gen_arg);
+                            if let GenericArgKind::Type(ty) = gen_arg.unpack() {
+                                map.insert(
+                                    param_def.name,
+                                    self.specialize_generic_argument_type(
+                                        ty,
+                                        &self.generic_argument_map,
+                                        param_def.index as usize,
+                                    ),
+                                );
+                            }
+                        } else {
+                            debug!("unmapped generic param def");
+                        }
+                        self.tcx.mk_param_from_def(param_def) // not used
+                    });
+                    // Add "Self" -> actual_argument_types[0]
+                    if let Some(self_ty) = actual_argument_types.get(0) {
+                        let self_ty = if let TyKind::Ref(_, ty, _) = self_ty.kind {
+                            ty
+                        } else {
+                            self_ty
+                        };
+                        let self_sym = syntax_pos::Symbol::intern("Self");
+                        map.insert(self_sym, self_ty);
+                    }
+                    debug!("formal to actual map for {:?}: {:?}", def_id, map);
+                    (
+                        Some(self.specialize_substs(generic_args, &self.generic_argument_map)),
+                        Some(map),
+                    )
                 }
                 _ => (None, None),
             }
         } else {
             (None, None)
         }
-    }
-
-    /// If the given generic parameter definition is "Self" then substitute actual_argument_types[0]
-    /// for it. Otherwise just return the corresponding generic_arg entry.
-    #[logfn_inputs(DEBUG)]
-    fn specialize_self(
-        actual_argument_types: &[Ty<'tcx>],
-        generic_args: SubstsRef<'tcx>,
-        param_def: &GenericParamDef,
-    ) -> GenericArg<'tcx> {
-        if !actual_argument_types.is_empty()
-            && param_def.name.as_str() == "Self"
-            && utils::is_concrete(&actual_argument_types[0].kind)
-        {
-            if let TyKind::Ref(_, ty, _) = actual_argument_types[0].kind {
-                debug!("Self deref self ty {:?}", ty.kind);
-                return ty.into();
-            } else {
-                debug!("Self deref self ty {:?}", actual_argument_types[0].kind);
-                return actual_argument_types[0].into();
-            }
-        }
-        debug!("retaining param_def {:?}", param_def);
-        generic_args[param_def.index as usize]
     }
 
     fn specialize_generic_argument(

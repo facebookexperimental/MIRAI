@@ -238,6 +238,9 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
             str.push_str("_as_");
             str.push_str(qualified_type_name(tcx, projection_ty.item_def_id).as_str());
         }
+        Never => {
+            str.push('_');
+        }
         _ => {
             //todo: add cases as the need arises, meanwhile make the need obvious.
             debug!("{:?}", ty);
@@ -369,7 +372,8 @@ pub fn are_concrete(gen_args: SubstsRef<'_>) -> bool {
                 return false;
             }
         } else {
-            return false;
+            debug!("gen_arg {:?}", gen_arg);
+            return true;
         }
     }
     true
