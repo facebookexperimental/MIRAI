@@ -717,9 +717,6 @@ pub mod core {
             pub fn sub_with_overflow<T>(x: T, y: T) -> (T, bool) {
                 result!()
             }
-            pub fn mul_with_overflow<T>(x: T, y: T) -> (T, bool) {
-                result!()
-            }
             pub fn exact_div<T>(x: T, y: T) -> T {
                 result!()
             }

@@ -6,6 +6,9 @@
 
 // Tests constant folding of arithmetic binary operations that overflow
 
+#[macro_use]
+extern crate mirai_annotations;
+
 pub fn tu8_add() -> u8 {
     let a: u8 = 255;
     a + 1 //~ attempt to add with overflow
@@ -25,6 +28,26 @@ pub fn tu8_div() -> u8 {
 pub fn tu8_mul() -> u8 {
     let a: u8 = 255;
     a * 2 //~ attempt to multiply with overflow
+}
+
+pub fn tu8_overflowing_mul() {
+    let a: u8 = 255;
+    let (a2, it_overflows) = a.overflowing_mul(2);
+    verify!(it_overflows);
+    verify!(a2 == 254);
+}
+pub fn ti8_overflowing_mul() {
+    let a: i8 = 127;
+    let (a2, it_overflows) = a.overflowing_mul(2);
+    verify!(it_overflows);
+    verify!(a2 == -2); //~ possible false verification condition
+}
+
+pub fn tu128_overflowing_mul() {
+    let a: u128 = std::u128::MAX;
+    let (a2, it_overflows) = a.overflowing_mul(2);
+    verify!(it_overflows);
+    verify!(a2 == 340282366920938463463374607431768211454); //~ possible false verification condition
 }
 
 pub fn tu8_rem() -> u8 {
@@ -90,3 +113,5 @@ pub fn ti8_shr() -> i8 {
     let b = 8;
     a >> b //~ attempt to shift right with overflow
 }
+
+pub fn main() {}

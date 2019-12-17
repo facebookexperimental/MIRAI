@@ -25,6 +25,7 @@ pub enum KnownNames {
     MiraiShallowClone,
     MiraiVerify,
     StdFutureFromGenerator,
+    StdIntrinsicsMulWithOverflow,
     StdIntrinsicsTransmute,
     StdOpsFunctionFnCall,
     StdOpsFunctionFnMutCallMut,
@@ -120,6 +121,7 @@ impl KnownNamesCache {
             if let Some(1) = path_data_elem_as_disambiguator(def_path_data_iter.next()) {
                 get_path_data_elem_name(def_path_data_iter.next())
                     .map(|n| match n.as_str().deref() {
+                        "mul_with_overflow" => KnownNames::StdIntrinsicsMulWithOverflow,
                         "transmute" => KnownNames::StdIntrinsicsTransmute,
                         _ => KnownNames::None,
                     })

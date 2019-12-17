@@ -822,4 +822,20 @@ impl ExpressionType {
             _ => ConstantDomain::Bottom,
         }
     }
+
+    /// Returns the maximum value for this type, plus one, as an abstract value.
+    /// If the type is not a primitive integer value, the result is Bottom.
+    #[allow(clippy::cast_lossless)]
+    #[logfn_inputs(TRACE)]
+    pub fn modulo_value(&self) -> Rc<AbstractValue> {
+        use self::ExpressionType::*;
+        match self {
+            U8 => Rc::new(ConstantDomain::U128((std::u8::MAX) as u128 + 1).into()),
+            U16 => Rc::new(ConstantDomain::U128((std::u16::MAX) as u128 + 1).into()),
+            U32 => Rc::new(ConstantDomain::U128((std::u32::MAX) as u128 + 1).into()),
+            U64 => Rc::new(ConstantDomain::U128((std::u64::MAX) as u128 + 1).into()),
+            Usize => Rc::new(ConstantDomain::U128((std::usize::MAX) as u128 + 1).into()),
+            _ => Rc::new(ConstantDomain::Bottom.into()),
+        }
+    }
 }
