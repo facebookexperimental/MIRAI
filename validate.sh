@@ -7,7 +7,7 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 # start clean
-cargo clean -p mirai
+cargo clean
 # Run format checks
 cargo fmt --all
 # Run lint checks
