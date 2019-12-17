@@ -104,7 +104,6 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
     fresh_variable_offset: usize,
-    summarize_on_demand: bool,
 }
 
 struct SavedVisitorState<'analysis, 'tcx> {
@@ -282,7 +281,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             unwind_condition: None,
             unwind_environment: Environment::default(),
             fresh_variable_offset: 0,
-            summarize_on_demand: false,
         }
     }
 
@@ -385,7 +383,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     pub fn visit_body(&mut self, actual_args: &[(Rc<Path>, Rc<AbstractValue>)]) {
         self.active_calls.push(self.def_id);
-        self.summarize_on_demand = true;
         let mut block_indices = self.get_sorted_block_indices();
 
         let (mut in_state, mut out_state) =
@@ -489,7 +486,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             return devirtualized_summary;
         }
         self.summary_cache
-            .get_summary_for(call_info.callee_def_id, Some(self.def_id))
+            .get_summary_for(call_info.callee_def_id)
             .clone()
     }
 
@@ -511,10 +508,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     gen_args,
                 ) {
                     let resolved_def_id = instance.def.def_id();
-                    let result = self
-                        .summary_cache
-                        .get_summary_for(resolved_def_id, Some(self.def_id))
-                        .clone();
+                    let result = self.summary_cache.get_summary_for(resolved_def_id).clone();
                     if result.is_not_default {
                         return Some(result);
                     }
@@ -595,10 +589,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             {
                 let summary;
                 let summary = if let Some(def_id) = def_id {
-                    let cached_summary = self
-                        .summary_cache
-                        .get_summary_for(*def_id, Some(self.def_id));
-                    if !self.summarize_on_demand || cached_summary.is_not_default {
+                    let cached_summary = self.summary_cache.get_summary_for(*def_id);
+                    if cached_summary.is_not_default {
                         cached_summary
                     } else {
                         summary = self.create_and_cache_function_summary(&def_id.into());
@@ -1500,9 +1492,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             };
             let result = self
                 .summary_cache
-                .get_summary_for_function_constant(func_ref, func_args, self.def_id)
+                .get_summary_for_function_constant(func_ref, func_args)
                 .clone();
-            if result.is_not_default || !self.summarize_on_demand || func_ref.def_id.is_none() {
+            if result.is_not_default || func_ref.def_id.is_none() {
                 return Some(result);
             }
             if !self.active_calls.contains(&func_ref.def_id.unwrap()) {
@@ -2070,9 +2062,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 call_info.callee_known_name = KnownNames::None;
                 call_info.actual_args = &actual_args;
                 //todo: actual argument types?
-                let summary = self
-                    .summary_cache
-                    .get_summary_for(callee_def_id, Some(self.def_id));
+                let summary = self.summary_cache.get_summary_for(callee_def_id);
                 if !summary.is_not_default && !self.active_calls.contains(&callee_def_id) {
                     self.create_and_cache_function_summary(&call_info)
                 } else {

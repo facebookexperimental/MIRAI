@@ -28,6 +28,7 @@ use std::fmt::{Debug, Formatter, Result};
 use std::iter::FromIterator;
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::rc::Rc;
 use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use tempdir::TempDir;
 
@@ -283,24 +284,33 @@ impl MiraiCallbacks {
             }
         }
 
-        // Analyze all public methods
+        // Analyze all functions that are white listed or public
         for def_id in defs.iter() {
-            if !utils::is_public(*def_id, tcx) {
+            let name = analysis_info
+                .persistent_summary_cache
+                .get_summary_key_for(*def_id);
+            if let Some(white_list) = &analysis_info.function_whitelist {
+                if !Self::included_in(white_list, name, *def_id, tcx) {
+                    info!(
+                        "skipping function {} as it is not selected for analysis",
+                        name
+                    );
+                    continue;
+                }
+            } else if !utils::is_public(*def_id, tcx) {
+                info!("skipping function {} as it is not public", name);
                 continue;
             }
             MiraiCallbacks::analyze_body(compiler, tcx, analysis_info, *def_id);
         }
-        // Analyze non public methods that have not been called in this crate.
-        for def_id in defs.iter() {
-            if !utils::is_public(*def_id, tcx)
-                && analysis_info
-                    .persistent_summary_cache
-                    .get_dependents(def_id)
-                    .is_empty()
-            {
-                MiraiCallbacks::analyze_body(compiler, tcx, analysis_info, *def_id);
-            }
-        }
+    }
+
+    // Determine whether this function is included in the analysis.
+    #[logfn(TRACE)]
+    fn included_in(list: &[String], name: &Rc<String>, def_id: DefId, tcx: TyCtxt<'_>) -> bool {
+        let display_name = utils::def_id_display_name(tcx, def_id);
+        // We check both for display name and summary key name.
+        list.contains(&display_name) || list.contains(name.as_ref())
     }
 
     /// Analyze the given function body.
@@ -311,36 +321,18 @@ impl MiraiCallbacks {
         analysis_info: &mut AnalysisInfo<'analysis, 'tcx>,
         def_id: DefId,
     ) {
-        // Determine whether this function is included in the analysis.
-        let name = &analysis_info
-            .persistent_summary_cache
-            .get_summary_key_for(def_id)
-            .to_string();
-        if let Some(ref fns) = analysis_info.function_whitelist {
-            let display_name = utils::def_id_display_name(tcx, def_id);
-            // We check both for display name and summary key name.
-            if !fns.contains(&display_name) && !fns.contains(name) {
-                info!(
-                    "skipping function {} as it is not selected for analysis",
-                    name
-                );
-                return;
-            }
-        }
-
         // No need to analyze a body for which we already have a non default summary.
         // We do, however, have to allow local foreign contract functions to override
         // the standard summaries that are already in the cache.
         if !utils::is_foreign_contract(tcx, def_id) {
             let summary = analysis_info
                 .persistent_summary_cache
-                .get_summary_for(def_id, None);
+                .get_summary_for(def_id);
             if summary.is_not_default {
                 return;
             }
         }
 
-        Self::log_name(name, 1);
         let mut buffered_diagnostics: Vec<DiagnosticBuilder<'_>> = vec![];
         Self::visit_body(
             def_id,
@@ -357,16 +349,6 @@ impl MiraiCallbacks {
             .insert(def_id, buffered_diagnostics)
         {
             old_diags.into_iter().for_each(cancel)
-        }
-    }
-
-    /// Logs the summary key of the function that is about to be analyzed.
-    #[logfn_inputs(TRACE)]
-    fn log_name(name: &str, iteration_count: usize) {
-        if iteration_count == 1 {
-            info!("analyzing({:?})", name);
-        } else {
-            info!("reanalyzing({:?})", name);
         }
     }
 

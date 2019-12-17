@@ -77,8 +77,10 @@ fn test4() {
     }
 }
 
-unsafe fn test5() {
-    asm!("NOP") //~ Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.
+pub fn test5() {
+    unsafe {
+        asm!("NOP") //~ Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.
+    }
 }
 
 fn test6() {
@@ -161,7 +163,7 @@ pub fn test11(arr: &[String]) {
     let e = &arr[1]; //~ possible index out of bounds
 }
 
-fn test12() {
+pub fn test12() {
     let x = 200u8 * 4; //~ attempt to multiply with overflow
 }
 
