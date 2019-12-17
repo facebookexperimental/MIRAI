@@ -24,6 +24,8 @@ use mirai_annotations::{
     assume, assume_unreachable, checked_assume, checked_assume_eq, precondition, verify,
 };
 use rpds::HashTrieMap;
+use rustc::hir::def_id::DefId;
+use rustc::mir;
 use rustc::mir::interpret::{ConstValue, Scalar};
 use rustc::session::Session;
 use rustc::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
@@ -31,7 +33,6 @@ use rustc::ty::{
     AdtDef, Const, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig,
     ParamTy, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex,
 };
-use rustc::{hir, mir};
 use rustc_data_structures::graph::dominators::Dominators;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
@@ -51,7 +52,7 @@ pub struct MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E> {
     pub options: &'compilation Options,
     pub session: &'compilation Session,
     pub tcx: TyCtxt<'tcx>,
-    pub def_id: hir::def_id::DefId,
+    pub def_id: DefId,
     pub mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
     pub constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
     pub known_names_cache: &'analysis mut KnownNamesCache,
@@ -73,7 +74,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     options: &'compilation Options,
     session: &'compilation Session,
     tcx: TyCtxt<'tcx>,
-    def_id: hir::def_id::DefId,
+    def_id: DefId,
     mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
     constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
     known_names_cache: &'analysis mut KnownNamesCache,
@@ -81,7 +82,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     smt_solver: &'analysis mut dyn SmtSolver<E>,
     buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
 
-    active_calls: Vec<hir::def_id::DefId>,
+    active_calls: Vec<DefId>,
     actual_argument_types: Vec<Ty<'tcx>>,
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     // True if the current function cannot be analyzed and hence is just assumed to be correct.
@@ -102,13 +103,14 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     post_condition: Option<Rc<AbstractValue>>,
     post_condition_block: Option<mir::BasicBlock>,
     preconditions: Vec<Precondition>,
+    substs_cache: HashMap<DefId, SubstsRef<'tcx>>,
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
     fresh_variable_offset: usize,
 }
 
 struct SavedVisitorState<'analysis, 'tcx> {
-    def_id: hir::def_id::DefId,
+    def_id: DefId,
     mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
 
     actual_argument_types: Vec<Ty<'tcx>>,
@@ -135,7 +137,7 @@ struct SavedVisitorState<'analysis, 'tcx> {
 
 #[derive(Clone, Debug)]
 struct CallInfo<'callinfo, 'tcx> {
-    callee_def_id: hir::def_id::DefId,
+    callee_def_id: DefId,
     callee_func_ref: Option<Rc<FunctionReference>>,
     callee_fun_val: Rc<AbstractValue>,
     callee_generic_arguments: Option<SubstsRef<'tcx>>,
@@ -147,8 +149,8 @@ struct CallInfo<'callinfo, 'tcx> {
     destination: Option<(mir::Place<'tcx>, mir::BasicBlock)>,
 }
 
-impl<'callinfo, 'tcx> From<&hir::def_id::DefId> for CallInfo<'callinfo, 'tcx> {
-    fn from(def_id: &hir::def_id::DefId) -> CallInfo<'callinfo, 'tcx> {
+impl<'callinfo, 'tcx> From<&DefId> for CallInfo<'callinfo, 'tcx> {
+    fn from(def_id: &DefId) -> CallInfo<'callinfo, 'tcx> {
         CallInfo {
             callee_def_id: *def_id,
             callee_func_ref: None,
@@ -166,7 +168,7 @@ impl<'callinfo, 'tcx> From<&hir::def_id::DefId> for CallInfo<'callinfo, 'tcx> {
 
 impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
     pub fn new(
-        def_id: hir::def_id::DefId,
+        def_id: DefId,
         mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
     ) -> SavedVisitorState<'analysis, 'tcx> {
         SavedVisitorState {
@@ -279,6 +281,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             post_condition: None,
             post_condition_block: None,
             preconditions: Vec::new(),
+            substs_cache: HashMap::default(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
             fresh_variable_offset: 0,
@@ -1392,20 +1395,21 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // We assume that no program that does not make MIRAI run out of memory will have more than
         // a million local variables.
         self.fresh_variable_offset += 1_000_000;
+
         debug!("visit_call {:?} {:?}", func, args);
         debug!("self.generic_argument_map {:?}", self.generic_argument_map);
         let func_to_call = self.visit_operand(func);
-        let callee_func_ref = Self::get_func_ref(&func_to_call);
-        let (callee_def_id, callee_known_name) = if let Some(func_ref) = callee_func_ref {
-            (func_ref.def_id, func_ref.known_name)
-        } else if let Expression::Variable { path, .. } = &func_to_call.expression {
-            let closure_type = self.get_path_rustc_type(path);
-            let closure_def_id = self.get_def_id_from_closure(closure_type);
-            (closure_def_id, KnownNames::None)
-        } else {
-            debug!("func_to_call {:?}", func_to_call);
-            unreachable!()
-        };
+        let func_ref_to_call = self
+            .get_func_ref(&func_to_call)
+            .expect("visit operand should ensure this");
+        let callee_def_id = func_ref_to_call
+            .def_id
+            .expect("callee obtained via operand should have def id");
+        let substs = self
+            .substs_cache
+            .get(&callee_def_id)
+            .expect("MIR should ensure this");
+        let callee_generic_arguments = self.specialize_substs(substs, &self.generic_argument_map);
         let actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = args
             .iter()
             .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
@@ -1418,14 +1422,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.specialize_generic_argument_type(arg_ty, &self.generic_argument_map, i)
             })
             .collect();
-        let (callee_generic_arguments, callee_generic_argument_map) =
-            self.get_generic_arguments(func, &actual_argument_types);
-        let call_info = CallInfo {
-            callee_def_id: callee_def_id.expect("callee obtained via operand should have def id"),
-            callee_func_ref: callee_func_ref.cloned(),
-            callee_fun_val: func_to_call,
-            callee_known_name,
+        let callee_generic_argument_map = self.get_generic_arguments_map(
+            callee_def_id,
             callee_generic_arguments,
+            &actual_argument_types,
+        );
+
+        let call_info = CallInfo {
+            callee_def_id,
+            callee_known_name: func_ref_to_call.known_name,
+            callee_func_ref: Some(func_ref_to_call),
+            callee_fun_val: func_to_call,
+            callee_generic_arguments: Some(callee_generic_arguments),
             callee_generic_argument_map,
             actual_args: &actual_args,
             actual_argument_types: &actual_argument_types,
@@ -1491,7 +1499,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Returns a summary of the function to call, obtained from the summary cache.
     #[logfn_inputs(TRACE)]
     fn get_function_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Option<Summary> {
-        if let Some(func_ref) = Self::get_func_ref(&call_info.callee_fun_val) {
+        if let Some(func_ref) = self.get_func_ref(&call_info.callee_fun_val) {
             // If the actual arguments include any function constants, collect them together
             // and pass them to get_summary_for_function_constant so that their signatures
             // can be included in the type specific key that is used to look up non generic
@@ -1500,13 +1508,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 && call_info
                     .actual_args
                     .iter()
-                    .any(|(_, v)| Self::get_func_ref(v).is_some())
+                    .any(|(_, v)| self.get_func_ref(v).is_some())
             {
                 Some(
                     call_info
                         .actual_args
                         .iter()
-                        .filter_map(|(_, v)| Self::get_func_ref(v).cloned())
+                        .filter_map(|(_, v)| self.get_func_ref(v))
                         .collect(),
                 )
             } else {
@@ -1515,7 +1523,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             };
             let result = self
                 .summary_cache
-                .get_summary_for_function_constant(func_ref, func_args)
+                .get_summary_for_function_constant(&func_ref, func_args)
                 .clone();
             if result.is_not_default || func_ref.def_id.is_none() {
                 return Some(result);
@@ -1527,19 +1535,59 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         None
     }
 
-    /// Returns the function constant part of the value, if there is one.
+    /// Returns the function reference part of the value, if there is one.
     #[logfn_inputs(TRACE)]
-    fn get_func_ref(val: &Rc<AbstractValue>) -> Option<&Rc<FunctionReference>> {
-        match &val.expression {
-            Expression::CompileTimeConstant(ConstantDomain::Function(func_ref)) => Some(func_ref),
+    fn get_func_ref(&mut self, val: &Rc<AbstractValue>) -> Option<Rc<FunctionReference>> {
+        let extract_func_ref = |c: &ConstantDomain| match c {
+            ConstantDomain::Function(func_ref) => Some(func_ref.clone()),
             _ => None,
+        };
+        match &val.expression {
+            Expression::CompileTimeConstant(c) => {
+                return extract_func_ref(c);
+            }
+            Expression::Variable {
+                path,
+                var_type: ExpressionType::NonPrimitive,
+            }
+            | Expression::Variable {
+                path,
+                var_type: ExpressionType::Reference,
+            } => {
+                let closure_ty = self.get_path_rustc_type(path);
+                match closure_ty.kind {
+                    TyKind::Closure(def_id, substs) => {
+                        let specialized_substs =
+                            self.specialize_substs(substs, &self.generic_argument_map);
+                        return extract_func_ref(self.visit_function_reference(
+                            def_id,
+                            closure_ty,
+                            specialized_substs,
+                        ));
+                    }
+                    TyKind::Ref(_, ty, _) => {
+                        if let TyKind::Closure(def_id, substs) = ty.kind {
+                            let specialized_substs =
+                                self.specialize_substs(substs, &self.generic_argument_map);
+                            return extract_func_ref(self.visit_function_reference(
+                                def_id,
+                                ty,
+                                specialized_substs,
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
         }
+        None
     }
 
     /// Extracts the def_id of a closure, given the type of a value that is known to be a closure.
     /// Returns None otherwise.
     #[logfn_inputs(TRACE)]
-    fn get_def_id_from_closure(&mut self, closure_ty: Ty<'tcx>) -> Option<hir::def_id::DefId> {
+    fn get_def_id_from_closure(&mut self, closure_ty: Ty<'tcx>) -> Option<DefId> {
         match closure_ty.kind {
             TyKind::Closure(def_id, _) => {
                 return Some(def_id);
@@ -1674,7 +1722,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 checked_assume!(call_info.actual_args.len() == 1);
                 let mut call_info = call_info.clone();
                 call_info.callee_fun_val = call_info.actual_args[0].1.clone();
-                call_info.callee_func_ref = Self::get_func_ref(&call_info.callee_fun_val).cloned();
+                call_info.callee_func_ref = self.get_func_ref(&call_info.callee_fun_val);
                 call_info.callee_def_id = call_info
                     .callee_func_ref
                     .clone()
@@ -2058,7 +2106,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .collect();
 
         let mut call_info = caller_call_info.clone();
-        let callee_func_ref = Self::get_func_ref(&callee).cloned();
+        let callee_func_ref = self.get_func_ref(&callee);
         // Get a summary for the callee.
         let function_summary = if let Some(func_ref) = &callee_func_ref {
             call_info.callee_def_id = func_ref.def_id.expect("defined when used here");
@@ -2071,16 +2119,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.get_function_summary(&call_info)
                 .expect("a summary because there is a func ref")
         } else {
-            // Closure operands do not result in func refs when queried with get_func_ref.
-            // It is assumed that MIR will never contain an indirect call where the callee
-            // is neither a closure nor a function constant.
+            // Closure operands that do not result in func refs when queried with get_func_ref
+            // need to get the closure value prepended to the actual arguments.
             if let Some(callee_def_id) =
                 self.get_def_id_from_closure(caller_call_info.actual_argument_types[0])
             {
                 // Prepend the closure (if there is one) to the unpacked arguments vector.
                 actual_args.insert(0, caller_call_info.actual_args[0].clone());
                 call_info.callee_fun_val = actual_args[0].1.clone();
-                call_info.callee_func_ref = None;
+                call_info.callee_func_ref = self.get_func_ref(&call_info.callee_fun_val);
                 call_info.callee_def_id = callee_def_id;
                 call_info.callee_known_name = KnownNames::None;
                 call_info.actual_args = &actual_args;
@@ -3561,76 +3608,61 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// the generic parameter substitutions (type arguments) that are used by
     /// the call instruction whose operand this is.
     #[logfn_inputs(TRACE)]
-    fn get_generic_arguments(
+    fn get_generic_arguments_map(
         &self,
-        operand: &mir::Operand<'tcx>,
+        def_id: DefId,
+        generic_args: SubstsRef<'tcx>,
         actual_argument_types: &[Ty<'tcx>],
-    ) -> (
-        Option<SubstsRef<'tcx>>,
-        Option<HashMap<syntax_pos::Symbol, Ty<'tcx>>>,
-    ) {
-        if let mir::Operand::Constant(constant) = operand {
-            let mir::Constant { literal, .. } = constant.borrow();
-            match literal.ty.kind {
-                TyKind::FnDef(def_id, generic_args) => {
-                    let mut gen_id = def_id;
-                    loop {
-                        let generics = self.tcx.generics_of(gen_id);
-                        if let Some(parent_id) = generics.parent {
-                            gen_id = parent_id;
-                        } else {
-                            break;
-                        }
-                    }
-                    if generic_args.is_empty() {
-                        return (None, None);
-                    }
-                    let mut substitution_map = self.generic_argument_map.clone();
-                    let mut map: HashMap<syntax_pos::Symbol, Ty<'tcx>> = HashMap::new();
-
-                    // This iterates over the callee's generic parameter definitions.
-                    // If the parent of the callee is generic, those definitions are iterated
-                    // as well. This applies recursively. Note that a child cannot mask the
-                    // generic parameters of its parent with one of its own, so each parameter
-                    // definition in this iteration will have a unique name.
-                    InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
-                        if let Some(gen_arg) = generic_args.get(param_def.index as usize) {
-                            if let GenericArgKind::Type(ty) = gen_arg.unpack() {
-                                let specialized_gen_arg_ty = self.specialize_generic_argument_type(
-                                    ty,
-                                    &substitution_map,
-                                    param_def.index as usize,
-                                );
-                                if let Some(substitution_map) = &mut substitution_map {
-                                    substitution_map.insert(param_def.name, specialized_gen_arg_ty);
-                                }
-                                map.insert(param_def.name, specialized_gen_arg_ty);
-                            }
-                        } else {
-                            debug!("unmapped generic param def");
-                        }
-                        self.tcx.mk_param_from_def(param_def) // not used
-                    });
-                    // Add "Self" -> actual_argument_types[0]
-                    if let Some(self_ty) = actual_argument_types.get(0) {
-                        let self_ty = if let TyKind::Ref(_, ty, _) = self_ty.kind {
-                            ty
-                        } else {
-                            self_ty
-                        };
-                        let self_sym = syntax_pos::Symbol::intern("Self");
-                        map.insert(self_sym, self_ty);
-                    }
-                    (
-                        Some(self.specialize_substs(generic_args, &self.generic_argument_map)),
-                        Some(map),
-                    )
-                }
-                _ => (None, None),
+    ) -> Option<HashMap<syntax_pos::Symbol, Ty<'tcx>>> {
+        let mut gen_id = def_id;
+        loop {
+            let generics = self.tcx.generics_of(gen_id);
+            if let Some(parent_id) = generics.parent {
+                gen_id = parent_id;
+            } else {
+                break;
             }
-        } else {
-            (None, None)
         }
+        if generic_args.is_empty() {
+            return None;
+        }
+        let mut substitution_map = self.generic_argument_map.clone();
+        let mut map: HashMap<syntax_pos::Symbol, Ty<'tcx>> = HashMap::new();
+
+        // This iterates over the callee's generic parameter definitions.
+        // If the parent of the callee is generic, those definitions are iterated
+        // as well. This applies recursively. Note that a child cannot mask the
+        // generic parameters of its parent with one of its own, so each parameter
+        // definition in this iteration will have a unique name.
+        InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
+            if let Some(gen_arg) = generic_args.get(param_def.index as usize) {
+                if let GenericArgKind::Type(ty) = gen_arg.unpack() {
+                    let specialized_gen_arg_ty = self.specialize_generic_argument_type(
+                        ty,
+                        &substitution_map,
+                        param_def.index as usize,
+                    );
+                    if let Some(substitution_map) = &mut substitution_map {
+                        substitution_map.insert(param_def.name, specialized_gen_arg_ty);
+                    }
+                    map.insert(param_def.name, specialized_gen_arg_ty);
+                }
+            } else {
+                debug!("unmapped generic param def");
+            }
+            self.tcx.mk_param_from_def(param_def) // not used
+        });
+        // Add "Self" -> actual_argument_types[0]
+        if let Some(self_ty) = actual_argument_types.get(0) {
+            let self_ty = if let TyKind::Ref(_, ty, _) = self_ty.kind {
+                ty
+            } else {
+                self_ty
+            };
+            let self_sym = syntax_pos::Symbol::intern("Self");
+            map.insert(self_sym, self_ty);
+        }
+        Some(map)
     }
 
     fn specialize_generic_argument(
@@ -4412,7 +4444,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_function_reference(
         &mut self,
-        mut def_id: hir::def_id::DefId,
+        mut def_id: DefId,
         ty: Ty<'tcx>,
         mut generic_args: SubstsRef<'tcx>,
     ) -> &ConstantDomain {
@@ -4438,6 +4470,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
             }
         }
+        self.substs_cache.insert(def_id, generic_args);
 
         &mut self.constant_value_cache.get_function_constant_for(
             def_id,
@@ -4467,14 +4500,31 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 Path::new_length(result.clone(), &self.current_environment);
                             self.current_environment.update_value_at(len_path, len_val);
                         }
+                        TyKind::Closure(def_id, generic_args, ..) => {
+                            let func_const = self.visit_function_reference(
+                                *def_id,
+                                ty,
+                                generic_args.as_closure().substs,
+                            );
+                            let func_val = Rc::new(func_const.clone().into());
+                            self.current_environment
+                                .update_value_at(result.clone(), func_val);
+                        }
+                        TyKind::FnDef(def_id, generic_args) => {
+                            let func_const = self.visit_function_reference(
+                                *def_id,
+                                ty,
+                                generic_args.as_closure().substs,
+                            );
+                            let func_val = Rc::new(func_const.clone().into());
+                            self.current_environment
+                                .update_value_at(result.clone(), func_val);
+                        }
                         TyKind::Generator(def_id, generic_args, ..) => {
-                            let func_const = self.constant_value_cache.get_function_constant_for(
+                            let func_const = self.visit_function_reference(
                                 *def_id,
                                 ty,
                                 generic_args.as_generator().substs,
-                                self.tcx,
-                                self.known_names_cache,
-                                self.summary_cache,
                             );
                             let func_val = Rc::new(func_const.clone().into());
                             self.current_environment
@@ -4634,8 +4684,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             PathEnum::LocalVariable { ordinal } => {
                 if *ordinal > 0 && *ordinal <= self.actual_argument_types.len() {
                     self.actual_argument_types[*ordinal - 1]
-                } else {
+                } else if *ordinal < self.mir.local_decls.len() {
                     self.mir.local_decls[mir::Local::from(*ordinal)].ty
+                } else {
+                    info!("path.value is {:?}", path.value);
+                    self.tcx.mk_ty(TyKind::Error)
                 }
             }
             PathEnum::QualifiedPath {
@@ -4657,7 +4710,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 }
                             }
                             TyKind::Closure(.., subs) => {
-                                return subs.as_ref()[*ordinal + 4].expect_ty();
+                                if *ordinal + 4 < subs.len() {
+                                    return subs.as_ref()[*ordinal + 4].expect_ty();
+                                }
                             }
                             TyKind::Tuple(types) => {
                                 if let Some(gen_arg) = types.get(*ordinal as usize) {
@@ -4680,11 +4735,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
                 info!("t is {:?}", t);
                 info!("selector is {:?}", selector);
-                assume_unreachable!()
+                self.tcx.mk_ty(TyKind::Error)
             }
             _ => {
                 info!("path.value is {:?}", path.value);
-                assume_unreachable!()
+                self.tcx.mk_ty(TyKind::Error)
             }
         }
     }
