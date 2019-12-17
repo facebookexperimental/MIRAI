@@ -31,7 +31,7 @@ fn no_summary_analyzed_anyway() {
         }
     }
     let d: &dyn Dynamic = &S {} as &dyn Dynamic; // forget type info of S
-    verify!(d.f(1) == 3); // normal,y, this statement would disable verification for this
+    verify!(d.f(1) == 3); // normally, this statement would disable verification for this
                           // function and we would not see the message below. With --diag=strict,
                           // we do not see an error here (as d.f is uninterpreted), but we still
                           // see the below error.

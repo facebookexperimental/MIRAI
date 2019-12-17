@@ -4,6 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
+// MIRAI_FLAGS --test_only
+
 #[macro_use]
 extern crate mirai_annotations;
 
@@ -24,6 +26,7 @@ impl Tr for Foo {
     }
 }
 
+#[test]
 pub fn main() {
     let foo = Foo { bar: 1 };
     verify!(foo.actual() == 1);

@@ -485,39 +485,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.visit_body(call_info.actual_args);
             self.swap_visitor_state(&mut saved_state);
             self.start_instant = Instant::now() - elapsed_time;
-        } else {
-            if let Some(devirtualized_summary) = self.try_to_devirtualize(call_info) {
-                return devirtualized_summary;
-            }
-            // No summary for the called function, so we can't trust the analysis of this function either.
-            // todo: When diagnosing in paranoid mode, we should give a diagnostic here for the call
-            // and proceed with analysis as normal.
-            // When diagnosing in strict mode, we assume the function call is OK ("angelic") and
-            // carry on with analysis as normal.
-            // When diagnosing in relaxed mode, we do not carry on with analysis as normal since
-            // the lack of a valid post condition for the function call can lead to a cascade
-            // of diagnostics that are most likely useless. To prevent this, we very optimistically
-            // assume that both the call is correct and the caller is correct and we propagate this
-            // all the way to the root caller. This minimizes false positives, but obviously ends
-            // up not analyzing a lot of code, which masks true positives (false negatives).
-            self.assume_function_is_angelic = self.options.diag_level == DiagLevel::RELAXED;
-            let argument_type_hint = if let Some(func) = &call_info.callee_func_ref {
-                format!(" (foreign fn argument key: {})", func.argument_type_key)
-            } else {
-                "".to_string()
-            };
-            let treatment_hint = if self.assume_function_is_angelic {
-                "Excluding this function and its transitive callers from analysis."
-            } else {
-                "Continuing analysis anyway."
-            };
-            info!(
-                    "function {} can't be reliably analyzed because it calls function {} which has no body and no summary{}. {}",
-                    utils::summary_key_str(self.tcx, self.def_id),
-                    utils::summary_key_str(self.tcx, call_info.callee_def_id),
-                    argument_type_hint,
-                    treatment_hint,
-                );
+        } else if let Some(devirtualized_summary) = self.try_to_devirtualize(call_info) {
+            return devirtualized_summary;
         }
         self.summary_cache
             .get_summary_for(call_info.callee_def_id, Some(self.def_id))
@@ -1419,10 +1388,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else if let Expression::Variable { path, .. } = &func_to_call.expression {
             let closure_type = self.get_path_rustc_type(path);
             let closure_def_id = self.get_def_id_from_closure(closure_type);
-            if self.assume_function_is_angelic {
-                return;
-            }
-            (Some(closure_def_id), KnownNames::None)
+            (closure_def_id, KnownNames::None)
         } else {
             debug!("func_to_call {:?}", func_to_call);
             unreachable!()
@@ -1459,6 +1425,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let function_summary = self
             .get_function_summary(&call_info)
             .unwrap_or_else(Summary::default);
+        if !function_summary.is_not_default {
+            self.deal_with_missing_summary(&call_info);
+        }
         debug!("calling func {:?}", call_info);
         debug!("summary {:?}", function_summary);
         debug!("pre env {:?}", self.current_environment);
@@ -1467,6 +1436,42 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
         self.transfer_and_refine_cleanup_state(&call_info, &function_summary);
         debug!("post env {:?}", self.current_environment);
+    }
+
+    /// Give diagnostic or mark the call chain as angelic, depending on self.options.diag_level
+    fn deal_with_missing_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) {
+        match self.options.diag_level {
+            DiagLevel::RELAXED => {
+                // Assume the callee is perfect and assume the caller and all of its callers are perfect
+                // little angels as well. This cuts down on false positives caused by missing post
+                // conditions.
+                self.assume_function_is_angelic = true;
+            }
+            DiagLevel::STRICT => {
+                // Assume the callee is perfect and that the caller does not need to prove any
+                // preconditions and that the callee guarantees no post conditions.
+            }
+            DiagLevel::PARANOID => {
+                // Give a diagnostic about this call, and make it the programmer's problem.
+                let error = self.session.struct_span_err(
+                    self.current_span,
+                    "the called function has no body and has not been summarized, all bets are off",
+                );
+                self.emit_diagnostic(error);
+            }
+        }
+        let argument_type_hint = if let Some(func) = &call_info.callee_func_ref {
+            format!(" (foreign fn argument key: {})", func.argument_type_key)
+        } else {
+            "".to_string()
+        };
+        info!(
+            "function {} can't be reliably analyzed because it calls function {} which has no body and no summary{}.",
+            utils::summary_key_str(self.tcx, self.def_id),
+            utils::summary_key_str(self.tcx, call_info.callee_def_id),
+            argument_type_hint,
+        );
+        debug!("def_id {:?}", call_info.callee_def_id);
     }
 
     /// Returns a summary of the function to call, obtained from the summary cache.
@@ -1518,26 +1523,21 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Extracts the def_id of a closure, given the type of a value that is known to be a closure.
+    /// Returns None otherwise.
     #[logfn_inputs(TRACE)]
-    fn get_def_id_from_closure(&mut self, closure_ty: Ty<'tcx>) -> hir::def_id::DefId {
+    fn get_def_id_from_closure(&mut self, closure_ty: Ty<'tcx>) -> Option<hir::def_id::DefId> {
         match closure_ty.kind {
             TyKind::Closure(def_id, _) => {
-                return def_id;
+                return Some(def_id);
             }
             TyKind::Ref(_, ty, _) => {
                 if let TyKind::Closure(def_id, _) = ty.kind {
-                    return def_id;
+                    return Some(def_id);
                 }
             }
             _ => {}
         }
-        self.assume_function_is_angelic = true;
-        info!(
-            "function {} can't be analyzed because it calls an unresolved function pointer {:?}",
-            utils::summary_key_str(self.tcx, self.def_id),
-            closure_ty.kind,
-        );
-        self.def_id
+        None
     }
 
     /// If we are checking for errors and have not assumed the preconditions of the called function
@@ -1569,8 +1569,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             KnownNames::StdOpsFunctionFnCall
             | KnownNames::StdOpsFunctionFnMutCallMut
             | KnownNames::StdOpsFunctionFnOnceCallOnce => {
-                self.try_to_inline_standard_ops_func(call_info);
-                return true;
+                return !self.try_to_inline_standard_ops_func(call_info).is_bottom();
             }
             KnownNames::MiraiAssume => {
                 checked_assume!(call_info.actual_args.len() == 1);
@@ -1901,9 +1900,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             | KnownNames::StdOpsFunctionFnOnceCallOnce => {
                 checked_assume!(call_info.destination.is_some());
                 checked_assume!(call_info.actual_args.len() == 2);
-                self.try_to_inline_indirectly_called_function(call_info);
-                // We don't want the caller to anything more.
-                abstract_value::BOTTOM.into()
+                self.try_to_inline_indirectly_called_function(call_info)
             }
             KnownNames::StdSliceLen => {
                 checked_assume!(call_info.actual_args.len() == 1);
@@ -1959,7 +1956,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ///
     /// All of this happens in code that is not encoded as MIR, so MIRAI needs built in support for it.
     #[logfn_inputs(TRACE)]
-    fn try_to_inline_indirectly_called_function(&mut self, caller_call_info: &CallInfo<'_, 'tcx>) {
+    fn try_to_inline_indirectly_called_function(
+        &mut self,
+        caller_call_info: &CallInfo<'_, 'tcx>,
+    ) -> Rc<AbstractValue> {
         // Get the function to call (it is either a function pointer or a closure)
         let callee = caller_call_info.actual_args[0].1.clone();
 
@@ -2000,31 +2000,33 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             // Closure operands do not result in func refs when queried with get_func_ref.
             // It is assumed that MIR will never contain an indirect call where the callee
             // is neither a closure nor a function constant.
-            let callee_def_id =
-                self.get_def_id_from_closure(caller_call_info.actual_argument_types[0]);
-            if self.assume_function_is_angelic {
-                return;
-            }
-            // Prepend the closure (if there is one) to the unpacked arguments vector.
-            actual_args.insert(0, caller_call_info.actual_args[0].clone());
-            call_info.callee_fun_val = actual_args[0].1.clone();
-            call_info.callee_func_ref = None;
-            call_info.callee_def_id = callee_def_id;
-            call_info.callee_known_name = KnownNames::None;
-            call_info.actual_args = &actual_args;
-            //todo: actual argument types?
-            let summary = self
-                .summary_cache
-                .get_summary_for(callee_def_id, Some(self.def_id));
-            if !summary.is_not_default && !self.active_calls.contains(&callee_def_id) {
-                self.create_and_cache_function_summary(&call_info)
+            if let Some(callee_def_id) =
+                self.get_def_id_from_closure(caller_call_info.actual_argument_types[0])
+            {
+                // Prepend the closure (if there is one) to the unpacked arguments vector.
+                actual_args.insert(0, caller_call_info.actual_args[0].clone());
+                call_info.callee_fun_val = actual_args[0].1.clone();
+                call_info.callee_func_ref = None;
+                call_info.callee_def_id = callee_def_id;
+                call_info.callee_known_name = KnownNames::None;
+                call_info.actual_args = &actual_args;
+                //todo: actual argument types?
+                let summary = self
+                    .summary_cache
+                    .get_summary_for(callee_def_id, Some(self.def_id));
+                if !summary.is_not_default && !self.active_calls.contains(&callee_def_id) {
+                    self.create_and_cache_function_summary(&call_info)
+                } else {
+                    summary.clone()
+                }
             } else {
-                summary.clone()
+                return abstract_value::BOTTOM.into();
             }
         };
         self.check_preconditions_if_necessary(&call_info, &function_summary);
         self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
         self.transfer_and_refine_cleanup_state(&call_info, &function_summary);
+        abstract_value::TOP.into()
     }
 
     /// Checks if the preconditions obtained from the summary of the function being called

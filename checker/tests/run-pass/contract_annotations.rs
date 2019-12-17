@@ -6,6 +6,8 @@
 
 // Tests for annotations from the contracts crate.
 
+// MIRAI_FLAGS --test_only
+
 use contracts::*;
 use mirai_annotations::*;
 
@@ -24,6 +26,7 @@ fn pre_post(x: i32) -> i32 {
     return x;
 }
 
+#[test]
 fn use_pre_post() {
     checked_verify!(pre_post(1) >= 1);
 }
@@ -56,6 +59,7 @@ impl Adder for MyAdder {
     }
 }
 
+#[test]
 fn use_trait() {
     let mut a = MyAdder { x: 1 };
     checked_verify!(a.get() == 1);
@@ -81,6 +85,7 @@ impl S {
     }
 }
 
+#[test]
 fn use_invariant() {
     let mut s = S { x: 1 };
     checked_verify!(s.get_and_decrement() == 1);

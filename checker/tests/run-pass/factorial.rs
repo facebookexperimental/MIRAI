@@ -6,6 +6,8 @@
 
 // A test that uses a widened summary.
 
+// MIRAI_FLAGS --diag=strict
+
 #[macro_use]
 extern crate mirai_annotations;
 

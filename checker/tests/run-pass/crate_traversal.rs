@@ -6,6 +6,8 @@
 
 // statements and expressions that exercise all visitor code paths
 
+// MIRAI_FLAGS --diag=strict
+
 #![allow(const_err)]
 #![allow(unused)]
 #![feature(asm)]
