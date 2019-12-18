@@ -418,7 +418,6 @@ pub struct PersistentSummaryCache<'tcx> {
     typed_cache_table: HashMap<Vec<Rc<FunctionReference>>, HashMap<usize, Summary>>,
     reference_cache: HashMap<Rc<FunctionReference>, Summary>,
     typed_reference_cache: HashMap<Rc<FunctionReference>, Summary>,
-    dependencies: HashMap<DefId, Vec<DefId>>,
     key_cache: HashMap<DefId, Rc<String>>,
     type_context: TyCtxt<'tcx>,
 }
@@ -467,7 +466,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
             reference_cache: HashMap::new(),
             typed_reference_cache: HashMap::new(),
             key_cache: HashMap::new(),
-            dependencies: HashMap::new(),
             type_context,
         }
     }
@@ -504,16 +502,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
         store_path
     }
 
-    /// Returns a list of DefIds for all functions in the current crate that are known
-    /// to have used the summary of the function identified by def_id.
-    /// Use this after all functions in a crate have been analyzed.
-    #[logfn_inputs(TRACE)]
-    pub fn get_dependents(&mut self, def_id: &DefId) -> &Vec<DefId> {
-        self.dependencies
-            .entry(def_id.clone())
-            .or_insert_with(Vec::new)
-    }
-
     /// Returns (and caches) a string that uniquely identifies a definition to serve as a key to
     /// the summary cache, which is a key value store. The string will always be the same as
     /// long as the definition does not change its name or location, so it can be used to
@@ -527,20 +515,8 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
     }
 
     /// Returns the cached summary corresponding to def_id, or creates a default for it.
-    /// The optional dependent_def_id is the definition that refers to the returned summary.
-    /// The cache tracks all such dependents so that they can be retrieved and re-analyzed
-    /// if the cache is updated with a new summary for def_id.
     #[logfn_inputs(TRACE)]
-    pub fn get_summary_for(&mut self, def_id: DefId, dependent_def_id: Option<DefId>) -> &Summary {
-        match dependent_def_id {
-            None => {}
-            Some(id) => {
-                let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
-                if !dependents.contains(&id) {
-                    dependents.push(id);
-                }
-            }
-        };
+    pub fn get_summary_for(&mut self, def_id: DefId) -> &Summary {
         let db = &self.db;
         let tcx = self.type_context;
         let persistent_key = self
@@ -553,9 +529,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
     }
 
     /// Returns the cached summary corresponding to the function reference.
-    /// The optional dependent_def_id is the definition that refers to the returned summary.
-    /// The cache tracks all such dependents so that they can be retrieved and re-analyzed
-    /// if the cache is updated with a new summary for a def_id.
     /// If the reference has no def_id (and hence no function_id), the entire reference used
     /// as the key, which requires more cache instances and the hard to extract
     /// and unify, duplicated code.
@@ -564,15 +537,10 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
         &mut self,
         func_ref: &Rc<FunctionReference>,
         func_args: Option<Vec<Rc<FunctionReference>>>,
-        dependent_def_id: DefId,
     ) -> &Summary {
         match (func_ref.def_id, func_ref.function_id) {
             // Use the ids as keys if they are available, since they make much better keys.
             (Some(def_id), Some(function_id)) => {
-                let dependents = self.dependencies.entry(def_id).or_insert_with(Vec::new);
-                if !dependents.contains(&dependent_def_id) {
-                    dependents.push(dependent_def_id);
-                }
                 if let Some(func_args) = func_args {
                     return self
                         .typed_cache_table
