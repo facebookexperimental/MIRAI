@@ -1170,7 +1170,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_assign(&mut self, place: &mir::Place<'tcx>, rvalue: &mir::Rvalue<'tcx>) {
         let path = self.visit_place(place);
-        debug!("target path {:?}", path);
         self.visit_rvalue(path, rvalue);
     }
 
@@ -1608,11 +1607,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 return true;
             }
             KnownNames::MiraiSetModelField => {
-                if let Some((_, target)) = &call_info.destination {
-                    self.handle_set_model_field(call_info, *target);
-                } else {
-                    assume_unreachable!();
-                }
+                self.handle_set_model_field(call_info);
                 return true;
             }
             KnownNames::MiraiShallowClone => {
@@ -1692,6 +1687,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             _ => {
                 let result = self.try_to_inline_standard_ops_func(call_info);
+                debug!("result {:?}", result);
                 if !result.is_bottom() {
                     if let Some((place, target)) = &call_info.destination {
                         let target_path = self.visit_place(place);
@@ -1762,18 +1758,78 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Update the state to reflect the assignment of the model field.
-    fn handle_set_model_field(&mut self, call_info: &CallInfo<'_, 'tcx>, target: mir::BasicBlock) {
+    #[logfn_inputs(TRACE)]
+    fn handle_set_model_field(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         checked_assume!(call_info.actual_args.len() == 3);
-        let qualifier = call_info.actual_args[0].0.clone();
-        let field_name = self.coerce_to_string(&call_info.actual_args[1].1);
-        let target_path = Path::new_model_field(qualifier, field_name, &self.current_environment);
-        let rpath = call_info.actual_args[2].0.clone();
-        self.copy_or_move_elements(target_path, rpath, ExpressionType::NonPrimitive, true);
-        let exit_condition = self.current_environment.entry_condition.clone();
-        self.current_environment.exit_conditions = self
-            .current_environment
-            .exit_conditions
-            .insert(target, exit_condition);
+        if let Some((_, target)) = &call_info.destination {
+            let qualifier = call_info.actual_args[0].0.clone();
+            let field_name = self.coerce_to_string(&call_info.actual_args[1].1);
+            let target_path =
+                Path::new_model_field(qualifier, field_name, &self.current_environment);
+            let rpath = call_info.actual_args[2].0.clone();
+            self.copy_or_move_elements(target_path, rpath, ExpressionType::NonPrimitive, true);
+            let exit_condition = self.current_environment.entry_condition.clone();
+            self.current_environment.exit_conditions = self
+                .current_environment
+                .exit_conditions
+                .insert(*target, exit_condition);
+        } else {
+            assume_unreachable!();
+        }
+    }
+
+    /// Update the state to reflect a call to an intrinsic binary operation that returns a tuple
+    /// of an operation result, modulo its max value, and a flag that indicates if the max value
+    /// was exceeded.
+    #[logfn_inputs(TRACE)]
+    fn handle_checked_binary_operation(
+        &mut self,
+        call_info: &CallInfo<'_, 'tcx>,
+    ) -> Rc<AbstractValue> {
+        checked_assume!(call_info.actual_args.len() == 2);
+        if let Some((target_place, _)) = &call_info.destination {
+            let bin_op = match call_info.callee_known_name {
+                KnownNames::StdIntrinsicsMulWithOverflow => mir::BinOp::Mul,
+                _ => assume_unreachable!(),
+            };
+            let target_path = self.visit_place(target_place);
+            let path0 = Path::new_field(target_path.clone(), 0, &self.current_environment);
+            let path1 = Path::new_field(target_path, 1, &self.current_environment);
+            let target_type = self.get_target_path_type(&path0);
+            let left = call_info.actual_args[0].1.clone();
+            let right = call_info.actual_args[1].1.clone();
+            let modulo = target_type.modulo_value();
+            debug!("modulo {:?}", modulo.expression);
+            debug!("modulo {:?}", modulo.is_bottom());
+            let (modulo_result, overflow_flag) = if !modulo.is_bottom() {
+                let (result, overflow_flag) =
+                    Self::do_checked_binary_op(bin_op, target_type.clone(), left, right);
+                (result.remainder(target_type.modulo_value()), overflow_flag)
+            } else {
+                let (result, overflow_flag) =
+                    Self::do_checked_binary_op(bin_op, target_type.clone(), left, right);
+                // todo: figure out an expression that represents the truncated overflow of a
+                // signed operation.
+                let unknown_typed_value = AbstractValue::make_from(
+                    Expression::Variable {
+                        path: path0.clone(),
+                        var_type: target_type,
+                    },
+                    (path0.path_length() as u64) + 1,
+                );
+                (
+                    overflow_flag.conditional_expression(unknown_typed_value, result),
+                    overflow_flag,
+                )
+            };
+            self.current_environment
+                .update_value_at(path0, modulo_result);
+            self.current_environment
+                .update_value_at(path1, overflow_flag);
+            self.get_new_heap_address()
+        } else {
+            assume_unreachable!();
+        }
     }
 
     /// Extracts the string from an AbstractDomain that is required to be a string literal.
@@ -1942,6 +1998,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     _ => None,
                 };
                 result.unwrap_or_else(|| abstract_value::BOTTOM.into())
+            }
+            KnownNames::StdIntrinsicsMulWithOverflow => {
+                self.handle_checked_binary_operation(call_info)
             }
             KnownNames::StdIntrinsicsTransmute => {
                 checked_assume!(call_info.actual_args.len() == 1);
@@ -3262,6 +3321,22 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let target_type = self.get_first_part_of_target_path_type_tuple(&path);
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
+        let (result, overflow_flag) = Self::do_checked_binary_op(bin_op, target_type, left, right);
+        let path0 = Path::new_field(path.clone(), 0, &self.current_environment);
+        self.current_environment.update_value_at(path0, result);
+        let path1 = Path::new_field(path, 1, &self.current_environment);
+        self.current_environment
+            .update_value_at(path1, overflow_flag);
+    }
+
+    /// Apply the given binary operator to the two operands, with overflow checking where appropriate
+    #[logfn_inputs(TRACE)]
+    fn do_checked_binary_op(
+        bin_op: mir::BinOp,
+        target_type: ExpressionType,
+        left: Rc<AbstractValue>,
+        right: Rc<AbstractValue>,
+    ) -> (Rc<AbstractValue>, Rc<AbstractValue>) {
         let (result, overflow_flag) = match bin_op {
             mir::BinOp::Add => (
                 left.addition(right.clone()),
@@ -3285,11 +3360,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             ),
             _ => assume_unreachable!(),
         };
-        let path0 = Path::new_field(path.clone(), 0, &self.current_environment);
-        self.current_environment.update_value_at(path0, result);
-        let path1 = Path::new_field(path, 1, &self.current_environment);
-        self.current_environment
-            .update_value_at(path1, overflow_flag);
+        (result, overflow_flag)
     }
 
     /// Create a value based on the given type and assign it to path.

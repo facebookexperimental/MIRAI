@@ -120,10 +120,14 @@ impl From<bool> for AbstractValue {
 impl From<ConstantDomain> for AbstractValue {
     #[logfn_inputs(TRACE)]
     fn from(cv: ConstantDomain) -> AbstractValue {
-        AbstractValue {
-            expression: Expression::CompileTimeConstant(cv),
-            expression_size: 1,
-            interval: RefCell::new(None),
+        if let ConstantDomain::Bottom = &cv {
+            BOTTOM
+        } else {
+            AbstractValue {
+                expression: Expression::CompileTimeConstant(cv),
+                expression_size: 1,
+                interval: RefCell::new(None),
+            }
         }
     }
 }
@@ -1018,7 +1022,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// True if the set of concrete values that correspond to this domain is empty.
     #[logfn_inputs(TRACE)]
     fn is_bottom(&self) -> bool {
-        match self.expression {
+        match &self.expression {
             Expression::Bottom => true,
             _ => false,
         }
