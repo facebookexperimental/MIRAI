@@ -38,6 +38,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt::{Debug, Formatter, Result};
+use std::io::Write;
 use std::rc::Rc;
 use std::time::Instant;
 use syntax::errors::DiagnosticBuilder;
@@ -382,6 +383,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// that is already in the cache.
     #[logfn_inputs(TRACE)]
     pub fn visit_body(&mut self, actual_args: &[(Rc<Path>, Rc<AbstractValue>)]) {
+        if cfg!(DEBUG) {
+            let mut stdout = std::io::stdout();
+            rustc_mir::util::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
+            debug!("{:?}", stdout.flush());
+        }
         self.active_calls.push(self.def_id);
         let mut block_indices = self.get_sorted_block_indices();
 
@@ -461,7 +467,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// values of any function parameters.
     #[logfn_inputs(TRACE)]
     fn create_and_cache_function_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Summary {
-        debug!("summarizing {:?}", call_info.callee_def_id);
+        debug!(
+            "summarizing {:?}: {:?}",
+            call_info.callee_def_id,
+            self.tcx.type_of(call_info.callee_def_id)
+        );
         if self.tcx.is_mir_available(call_info.callee_def_id) {
             let elapsed_time = self.start_instant.elapsed();
             let mut saved_state = SavedVisitorState::new(self.def_id, self.mir);
@@ -498,9 +508,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if !call_info.actual_args.is_empty() && !self.tcx.is_closure(self.def_id) {
             if let Some(gen_args) = call_info.callee_generic_arguments {
                 // The environment of the caller provides a resolution context for the callee.
-                debug!("devirt gen_args {:?}", gen_args);
                 let param_env = self.tcx.param_env(self.def_id);
-                debug!("devirt param_env {:?}", param_env);
+                debug!(
+                    "devirtualize resolving def_id {:?}: {:?}",
+                    call_info.callee_def_id,
+                    self.tcx.type_of(call_info.callee_def_id)
+                );
+                debug!("gen_args {:?}", gen_args);
                 if let Some(instance) = rustc::ty::Instance::resolve(
                     self.tcx,
                     param_env,
@@ -508,6 +522,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     gen_args,
                 ) {
                     let resolved_def_id = instance.def.def_id();
+                    debug!(
+                        "devirtualize resolved def_id {:?}: {:?}",
+                        resolved_def_id,
+                        self.tcx.type_of(resolved_def_id)
+                    );
                     let result = self.summary_cache.get_summary_for(resolved_def_id).clone();
                     if result.is_not_default {
                         return Some(result);
@@ -1372,6 +1391,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // We assume that no program that does not make MIRAI run out of memory will have more than
         // a million local variables.
         self.fresh_variable_offset += 1_000_000;
+        debug!("visit_call {:?} {:?}", func, args);
+        debug!("self.generic_argument_map {:?}", self.generic_argument_map);
         let func_to_call = self.visit_operand(func);
         let callee_func_ref = Self::get_func_ref(&func_to_call);
         let (callee_def_id, callee_known_name) = if let Some(func_ref) = callee_func_ref {
@@ -1410,6 +1431,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             cleanup,
             destination: destination.clone(),
         };
+        debug!("calling func {:?}", call_info);
         if self.handled_as_special_function_call(&call_info) {
             return;
         }
@@ -1419,10 +1441,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if !function_summary.is_not_default {
             self.deal_with_missing_summary(&call_info);
         }
-        debug!("calling func {:?}", call_info);
         debug!("summary {:?}", function_summary);
         debug!("pre env {:?}", self.current_environment);
-        debug!("entry cond {:?}", self.current_environment.entry_condition);
         self.check_preconditions_if_necessary(&call_info, &function_summary);
         self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
         self.transfer_and_refine_cleanup_state(&call_info, &function_summary);
@@ -3551,7 +3571,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     let mut gen_id = def_id;
                     loop {
                         let generics = self.tcx.generics_of(gen_id);
-                        debug!("generics for {:?}: {:?}", gen_id, generics);
                         if let Some(parent_id) = generics.parent {
                             gen_id = parent_id;
                         } else {
@@ -3561,7 +3580,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if generic_args.is_empty() {
                         return (None, None);
                     }
-                    debug!("self.generic_argument_map {:?}", self.generic_argument_map);
+                    let mut substitution_map = self.generic_argument_map.clone();
                     let mut map: HashMap<syntax_pos::Symbol, Ty<'tcx>> = HashMap::new();
 
                     // This iterates over the callee's generic parameter definitions.
@@ -3570,19 +3589,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     // generic parameters of its parent with one of its own, so each parameter
                     // definition in this iteration will have a unique name.
                     InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
-                        debug!("param_def {:?}", param_def);
-                        debug!("param_def name {:?}", param_def.name);
                         if let Some(gen_arg) = generic_args.get(param_def.index as usize) {
-                            debug!("gen_arg {:?}", gen_arg);
                             if let GenericArgKind::Type(ty) = gen_arg.unpack() {
-                                map.insert(
-                                    param_def.name,
-                                    self.specialize_generic_argument_type(
-                                        ty,
-                                        &self.generic_argument_map,
-                                        param_def.index as usize,
-                                    ),
+                                let specialized_gen_arg_ty = self.specialize_generic_argument_type(
+                                    ty,
+                                    &substitution_map,
+                                    param_def.index as usize,
                                 );
+                                if let Some(substitution_map) = &mut substitution_map {
+                                    substitution_map.insert(param_def.name, specialized_gen_arg_ty);
+                                }
+                                map.insert(param_def.name, specialized_gen_arg_ty);
                             }
                         } else {
                             debug!("unmapped generic param def");
@@ -3599,7 +3616,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         let self_sym = syntax_pos::Symbol::intern("Self");
                         map.insert(self_sym, self_ty);
                     }
-                    debug!("formal to actual map for {:?}: {:?}", def_id, map);
                     (
                         Some(self.specialize_substs(generic_args, &self.generic_argument_map)),
                         Some(map),
@@ -3631,16 +3647,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         substs: SubstsRef<'tcx>,
         map: &Option<HashMap<syntax_pos::Symbol, Ty<'tcx>>>,
     ) -> SubstsRef<'tcx> {
-        debug!("substs {:?}", substs);
         let specialized_generic_args: Vec<GenericArg<'_>> = substs
             .iter()
             .enumerate()
             .map(|(i, gen_arg)| self.specialize_generic_argument(*gen_arg, &map, i))
             .collect();
-        debug!("specialized_generic_args {:?}", specialized_generic_args);
-        let specialized_substs = self.tcx.intern_substs(&specialized_generic_args);
-        debug!("specialized substs {:?}", specialized_substs);
-        specialized_substs
+        self.tcx.intern_substs(&specialized_generic_args)
     }
 
     fn specialize_generic_argument_type(
@@ -3728,18 +3740,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let specialized_predicates = predicates.map_bound(map_predicates);
                 self.tcx.mk_dynamic(specialized_predicates, region)
             }
-            TyKind::Closure(def_id, substs) => {
-                debug!("specializing closure {:?}", def_id);
-                debug!("closure generics {:?}", self.tcx.generics_of(def_id));
-                debug!("substs {:?}", substs);
-                debug!("map {:?}", map);
-                debug!(
-                    "specialized closure substs {:?}",
-                    self.specialize_substs(substs, map)
-                );
-                self.tcx
-                    .mk_closure(def_id, self.specialize_substs(substs, map))
-            }
+            TyKind::Closure(def_id, substs) => self
+                .tcx
+                .mk_closure(def_id, self.specialize_substs(substs, map)),
             TyKind::Generator(def_id, substs, movability) => {
                 self.tcx
                     .mk_generator(def_id, self.specialize_substs(substs, map), movability)
@@ -3770,7 +3773,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .mk_opaque(def_id, self.specialize_substs(substs, map)),
             TyKind::Param(ParamTy { name, .. }) => {
                 if let Some(ty) = map.as_ref().unwrap().get(&name) {
-                    debug!("substituting {:?} with {:?}", name, ty);
                     return *ty;
                 } else if index == 0 {
                     if let Some(ty) = map
@@ -3778,11 +3780,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         .unwrap()
                         .get(&syntax_pos::Symbol::intern("Self"))
                     {
-                        debug!("substituting {:?} as Self with {:?}", name, ty);
                         return *ty;
                     }
                 }
-                debug!("no map entry for {:?}", name);
                 gen_arg_type
             }
             _ => gen_arg_type,
@@ -4414,25 +4414,22 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if !self.tcx.is_mir_available(def_id) && self.tcx.trait_of_item(def_id).is_some() {
             let known_name = self.known_names_cache.get(self.tcx, def_id);
             if known_name == KnownNames::None && !self.tcx.is_closure(self.def_id) {
-                debug!("func_ref original def_id {:?}", def_id);
-                debug!(
-                    "func_ref trait of def_id {:?}",
-                    self.tcx.trait_of_item(def_id)
-                );
-                debug!("func_ref generic_args {:?}", generic_args);
                 let param_env = self.tcx.param_env(self.def_id);
-                debug!("func_ref param_env {:?}", param_env);
+                debug!(
+                    "func_ref resolving def_id {:?}: {:?}",
+                    def_id,
+                    self.tcx.type_of(def_id)
+                );
                 if let Some(instance) =
                     rustc::ty::Instance::resolve(self.tcx, param_env, def_id, generic_args)
                 {
                     def_id = instance.def.def_id();
-                    debug!("func_ref resolved def_id {:?}", def_id);
-                    generic_args = instance.substs;
-                    debug!("func_ref resolved generic_args {:?}", generic_args);
                     debug!(
-                        "func_ref mir available {:?}",
-                        self.tcx.is_mir_available(def_id)
+                        "func_ref resolved def_id {:?}: {:?}",
+                        def_id,
+                        self.tcx.type_of(def_id)
                     );
+                    generic_args = instance.substs;
                 }
             }
         }
