@@ -24,7 +24,7 @@ extern crate syntax;
 extern crate tempdir;
 
 use mirai::callbacks;
-use mirai::options::Options;
+use mirai::options::{DiagLevel, Options};
 use mirai::utils;
 use regex::Regex;
 use rustc_rayon::iter::IntoParallelIterator;
@@ -154,6 +154,7 @@ fn invoke_driver(
 ) -> usize {
     // Read MIRAI options from file content.
     let mut options = Options::default();
+    options.diag_level = DiagLevel::PARANOID;
     let mut rustc_args = vec![]; // any arguments after `--` for rustc
     {
         let file_content = read_to_string(&Path::new(&file_name)).unwrap();

@@ -6,6 +6,8 @@
 
 // This tests the devirtualization needed for the contracts crate to work for MIRAI.
 
+// MIRAI_FLAGS --test_only
+
 use mirai_annotations::*;
 
 // Without using contracts crate directly, this is what #[contract_trait] will generate.
@@ -38,6 +40,7 @@ impl Adder for MyAdder {
     }
 }
 
+#[test]
 pub fn main() {
     let mut a = MyAdder(3);
     a.decrement();
