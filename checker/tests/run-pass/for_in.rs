@@ -15,4 +15,6 @@
 //    }
 //}
 
-pub fn main() {}
+pub fn main() {
+    //String::from("foo");
+}
