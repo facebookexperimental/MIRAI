@@ -21,10 +21,11 @@ extern crate rustc;
 extern crate rustc_driver;
 extern crate rustc_interface;
 
-use log::info;
+use log::*;
 use mirai::callbacks;
 use mirai::options::Options;
 use mirai::utils;
+use mirai_annotations::*;
 use rustc::session::config::ErrorOutputType;
 use rustc::session::early_error;
 use std::env;
@@ -42,69 +43,74 @@ fn main() {
         env_logger::init_from_env(e);
     }
 
-    // Get MIRAI options from environment variable. For now, we do not pass them
-    // on the command line because `RUSTC_WRAPPER=mirai cargo build` does not accept any
-    // options and arguments which it does not known about (even though we could remove them in
-    // this code here and not pass on to rustc). Once we have cargo integration
-    // of MIRAI we may want to change this.
+    // Get any options specified via the MIRAI_FLAGS environment variable
     let mut options = Options::default();
     let rustc_args = if env::var("MIRAI_FLAGS").is_ok() {
         options.parse_from_str(&env::var("MIRAI_FLAGS").ok().unwrap())
     } else {
         vec![]
     };
-    info!("Options: {:?}", options);
+    info!("MIRAI options from environment: {:?}", options);
+
+    // Let arguments supplied on the command line override the environment variable.
+    let mut args = env::args_os()
+        .enumerate()
+        .map(|(i, arg)| {
+            arg.into_string().unwrap_or_else(|arg| {
+                early_error(
+                    ErrorOutputType::default(),
+                    &format!("Argument {} is not valid Unicode: {:?}", i, arg),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    assume!(!args.is_empty());
+
+    // Setting RUSTC_WRAPPER causes Cargo to pass 'rustc' as the first argument.
+    // We're invoking the compiler programmatically, so we remove it if present.
+    if args.len() > 1 && Path::new(&args[1]).file_stem() == Some("rustc".as_ref()) {
+        args.remove(1);
+    }
+
+    let mut rustc_command_line_arguments = options.parse(&args[1..]);
+    info!("MIRAI options modified by command line: {:?}", options);
 
     rustc_driver::install_ice_hook();
     let result = rustc_driver::catch_fatal_errors(|| {
-        // Get command line arguments from environment and massage them a bit.
-        let mut command_line_arguments = env::args_os()
-            .enumerate()
-            .map(|(i, arg)| {
-                arg.into_string().unwrap_or_else(|arg| {
-                    early_error(
-                        ErrorOutputType::default(),
-                        &format!("Argument {} is not valid Unicode: {:?}", i, arg),
-                    )
-                })
-            })
-            .collect::<Vec<_>>();
+        // Add back the binary name
+        rustc_command_line_arguments.insert(0, args[0].clone());
 
-        // Setting RUSTC_WRAPPER causes Cargo to pass 'rustc' as the first argument.
-        // We're invoking the compiler programmatically, so we remove it if present.
-        if command_line_arguments.len() > 1
-            && Path::new(&command_line_arguments[1]).file_stem() == Some("rustc".as_ref())
-        {
-            command_line_arguments.remove(1);
-        }
+        // Add rustc arguments supplied via the MIRAI_FLAGS environment variable
+        rustc_command_line_arguments.extend(rustc_args);
 
         let sysroot: String = "--sysroot".into();
-        if !command_line_arguments
+        if !rustc_command_line_arguments
             .iter()
             .any(|arg| arg.starts_with(&sysroot))
         {
             // Tell compiler where to find the std library and so on.
             // The compiler relies on the standard rustc driver to tell it, so we have to do likewise.
-            command_line_arguments.push(sysroot);
-            command_line_arguments.push(utils::find_sysroot());
+            rustc_command_line_arguments.push(sysroot);
+            rustc_command_line_arguments.push(utils::find_sysroot());
         }
 
         let always_encode_mir: String = "always-encode-mir".into();
-        if !command_line_arguments
+        if !rustc_command_line_arguments
             .iter()
             .any(|arg| arg.ends_with(&always_encode_mir))
         {
             // Tell compiler to emit MIR into crate for every function with a body.
-            command_line_arguments.push("-Z".into());
-            command_line_arguments.push(always_encode_mir);
+            rustc_command_line_arguments.push("-Z".into());
+            rustc_command_line_arguments.push(always_encode_mir);
         }
 
-        // Add any arguments obtained from MIRAI_FLAGS following `--`
-        command_line_arguments.extend(rustc_args);
-
         let mut callbacks = callbacks::MiraiCallbacks::new(options);
+        debug!(
+            "rustc_command_line_arguments {:?}",
+            rustc_command_line_arguments
+        );
         rustc_driver::run_compiler(
-            &command_line_arguments,
+            &rustc_command_line_arguments,
             &mut callbacks,
             None, // use default file loader
             None, // emit output to default destination

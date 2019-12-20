@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use clap::{App, AppSettings, Arg};
+use clap::{App, AppSettings, Arg, Error, ErrorKind};
 use itertools::Itertools;
 use mirai_annotations::*;
 use rustc::session::config::ErrorOutputType;
@@ -24,15 +24,16 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .long_help("Name is the simple name of a top-level crate function or a MIRAI summary key."))
     .arg(Arg::with_name("test_only")
         .long("test_only")
+        .short("t")
         .takes_value(false)
         .help("Focus analysis on #[test] methods.")
-        .long_help("Only #[test] methods and their usage are analyzed. This must be used together with the rustc --test option."))
+        .long_help("Only #[test] methods and their usage are analyzed. This must be used together with the rustc --test option.")) //todo: just set the --test option, dammit
     .arg(Arg::with_name("diag")
         .long("diag")
         .possible_values(&["relaxed", "strict", "paranoid"])
         .default_value("relaxed")
-        .help("Level of diagnostics which will be produced.")
-        .long_help("With `relaxed`, false positives will be avoided where possible. With `strict`, all errors will be reported."))
+        .help("Level of diagnostics.\n")
+        .long_help("With `relaxed`, false positives will be avoided where possible.\nWith 'strict' optimistic assumptions are made about unanalyzable calls.\nWith `paranoid`, all errors will be reported.\n"))
 }
 
 /// Represents options passed to MIRAI.
@@ -86,14 +87,44 @@ impl Options {
     /// will be returned (excluding this token).
     pub fn parse(&mut self, args: &[String]) -> Vec<String> {
         let mut mirai_args_end = args.len();
-        let mut other_args_start = args.len();
+        let mut rustc_args_start = 0;
         if let Some((p, _)) = args.iter().find_position(|s| s.as_str() == "--") {
             mirai_args_end = p;
-            other_args_start = p + 1;
+            rustc_args_start = p + 1;
         }
         let mirai_args = &args[0..mirai_args_end];
-        let other_args = &args[other_args_start..args.len()];
-        let matches = make_options_parser().get_matches_from(mirai_args.iter());
+        let matches = if rustc_args_start == 0 {
+            // The arguments may not be intended for MIRAI and may get here
+            // via some tool, so do not report errors here, but just assume
+            // that the arguments were not meant for MIRAI.
+            match make_options_parser().get_matches_from_safe(mirai_args.iter()) {
+                Ok(matches) => {
+                    // Looks like these are MIRAI options after all and there are no rustc options.
+                    rustc_args_start = args.len();
+                    matches
+                }
+                Err(Error {
+                    kind: ErrorKind::HelpDisplayed,
+                    message,
+                    ..
+                }) => {
+                    // help is ambiguous, so display both MIRAI and rustc help.
+                    println!("{}\n", message);
+                    return args.to_vec();
+                }
+                Err(..) => {
+                    // Just send all of the arguments to rustc.
+                    // Note that this means that MIRAI options and rustc options must always
+                    // be separated by --. I.e. any MIRAI options present in arguments list
+                    // will stay unknown to MIRAI and will make rustc unhappy.
+                    return args.to_vec();
+                }
+            }
+        } else {
+            // This will display error diagnostics for arguments that are not valid for MIRAI.
+            make_options_parser().get_matches_from(mirai_args.iter())
+        };
+
         self.single_func = matches.value_of("single_func").map(|s| s.to_string());
         self.test_only = matches.is_present("test_only");
         self.diag_level = match matches.value_of("diag").unwrap() {
@@ -102,6 +133,6 @@ impl Options {
             "paranoid" => DiagLevel::PARANOID,
             _ => assume_unreachable!(),
         };
-        other_args.to_vec()
+        args[rustc_args_start..args.len()].to_vec()
     }
 }
