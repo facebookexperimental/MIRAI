@@ -1390,20 +1390,15 @@ impl Z3Solver {
     fn bv_constant(&self, num_bits: u32, const_domain: &ConstantDomain) -> z3_sys::Z3_ast {
         match const_domain {
             ConstantDomain::Char(v) => unsafe {
-                let n: u128 = *v as u128;
-                z3_sys::Z3_mk_bv_numeral(
-                    self.z3_context,
-                    num_bits,
-                    &n as *const u128 as *const bool,
-                )
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                let num_str = format!("{}", (*v as u128));
+                let c_string = CString::new(num_str).unwrap();
+                z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },
             ConstantDomain::False => unsafe {
-                let n: u128 = 0;
-                z3_sys::Z3_mk_bv_numeral(
-                    self.z3_context,
-                    num_bits,
-                    &n as *const u128 as *const bool,
-                )
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                let c_string = CString::new("0").unwrap();
+                z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },
             ConstantDomain::F32(v) => unsafe {
                 let fv = f32::from_bits(*v);
@@ -1414,18 +1409,21 @@ impl Z3Solver {
                 z3_sys::Z3_mk_fpa_numeral_double(self.z3_context, fv, self.f64_sort)
             },
             ConstantDomain::I128(v) => unsafe {
-                z3_sys::Z3_mk_bv_numeral(self.z3_context, num_bits, v as *const i128 as *const bool)
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                let num_str = format!("{}", (*v as u128));
+                let c_string = CString::new(num_str).unwrap();
+                z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },
             ConstantDomain::U128(v) => unsafe {
-                z3_sys::Z3_mk_bv_numeral(self.z3_context, num_bits, v as *const u128 as *const bool)
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                let num_str = format!("{}", *v);
+                let c_string = CString::new(num_str).unwrap();
+                z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },
             ConstantDomain::True => unsafe {
-                let n: u128 = 1;
-                z3_sys::Z3_mk_bv_numeral(
-                    self.z3_context,
-                    num_bits,
-                    &n as *const u128 as *const bool,
-                )
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                let c_string = CString::new("1").unwrap();
+                z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },
             _ => unsafe {
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
