@@ -16,9 +16,9 @@ fn bar(x: Option<i32>, j: i32) -> Option<i32> {
     }
 }
 
-fn bas(x: Option<i32>, j: i32) -> Option<i32> {
+fn bas<T>(x: Option<T>, j: T) -> Option<T> {
     match x {
-        Some(i) => Some(i << 2),
+        Some(i) => Some(i),
         None => Some(j),
     }
 }
@@ -27,9 +27,13 @@ fn foo(f: fn(Option<i32>, i32) -> Option<i32>) -> Option<i32> {
     f(Some(1), 1)
 }
 
+fn foos<T: Copy>(f: fn(Option<T>, T) -> Option<T>, x: T) -> Option<T> {
+    f(Some(x), x)
+}
+
 pub fn main() {
     let fbar = foo(bar);
     verify!(fbar.unwrap() == 2);
-    let fbas = foo(bas);
-    verify!(fbas.unwrap() == 4);
+    let fbas = foos(bas, 2);
+    verify!(fbas.unwrap() == 2);
 }
