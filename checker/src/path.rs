@@ -5,6 +5,7 @@
 //
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
+use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::k_limits;
@@ -157,6 +158,12 @@ impl Path {
             PathEnum::QualifiedPath { length, .. } => *length,
             _ => 1,
         }
+    }
+
+    /// Creates a path that denotes a constant value without a specified memory location.
+    #[logfn_inputs(TRACE)]
+    pub fn new_constant(value: Rc<AbstractValue>) -> Rc<Path> {
+        Rc::new(PathEnum::Constant { value }.into())
     }
 
     /// Creates a path the selects the discriminant of the enum at the given path.
@@ -324,6 +331,9 @@ impl PathRefinement for Rc<Path> {
                 }
                 Expression::AbstractHeapAddress(ordinal) => {
                     Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into())
+                }
+                Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
+                    Path::new_constant(val.clone())
                 }
                 _ => self.clone(), // self is canonical
             };

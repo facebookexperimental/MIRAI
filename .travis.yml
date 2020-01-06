@@ -25,17 +25,26 @@ before_script:
 script:
 # Exit immediately if a command exits with a non-zero status.
 - set -e
-# Audit dependencies
-- cargo audit
-# Run format checks
-- cargo fmt --all -- --check
-# Run lint checks
-- cargo clippy -- -D warnings
+
+# Lint style checks
+- |
+  if [ ${TRAVIS_OS_NAME} == "osx" ]
+  then
+    # Audit dependencies
+    cargo audit
+    # Run format checks
+    cargo fmt --all -- --check
+    # Run lint checks
+    cargo clippy -- -D warnings
+  fi
+
 # Build
 - cargo build
 - if [ ${TRAVIS_OS_NAME} == "windows" ]; then cp binaries/libz3.dll target/debug; fi
+
 # Run unit and integration tests
 - RUST_BACKTRACE=1 cargo test
+
 # Run code coverage tests
 - |
   if [ ${TRAVIS_OS_NAME} == "osx" ]
