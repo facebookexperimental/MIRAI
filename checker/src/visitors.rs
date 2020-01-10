@@ -2957,14 +2957,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
                         self.copy_or_move_elements(path, rpath, rtype, false);
                     }
-                    Expression::CompileTimeConstant(ConstantDomain::Str(val)) => {
-                        let rtype = ExpressionType::U128;
-                        let rpath: Rc<Path> = Rc::new(
-                            PathEnum::Constant {
-                                value: Rc::new(ConstantDomain::Str(val.clone()).into()),
-                            }
-                            .into(),
-                        );
+                    Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
+                        let rtype = ExpressionType::Reference;
+                        let rpath = Path::new_constant(const_value.clone());
                         self.copy_or_move_elements(path.clone(), rpath, rtype, false);
                         self.current_environment.update_value_at(path, const_value);
                     }
@@ -3047,24 +3042,28 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
         };
         // Get here for paths that are not patterns.
-        // First look at paths that are rooted in rpath.
+        let value = self.lookup_path_and_refine_result(rpath.clone(), rtype.clone());
+        let val_type = value.expression.infer_type();
         let mut no_children = true;
-        for (path, value) in self
-            .current_environment
-            .value_map
-            .iter()
-            .filter(|(p, _)| p.is_rooted_by(&rpath))
-        {
-            check_for_early_return!(self);
-            let qualified_path = path.replace_root(&rpath, target_path.clone());
-            if move_elements {
-                trace!("moving {:?} to {:?}", value, qualified_path);
-                value_map = value_map.remove(path);
-            } else {
-                trace!("copying {:?} to {:?}", value, qualified_path);
-            };
-            value_map = value_map.insert(qualified_path, value.clone());
-            no_children = false;
+        if val_type == ExpressionType::NonPrimitive {
+            // First look at paths that are rooted in rpath.
+            for (path, value) in self
+                .current_environment
+                .value_map
+                .iter()
+                .filter(|(p, _)| p.is_rooted_by(&rpath))
+            {
+                check_for_early_return!(self);
+                let qualified_path = path.replace_root(&rpath, target_path.clone());
+                if move_elements {
+                    trace!("moving {:?} to {:?}", value, qualified_path);
+                    value_map = value_map.remove(path);
+                } else {
+                    trace!("copying {:?} to {:?}", value, qualified_path);
+                };
+                value_map = value_map.insert(qualified_path, value.clone());
+                no_children = false;
+            }
         }
         if rtype != ExpressionType::NonPrimitive || no_children {
             let value = self.lookup_path_and_refine_result(rpath.clone(), rtype.clone());
@@ -3179,11 +3178,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if let TyKind::Ref(_, ty, _) = lh_type.kind {
                         if let TyKind::Slice(elem_ty) = ty.kind {
                             if let TyKind::Uint(syntax::ast::UintTy::U8) = elem_ty.kind {
+                                let collection_path = Path::new_constant(value.clone());
                                 for (i, ch) in s.as_bytes().iter().enumerate() {
                                     let index = Rc::new((i as u128).into());
                                     let ch_const = Rc::new((*ch as u128).into());
                                     let path = Path::new_index(
-                                        target_path.clone(),
+                                        collection_path.clone(),
                                         index,
                                         &self.current_environment,
                                     );
@@ -3247,7 +3247,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             } if *selector.as_ref() == PathSelector::Deref => {
                 // We are taking a reference to the result of a deref. This is a bit awkward.
                 // The deref essentially does a copy of the value denoted by the qualifier.
-                // It this value is structured and not heap allocated, the copy must be done
+                // If this value is structured and not heap allocated, the copy must be done
                 // with copy_or_move_elements. We use path as the address of the copy and rely
                 // on the type of the value to ensure reference like behavior.
                 let rval = self
@@ -3565,12 +3565,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn get_operand_path(&mut self, operand: &mir::Operand<'tcx>) -> Rc<Path> {
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => self.visit_place(place),
-            mir::Operand::Constant(..) => Rc::new(
-                PathEnum::Constant {
-                    value: self.visit_operand(operand),
-                }
-                .into(),
-            ),
+            mir::Operand::Constant(..) => Path::new_constant(self.visit_operand(operand)),
         }
     }
 
@@ -3930,12 +3925,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 Rc::new(ConstantDomain::U128(s.len() as u128).into());
                             let res = &mut self.constant_value_cache.get_string_for(s);
 
-                            let path: Rc<Path> = Rc::new(
-                                PathEnum::Constant {
-                                    value: Rc::new(res.clone().into()),
-                                }
-                                .into(),
-                            );
+                            let path = Path::new_constant(Rc::new(res.clone().into()));
                             let len_path = Path::new_length(path, &self.current_environment);
                             self.current_environment.update_value_at(len_path, len_val);
 
@@ -4214,7 +4204,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     let res: Rc<AbstractValue> =
                         Rc::new(self.constant_value_cache.get_string_for(s).clone().into());
 
-                    let path: Rc<Path> = Rc::new(PathEnum::Constant { value: res.clone() }.into());
+                    let path = Path::new_constant(res.clone());
                     let len_path = Path::new_length(path, &self.current_environment);
                     self.current_environment.update_value_at(len_path, len_val);
                     res
