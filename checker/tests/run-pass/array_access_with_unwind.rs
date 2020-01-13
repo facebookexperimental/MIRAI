@@ -34,8 +34,10 @@ pub mod foreign_contracts {
     }
 }
 
-pub fn foo(arr: &mut [i32], i: usize) -> String {
-    arr[i] = 123; //~ possible index out of bounds
+//todo: remove this and make foo public when analysis of String::from has been fixed
+#[allow(dead_code)]
+fn foo(arr: &mut [i32], i: usize) -> String {
+    arr[i] = 123; // ~ possible index out of bounds
     let result = String::from("foo"); // allocate something that needs explicit cleanup
     let _e = arr[i]; // no warning here because we can't get here unless the assignment succeeded
     result

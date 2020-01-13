@@ -15,15 +15,16 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
 #![feature(box_syntax)]
-#![feature(vec_remove_item)]
 
 extern crate rustc;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
+extern crate rustc_errors;
+extern crate rustc_hir;
 extern crate rustc_interface;
 extern crate rustc_mir;
+extern crate rustc_span;
 extern crate syntax;
-extern crate syntax_pos;
 
 #[macro_use]
 extern crate log;

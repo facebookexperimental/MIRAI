@@ -10,9 +10,9 @@ use crate::summaries::PersistentSummaryCache;
 use crate::utils;
 
 use log_derive::{logfn, logfn_inputs};
-use rustc::hir::def_id::DefId;
 use rustc::ty::subst::SubstsRef;
 use rustc::ty::{Ty, TyCtxt};
+use rustc_hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};

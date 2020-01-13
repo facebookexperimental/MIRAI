@@ -14,7 +14,6 @@
 // While pretty bad, it is a lot less bad than having to write our own compiler, so here goes.
 #![feature(rustc_private)]
 #![feature(box_syntax)]
-#![feature(vec_remove_item)]
 
 extern crate mirai;
 extern crate rustc_data_structures;

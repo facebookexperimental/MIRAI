@@ -8,6 +8,7 @@
 
 // MIRAI_FLAGS -- -Z mir-opt-level=0
 
+#[allow(const_err)]
 pub fn main() {
     let x = [1, 2];
     let _y = x[2]; //~ index out of bounds

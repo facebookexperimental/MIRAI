@@ -3,9 +3,9 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use rustc::hir::def_id::DefId;
 use rustc::hir::map::{DefPathData, DisambiguatedDefPathData};
 use rustc::ty::TyCtxt;
+use rustc_hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

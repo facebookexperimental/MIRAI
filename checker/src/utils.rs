@@ -6,12 +6,12 @@
 use log::debug;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::assume_unreachable;
-use rustc::hir::def_id::DefId;
 use rustc::hir::map::{DefPathData, DisambiguatedDefPathData};
-use rustc::hir::{ItemKind, Node};
 use rustc::ty::print::{FmtPrinter, Printer};
 use rustc::ty::subst::{GenericArgKind, SubstsRef};
 use rustc::ty::{DefIdTree, ProjectionTy, Ty, TyCtxt, TyKind};
+use rustc_hir::def_id::DefId;
+use rustc_hir::{ItemKind, Node};
 use std::rc::Rc;
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
@@ -41,8 +41,8 @@ pub fn find_sysroot() -> String {
 pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
     if let Some(node) = tcx.hir().get_if_local(def_id) {
         match node {
-            Node::Expr(rustc::hir::Expr {
-                kind: rustc::hir::ExprKind::Closure(..),
+            Node::Expr(rustc_hir::Expr {
+                kind: rustc_hir::ExprKind::Closure(..),
                 ..
             }) => {
                 if let Some(parent_def_id) = tcx.parent(def_id) {
@@ -196,14 +196,14 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         RawPtr(ty_and_mut) => {
             str.push_str("pointer_");
             match ty_and_mut.mutbl {
-                rustc::hir::Mutability::Mutable => str.push_str("mut_"),
-                rustc::hir::Mutability::Immutable => str.push_str("const_"),
+                rustc_hir::Mutability::Mut => str.push_str("mut_"),
+                rustc_hir::Mutability::Not => str.push_str("const_"),
             }
             append_mangled_type(str, ty_and_mut.ty, tcx);
         }
         Ref(_, ty, mutability) => {
             str.push_str("ref_");
-            if mutability == rustc::hir::Mutability::Mutable {
+            if mutability == rustc_hir::Mutability::Mut {
                 str.push_str("mut_");
             }
             append_mangled_type(str, ty, tcx);
@@ -356,7 +356,7 @@ pub fn def_id_display_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
     struct PrettyDefId<'tcx>(DefId, TyCtxt<'tcx>);
     impl std::fmt::Debug for PrettyDefId<'_> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            FmtPrinter::new(self.1, f, rustc::hir::def::Namespace::ValueNS)
+            FmtPrinter::new(self.1, f, rustc_hir::def::Namespace::ValueNS)
                 .print_def_path(self.0, &[])?;
             Ok(())
         }

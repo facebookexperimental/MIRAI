@@ -13,8 +13,8 @@ use crate::utils;
 
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::{assume, assume_unreachable};
-use rustc::hir::def_id::DefId;
 use rustc::ty::TyCtxt;
+use rustc_hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
 use sled::{Config, Db};
 use std::collections::{HashMap, HashSet};
@@ -120,7 +120,7 @@ pub struct Precondition {
     /// Because this situation arises for non public functions, it is possible to use source spans
     /// rather than strings to track the locations where the promotions happen.
     #[serde(skip)]
-    pub spans: Vec<syntax_pos::Span>,
+    pub spans: Vec<rustc_span::Span>,
 }
 
 impl Summary {
