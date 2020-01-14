@@ -948,7 +948,19 @@ impl Z3Solver {
                 ),
                 _ => {
                     if target_type.is_integer() {
-                        self.get_as_numeric_z3_ast(expression)
+                        if expression.infer_type() == *target_type {
+                            self.get_as_numeric_z3_ast(expression)
+                        } else {
+                            let bv_cast = self.bv_cast(expression, target_type, 128);
+                            (
+                                false,
+                                z3_sys::Z3_mk_bv2int(
+                                    self.z3_context,
+                                    bv_cast,
+                                    target_type.is_signed_integer(),
+                                ),
+                            )
+                        }
                     } else {
                         (
                             false,
@@ -1264,7 +1276,7 @@ impl Z3Solver {
             Expression::BitXor { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvxor)
             }
-            Expression::Cast { .. } => self.bv_cast(expression, num_bits),
+            Expression::Cast { target_type, .. } => self.bv_cast(expression, target_type, num_bits),
             Expression::CompileTimeConstant(const_domain) => {
                 self.bv_constant(num_bits, const_domain)
             }
@@ -1377,12 +1389,22 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn bv_cast(&self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
+    fn bv_cast(
+        &self,
+        expression: &Expression,
+        target_type: &ExpressionType,
+        num_bits: u32,
+    ) -> z3_sys::Z3_ast {
         let path_str = CString::new(format!("{:?}", expression)).unwrap();
+        let mask = self.bv_constant(num_bits, &target_type.max_value());
         unsafe {
             let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
             let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
-            z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
+            z3_sys::Z3_mk_bvand(
+                self.z3_context,
+                mask,
+                z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort),
+            )
         }
     }
 
