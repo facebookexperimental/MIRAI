@@ -5,13 +5,13 @@
 
 use log_derive::logfn_inputs;
 use mirai_annotations::assume;
+use rustc_errors::Diagnostic;
+use rustc_span::MultiSpan;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use syntax::errors::Diagnostic;
-use syntax_pos::MultiSpan;
 
 /// A collection of error strings that are expected for a test case.
 #[derive(Debug)]

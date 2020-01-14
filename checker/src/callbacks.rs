@@ -15,12 +15,13 @@ use crate::z3_solver::Z3Solver;
 
 use log::info;
 use log_derive::{logfn, logfn_inputs};
-use rustc::hir::def_id::{DefId, LOCAL_CRATE};
 use rustc::mir;
 use rustc::session::config::ErrorOutputType;
 use rustc::session::early_error;
 use rustc::ty::TyCtxt;
 use rustc_driver::Compilation;
+use rustc_errors::{Diagnostic, DiagnosticBuilder};
+use rustc_hir::def_id::{DefId, LOCAL_CRATE};
 use rustc_interface::{interface, Queries};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -29,7 +30,6 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::rc::Rc;
-use syntax::errors::{Diagnostic, DiagnosticBuilder};
 use tempdir::TempDir;
 
 /// Private state used to implement the callbacks.
@@ -194,7 +194,7 @@ impl MiraiCallbacks {
             "storing summaries for {} at {}/.summary_store.sled",
             self.file_name, summary_store_path
         );
-        let options = std::mem::replace(&mut self.options, Options::default());
+        let options = std::mem::take(&mut self.options);
         let persistent_summary_cache = PersistentSummaryCache::new(tcx, summary_store_path);
         let defs = Vec::from_iter(tcx.body_owners());
         let constant_value_cache = ConstantValueCache::default();

@@ -12,7 +12,7 @@ use crate::k_limits;
 
 use log_derive::logfn_inputs;
 use mirai_annotations::assume;
-use rustc::hir::def_id::DefId;
+use rustc_hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
