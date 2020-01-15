@@ -221,6 +221,14 @@ pub mod core {
         pub struct Void {}
     }
 
+    pub mod hash {
+        pub mod Hasher {
+            pub fn write<T>(_self: &mut T, _bytes: &[u8]) {
+                // todo: provide non default models for interesting types
+            }
+        }
+    }
+
     pub mod intrinsics {
         pub mod _1 {
             pub fn atomic_cxchg<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
@@ -493,7 +501,7 @@ pub mod core {
             }
             pub fn move_val_init<T>(dst: *mut T, src: T) {}
             pub fn min_align_of<T>() -> usize {
-                result!()
+                4
             }
             pub fn pref_align_of<T>() -> usize {
                 result!()
