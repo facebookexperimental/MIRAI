@@ -18,6 +18,16 @@ fn write_u32_as_uleb128(value: u32) {
     verify!(v2 == 1);
 }
 
+fn write_i32_as_uleb128(value: i32) {
+    let mut val = value;
+    let v1: u8 = (val & (-127)) as u8;
+    verify!(v1 == 1);
+    val >>= 7;
+    let v2: u8 = (val & (-127)) as u8;
+    verify!(v2 == 128);
+}
+
 pub fn main() {
     write_u32_as_uleb128(129);
+    write_i32_as_uleb128(-129);
 }

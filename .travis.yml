@@ -1,7 +1,7 @@
 os:
   - linux
   - osx
-  - windows
+  # - windows
 language: rust
 rust:
 - nightly-2020-01-08

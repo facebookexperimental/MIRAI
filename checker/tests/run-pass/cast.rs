@@ -9,10 +9,12 @@
 #[macro_use]
 extern crate mirai_annotations;
 
-pub fn foo(i: u16) {
+fn foo(i: u16) {
     if i > 16 {
         verify!((i as usize) > 16);
     }
 }
 
-pub fn main() {}
+pub fn main() {
+    foo(17);
+}
