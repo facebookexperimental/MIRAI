@@ -539,6 +539,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     {
                         let mut devirtualized_call_info = call_info.clone();
                         devirtualized_call_info.callee_def_id = resolved_def_id;
+                        devirtualized_call_info.callee_generic_arguments = Some(instance.substs);
+                        devirtualized_call_info.callee_generic_argument_map = self
+                            .get_generic_arguments_map(
+                                resolved_def_id,
+                                instance.substs,
+                                call_info.actual_argument_types,
+                            );
                         return Some(
                             self.create_and_cache_function_summary(&devirtualized_call_info),
                         );
@@ -3649,7 +3656,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self_ty
             };
             let self_sym = rustc_span::Symbol::intern("Self");
-            map.insert(self_sym, self_ty);
+            map.entry(self_sym).or_insert(self_ty);
         }
         Some(map)
     }
