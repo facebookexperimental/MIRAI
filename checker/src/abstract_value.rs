@@ -781,13 +781,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
                 1,
             ),
-            Expression::Variable { path, .. } => AbstractValue::make_from(
-                Expression::Variable {
-                    path: Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
-                    var_type: target_type,
-                },
-                1,
-            ),
+            Expression::UninterpretedCall { path, .. } | Expression::Variable { path, .. } => {
+                AbstractValue::make_from(
+                    Expression::Variable {
+                        path: Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
+                        var_type: target_type,
+                    },
+                    1,
+                )
+            }
             Expression::Widen { path, operand } => operand.dereference(target_type).widen(path),
             _ => assume_unreachable!(
                 "found unhandled expression that is of type reference: {:?}",
