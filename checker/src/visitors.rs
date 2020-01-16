@@ -19,7 +19,7 @@ use crate::summaries;
 use crate::summaries::{PersistentSummaryCache, Precondition, Summary};
 use crate::utils;
 
-use log_derive::logfn_inputs;
+use log_derive::*;
 use mirai_annotations::{
     assume, assume_unreachable, checked_assume, checked_assume_eq, precondition, verify,
 };
@@ -462,6 +462,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let param_path = Path::new_local(i + 1);
                 environment.value_map = environment.value_map.insert(param_path, arg.clone());
             }
+            //todo: if the argument is structured and one of the elements is a function constant,
+            //add that to the environment as well.
         }
         environment
     }
@@ -503,13 +505,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .clone()
     }
 
-    /// If call_info.callee_def_id is a trait (virtual) method and the first argument has a concrete type
-    /// that implements the trait, then this gets the def_id of the concrete method that implements the
-    /// given virtual method and returns the summary of that, computing it if necessary.
+    /// If call_info.callee_def_id is a trait (virtual) then this tries to get the def_id of the
+    /// concrete method that implements the given virtual method and returns the summary of that,
+    /// computing it if necessary.
     #[logfn_inputs(DEBUG)]
     fn try_to_devirtualize(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Option<Summary> {
-        if !call_info.actual_args.is_empty() && !self.tcx.is_closure(self.def_id) {
+        if !self.tcx.is_closure(self.def_id) {
             if let Some(gen_args) = call_info.callee_generic_arguments {
+                if !utils::are_concrete(gen_args) {
+                    return None;
+                }
                 // The environment of the caller provides a resolution context for the callee.
                 let param_env = self.tcx.param_env(self.def_id);
                 debug!(
@@ -632,23 +637,36 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         .get_persistent_summary_for(summary_cache_key);
                     &summary
                 };
-                if let Some(result) = &summary.result {
-                    let result = result.refine_paths(&self.current_environment);
-                    if let Expression::AbstractHeapAddress(ordinal) = result.expression {
-                        let root_path: Rc<Path> =
-                            Rc::new(PathEnum::AbstractHeapAddress { ordinal }.into());
-                        for (path, value) in summary
-                            .side_effects
-                            .iter()
-                            .filter(|(p, _)| p.is_rooted_by(&root_path))
-                        {
-                            let rvalue = value.refine_paths(&self.current_environment);
+                if summary.result.is_some() {
+                    let side_effects = summary.side_effects.clone();
+
+                    // Effects on the path
+                    self.transfer_and_refine(&side_effects, path.clone(), &Path::new_local(0), &[]);
+
+                    // Effects on the heap
+                    for (path, value) in side_effects.iter() {
+                        if path.is_rooted_by_abstract_heap_address() {
                             self.current_environment
-                                .update_value_at(path.clone(), rvalue);
+                                .update_value_at(path.clone(), value.clone());
                         }
                     }
-                    result
+                    self.current_environment
+                        .value_at(&path)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            AbstractValue::make_from(
+                                Expression::Variable {
+                                    path: path.clone(),
+                                    var_type: expression_type.clone(),
+                                },
+                                1,
+                            )
+                        })
                 } else {
+                    debug!(
+                        "static var with summary that does not have a result {:?} {:?}",
+                        path, summary
+                    );
                     let result = AbstractValue::make_from(
                         Expression::Variable {
                             path: path.clone(),
