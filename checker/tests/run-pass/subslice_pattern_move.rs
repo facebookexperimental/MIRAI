@@ -7,7 +7,6 @@
 // A test that visits the ProjectionElem::Subslice case of Visitor::visit_projection_elem
 
 #![feature(box_syntax)]
-#![feature(slice_patterns)]
 
 #[macro_use]
 extern crate mirai_annotations;

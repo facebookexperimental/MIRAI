@@ -1063,32 +1063,57 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
             let promoted_root: Rc<Path> = Rc::new(PathEnum::PromotedConstant { ordinal }.into());
             let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
-            if let Expression::AbstractHeapAddress(ordinal) = &value.expression {
-                let heap_root: Rc<Path> =
-                    Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
-                for (path, value) in self
-                    .exit_environment
-                    .value_map
-                    .iter()
-                    .filter(|(p, _)| p.is_rooted_by(&heap_root))
-                {
-                    environment.update_value_at(path.clone(), value.clone());
-                }
-                environment.update_value_at(promoted_root.clone(), value.clone());
-            } else {
-                for (path, value) in self
-                    .exit_environment
-                    .value_map
-                    .iter()
-                    .filter(|(p, _)| p.is_rooted_by(&result_root))
-                {
-                    let promoted_path = path.replace_root(&result_root, promoted_root.clone());
-                    environment.update_value_at(promoted_path, value.clone());
-                }
-                if let Expression::Variable { .. } = &value.expression {
-                    // The constant is a stack allocated struct. No need for a separate entry.
-                } else {
+            match &value.expression {
+                Expression::AbstractHeapAddress(ordinal) => {
+                    let heap_root: Rc<Path> =
+                        Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+                    for (path, value) in self
+                        .exit_environment
+                        .value_map
+                        .iter()
+                        .filter(|(p, _)| p.is_rooted_by(&heap_root))
+                    {
+                        environment.update_value_at(path.clone(), value.clone());
+                    }
                     environment.update_value_at(promoted_root.clone(), value.clone());
+                }
+                Expression::Reference(local_path) => {
+                    // value is reference to a local of the promoted constant function so we
+                    // need to rename the local so that it does not clash with the parent function's
+                    // locals.
+                    let new_local: Rc<Path> = Rc::new(
+                        PathEnum::PromotedConstant {
+                            ordinal: ordinal + 1000,
+                        }
+                        .into(),
+                    );
+                    for (path, value) in self
+                        .exit_environment
+                        .value_map
+                        .iter()
+                        .filter(|(p, _)| (*p) == local_path || p.is_rooted_by(local_path))
+                    {
+                        let renamed_path = path.replace_root(local_path, new_local.clone());
+                        environment.update_value_at(renamed_path, value.clone());
+                    }
+                    let new_value = AbstractValue::make_from(Expression::Reference(new_local), 1);
+                    environment.update_value_at(promoted_root.clone(), new_value);
+                }
+                _ => {
+                    for (path, value) in self
+                        .exit_environment
+                        .value_map
+                        .iter()
+                        .filter(|(p, _)| p.is_rooted_by(&result_root))
+                    {
+                        let promoted_path = path.replace_root(&result_root, promoted_root.clone());
+                        environment.update_value_at(promoted_path, value.clone());
+                    }
+                    if let Expression::Variable { .. } = &value.expression {
+                        // The constant is a stack allocated struct. No need for a separate entry.
+                    } else {
+                        environment.update_value_at(promoted_root.clone(), value.clone());
+                    }
                 }
             }
             self.reset_visitor_state();
@@ -1458,7 +1483,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             actual_args: &actual_args,
             actual_argument_types: &actual_argument_types,
             cleanup,
-            destination: destination.clone(),
+            destination: *destination,
             function_constant_args: &self.get_function_constant_args(&actual_args),
         };
         debug!("calling func {:?}", call_info);
@@ -3375,6 +3400,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     AbstractValue::make_from(Expression::Reference(value_path), 1)
                 }
             }
+            PathEnum::AbstractHeapAddress { ordinal } => {
+                AbstractValue::make_from(Expression::AbstractHeapAddress(*ordinal), 1)
+            }
             _ => AbstractValue::make_from(Expression::Reference(value_path), 1),
         };
         self.current_environment.update_value_at(path, value);
@@ -3940,17 +3968,24 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let ty = literal.ty;
 
         match &literal.val {
-            rustc::ty::ConstKind::Unevaluated(def_id, ..) => {
+            rustc::ty::ConstKind::Unevaluated(def_id, _substs, promoted) => {
+                //todo: use the generic arguments in _substs to specialize the summary key
                 let name = utils::summary_key_str(self.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
-                let path = Rc::new(
-                    PathEnum::StaticVariable {
-                        def_id: Some(*def_id),
-                        summary_cache_key: name,
-                        expression_type: expression_type.clone(),
+                let path = match promoted {
+                    Some(promoted) => {
+                        let index = promoted.index();
+                        Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
                     }
-                    .into(),
-                );
+                    None => Rc::new(
+                        PathEnum::StaticVariable {
+                            def_id: Some(*def_id),
+                            summary_cache_key: name,
+                            expression_type: expression_type.clone(),
+                        }
+                        .into(),
+                    ),
+                };
                 self.lookup_path_and_refine_result(path, expression_type)
             }
 
@@ -4141,6 +4176,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Use for constants that are accessed via references
+    #[logfn_inputs(TRACE)]
     fn get_reference_to_constant(
         &mut self,
         literal: &rustc::ty::Const<'tcx>,
@@ -4181,6 +4217,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Used for enum typed constants. Currently only simple variants are understood.
+    #[logfn_inputs(TRACE)]
     fn get_enum_variant_as_constant(
         &mut self,
         literal: &rustc::ty::Const<'tcx>,
@@ -4219,6 +4256,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Used only for types with `layout::abi::Scalar` ABI and ZSTs.
+    #[logfn_inputs(TRACE)]
     fn get_constant_from_scalar(
         &mut self,
         ty: &TyKind<'tcx>,
@@ -4563,75 +4601,51 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let mut is_union = false;
-        let base_path = match &place.base {
-            mir::PlaceBase::Local(local) => {
-                let ordinal = local.as_usize();
-                let result: Rc<Path> = Path::new_local(ordinal);
-                if place.projection.is_empty() {
-                    let ty = self.get_rustc_place_type(place);
-                    match &ty.kind {
-                        TyKind::Array(_, len) => {
-                            let len_val = self.visit_constant(None, &len);
-                            let len_path =
-                                Path::new_length(result.clone(), &self.current_environment);
-                            self.current_environment.update_value_at(len_path, len_val);
-                        }
-                        TyKind::Closure(def_id, generic_args, ..) => {
-                            let func_const = self.visit_function_reference(
-                                *def_id,
-                                ty,
-                                generic_args.as_closure().substs,
-                            );
-                            let func_val = Rc::new(func_const.clone().into());
-                            self.current_environment
-                                .update_value_at(result.clone(), func_val);
-                        }
-                        TyKind::FnDef(def_id, generic_args) => {
-                            let func_const = self.visit_function_reference(
-                                *def_id,
-                                ty,
-                                generic_args.as_closure().substs,
-                            );
-                            let func_val = Rc::new(func_const.clone().into());
-                            self.current_environment
-                                .update_value_at(result.clone(), func_val);
-                        }
-                        TyKind::Generator(def_id, generic_args, ..) => {
-                            let func_const = self.visit_function_reference(
-                                *def_id,
-                                ty,
-                                generic_args.as_generator().substs,
-                            );
-                            let func_val = Rc::new(func_const.clone().into());
-                            self.current_environment
-                                .update_value_at(result.clone(), func_val);
-                        }
-                        _ => (),
-                    }
-                } else {
-                    let ty = self.mir.local_decls[*local].ty;
-                    is_union = Self::is_union(ty);
+        let base_path: Rc<Path> = Path::new_local(place.local.as_usize());
+        if place.projection.is_empty() {
+            let ty = self.get_rustc_place_type(place);
+            match &ty.kind {
+                TyKind::Array(_, len) => {
+                    let len_val = self.visit_constant(None, &len);
+                    let len_path = Path::new_length(base_path.clone(), &self.current_environment);
+                    self.current_environment.update_value_at(len_path, len_val);
                 }
-                result
+                TyKind::Closure(def_id, generic_args, ..) => {
+                    let func_const = self.visit_function_reference(
+                        *def_id,
+                        ty,
+                        generic_args.as_closure().substs,
+                    );
+                    let func_val = Rc::new(func_const.clone().into());
+                    self.current_environment
+                        .update_value_at(base_path.clone(), func_val);
+                }
+                TyKind::FnDef(def_id, generic_args) => {
+                    let func_const = self.visit_function_reference(
+                        *def_id,
+                        ty,
+                        generic_args.as_closure().substs,
+                    );
+                    let func_val = Rc::new(func_const.clone().into());
+                    self.current_environment
+                        .update_value_at(base_path.clone(), func_val);
+                }
+                TyKind::Generator(def_id, generic_args, ..) => {
+                    let func_const = self.visit_function_reference(
+                        *def_id,
+                        ty,
+                        generic_args.as_generator().substs,
+                    );
+                    let func_val = Rc::new(func_const.clone().into());
+                    self.current_environment
+                        .update_value_at(base_path.clone(), func_val);
+                }
+                _ => (),
             }
-            mir::PlaceBase::Static(boxed_static) => match boxed_static.kind {
-                mir::StaticKind::Promoted(promoted, _) => {
-                    let index = promoted.index();
-                    Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
-                }
-                mir::StaticKind::Static => {
-                    let name = utils::summary_key_str(self.tcx, boxed_static.def_id);
-                    Rc::new(
-                        PathEnum::StaticVariable {
-                            def_id: Some(boxed_static.def_id),
-                            summary_cache_key: name,
-                            expression_type: self.get_place_type(place),
-                        }
-                        .into(),
-                    )
-                }
-            },
-        };
+        } else {
+            let ty = self.mir.local_decls[place.local].ty;
+            is_union = Self::is_union(ty);
+        }
         self.visit_projection(base_path, is_union, &place.projection)
     }
 
@@ -4716,12 +4730,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> Ty<'tcx> {
         let result = {
-            let base_type = match &place.base {
-                mir::PlaceBase::Local(local) => {
-                    self.mir.local_decls[mir::Local::from(local.as_usize())].ty
-                }
-                mir::PlaceBase::Static(boxed_static) => boxed_static.ty,
-            };
+            let base_type = self.mir.local_decls[place.local].ty;
             self.get_type_for_projection_element(base_type, &place.projection)
         };
         match result.kind {
