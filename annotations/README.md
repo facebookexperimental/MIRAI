@@ -35,6 +35,7 @@ Additionally we also have:
 * verify_unreachable! which requires MIRAI to verify that it is not unreachable.
 
 This crate also provides macros for describing and constraining abstract state that only has meaning to MIRAI. These are:
+* abstract_value!
 * get_model_field!
 * result!
 * set_model_field!

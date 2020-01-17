@@ -5,6 +5,23 @@
 
 // A set of macros and functions to use for annotating source files that are being checked with MIRAI
 
+/// Provides a way to specify a value that should be treated abstractly by the verifier.
+/// The concrete argument provides type information to the verifier and a meaning for
+/// the expression when compiled by the rust compiler.
+///
+/// The expected use case for this is inside test cases. Principally this would be test cases
+/// for the verifier itself, but it can also be used to "fuzz" unit tests in user code.
+#[macro_export]
+macro_rules! abstract_value {
+    ($value:expr) => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_abstract_value($value)
+        } else {
+            $value
+        }
+    };
+}
+
 /// Equivalent to a no op when used with an unmodified Rust compiler.
 /// When compiled with MIRAI, this causes MIRAI to assume the condition unless it can
 /// prove it to be false.
@@ -888,6 +905,12 @@ macro_rules! verify_unreachable {
             unreachable!($fmt, $($arg)*)
         }
     };
+}
+
+// Helper function for MIRAI. Should only be called via the result! macro.
+#[doc(hidden)]
+pub fn mirai_abstract_value<T>(x: T) -> T {
+    x
 }
 
 // Helper function for MIRAI. Should only be called via the assume macros.

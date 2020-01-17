@@ -1673,6 +1673,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             | KnownNames::StdOpsFunctionFnOnceCallOnce => {
                 return !self.try_to_inline_standard_ops_func(call_info).is_bottom();
             }
+            KnownNames::MiraiAbstractValue => {
+                checked_assume!(call_info.actual_args.len() == 1);
+                self.handle_abstract_value(call_info);
+                return true;
+            }
             KnownNames::MiraiAssume => {
                 checked_assume!(call_info.actual_args.len() == 1);
                 if self.check_for_errors {
@@ -1806,6 +1811,31 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
         }
         false
+    }
+
+    /// Replace the call result with an abstract value of the same type as the
+    /// destination place.
+    fn handle_abstract_value(&mut self, call_info: &CallInfo<'_, 'tcx>) {
+        if let Some((place, target)) = &call_info.destination {
+            let path = self.visit_place(place);
+            let expression_type = self.get_place_type(place);
+            let abstract_value = AbstractValue::make_from(
+                Expression::Variable {
+                    path: path.clone(),
+                    var_type: expression_type,
+                },
+                1,
+            );
+            self.current_environment
+                .update_value_at(path, abstract_value);
+            let exit_condition = self.current_environment.entry_condition.clone();
+            self.current_environment.exit_conditions = self
+                .current_environment
+                .exit_conditions
+                .insert(*target, exit_condition);
+        } else {
+            assume_unreachable!();
+        }
     }
 
     /// Update the state so that the call result is the value of the model field (or the default

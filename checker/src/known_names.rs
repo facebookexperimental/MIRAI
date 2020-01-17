@@ -14,6 +14,7 @@ use std::collections::HashMap;
 pub enum KnownNames {
     /// This is not a known name
     None,
+    MiraiAbstractValue,
     MiraiAssume,
     MiraiAssumePreconditions,
     MiraiGetModelField,
@@ -201,6 +202,7 @@ impl KnownNamesCache {
                     "panicking" => get_known_name_for_panicking_namespace(def_path_data_iter),
                     "slice" => get_known_name_for_slice_namespace(def_path_data_iter),
                     "str" => get_known_name_for_str_namespace(def_path_data_iter),
+                    "mirai_abstract_value" => KnownNames::MiraiAbstractValue,
                     "mirai_assume" => KnownNames::MiraiAssume,
                     "mirai_assume_preconditions" => KnownNames::MiraiAssumePreconditions,
                     "mirai_get_model_field" => KnownNames::MiraiGetModelField,
