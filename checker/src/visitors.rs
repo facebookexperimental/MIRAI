@@ -147,6 +147,7 @@ struct CallInfo<'callinfo, 'tcx> {
     actual_argument_types: &'callinfo [Ty<'tcx>],
     cleanup: Option<mir::BasicBlock>,
     destination: Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+    function_constant_args: &'callinfo [(Rc<Path>, Rc<AbstractValue>)],
 }
 
 impl<'callinfo, 'tcx> From<&DefId> for CallInfo<'callinfo, 'tcx> {
@@ -162,6 +163,7 @@ impl<'callinfo, 'tcx> From<&DefId> for CallInfo<'callinfo, 'tcx> {
             actual_argument_types: &[],
             cleanup: None,
             destination: None,
+            function_constant_args: &[],
         }
     }
 }
@@ -385,7 +387,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Returns true if the newly computed summary is different from the summary (if any)
     /// that is already in the cache.
     #[logfn_inputs(TRACE)]
-    pub fn visit_body(&mut self, actual_args: &[(Rc<Path>, Rc<AbstractValue>)]) {
+    pub fn visit_body(&mut self, function_constant_args: &[(Rc<Path>, Rc<AbstractValue>)]) {
         if cfg!(DEBUG) {
             let mut stdout = std::io::stdout();
             rustc_mir::util::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
@@ -400,17 +402,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // The entry block has no predecessors and its initial state is the function parameters
         // (which we omit here so that we can lazily provision them with additional context)
         // as well any promoted constants.
-        let first_state = self.promote_constants();
+        let mut first_state = self.promote_constants();
 
-        // If this body is being analyzed in the context of actual arguments (because it is not a root)
-        // initialize the first state with the parameter bindings for any function constants
-        let state_with_function_constants = self.add_function_constants(first_state, actual_args);
+        // Add function constants.
+        for (path, val) in function_constant_args.iter() {
+            first_state.value_map = first_state.value_map.insert(path.clone(), val.clone())
+        }
 
         let elapsed_time_in_seconds = self.compute_fixed_point(
             &mut block_indices,
             &mut in_state,
             &mut out_state,
-            &state_with_function_constants,
+            &first_state,
         );
 
         if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
@@ -449,25 +452,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.active_calls.pop();
     }
 
-    /// If the actual arguments contain function constants, add these to the initial environment
-    /// so that any calls to the corresponding parameters can be summarized by using a known function.
-    #[logfn_inputs(TRACE)]
-    fn add_function_constants(
-        &self,
-        mut environment: Environment,
-        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
-    ) -> Environment {
-        for (i, (_, arg)) in actual_args.iter().enumerate() {
-            if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &arg.expression {
-                let param_path = Path::new_local(i + 1);
-                environment.value_map = environment.value_map.insert(param_path, arg.clone());
-            }
-            //todo: if the argument is structured and one of the elements is a function constant,
-            //add that to the environment as well.
-        }
-        environment
-    }
-
     /// Summarize the referenced function, specialized by its argument types and the actual
     /// values of any function parameters.
     #[logfn_inputs(TRACE)]
@@ -494,7 +478,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .summary_cache
                 .get_summary_key_for(call_info.callee_def_id)
                 .clone();
-            self.visit_body(call_info.actual_args);
+            self.visit_body(call_info.function_constant_args);
             self.swap_visitor_state(&mut saved_state);
             self.start_instant = Instant::now() - elapsed_time;
         } else if let Some(devirtualized_summary) = self.try_to_devirtualize(call_info) {
@@ -1464,6 +1448,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             actual_argument_types: &actual_argument_types,
             cleanup,
             destination: destination.clone(),
+            function_constant_args: &self.get_function_constant_args(&actual_args),
         };
         debug!("calling func {:?}", call_info);
         if self.handled_as_special_function_call(&call_info) {
@@ -1481,6 +1466,40 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
         self.transfer_and_refine_cleanup_state(&call_info, &function_summary);
         debug!("post env {:?}", self.current_environment);
+    }
+
+    #[logfn_inputs(TRACE)]
+    fn get_function_constant_args(
+        &self,
+        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+    ) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {
+        let mut result = vec![];
+        for (path, value) in self.current_environment.value_map.iter() {
+            if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &value.expression
+            {
+                for (i, (arg_path, _)) in actual_args.iter().enumerate() {
+                    if (*path) == *arg_path || path.is_rooted_by(arg_path) {
+                        let param_path_root = Path::new_local(i + 1);
+                        let param_path = path.replace_root(arg_path, param_path_root);
+                        result.push((param_path, value.clone()));
+                        break;
+                    }
+                }
+            }
+        }
+        for (i, (path, value)) in actual_args.iter().enumerate() {
+            if let PathEnum::Constant { value: val } = &path.value {
+                if *val == *value {
+                    if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) =
+                        &value.expression
+                    {
+                        let param_path = Path::new_local(i + 1);
+                        result.push((param_path, value.clone()));
+                    }
+                }
+            }
+        }
+        result
     }
 
     /// Give diagnostic or mark the call chain as angelic, depending on self.options.diag_level
@@ -1529,23 +1548,19 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             // and pass them to get_summary_for_function_constant so that their signatures
             // can be included in the type specific key that is used to look up non generic
             // predefined summaries.
-            let func_args: Option<Vec<Rc<FunctionReference>>> = if !call_info.actual_args.is_empty()
-                && call_info
-                    .actual_args
-                    .iter()
-                    .any(|(_, v)| self.get_func_ref(v).is_some())
-            {
-                Some(
-                    call_info
-                        .actual_args
-                        .iter()
-                        .filter_map(|(_, v)| self.get_func_ref(v))
-                        .collect(),
-                )
-            } else {
-                // common case
-                None
-            };
+            let func_args: Option<Vec<Rc<FunctionReference>>> =
+                if !call_info.function_constant_args.is_empty() {
+                    Some(
+                        call_info
+                            .function_constant_args
+                            .iter()
+                            .filter_map(|(_, v)| self.get_func_ref(v))
+                            .collect(),
+                    )
+                } else {
+                    // common case
+                    None
+                };
             let result = self
                 .summary_cache
                 .get_summary_for_function_constant(&func_ref, func_args)
@@ -2129,7 +2144,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 (arg_path, arg_val)
             })
             .collect();
-
+        let actual_argument_types: Vec<Ty<'tcx>> =
+            if let Some(gen_args) = caller_call_info.callee_generic_arguments {
+                gen_args
+                    .as_ref()
+                    .iter()
+                    .map(|gen_arg| gen_arg.expect_ty())
+                    .collect()
+            } else {
+                vec![]
+            };
+        let function_constant_args = self.get_function_constant_args(&actual_args);
         let mut call_info = caller_call_info.clone();
         let callee_func_ref = self.get_func_ref(&callee);
         // Get a summary for the callee.
@@ -2139,8 +2164,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             call_info.callee_fun_val = callee;
             call_info.callee_known_name = KnownNames::None;
             call_info.actual_args = &actual_args;
-            debug!("perhaps set actual argument types here?");
-            //todo: actual argument types?
+            call_info.actual_argument_types = &actual_argument_types;
+            call_info.function_constant_args = &function_constant_args;
             self.get_function_summary(&call_info)
                 .expect("a summary because there is a func ref")
         } else {
@@ -2156,7 +2181,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 call_info.callee_def_id = callee_def_id;
                 call_info.callee_known_name = KnownNames::None;
                 call_info.actual_args = &actual_args;
-                //todo: actual argument types?
+                call_info.actual_argument_types = &actual_argument_types;
+                call_info.function_constant_args = &function_constant_args;
                 let summary = self.summary_cache.get_summary_for(callee_def_id);
                 if !summary.is_not_default && !self.active_calls.contains(&callee_def_id) {
                     self.create_and_cache_function_summary(&call_info)
