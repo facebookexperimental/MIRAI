@@ -31,9 +31,20 @@ fn foos<T: Copy>(f: fn(Option<T>, T) -> Option<T>, x: T) -> Option<T> {
     f(Some(x), x)
 }
 
+struct S {
+    pub i: i32,
+    pub f: fn(Option<i32>, i32) -> Option<i32>,
+}
+
+fn foot(s: S) -> Option<i32> {
+    (s.f)(Some(s.i), s.i)
+}
+
 pub fn main() {
     let fbar = foo(bar);
     verify!(fbar.unwrap() == 2);
     let fbas = foos(bas, 2);
     verify!(fbas.unwrap() == 2);
+    let fbart = foot(S { i: 2, f: bar });
+    verify!(fbart.unwrap() == 4);
 }
