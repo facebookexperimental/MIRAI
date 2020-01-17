@@ -417,7 +417,7 @@ impl MiraiCallbacks {
                         mir::Rvalue::Use(mir::Operand::Constant(box ref con)),
                     )) = s.kind
                     {
-                        if let rustc::ty::ConstKind::Unevaluated(def_id, _) = con.literal.val {
+                        if let rustc::ty::ConstKind::Unevaluated(def_id, _, _) = con.literal.val {
                             result.push(utils::def_id_display_name(tcx, def_id));
                         }
                     }

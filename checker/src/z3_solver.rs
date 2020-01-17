@@ -165,7 +165,7 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
             match z3_sys::Z3_solver_check(self.z3_context, self.z3_solver) {
                 z3_sys::Z3_L_TRUE => SmtResult::Satisfiable,
                 z3_sys::Z3_L_FALSE => SmtResult::Unsatisfiable,
-                z3_sys::Z3_L_UNDEF | _ => SmtResult::Undefined,
+                _ => SmtResult::Undefined,
             }
         }
     }

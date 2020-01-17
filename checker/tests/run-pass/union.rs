@@ -12,7 +12,6 @@
 #[macro_use]
 extern crate mirai_annotations;
 
-#[allow_internal_unstable(const_fn_union)]
 pub const fn as_bytes(_self: &str) -> &[u8] {
     union Slices<'a> {
         str: &'a str,
