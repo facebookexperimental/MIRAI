@@ -394,7 +394,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             debug!("{:?}", stdout.flush());
         }
         self.active_calls.push(self.def_id);
-        let mut block_indices = self.get_sorted_block_indices();
+        let (mut block_indices, contains_loop) = self.get_sorted_block_indices();
 
         let (mut in_state, mut out_state) =
             <MirVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
@@ -411,6 +411,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         let elapsed_time_in_seconds = self.compute_fixed_point(
             &mut block_indices,
+            contains_loop,
             &mut in_state,
             &mut out_state,
             &first_state,
@@ -737,6 +738,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &self,
         root_block: mir::BasicBlock,
         dominators: &Dominators<mir::BasicBlock>,
+        contains_loop: &mut bool,
         block_indices: &mut Vec<mir::BasicBlock>,
         already_added: &mut HashSet<mir::BasicBlock>,
     ) {
@@ -748,11 +750,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 continue;
             };
             if dominators.is_dominated_by(*pred_bb, root_block) {
+                *contains_loop = true;
                 continue;
             }
             self.add_predecessors_then_root_block(
                 *pred_bb,
                 dominators,
+                contains_loop,
                 block_indices,
                 already_added,
             );
@@ -764,19 +768,21 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     // Perform a topological sort on the basic blocks so that blocks are analyzed after their
     // predecessors (except in the case of loop anchors).
     #[logfn_inputs(TRACE)]
-    fn get_sorted_block_indices(&mut self) -> Vec<mir::BasicBlock> {
+    fn get_sorted_block_indices(&mut self) -> (Vec<mir::BasicBlock>, bool) {
         let dominators = self.mir.dominators();
         let mut block_indices = Vec::new();
         let mut already_added = HashSet::new();
+        let mut contains_loop = false;
         for bb in self.mir.basic_blocks().indices() {
             self.add_predecessors_then_root_block(
                 bb,
                 &dominators,
+                &mut contains_loop,
                 &mut block_indices,
                 &mut already_added,
             );
         }
-        block_indices
+        (block_indices, contains_loop)
     }
 
     /// Rewrite roots of the form local_1.0 into local_1, local_1.1 into local_2 and so on.
@@ -837,6 +843,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn compute_fixed_point(
         &mut self,
         mut block_indices: &mut Vec<mir::BasicBlock>,
+        contains_loop: bool,
         mut in_state: &mut HashMap<mir::BasicBlock, Environment>,
         mut out_state: &mut HashMap<mir::BasicBlock, Environment>,
         first_state: &Environment,
@@ -852,6 +859,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 &first_state,
                 iteration_count,
             );
+            if !contains_loop {
+                break;
+            }
             check_for_early_break!(self);
             if iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
                 break;
@@ -1090,7 +1100,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Computes a fixed point over the blocks of the MIR for a promoted constant block
     #[logfn_inputs(TRACE)]
     fn visit_promoted_constants_block(&mut self) {
-        let mut block_indices = self.get_sorted_block_indices();
+        let (mut block_indices, contains_loop) = self.get_sorted_block_indices();
 
         let (mut in_state, mut out_state) =
             <MirVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
@@ -1101,6 +1111,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         self.compute_fixed_point(
             &mut block_indices,
+            contains_loop,
             &mut in_state,
             &mut out_state,
             &first_state,
