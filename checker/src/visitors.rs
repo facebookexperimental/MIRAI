@@ -392,7 +392,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if cfg!(DEBUG) {
             let mut stdout = std::io::stdout();
             rustc_mir::util::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
-            debug!("{:?}", stdout.flush());
+            info!("{:?}", stdout.flush());
         }
         self.active_calls.push(self.def_id);
         let (mut block_indices, contains_loop) = self.get_sorted_block_indices();

@@ -7,6 +7,13 @@ In order to use MIRAI, you need to install Rust, install Z3, and install MIRAI i
 You should install rustup and then use it to get hold of the latest Rust compiler.
 See [here](https://doc.rust-lang.org/book/ch01-01-installation.html) for instructions.
 
+In addition, explicitly install the rustc-dev component since that is needed to compile MIRAI:
+```
+rustup component add rustc-dev
+```
+
+Remember to do this every time you update the Rust compiler to a newer nightly build.
+
 ## Installing Z3
 
 On Fedora install it with

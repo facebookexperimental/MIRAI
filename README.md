@@ -13,7 +13,8 @@ Use `rustup override set nightly-YYYY-MM-DD` to make Cargo use the same version 
 instruction to determine which version to use. If you forget to do that or use the wrong version,
 you'll see an error message complaining about a dynamic load library not being found. 
 
-The easiest way to get started is to first build your project in the normal way.
+The easiest way to get started is to first build your project in the normal way (with one exception:
+ set `RUSTFLAGS="-Z always_encode_mir"` to force the rust compiler to include MIR into its compiled output).
 Refer [this link](https://doc.rust-lang.org/1.30.0/book/2018-edition/ch01-00-getting-started.html) for details
 on compiling a cargo project.
 When there are no compile errors,

@@ -144,44 +144,37 @@ impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
     fn analyze_with_mirai<'tcx>(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
-        if self.file_name.contains("/bounded-executor")
+        if self.file_name.contains("crypto/crypto-derive/src")
             || self.file_name.contains("threshold_crypto")
-            || self.file_name.contains("/libra-types")
-            || self.file_name.contains("/accumulator")
-            || self.file_name.contains("/libradb")
-            || self.file_name.contains("client/src/main")
-            || self.file_name.contains("config/src")
-            || self.file_name.contains("config/config-builder/src/lib")
-            || self.file_name.contains("common/grpc-helpers")
-            || self.file_name.contains("common/metrics")
-            || self.file_name.contains("common/nibble")
-            || self.file_name.contains("common/lcs")
-            || self.file_name.contains("consensus/src/lib")
-            || self.file_name.contains("crypto/crypto")
-            || self.file_name.contains("/storage-service")
-            || self.file_name.contains("/noise")
-            || self.file_name.contains("network")
-            || self.file_name.contains("/tiny-keccak")
+            || self.file_name.contains("network/memsocket/src")
+            || self.file_name.contains("crypto/crypto/src")
+            || self.file_name.contains("common/futures-semaphore/src")
+            || self.file_name.contains("common/logger/src")
+            || self.file_name.contains("network/noise/src")
+            || self.file_name.contains("storage/schemadb/src")
+            || self.file_name.contains("network/src")
             || self.file_name.contains("types/src")
-            || self.file_name.contains("mempool/mempool-shared-proto")
-            || self.file_name.contains("language/vm")
+            || self.file_name.contains("language/vm/src")
+            || self.file_name.contains("config/src")
+            || self.file_name.contains("storage/jellyfish-merkle/src")
+            || self.file_name.contains("client/libra_wallet/src")
+            || self.file_name.contains("common/debug-interface/src")
             || self
                 .file_name
-                .contains("language/compiler/ir-to-bytecode/syntax")
-            || self.file_name.contains("storage/jellyfish-merkle")
-            || self.file_name.contains("client/libra_wallet")
+                .contains("admission_control/admission-control-proto/src")
+            || self.file_name.contains("storage/libradb/src")
+            || self.file_name.contains("language/bytecode-verifier/src")
+            || self.file_name.contains("executor/src")
             || self
                 .file_name
-                .contains("admission_control/admission-control-proto")
-            || self.file_name.contains("storage/storage-client")
-            || self
-                .file_name
-                .contains("language/compiler/bytecode-source-map")
-            || self.file_name.contains("language/compiler/ir-to-bytecode")
-            || self.file_name.contains("libra-node/src")
-            || self.file_name.contains("client/src/lib")
-            || self.file_name.contains("language/compiler/src/main")
+                .contains("language/compiler/ir-to-bytecode/src")
             || self.file_name.contains("state-synchronizer/src")
+            || self.file_name.contains("mempool/src")
+            || self.file_name.contains("consensus/src")
+            || self.file_name.contains("client/src")
+            || self.file_name.contains("language/tools/vm-genesis/src")
+            || self.file_name.contains("storage/storage-client/src")
+            || self.file_name.contains("storage/scratchpad/src")
         {
             return;
         }
@@ -279,16 +272,16 @@ impl MiraiCallbacks {
                         "Could not extract any tests from main entry point",
                     );
                 }
+                info!("analyzing functions: {:?}", fns);
                 analysis_info.function_whitelist = Some(fns);
             } else {
-                early_error(
-                    ErrorOutputType::default(),
-                    "Did not find main entry point to identify tests",
-                );
+                warn!("Did not find main entry point to identify tests",);
+                return;
             }
         }
 
         // Analyze all functions that are white listed or public
+        let building_standard_summaries = std::env::var("MIRAI_START_FRESH").is_ok();
         for def_id in defs.iter() {
             let name = analysis_info
                 .persistent_summary_cache
@@ -304,6 +297,11 @@ impl MiraiCallbacks {
                 info!("analyzing function {}", name);
             } else if !utils::is_public(*def_id, tcx) {
                 info!("skipping function {} as it is not public", name);
+                continue;
+            } else if !building_standard_summaries
+                && tcx.generics_of(*def_id).requires_monomorphization(tcx)
+            {
+                info!("skipping function {} as it is generic", name);
                 continue;
             } else {
                 info!("analyzing function {}", name);
