@@ -666,7 +666,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             && !(consequent_type.is_integer() && alternate_type.is_integer())
             && !(consequent.is_top() || alternate.is_top())
         {
-            info!(
+            debug!(
                 "conditional with mismatched types  {:?}: {:?}     {:?}: {:?}",
                 consequent_type, consequent, alternate_type, alternate
             );

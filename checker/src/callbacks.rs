@@ -18,6 +18,7 @@ use log_derive::{logfn, logfn_inputs};
 use rustc::mir;
 use rustc::session::config::ErrorOutputType;
 use rustc::session::early_error;
+use rustc::ty::subst::SubstsRef;
 use rustc::ty::TyCtxt;
 use rustc_driver::Compilation;
 use rustc_errors::{Diagnostic, DiagnosticBuilder};
@@ -134,6 +135,7 @@ struct AnalysisInfo<'compilation, 'tcx> {
     constant_value_cache: ConstantValueCache<'tcx>,
     diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'compilation>>>,
     known_names_cache: KnownNamesCache,
+    substs_cache: HashMap<DefId, SubstsRef<'tcx>>,
     // Functions to include in analysis. If None, all functions are included.
     function_whitelist: Option<Vec<String>>,
 }
@@ -200,12 +202,14 @@ impl MiraiCallbacks {
         let constant_value_cache = ConstantValueCache::default();
         let diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'_>>> = HashMap::new();
         let known_names_cache = KnownNamesCache::create_cache_from_language_items();
+        let substs_cache = HashMap::new();
         let mut analysis_info = AnalysisInfo {
             options: &options,
             persistent_summary_cache,
             constant_value_cache,
             diagnostics_for,
             known_names_cache,
+            substs_cache,
             function_whitelist: None,
         };
         Self::analyze_bodies(compiler, tcx, &defs, &mut analysis_info);
@@ -297,9 +301,12 @@ impl MiraiCallbacks {
                     );
                     continue;
                 }
+                info!("analyzing function {}", name);
             } else if !utils::is_public(*def_id, tcx) {
                 info!("skipping function {} as it is not public", name);
                 continue;
+            } else {
+                info!("analyzing function {}", name);
             }
             MiraiCallbacks::analyze_body(compiler, tcx, analysis_info, *def_id);
         }
@@ -375,6 +382,7 @@ impl MiraiCallbacks {
             constant_value_cache: &mut analysis_info.constant_value_cache,
             known_names_cache: &mut analysis_info.known_names_cache,
             smt_solver: &mut smt_solver,
+            substs_cache: &mut analysis_info.substs_cache,
             buffered_diagnostics: &mut buffered_diagnostics,
         });
         mir_visitor.visit_body(&[]);
