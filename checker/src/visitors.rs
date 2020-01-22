@@ -58,6 +58,7 @@ pub struct MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E> {
     pub known_names_cache: &'analysis mut KnownNamesCache,
     pub summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
     pub smt_solver: &'analysis mut dyn SmtSolver<E>,
+    pub substs_cache: &'analysis mut HashMap<DefId, SubstsRef<'tcx>>,
     pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
 }
 
@@ -80,6 +81,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     known_names_cache: &'analysis mut KnownNamesCache,
     summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
     smt_solver: &'analysis mut dyn SmtSolver<E>,
+    substs_cache: &'analysis mut HashMap<DefId, SubstsRef<'tcx>>,
     buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
 
     active_calls: Vec<DefId>,
@@ -103,7 +105,6 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     post_condition: Option<Rc<AbstractValue>>,
     post_condition_block: Option<mir::BasicBlock>,
     preconditions: Vec<Precondition>,
-    substs_cache: HashMap<DefId, SubstsRef<'tcx>>,
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
     fresh_variable_offset: usize,
@@ -261,6 +262,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             known_names_cache: crate_context.known_names_cache,
             summary_cache: crate_context.summary_cache,
             smt_solver: crate_context.smt_solver,
+            substs_cache: crate_context.substs_cache,
             buffered_diagnostics: crate_context.buffered_diagnostics,
 
             active_calls: Vec::new(),
@@ -283,7 +285,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             post_condition: None,
             post_condition_block: None,
             preconditions: Vec::new(),
-            substs_cache: HashMap::default(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
             fresh_variable_offset: 0,
@@ -1513,12 +1514,25 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         for (path, value) in self.current_environment.value_map.iter() {
             if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &value.expression
             {
-                for (i, (arg_path, _)) in actual_args.iter().enumerate() {
+                for (i, (arg_path, arg_val)) in actual_args.iter().enumerate() {
                     if (*path) == *arg_path || path.is_rooted_by(arg_path) {
                         let param_path_root = Path::new_local(i + 1);
                         let param_path = path.replace_root(arg_path, param_path_root);
                         result.push((param_path, value.clone()));
                         break;
+                    } else {
+                        match &arg_val.expression {
+                            Expression::Reference(ipath)
+                            | Expression::Variable { path: ipath, .. } => {
+                                if (*path) == *ipath || path.is_rooted_by(ipath) {
+                                    let param_path_root = Path::new_local(i + 1);
+                                    let param_path = path.replace_root(arg_path, param_path_root);
+                                    result.push((param_path, value.clone()));
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -3968,8 +3982,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let ty = literal.ty;
 
         match &literal.val {
-            rustc::ty::ConstKind::Unevaluated(def_id, _substs, promoted) => {
-                //todo: use the generic arguments in _substs to specialize the summary key
+            rustc::ty::ConstKind::Unevaluated(def_id, substs, promoted) => {
+                //todo: use the generic arguments in substs to specialize the summary key
+                self.substs_cache.insert(*def_id, substs);
                 let name = utils::summary_key_str(self.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
                 let path = match promoted {
