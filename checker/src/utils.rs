@@ -300,7 +300,9 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
             if component.data == DefPathData::Impl {
                 if let Some(parent_def_id) = tcx.parent(def_id) {
                     if let Some(type_ns) = &type_ns {
-                        if type_ns == "num" {
+                        if type_ns == "num"
+                            && tcx.crate_name(parent_def_id.krate).as_str() == "core"
+                        {
                             append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
                             continue;
                         }
