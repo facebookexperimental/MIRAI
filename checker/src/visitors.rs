@@ -388,7 +388,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Returns true if the newly computed summary is different from the summary (if any)
     /// that is already in the cache.
     #[logfn_inputs(TRACE)]
-    pub fn visit_body(&mut self, function_constant_args: &[(Rc<Path>, Rc<AbstractValue>)]) {
+    pub fn visit_body(
+        &mut self,
+        function_constant_args: &[(Rc<Path>, Rc<AbstractValue>)],
+    ) -> Summary {
         if cfg!(DEBUG) {
             let mut stdout = std::io::stdout();
             rustc_mir::util::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
@@ -424,13 +427,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 "analysis of {} timed out after {} seconds",
                 self.function_name, elapsed_time_in_seconds,
             );
-            return;
+            self.active_calls.pop();
+            return Summary::default();
         }
 
         if !self.assume_function_is_angelic {
             // Now traverse the blocks again, doing checks and emitting diagnostics.
             // in_state[bb] is now complete for every basic block bb in the body.
             self.check_for_errors(&block_indices, &in_state);
+            self.active_calls.pop();
 
             // Now create a summary of the body that can be in-lined into call sites.
             if self.async_fn_summary.is_some() {
@@ -438,7 +443,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 // todo: also translate side-effects, return result and post-condition
             };
 
-            let summary = summaries::summarize(
+            summaries::summarize(
                 self.mir.arg_count,
                 self.get_return_type(),
                 &self.exit_environment,
@@ -447,15 +452,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.unwind_condition.clone(),
                 &self.unwind_environment,
                 self.tcx,
-            );
-            self.summary_cache.set_summary_for(self.def_id, summary);
+            )
+        } else {
+            Summary::default()
         }
-
-        self.active_calls.pop();
     }
 
-    /// Summarize the referenced function, specialized by its argument types and the actual
-    /// values of any function parameters.
+    /// Summarize the referenced function, specialized by its generic arguments and the actual
+    /// values of any function parameters. Then cache it.
     #[logfn_inputs(TRACE)]
     fn create_and_cache_function_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Summary {
         debug!(
@@ -480,15 +484,25 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .summary_cache
                 .get_summary_key_for(call_info.callee_def_id)
                 .clone();
-            self.visit_body(call_info.function_constant_args);
+            let summary = self.visit_body(call_info.function_constant_args);
+            debug!("summary {:?}", summary);
+            if let Some(func_ref) = &call_info.callee_func_ref {
+                // We cache the summary with call site details included so that
+                // cached summaries are specialized with respect to call site generic arguments and
+                // function constants arguments. Subsequent calls with the call site signature
+                // will not need to re-summarize the function, thus avoiding exponential blow up.
+                let signature =
+                    self.get_function_constant_signature(call_info.function_constant_args);
+                self.summary_cache
+                    .set_summary_for_call_site(func_ref, signature, summary.clone());
+            }
             self.swap_visitor_state(&mut saved_state);
             self.start_instant = Instant::now() - elapsed_time;
+            return summary;
         } else if let Some(devirtualized_summary) = self.try_to_devirtualize(call_info) {
             return devirtualized_summary;
         }
-        self.summary_cache
-            .get_summary_for(call_info.callee_def_id)
-            .clone()
+        Summary::default()
     }
 
     /// If call_info.callee_def_id is a trait (virtual) then this tries to get the def_id of the
@@ -521,10 +535,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         resolved_def_id,
                         self.tcx.type_of(resolved_def_id)
                     );
-                    let result = self.summary_cache.get_summary_for(resolved_def_id).clone();
-                    if result.is_not_default {
-                        return Some(result);
-                    }
                     if !self.active_calls.contains(&resolved_def_id)
                         && self.tcx.is_mir_available(resolved_def_id)
                     {
@@ -541,7 +551,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             self.create_and_cache_function_summary(&devirtualized_call_info),
                         );
                     } else {
-                        return Some(result);
+                        return None;
                     }
                 }
             }
@@ -610,6 +620,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             {
                 let summary;
                 let summary = if let Some(def_id) = def_id {
+                    //todo: provide a function reference here
                     let cached_summary = self.summary_cache.get_summary_for(*def_id);
                     if cached_summary.is_not_default {
                         cached_summary
@@ -1444,6 +1455,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         debug!("visit_call {:?} {:?}", func, args);
         debug!("self.generic_argument_map {:?}", self.generic_argument_map);
+        debug!("env {:?}", self.current_environment);
         let func_to_call = self.visit_operand(func);
         let func_ref_to_call = self
             .get_func_ref(&func_to_call)
@@ -1552,7 +1564,27 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         result
     }
 
+    /// Extract a list of function references from an environment of function constant arguments
+    #[logfn_inputs(TRACE)]
+    fn get_function_constant_signature(
+        &mut self,
+        func_args: &[(Rc<Path>, Rc<AbstractValue>)],
+    ) -> Option<Vec<Rc<FunctionReference>>> {
+        if func_args.is_empty() {
+            return None;
+        }
+        let vec: Vec<Rc<FunctionReference>> = func_args
+            .iter()
+            .filter_map(|(_, v)| self.get_func_ref(v))
+            .collect();
+        if vec.is_empty() {
+            return None;
+        }
+        Some(vec)
+    }
+
     /// Give diagnostic or mark the call chain as angelic, depending on self.options.diag_level
+    #[logfn_inputs(TRACE)]
     fn deal_with_missing_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         match self.options.diag_level {
             DiagLevel::RELAXED => {
@@ -1613,7 +1645,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 };
             let result = self
                 .summary_cache
-                .get_summary_for_function_constant(&func_ref, func_args)
+                .get_summary_for_call_site(&func_ref, func_args)
                 .clone();
             if result.is_not_default || func_ref.def_id.is_none() {
                 return Some(result);
@@ -1636,7 +1668,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             Expression::CompileTimeConstant(c) => {
                 return extract_func_ref(c);
             }
-            Expression::Variable {
+            Expression::Reference(path)
+            | Expression::Variable {
                 path,
                 var_type: ExpressionType::NonPrimitive,
             }
@@ -2202,6 +2235,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &mut self,
         caller_call_info: &CallInfo<'_, 'tcx>,
     ) -> Rc<AbstractValue> {
+        precondition!(!caller_call_info.actual_args.is_empty());
         // Get the function to call (it is either a function pointer or a closure)
         let callee = caller_call_info.actual_args[0].1.clone();
 
@@ -2234,10 +2268,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             } else {
                 vec![]
             };
+
+        // Prepend the closure (if there is one) to the unpacked arguments vector.
+        if self
+            .get_def_id_from_closure(caller_call_info.actual_argument_types[0])
+            .is_some()
+        {
+            actual_args.insert(0, caller_call_info.actual_args[0].clone());
+        }
+
         let function_constant_args = self.get_function_constant_args(&actual_args);
         let mut call_info = caller_call_info.clone();
         let callee_func_ref = self.get_func_ref(&callee);
-        // Get a summary for the callee.
         let function_summary = if let Some(func_ref) = &callee_func_ref {
             call_info.callee_def_id = func_ref.def_id.expect("defined when used here");
             call_info.callee_func_ref = callee_func_ref;
@@ -2249,30 +2291,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.get_function_summary(&call_info)
                 .expect("a summary because there is a func ref")
         } else {
-            // Closure operands that do not result in func refs when queried with get_func_ref
-            // need to get the closure value prepended to the actual arguments.
-            if let Some(callee_def_id) =
-                self.get_def_id_from_closure(caller_call_info.actual_argument_types[0])
-            {
-                // Prepend the closure (if there is one) to the unpacked arguments vector.
-                actual_args.insert(0, caller_call_info.actual_args[0].clone());
-                call_info.callee_fun_val = actual_args[0].1.clone();
-                call_info.callee_func_ref = self.get_func_ref(&call_info.callee_fun_val);
-                call_info.callee_def_id = callee_def_id;
-                call_info.callee_known_name = KnownNames::None;
-                call_info.actual_args = &actual_args;
-                call_info.actual_argument_types = &actual_argument_types;
-                call_info.function_constant_args = &function_constant_args;
-                let summary = self.summary_cache.get_summary_for(callee_def_id);
-                if !summary.is_not_default && !self.active_calls.contains(&callee_def_id) {
-                    self.create_and_cache_function_summary(&call_info)
-                } else {
-                    summary.clone()
-                }
-            } else {
-                return abstract_value::BOTTOM.into();
-            }
+            return abstract_value::BOTTOM.into();
         };
+
         self.check_preconditions_if_necessary(&call_info, &function_summary);
         self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
         self.transfer_and_refine_cleanup_state(&call_info, &function_summary);

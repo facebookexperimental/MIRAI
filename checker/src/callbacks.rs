@@ -175,6 +175,10 @@ impl MiraiCallbacks {
             || self.file_name.contains("language/tools/vm-genesis/src")
             || self.file_name.contains("storage/storage-client/src")
             || self.file_name.contains("storage/scratchpad/src")
+            || self.file_name.contains("tiny-keccak")
+            || self.file_name.contains("language/vm/vm-runtime/src")
+            || self.file_name.contains("language/compiler/src")
+            || self.file_name.contains("language/transaction-builder/src")
         {
             return;
         }
@@ -326,18 +330,6 @@ impl MiraiCallbacks {
         analysis_info: &mut AnalysisInfo<'analysis, 'tcx>,
         def_id: DefId,
     ) {
-        // No need to analyze a body for which we already have a non default summary.
-        // We do, however, have to allow local foreign contract functions to override
-        // the standard summaries that are already in the cache.
-        if !utils::is_foreign_contract(tcx, def_id) {
-            let summary = analysis_info
-                .persistent_summary_cache
-                .get_summary_for(def_id);
-            if summary.is_not_default {
-                return;
-            }
-        }
-
         let mut buffered_diagnostics: Vec<DiagnosticBuilder<'_>> = vec![];
         Self::visit_body(
             def_id,
@@ -383,7 +375,13 @@ impl MiraiCallbacks {
             substs_cache: &mut analysis_info.substs_cache,
             buffered_diagnostics: &mut buffered_diagnostics,
         });
-        mir_visitor.visit_body(&[]);
+        let summary = mir_visitor.visit_body(&[]);
+        // Analysis local foreign contracts are not summarized and cached on demand, so we need to do it here.
+        if utils::is_foreign_contract(tcx, def_id) {
+            analysis_info
+                .persistent_summary_cache
+                .set_summary_for(def_id, summary);
+        }
     }
 
     /// Extract test functions from the promoted constants of a test runner main function.
