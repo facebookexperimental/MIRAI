@@ -332,18 +332,6 @@ fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precon
         .collect()
 }
 
-/// When a precondition is used during the compilation of the crate in which it is defined, we
-/// want to use the spans, rather than the provenance string (and we don't want to waste memory),
-/// so we strip it's provenance string after it has been serialized.
-#[logfn_inputs(TRACE)]
-fn remove_provenance(preconditions: &mut Vec<Precondition>) {
-    for precondition in preconditions.iter_mut() {
-        if !precondition.spans.is_empty() {
-            precondition.provenance = None;
-        }
-    }
-}
-
 /// Returns a list of (path, value) pairs where each path is rooted by an argument(or the result)
 /// or where the path root is a heap address reachable from an argument (or the result).
 /// Since paths are created by writes, these are side-effects.
@@ -413,7 +401,7 @@ fn extract_reachable_heap_allocations(
 /// Also tracks which definitions depend on (use) any particular Summary.
 pub struct PersistentSummaryCache<'tcx> {
     db: Db,
-    cache: HashMap<DefId, Summary>,
+    def_id_cache: HashMap<DefId, Summary>,
     typed_cache: HashMap<usize, Summary>,
     typed_cache_table: HashMap<Vec<Rc<FunctionReference>>, HashMap<usize, Summary>>,
     reference_cache: HashMap<Rc<FunctionReference>, Summary>,
@@ -460,7 +448,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
         });
         PersistentSummaryCache {
             db,
-            cache: HashMap::new(),
+            def_id_cache: HashMap::new(),
             typed_cache: HashMap::new(),
             typed_cache_table: HashMap::new(),
             reference_cache: HashMap::new(),
@@ -523,7 +511,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
             .key_cache
             .entry(def_id)
             .or_insert_with(|| utils::summary_key_str(tcx, def_id));
-        self.cache.entry(def_id).or_insert_with(|| {
+        self.def_id_cache.entry(def_id).or_insert_with(|| {
             Self::get_persistent_summary_for_db(db, &persistent_key).unwrap_or_default()
         })
     }
@@ -533,7 +521,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
     /// as the key, which requires more cache instances and the hard to extract
     /// and unify, duplicated code.
     #[logfn_inputs(TRACE)]
-    pub fn get_summary_for_function_constant(
+    pub fn get_summary_for_call_site(
         &mut self,
         func_ref: &Rc<FunctionReference>,
         func_args: Option<Vec<Rc<FunctionReference>>>,
@@ -564,7 +552,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
                     // we need to take care not to cache this summary in self.typed_cache because updating
                     // self.cache will not also update self.typed_cache.
                     let db = &self.db;
-                    self.cache.entry(def_id).or_insert_with(|| {
+                    self.def_id_cache.entry(def_id).or_insert_with(|| {
                         let summary =
                             Self::get_persistent_summary_for_db(db, &func_ref.summary_cache_key);
                         summary.unwrap_or_default()
@@ -647,9 +635,35 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
         }
     }
 
-    /// Sets or updates the cache so that from now on def_id maps to the given summary.
+    /// Sets or updates the typed caches with the call site specialized summary of the
+    /// referenced function. Call site specialization involves using the actual generic
+    /// arguments supplied by the call site, along with the values of any constant functions
+    /// that are supplied as actual arguments.
     #[logfn_inputs(TRACE)]
-    pub fn set_summary_for(&mut self, def_id: DefId, mut summary: Summary) -> Option<Summary> {
+    pub fn set_summary_for_call_site(
+        &mut self,
+        func_ref: &Rc<FunctionReference>,
+        func_args: Option<Vec<Rc<FunctionReference>>>,
+        summary: Summary,
+    ) {
+        if let Some(func_id) = func_ref.function_id {
+            if let Some(func_args) = func_args {
+                self.typed_cache_table
+                    .entry(func_args)
+                    .or_insert_with(HashMap::new)
+                    .insert(func_id, summary);
+            } else {
+                self.typed_cache.insert(func_id, summary);
+            }
+        } else {
+            //todo: change param to function id
+            unreachable!()
+        }
+    }
+
+    /// Sets or updates the DefId cache so that from now on def_id maps to the given summary.
+    #[logfn_inputs(TRACE)]
+    pub fn set_summary_for(&mut self, def_id: DefId, summary: Summary) -> Option<Summary> {
         let persistent_key = utils::summary_key_str(self.type_context, def_id);
         let serialized_summary = bincode::serialize(&summary).unwrap();
         let result = self
@@ -658,10 +672,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
         if result.is_err() {
             println!("unable to set key in summary database: {:?}", result);
         }
-        // Now that the summary has been serialized we can remove the provenance strings so that
-        // we can save memory and better fit in with the normal way of presenting compiler
-        // diagnostics.
-        remove_provenance(&mut summary.preconditions);
-        self.cache.insert(def_id, summary)
+        self.def_id_cache.insert(def_id, summary)
     }
 }
