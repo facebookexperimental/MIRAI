@@ -2663,8 +2663,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if path_cond.unwrap_or(false) && self.function_being_analyzed_is_root() {
                     // We always get to this call and we have to assume that the function will
                     // get called, so keep the message certain.
-                    let err = self.session.struct_span_warn(span, msg.as_str());
-                    self.emit_diagnostic(err);
+                    // Don't, however, complain about panics in the standard contract summaries
+                    if std::env::var("MIRAI_START_FRESH").is_err() {
+                        let err = self.session.struct_span_warn(span, msg.as_str());
+                        self.emit_diagnostic(err);
+                    }
                 } else {
                     // We might get to this call, depending on the state at the call site.
                     //
