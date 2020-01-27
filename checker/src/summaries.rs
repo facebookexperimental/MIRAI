@@ -530,13 +530,29 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
             // Use the ids as keys if they are available, since they make much better keys.
             (Some(def_id), Some(function_id)) => {
                 if let Some(func_args) = func_args {
-                    return self
-                        .typed_cache_table
-                        .entry(func_args)
-                        .or_insert_with(HashMap::new)
-                        .entry(function_id)
-                        .or_insert_with(Summary::default);
-                }
+                    // Need the double lookup in order to allow the recursive call to get_summary_for_function_constant.
+                    let summary_is_cached =
+                        if let Some(type_table) = self.typed_cache_table.get(&func_args) {
+                            type_table.get(&function_id).is_some()
+                        } else {
+                            false
+                        };
+                    return if summary_is_cached {
+                        self.typed_cache_table
+                            .get(&func_args)
+                            .unwrap()
+                            .get(&function_id)
+                            .unwrap()
+                    } else {
+                        // can't have self borrowed at this point.
+                        let summary = self.get_summary_for_call_site(func_ref, None).clone();
+                        self.typed_cache_table
+                            .entry(func_args)
+                            .or_insert_with(HashMap::new)
+                            .entry(function_id)
+                            .or_insert(summary)
+                    };
+                };
                 if self.typed_cache.contains_key(&function_id) {
                     let result = self.typed_cache.get(&function_id);
                     result.expect("value disappeared from typed_cache")

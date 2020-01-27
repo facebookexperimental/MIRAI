@@ -162,6 +162,14 @@ pub mod core {
         }
     }
 
+    pub mod core_arch {
+        pub mod x86 {
+            pub mod sse2 {
+                pub fn pause() {}
+            }
+        }
+    }
+
     pub mod default {
         pub trait Default {
             fn default__T() {
@@ -230,251 +238,247 @@ pub mod core {
     }
 
     pub mod intrinsics {
-        pub mod _1 {
-            pub fn atomic_cxchg<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchg_acq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchg_rel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchg_acqrel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchg_relaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchg_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchg_failacq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchg_acq_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchg_acqrel_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchgweak<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchgweak_acq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchgweak_rel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchgweak_acqrel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchgweak_relaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchgweak_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchgweak_failacq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchgweak_acq_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_cxchgweak_acqrel_failrelaxed<T>(
-                dst: *mut T,
-                old: T,
-                src: T,
-            ) -> (T, bool) {
-                result!()
-            }
-            pub fn atomic_load<T>(src: *const T) -> T {
-                result!()
-            }
-            pub fn atomic_load_acq<T>(src: *const T) -> T {
-                result!()
-            }
-            pub fn atomic_load_relaxed<T>(src: *const T) -> T {
-                result!()
-            }
-            pub fn atomic_load_unordered<T>(src: *const T) -> T {
-                result!()
-            }
-            pub fn atomic_store<T>(dst: *mut T, val: T) {}
-            pub fn atomic_store_rel<T>(dst: *mut T, val: T) {}
-            pub fn atomic_store_relaxed<T>(dst: *mut T, val: T) {}
-            pub fn atomic_store_unordered<T>(dst: *mut T, val: T) {}
-            pub fn atomic_xchg<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xchg_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xchg_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xchg_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xchg_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xadd<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xadd_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xadd_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xadd_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xadd_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xsub<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xsub_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xsub_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xsub_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xsub_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_and<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_and_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_and_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_and_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_and_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_nand<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_nand_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_nand_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_nand_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_nand_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_or<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_or_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_or_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_or_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_or_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xor<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xor_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xor_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xor_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_xor_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_max<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_max_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_max_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_max_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_max_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_min<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_min_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_min_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_min_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_min_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_umin<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_umin_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_umin_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_umin_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_umin_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_umax<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_umax_acq<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_umax_rel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_umax_acqrel<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn atomic_umax_relaxed<T>(dst: *mut T, src: T) -> T {
-                result!()
-            }
-            pub fn prefetch_read_data<T>(data: *const T, locality: i32) {}
-            pub fn prefetch_write_data<T>(data: *const T, locality: i32) {}
-            pub fn prefetch_read_instruction<T>(data: *const T, locality: i32) {}
-            pub fn prefetch_write_instruction<T>(data: *const T, locality: i32) {}
+        pub fn atomic_cxchg<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchg_acq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchg_rel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchg_acqrel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchg_relaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchg_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchg_failacq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchg_acq_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchg_acqrel_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchgweak<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchgweak_acq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchgweak_rel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchgweak_acqrel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchgweak_relaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchgweak_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchgweak_failacq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchgweak_acq_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_cxchgweak_acqrel_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+            result!()
+        }
+        pub fn atomic_load<T>(src: *const T) -> T {
+            result!()
+        }
+        pub fn atomic_load_acq<T>(src: *const T) -> T {
+            result!()
+        }
+        pub fn atomic_load_relaxed<T>(src: *const T) -> T {
+            result!()
+        }
+        pub fn atomic_load_unordered<T>(src: *const T) -> T {
+            result!()
+        }
+        pub fn atomic_store<T>(dst: *mut T, val: T) {}
+        pub fn atomic_store_rel<T>(dst: *mut T, val: T) {}
+        pub fn atomic_store_relaxed<T>(dst: *mut T, val: T) {}
+        pub fn atomic_store_unordered<T>(dst: *mut T, val: T) {}
+        pub fn atomic_xchg<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xchg_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xchg_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xchg_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xchg_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xadd<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xadd_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xadd_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xadd_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xadd_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xsub<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xsub_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xsub_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xsub_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xsub_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_and<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_and_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_and_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_and_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_and_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_nand<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_nand_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_nand_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_nand_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_nand_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_or<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_or_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_or_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_or_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_or_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xor<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xor_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xor_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xor_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_xor_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_max<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_max_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_max_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_max_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_max_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_min<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_min_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_min_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_min_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_min_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_umin<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_umin_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_umin_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_umin_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_umin_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_umax<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_umax_acq<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_umax_rel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_umax_acqrel<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn atomic_umax_relaxed<T>(dst: *mut T, src: T) -> T {
+            result!()
+        }
+        pub fn prefetch_read_data<T>(data: *const T, locality: i32) {}
+        pub fn prefetch_write_data<T>(data: *const T, locality: i32) {}
+        pub fn prefetch_read_instruction<T>(data: *const T, locality: i32) {}
+        pub fn prefetch_write_instruction<T>(data: *const T, locality: i32) {}
 
+        pub mod _1 {
             pub fn atomic_fence() {}
             pub fn atomic_fence_acq() {}
             pub fn atomic_fence_rel() {}
@@ -1059,6 +1063,12 @@ pub mod core {
         }
     }
 
+    pub mod option {
+        pub fn expect_failed() {
+            panic!("expect failed");
+        }
+    }
+
     pub mod iter {
         pub mod adapters {
             use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
@@ -1092,6 +1102,12 @@ pub mod core {
                 use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
                 use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
                 use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
+
+                pub trait FromIterator {
+                    fn from_iter<T>() -> T {
+                        result!()
+                    }
+                }
 
                 pub trait IntoIterator {
                     fn into_iter__core_iter_adapters_Enumerate_core_slice_Iter_bool(
@@ -1367,6 +1383,18 @@ pub mod core {
 }
 
 pub mod std {
+    pub mod collections {
+        pub mod hash {
+            pub mod map {
+                pub mod implement_map {
+                    pub fn new<T>() -> T {
+                        result!()
+                    }
+                }
+            }
+        }
+    }
+
     pub mod fmt {
         pub struct Arguments<'a> {
             // Format string pieces to print.
@@ -1388,6 +1416,26 @@ pub mod std {
     }
 
     pub mod result {}
+
+    pub mod sys {
+        pub mod unix {
+            pub mod fast_thread_local {
+                pub fn register_dtor() {}
+            }
+        }
+    }
+
+    pub mod time {
+        pub mod implement {
+            pub fn now<T>() -> T {
+                result!()
+            }
+        }
+    }
+
+    pub mod thread {
+        pub fn yield_now() {}
+    }
 }
 
 pub mod alloc {
@@ -1401,6 +1449,14 @@ pub mod alloc {
 
     pub mod raw_vec {
         pub fn capacity_overflow() {}
+    }
+
+    pub mod rc {
+        pub mod implement_rc {
+            pub fn hash<T, H>(_self: T, state: &mut H) {
+                result!()
+            }
+        }
     }
 
     pub mod slice {
@@ -1580,6 +1636,28 @@ pub mod alloc {
             }
         }
     }
+}
+
+pub mod libc {
+    pub mod unix {
+        pub mod _1 {
+            pub fn pthread_mutex_lock() -> u64 {
+                0
+            }
+
+            pub fn pthread_mutex_unlock() -> u64 {
+                0
+            }
+
+            pub fn pthread_cond_signal() -> u64 {
+                0
+            }
+        }
+    }
+}
+
+pub mod log {
+    pub fn __private_api_log() {}
 }
 
 pub mod rand {

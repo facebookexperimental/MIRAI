@@ -179,6 +179,9 @@ impl MiraiCallbacks {
             || self.file_name.contains("language/vm/vm-runtime/src")
             || self.file_name.contains("language/compiler/src")
             || self.file_name.contains("language/transaction-builder/src")
+            || self.file_name.contains("language/bytecode-verifier/src")
+            || self.file_name.contains("common/executable-helpers/src")
+            || self.file_name.contains("client/cli/src")
         {
             return;
         }
@@ -292,14 +295,16 @@ impl MiraiCallbacks {
                 .get_summary_key_for(*def_id);
             if let Some(white_list) = &analysis_info.function_whitelist {
                 if !Self::included_in(white_list, name, *def_id, tcx) {
-                    info!(
-                        "skipping function {} as it is not selected for analysis",
-                        name
-                    );
+                    if analysis_info.options.single_func.is_none() {
+                        info!(
+                            "skipping function {} as it is not selected for analysis",
+                            name
+                        );
+                    }
                     continue;
                 }
                 info!("analyzing function {}", name);
-            } else if !utils::is_public(*def_id, tcx) {
+            } else if !building_standard_summaries && !utils::is_public(*def_id, tcx) {
                 info!("skipping function {} as it is not public", name);
                 continue;
             } else if !building_standard_summaries
