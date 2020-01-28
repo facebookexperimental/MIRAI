@@ -510,49 +510,48 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// computing it if necessary.
     #[logfn_inputs(DEBUG)]
     fn try_to_devirtualize(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Option<Summary> {
-        if !self.tcx.is_closure(self.def_id) {
-            if let Some(gen_args) = call_info.callee_generic_arguments {
-                if !utils::are_concrete(gen_args) {
-                    return None;
-                }
-                // The environment of the caller provides a resolution context for the callee.
-                let param_env = self.tcx.param_env(self.def_id);
+        let env_def_id = if self.tcx.is_closure(self.def_id) {
+            self.tcx.closure_base_def_id(self.def_id)
+        } else {
+            self.def_id
+        };
+        if let Some(gen_args) = call_info.callee_generic_arguments {
+            if !utils::are_concrete(gen_args) {
+                debug!("non concrete generic args {:?}", gen_args);
+                return None;
+            }
+            // The parameter environment of the caller provides a resolution context for the callee.
+            let param_env = self.tcx.param_env(env_def_id);
+            debug!(
+                "devirtualize resolving def_id {:?}: {:?}",
+                call_info.callee_def_id,
+                self.tcx.type_of(call_info.callee_def_id)
+            );
+            debug!("gen_args {:?}", gen_args);
+            if let Some(instance) =
+                rustc::ty::Instance::resolve(self.tcx, param_env, call_info.callee_def_id, gen_args)
+            {
+                let resolved_def_id = instance.def.def_id();
                 debug!(
-                    "devirtualize resolving def_id {:?}: {:?}",
-                    call_info.callee_def_id,
-                    self.tcx.type_of(call_info.callee_def_id)
+                    "devirtualize resolved def_id {:?}: {:?}",
+                    resolved_def_id,
+                    self.tcx.type_of(resolved_def_id)
                 );
-                debug!("gen_args {:?}", gen_args);
-                if let Some(instance) = rustc::ty::Instance::resolve(
-                    self.tcx,
-                    param_env,
-                    call_info.callee_def_id,
-                    gen_args,
-                ) {
-                    let resolved_def_id = instance.def.def_id();
-                    debug!(
-                        "devirtualize resolved def_id {:?}: {:?}",
-                        resolved_def_id,
-                        self.tcx.type_of(resolved_def_id)
-                    );
-                    if !self.active_calls.contains(&resolved_def_id)
-                        && self.tcx.is_mir_available(resolved_def_id)
-                    {
-                        let mut devirtualized_call_info = call_info.clone();
-                        devirtualized_call_info.callee_def_id = resolved_def_id;
-                        devirtualized_call_info.callee_generic_arguments = Some(instance.substs);
-                        devirtualized_call_info.callee_generic_argument_map = self
-                            .get_generic_arguments_map(
-                                resolved_def_id,
-                                instance.substs,
-                                call_info.actual_argument_types,
-                            );
-                        return Some(
-                            self.create_and_cache_function_summary(&devirtualized_call_info),
+                if !self.active_calls.contains(&resolved_def_id)
+                    && self.tcx.is_mir_available(resolved_def_id)
+                {
+                    let mut devirtualized_call_info = call_info.clone();
+                    devirtualized_call_info.callee_def_id = resolved_def_id;
+                    devirtualized_call_info.callee_generic_arguments = Some(instance.substs);
+                    devirtualized_call_info.callee_generic_argument_map = self
+                        .get_generic_arguments_map(
+                            resolved_def_id,
+                            instance.substs,
+                            call_info.actual_argument_types,
                         );
-                    } else {
-                        return None;
-                    }
+                    return Some(self.create_and_cache_function_summary(&devirtualized_call_info));
+                } else {
+                    return None;
                 }
             }
         }
@@ -2270,15 +2269,27 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             };
 
         // Prepend the closure (if there is one) to the unpacked arguments vector.
-        if self
-            .get_def_id_from_closure(caller_call_info.actual_argument_types[0])
-            .is_some()
-        {
+        // Also update the Self parameter in the arguments map.
+        let mut call_info = caller_call_info.clone();
+        let mut closure_ty = caller_call_info.actual_argument_types[0];
+        if let TyKind::Ref(_, ty, _) = closure_ty.kind {
+            closure_ty = ty;
+        }
+        if self.get_def_id_from_closure(closure_ty).is_some() {
             actual_args.insert(0, caller_call_info.actual_args[0].clone());
+            if let TyKind::Closure(_, substs) = closure_ty.kind {
+                let mut map = call_info
+                    .callee_generic_argument_map
+                    .unwrap_or_else(HashMap::new);
+                if let Some(ty) = substs.types().next() {
+                    let self_sym = rustc_span::Symbol::intern("Self");
+                    map.insert(self_sym, ty);
+                }
+                call_info.callee_generic_argument_map = Some(map);
+            }
         }
 
         let function_constant_args = self.get_function_constant_args(&actual_args);
-        let mut call_info = caller_call_info.clone();
         let callee_func_ref = self.get_func_ref(&callee);
         let function_summary = if let Some(func_ref) = &callee_func_ref {
             call_info.callee_def_id = func_ref.def_id.expect("defined when used here");
@@ -3761,15 +3772,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         generic_args: SubstsRef<'tcx>,
         actual_argument_types: &[Ty<'tcx>],
     ) -> Option<HashMap<rustc_span::Symbol, Ty<'tcx>>> {
-        let mut gen_id = def_id;
-        loop {
-            let generics = self.tcx.generics_of(gen_id);
-            if let Some(parent_id) = generics.parent {
-                gen_id = parent_id;
-            } else {
-                break;
-            }
-        }
         if generic_args.is_empty() {
             return None;
         }

@@ -182,6 +182,7 @@ impl MiraiCallbacks {
             || self.file_name.contains("language/bytecode-verifier/src")
             || self.file_name.contains("common/executable-helpers/src")
             || self.file_name.contains("client/cli/src")
+            || self.file_name.contains("consensus/safety-rules/src")
         {
             return;
         }
