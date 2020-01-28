@@ -86,6 +86,8 @@ impl Options {
     /// Parses options from a list of strings. Any content beyond the leftmost `--` token
     /// will be returned (excluding this token).
     pub fn parse(&mut self, args: &[String]) -> Vec<String> {
+        self.single_func = std::env::var("MIRAI_SINGLE_FUNC").ok();
+
         let mut mirai_args_end = args.len();
         let mut rustc_args_start = 0;
         if let Some((p, _)) = args.iter().find_position(|s| s.as_str() == "--") {
@@ -125,7 +127,9 @@ impl Options {
             make_options_parser().get_matches_from(mirai_args.iter())
         };
 
-        self.single_func = matches.value_of("single_func").map(|s| s.to_string());
+        if let Some(s) = matches.value_of("single_func") {
+            self.single_func = Some(s.to_string())
+        }
         self.test_only = matches.is_present("test_only");
         self.diag_level = match matches.value_of("diag").unwrap() {
             "relaxed" => DiagLevel::RELAXED,

@@ -41,9 +41,9 @@ can contain any of the following flags:
 
 - `--test_only`: instructs MIRAI to analyze only test methods in your crate. You must also provide the `--tests`
   option to the `cargo build` command to include those tests actually into your build.
-- `--diag=relaxed|strict`: configures level of diagnostics. With `relaxed` (the default) MIRAI
+- `--diag=relaxed|strict|paranoid`: configures level of diagnostics. With `relaxed` (the default) MIRAI
    will not report errors which are potential 'false positives'. With `strict` it will
-   report such errors. 
+   report such errors. With `paranoid` it will flag any direct or indirect call as a potential error.
 - `--single_func <name>`: the name of a specific function you want to analyze. 
 - `--`: any arguments after this marker are passed on to rustc.
 
