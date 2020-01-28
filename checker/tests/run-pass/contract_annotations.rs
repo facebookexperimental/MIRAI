@@ -39,7 +39,7 @@ trait Adder {
 
     #[pre(x > 0)]
     #[pre(self.get() <= std::i32::MAX - x)]
-    #[post(ret == old(self.get()) && self.get() > old(self.get()))]
+    #[post(ret == old(self.get()) && self.get() > old(self.get()))] //~ provably false verification condition
     fn get_and_add(&mut self, x: i32) -> i32;
 }
 
@@ -63,8 +63,8 @@ impl Adder for MyAdder {
 fn use_trait() {
     let mut a = MyAdder { x: 1 };
     checked_verify!(a.get() == 1);
-    checked_verify!(a.get_and_add(2) == 1);
-    checked_verify!(a.get() == 3);
+    checked_verify!(a.get_and_add(2) == 1); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
+    checked_verify!(a.get() == 3); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
 }
 
 // Invariants
