@@ -231,6 +231,10 @@ pub mod core {
 
     pub mod hash {
         pub mod Hasher {
+            fn finish() {
+                panic!("use StableHasher::finalize instead");
+            }
+
             pub fn write<T>(_self: &mut T, _bytes: &[u8]) {
                 // todo: provide non default models for interesting types
             }
