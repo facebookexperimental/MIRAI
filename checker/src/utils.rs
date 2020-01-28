@@ -288,7 +288,7 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
             // We use this to provide contracts for functions defined in crates we do not
             // wish to modify in place.
             name.clear();
-        } else {
+        } else if !name.ends_with('.') {
             name.push('.');
         }
         push_component_name(component.data, &mut name);
