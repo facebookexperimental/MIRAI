@@ -27,8 +27,10 @@ impl Tr for Foo {
 }
 
 #[test]
-pub fn main() {
+pub fn t1() {
     let foo = Foo { bar: 1 };
     verify!(foo.actual() == 1);
     verify!(foo.actual() == 2); //~ provably false verification condition
 }
+
+pub fn main() {}
