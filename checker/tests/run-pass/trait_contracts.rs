@@ -41,9 +41,11 @@ impl Adder for MyAdder {
 }
 
 #[test]
-pub fn main() {
+pub fn test() {
     let mut a = MyAdder(3);
     a.decrement();
     checked_verify!(a.current() < 3);
     verify!(a.current() == 1); //~ provably false verification condition
 }
+
+pub fn main() {}
