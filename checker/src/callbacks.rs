@@ -16,8 +16,6 @@ use crate::z3_solver::Z3Solver;
 use log::info;
 use log_derive::{logfn, logfn_inputs};
 use rustc::mir;
-use rustc::session::config::ErrorOutputType;
-use rustc::session::early_error;
 use rustc::ty::subst::SubstsRef;
 use rustc::ty::TyCtxt;
 use rustc_driver::Compilation;
@@ -82,9 +80,22 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     /// Called before creating the compiler instance
     #[logfn(TRACE)]
     fn config(&mut self, config: &mut interface::Config) {
-        config.crate_cfg.insert(("mirai".to_string(), None));
         self.file_name = config.input.source_name().to_string();
         info!("Processing input file: {}", self.file_name);
+        if self.options.test_only {
+            if config.opts.test {
+                if Self::is_test_black_listed(&self.file_name) {
+                    // This file is known not to compile with the test flag.
+                    // This happens in Libra code.
+                    std::process::exit(0);
+                }
+            } else {
+                // In test only mode we only run MIRAI when the --tests flag has been set.
+                return;
+            }
+        }
+
+        config.crate_cfg.insert(("mirai".to_string(), None));
         match &config.output_dir {
             None => {
                 self.output_directory = std::env::temp_dir();
@@ -105,6 +116,10 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
         compiler.session().abort_if_errors();
+        if self.options.test_only && !compiler.session().opts.test {
+            // In test only mode we only run MIRAI when the --tests flag has been set.
+            return Compilation::Continue;
+        }
         if self
             .output_directory
             .to_str()
@@ -141,51 +156,59 @@ struct AnalysisInfo<'compilation, 'tcx> {
 }
 
 impl MiraiCallbacks {
+    fn is_test_black_listed(file_name: &str) -> bool {
+        file_name.contains("storage/storage-service/src") || file_name.contains("client/cli/src")
+    }
+
+    fn is_black_listed(file_name: &str) -> bool {
+        file_name.contains("crypto/crypto-derive/src")
+            || file_name.contains("threshold_crypto")
+            || file_name.contains("network/memsocket/src")
+            || file_name.contains("crypto/crypto/src")
+            || file_name.contains("common/futures-semaphore/src")
+            || file_name.contains("common/logger/src")
+            || file_name.contains("network/noise/src")
+            || file_name.contains("storage/schemadb/src")
+            || file_name.contains("network/src")
+            || file_name.contains("types/src")
+            || file_name.contains("language/vm/src")
+            || file_name.contains("config/src")
+            || file_name.contains("storage/jellyfish-merkle/src")
+            || file_name.contains("client/libra_wallet/src")
+            || file_name.contains("common/debug-interface/src")
+            || file_name.contains("admission_control/admission-control-proto/src")
+            || file_name.contains("storage/libradb/src")
+            || file_name.contains("language/bytecode-verifier/src")
+            || file_name.contains("executor/src")
+            || file_name.contains("language/compiler/ir-to-bytecode/src")
+            || file_name.contains("state-synchronizer/src")
+            || file_name.contains("mempool/src")
+            || file_name.contains("consensus/src")
+            || file_name.contains("client/src")
+            || file_name.contains("language/tools/vm-genesis/src")
+            || file_name.contains("storage/storage-client/src")
+            || file_name.contains("storage/scratchpad/src")
+            || file_name.contains("tiny-keccak")
+            || file_name.contains("language/vm/vm-runtime/src")
+            || file_name.contains("language/compiler/src")
+            || file_name.contains("language/transaction-builder/src")
+            || file_name.contains("language/bytecode-verifier/src")
+            || file_name.contains("common/executable-helpers/src")
+            || file_name.contains("client/cli/src")
+            || file_name.contains("consensus/safety-rules/src")
+    }
+
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
     fn analyze_with_mirai<'tcx>(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
-        if self.file_name.contains("crypto/crypto-derive/src")
-            || self.file_name.contains("threshold_crypto")
-            || self.file_name.contains("network/memsocket/src")
-            || self.file_name.contains("crypto/crypto/src")
-            || self.file_name.contains("common/futures-semaphore/src")
-            || self.file_name.contains("common/logger/src")
-            || self.file_name.contains("network/noise/src")
-            || self.file_name.contains("storage/schemadb/src")
-            || self.file_name.contains("network/src")
-            || self.file_name.contains("types/src")
-            || self.file_name.contains("language/vm/src")
-            || self.file_name.contains("config/src")
-            || self.file_name.contains("storage/jellyfish-merkle/src")
-            || self.file_name.contains("client/libra_wallet/src")
-            || self.file_name.contains("common/debug-interface/src")
-            || self
-                .file_name
-                .contains("admission_control/admission-control-proto/src")
-            || self.file_name.contains("storage/libradb/src")
-            || self.file_name.contains("language/bytecode-verifier/src")
-            || self.file_name.contains("executor/src")
-            || self
-                .file_name
-                .contains("language/compiler/ir-to-bytecode/src")
-            || self.file_name.contains("state-synchronizer/src")
-            || self.file_name.contains("mempool/src")
-            || self.file_name.contains("consensus/src")
-            || self.file_name.contains("client/src")
-            || self.file_name.contains("language/tools/vm-genesis/src")
-            || self.file_name.contains("storage/storage-client/src")
-            || self.file_name.contains("storage/scratchpad/src")
-            || self.file_name.contains("tiny-keccak")
-            || self.file_name.contains("language/vm/vm-runtime/src")
-            || self.file_name.contains("language/compiler/src")
-            || self.file_name.contains("language/transaction-builder/src")
-            || self.file_name.contains("language/bytecode-verifier/src")
-            || self.file_name.contains("common/executable-helpers/src")
-            || self.file_name.contains("client/cli/src")
-            || self.file_name.contains("consensus/safety-rules/src")
-        {
+        if self.options.test_only {
+            if Self::is_test_black_listed(&self.file_name) {
+                return;
+            }
+        } else if Self::is_black_listed(&self.file_name) {
             return;
         }
+
         let output_dir = String::from(self.output_directory.to_str().expect("valid string"));
         let summary_store_path = if std::env::var("MIRAI_SHARE_PERSISTENT_STORE").is_ok() {
             output_dir
@@ -275,12 +298,10 @@ impl MiraiCallbacks {
             if let Some((entry_def_id, _)) = tcx.entry_fn(LOCAL_CRATE) {
                 let fns = Self::extract_test_fns(tcx, entry_def_id);
                 if fns.is_empty() {
-                    early_error(
-                        ErrorOutputType::default(),
-                        "Could not extract any tests from main entry point",
-                    );
+                    info!("Could not extract any tests from main entry point");
+                } else {
+                    info!("analyzing functions: {:?}", fns);
                 }
-                info!("analyzing functions: {:?}", fns);
                 analysis_info.function_whitelist = Some(fns);
             } else {
                 warn!("Did not find main entry point to identify tests",);
