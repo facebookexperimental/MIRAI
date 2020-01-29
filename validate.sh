@@ -42,4 +42,4 @@ cargo test
 cargo clean
 RUSTFLAGS="-Z always_encode_mir" cargo build
 touch checker/src/lib.rs
-RUSTFLAGS="-Z always_encode_mir" RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn cargo build --lib -p mirai
+RUSTFLAGS="-Z always_encode_mir" MIRAI_FLAGS="--test_only" RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn cargo build --lib -p mirai
