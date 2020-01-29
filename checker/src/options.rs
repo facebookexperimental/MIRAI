@@ -125,14 +125,20 @@ impl Options {
             make_options_parser().get_matches_from(mirai_args.iter())
         };
 
-        self.single_func = matches.value_of("single_func").map(|s| s.to_string());
-        self.test_only = matches.is_present("test_only");
-        self.diag_level = match matches.value_of("diag").unwrap() {
-            "relaxed" => DiagLevel::RELAXED,
-            "strict" => DiagLevel::STRICT,
-            "paranoid" => DiagLevel::PARANOID,
-            _ => assume_unreachable!(),
-        };
+        if matches.is_present("single_func") {
+            self.single_func = matches.value_of("single_func").map(|s| s.to_string());
+        }
+        if matches.is_present("test_only") {
+            self.test_only = true;
+        }
+        if matches.is_present("diag") {
+            self.diag_level = match matches.value_of("diag").unwrap() {
+                "relaxed" => DiagLevel::RELAXED,
+                "strict" => DiagLevel::STRICT,
+                "paranoid" => DiagLevel::PARANOID,
+                _ => assume_unreachable!(),
+            };
+        }
         args[rustc_args_start..args.len()].to_vec()
     }
 }
