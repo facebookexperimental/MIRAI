@@ -2291,18 +2291,19 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         let function_constant_args = self.get_function_constant_args(&actual_args);
         let callee_func_ref = self.get_func_ref(&callee);
-        let function_summary = if let Some(func_ref) = &callee_func_ref {
+        call_info.callee_func_ref = callee_func_ref;
+        call_info.callee_fun_val = callee;
+        call_info.callee_known_name = KnownNames::None;
+        call_info.actual_args = &actual_args;
+        call_info.actual_argument_types = &actual_argument_types;
+        call_info.function_constant_args = &function_constant_args;
+        let function_summary = if let Some(func_ref) = &call_info.callee_func_ref {
             call_info.callee_def_id = func_ref.def_id.expect("defined when used here");
-            call_info.callee_func_ref = callee_func_ref;
-            call_info.callee_fun_val = callee;
-            call_info.callee_known_name = KnownNames::None;
-            call_info.actual_args = &actual_args;
-            call_info.actual_argument_types = &actual_argument_types;
-            call_info.function_constant_args = &function_constant_args;
             self.get_function_summary(&call_info)
                 .expect("a summary because there is a func ref")
         } else {
-            return abstract_value::BOTTOM.into();
+            self.deal_with_missing_summary(&call_info);
+            Summary::default()
         };
 
         self.check_preconditions_if_necessary(&call_info, &function_summary);
