@@ -8,5 +8,7 @@
 rustup component add rustfmt-preview
 # install linter
 rustup component add clippy-preview
+# install rustc-dev
+rustup component add rustc-dev
 # install audit
 cargo install --force cargo-audit || true
