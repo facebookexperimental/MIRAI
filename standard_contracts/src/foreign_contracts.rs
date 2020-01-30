@@ -1451,6 +1451,12 @@ pub mod alloc {
         }
     }
 
+    pub mod fmt {
+        pub fn format() -> String {
+            result!()
+        }
+    }
+
     pub mod raw_vec {
         pub fn capacity_overflow() {}
     }

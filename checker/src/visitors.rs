@@ -1456,9 +1456,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         debug!("self.generic_argument_map {:?}", self.generic_argument_map);
         debug!("env {:?}", self.current_environment);
         let func_to_call = self.visit_operand(func);
-        let func_ref_to_call = self
-            .get_func_ref(&func_to_call)
-            .expect("visit operand should ensure this");
+        let func_ref = self.get_func_ref(&func_to_call);
+        let func_ref_to_call;
+        if let Some(fr) = func_ref {
+            func_ref_to_call = fr;
+        } else {
+            self.report_missing_summary();
+            info!(
+                "function {} can't be reliably analyzed because it calls an unknown function.",
+                utils::summary_key_str(self.tcx, self.def_id),
+            );
+            return;
+        }
         let callee_def_id = func_ref_to_call
             .def_id
             .expect("callee obtained via operand should have def id");
@@ -1585,6 +1594,24 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Give diagnostic or mark the call chain as angelic, depending on self.options.diag_level
     #[logfn_inputs(TRACE)]
     fn deal_with_missing_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) {
+        self.report_missing_summary();
+        let argument_type_hint = if let Some(func) = &call_info.callee_func_ref {
+            format!(" (foreign fn argument key: {})", func.argument_type_key)
+        } else {
+            "".to_string()
+        };
+        info!(
+            "function {} can't be reliably analyzed because it calls function {} which has no body and no summary{}.",
+            utils::summary_key_str(self.tcx, self.def_id),
+            utils::summary_key_str(self.tcx, call_info.callee_def_id),
+            argument_type_hint,
+        );
+        debug!("def_id {:?}", call_info.callee_def_id);
+    }
+
+    /// Give diagnostic, depending on self.options.diag_level
+    #[logfn_inputs(TRACE)]
+    fn report_missing_summary(&mut self) {
         match self.options.diag_level {
             DiagLevel::RELAXED => {
                 // Assume the callee is perfect and assume the caller and all of its callers are perfect
@@ -1607,18 +1634,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
             }
         }
-        let argument_type_hint = if let Some(func) = &call_info.callee_func_ref {
-            format!(" (foreign fn argument key: {})", func.argument_type_key)
-        } else {
-            "".to_string()
-        };
-        info!(
-            "function {} can't be reliably analyzed because it calls function {} which has no body and no summary{}.",
-            utils::summary_key_str(self.tcx, self.def_id),
-            utils::summary_key_str(self.tcx, call_info.callee_def_id),
-            argument_type_hint,
-        );
-        debug!("def_id {:?}", call_info.callee_def_id);
     }
 
     /// Returns a summary of the function to call, obtained from the summary cache.
@@ -2299,8 +2314,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         call_info.function_constant_args = &function_constant_args;
         let function_summary = if let Some(func_ref) = &call_info.callee_func_ref {
             call_info.callee_def_id = func_ref.def_id.expect("defined when used here");
-            self.get_function_summary(&call_info)
-                .expect("a summary because there is a func ref")
+            let summary = self.get_function_summary(&call_info);
+            if let Some(summary) = summary {
+                summary
+            } else {
+                self.deal_with_missing_summary(&call_info);
+                Summary::default()
+            }
         } else {
             self.deal_with_missing_summary(&call_info);
             Summary::default()
