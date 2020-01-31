@@ -34,7 +34,7 @@ rand = "*"
 rpds = { version = "*", features = ["serde"] }
 serde = {version = "*", features = ["derive", "alloc", "rc"] }
 tar = "*"
-sled = "*"
+sled = "= 0.31.0"
 shellwords = "*"
 tempdir = "*"
 z3-sys = "*"
