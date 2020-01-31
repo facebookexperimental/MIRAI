@@ -127,6 +127,18 @@ impl Debug for PathEnum {
 }
 
 impl Path {
+    /// True if path is, or is rooted by local variable 0, which is reserved for the function result.
+    #[logfn_inputs(TRACE)]
+    pub fn is_result_or_is_rooted_by_result(&self) -> bool {
+        match &self.value {
+            PathEnum::QualifiedPath { qualifier, .. } => {
+                qualifier.is_result_or_is_rooted_by_result()
+            }
+            PathEnum::LocalVariable { ordinal } => 0 == *ordinal,
+            _ => false,
+        }
+    }
+
     /// True if path qualifies root, or another qualified path rooted by root.
     #[logfn_inputs(TRACE)]
     pub fn is_rooted_by(&self, root: &Rc<Path>) -> bool {
