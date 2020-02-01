@@ -25,6 +25,7 @@ pub enum KnownNames {
     MiraiSetModelField,
     MiraiShallowClone,
     MiraiVerify,
+    RustAlloc,
     StdFutureFromGenerator,
     StdIntrinsicsMulWithOverflow,
     StdIntrinsicsTransmute,
@@ -107,6 +108,21 @@ impl KnownNamesCache {
                 } else {
                     None
                 }
+            };
+
+        let get_known_name_for_alloc_namespace =
+            |mut def_path_data_iter: Iter<'_>| match get_path_data_elem_name(
+                def_path_data_iter.next(),
+            ) {
+                Some(n) if n.as_str().deref() == "" => {
+                    get_path_data_elem_name(def_path_data_iter.next())
+                        .map(|n| match n.as_str().deref() {
+                            "__rust_alloc" => KnownNames::RustAlloc,
+                            _ => KnownNames::None,
+                        })
+                        .unwrap_or(KnownNames::None)
+                }
+                _ => KnownNames::None,
             };
 
         let get_known_name_for_future_namespace = |mut def_path_data_iter: Iter<'_>| {
@@ -196,6 +212,7 @@ impl KnownNamesCache {
         let get_known_name_for_known_crate = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
+                    "alloc" => get_known_name_for_alloc_namespace(def_path_data_iter),
                     "future" => get_known_name_for_future_namespace(def_path_data_iter),
                     "intrinsics" => get_known_name_for_intrinsics_namespace(def_path_data_iter),
                     "ops" => get_known_name_for_ops_namespace(def_path_data_iter),
@@ -220,7 +237,7 @@ impl KnownNamesCache {
 
         let crate_name = tcx.crate_name(def_id.krate);
         match crate_name.as_str().deref() {
-            "core" | "mirai_annotations" | "std" => {
+            "alloc" | "core" | "mirai_annotations" | "std" => {
                 get_known_name_for_known_crate(def_path_data_iter)
             }
             _ => KnownNames::None,
