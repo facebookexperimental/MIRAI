@@ -1073,6 +1073,10 @@ pub mod core {
         }
     }
 
+    pub mod ptr {
+        pub fn drop_in_place() {}
+    }
+
     pub mod iter {
         pub mod adapters {
             use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
@@ -1354,6 +1358,39 @@ pub mod core {
     }
 
     pub mod mem {
+        pub fn size_of__i8() -> usize {
+            1
+        }
+        pub fn size_of__i16() -> usize {
+            2
+        }
+        pub fn size_of__i32() -> usize {
+            4
+        }
+        pub fn size_of__i64() -> usize {
+            8
+        }
+        pub fn size_of__i128() -> usize {
+            16
+        }
+        pub fn size_of__isize() -> usize {
+            if cfg!(any(
+                target_arch = "x86",
+                tagret_arch = "mips",
+                tagret_arch = "powerpc",
+                tagret_arch = "arm"
+            )) {
+                4
+            } else if cfg!(any(
+                target_arch = "x86_64",
+                tagret_arch = "powerpc64",
+                tagret_arch = "aarch64"
+            )) {
+                8
+            } else {
+                panic!("Unsupported architecture");
+            }
+        }
         pub fn size_of__u8() -> usize {
             1
         }
@@ -1368,6 +1405,24 @@ pub mod core {
         }
         pub fn size_of__u128() -> usize {
             16
+        }
+        pub fn size_of__usize() -> usize {
+            if cfg!(any(
+                target_arch = "x86",
+                tagret_arch = "mips",
+                tagret_arch = "powerpc",
+                tagret_arch = "arm"
+            )) {
+                4
+            } else if cfg!(any(
+                target_arch = "x86_64",
+                tagret_arch = "powerpc64",
+                tagret_arch = "aarch64"
+            )) {
+                8
+            } else {
+                panic!("Unsupported architecture");
+            }
         }
     }
 
