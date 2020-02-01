@@ -1765,6 +1765,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn handled_as_special_function_call(&mut self, call_info: &CallInfo<'_, 'tcx>) -> bool {
         match call_info.callee_known_name {
+            KnownNames::RustAlloc => {
+                checked_assume!(call_info.actual_args.len() == 2);
+                self.handle_rust_alloc(call_info);
+                return true;
+            }
             KnownNames::StdOpsFunctionFnCall
             | KnownNames::StdOpsFunctionFnMutCallMut
             | KnownNames::StdOpsFunctionFnOnceCallOnce => {
@@ -1910,8 +1915,40 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         false
     }
 
+    /// Set the call result to a new heap local and initialize the lenth path with
+    /// the given value.
+    #[logfn_inputs(TRACE)]
+    fn handle_rust_alloc(&mut self, call_info: &CallInfo<'_, 'tcx>) {
+        checked_assume!(call_info.actual_args.len() == 2);
+        if let Some((place, target)) = &call_info.destination {
+            let target_path = self.visit_place(place);
+
+            // Create a heap address for the allocation
+            let heap_address = self.get_new_heap_address();
+            self.current_environment
+                .update_value_at(target_path.clone(), heap_address);
+
+            // set length in bytes
+            // todo: Check accesses via heap pointers for out of bounds conditions.
+            // I.e. statically verify unsafe code.
+            let length_value = call_info.actual_args[0].1.clone();
+            let length_path = Path::new_length(target_path, &self.current_environment);
+            self.current_environment
+                .update_value_at(length_path, length_value);
+
+            let exit_condition = self.current_environment.entry_condition.clone();
+            self.current_environment.exit_conditions = self
+                .current_environment
+                .exit_conditions
+                .insert(*target, exit_condition);
+        } else {
+            assume_unreachable!();
+        }
+    }
+
     /// Replace the call result with an abstract value of the same type as the
     /// destination place.
+    #[logfn_inputs(TRACE)]
     fn handle_abstract_value(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         if let Some((place, target)) = &call_info.destination {
             let path = self.visit_place(place);
@@ -1937,6 +1974,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// Update the state so that the call result is the value of the model field (or the default
     /// value if there is no field).
+    #[logfn_inputs(TRACE)]
     fn handle_get_model_field(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         if let Some((place, target)) = &call_info.destination {
             let rtype = self.get_place_type(place);

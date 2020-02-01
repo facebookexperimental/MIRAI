@@ -17,7 +17,7 @@ before_script:
 # install linter
 - rustup component add clippy
 # install audit
-- cargo install --force cargo-audit || true
+- cargo install cargo-audit
 # install z3
 - if [ ${TRAVIS_OS_NAME} == "linux" ]; then export RUSTFLAGS='-Clink-arg=-L./binaries -Clink-arg=-lstdc++'; fi
 - if [ ${TRAVIS_OS_NAME} == "osx" ]; then cp binaries/libz3.dylib /usr/local/lib; fi

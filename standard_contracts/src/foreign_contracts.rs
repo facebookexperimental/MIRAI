@@ -1449,6 +1449,8 @@ pub mod alloc {
         pub fn handle_alloc_error() {
             // Not something that can be reasonably detected with static analysis, so ignore.
         }
+
+        pub fn __rust_dealloc() {}
     }
 
     pub mod fmt {
