@@ -151,20 +151,29 @@ struct CallInfo<'callinfo, 'tcx> {
     function_constant_args: &'callinfo [(Rc<Path>, Rc<AbstractValue>)],
 }
 
-impl<'callinfo, 'tcx> From<&DefId> for CallInfo<'callinfo, 'tcx> {
-    fn from(def_id: &DefId) -> CallInfo<'callinfo, 'tcx> {
-        CallInfo {
-            callee_def_id: *def_id,
-            callee_func_ref: None,
-            callee_fun_val: abstract_value::BOTTOM.into(),
-            callee_generic_arguments: None,
-            callee_known_name: KnownNames::None,
-            callee_generic_argument_map: None,
-            actual_args: &[],
-            actual_argument_types: &[],
-            cleanup: None,
-            destination: None,
-            function_constant_args: &[],
+impl<'callinfo, 'tcx> CallInfo<'callinfo, 'tcx> {
+    fn new(
+        callee_def_id: DefId,
+        callee_generic_arguments: Option<SubstsRef<'tcx>>,
+        callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
+        func_const: ConstantDomain,
+    ) -> CallInfo<'callinfo, 'tcx> {
+        if let ConstantDomain::Function(func_ref) = &func_const {
+            CallInfo {
+                callee_def_id,
+                callee_func_ref: Some(func_ref.clone()),
+                callee_fun_val: Rc::new(func_const.into()),
+                callee_generic_arguments,
+                callee_known_name: KnownNames::None,
+                callee_generic_argument_map,
+                actual_args: &[],
+                actual_argument_types: &[],
+                cleanup: None,
+                destination: None,
+                function_constant_args: &[],
+            }
+        } else {
+            unreachable!("caller should supply a constant function")
         }
     }
 }
@@ -619,12 +628,42 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             {
                 let summary;
                 let summary = if let Some(def_id) = def_id {
-                    //todo: provide a function reference here
-                    let cached_summary = self.summary_cache.get_summary_for(*def_id);
+                    let generic_args = self.substs_cache.get(def_id).cloned();
+                    let callee_generic_argument_map = if let Some(generic_args) = generic_args {
+                        self.get_generic_arguments_map(*def_id, generic_args, &[])
+                    } else {
+                        None
+                    };
+                    let ty = self.tcx.type_of(*def_id);
+                    let func_const = self
+                        .constant_value_cache
+                        .get_function_constant_for(
+                            *def_id,
+                            ty,
+                            generic_args
+                                .unwrap_or_else(|| self.tcx.empty_substs_for_def_id(*def_id)),
+                            self.tcx,
+                            self.known_names_cache,
+                            self.summary_cache,
+                        )
+                        .clone();
+                    let call_info = CallInfo::new(
+                        *def_id,
+                        generic_args,
+                        callee_generic_argument_map,
+                        func_const,
+                    );
+                    let func_ref = call_info
+                        .callee_func_ref
+                        .clone()
+                        .expect("CallInfo::new should guarantee this");
+                    let cached_summary = self
+                        .summary_cache
+                        .get_summary_for_call_site(&func_ref, None);
                     if cached_summary.is_not_default {
                         cached_summary
                     } else {
-                        summary = self.create_and_cache_function_summary(&def_id.into());
+                        summary = self.create_and_cache_function_summary(&call_info);
                         &summary
                     }
                 } else {

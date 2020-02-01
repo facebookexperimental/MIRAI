@@ -502,20 +502,6 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
             .or_insert_with(|| utils::summary_key_str(tcx, def_id))
     }
 
-    /// Returns the cached summary corresponding to def_id, or creates a default for it.
-    #[logfn_inputs(TRACE)]
-    pub fn get_summary_for(&mut self, def_id: DefId) -> &Summary {
-        let db = &self.db;
-        let tcx = self.type_context;
-        let persistent_key = self
-            .key_cache
-            .entry(def_id)
-            .or_insert_with(|| utils::summary_key_str(tcx, def_id));
-        self.def_id_cache.entry(def_id).or_insert_with(|| {
-            Self::get_persistent_summary_for_db(db, &persistent_key).unwrap_or_default()
-        })
-    }
-
     /// Returns the cached summary corresponding to the function reference.
     /// If the reference has no def_id (and hence no function_id), the entire reference used
     /// as the key, which requires more cache instances and the hard to extract
