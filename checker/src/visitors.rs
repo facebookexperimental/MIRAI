@@ -3914,6 +3914,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         Some(map)
     }
 
+    #[logfn_inputs(TRACE)]
     fn specialize_generic_argument(
         &self,
         gen_arg: GenericArg<'tcx>,
@@ -3925,6 +3926,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn specialize_substs(
         &self,
         substs: SubstsRef<'tcx>,
@@ -3937,6 +3939,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.tcx.intern_substs(&specialized_generic_args)
     }
 
+    #[logfn_inputs(TRACE)]
     fn specialize_generic_argument_type(
         &self,
         gen_arg_type: Ty<'tcx>,
@@ -4042,10 +4045,33 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     .iter()
                     .map(|gen_arg| gen_arg.expect_ty()),
             ),
+            // The projection of an associated type. For example,
+            // `<T as Trait<..>>::N`.
             TyKind::Projection(projection) => {
                 let specialized_substs = self.specialize_substs(projection.substs, map);
-                self.tcx
-                    .mk_projection(projection.item_def_id, specialized_substs)
+                let item_def_id = projection.item_def_id;
+                if utils::are_concrete(specialized_substs) {
+                    let param_env = self
+                        .tcx
+                        .param_env(self.tcx.associated_item(item_def_id).container.id());
+                    let specialized_substs = self.specialize_substs(projection.substs, map);
+                    if let Some(instance) = rustc::ty::Instance::resolve(
+                        self.tcx,
+                        param_env,
+                        item_def_id,
+                        specialized_substs,
+                    ) {
+                        let item_def_id = instance.def.def_id();
+                        let item_type = self.tcx.type_of(item_def_id);
+                        self.specialize_generic_argument_type(item_type, map)
+                    } else {
+                        debug!("could not resolve an associated type with concrete type arguments");
+                        gen_arg_type
+                    }
+                } else {
+                    self.tcx
+                        .mk_projection(projection.item_def_id, specialized_substs)
+                }
             }
             TyKind::Opaque(def_id, substs) => self
                 .tcx
@@ -4094,7 +4120,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         match &literal.val {
             rustc::ty::ConstKind::Unevaluated(def_id, substs, promoted) => {
-                //todo: use the generic arguments in substs to specialize the summary key
+                let substs = self.specialize_substs(substs, &self.generic_argument_map);
                 self.substs_cache.insert(*def_id, substs);
                 let name = utils::summary_key_str(self.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
@@ -4133,10 +4159,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             assume_unreachable!()
                         }
                     }
-                    TyKind::FnDef(def_id, generic_args)
-                    | TyKind::Closure(def_id, generic_args)
-                    | TyKind::Generator(def_id, generic_args, ..) => {
-                        result = self.visit_function_reference(def_id, ty, generic_args);
+                    TyKind::FnDef(def_id, substs)
+                    | TyKind::Closure(def_id, substs)
+                    | TyKind::Generator(def_id, substs, ..) => {
+                        let substs = self.specialize_substs(substs, &self.generic_argument_map);
+                        result = self.visit_function_reference(def_id, ty, substs);
                     }
                     TyKind::Ref(
                         _,

@@ -150,7 +150,7 @@ impl Path {
         }
     }
 
-    /// True is path qualifies an abstract heap address, or another qualified path rooted by an
+    /// True if path qualifies an abstract heap address, or another qualified path rooted by an
     /// abstract heap address.
     #[logfn_inputs(TRACE)]
     pub fn is_rooted_by_abstract_heap_address(&self) -> bool {
