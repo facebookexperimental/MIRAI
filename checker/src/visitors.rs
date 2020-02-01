@@ -485,7 +485,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .get_summary_key_for(call_info.callee_def_id)
                 .clone();
             let summary = self.visit_body(call_info.function_constant_args);
-            debug!("summary {:?}", summary);
+            debug!("summary {:?} {:?}", self.function_name, summary);
             if let Some(func_ref) = &call_info.callee_func_ref {
                 // We cache the summary with call site details included so that
                 // cached summaries are specialized with respect to call site generic arguments and
