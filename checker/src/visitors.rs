@@ -1935,7 +1935,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             _ => {
                 let result = self.try_to_inline_standard_ops_func(call_info);
-                debug!("result {:?}", result);
                 if !result.is_bottom() {
                     if let Some((place, target)) = &call_info.destination {
                         let target_path = self.visit_place(place);
@@ -4697,34 +4696,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_function_reference(
         &mut self,
-        mut def_id: DefId,
+        def_id: DefId,
         ty: Ty<'tcx>,
-        mut generic_args: SubstsRef<'tcx>,
+        generic_args: SubstsRef<'tcx>,
     ) -> &ConstantDomain {
-        if !self.tcx.is_mir_available(def_id) && self.tcx.trait_of_item(def_id).is_some() {
-            let known_name = self.known_names_cache.get(self.tcx, def_id);
-            if known_name == KnownNames::None && !self.tcx.is_closure(self.def_id) {
-                let param_env = self.tcx.param_env(self.def_id);
-                debug!(
-                    "func_ref resolving def_id {:?}: {:?}",
-                    def_id,
-                    self.tcx.type_of(def_id)
-                );
-                if let Some(instance) =
-                    rustc::ty::Instance::resolve(self.tcx, param_env, def_id, generic_args)
-                {
-                    def_id = instance.def.def_id();
-                    debug!(
-                        "func_ref resolved def_id {:?}: {:?}",
-                        def_id,
-                        self.tcx.type_of(def_id)
-                    );
-                    generic_args = instance.substs;
-                }
-            }
-        }
         self.substs_cache.insert(def_id, generic_args);
-
         &mut self.constant_value_cache.get_function_constant_for(
             def_id,
             ty,

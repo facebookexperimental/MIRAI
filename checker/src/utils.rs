@@ -373,9 +373,6 @@ pub fn are_concrete(gen_args: SubstsRef<'_>) -> bool {
             if !is_concrete(&ty.kind) {
                 return false;
             }
-        } else {
-            debug!("gen_arg {:?}", gen_arg);
-            return true;
         }
     }
     true

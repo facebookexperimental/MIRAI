@@ -198,6 +198,7 @@ impl MiraiCallbacks {
             || file_name.contains("consensus/safety-rules/src")
             || file_name.contains("language/compiler/bytecode-source-map/src")
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src")
+            || file_name.contains("config/config-builder/src")
     }
 
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
