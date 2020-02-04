@@ -9,6 +9,214 @@
 #![allow(unused)]
 #![allow(clippy::all)]
 
+pub mod alloc {
+    pub mod alloc {
+        pub fn box_free() {}
+
+        pub fn handle_alloc_error() {
+            // Not something that can be reasonably detected with static analysis, so ignore.
+        }
+
+        pub fn __rust_dealloc() {}
+    }
+
+    pub mod collections {
+        pub mod vec_deque {
+            pub const INITIAL_CAPACITY: usize = 7; // 2^3 - 1
+            pub const MINIMUM_CAPACITY: usize = 1; // 2 - 1
+            #[cfg(target_pointer_width = "16")]
+            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (16 - 1); // Largest possible power of two
+            #[cfg(target_pointer_width = "32")]
+            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (32 - 1); // Largest possible power of two
+            #[cfg(target_pointer_width = "64")]
+            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (64 - 1); // Largest possible power of two
+
+            pub struct VecDeque<T> {
+                _phantom: std::marker::PhantomData<T>,
+                capacity: usize,
+                len: usize,
+            }
+
+            pub mod implement_vec_deque {
+                use crate::foreign_contracts::alloc::collections::vec_deque::VecDeque;
+
+                pub fn new<T>() -> VecDeque<T> {
+                    VecDeque {
+                        _phantom: std::marker::PhantomData,
+                        capacity: 0,
+                        len: 0,
+                    }
+                }
+
+                pub fn len<T>(_self: &VecDeque<T>) -> usize {
+                    _self.len
+                }
+
+                pub fn is_empty<T>(_self: &VecDeque<T>) -> bool {
+                    _self.len == 0
+                }
+
+                pub fn pop_front<T>(_self: &mut VecDeque<T>) -> Option<T> {
+                    if _self.len == 0 {
+                        None
+                    } else {
+                        _self.len -= 1;
+                        result!()
+                    }
+                }
+
+                pub fn pop_back<T>(_self: &mut VecDeque<T>) -> Option<T> {
+                    if _self.len == 0 {
+                        None
+                    } else {
+                        _self.len -= 1;
+                        result!()
+                    }
+                }
+
+                pub fn push_front<T>(_self: &mut VecDeque<T>, _value: T) {
+                    assume!(_self.len < usize::max_value());
+                    _self.len += 1;
+                }
+
+                pub fn push_back<T>(_self: &mut VecDeque<T>, _value: T) {
+                    assume!(_self.len < usize::max_value());
+                    _self.len += 1;
+                }
+
+                pub fn contains<T>(_self: &VecDeque<T>, _value: T) -> bool {
+                    result!()
+                }
+            }
+        }
+    }
+
+    pub mod fmt {
+        pub fn format() -> String {
+            result!()
+        }
+    }
+
+    pub mod raw_vec {
+        pub fn capacity_overflow() {}
+    }
+
+    pub mod rc {
+        pub mod implement_rc {
+            pub fn hash<T, H>(_self: T, state: &mut H) {
+                result!()
+            }
+        }
+    }
+
+    pub mod slice {
+        use crate::foreign_contracts::alloc::vec::Vec;
+
+        pub struct Slice<T: Clone> {
+            _phantom: std::marker::PhantomData<T>,
+        }
+        impl<T: Clone> Slice<T> {
+            pub fn into_vec(self_: Box<[T]>) -> Vec<T>
+            where
+                T: Clone,
+            {
+                Vec::with_len(self_.len())
+            }
+        }
+    }
+
+    pub mod vec {
+        pub struct Vec<T> {
+            _phantom: std::marker::PhantomData<T>,
+            capacity: usize,
+            len: usize,
+        }
+
+        impl<T> Vec<T> {
+            pub fn new() -> Vec<T> {
+                Vec {
+                    _phantom: std::marker::PhantomData,
+                    capacity: 0,
+                    len: 0,
+                }
+            }
+
+            pub fn with_capacity(capacity: usize) -> Vec<T> {
+                Vec {
+                    _phantom: std::marker::PhantomData,
+                    capacity: capacity,
+                    len: 0,
+                }
+            }
+
+            pub(crate) fn with_len(len: usize) -> Vec<T> {
+                Vec {
+                    _phantom: std::marker::PhantomData,
+                    capacity: len,
+                    len,
+                }
+            }
+
+            pub fn len(&self) -> usize {
+                self.len
+            }
+
+            pub fn append(&mut self, other: &mut Vec<T>) {
+                use crate::foreign_contracts::core::usize;
+
+                assume!(self.len <= usize::max_value() - other.len());
+                self.len += other.len;
+            }
+
+            pub fn capacity(&self) -> usize {
+                self.capacity
+            }
+
+            pub fn clear(&mut self) {
+                self.len = 0;
+            }
+
+            pub fn is_empty(&self) -> bool {
+                self.len == 0
+            }
+
+            pub fn last(&mut self) -> Option<T> {
+                if self.len == 0 {
+                    None
+                } else {
+                    Some(result!())
+                }
+            }
+
+            pub fn pop(&mut self) -> Option<T> {
+                if self.len == 0 {
+                    None
+                } else {
+                    self.len -= 1;
+                    Some(result!())
+                }
+            }
+
+            pub fn push(&mut self, _value: T) {
+                assume!(self.len < usize::max_value());
+                self.len += 1;
+            }
+
+            pub fn reserve(&mut self, additional: usize) {
+                assume!(self.len < usize::max_value() - additional);
+                let new_capacity = self.len + additional;
+                if new_capacity > self.capacity {
+                    self.capacity = new_capacity;
+                }
+            }
+
+            pub fn resize(&mut self, new_len: usize, _value: T) {
+                self.len = new_len
+            }
+        }
+    }
+}
+
 pub mod core {
     pub mod alloc {
         pub mod Alloc {
@@ -38,37 +246,6 @@ pub mod core {
     }
 
     pub mod cmp {
-
-        pub enum Ordering {
-            /// An ordering where a compared value is less than another.
-            Less = -1,
-            /// An ordering where a compared value is equal to another.
-            Equal = 0,
-            /// An ordering where a compared value is greater than another.
-            Greater = 1,
-        }
-
-        pub trait PartialEq<Rhs: ?Sized = Self> {
-            fn eq() -> bool {
-                result!()
-            }
-        }
-
-        pub trait PartialOrd<Rhs: ?Sized = Self> {
-            fn lt__ref_i32_ref_i32(x: &i32, y: &i32) -> bool {
-                (*x) < (*y)
-            }
-            fn partial_cmp(&self, other: &Rhs) -> Option<Ordering> {
-                result!()
-            }
-        }
-
-        pub trait Ord {
-            fn cmp<T>(_a: &T, _b: &T) -> Ordering {
-                result!()
-            }
-        }
-
         pub fn max__i8(v1: i8, v2: i8) -> i8 {
             if v1 >= v2 {
                 return v1;
@@ -152,6 +329,36 @@ pub mod core {
             }
             return v2;
         }
+
+        pub enum Ordering {
+            /// An ordering where a compared value is less than another.
+            Less = -1,
+            /// An ordering where a compared value is equal to another.
+            Equal = 0,
+            /// An ordering where a compared value is greater than another.
+            Greater = 1,
+        }
+
+        pub trait PartialEq<Rhs: ?Sized = Self> {
+            fn eq() -> bool {
+                result!()
+            }
+        }
+
+        pub trait PartialOrd<Rhs: ?Sized = Self> {
+            fn lt__ref_i32_ref_i32(x: &i32, y: &i32) -> bool {
+                (*x) < (*y)
+            }
+            fn partial_cmp(&self, other: &Rhs) -> Option<Ordering> {
+                result!()
+            }
+        }
+
+        pub trait Ord {
+            fn cmp<T>(_a: &T, _b: &T) -> Ordering {
+                result!()
+            }
+        }
     }
 
     pub mod convert {
@@ -181,9 +388,19 @@ pub mod core {
     pub mod fmt {
         use std::marker::PhantomData;
 
-        pub mod rt {
-            pub mod v1 {
-                pub struct Argument {}
+        pub struct Arguments<'a> {
+            phantom: PhantomData<&'a str>,
+        }
+
+        pub mod implement_core_fmt_Arguments {
+            use crate::foreign_contracts::core::fmt::ArgumentV1;
+            use crate::foreign_contracts::core::fmt::Arguments;
+
+            pub fn new_v1<'a>(
+                _pieces: &'a [&'a str],
+                _args: &'a [ArgumentV1<'a>],
+            ) -> Arguments<'a> {
+                result!()
             }
         }
 
@@ -204,27 +421,17 @@ pub mod core {
             }
         }
 
-        pub struct Arguments<'a> {
-            phantom: PhantomData<&'a str>,
-        }
-
-        pub mod implement_core_fmt_Arguments {
-            use crate::foreign_contracts::core::fmt::ArgumentV1;
-            use crate::foreign_contracts::core::fmt::Arguments;
-
-            pub fn new_v1<'a>(
-                _pieces: &'a [&'a str],
-                _args: &'a [ArgumentV1<'a>],
-            ) -> Arguments<'a> {
-                result!()
-            }
-        }
-
         pub struct Formatter<'a> {
             phantom: PhantomData<&'a str>,
         }
 
         pub struct Result {}
+
+        pub mod rt {
+            pub mod v1 {
+                pub struct Argument {}
+            }
+        }
 
         pub struct Void {}
     }
@@ -477,10 +684,12 @@ pub mod core {
         pub fn atomic_umax_relaxed<T>(dst: *mut T, src: T) -> T {
             result!()
         }
+        pub fn copy_nonoverlapping<T>() {}
         pub fn prefetch_read_data<T>(data: *const T, locality: i32) {}
         pub fn prefetch_write_data<T>(data: *const T, locality: i32) {}
         pub fn prefetch_read_instruction<T>(data: *const T, locality: i32) {}
         pub fn prefetch_write_instruction<T>(data: *const T, locality: i32) {}
+        pub fn write_bytes<T>(_dst: *mut T, _val: u8, _count: usize) {}
 
         pub mod _1 {
             pub fn atomic_fence() {}
@@ -790,10 +999,6 @@ pub mod core {
             }
             pub fn miri_start_panic<T>(data: T) {}
         }
-
-        pub fn copy_nonoverlapping<T>() {}
-
-        pub fn write_bytes<T>(_dst: *mut T, _val: u8, _count: usize) {}
     }
 
     pub mod isize {
@@ -827,6 +1032,177 @@ pub mod core {
         pub const MIN: isize = -9223372036854775808;
     }
 
+    pub mod iter {
+        pub mod adapters {
+            use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
+            use crate::foreign_contracts::core::slice::Iter;
+
+            pub struct Enumerator_slice<'a, T: 'a> {
+                pub iterator: Iter<'a, T>,
+            }
+
+            pub struct Rev__Range_usize {
+                pub range: Range_usize,
+            }
+
+            pub struct Enumerate<I> {
+                _iter: I,
+                _count: usize,
+            }
+
+            impl<I> Enumerate<I> {
+                pub(super) fn new(iter: I) -> Enumerate<I> {
+                    Enumerate {
+                        _iter: iter,
+                        _count: 0,
+                    }
+                }
+            }
+        }
+
+        pub mod raw_vec {
+            pub fn capacity_overflow() {}
+        }
+
+        pub mod result {
+            pub fn unwrap_failed(_msg: &str, _error: &dyn std::fmt::Debug) {
+                // todo: put something here that compiles OK here, but causes a diagnostic in the caller
+                // i.e. something like a false precondition
+            }
+        }
+
+        pub mod r#try {
+            pub mod Try {
+                pub fn from_error<T>() -> T {
+                    result!()
+                }
+
+                pub fn into_result<T>() -> T {
+                    result!()
+                }
+            }
+        }
+
+        pub mod traits {
+            pub mod collect {
+                use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
+                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
+                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
+
+                pub trait FromIterator {
+                    fn from_iter<T>() -> T {
+                        result!()
+                    }
+                }
+
+                pub trait IntoIterator {
+                    fn into_iter__core_iter_adapters_Enumerate_core_slice_Iter_bool(
+                        slice: Enumerator_slice<bool>,
+                    ) -> Enumerator_slice<bool> {
+                        slice
+                    }
+
+                    fn into_iter__core_ops_range_Range_usize(range: Range_usize) -> Range_usize {
+                        range
+                    }
+
+                    fn into_iter__core_ops_range_RangeInclusive_usize(
+                        range: RangeInclusive_usize,
+                    ) -> RangeInclusive_usize {
+                        range
+                    }
+                }
+            }
+
+            pub mod iterator {
+                use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
+                use crate::foreign_contracts::core::iter::adapters::Rev__Range_usize;
+                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::compute_is_empty__usize;
+                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
+                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
+                use crate::foreign_contracts::core::slice::Iter;
+                use crate::foreign_contracts::core::iter::adapters::Enumerate;
+
+                pub trait Iterator {
+                    fn enumerate__core_slice_Iter_bool(iter: Iter<bool>) -> Enumerator_slice<bool> {
+                        Enumerator_slice { iterator: iter }
+                    }
+
+                    fn next__core_iter_adapters_Enumerate_core_slice_Iter_bool(
+                        mut slice: &mut Enumerator_slice<bool>,
+                    ) -> Option<(usize, bool)> {
+                        let i = slice.iterator.index;
+                        let collection = slice.iterator.collection;
+                        if i < collection.len() {
+                            slice.iterator.index += 1;
+                            Some((i, collection[i]))
+                        } else {
+                            None
+                        }
+                    }
+
+                    fn next__core_ops_range_Range_usize(
+                        mut range: &mut Range_usize,
+                    ) -> Option<usize> {
+                        if range.start < range.end {
+                            let n = range.start;
+                            range.start = n + 1;
+                            Some(n)
+                        } else {
+                            None
+                        }
+                    }
+
+                    fn next__core_ops_range_RangeInclusive_usize(
+                        mut range: &mut RangeInclusive_usize,
+                    ) -> Option<usize> {
+                        compute_is_empty__usize(&mut range);
+                        if range.is_empty.unwrap_or_default() {
+                            return None;
+                        }
+                        let is_iterating = range.start < range.end;
+                        range.is_empty = Some(!is_iterating);
+                        Some(if is_iterating {
+                            let n = range.start;
+                            range.start = n + 1;
+                            n
+                        } else {
+                            range.start
+                        })
+                    }
+
+                    fn next_back__core_ops_range_Range_usize(
+                        range: &mut Range_usize,
+                    ) -> Option<usize> {
+                        if range.start < range.end {
+                            range.end -= 1;
+                            Some(range.end)
+                        } else {
+                            None
+                        }
+                    }
+
+                    fn next__core_iter_adapters_Rev_core_ops_range_Range_usize(
+                        rev: &mut Rev__Range_usize,
+                    ) -> Option<usize> {
+                        Self::next_back__core_ops_range_Range_usize(&mut rev.range)
+                    }
+
+                    fn rev__core_ops_range_Range_usize(range: Range_usize) -> Rev__Range_usize {
+                        Rev__Range_usize { range }
+                    }
+
+                    fn enumerate(self) -> Enumerate<Self>
+                    where
+                        Self: Sized,
+                    {
+                        Enumerate::new(self)
+                    }
+                }
+            }
+        }
+    }
+
     pub mod i8 {
         pub const MAX: i8 = 127;
         pub const MIN: i8 = -128;
@@ -850,6 +1226,75 @@ pub mod core {
     pub mod i128 {
         pub const MAX: i128 = 170141183460469231731687303715884105727;
         pub const MIN: i128 = -170141183460469231731687303715884105728;
+    }
+
+    pub mod mem {
+        pub fn size_of__i8() -> usize {
+            1
+        }
+        pub fn size_of__i16() -> usize {
+            2
+        }
+        pub fn size_of__i32() -> usize {
+            4
+        }
+        pub fn size_of__i64() -> usize {
+            8
+        }
+        pub fn size_of__i128() -> usize {
+            16
+        }
+        pub fn size_of__isize() -> usize {
+            if cfg!(any(
+                target_arch = "x86",
+                tagret_arch = "mips",
+                tagret_arch = "powerpc",
+                tagret_arch = "arm"
+            )) {
+                4
+            } else if cfg!(any(
+                target_arch = "x86_64",
+                tagret_arch = "powerpc64",
+                tagret_arch = "aarch64"
+            )) {
+                8
+            } else {
+                panic!("Unsupported architecture");
+            }
+        }
+        pub fn size_of__u8() -> usize {
+            1
+        }
+        pub fn size_of__u16() -> usize {
+            2
+        }
+        pub fn size_of__u32() -> usize {
+            4
+        }
+        pub fn size_of__u64() -> usize {
+            8
+        }
+        pub fn size_of__u128() -> usize {
+            16
+        }
+        pub fn size_of__usize() -> usize {
+            if cfg!(any(
+                target_arch = "x86",
+                tagret_arch = "mips",
+                tagret_arch = "powerpc",
+                tagret_arch = "arm"
+            )) {
+                4
+            } else if cfg!(any(
+                target_arch = "x86_64",
+                tagret_arch = "powerpc64",
+                tagret_arch = "aarch64"
+            )) {
+                8
+            } else {
+                panic!("Unsupported architecture");
+            }
+        }
     }
 
     pub mod num {
@@ -1077,195 +1522,14 @@ pub mod core {
         pub fn drop_in_place() {}
     }
 
-    pub mod iter {
-        pub mod adapters {
-            use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
-            use crate::foreign_contracts::core::slice::Iter;
-
-            pub struct Enumerator_slice<'a, T: 'a> {
-                pub iterator: Iter<'a, T>,
-            }
-
-            pub struct Rev__Range_usize {
-                pub range: Range_usize,
-            }
-
-            pub struct Enumerate<I> {
-                _iter: I,
-                _count: usize,
-            }
-
-            impl<I> Enumerate<I> {
-                pub(super) fn new(iter: I) -> Enumerate<I> {
-                    Enumerate {
-                        _iter: iter,
-                        _count: 0,
-                    }
-                }
-            }
-        }
-
-        pub mod traits {
-            pub mod collect {
-                use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
-                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
-                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
-
-                pub trait FromIterator {
-                    fn from_iter<T>() -> T {
-                        result!()
-                    }
-                }
-
-                pub trait IntoIterator {
-                    fn into_iter__core_iter_adapters_Enumerate_core_slice_Iter_bool(
-                        slice: Enumerator_slice<bool>,
-                    ) -> Enumerator_slice<bool> {
-                        slice
-                    }
-
-                    fn into_iter__core_ops_range_Range_usize(range: Range_usize) -> Range_usize {
-                        range
-                    }
-
-                    fn into_iter__core_ops_range_RangeInclusive_usize(
-                        range: RangeInclusive_usize,
-                    ) -> RangeInclusive_usize {
-                        range
-                    }
-                }
-            }
-
-            pub mod iterator {
-                use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
-                use crate::foreign_contracts::core::iter::adapters::Rev__Range_usize;
-                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::compute_is_empty__usize;
-                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
-                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
-                use crate::foreign_contracts::core::slice::Iter;
-                use crate::foreign_contracts::core::iter::adapters::Enumerate;
-
-                pub trait Iterator {
-                    fn enumerate__core_slice_Iter_bool(iter: Iter<bool>) -> Enumerator_slice<bool> {
-                        Enumerator_slice { iterator: iter }
-                    }
-
-                    fn next__core_iter_adapters_Enumerate_core_slice_Iter_bool(
-                        mut slice: &mut Enumerator_slice<bool>,
-                    ) -> Option<(usize, bool)> {
-                        let i = slice.iterator.index;
-                        let collection = slice.iterator.collection;
-                        if i < collection.len() {
-                            slice.iterator.index += 1;
-                            Some((i, collection[i]))
-                        } else {
-                            None
-                        }
-                    }
-
-                    fn next__core_ops_range_Range_usize(
-                        mut range: &mut Range_usize,
-                    ) -> Option<usize> {
-                        if range.start < range.end {
-                            let n = range.start;
-                            range.start = n + 1;
-                            Some(n)
-                        } else {
-                            None
-                        }
-                    }
-
-                    fn next__core_ops_range_RangeInclusive_usize(
-                        mut range: &mut RangeInclusive_usize,
-                    ) -> Option<usize> {
-                        compute_is_empty__usize(&mut range);
-                        if range.is_empty.unwrap_or_default() {
-                            return None;
-                        }
-                        let is_iterating = range.start < range.end;
-                        range.is_empty = Some(!is_iterating);
-                        Some(if is_iterating {
-                            let n = range.start;
-                            range.start = n + 1;
-                            n
-                        } else {
-                            range.start
-                        })
-                    }
-
-                    fn next_back__core_ops_range_Range_usize(
-                        range: &mut Range_usize,
-                    ) -> Option<usize> {
-                        if range.start < range.end {
-                            range.end -= 1;
-                            Some(range.end)
-                        } else {
-                            None
-                        }
-                    }
-
-                    fn next__core_iter_adapters_Rev_core_ops_range_Range_usize(
-                        rev: &mut Rev__Range_usize,
-                    ) -> Option<usize> {
-                        Self::next_back__core_ops_range_Range_usize(&mut rev.range)
-                    }
-
-                    fn rev__core_ops_range_Range_usize(range: Range_usize) -> Rev__Range_usize {
-                        Rev__Range_usize { range }
-                    }
-
-                    fn enumerate(self) -> Enumerate<Self>
-                    where
-                        Self: Sized,
-                    {
-                        Enumerate::new(self)
-                    }
-                }
-            }
-        }
-
-        pub mod r#try {
-            pub mod Try {
-                pub fn from_error<T>() -> T {
-                    result!()
-                }
-
-                pub fn into_result<T>() -> T {
-                    result!()
-                }
-            }
-        }
-
-        pub mod result {
-            pub fn unwrap_failed(_msg: &str, _error: &dyn std::fmt::Debug) {
-                // todo: put something here that compiles OK here, but causes a diagnostic in the caller
-                // i.e. something like a false precondition
-            }
-        }
-
-        pub mod raw_vec {
-            pub fn capacity_overflow() {}
+    pub mod result {
+        fn unwrap_failed(msg: &str) -> ! {
+            panic!("{}", msg)
         }
     }
 
     pub mod slice {
         use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
-
-        pub struct Iter<'a, T: 'a> {
-            pub collection: &'a [T],
-            pub index: usize,
-        }
-
-        impl<'a, T: 'a> Iter<'a, T> {
-            pub fn enumerate(self) -> Enumerator_slice<'a, T> {
-                Enumerator_slice { iterator: self }
-            }
-        }
-
-        pub struct IterMut<'a, T: 'a> {
-            pub collection: &'a mut [T],
-            pub index: usize,
-        }
 
         pub mod implement {
 
@@ -1303,6 +1567,22 @@ pub mod core {
             }
         }
 
+        pub struct Iter<'a, T: 'a> {
+            pub collection: &'a [T],
+            pub index: usize,
+        }
+
+        impl<'a, T: 'a> Iter<'a, T> {
+            pub fn enumerate(self) -> Enumerator_slice<'a, T> {
+                Enumerator_slice { iterator: self }
+            }
+        }
+
+        pub struct IterMut<'a, T: 'a> {
+            pub collection: &'a mut [T],
+            pub index: usize,
+        }
+
         pub mod SliceIndex {
             pub fn get<T>() -> T {
                 result!()
@@ -1310,6 +1590,14 @@ pub mod core {
 
             pub fn get_unchecked<T>() -> T {
                 result!()
+            }
+        }
+    }
+
+    pub mod str {
+        pub mod implement_str {
+            pub fn is_empty(_self: &str) -> bool {
+                _self.len() == 0
             }
         }
     }
@@ -1356,353 +1644,6 @@ pub mod core {
         pub const MAX: u128 = 340282366920938463463374607431768211455;
         pub const MIN: u128 = 0;
     }
-
-    pub mod mem {
-        pub fn size_of__i8() -> usize {
-            1
-        }
-        pub fn size_of__i16() -> usize {
-            2
-        }
-        pub fn size_of__i32() -> usize {
-            4
-        }
-        pub fn size_of__i64() -> usize {
-            8
-        }
-        pub fn size_of__i128() -> usize {
-            16
-        }
-        pub fn size_of__isize() -> usize {
-            if cfg!(any(
-                target_arch = "x86",
-                tagret_arch = "mips",
-                tagret_arch = "powerpc",
-                tagret_arch = "arm"
-            )) {
-                4
-            } else if cfg!(any(
-                target_arch = "x86_64",
-                tagret_arch = "powerpc64",
-                tagret_arch = "aarch64"
-            )) {
-                8
-            } else {
-                panic!("Unsupported architecture");
-            }
-        }
-        pub fn size_of__u8() -> usize {
-            1
-        }
-        pub fn size_of__u16() -> usize {
-            2
-        }
-        pub fn size_of__u32() -> usize {
-            4
-        }
-        pub fn size_of__u64() -> usize {
-            8
-        }
-        pub fn size_of__u128() -> usize {
-            16
-        }
-        pub fn size_of__usize() -> usize {
-            if cfg!(any(
-                target_arch = "x86",
-                tagret_arch = "mips",
-                tagret_arch = "powerpc",
-                tagret_arch = "arm"
-            )) {
-                4
-            } else if cfg!(any(
-                target_arch = "x86_64",
-                tagret_arch = "powerpc64",
-                tagret_arch = "aarch64"
-            )) {
-                8
-            } else {
-                panic!("Unsupported architecture");
-            }
-        }
-    }
-
-    pub mod result {
-        fn unwrap_failed(msg: &str) -> ! {
-            panic!("{}", msg)
-        }
-    }
-
-    pub mod str {
-        pub mod implement_str {
-            pub fn is_empty(_self: &str) -> bool {
-                _self.len() == 0
-            }
-        }
-    }
-}
-
-pub mod std {
-    pub mod collections {
-        pub mod hash {
-            pub mod map {
-                pub mod implement_map {
-                    pub fn new<T>() -> T {
-                        result!()
-                    }
-                }
-            }
-        }
-    }
-
-    pub mod fmt {
-        pub struct Arguments<'a> {
-            // Format string pieces to print.
-            pub pieces: &'a [&'a str],
-        }
-
-        impl<'a> Arguments<'a> {
-            pub fn new_v1(pieces: &'a [&'a str]) -> Arguments<'a> {
-                Arguments { pieces }
-            }
-        }
-    }
-
-    pub mod io {
-        pub mod stdio {
-            use crate::foreign_contracts::core::fmt;
-            pub fn _print(_args: fmt::Arguments<'_>) {}
-        }
-    }
-
-    pub mod result {}
-
-    pub mod sys {
-        pub mod unix {
-            pub mod fast_thread_local {
-                pub fn register_dtor() {}
-            }
-        }
-    }
-
-    pub mod time {
-        pub mod implement {
-            pub fn now<T>() -> T {
-                result!()
-            }
-        }
-    }
-
-    pub mod thread {
-        pub fn yield_now() {}
-    }
-}
-
-pub mod alloc {
-    pub mod alloc {
-        pub fn box_free() {}
-
-        pub fn handle_alloc_error() {
-            // Not something that can be reasonably detected with static analysis, so ignore.
-        }
-
-        pub fn __rust_dealloc() {}
-    }
-
-    pub mod fmt {
-        pub fn format() -> String {
-            result!()
-        }
-    }
-
-    pub mod raw_vec {
-        pub fn capacity_overflow() {}
-    }
-
-    pub mod rc {
-        pub mod implement_rc {
-            pub fn hash<T, H>(_self: T, state: &mut H) {
-                result!()
-            }
-        }
-    }
-
-    pub mod slice {
-        use crate::foreign_contracts::alloc::vec::Vec;
-
-        pub struct Slice<T: Clone> {
-            _phantom: std::marker::PhantomData<T>,
-        }
-        impl<T: Clone> Slice<T> {
-            pub fn into_vec(self_: Box<[T]>) -> Vec<T>
-            where
-                T: Clone,
-            {
-                Vec::with_len(self_.len())
-            }
-        }
-    }
-
-    pub mod vec {
-        pub struct Vec<T> {
-            _phantom: std::marker::PhantomData<T>,
-            capacity: usize,
-            len: usize,
-        }
-
-        impl<T> Vec<T> {
-            pub fn new() -> Vec<T> {
-                Vec {
-                    _phantom: std::marker::PhantomData,
-                    capacity: 0,
-                    len: 0,
-                }
-            }
-
-            pub fn with_capacity(capacity: usize) -> Vec<T> {
-                Vec {
-                    _phantom: std::marker::PhantomData,
-                    capacity: capacity,
-                    len: 0,
-                }
-            }
-
-            pub(crate) fn with_len(len: usize) -> Vec<T> {
-                Vec {
-                    _phantom: std::marker::PhantomData,
-                    capacity: len,
-                    len,
-                }
-            }
-
-            pub fn len(&self) -> usize {
-                self.len
-            }
-
-            pub fn append(&mut self, other: &mut Vec<T>) {
-                use crate::foreign_contracts::core::usize;
-
-                assume!(self.len <= usize::max_value() - other.len());
-                self.len += other.len;
-            }
-
-            pub fn capacity(&self) -> usize {
-                self.capacity
-            }
-
-            pub fn clear(&mut self) {
-                self.len = 0;
-            }
-
-            pub fn is_empty(&self) -> bool {
-                self.len == 0
-            }
-
-            pub fn last(&mut self) -> Option<T> {
-                if self.len == 0 {
-                    None
-                } else {
-                    Some(result!())
-                }
-            }
-
-            pub fn pop(&mut self) -> Option<T> {
-                if self.len == 0 {
-                    None
-                } else {
-                    self.len -= 1;
-                    Some(result!())
-                }
-            }
-
-            pub fn push(&mut self, _value: T) {
-                assume!(self.len < usize::max_value());
-                self.len += 1;
-            }
-
-            pub fn reserve(&mut self, additional: usize) {
-                assume!(self.len < usize::max_value() - additional);
-                let new_capacity = self.len + additional;
-                if new_capacity > self.capacity {
-                    self.capacity = new_capacity;
-                }
-            }
-
-            pub fn resize(&mut self, new_len: usize, _value: T) {
-                self.len = new_len
-            }
-        }
-    }
-
-    pub mod collections {
-        pub mod vec_deque {
-            pub const INITIAL_CAPACITY: usize = 7; // 2^3 - 1
-            pub const MINIMUM_CAPACITY: usize = 1; // 2 - 1
-            #[cfg(target_pointer_width = "16")]
-            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (16 - 1); // Largest possible power of two
-            #[cfg(target_pointer_width = "32")]
-            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (32 - 1); // Largest possible power of two
-            #[cfg(target_pointer_width = "64")]
-            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (64 - 1); // Largest possible power of two
-
-            pub struct VecDeque<T> {
-                _phantom: std::marker::PhantomData<T>,
-                capacity: usize,
-                len: usize,
-            }
-
-            pub mod implement_vec_deque {
-                use crate::foreign_contracts::alloc::collections::vec_deque::VecDeque;
-
-                pub fn new<T>() -> VecDeque<T> {
-                    VecDeque {
-                        _phantom: std::marker::PhantomData,
-                        capacity: 0,
-                        len: 0,
-                    }
-                }
-
-                pub fn len<T>(_self: &VecDeque<T>) -> usize {
-                    _self.len
-                }
-
-                pub fn is_empty<T>(_self: &VecDeque<T>) -> bool {
-                    _self.len == 0
-                }
-
-                pub fn pop_front<T>(_self: &mut VecDeque<T>) -> Option<T> {
-                    if _self.len == 0 {
-                        None
-                    } else {
-                        _self.len -= 1;
-                        result!()
-                    }
-                }
-
-                pub fn pop_back<T>(_self: &mut VecDeque<T>) -> Option<T> {
-                    if _self.len == 0 {
-                        None
-                    } else {
-                        _self.len -= 1;
-                        result!()
-                    }
-                }
-
-                pub fn push_front<T>(_self: &mut VecDeque<T>, _value: T) {
-                    assume!(_self.len < usize::max_value());
-                    _self.len += 1;
-                }
-
-                pub fn push_back<T>(_self: &mut VecDeque<T>, _value: T) {
-                    assume!(_self.len < usize::max_value());
-                    _self.len += 1;
-                }
-
-                pub fn contains<T>(_self: &VecDeque<T>, _value: T) -> bool {
-                    result!()
-                }
-            }
-        }
-    }
 }
 
 pub mod libc {
@@ -1712,11 +1653,11 @@ pub mod libc {
                 0
             }
 
-            pub fn pthread_mutex_unlock() -> u64 {
+            pub fn pthread_cond_signal() -> u64 {
                 0
             }
 
-            pub fn pthread_cond_signal() -> u64 {
+            pub fn pthread_mutex_unlock() -> u64 {
                 0
             }
         }
@@ -1733,6 +1674,7 @@ pub mod rand {
             pub struct StdRng {
                 _value: usize,
             }
+
             impl StdRng {
                 pub fn new() -> StdRng {
                     StdRng { _value: 0 }
@@ -1809,6 +1751,62 @@ pub mod rand {
         pub fn gen_bool__rand_rngs_std_StdRng(_self: &rngs::std::StdRng, probability: f64) -> bool {
             precondition!(probability >= 0.0 && probability <= 1.0);
             result!()
+        }
+    }
+}
+
+pub mod std {
+    pub mod collections {
+        pub mod hash {
+            pub mod map {
+                pub mod implement_map {
+                    pub fn new<T>() -> T {
+                        result!()
+                    }
+                }
+            }
+        }
+    }
+
+    pub mod fmt {
+        pub struct Arguments<'a> {
+            // Format string pieces to print.
+            pub pieces: &'a [&'a str],
+        }
+
+        impl<'a> Arguments<'a> {
+            pub fn new_v1(pieces: &'a [&'a str]) -> Arguments<'a> {
+                Arguments { pieces }
+            }
+        }
+    }
+
+    pub mod io {
+        pub mod stdio {
+            use crate::foreign_contracts::core::fmt;
+            pub fn _print(_args: fmt::Arguments<'_>) {}
+        }
+    }
+
+    pub mod result {}
+
+    pub mod sys {
+        pub mod unix {
+            pub mod fast_thread_local {
+                pub fn register_dtor() {}
+            }
+        }
+    }
+
+    pub mod thread {
+        pub fn yield_now() {}
+    }
+
+    pub mod time {
+        pub mod implement {
+            pub fn now<T>() -> T {
+                result!()
+            }
         }
     }
 }
