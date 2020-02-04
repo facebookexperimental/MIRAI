@@ -1521,10 +1521,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .collect();
         let actual_argument_types: Vec<Ty<'tcx>> = args
             .iter()
-            .enumerate()
-            .map(|(i, arg)| {
+            .map(|arg| {
                 let arg_ty = self.get_operand_rustc_type(arg);
-                self.specialize_generic_argument_type(arg_ty, &self.generic_argument_map, i)
+                self.specialize_generic_argument_type(arg_ty, &self.generic_argument_map)
             })
             .collect();
         let callee_generic_argument_map = self.get_generic_arguments_map(
@@ -3883,11 +3882,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
             if let Some(gen_arg) = generic_args.get(param_def.index as usize) {
                 if let GenericArgKind::Type(ty) = gen_arg.unpack() {
-                    let specialized_gen_arg_ty = self.specialize_generic_argument_type(
-                        ty,
-                        &substitution_map,
-                        param_def.index as usize,
-                    );
+                    let specialized_gen_arg_ty =
+                        self.specialize_generic_argument_type(ty, &substitution_map);
                     if let Some(substitution_map) = &mut substitution_map {
                         substitution_map.insert(param_def.name, specialized_gen_arg_ty);
                     }
@@ -3915,12 +3911,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &self,
         gen_arg: GenericArg<'tcx>,
         map: &Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
-        index: usize,
     ) -> GenericArg<'tcx> {
         match gen_arg.unpack() {
-            GenericArgKind::Type(ty) => {
-                self.specialize_generic_argument_type(ty, map, index).into()
-            }
+            GenericArgKind::Type(ty) => self.specialize_generic_argument_type(ty, map).into(),
             _ => gen_arg,
         }
     }
@@ -3932,8 +3925,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) -> SubstsRef<'tcx> {
         let specialized_generic_args: Vec<GenericArg<'_>> = substs
             .iter()
-            .enumerate()
-            .map(|(i, gen_arg)| self.specialize_generic_argument(*gen_arg, &map, i))
+            .map(|gen_arg| self.specialize_generic_argument(*gen_arg, &map))
             .collect();
         self.tcx.intern_substs(&specialized_generic_args)
     }
@@ -3942,7 +3934,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &self,
         gen_arg_type: Ty<'tcx>,
         map: &Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
-        index: usize,
     ) -> Ty<'tcx> {
         if map.is_none() {
             return gen_arg_type;
@@ -3950,24 +3941,22 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         match gen_arg_type.kind {
             TyKind::Adt(def, substs) => self.tcx.mk_adt(def, self.specialize_substs(substs, map)),
             TyKind::Array(elem_ty, _) => {
-                let specialized_elem_ty =
-                    self.specialize_generic_argument_type(elem_ty, map, index);
+                let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
                 self.tcx.mk_array(specialized_elem_ty, 1) //todo: use the actual value
             }
             TyKind::Slice(elem_ty) => {
-                let specialized_elem_ty =
-                    self.specialize_generic_argument_type(elem_ty, map, index);
+                let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
                 self.tcx.mk_slice(specialized_elem_ty)
             }
             TyKind::RawPtr(rustc::ty::TypeAndMut { ty, mutbl }) => {
-                let specialized_ty = self.specialize_generic_argument_type(ty, map, index);
+                let specialized_ty = self.specialize_generic_argument_type(ty, map);
                 self.tcx.mk_ptr(rustc::ty::TypeAndMut {
                     ty: specialized_ty,
                     mutbl,
                 })
             }
             TyKind::Ref(region, ty, mutbl) => {
-                let specialized_ty = self.specialize_generic_argument_type(ty, map, index);
+                let specialized_ty = self.specialize_generic_argument_type(ty, map);
                 self.tcx.mk_ref(
                     region,
                     rustc::ty::TypeAndMut {
@@ -3985,7 +3974,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         fn_sig
                             .inputs_and_output
                             .iter()
-                            .map(|ty| self.specialize_generic_argument_type(ty, map, index)),
+                            .map(|ty| self.specialize_generic_argument_type(ty, map)),
                     );
                     FnSig {
                         inputs_and_output: specialized_inputs_and_output,
@@ -4014,7 +4003,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             }) => ExistentialPredicate::Projection(ExistentialProjection {
                                 item_def_id: *item_def_id,
                                 substs: self.specialize_substs(substs, map),
-                                ty: self.specialize_generic_argument_type(ty, map, index),
+                                ty: self.specialize_generic_argument_type(ty, map),
                             }),
                             ExistentialPredicate::AutoTrait(_) => *pred,
                         },
@@ -4035,7 +4024,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     self.tcx.mk_type_list(
                         types
                             .iter()
-                            .map(|ty| self.specialize_generic_argument_type(ty, map, index)),
+                            .map(|ty| self.specialize_generic_argument_type(ty, map)),
                     )
                 };
                 let specialized_types = bound_types.map_bound(map_types);
@@ -4057,14 +4046,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             TyKind::Param(ParamTy { name, .. }) => {
                 if let Some(ty) = map.as_ref().unwrap().get(&name) {
                     return *ty;
-                } else if index == 0 {
-                    if let Some(ty) = map
-                        .as_ref()
-                        .unwrap()
-                        .get(&rustc_span::Symbol::intern("Self"))
-                    {
-                        return *ty;
-                    }
                 }
                 gen_arg_type
             }
