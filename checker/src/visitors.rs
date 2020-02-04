@@ -2523,16 +2523,23 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else {
             precondition.message.clone()
         };
-        if let Some(provenance) = &precondition.provenance {
-            let mut buffer = diagnostic.to_string();
-            buffer.push_str(", defined in ");
-            buffer.push_str(provenance.as_str());
-            diagnostic = Rc::new(buffer);
+        if precondition.spans.is_empty() {
+            if let Some(provenance) = &precondition.provenance {
+                let mut buffer = diagnostic.to_string();
+                buffer.push_str(", defined in ");
+                buffer.push_str(provenance.as_str());
+                diagnostic = Rc::new(buffer);
+            }
         }
         let span = self.current_span;
         let mut err = self.session.struct_span_warn(span, diagnostic.as_str());
         for pc_span in precondition.spans.iter() {
-            err.span_note(pc_span.clone(), "related location");
+            let span_str = self.tcx.sess.source_map().span_to_string(*pc_span);
+            if span_str.starts_with("/rustc/") {
+                err.span_note(pc_span.clone(), &format!("related location {:?}", span_str));
+            } else {
+                err.span_note(pc_span.clone(), "related location");
+            };
         }
         self.emit_diagnostic(err);
     }
