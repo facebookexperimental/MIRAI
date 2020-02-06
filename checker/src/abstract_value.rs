@@ -2061,7 +2061,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::UninterpretedCall {
                 result_type, path, ..
             } => {
-                //todo: try to find a summary for the callee and use and check it
                 let refined_path = path.refine_parameters(arguments, fresh);
                 if let PathEnum::Constant { value } = &refined_path.value {
                     value.clone()

@@ -1521,7 +1521,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let call_info = CallInfo {
             callee_def_id,
             callee_known_name: func_ref_to_call.known_name,
-            callee_func_ref: Some(func_ref_to_call),
+            callee_func_ref: Some(func_ref_to_call.clone()),
             callee_fun_val: func_to_call,
             callee_generic_arguments: Some(callee_generic_arguments),
             callee_generic_argument_map,
@@ -1541,7 +1541,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if self.check_for_errors && !function_summary.is_not_default {
             self.deal_with_missing_summary(&call_info);
         }
-        debug!("summary {:?}", function_summary);
+        debug!(
+            "summary {:?} {:?}",
+            func_ref_to_call.summary_cache_key, function_summary
+        );
         debug!("pre env {:?}", self.current_environment);
         self.check_preconditions_if_necessary(&call_info, &function_summary);
         self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
