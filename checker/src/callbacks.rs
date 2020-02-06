@@ -187,6 +187,7 @@ impl MiraiCallbacks {
             || file_name.contains("config/config-builder/src") // false positives
             || file_name.contains("executor/src") // false positives
             || file_name.contains("network/src") // false positives
+            || file_name.contains("secure/storage") // Z3 encoding error
     }
 
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.

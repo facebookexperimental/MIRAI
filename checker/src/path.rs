@@ -362,7 +362,10 @@ impl PathRefinement for Rc<Path> {
         fresh: usize,
     ) -> Rc<Path> {
         match &self.value {
-            PathEnum::LocalVariable { ordinal } => Path::new_local(ordinal + fresh),
+            PathEnum::LocalVariable { ordinal } => {
+                // This is a handy place to put a break point.
+                Path::new_local(ordinal + fresh)
+            }
             PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].0.clone(),
             PathEnum::Result => Path::new_local(fresh),
             PathEnum::QualifiedPath {

@@ -402,6 +402,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) -> Summary {
         if cfg!(DEBUG) {
             let mut stdout = std::io::stdout();
+            stdout.write_fmt(format_args!("{:?}", self.def_id)).unwrap();
             rustc_mir::util::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
             info!("{:?}", stdout.flush());
         }
