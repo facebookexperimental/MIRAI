@@ -108,113 +108,6 @@ pub mod alloc {
             }
         }
     }
-
-    pub mod slice {
-        use crate::foreign_contracts::alloc::vec::Vec;
-
-        pub struct Slice<T: Clone> {
-            _phantom: std::marker::PhantomData<T>,
-        }
-        impl<T: Clone> Slice<T> {
-            pub fn into_vec(self_: Box<[T]>) -> Vec<T>
-            where
-                T: Clone,
-            {
-                Vec::with_len(self_.len())
-            }
-        }
-    }
-
-    pub mod vec {
-        pub struct Vec<T> {
-            _phantom: std::marker::PhantomData<T>,
-            capacity: usize,
-            len: usize,
-        }
-
-        impl<T> Vec<T> {
-            pub fn new() -> Vec<T> {
-                Vec {
-                    _phantom: std::marker::PhantomData,
-                    capacity: 0,
-                    len: 0,
-                }
-            }
-
-            pub fn with_capacity(capacity: usize) -> Vec<T> {
-                Vec {
-                    _phantom: std::marker::PhantomData,
-                    capacity: capacity,
-                    len: 0,
-                }
-            }
-
-            pub(crate) fn with_len(len: usize) -> Vec<T> {
-                Vec {
-                    _phantom: std::marker::PhantomData,
-                    capacity: len,
-                    len,
-                }
-            }
-
-            pub fn len(&self) -> usize {
-                self.len
-            }
-
-            pub fn append(&mut self, other: &mut Vec<T>) {
-                use crate::foreign_contracts::core::usize;
-
-                assume!(self.len <= usize::max_value() - other.len());
-                self.len += other.len;
-            }
-
-            pub fn capacity(&self) -> usize {
-                self.capacity
-            }
-
-            pub fn clear(&mut self) {
-                self.len = 0;
-            }
-
-            pub fn is_empty(&self) -> bool {
-                self.len == 0
-            }
-
-            pub fn last(&mut self) -> Option<T> {
-                if self.len == 0 {
-                    None
-                } else {
-                    Some(result!())
-                }
-            }
-
-            pub fn pop(&mut self) -> Option<T> {
-                if self.len == 0 {
-                    None
-                } else {
-                    self.len -= 1;
-                    Some(result!())
-                }
-            }
-
-            pub fn push(&mut self, _value: T) {
-                assume!(self.len < usize::max_value());
-                self.len += 1;
-            }
-
-            pub fn reserve(&mut self, additional: usize) {
-                assume!(self.len < usize::max_value() - additional);
-                let new_capacity = self.len + additional;
-                if new_capacity > self.capacity {
-                    self.capacity = new_capacity;
-                }
-            }
-
-            pub fn resize(&mut self, new_len: usize, _value: T) {
-                self.len = new_len
-            }
-        }
-    }
 }
 
 pub mod core {
@@ -1129,33 +1022,6 @@ pub mod core {
     }
 
     pub mod iter {
-        pub mod adapters {
-            use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
-            use crate::foreign_contracts::core::slice::Iter;
-
-            pub struct Enumerator_slice<'a, T: 'a> {
-                pub iterator: Iter<'a, T>,
-            }
-
-            pub struct Rev__Range_usize {
-                pub range: Range_usize,
-            }
-
-            pub struct Enumerate<I> {
-                _iter: I,
-                _count: usize,
-            }
-
-            impl<I> Enumerate<I> {
-                pub(super) fn new(iter: I) -> Enumerate<I> {
-                    Enumerate {
-                        _iter: iter,
-                        _count: 0,
-                    }
-                }
-            }
-        }
-
         pub mod raw_vec {
             pub fn capacity_overflow() {}
         }
@@ -1181,118 +1047,9 @@ pub mod core {
 
         pub mod traits {
             pub mod collect {
-                use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
-                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
-                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
-
                 pub trait FromIterator {
                     fn from_iter<T>() -> T {
                         result!()
-                    }
-                }
-
-                pub trait IntoIterator {
-                    fn into_iter__core_iter_adapters_Enumerate_core_slice_Iter_bool(
-                        slice: Enumerator_slice<bool>,
-                    ) -> Enumerator_slice<bool> {
-                        slice
-                    }
-
-                    fn into_iter__core_ops_range_Range_usize(range: Range_usize) -> Range_usize {
-                        range
-                    }
-
-                    fn into_iter__core_ops_range_RangeInclusive_usize(
-                        range: RangeInclusive_usize,
-                    ) -> RangeInclusive_usize {
-                        range
-                    }
-                }
-            }
-
-            pub mod iterator {
-                use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
-                use crate::foreign_contracts::core::iter::adapters::Rev__Range_usize;
-                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::compute_is_empty__usize;
-                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::RangeInclusive_usize;
-                use crate::foreign_contracts::core::ops::range::implement_core_ops_range_RangeInclusive_Idx::Range_usize;
-                use crate::foreign_contracts::core::slice::Iter;
-                use crate::foreign_contracts::core::iter::adapters::Enumerate;
-
-                pub trait Iterator {
-                    fn enumerate__core_slice_Iter_bool(iter: Iter<bool>) -> Enumerator_slice<bool> {
-                        Enumerator_slice { iterator: iter }
-                    }
-
-                    fn next__core_iter_adapters_Enumerate_core_slice_Iter_bool(
-                        mut slice: &mut Enumerator_slice<bool>,
-                    ) -> Option<(usize, bool)> {
-                        let i = slice.iterator.index;
-                        let collection = slice.iterator.collection;
-                        if i < collection.len() {
-                            slice.iterator.index += 1;
-                            Some((i, collection[i]))
-                        } else {
-                            None
-                        }
-                    }
-
-                    fn next__core_ops_range_Range_usize(
-                        mut range: &mut Range_usize,
-                    ) -> Option<usize> {
-                        if range.start < range.end {
-                            let n = range.start;
-                            range.start = n + 1;
-                            Some(n)
-                        } else {
-                            None
-                        }
-                    }
-
-                    fn next__core_ops_range_RangeInclusive_usize(
-                        mut range: &mut RangeInclusive_usize,
-                    ) -> Option<usize> {
-                        compute_is_empty__usize(&mut range);
-                        if range.is_empty.unwrap_or_default() {
-                            return None;
-                        }
-                        let is_iterating = range.start < range.end;
-                        range.is_empty = Some(!is_iterating);
-                        Some(if is_iterating {
-                            let n = range.start;
-                            range.start = n + 1;
-                            n
-                        } else {
-                            range.start
-                        })
-                    }
-
-                    fn next_back__core_ops_range_Range_usize(
-                        range: &mut Range_usize,
-                    ) -> Option<usize> {
-                        if range.start < range.end {
-                            range.end -= 1;
-                            Some(range.end)
-                        } else {
-                            None
-                        }
-                    }
-
-                    fn next__core_iter_adapters_Rev_core_ops_range_Range_usize(
-                        rev: &mut Rev__Range_usize,
-                    ) -> Option<usize> {
-                        Self::next_back__core_ops_range_Range_usize(&mut rev.range)
-                    }
-
-                    fn rev__core_ops_range_Range_usize(range: Range_usize) -> Rev__Range_usize {
-                        Rev__Range_usize { range }
-                    }
-
-                    fn enumerate(self) -> Enumerate<Self>
-                    where
-                        Self: Sized,
-                    {
-                        Enumerate::new(self)
                     }
                 }
             }
@@ -1618,42 +1375,6 @@ pub mod core {
                 }
             }
         }
-
-        pub mod range {
-            pub mod implement_core_ops_range_RangeInclusive_Idx {
-                pub struct Range_usize {
-                    pub start: usize,
-                    pub end: usize,
-                }
-
-                pub struct RangeInclusive_usize {
-                    pub start: usize,
-                    pub end: usize,
-                    pub is_empty: Option<bool>,
-                    // This field is:
-                    //  - `None` when next() or next_back() was never called
-                    //  - `Some(false)` when `start <= end` assuming no overflow
-                    //  - `Some(true)` otherwise
-                    // The field cannot be a simple `bool` because the `..=` constructor can
-                    // accept non-PartialOrd types, also we want the constructor to be const.
-                }
-
-                pub fn new__usize(start: usize, end: usize) -> RangeInclusive_usize {
-                    RangeInclusive_usize {
-                        start,
-                        end,
-                        is_empty: None,
-                    }
-                }
-
-                // If this range's `is_empty` is field is unknown (`None`), update it to be a concrete value.
-                pub fn compute_is_empty__usize(range: &mut RangeInclusive_usize) {
-                    if range.is_empty.is_none() {
-                        range.is_empty = Some(!(range.start <= range.end));
-                    }
-                }
-            }
-        }
     }
 
     pub mod option {
@@ -1673,59 +1394,6 @@ pub mod core {
     }
 
     pub mod slice {
-        use crate::foreign_contracts::core::iter::adapters::Enumerator_slice;
-
-        pub mod implement {
-
-            use crate::foreign_contracts::core::slice::Iter;
-            pub fn iter<T>(collection: &[T]) -> Iter<T> {
-                Iter {
-                    collection,
-                    index: 0,
-                }
-            }
-
-            pub fn get<T>(collection: &[T], index: usize) -> Option<&T> {
-                if index >= collection.len() {
-                    None
-                } else {
-                    Some(&collection[index])
-                }
-            }
-
-            // todo: handle this inside MIRAI
-            pub fn get_unchecked_mut<T>(collection: &[T], index: usize) -> &mut T {
-                result!()
-            }
-
-            pub fn is_empty<T>(collection: &[T]) -> bool {
-                collection.len() == 0
-            }
-
-            pub fn last<T>(collection: &[T]) -> Option<&T> {
-                if collection.len() == 0 {
-                    None
-                } else {
-                    Some(&collection[collection.len() - 1])
-                }
-            }
-        }
-
-        pub struct Iter<'a, T: 'a> {
-            pub collection: &'a [T],
-            pub index: usize,
-        }
-
-        impl<'a, T: 'a> Iter<'a, T> {
-            pub fn enumerate(self) -> Enumerator_slice<'a, T> {
-                Enumerator_slice { iterator: self }
-            }
-        }
-
-        pub struct IterMut<'a, T: 'a> {
-            pub collection: &'a mut [T],
-            pub index: usize,
-        }
 
         pub mod SliceIndex {
             pub fn get<T>() -> T {

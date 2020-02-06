@@ -100,7 +100,7 @@ pub enum Expression {
     /// An expression that is a compile time constant value, such as a numeric literal or a function.
     CompileTimeConstant(ConstantDomain),
 
-    /// An expression that is either if_true or if_false, depending on the value of condition.
+    /// An expression that is either consequent or alternate, depending on the value of condition.
     ConditionalExpression {
         // A condition that results in a Boolean value
         condition: Rc<AbstractValue>,
@@ -464,7 +464,11 @@ impl Debug for Expression {
                 f.write_fmt(format_args!("{:?}: {:?}", path, var_type))
             }
             Expression::Widen { path, operand } => {
-                f.write_fmt(format_args!("widen({:?}) at {:?}", operand, path))
+                if operand.expression_size > 100 {
+                    f.write_fmt(format_args!("widen(..) at {:?}", path))
+                } else {
+                    f.write_fmt(format_args!("widen({:?}) at {:?}", operand, path))
+                }
             }
         }
     }
