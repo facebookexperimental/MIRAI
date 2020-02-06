@@ -938,57 +938,169 @@ pub mod core {
             pub fn bitreverse<T>(x: T) -> T {
                 result!()
             }
+
             pub fn add_with_overflow<T>(x: T, y: T) -> (T, bool) {
                 result!()
             }
+            pub fn add_with_overflow__usize(x: usize, y: usize) -> (u128, bool) {
+                let result = (x as u128) + (y as u128);
+                (
+                    result % ((std::usize::MAX as u128) + 1),
+                    result > (std::usize::MAX as u128),
+                )
+            }
+
             pub fn sub_with_overflow<T>(x: T, y: T) -> (T, bool) {
                 result!()
             }
+            pub fn sub_with_overflow__usize(x: usize, y: usize) -> (usize, bool) {
+                let result = (x as i128) + (-(y as i128));
+                (
+                    (result % ((std::usize::MAX as i128) + 1)) as usize,
+                    result < 0 || result > (std::usize::MAX as i128),
+                )
+            }
+
+            /// Performs an exact division, resulting in undefined behavior when
+            /// `x % y != 0` or `y == 0` or `x == T::min_value() && y == -1`
             pub fn exact_div<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn exact_div__usize(x: usize, y: usize) -> usize {
+                precondition!(y != 0);
+                precondition!(x % y == 0);
+                x / y
+            }
+
+            // These operations assume that no overflow/underflow will occur.
+            // This is not checked at runtime, but code generation can proceed
+            // on the assumption that there will be no overflow/underflow.
+
             pub fn unchecked_div<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn unchecked_div__usize(x: usize, y: usize) -> usize {
+                precondition!(y != 0);
+                x * y
+            }
+
             pub fn unchecked_rem<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn unchecked_rem__usize(x: usize, y: usize) -> usize {
+                precondition!(y != 0);
+                x % y
+            }
+
             pub fn unchecked_shl<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn unchecked_shl__usize(x: usize, y: usize) -> usize {
+                //precondition!(y <= crate::foreign_contracts::core::mem::size_of__usize());
+                x << y
+            }
+
             pub fn unchecked_shr<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn unchecked_shr__usize(x: usize, y: usize) -> usize {
+                //precondition!(y <= crate::foreign_contracts::core::mem::size_of__usize());
+                x >> y
+            }
+
             pub fn unchecked_add<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn unchecked_add__usize(x: usize, y: usize) -> usize {
+                precondition!((x as u128) + (y as u128) <= (std::usize::MAX as u128));
+                x + y
+            }
+
             pub fn unchecked_sub<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn unchecked_sub__usize(x: usize, y: usize) -> usize {
+                precondition!(x >= y);
+                x - y
+            }
+
             pub fn unchecked_mul<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn unchecked_mul__usize(x: usize, y: usize) -> usize {
+                precondition!((x as u128) * (y as u128) <= (std::usize::MAX as u128));
+                x * y
+            }
+
+            // rotate_left: (X << (S % BW)) | (X >> ((BW - S) % BW))
             pub fn rotate_left<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn rotate_left__usize(x: usize, y: usize) -> usize {
+                let bw = crate::foreign_contracts::core::mem::size_of__usize();
+                (x << (y % bw)) | (x >> ((bw - y) % bw))
+            }
+
+            // rotate_right: (X << ((BW - S) % BW)) | (X >> (S % BW))
             pub fn rotate_right<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn rotate_right__usize(x: usize, y: usize) -> usize {
+                let bw = crate::foreign_contracts::core::mem::size_of__usize();
+                (x << ((bw - y) % bw)) | (x >> (y % bw))
+            }
+
+            // Wrapping operations are just the normal CPU ops with no extra runtime checks.
+            // Code generation following such operations have to take into account the possibility
+            // of overflow.
+
+            /// (a + b) mod 2<sup>N</sup>, where N is the width of T
             pub fn wrapping_add<T>(a: T, b: T) -> T {
                 result!()
             }
+            pub fn wrapping_add__usize(a: usize, b: usize) -> u128 {
+                ((a as u128) + (b as u128)) % ((std::usize::MAX as u128) + 1)
+            }
+
+            /// (a - b) mod 2 ** N, where N is the width of T in bits.
             pub fn wrapping_sub<T>(a: T, b: T) -> T {
                 result!()
             }
+            pub fn wrapping_sub__usize(a: usize, b: usize) -> usize {
+                (((a as i128) + (-(b as i128))) % ((std::usize::MAX as i128) + 1)) as usize
+            }
+
+            /// (a * b) mod 2 ** N, where N is the width of T in bits.
             pub fn wrapping_mul<T>(a: T, b: T) -> T {
                 result!()
             }
+            pub fn wrapping_mul__usize(a: usize, b: usize) -> u128 {
+                ((a as u128) * (b as u128)) % ((std::usize::MAX as u128) + 1)
+            }
+
             pub fn saturating_add<T>(a: T, b: T) -> T {
                 result!()
             }
+            pub fn saturating_add__usize(a: usize, b: usize) -> usize {
+                let result = (a as u128) + (b as u128);
+                if result > (std::usize::MAX as u128) {
+                    std::usize::MAX
+                } else {
+                    result as usize
+                }
+            }
+
             pub fn saturating_sub<T>(a: T, b: T) -> T {
                 result!()
             }
+            pub fn saturating_sub__usize(a: usize, b: usize) -> usize {
+                if a < b {
+                    0
+                } else {
+                    a - b
+                }
+            }
+
             pub fn discriminant_value<T>(v: &T) -> u64 {
                 result!()
             }
