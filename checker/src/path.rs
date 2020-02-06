@@ -94,6 +94,10 @@ pub enum PathEnum {
         expression_type: ExpressionType,
     },
 
+    /// This path points to data that is not used, but exists only to satisfy a static checker
+    /// that a generic parameter is actually used.
+    PhantomData,
+
     /// The ordinal is an index into a method level table of MIR bodies.
     /// This should not be serialized into a summary since it is function private local state.
     PromotedConstant { ordinal: usize },
@@ -120,6 +124,7 @@ impl Debug for PathEnum {
             PathEnum::StaticVariable {
                 summary_cache_key, ..
             } => summary_cache_key.fmt(f),
+            PathEnum::PhantomData => f.write_str("phantom_data"),
             PathEnum::PromotedConstant { ordinal } => {
                 f.write_fmt(format_args!("constant_{}", ordinal))
             }
