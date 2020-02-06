@@ -1238,6 +1238,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_assign(&mut self, place: &mir::Place<'tcx>, rvalue: &mir::Rvalue<'tcx>) {
         let path = self.visit_place(place);
+        if PathEnum::PhantomData == path.value {
+            // No need to track this data
+            return;
+        }
         self.visit_rvalue(path, rvalue);
     }
 
@@ -2529,7 +2533,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         for pc_span in precondition.spans.iter() {
             let span_str = self.tcx.sess.source_map().span_to_string(*pc_span);
             if span_str.starts_with("/rustc/") {
-                err.span_note(pc_span.clone(), &format!("related location {:?}", span_str));
+                err.span_note(pc_span.clone(), &format!("related location {}", span_str));
             } else {
                 err.span_note(pc_span.clone(), "related location");
             };
@@ -4730,6 +4734,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if place.projection.is_empty() {
             let ty = self.get_rustc_place_type(place);
             match &ty.kind {
+                TyKind::Adt(def, ..) => {
+                    let ty_name = self.known_names_cache.get(self.tcx, def.did);
+                    if ty_name == KnownNames::StdMarkerPhantomData {
+                        return Rc::new(PathEnum::PhantomData.into());
+                    }
+                }
                 TyKind::Array(_, len) => {
                     let len_val = self.visit_constant(None, &len);
                     let len_path = Path::new_length(base_path.clone(), &self.current_environment);

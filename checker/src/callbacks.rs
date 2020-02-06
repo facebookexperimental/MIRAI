@@ -175,11 +175,14 @@ impl MiraiCallbacks {
             || file_name.contains("bounded-executor/src") // false positives
             || file_name.contains("storage/libradb/src") // false positives
             || file_name.contains("common/executable-helpers/src") // false positives
+            || file_name.contains("common/num-variants/src") // resolve error
             || file_name.contains("state-synchronizer/src") // false positives
             || file_name.contains("language/vm/vm-runtime/src") // false positives
             || file_name.contains("language/bytecode-verifier/src") // stack overflow
             || file_name.contains("client/cli/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 33 to point to memory
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // false positives
+            || file_name.contains("language/stdlib/src") // false positives
+            || file_name.contains("language/transaction-builder/src") // false positives
             || file_name.contains("config/config-builder/src") // false positives
             || file_name.contains("executor/src") // false positives
             || file_name.contains("network/src") // false positives
