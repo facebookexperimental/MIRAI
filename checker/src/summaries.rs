@@ -7,7 +7,7 @@ use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::FunctionReference;
 use crate::environment::Environment;
-use crate::expression::{Expression, ExpressionType};
+use crate::expression::Expression;
 use crate::path::{Path, PathEnum};
 use crate::utils;
 
@@ -63,11 +63,6 @@ pub struct Summary {
     // The string value bundled with the condition is the message that details what would go
     // wrong at runtime if the precondition is not satisfied by the caller.
     pub preconditions: Vec<Precondition>,
-
-    // If the function returns a value, this summarizes what is known statically of the return value.
-    // Callers should substitute parameter values with argument values and simplify the result
-    // under the current path condition.
-    pub result: Option<Rc<AbstractValue>>,
 
     // Modifications the function makes to mutable state external to the function.
     // Every path will be rooted in a static or in a mutable parameter.
@@ -129,9 +124,6 @@ impl Summary {
         if !Self::is_subset_of_preconditions(&self.preconditions[0..], &other.preconditions[0..]) {
             return false;
         }
-        if !Self::is_subset_of_result(&self.result, &other.result) {
-            return false;
-        }
         if !Self::is_subset_of_side_effects(&self.side_effects[0..], &other.side_effects[0..]) {
             return false;
         }
@@ -162,15 +154,6 @@ impl Summary {
             return false;
         }
         Self::is_subset_of_preconditions(&p1[1..], &p2[1..])
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn is_subset_of_result(r1: &Option<Rc<AbstractValue>>, r2: &Option<Rc<AbstractValue>>) -> bool {
-        match (r1, r2) {
-            (Some(v1), Some(v2)) => v1.subset(v2),
-            (None, _) => true,
-            (_, None) => false,
-        }
     }
 
     #[logfn_inputs(TRACE)]
@@ -207,16 +190,10 @@ impl Summary {
             &other.unwind_side_effects[0..],
             vec![],
         );
-        let result_path = &Path::new_local(0);
-        let result = side_effects
-            .iter()
-            .find(|&(p, _)| p.eq(result_path))
-            .map(|(_, v)| v.clone());
 
         Summary {
             is_not_default: true,
             preconditions: other.preconditions.clone(),
-            result,
             side_effects,
             post_condition: other.post_condition.clone(),
             unwind_condition: None,
@@ -266,7 +243,6 @@ impl Summary {
 #[allow(clippy::too_many_arguments)]
 pub fn summarize(
     argument_count: usize,
-    return_type: Option<ExpressionType>,
     exit_environment: &Environment,
     preconditions: &[Precondition],
     post_condition: &Option<Rc<AbstractValue>>,
@@ -274,25 +250,9 @@ pub fn summarize(
     unwind_environment: &Environment,
     tcx: TyCtxt<'_>,
 ) -> Summary {
-    let return_path = Path::new_local(0);
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
-    let mut result = exit_environment.value_at(&return_path).cloned();
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
-
-    if result.is_none() {
-        if let Some(return_type) = return_type {
-            let return_value = AbstractValue::make_from(
-                Expression::Variable {
-                    path: return_path.clone(),
-                    var_type: return_type,
-                },
-                1,
-            );
-            side_effects.push((return_path, return_value.clone()));
-            result = Some(return_value);
-        }
-    }
 
     preconditions.sort();
     side_effects.sort();
@@ -301,7 +261,6 @@ pub fn summarize(
     Summary {
         is_not_default: true,
         preconditions,
-        result,
         side_effects,
         post_condition: post_condition.clone(),
         unwind_condition,

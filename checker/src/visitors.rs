@@ -454,7 +454,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
             summaries::summarize(
                 self.mir.arg_count,
-                self.get_return_type(),
                 &self.exit_environment,
                 &self.preconditions,
                 &self.post_condition,
@@ -672,47 +671,30 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         .get_persistent_summary_for(summary_cache_key);
                     &summary
                 };
-                if summary.result.is_some() {
-                    let side_effects = summary.side_effects.clone();
+                let side_effects = summary.side_effects.clone();
 
-                    // Effects on the path
-                    self.transfer_and_refine(&side_effects, path.clone(), &Path::new_local(0), &[]);
+                // Effects on the path
+                self.transfer_and_refine(&side_effects, path.clone(), &Path::new_local(0), &[]);
 
-                    // Effects on the heap
-                    for (path, value) in side_effects.iter() {
-                        if path.is_rooted_by_abstract_heap_address() {
-                            self.current_environment
-                                .update_value_at(path.clone(), value.clone());
-                        }
+                // Effects on the heap
+                for (path, value) in side_effects.iter() {
+                    if path.is_rooted_by_abstract_heap_address() {
+                        self.current_environment
+                            .update_value_at(path.clone(), value.clone());
                     }
-                    self.current_environment
-                        .value_at(&path)
-                        .cloned()
-                        .unwrap_or_else(|| {
-                            AbstractValue::make_from(
-                                Expression::Variable {
-                                    path: path.clone(),
-                                    var_type: expression_type.clone(),
-                                },
-                                1,
-                            )
-                        })
-                } else {
-                    debug!(
-                        "static var with summary that does not have a result {:?} {:?}",
-                        path, summary
-                    );
-                    let result = AbstractValue::make_from(
-                        Expression::Variable {
-                            path: path.clone(),
-                            var_type: expression_type.clone(),
-                        },
-                        1,
-                    );
-                    self.current_environment
-                        .update_value_at(path, result.clone());
-                    result
                 }
+                self.current_environment
+                    .value_at(&path)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        AbstractValue::make_from(
+                            Expression::Variable {
+                                path: path.clone(),
+                                var_type: expression_type.clone(),
+                            },
+                            1,
+                        )
+                    })
             } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
                 let mut ref_result = None;
                 if result_type == ExpressionType::Reference {
@@ -780,17 +762,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn get_type_for_local(&self, ordinal: usize) -> ExpressionType {
         let loc = &self.mir.local_decls[mir::Local::from(ordinal)];
         (&loc.ty.kind).into()
-    }
-
-    /// Returns None if the type of the return local is () (i.e. void)
-    fn get_return_type(&self) -> Option<ExpressionType> {
-        let return_loc = &self.mir.local_decls[mir::Local::from(0u32)];
-        if let TyKind::Tuple(fields) = return_loc.ty.kind {
-            if fields.is_empty() {
-                return None;
-            }
-        }
-        Some((&return_loc.ty.kind).into())
     }
 
     /// Do a topological sort, breaking loops by preferring lower block indices, using dominance
