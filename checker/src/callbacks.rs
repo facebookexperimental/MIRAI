@@ -161,47 +161,28 @@ impl MiraiCallbacks {
     }
 
     fn is_black_listed(file_name: &str) -> bool {
-        file_name.contains("crypto/crypto-derive/src")
-            || file_name.contains("threshold_crypto")
-            || file_name.contains("network/memsocket/src")
-            || file_name.contains("crypto/crypto/src")
-            || file_name.contains("common/futures-semaphore/src")
-            || file_name.contains("common/logger/src")
-            || file_name.contains("network/noise/src")
-            || file_name.contains("storage/schemadb/src")
-            || file_name.contains("network/src")
-            || file_name.contains("types/src")
-            || file_name.contains("language/vm/src")
-            || file_name.contains("config/src")
-            || file_name.contains("storage/jellyfish-merkle/src")
-            || file_name.contains("client/libra_wallet/src")
-            || file_name.contains("common/debug-interface/src")
-            || file_name.contains("admission_control/admission-control-proto/src")
-            || file_name.contains("storage/libradb/src")
-            || file_name.contains("language/bytecode-verifier/src")
-            || file_name.contains("executor/src")
-            || file_name.contains("language/compiler/ir-to-bytecode/src")
-            || file_name.contains("state-synchronizer/src")
-            || file_name.contains("mempool/src")
-            || file_name.contains("consensus/src")
-            || file_name.contains("client/src")
-            || file_name.contains("language/tools/vm-genesis/src")
-            || file_name.contains("storage/storage-client/src")
-            || file_name.contains("storage/scratchpad/src")
-            || file_name.contains("tiny-keccak")
-            || file_name.contains("language/vm/vm-runtime/src")
-            || file_name.contains("language/compiler/src")
-            || file_name.contains("language/transaction-builder/src")
-            || file_name.contains("language/bytecode-verifier/src")
-            || file_name.contains("common/executable-helpers/src")
-            || file_name.contains("client/cli/src")
-            || file_name.contains("consensus/safety-rules/src")
-            || file_name.contains("language/compiler/bytecode-source-map/src")
-            || file_name.contains("language/compiler/ir-to-bytecode/syntax/src")
-            || file_name.contains("common/metrics/src")
-            || file_name.contains("config/config-builder/src")
-            || file_name.contains("secure/storage/vault/src")
-            || file_name.contains("secure/net/src")
+        file_name.contains("secure/net/src") // false positives
+            || file_name.contains("crypto/crypto-derive/src") // resolve error
+            || file_name.contains("common/futures-semaphore/src") // false positives
+            || file_name.contains("common/logger/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 10 to point to memory
+            || file_name.contains("crypto/crypto/src") // resolve error
+            || file_name.contains("types/src") // resolve error
+            || file_name.contains("language/vm/src") // false positives
+            || file_name.contains("config/src") // unimplemented case
+            || file_name.contains("storage/scratchpad/src") // resolve error
+            || file_name.contains("storage/jellyfish-merkle/src") // false positives
+            || file_name.contains("client/libra_wallet/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 10 to point to memory
+            || file_name.contains("bounded-executor/src") // false positives
+            || file_name.contains("storage/libradb/src") // false positives
+            || file_name.contains("common/executable-helpers/src") // false positives
+            || file_name.contains("state-synchronizer/src") // false positives
+            || file_name.contains("language/vm/vm-runtime/src") // false positives
+            || file_name.contains("language/bytecode-verifier/src") // stack overflow
+            || file_name.contains("client/cli/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 33 to point to memory
+            || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // false positives
+            || file_name.contains("config/config-builder/src") // false positives
+            || file_name.contains("executor/src") // false positives
+            || file_name.contains("network/src") // false positives
     }
 
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.

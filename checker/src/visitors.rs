@@ -714,16 +714,29 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     result
                 }
             } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
-                let result = AbstractValue::make_from(
-                    Expression::Variable {
-                        path: path.clone(),
-                        var_type: result_type.clone(),
-                    },
-                    1,
-                );
-                self.current_environment
-                    .update_value_at(path, result.clone());
-                result
+                let mut ref_result = None;
+                if result_type == ExpressionType::Reference {
+                    // This could be an alias for a fat pointer stored at path.0 (etc.)
+                    for (leaf_path, val) in self.current_environment.value_map.iter() {
+                        if leaf_path.is_first_leaf_rooted_in(&path) {
+                            ref_result = Some(val.clone());
+                            break;
+                        }
+                    }
+                }
+                ref_result.unwrap_or_else(|| {
+                    let result = AbstractValue::make_from(
+                        Expression::Variable {
+                            path: path.clone(),
+                            var_type: result_type.clone(),
+                        },
+                        1,
+                    );
+
+                    self.current_environment
+                        .update_value_at(path, result.clone());
+                    result
+                })
             } else {
                 Rc::new(abstract_value::TOP)
             }
@@ -1224,6 +1237,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Calls a specialized visitor for each kind of statement.
     #[logfn_inputs(TRACE)]
     fn visit_statement(&mut self, location: mir::Location, statement: &mir::Statement<'tcx>) {
+        trace!("env {:?}", self.current_environment);
         self.current_location = location;
         let mir::Statement { kind, source_info } = statement;
         self.current_span = source_info.span;
@@ -1313,6 +1327,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Calls a specialized visitor for each kind of terminator.
     #[logfn_inputs(TRACE)]
     fn visit_terminator(&mut self, source_info: mir::SourceInfo, kind: &mir::TerminatorKind<'tcx>) {
+        trace!("env {:?}", self.current_environment);
         self.current_span = source_info.span;
         match kind {
             mir::TerminatorKind::Goto { target } => self.visit_goto(*target),

@@ -127,6 +127,26 @@ impl Debug for PathEnum {
 }
 
 impl Path {
+    /// True if path qualifies root, or another qualified path rooted by root,
+    /// by selecting field 0.
+    #[logfn_inputs(TRACE)]
+    pub fn is_first_leaf_rooted_in(&self, root: &Rc<Path>) -> bool {
+        match &self.value {
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } => {
+                if let PathSelector::Field(0) = *selector.as_ref() {
+                    *qualifier == *root || qualifier.is_first_leaf_rooted_in(root)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
     /// True if path is, or is rooted by local variable 0, which is reserved for the function result.
     #[logfn_inputs(TRACE)]
     pub fn is_result_or_is_rooted_by_result(&self) -> bool {

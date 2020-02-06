@@ -705,7 +705,9 @@ pub mod core {
             }
             pub fn abort() {}
             pub fn unreachable() {}
-            pub fn assume(b: bool) {}
+            pub fn assume(b: bool) {
+                assumed_postcondition!(b)
+            }
             pub fn likely(b: bool) -> bool {
                 result!()
             }
