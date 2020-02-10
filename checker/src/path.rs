@@ -186,10 +186,20 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn is_rooted_by_abstract_heap_address(&self) -> bool {
         match &self.value {
-            PathEnum::QualifiedPath { qualifier, .. } => match qualifier.value {
-                PathEnum::AbstractHeapAddress { .. } => true,
-                _ => false,
-            },
+            PathEnum::QualifiedPath { qualifier, .. } => {
+                qualifier.is_rooted_by_abstract_heap_address()
+            }
+            PathEnum::AbstractHeapAddress { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// True if path qualifies a parameter, or another qualified path rooted by a parameter.
+    #[logfn_inputs(TRACE)]
+    pub fn is_rooted_by_parameter(&self) -> bool {
+        match &self.value {
+            PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_parameter(),
+            PathEnum::Parameter { .. } => true,
             _ => false,
         }
     }

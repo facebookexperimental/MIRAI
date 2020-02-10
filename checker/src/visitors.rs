@@ -2029,10 +2029,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.copy_or_move_elements(target_path, rpath, rtype, true);
             } else {
                 // If there is no value for the model field in the environment, we should
-                // use the default value, but only the qualifier is not rooted in a parameter
+                // use the default value, but only if the qualifier is not rooted in a parameter
                 // value since only the caller will know what the values of the fields are.
                 match &call_info.actual_args[0].1.expression {
-                    Expression::Variable { .. } | Expression::Reference(..) => {
+                    Expression::Reference(path) | Expression::Variable { path, .. }
+                        if path.is_rooted_by_parameter() =>
+                    {
+                        //todo: if the default value is a non primitive then we lose the structure
+                        // using the code below. That is wrong. Generalize the default field.
                         let rval = AbstractValue::make_from(
                             Expression::UnknownModelField {
                                 path: rpath,
@@ -2068,7 +2072,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let target_path =
                 Path::new_model_field(qualifier, field_name, &self.current_environment);
             let rpath = call_info.actual_args[2].0.clone();
-            self.copy_or_move_elements(target_path, rpath, ExpressionType::NonPrimitive, true);
+            let rtype = call_info.actual_args[2].1.expression.infer_type();
+            self.copy_or_move_elements(target_path, rpath, rtype, true);
             let exit_condition = self.current_environment.entry_condition.clone();
             self.current_environment.exit_conditions = self
                 .current_environment

@@ -30,7 +30,7 @@ cd target/debug/deps
 tar -c -f ../../../binaries/summary_store.tar .summary_store.sled
 cd ../../..
 
-# Install MIRAI into cargo again, so that this time it uses the new sumary store
+# Install MIRAI into cargo again, so that this time it uses the new summary store
 cargo uninstall mirai || true
 cargo install --path ./checker
 
