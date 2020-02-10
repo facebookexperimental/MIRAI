@@ -1853,22 +1853,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let Some(val) = environment.value_at(&path) {
                     // This environment has a value for the model field.
                     val.clone()
-                } else if let PathEnum::QualifiedPath { qualifier, .. } = &path.value {
-                    if environment.value_at(&*qualifier).is_some() {
-                        // This environment does have a value for the qualifier, so the buck stops here.
-                        default.clone()
-                    } else {
-                        // Keep passing the buck to the next caller.
-                        AbstractValue::make_from(
-                            Expression::UnknownModelField {
-                                path: path.clone(),
-                                default: default.clone(),
-                            },
-                            default.expression_size.saturating_add(1),
-                        )
-                    }
+                } else if path.is_rooted_by_parameter() {
+                    // Keep passing the buck to the next caller.
+                    AbstractValue::make_from(
+                        Expression::UnknownModelField {
+                            path: path.clone(),
+                            default: default.clone(),
+                        },
+                        default.expression_size.saturating_add(1),
+                    )
                 } else {
-                    assume_unreachable!()
+                    // The buck stops here and the environment does not have a value for model field.
+                    default.clone()
                 }
             }
             Expression::Variable { path, var_type } => {
@@ -1880,6 +1876,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         value.clone()
                     } else if let Some(val) = environment.value_at(&refined_path) {
                         val.clone()
+                    } else if refined_path == *path {
+                        self.clone()
                     } else {
                         AbstractValue::make_from(
                             Expression::Variable {
