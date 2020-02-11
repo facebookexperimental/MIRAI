@@ -239,7 +239,6 @@ impl Summary {
 
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
-#[logfn(TRACE)]
 #[allow(clippy::too_many_arguments)]
 pub fn summarize(
     argument_count: usize,
@@ -250,6 +249,14 @@ pub fn summarize(
     unwind_environment: &Environment,
     tcx: TyCtxt<'_>,
 ) -> Summary {
+    trace!(
+        "summarize env {:?} pre {:?} post {:?} unwind cond {:?} unwind env {:?}",
+        exit_environment,
+        preconditions,
+        post_condition,
+        unwind_condition,
+        unwind_environment
+    );
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
     let mut side_effects = extract_side_effects(exit_environment, argument_count);
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);

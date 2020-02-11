@@ -91,8 +91,8 @@ pub fn argument_types_key_str<'tcx>(
 /// Appends a string to str with the constraint that it must uniquely identify ty and also
 /// be a valid identifier (so that core library contracts can be written for type specialized
 /// generic trait methods).
-#[logfn(TRACE)]
 fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) {
+    trace!("append_mangled_type {:?} to {}", ty.kind, str);
     use syntax::ast;
     use TyKind::*;
     match ty.kind {

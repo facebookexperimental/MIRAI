@@ -53,6 +53,7 @@ type JoinOrWiden =
 impl Environment {
     /// Returns a reference to the value associated with the given path, if there is one.
     #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
     pub fn value_at(&self, path: &Rc<Path>) -> Option<&Rc<AbstractValue>> {
         self.value_map.get(path)
     }
