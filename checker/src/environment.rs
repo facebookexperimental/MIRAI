@@ -93,7 +93,9 @@ impl Environment {
     #[logfn_inputs(TRACE)]
     fn try_to_split(&mut self, path: &Rc<Path>) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
         match &path.value {
-            PathEnum::LocalVariable { .. } => self.try_to_split_local(path),
+            PathEnum::LocalVariable { .. } | PathEnum::Parameter { .. } | PathEnum::Result => {
+                self.try_to_split_local(path)
+            }
             PathEnum::QualifiedPath {
                 ref qualifier,
                 ref selector,

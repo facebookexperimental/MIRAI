@@ -72,10 +72,14 @@ pub enum PathEnum {
     /// Don't use this unless you are really sure you know what you are doing.
     Constant { value: Rc<AbstractValue> },
 
-    /// 0 is the return value temporary
-    /// [1 ... arg_count] are the parameters
-    /// [arg_count ... ] are the local variables and compiler temporaries.
+    /// locals [arg_count+1..] are the local variables and compiler temporaries.
     LocalVariable { ordinal: usize },
+
+    /// locals [1..=arg_count] are the parameters
+    Parameter { ordinal: usize },
+
+    /// local 0 is the return value temporary
+    Result,
 
     /// The name is a summary cache key string.
     StaticVariable {
@@ -111,6 +115,8 @@ impl Debug for PathEnum {
             }
             PathEnum::Constant { value } => value.fmt(f),
             PathEnum::LocalVariable { ordinal } => f.write_fmt(format_args!("local_{}", ordinal)),
+            PathEnum::Parameter { ordinal } => f.write_fmt(format_args!("param_{}", ordinal)),
+            PathEnum::Result => f.write_str("result"),
             PathEnum::StaticVariable {
                 summary_cache_key, ..
             } => summary_cache_key.fmt(f),
@@ -154,7 +160,7 @@ impl Path {
             PathEnum::QualifiedPath { qualifier, .. } => {
                 qualifier.is_result_or_is_rooted_by_result()
             }
-            PathEnum::LocalVariable { ordinal } => 0 == *ordinal,
+            PathEnum::Result => true,
             _ => false,
         }
     }
@@ -231,6 +237,30 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn new_local(ordinal: usize) -> Rc<Path> {
         Rc::new(PathEnum::LocalVariable { ordinal }.into())
+    }
+
+    /// Creates a path to the local variable corresponding to the ordinal.
+    #[logfn_inputs(TRACE)]
+    pub fn new_parameter(ordinal: usize) -> Rc<Path> {
+        Rc::new(PathEnum::Parameter { ordinal }.into())
+    }
+
+    /// Creates a path to the local variable corresponding to the ordinal.
+    #[logfn_inputs(TRACE)]
+    pub fn new_result() -> Rc<Path> {
+        Rc::new(PathEnum::Result.into())
+    }
+
+    /// Creates a path to the local variable, parameter or result local, corresponding to the ordinal.
+    #[logfn_inputs(TRACE)]
+    pub fn new_local_parameter_or_result(ordinal: usize, argument_count: usize) -> Rc<Path> {
+        if ordinal == 0 {
+            Self::new_result()
+        } else if ordinal <= argument_count {
+            Self::new_parameter(ordinal)
+        } else {
+            Self::new_local(ordinal)
+        }
     }
 
     /// Creates a path the selects the length of the array/slice/string at the given path.
@@ -317,13 +347,9 @@ impl PathRefinement for Rc<Path> {
         fresh: usize,
     ) -> Rc<Path> {
         match &self.value {
-            PathEnum::LocalVariable { ordinal } => {
-                if 0 < *ordinal && *ordinal <= arguments.len() {
-                    arguments[*ordinal - 1].0.clone()
-                } else {
-                    Path::new_local(ordinal + fresh)
-                }
-            }
+            PathEnum::LocalVariable { ordinal } => Path::new_local(ordinal + fresh),
+            PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].0.clone(),
+            PathEnum::Result => Path::new_local(fresh),
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,

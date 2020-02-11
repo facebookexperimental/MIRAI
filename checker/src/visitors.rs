@@ -674,7 +674,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let side_effects = summary.side_effects.clone();
 
                 // Effects on the path
-                self.transfer_and_refine(&side_effects, path.clone(), &Path::new_local(0), &[]);
+                self.transfer_and_refine(&side_effects, path.clone(), &Path::new_result(), &[]);
 
                 // Effects on the heap
                 for (path, value) in side_effects.iter() {
@@ -844,9 +844,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             );
             // skip(1) above ensures this
             assume!(i < usize::max_value());
-            let param_path = Path::new_local(i + 1);
+            let path = if i < self.mir.arg_count {
+                Path::new_parameter(i + 1)
+            } else {
+                Path::new_local(i + 1)
+            };
             let ty: ExpressionType = (&loc.ty.kind).into();
-            let value = self.lookup_path_and_refine_result(param_path, ty);
+            let value = self.lookup_path_and_refine_result(path, ty);
             self.current_environment
                 .update_value_at(closure_path, value);
         }
@@ -1089,7 +1093,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn promote_constants(&mut self) -> Environment {
         let mut environment = Environment::default();
         let saved_mir = self.mir;
-        let result_root: Rc<Path> = Path::new_local(0);
+        let result_root: Rc<Path> = Path::new_result();
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
             self.mir = constant_mir.unwrap_read_only();
             let result_type = self.get_type_for_local(0);
@@ -1263,7 +1267,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// End the current live range for the storage of the local.
     #[logfn_inputs(TRACE)]
     fn visit_storage_dead(&mut self, local: mir::Local) {
-        let path = Path::new_local(local.as_usize());
+        let path = Path::new_local_parameter_or_result(local.as_usize(), self.mir.arg_count);
         self.current_environment
             .update_value_at(path, abstract_value::BOTTOM.into());
     }
@@ -1563,7 +1567,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             {
                 for (i, (arg_path, arg_val)) in actual_args.iter().enumerate() {
                     if (*path) == *arg_path || path.is_rooted_by(arg_path) {
-                        let param_path_root = Path::new_local(i + 1);
+                        let param_path_root = Path::new_parameter(i + 1);
                         let param_path = path.replace_root(arg_path, param_path_root);
                         result.push((param_path, value.clone()));
                         break;
@@ -1572,7 +1576,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             Expression::Reference(ipath)
                             | Expression::Variable { path: ipath, .. } => {
                                 if (*path) == *ipath || path.is_rooted_by(ipath) {
-                                    let param_path_root = Path::new_local(i + 1);
+                                    let param_path_root = Path::new_parameter(i + 1);
                                     let param_path = path.replace_root(arg_path, param_path_root);
                                     result.push((param_path, value.clone()));
                                     break;
@@ -1590,7 +1594,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) =
                         &value.expression
                     {
-                        let param_path = Path::new_local(i + 1);
+                        let param_path = Path::new_parameter(i + 1);
                         result.push((param_path, value.clone()));
                     }
                 }
@@ -1867,7 +1871,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if let Some((place, target)) = &call_info.destination {
                     let target_path = self.visit_place(place);
                     let target_type = self.get_place_type(place);
-                    let return_value_path = Path::new_local(0);
+                    let return_value_path = Path::new_result();
                     let return_value =
                         self.lookup_path_and_refine_result(return_value_path, target_type);
                     self.current_environment
@@ -2534,7 +2538,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Updates the current state to reflect the effects of a normal return from the function call.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn transfer_and_refine_normal_return_state(
         &mut self,
         call_info: &CallInfo<'_, 'tcx>,
@@ -2543,7 +2547,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if let Some((place, target)) = &call_info.destination {
             // Assign function result to place
             let target_path = self.visit_place(place);
-            let return_value_path = Path::new_local(0);
+            let return_value_path = Path::new_result();
 
             // Transfer side effects
             if function_summary.is_not_default {
@@ -2557,7 +2561,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
                 // Effects on the call arguments
                 for (i, (target_path, _)) in call_info.actual_args.iter().enumerate() {
-                    let parameter_path = Path::new_local(i + 1);
+                    let parameter_path = Path::new_parameter(i + 1);
                     self.transfer_and_refine(
                         &function_summary.side_effects,
                         target_path.clone(),
@@ -2639,7 +2643,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) {
         if let Some(cleanup_target) = call_info.cleanup {
             for (i, (target_path, _)) in call_info.actual_args.iter().enumerate() {
-                let parameter_path = Path::new_local(i + 1);
+                let parameter_path = Path::new_parameter(i + 1);
                 self.transfer_and_refine(
                     &function_summary.unwind_side_effects,
                     target_path.clone(),
@@ -2917,7 +2921,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// for which the path is rooted by source_path and where rpath is path re-rooted with
     /// target_path and rvalue is value refined by replacing all occurrences of parameter values
     /// with the corresponding actual values.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn transfer_and_refine(
         &mut self,
         effects: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -2929,6 +2933,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
         {
+            debug!("effect {:?} {:?}", path, value);
             let tpath = Rc::new(path.clone())
                 .replace_root(source_path, target_path.clone())
                 .refine_paths(&self.current_environment);
@@ -4720,7 +4725,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let mut is_union = false;
-        let base_path: Rc<Path> = Path::new_local(place.local.as_usize());
+        let base_path: Rc<Path> =
+            Path::new_local_parameter_or_result(place.local.as_usize(), self.mir.arg_count);
         if place.projection.is_empty() {
             let ty = self.get_rustc_place_type(place);
             match &ty.kind {
@@ -4809,7 +4815,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 r
             }
             mir::ProjectionElem::Index(local) => {
-                let local_path = Path::new_local(local.as_usize());
+                let local_path =
+                    Path::new_local_parameter_or_result(local.as_usize(), self.mir.arg_count);
                 let index_value =
                     self.lookup_path_and_refine_result(local_path, ExpressionType::Usize);
                 PathSelector::Index(index_value)
@@ -4886,15 +4893,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn get_path_rustc_type(&mut self, path: &Rc<Path>) -> Ty<'tcx> {
         match &path.value {
             PathEnum::LocalVariable { ordinal } => {
-                if *ordinal > 0 && *ordinal <= self.actual_argument_types.len() {
-                    self.actual_argument_types[*ordinal - 1]
-                } else if *ordinal < self.mir.local_decls.len() {
+                if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
                     self.mir.local_decls[mir::Local::from(*ordinal)].ty
                 } else {
                     info!("path.value is {:?}", path.value);
                     self.tcx.mk_ty(TyKind::Error)
                 }
             }
+            PathEnum::Parameter { ordinal } => self.actual_argument_types[*ordinal - 1],
+            PathEnum::Result => self.mir.local_decls[mir::Local::from(0usize)].ty,
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
