@@ -304,8 +304,11 @@ fn extract_side_effects(
     let mut heap_roots: HashSet<usize> = HashSet::new();
     let mut result = Vec::new();
     for ordinal in 0..=argument_count {
-        // remember that 0 is the result
-        let root = Path::new_local(ordinal);
+        let root = if ordinal == 0 {
+            Path::new_result()
+        } else {
+            Path::new_parameter(ordinal)
+        };
         for (path, value) in env
             .value_map
             .iter()
