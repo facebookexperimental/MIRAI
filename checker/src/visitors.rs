@@ -714,9 +714,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         },
                         1,
                     );
-
-                    self.current_environment
-                        .update_value_at(path, result.clone());
+                    if result_type != ExpressionType::NonPrimitive {
+                        self.current_environment
+                            .update_value_at(path, result.clone());
+                    }
                     result
                 })
             } else {
@@ -1777,6 +1778,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// If we are checking for errors and have not assumed the preconditions of the called function
     /// and we are not in angelic mode and have not already reported an error for this call,
     /// then check the preconditions and report any conditions that are not known to hold at this point.
+    #[logfn_inputs(TRACE)]
     fn check_preconditions_if_necessary(
         &mut self,
         call_info: &CallInfo<'_, 'tcx>,
@@ -2334,31 +2336,36 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let callee_arg_array_path = caller_call_info.actual_args[1].0.clone();
 
         // Unpack the arguments. We use the generic arguments of the caller as a proxy for the callee function signature.
-        let caller_func_ref = caller_call_info
-            .callee_func_ref
-            .clone()
-            .expect("func ref when called this way");
-        let mut actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = caller_func_ref
-            .generic_arguments
+        let generic_argument_types: Vec<Ty<'tcx>> = caller_call_info
+            .callee_generic_arguments
+            .expect("call_once, etc. are generic")
+            .as_ref()
+            .iter()
+            .map(|gen_arg| gen_arg.expect_ty())
+            .collect();
+
+        checked_assume!(generic_argument_types.len() == 2);
+        let actual_argument_types: Vec<Ty<'tcx>>;
+        if let TyKind::Tuple(tuple_types) = generic_argument_types[1].kind {
+            actual_argument_types = tuple_types
+                .iter()
+                .map(|gen_arg| gen_arg.expect_ty())
+                .collect();
+        } else {
+            assume_unreachable!("expected second type argument to be a tuple type");
+        }
+
+        let mut actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = actual_argument_types
             .iter()
             .enumerate()
             .map(|(i, t)| {
                 let arg_path =
                     Path::new_field(callee_arg_array_path.clone(), i, &self.current_environment);
-                let arg_val = self.lookup_path_and_refine_result(arg_path.clone(), t.clone());
+                let arg_val =
+                    self.lookup_path_and_refine_result(arg_path.clone(), (&t.kind).into());
                 (arg_path, arg_val)
             })
             .collect();
-        let actual_argument_types: Vec<Ty<'tcx>> =
-            if let Some(gen_args) = caller_call_info.callee_generic_arguments {
-                gen_args
-                    .as_ref()
-                    .iter()
-                    .map(|gen_arg| gen_arg.expect_ty())
-                    .collect()
-            } else {
-                vec![]
-            };
 
         // Prepend the closure (if there is one) to the unpacked arguments vector.
         // Also update the Self parameter in the arguments map.
@@ -2950,6 +2957,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .clone()
                 .refine_parameters(arguments, self.fresh_variable_offset)
                 .refine_paths(&self.current_environment);
+            let rtype = rvalue.expression.infer_type();
             if let Expression::Variable { path, .. } = &rvalue.expression {
                 if let PathEnum::LocalVariable { ordinal } = &path.value {
                     if *ordinal >= self.fresh_variable_offset {
@@ -2959,17 +2967,25 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             self.current_environment.value_map.remove(&tpath);
                         continue;
                     }
+                    if rtype == ExpressionType::NonPrimitive {
+                        self.copy_or_move_elements(
+                            tpath.clone(),
+                            path.clone(),
+                            rtype.clone(),
+                            false,
+                        );
+                    }
+                } else if path.is_rooted_by_parameter() {
+                    self.current_environment.update_value_at(tpath, rvalue);
+                    continue;
+                } else if rtype == ExpressionType::NonPrimitive {
+                    self.copy_or_move_elements(tpath.clone(), path.clone(), rtype.clone(), false);
                 }
             }
-            for (arg_path, arg_val) in arguments.iter() {
-                if arg_val.eq(&rvalue) {
-                    let rtype = arg_val.expression.infer_type();
-                    self.copy_or_move_elements(tpath.clone(), arg_path.clone(), rtype, false);
-                    break;
-                }
+            if rtype != ExpressionType::NonPrimitive {
+                self.current_environment.update_value_at(tpath, rvalue);
             }
             check_for_early_return!(self);
-            self.current_environment.update_value_at(tpath, rvalue);
         }
     }
 
@@ -4869,6 +4885,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// Returns the rustc Ty of the given place in memory.
     #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
     fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> Ty<'tcx> {
         let result = {
             let base_type = self.mir.local_decls[place.local].ty;

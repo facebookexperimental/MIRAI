@@ -165,6 +165,7 @@ impl MiraiCallbacks {
             || file_name.contains("crypto/crypto-derive/src") // resolve error
             || file_name.contains("common/futures-semaphore/src") // false positives
             || file_name.contains("common/logger/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 10 to point to memory
+            || file_name.contains("common/metrics/src") // index out of bounds
             || file_name.contains("crypto/crypto/src") // resolve error
             || file_name.contains("types/src") // resolve error
             || file_name.contains("language/vm/src") // false positives
