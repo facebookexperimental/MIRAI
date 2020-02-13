@@ -226,6 +226,7 @@ pub trait AbstractValueTrait: Sized {
     fn bit_xor(&self, other: Self) -> Self;
     fn cast(&self, target_type: ExpressionType) -> Self;
     fn conditional_expression(&self, consequent: Self, alternate: Self) -> Self;
+    fn count_ones(&self) -> Self;
     fn dereference(&self, target_type: ExpressionType) -> Self;
     fn divide(&self, other: Self) -> Self;
     fn equals(&self, other: Self) -> Self;
@@ -559,6 +560,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
             ),
         }
+    }
+
+    /// Returns an value that is the number of 1 bits.
+    #[logfn_inputs(TRACE)]
+    fn count_ones(&self) -> Self {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = v1.count_ones();
+            if result != ConstantDomain::Bottom {
+                return Rc::new(result.into());
+            }
+        };
+        AbstractValue::make_unary(self.clone(), |operand| Expression::CountOnes { operand })
     }
 
     /// Returns an element that is "if self { consequent } else { alternate }".
@@ -1765,6 +1778,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent.refine_paths(environment),
                 alternate.refine_paths(environment),
             ),
+            Expression::CountOnes { operand } => operand.refine_paths(environment).count_ones(),
             Expression::Div { left, right } => left
                 .refine_paths(environment)
                 .divide(right.refine_paths(environment)),
@@ -1955,6 +1969,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     consequent.refine_parameters(arguments, fresh),
                     alternate.refine_parameters(arguments, fresh),
                 ),
+            Expression::CountOnes { operand } => {
+                operand.refine_parameters(arguments, fresh).count_ones()
+            }
             Expression::Div { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .divide(right.refine_parameters(arguments, fresh)),
@@ -2179,6 +2196,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         refined_alternate.refine_with(&refined_condition.logical_not(), depth + 1);
                     refined_condition.conditional_expression(refined_consequent, refined_alternate)
                 }
+            }
+            Expression::CountOnes { operand } => {
+                operand.refine_with(path_condition, depth + 1).count_ones()
             }
             Expression::Div { left, right } => left
                 .refine_with(path_condition, depth + 1)

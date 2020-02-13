@@ -917,9 +917,6 @@ pub mod core {
             pub fn frem_fast<T>(a: T, b: T) -> T {
                 result!()
             }
-            pub fn ctpop<T>(x: T) -> T {
-                result!()
-            }
             pub fn ctlz<T>(x: T) -> T {
                 result!()
             }
@@ -1525,6 +1522,25 @@ pub mod core {
                     Some(_self + value)
                 }
             }
+
+            pub fn is_power_of_two(n: usize) -> bool {
+                if cfg!(any(
+                    target_arch = "x86",
+                    tagret_arch = "mips",
+                    tagret_arch = "powerpc",
+                    tagret_arch = "arm"
+                )) {
+                    (n as u32).is_power_of_two()
+                } else if cfg!(any(
+                    target_arch = "x86_64",
+                    tagret_arch = "powerpc64",
+                    tagret_arch = "aarch64"
+                )) {
+                    (n as u64).is_power_of_two()
+                } else {
+                    panic!("Unsupported architecture");
+                }
+            }
         }
 
         pub mod implement_u8 {
@@ -1541,6 +1557,16 @@ pub mod core {
                     Some(_self + value)
                 }
             }
+            pub fn is_power_of_two(n: u8) -> bool {
+                n == 1 << 0
+                    || n == 1 << 1
+                    || n == 1 << 2
+                    || n == 1 << 3
+                    || n == 1 << 4
+                    || n == 1 << 5
+                    || n == 1 << 6
+                    || n == 1 << 7
+            }
         }
 
         pub mod implement_u16 {
@@ -1549,6 +1575,25 @@ pub mod core {
             }
             pub fn min_value() -> u16 {
                 0
+            }
+
+            pub fn is_power_of_two(n: u16) -> bool {
+                n == 1 << 0
+                    || n == 1 << 1
+                    || n == 1 << 2
+                    || n == 1 << 3
+                    || n == 1 << 4
+                    || n == 1 << 5
+                    || n == 1 << 6
+                    || n == 1 << 7
+                    || n == 1 << 8
+                    || n == 1 << 9
+                    || n == 1 << 10
+                    || n == 1 << 11
+                    || n == 1 << 12
+                    || n == 1 << 13
+                    || n == 1 << 14
+                    || n == 1 << 15
             }
         }
 
@@ -1562,10 +1607,10 @@ pub mod core {
         }
 
         pub mod implement_u64 {
-            pub fn max_value() -> u128 {
+            pub fn max_value() -> u64 {
                 18446744073709551615
             }
-            pub fn min_value() -> u128 {
+            pub fn min_value() -> u64 {
                 0
             }
         }

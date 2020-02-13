@@ -330,6 +330,16 @@ impl ConstantDomain {
         }
     }
 
+    /// Returns the number of one bits in an unsigned integer
+    #[logfn_inputs(TRACE)]
+    pub fn count_ones(&self) -> Self {
+        if let ConstantDomain::U128(val) = self {
+            ConstantDomain::U128(val.count_ones() as u128)
+        } else {
+            ConstantDomain::Bottom
+        }
+    }
+
     /// Returns a constant that is "self / other".
     #[logfn_inputs(TRACE)]
     pub fn div(&self, other: &Self) -> Self {
