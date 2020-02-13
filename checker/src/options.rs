@@ -139,6 +139,6 @@ impl Options {
                 _ => assume_unreachable!(),
             };
         }
-        args[rustc_args_start..args.len()].to_vec()
+        args[rustc_args_start..].to_vec()
     }
 }
