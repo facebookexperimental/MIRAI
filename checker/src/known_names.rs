@@ -77,15 +77,12 @@ impl KnownNamesCache {
         // helper to get next elem from def path and return its name, if it has one
         let get_path_data_elem_name =
             |def_path_data_elem: Option<&rustc::hir::map::DisambiguatedDefPathData>| {
-                match def_path_data_elem {
-                    Some(ref elem) => match elem {
-                        DisambiguatedDefPathData { data, .. } => match &data {
-                            TypeNs(name) | ValueNs(name) => Some(*name),
-                            _ => None,
-                        },
+                def_path_data_elem.and_then(|ref elem| match elem {
+                    DisambiguatedDefPathData { data, .. } => match &data {
+                        TypeNs(name) | ValueNs(name) => Some(*name),
+                        _ => None,
                     },
-                    None => None,
-                }
+                })
             };
 
         // helper to get next elem from def path and return true if it is Impl path
@@ -102,14 +99,11 @@ impl KnownNamesCache {
                 }
             };
 
-        let path_data_elem_as_disambiguator =
-            |def_path_data_elem: Option<&rustc::hir::map::DisambiguatedDefPathData>| {
-                if let Some(DisambiguatedDefPathData { disambiguator, .. }) = def_path_data_elem {
-                    Some(*disambiguator)
-                } else {
-                    None
-                }
-            };
+        let path_data_elem_as_disambiguator = |def_path_data_elem: Option<
+            &rustc::hir::map::DisambiguatedDefPathData,
+        >| {
+            def_path_data_elem.map(|DisambiguatedDefPathData { disambiguator, .. }| *disambiguator)
+        };
 
         let get_known_name_for_alloc_namespace =
             |mut def_path_data_iter: Iter<'_>| match get_path_data_elem_name(
