@@ -110,6 +110,9 @@ pub enum Expression {
         alternate: Rc<AbstractValue>,
     },
 
+    /// An expression that counts the number of one bits in the given unsigned integer value
+    CountOnes { operand: Rc<AbstractValue> },
+
     /// An expression that is the left value divided by the right value. /
     Div {
         // The value of the left operand.
@@ -378,6 +381,9 @@ impl Debug for Expression {
                 "if {:?} {{ {:?} }} else {{ {:?} }}",
                 condition, consequent, alternate
             )),
+            Expression::CountOnes { operand } => {
+                f.write_fmt(format_args!("({:?}).count_ones()", operand))
+            }
             Expression::Div { left, right } => {
                 f.write_fmt(format_args!("({:?}) / ({:?})", left, right))
             }
@@ -494,6 +500,7 @@ impl Expression {
                     consequent.expression.infer_type()
                 }
             }
+            Expression::CountOnes { .. } => ExpressionType::U32,
             Expression::Div { left, .. } => left.expression.infer_type(),
             Expression::Equals { .. } => Bool,
             Expression::GreaterOrEqual { .. } => Bool,

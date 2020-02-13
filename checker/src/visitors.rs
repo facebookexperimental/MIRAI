@@ -2305,6 +2305,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 };
                 result.unwrap_or_else(|| abstract_value::BOTTOM.into())
             }
+            KnownNames::StdIntrinsicsCtpop => {
+                checked_assume!(call_info.actual_args.len() == 1);
+                call_info.actual_args[0].1.count_ones()
+            }
             KnownNames::StdIntrinsicsMulWithOverflow => {
                 self.handle_checked_binary_operation(call_info)
             }
