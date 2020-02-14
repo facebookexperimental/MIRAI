@@ -17,7 +17,10 @@ fn bar(x: Option<i32>, j: i32) -> Option<i32> {
 }
 
 fn bas<T>(x: Option<T>, j: T) -> Option<T> {
-    x.or_else(|| { Some(j) })
+    match x {
+        Some(i) => Some(i),
+        None => Some(j),
+    }
 }
 
 fn foo(f: fn(Option<i32>, i32) -> Option<i32>) -> Option<i32> {
