@@ -1,4 +1,4 @@
-# MIRAI  [![Build Status](https://travis-ci.com/facebookexperimental/MIRAI.svg?token=uaX9rExVwSVz5FfMFphz&branch=master)](https://travis-ci.com/facebookexperimental/MIRAI) [![codecov](https://codecov.io/gh/facebookexperimental/MIRAI/branch/master/graph/badge.svg?token=q4jzL09Ahl)](https://codecov.io/gh/facebookexperimental/MIRAI)
+# MIRAI  [![Build Status](https://travis-ci.com/facebookexperimental/MIRAI.svg?token=uaX9rExVwSVz5FfMFphz&branch=master)](https://travis-ci.com/facebookexperimental/MIRAI) [![codecov](https://codecov.io/gh/facebookexperimental/MIRAI/branch/master/graph/badge.svg?token=q4jzL09Ahl)](https://codecov.io/gh/facebookexperimental/MIRAI) [![deps.rs](https://deps.rs/repo/github/facebookexperimental/MIRAI/status.svg)](https://deps.rs/repo/github/facebookexperimental/MIRAI)
 MIRAI is an abstract interpreter for the [Rust](https://www.rust-lang.org/) compiler's [mid-level intermediate
 representation](https://github.com/rust-lang/rfcs/blob/master/text/1211-mir.md) (MIR).
 It is intended to become a widely used static analysis tool for Rust.
@@ -11,7 +11,7 @@ and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/master/d
 To run mirai, use cargo with `RUSTC_WRAPPER` set to `mirai`.
 Use `rustup override set nightly-YYYY-MM-DD` to make Cargo use the same version of Rust as MIRAI. See the above installation
 instruction to determine which version to use. If you forget to do that or use the wrong version,
-you'll see an error message complaining about a dynamic load library not being found. 
+you'll see an error message complaining about a dynamic load library not being found.
 
 The easiest way to get started is to first build your project in the normal way (with one exception:
  set `RUSTFLAGS="-Z always_encode_mir"` to force the rust compiler to include MIR into its compiled output).
@@ -44,7 +44,7 @@ can contain any of the following flags:
 - `--diag=relaxed|strict|paranoid`: configures level of diagnostics. With `relaxed` (the default) MIRAI
    will not report errors which are potential 'false positives'. With `strict` it will
    report such errors. With `paranoid` it will flag any direct or indirect call as a potential error.
-- `--single_func <name>`: the name of a specific function you want to analyze. 
+- `--single_func <name>`: the name of a specific function you want to analyze.
 - `--`: any arguments after this marker are passed on to rustc.
 
 A more comprehensive command line interface for MIRAI is planned, but currently not implemented.
@@ -77,7 +77,7 @@ for instructions on how to build, run and debug MIRAI.
 * Explicit loop invariants
 * Structure invariants
 * More standard library contracts
-* Upgrade log message that affect soundness into compiler warnings 
+* Upgrade log message that affect soundness into compiler warnings
 * Publish MIRAI to crates.io
 * Support linting interfaces
 * Tutorials and worked examples
