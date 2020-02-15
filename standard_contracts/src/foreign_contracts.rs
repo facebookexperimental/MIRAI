@@ -715,9 +715,6 @@ pub mod core {
                 result!()
             }
             pub fn breakpoint() {}
-            pub fn size_of<T>() -> usize {
-                result!()
-            }
             pub fn move_val_init<T>(dst: *mut T, src: T) {}
             pub fn min_align_of<T>() -> usize {
                 4
