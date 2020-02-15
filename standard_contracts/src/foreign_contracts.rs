@@ -330,33 +330,21 @@ pub mod core {
             return v2;
         }
 
-        pub enum Ordering {
-            /// An ordering where a compared value is less than another.
-            Less = -1,
-            /// An ordering where a compared value is equal to another.
-            Equal = 0,
-            /// An ordering where a compared value is greater than another.
-            Greater = 1,
-        }
-
-        pub trait PartialEq<Rhs: ?Sized = Self> {
-            fn eq() -> bool {
-                result!()
+        pub trait Ord {
+            fn cmp__usize(a: usize, b: usize) -> std::cmp::Ordering {
+                if a < b {
+                    std::cmp::Ordering::Less
+                } else if a == b {
+                    std::cmp::Ordering::Equal
+                } else {
+                    std::cmp::Ordering::Greater
+                }
             }
         }
 
         pub trait PartialOrd<Rhs: ?Sized = Self> {
             fn lt__ref_i32_ref_i32(x: &i32, y: &i32) -> bool {
                 (*x) < (*y)
-            }
-            fn partial_cmp(&self, other: &Rhs) -> Option<Ordering> {
-                result!()
-            }
-        }
-
-        pub trait Ord {
-            fn cmp<T>(_a: &T, _b: &T) -> Ordering {
-                result!()
             }
         }
     }
