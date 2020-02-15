@@ -2086,6 +2086,24 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
+    /// Gets the size in bytes of the type parameter T of the std::mem::size_of<T> function.
+    /// Returns TOP if T is not a concrete type.
+    #[logfn_inputs(TRACE)]
+    fn handle_size_of(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
+        checked_assume!(call_info.actual_args.is_empty());
+        let sym = rustc_span::Symbol::intern("T");
+        let t = (call_info.callee_generic_argument_map.as_ref())
+            .expect("std::mem::size_of must be called with generic arguments")
+            .get(&sym)
+            .expect("std::mem::size must have generic argument T");
+        let param_env = self.tcx.param_env(call_info.callee_def_id);
+        if let Ok(layout) = self.tcx.layout_of(param_env.and(*t)) {
+            Rc::new((layout.details.size.bytes() as u128).into())
+        } else {
+            abstract_value::TOP.into()
+        }
+    }
+
     /// Update the state to reflect a call to an intrinsic binary operation that returns a tuple
     /// of an operation result, modulo its max value, and a flag that indicates if the max value
     /// was exceeded.
@@ -2107,8 +2125,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let left = call_info.actual_args[0].1.clone();
             let right = call_info.actual_args[1].1.clone();
             let modulo = target_type.modulo_value();
-            debug!("modulo {:?}", modulo.expression);
-            debug!("modulo {:?}", modulo.is_bottom());
             let (modulo_result, overflow_flag) = if !modulo.is_bottom() {
                 let (result, overflow_flag) =
                     Self::do_checked_binary_op(bin_op, target_type.clone(), left, right);
@@ -2316,6 +2332,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 checked_assume!(call_info.actual_args.len() == 1);
                 call_info.actual_args[0].1.clone()
             }
+            KnownNames::StdMemSizeOf => self.handle_size_of(call_info),
             _ => abstract_value::BOTTOM.into(),
         }
     }

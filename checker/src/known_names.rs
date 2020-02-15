@@ -31,6 +31,7 @@ pub enum KnownNames {
     StdIntrinsicsMulWithOverflow,
     StdIntrinsicsTransmute,
     StdMarkerPhantomData,
+    StdMemSizeOf,
     StdOpsFunctionFnCall,
     StdOpsFunctionFnMutCallMut,
     StdOpsFunctionFnOnceCallOnce,
@@ -154,6 +155,15 @@ impl KnownNamesCache {
                 .unwrap_or(KnownNames::None)
         };
 
+        let get_known_name_for_mem_namespace = |mut def_path_data_iter: Iter<'_>| {
+            get_path_data_elem_name(def_path_data_iter.next())
+                .map(|n| match n.as_str().deref() {
+                    "size_of" => KnownNames::StdMemSizeOf,
+                    _ => KnownNames::None,
+                })
+                .unwrap_or(KnownNames::None)
+        };
+
         let get_known_name_for_ops_function_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
@@ -222,6 +232,7 @@ impl KnownNamesCache {
                     "future" => get_known_name_for_future_namespace(def_path_data_iter),
                     "intrinsics" => get_known_name_for_intrinsics_namespace(def_path_data_iter),
                     "marker" => get_known_name_for_marker_namespace(def_path_data_iter),
+                    "mem" => get_known_name_for_mem_namespace(def_path_data_iter),
                     "ops" => get_known_name_for_ops_namespace(def_path_data_iter),
                     "panicking" => get_known_name_for_panicking_namespace(def_path_data_iter),
                     "slice" => get_known_name_for_slice_namespace(def_path_data_iter),

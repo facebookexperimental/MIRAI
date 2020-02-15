@@ -5,17 +5,23 @@
 //
 
 // A test that checks that size_of::<u32>() is mangled correctly.
+#![allow(non_snake_case)]
 
 use std::mem::size_of;
-
-pub struct Foo {
-    pub bar: i32,
-    pub baz: f64,
-}
 
 #[macro_use]
 extern crate mirai_annotations;
 
 pub fn main() {
-    verify!(size_of::<Foo>() == 16);
+    verify!(size_of::<u32>() == 4);
+}
+
+pub mod foreign_contracts {
+    pub mod core {
+        pub mod mem {
+            pub fn size_of__u32() -> usize {
+                4
+            }
+        }
+    }
 }
