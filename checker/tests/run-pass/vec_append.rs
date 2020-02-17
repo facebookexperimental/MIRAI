@@ -14,5 +14,5 @@ pub fn main() {
     let mut v2: Vec<i32> = Vec::new();
     v2.push(1);
     v1.append(&mut v2);
-    verify!(v1.len() == 1);
+    verify!(v1.len() == 1); //~ possible false verification condition
 }

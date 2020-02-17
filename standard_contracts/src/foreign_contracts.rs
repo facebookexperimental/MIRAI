@@ -219,11 +219,11 @@ pub mod alloc {
 
 pub mod core {
     pub mod alloc {
-        pub mod Alloc {
+        pub mod AllocRef {
             pub fn alloc(
-                _self: &mut dyn std::alloc::Alloc,
+                _self: &mut dyn std::alloc::AllocRef,
                 _layout: std::alloc::Layout,
-            ) -> Result<std::ptr::NonNull<u8>, std::alloc::AllocErr> {
+            ) -> Result<std::ptr::NonNull<u8>, core::alloc::AllocErr> {
                 result!()
             }
 
