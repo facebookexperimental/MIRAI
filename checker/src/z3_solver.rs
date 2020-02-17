@@ -21,7 +21,6 @@ use std::ffi::{CStr, CString};
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 use std::sync::Mutex;
-use z3_sys;
 
 pub type Z3ExpressionType = z3_sys::Z3_ast;
 

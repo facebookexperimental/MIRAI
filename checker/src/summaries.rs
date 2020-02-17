@@ -287,10 +287,7 @@ fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precon
             if !precondition.spans.is_empty() {
                 let last_span = precondition.spans.last();
                 assume!(last_span.is_some());
-                let span = tcx
-                    .sess
-                    .source_map()
-                    .call_span_if_macro(*last_span.unwrap());
+                let span = last_span.unwrap().source_callsite();
                 precond.provenance = Some(Rc::new(tcx.sess.source_map().span_to_string(span)));
             }
             precond

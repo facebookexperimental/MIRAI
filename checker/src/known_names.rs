@@ -79,11 +79,12 @@ impl KnownNamesCache {
         // helper to get next elem from def path and return its name, if it has one
         let get_path_data_elem_name =
             |def_path_data_elem: Option<&rustc::hir::map::DisambiguatedDefPathData>| {
-                def_path_data_elem.and_then(|ref elem| match elem {
-                    DisambiguatedDefPathData { data, .. } => match &data {
+                def_path_data_elem.and_then(|ref elem| {
+                    let DisambiguatedDefPathData { data, .. } = elem;
+                    match &data {
                         TypeNs(name) | ValueNs(name) => Some(*name),
                         _ => None,
-                    },
+                    }
                 })
             };
 

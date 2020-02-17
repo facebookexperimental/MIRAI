@@ -35,7 +35,6 @@ use rustc::ty::{
 use rustc_data_structures::graph::dominators::Dominators;
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
-use rustc_span;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -3121,8 +3120,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         fn get_assert_msg_description<'tcx>(msg: &mir::AssertMessage<'tcx>) -> &'tcx str {
             match msg {
-                mir::interpret::PanicInfo::BoundsCheck { .. } => "index out of bounds",
-                mir::interpret::PanicInfo::Panic { .. } => "panic",
+                mir::AssertKind::BoundsCheck { .. } => "index out of bounds",
                 _ => msg.description(),
             }
         }

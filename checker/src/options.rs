@@ -8,7 +8,6 @@ use itertools::Itertools;
 use mirai_annotations::*;
 use rustc::session::config::ErrorOutputType;
 use rustc::session::early_error;
-use shellwords;
 
 /// Creates the clap::App metadata for argument parsing.
 fn make_options_parser<'a>() -> App<'a, 'a> {
