@@ -1817,15 +1817,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn handled_as_special_function_call(&mut self, call_info: &CallInfo<'_, 'tcx>) -> bool {
         match call_info.callee_known_name {
-            KnownNames::RustAlloc => {
-                checked_assume!(call_info.actual_args.len() == 2);
-                self.handle_rust_alloc(call_info);
-                return true;
-            }
             KnownNames::StdOpsFunctionFnCall
             | KnownNames::StdOpsFunctionFnMutCallMut
             | KnownNames::StdOpsFunctionFnOnceCallOnce => {
-                return !self.try_to_inline_standard_ops_func(call_info).is_bottom();
+                return !self
+                    .try_to_inline_indirectly_called_function(call_info)
+                    .is_bottom();
             }
             KnownNames::MiraiAbstractValue => {
                 checked_assume!(call_info.actual_args.len() == 1);
@@ -1947,7 +1944,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 return true;
             }
             _ => {
-                let result = self.try_to_inline_standard_ops_func(call_info);
+                let result = self.try_to_inline_special_function(call_info);
                 if !result.is_bottom() {
                     if let Some((place, target)) = &call_info.destination {
                         let target_path = self.visit_place(place);
@@ -1964,37 +1961,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
         }
         false
-    }
-
-    /// Set the call result to a new heap local and initialize the lenth path with
-    /// the given value.
-    #[logfn_inputs(TRACE)]
-    fn handle_rust_alloc(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        checked_assume!(call_info.actual_args.len() == 2);
-        if let Some((place, target)) = &call_info.destination {
-            let target_path = self.visit_place(place);
-
-            // Create a heap address for the allocation
-            let heap_address = self.get_new_heap_address();
-            self.current_environment
-                .update_value_at(target_path.clone(), heap_address);
-
-            // set length in bytes
-            // todo: Check accesses via heap pointers for out of bounds conditions.
-            // I.e. statically verify unsafe code.
-            let length_value = call_info.actual_args[0].1.clone();
-            let length_path = Path::new_length(target_path, &self.current_environment);
-            self.current_environment
-                .update_value_at(length_path, length_value);
-
-            let exit_condition = self.current_environment.entry_condition.clone();
-            self.current_environment.exit_conditions = self
-                .current_environment
-                .exit_conditions
-                .insert(*target, exit_condition);
-        } else {
-            assume_unreachable!();
-        }
     }
 
     /// Replace the call result with an abstract value of the same type as the
@@ -2096,76 +2062,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .current_environment
                 .exit_conditions
                 .insert(*target, exit_condition);
-        } else {
-            assume_unreachable!();
-        }
-    }
-
-    /// Gets the size in bytes of the type parameter T of the std::mem::size_of<T> function.
-    /// Returns TOP if T is not a concrete type.
-    #[logfn_inputs(TRACE)]
-    fn handle_size_of(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
-        checked_assume!(call_info.actual_args.is_empty());
-        let sym = rustc_span::Symbol::intern("T");
-        let t = (call_info.callee_generic_argument_map.as_ref())
-            .expect("std::mem::size_of must be called with generic arguments")
-            .get(&sym)
-            .expect("std::mem::size must have generic argument T");
-        let param_env = self.tcx.param_env(call_info.callee_def_id);
-        if let Ok(layout) = self.tcx.layout_of(param_env.and(*t)) {
-            Rc::new((layout.details.size.bytes() as u128).into())
-        } else {
-            abstract_value::TOP.into()
-        }
-    }
-
-    /// Update the state to reflect a call to an intrinsic binary operation that returns a tuple
-    /// of an operation result, modulo its max value, and a flag that indicates if the max value
-    /// was exceeded.
-    #[logfn_inputs(TRACE)]
-    fn handle_checked_binary_operation(
-        &mut self,
-        call_info: &CallInfo<'_, 'tcx>,
-    ) -> Rc<AbstractValue> {
-        checked_assume!(call_info.actual_args.len() == 2);
-        if let Some((target_place, _)) = &call_info.destination {
-            let bin_op = match call_info.callee_known_name {
-                KnownNames::StdIntrinsicsMulWithOverflow => mir::BinOp::Mul,
-                _ => assume_unreachable!(),
-            };
-            let target_path = self.visit_place(target_place);
-            let path0 = Path::new_field(target_path.clone(), 0, &self.current_environment);
-            let path1 = Path::new_field(target_path, 1, &self.current_environment);
-            let target_type = self.get_target_path_type(&path0);
-            let left = call_info.actual_args[0].1.clone();
-            let right = call_info.actual_args[1].1.clone();
-            let modulo = target_type.modulo_value();
-            let (modulo_result, overflow_flag) = if !modulo.is_bottom() {
-                let (result, overflow_flag) =
-                    Self::do_checked_binary_op(bin_op, target_type.clone(), left, right);
-                (result.remainder(target_type.modulo_value()), overflow_flag)
-            } else {
-                let (result, overflow_flag) =
-                    Self::do_checked_binary_op(bin_op, target_type.clone(), left, right);
-                // todo: figure out an expression that represents the truncated overflow of a
-                // signed operation.
-                let unknown_typed_value = AbstractValue::make_from(
-                    Expression::Variable {
-                        path: path0.clone(),
-                        var_type: target_type,
-                    },
-                    (path0.path_length() as u64) + 1,
-                );
-                (
-                    overflow_flag.conditional_expression(unknown_typed_value, result),
-                    overflow_flag,
-                )
-            };
-            self.current_environment
-                .update_value_at(path0, modulo_result);
-            self.current_environment
-                .update_value_at(path1, overflow_flag);
-            self.get_new_heap_address()
         } else {
             assume_unreachable!();
         }
@@ -2280,23 +2176,20 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
-    /// Standard functions that represent an alternative way to perform operations for which
-    /// there are MIR operations should be normalized into the corresponding MIR operations.
-    /// In some cases this can be done via a summary, but if not this is the place to do it.
-    /// Right now, that means core::slice::len becomes a path with the ArrayLength selector
-    /// since there is no way to write a summary to that effect in Rust itself.
+    /// Provides special handling of functions that have no MIR bodies or that need to access
+    /// internal MIRAI state in ways that cannot be expressed in normal Rust and therefore
+    /// cannot be summarized in the standard_contracts crate.
+    /// Returns the result of the call, or BOTTOM if the function to call is not a known
+    /// special function.
     #[logfn_inputs(TRACE)]
-    fn try_to_inline_standard_ops_func(
+    fn try_to_inline_special_function(
         &mut self,
         call_info: &CallInfo<'_, 'tcx>,
     ) -> Rc<AbstractValue> {
         match call_info.callee_known_name {
-            KnownNames::StdOpsFunctionFnCall
-            | KnownNames::StdOpsFunctionFnMutCallMut
-            | KnownNames::StdOpsFunctionFnOnceCallOnce => {
-                checked_assume!(call_info.destination.is_some());
+            KnownNames::RustAlloc => {
                 checked_assume!(call_info.actual_args.len() == 2);
-                self.try_to_inline_indirectly_called_function(call_info)
+                self.handle_rust_alloc(call_info)
             }
             KnownNames::StdSliceLen => {
                 checked_assume!(call_info.actual_args.len() == 1);
@@ -2352,6 +2245,98 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
+    /// Set the call result to a new heap local and initialize the length path with
+    /// the given value.
+    #[logfn_inputs(TRACE)]
+    fn handle_rust_alloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
+        checked_assume!(call_info.actual_args.len() == 2);
+        if let Some((place, ..)) = &call_info.destination {
+            // Create a heap address for the allocation
+            let heap_address = self.get_new_heap_address();
+
+            // set length in bytes
+            let length_value = call_info.actual_args[0].1.clone();
+            let target_path = self.visit_place(place);
+            let length_path = Path::new_length(target_path, &self.current_environment);
+            self.current_environment
+                .update_value_at(length_path, length_value);
+
+            heap_address
+        } else {
+            assume_unreachable!();
+        }
+    }
+
+    /// Update the state to reflect a call to an intrinsic binary operation that returns a tuple
+    /// of an operation result, modulo its max value, and a flag that indicates if the max value
+    /// was exceeded.
+    #[logfn_inputs(TRACE)]
+    fn handle_checked_binary_operation(
+        &mut self,
+        call_info: &CallInfo<'_, 'tcx>,
+    ) -> Rc<AbstractValue> {
+        checked_assume!(call_info.actual_args.len() == 2);
+        if let Some((target_place, _)) = &call_info.destination {
+            let bin_op = match call_info.callee_known_name {
+                KnownNames::StdIntrinsicsMulWithOverflow => mir::BinOp::Mul,
+                _ => assume_unreachable!(),
+            };
+            let target_path = self.visit_place(target_place);
+            let path0 = Path::new_field(target_path.clone(), 0, &self.current_environment);
+            let path1 = Path::new_field(target_path, 1, &self.current_environment);
+            let target_type = self.get_target_path_type(&path0);
+            let left = call_info.actual_args[0].1.clone();
+            let right = call_info.actual_args[1].1.clone();
+            let modulo = target_type.modulo_value();
+            let (modulo_result, overflow_flag) = if !modulo.is_bottom() {
+                let (result, overflow_flag) =
+                    Self::do_checked_binary_op(bin_op, target_type.clone(), left, right);
+                (result.remainder(target_type.modulo_value()), overflow_flag)
+            } else {
+                let (result, overflow_flag) =
+                    Self::do_checked_binary_op(bin_op, target_type.clone(), left, right);
+                // todo: figure out an expression that represents the truncated overflow of a
+                // signed operation.
+                let unknown_typed_value = AbstractValue::make_from(
+                    Expression::Variable {
+                        path: path0.clone(),
+                        var_type: target_type,
+                    },
+                    (path0.path_length() as u64) + 1,
+                );
+                (
+                    overflow_flag.conditional_expression(unknown_typed_value, result),
+                    overflow_flag,
+                )
+            };
+            self.current_environment
+                .update_value_at(path0, modulo_result);
+            self.current_environment
+                .update_value_at(path1, overflow_flag);
+            self.get_new_heap_address()
+        } else {
+            assume_unreachable!();
+        }
+    }
+
+    /// Gets the size in bytes of the type parameter T of the std::mem::size_of<T> function.
+    /// Returns TOP if T is not a concrete type.
+    #[logfn_inputs(TRACE)]
+    fn handle_size_of(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
+        checked_assume!(call_info.actual_args.is_empty());
+        let sym = rustc_span::Symbol::intern("T");
+        let t = (call_info.callee_generic_argument_map.as_ref())
+            .expect("std::mem::size_of must be called with generic arguments")
+            .get(&sym)
+            .expect("std::mem::size must have generic argument T");
+        let param_env = self.tcx.param_env(call_info.callee_def_id);
+        if let Ok(layout) = self.tcx.layout_of(param_env.and(*t)) {
+            Rc::new((layout.details.size.bytes() as u128).into())
+        } else {
+            abstract_value::TOP.into()
+        }
+    }
+
     /// Fn::call, FnMut::call_mut, FnOnce::call_once all receive two arguments:
     /// 1. A function pointer or closure instance to call.
     /// 2. A tuple of argument values for the call.
@@ -2364,7 +2349,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &mut self,
         caller_call_info: &CallInfo<'_, 'tcx>,
     ) -> Rc<AbstractValue> {
-        precondition!(!caller_call_info.actual_args.is_empty());
+        checked_assume!(caller_call_info.actual_args.len() == 2);
         // Get the function to call (it is either a function pointer or a closure)
         let callee = caller_call_info.actual_args[0].1.clone();
 
