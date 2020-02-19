@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that checks that size_of::<u32>() is mangled correctly.
+// A test that checks that size_of::<T>() is handled correctly for a struct
 
 use std::mem::size_of;
 
