@@ -765,9 +765,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn dereference(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::AbstractHeapAddress(..) | Expression::Bottom | Expression::Top => {
-                self.clone()
-            }
+            Expression::AbstractHeapAddress(..)
+            | Expression::Offset { .. }
+            | Expression::Bottom
+            | Expression::Top => self.clone(),
             Expression::Cast {
                 operand,
                 target_type: cast_type,
@@ -1221,10 +1222,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self.other".
     #[logfn_inputs(TRACE)]
     fn offset(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Offset {
-            left,
-            right,
-        })
+        if let Expression::Offset { left, right } = &self.expression {
+            AbstractValue::make_binary(left.clone(), right.addition(other), |left, right| {
+                Expression::Offset { left, right }
+            })
+        } else {
+            AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Offset {
+                left,
+                right,
+            })
+        }
     }
 
     /// Returns an element that is "self || other".

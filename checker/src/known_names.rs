@@ -27,8 +27,10 @@ pub enum KnownNames {
     MiraiVerify,
     RustAlloc,
     StdFutureFromGenerator,
+    StdIntrinsicsArithOffset,
     StdIntrinsicsCtpop,
     StdIntrinsicsMulWithOverflow,
+    StdIntrinsicsOffset,
     StdIntrinsicsTransmute,
     StdMarkerPhantomData,
     StdMemSizeOf,
@@ -136,8 +138,10 @@ impl KnownNamesCache {
             if let Some(1) = path_data_elem_as_disambiguator(def_path_data_iter.next()) {
                 get_path_data_elem_name(def_path_data_iter.next())
                     .map(|n| match n.as_str().deref() {
+                        "arith_offset" => KnownNames::StdIntrinsicsArithOffset,
                         "ctpop" => KnownNames::StdIntrinsicsCtpop,
                         "mul_with_overflow" => KnownNames::StdIntrinsicsMulWithOverflow,
+                        "offset" => KnownNames::StdIntrinsicsOffset,
                         "transmute" => KnownNames::StdIntrinsicsTransmute,
                         _ => KnownNames::None,
                     })

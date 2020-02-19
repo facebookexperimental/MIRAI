@@ -649,12 +649,6 @@ pub mod core {
             pub fn needs_drop<T>() -> bool {
                 result!()
             }
-            pub fn offset<T>(dst: *const T, offset: isize) -> *const T {
-                result!()
-            }
-            pub fn arith_offset<T>(dst: *const T, offset: isize) -> *const T {
-                result!()
-            }
             pub fn volatile_copy_nonoverlapping_memory<T>(
                 dst: *mut T,
                 src: *const T,

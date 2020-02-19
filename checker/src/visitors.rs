@@ -2187,10 +2187,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         call_info: &CallInfo<'_, 'tcx>,
     ) -> Rc<AbstractValue> {
         match call_info.callee_known_name {
-            KnownNames::RustAlloc => {
-                checked_assume!(call_info.actual_args.len() == 2);
-                self.handle_rust_alloc(call_info)
-            }
+            KnownNames::RustAlloc => self.handle_rust_alloc(call_info),
             KnownNames::StdSliceLen => {
                 checked_assume!(call_info.actual_args.len() == 1);
                 let slice_val = &call_info.actual_args[0].1;
@@ -2229,6 +2226,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 };
                 result.unwrap_or_else(|| abstract_value::BOTTOM.into())
             }
+            KnownNames::StdIntrinsicsArithOffset => self.handle_arith_offset(call_info),
             KnownNames::StdIntrinsicsCtpop => {
                 checked_assume!(call_info.actual_args.len() == 1);
                 call_info.actual_args[0].1.count_ones()
@@ -2236,6 +2234,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             KnownNames::StdIntrinsicsMulWithOverflow => {
                 self.handle_checked_binary_operation(call_info)
             }
+            KnownNames::StdIntrinsicsOffset => self.handle_offset(call_info),
             KnownNames::StdIntrinsicsTransmute => {
                 checked_assume!(call_info.actual_args.len() == 1);
                 call_info.actual_args[0].1.clone()
@@ -2265,6 +2264,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else {
             assume_unreachable!();
         }
+    }
+
+    /// Set the call result to an offset derived from the arguments. Does no checking.
+    #[logfn_inputs(TRACE)]
+    fn handle_arith_offset(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
+        checked_assume!(call_info.actual_args.len() == 2);
+        let base_val = &call_info.actual_args[0].1;
+        let offset_val = &call_info.actual_args[1].1;
+        base_val.offset(offset_val.clone())
     }
 
     /// Update the state to reflect a call to an intrinsic binary operation that returns a tuple
@@ -2316,6 +2324,47 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.get_new_heap_address()
         } else {
             assume_unreachable!();
+        }
+    }
+
+    /// Set the call result to an offset derived from the arguments.
+    /// Checks that the resulting offset is either in bounds or one
+    /// byte past the end of an allocated object.
+    #[logfn_inputs(TRACE)]
+    fn handle_offset(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
+        checked_assume!(call_info.actual_args.len() == 2);
+        let base_val = &call_info.actual_args[0].1;
+        let offset_val = &call_info.actual_args[1].1;
+        let result = base_val.offset(offset_val.clone());
+        if self.check_for_errors && self.function_being_analyzed_is_root() {
+            self.check_offset(&result)
+        }
+        result
+    }
+
+    /// Checks that the offset is either in bounds or one byte past the end of an allocated object.
+    fn check_offset(&mut self, offset: &AbstractValue) {
+        if let Expression::Offset { left, right, .. } = &offset.expression {
+            let ge_zero = right.greater_or_equal(Rc::new(ConstantDomain::I128(0).into()));
+            let len = if let Expression::AbstractHeapAddress(ordinal) = &left.expression {
+                self.get_len(Rc::new(
+                    PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into(),
+                ))
+            } else {
+                Rc::new(abstract_value::TOP)
+            };
+            let le_one_past =
+                right.less_or_equal(len.addition(Rc::new(ConstantDomain::I128(1).into())));
+            let in_range = ge_zero.and(le_one_past);
+            let (in_range_as_bool, entry_cond_as_bool) =
+                self.check_condition_value_and_reachability(&in_range);
+            //todo: eventually give a warning if in_range_as_bool is unknown. For now, that is too noisy.
+            if entry_cond_as_bool.unwrap_or(true) && !in_range_as_bool.unwrap_or(true) {
+                let span = self.current_span;
+                let message = "effective offset is outside allocated range";
+                let warning = self.session.struct_span_warn(span, message);
+                self.emit_diagnostic(warning);
+            }
         }
     }
 
@@ -2979,16 +3028,33 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .refine_parameters(arguments, self.fresh_variable_offset)
                 .refine_paths(&self.current_environment);
             let rtype = rvalue.expression.infer_type();
-            if let Expression::Variable { path, .. } = &rvalue.expression {
-                if let PathEnum::LocalVariable { ordinal } = &path.value {
-                    if *ordinal >= self.fresh_variable_offset {
-                        // A fresh variable from the callee adds no information that is not
-                        // already inherent in the target location.
-                        self.current_environment.value_map =
-                            self.current_environment.value_map.remove(&tpath);
-                        continue;
+            match &rvalue.expression {
+                Expression::Offset { .. } => {
+                    if self.check_for_errors && self.function_being_analyzed_is_root() {
+                        self.check_offset(&rvalue);
                     }
-                    if rtype == ExpressionType::NonPrimitive {
+                }
+                Expression::Variable { path, .. } => {
+                    if let PathEnum::LocalVariable { ordinal } = &path.value {
+                        if *ordinal >= self.fresh_variable_offset {
+                            // A fresh variable from the callee adds no information that is not
+                            // already inherent in the target location.
+                            self.current_environment.value_map =
+                                self.current_environment.value_map.remove(&tpath);
+                            continue;
+                        }
+                        if rtype == ExpressionType::NonPrimitive {
+                            self.copy_or_move_elements(
+                                tpath.clone(),
+                                path.clone(),
+                                rtype.clone(),
+                                false,
+                            );
+                        }
+                    } else if path.is_rooted_by_parameter() {
+                        self.current_environment.update_value_at(tpath, rvalue);
+                        continue;
+                    } else if rtype == ExpressionType::NonPrimitive {
                         self.copy_or_move_elements(
                             tpath.clone(),
                             path.clone(),
@@ -2996,12 +3062,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             false,
                         );
                     }
-                } else if path.is_rooted_by_parameter() {
-                    self.current_environment.update_value_at(tpath, rvalue);
-                    continue;
-                } else if rtype == ExpressionType::NonPrimitive {
-                    self.copy_or_move_elements(tpath.clone(), path.clone(), rtype.clone(), false);
                 }
+                _ => {}
             }
             if rtype != ExpressionType::NonPrimitive {
                 self.current_environment.update_value_at(tpath, rvalue);
