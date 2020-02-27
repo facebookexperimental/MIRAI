@@ -21,6 +21,17 @@ pub mod alloc {
     }
 
     pub mod collections {
+        pub mod btree {
+            pub mod map {
+                pub mod implement_map {
+                    pub fn or_insert_with__usize_alloc_vec_Vec_alloc_string_String_fn_alloc_vec_implement_new_alloc_string_String<
+                        T,
+                    >() -> T {
+                        result!()
+                    }
+                }
+            }
+        }
         pub mod vec_deque {
             pub const INITIAL_CAPACITY: usize = 7; // 2^3 - 1
             pub const MINIMUM_CAPACITY: usize = 1; // 2 - 1
@@ -106,6 +117,12 @@ pub mod alloc {
             pub fn hash<T, H>(_self: T, state: &mut H) {
                 result!()
             }
+        }
+    }
+
+    pub mod vec {
+        pub mod SpecExtend {
+            pub fn spec_extend() {}
         }
     }
 }
@@ -895,7 +912,7 @@ pub mod core {
                 result!()
             }
             pub fn unchecked_sub__usize(x: usize, y: usize) -> usize {
-                precondition!(x >= y);
+                //precondition!(x >= y);
                 x - y
             }
 
@@ -1047,8 +1064,11 @@ pub mod core {
 
         pub mod traits {
             pub mod collect {
-                pub trait FromIterator {
-                    fn from_iter<T>() -> T {
+                pub mod Extend {
+                    pub fn extend() {}
+                }
+                pub mod FromIterator {
+                    pub fn from_iter<T>() -> T {
                         result!()
                     }
                 }
@@ -1375,6 +1395,25 @@ pub mod core {
                 }
             }
         }
+
+        pub mod index {
+            pub mod Index {
+                pub fn index__alloc_vec_Vec_u8_usize(_self: usize, slice: &[u8]) -> &u8 {
+                    assume!(_self < slice.len());
+                    &(*slice)[_self]
+                }
+            }
+
+            pub mod IndexMut {
+                pub fn index_mut__alloc_vec_Vec_u8_usize(
+                    _self: usize,
+                    slice: &mut [u8],
+                ) -> &mut u8 {
+                    assume!(_self < slice.len());
+                    &mut (*slice)[_self]
+                }
+            }
+        }
     }
 
     pub mod option {
@@ -1394,13 +1433,8 @@ pub mod core {
     }
 
     pub mod slice {
-
-        pub mod SliceIndex {
-            pub fn get<T>() -> T {
-                result!()
-            }
-
-            pub fn get_unchecked<T>() -> T {
+        pub mod implement {
+            pub fn get_unchecked_mut<T>() -> T {
                 result!()
             }
         }
@@ -1478,6 +1512,16 @@ pub mod libc {
 
 pub mod log {
     pub fn __private_api_log() {}
+}
+
+pub mod once_cell {
+    pub mod sync {
+        pub mod implement_sync {
+            pub fn force<T>() -> T {
+                result!()
+            }
+        }
+    }
 }
 
 pub mod rand {

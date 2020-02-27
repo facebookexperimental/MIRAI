@@ -161,33 +161,23 @@ impl MiraiCallbacks {
     }
 
     fn is_black_listed(file_name: &str) -> bool {
-        file_name.contains("secure/net/src") // false positives
-            || file_name.contains("crypto/crypto-derive/src") // resolve error
-            || file_name.contains("common/futures-semaphore/src") // false positives
+        file_name.contains("crypto/crypto-derive/src") // resolve error
             || file_name.contains("common/logger/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 10 to point to memory
             || file_name.contains("common/metrics/src") // index out of bounds
             || file_name.contains("crypto/crypto/src") // resolve error
             || file_name.contains("types/src") // resolve error
-            || file_name.contains("language/vm/src") // false positives
             || file_name.contains("config/src") // unimplemented case
+            || file_name.contains("storage/jellyfish-merkle/src") // index out of bounds
+            || file_name.contains("storage/libradb/src") // resolve error
             || file_name.contains("storage/scratchpad/src") // resolve error
-            || file_name.contains("storage/jellyfish-merkle/src") // false positives
             || file_name.contains("client/libra_wallet/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 10 to point to memory
-            || file_name.contains("bounded-executor/src") // false positives
-            || file_name.contains("storage/libradb/src") // false positives
-            || file_name.contains("common/executable-helpers/src") // false positives
             || file_name.contains("common/num-variants/src") // resolve error
-            || file_name.contains("state-synchronizer/src") // false positives
-            || file_name.contains("language/vm/vm-runtime/src") // false positives
             || file_name.contains("language/bytecode-verifier/src") // stack overflow
+            || file_name.contains("language/move-lang/src") // index out of bounds
             || file_name.contains("client/cli/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 33 to point to memory
-            || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // false positives
-            || file_name.contains("language/stdlib/src") // false positives
-            || file_name.contains("language/transaction-builder/src") // false positives
-            || file_name.contains("config/config-builder/src") // false positives
-            || file_name.contains("executor/src") // false positives
-            || file_name.contains("network/src") // false positives
             || file_name.contains("secure/storage") // Z3 encoding error
+            || file_name.contains("state-synchronizer/src") // Z3 encoding error
+            || file_name.contains("language/vm/vm-runtime/src") // resolve error
     }
 
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
@@ -310,7 +300,7 @@ impl MiraiCallbacks {
             if let Some(white_list) = &analysis_info.function_whitelist {
                 if !Self::included_in(white_list, name, *def_id, tcx) {
                     if analysis_info.options.single_func.is_none() {
-                        info!(
+                        debug!(
                             "skipping function {} as it is not selected for analysis",
                             name
                         );
@@ -319,12 +309,12 @@ impl MiraiCallbacks {
                 }
                 info!("analyzing function {}", name);
             } else if !building_standard_summaries && !utils::is_public(*def_id, tcx) {
-                info!("skipping function {} as it is not public", name);
+                debug!("skipping function {} as it is not public", name);
                 continue;
             } else if !building_standard_summaries
                 && tcx.generics_of(*def_id).requires_monomorphization(tcx)
             {
-                info!("skipping function {} as it is generic", name);
+                debug!("skipping function {} as it is generic", name);
                 continue;
             } else {
                 info!("analyzing function {}", name);
