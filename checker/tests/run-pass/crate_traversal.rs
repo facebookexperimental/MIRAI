@@ -163,6 +163,7 @@ pub fn test11(arr: &[String]) {
     let e = &arr[1]; //~ possible index out of bounds
 }
 
+#[allow(arithmetic_overflow)]
 pub fn test12() {
     let x = 200u8 * 4; //~ attempt to multiply with overflow
 }

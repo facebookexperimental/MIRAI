@@ -540,16 +540,31 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 rustc::ty::Instance::resolve(self.tcx, param_env, call_info.callee_def_id, gen_args)
             {
                 let resolved_def_id = instance.def.def_id();
+                let resolved_ty = self.tcx.type_of(resolved_def_id);
                 debug!(
                     "devirtualize resolved def_id {:?}: {:?}",
-                    resolved_def_id,
-                    self.tcx.type_of(resolved_def_id)
+                    resolved_def_id, resolved_ty
                 );
                 if !self.active_calls.contains(&resolved_def_id)
                     && self.tcx.is_mir_available(resolved_def_id)
                 {
+                    let func_ref = if let ConstantDomain::Function(fr) =
+                        self.visit_function_reference(resolved_def_id, resolved_ty, instance.substs)
+                    {
+                        fr.clone()
+                    } else {
+                        unreachable!()
+                    };
+                    let cached_summary = self
+                        .summary_cache
+                        .get_summary_for_call_site(&func_ref, None);
+                    if cached_summary.is_not_default {
+                        return Some(cached_summary.clone());
+                    }
+
                     let mut devirtualized_call_info = call_info.clone();
                     devirtualized_call_info.callee_def_id = resolved_def_id;
+                    devirtualized_call_info.callee_func_ref = Some(func_ref);
                     devirtualized_call_info.callee_generic_arguments = Some(instance.substs);
                     devirtualized_call_info.callee_generic_argument_map = self
                         .get_generic_arguments_map(
