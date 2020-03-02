@@ -237,6 +237,7 @@ pub trait AbstractValueTrait: Sized {
     fn inverse_implies(&self, other: &Rc<AbstractValue>) -> bool;
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool;
     fn is_bottom(&self) -> bool;
+    fn is_contained_in_zeroed_abstract_heap_block(&self) -> bool;
     fn is_top(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
@@ -765,7 +766,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn dereference(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::AbstractHeapAddress { .. }
+            Expression::AbstractHeapAddress { .. } //todo: make a var with a deref path
             | Expression::Offset { .. }
             | Expression::Bottom
             | Expression::Top => self.clone(),
@@ -1043,6 +1044,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn is_bottom(&self) -> bool {
         match &self.expression {
             Expression::Bottom => true,
+            _ => false,
+        }
+    }
+
+    /// True if the storage referenced by this expression is, or is contained in, a zeroed heap allocation.
+    #[logfn_inputs(TRACE)]
+    fn is_contained_in_zeroed_abstract_heap_block(&self) -> bool {
+        match &self.expression {
+            Expression::AbstractHeapAddress { is_zeroed, .. } => *is_zeroed,
+            Expression::Offset { left, .. } => left.is_contained_in_zeroed_abstract_heap_block(),
+            Expression::Variable { path, .. } => path.is_rooted_by_zeroed_abstract_heap_address(),
             _ => false,
         }
     }
@@ -1745,10 +1757,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Top | Expression::Bottom => self.clone(),
-            Expression::AbstractHeapAddress { address, length } => AbstractValue::make_from(
+            Expression::AbstractHeapAddress {
+                address,
+                length,
+                is_zeroed,
+            } => AbstractValue::make_from(
                 Expression::AbstractHeapAddress {
                     address: *address,
                     length: length.refine_paths(environment),
+                    is_zeroed: *is_zeroed,
                 },
                 1,
             ),
@@ -1934,10 +1951,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     ) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Top | Expression::Bottom => self.clone(),
-            Expression::AbstractHeapAddress { address, length } => AbstractValue::make_from(
+            Expression::AbstractHeapAddress {
+                address,
+                length,
+                is_zeroed,
+            } => AbstractValue::make_from(
                 Expression::AbstractHeapAddress {
                     address: address.wrapping_add(fresh),
                     length: length.refine_parameters(arguments, fresh),
+                    is_zeroed: *is_zeroed,
                 },
                 1,
             ),
@@ -2143,10 +2165,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
         match &self.expression {
             Expression::Top | Expression::Bottom => self.clone(),
-            Expression::AbstractHeapAddress { address, length } => AbstractValue::make_from(
+            Expression::AbstractHeapAddress {
+                address,
+                length,
+                is_zeroed,
+            } => AbstractValue::make_from(
                 Expression::AbstractHeapAddress {
                     address: *address,
                     length: length.refine_with(path_condition, depth + 1),
+                    is_zeroed: *is_zeroed,
                 },
                 1,
             ),
@@ -2353,10 +2380,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Reference(..)
             | Expression::Top
             | Expression::Variable { .. } => self.clone(),
-            Expression::AbstractHeapAddress { address, length } => AbstractValue::make_from(
+            Expression::AbstractHeapAddress {
+                address,
+                length,
+                is_zeroed,
+            } => AbstractValue::make_from(
                 Expression::AbstractHeapAddress {
                     address: *address,
                     length: length.widen(path),
+                    is_zeroed: *is_zeroed,
                 },
                 1,
             ),
