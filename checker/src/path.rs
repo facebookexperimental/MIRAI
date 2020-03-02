@@ -211,6 +211,25 @@ impl Path {
         }
     }
 
+    /// True if path qualifies an abstract heap address, or another qualified path rooted by an
+    /// abstract heap address, where the corresponding memory block has been zeroed by the heap allocator.
+    #[logfn_inputs(TRACE)]
+    pub fn is_rooted_by_zeroed_abstract_heap_address(&self) -> bool {
+        match &self.value {
+            PathEnum::QualifiedPath { qualifier, .. } => {
+                qualifier.is_rooted_by_zeroed_abstract_heap_address()
+            }
+            PathEnum::AbstractHeapAddress { value, .. } => {
+                if let Expression::AbstractHeapAddress { is_zeroed, .. } = &value.expression {
+                    *is_zeroed
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
     /// True if path qualifies a parameter, or another qualified path rooted by a parameter.
     #[logfn_inputs(TRACE)]
     pub fn is_rooted_by_parameter(&self) -> bool {
