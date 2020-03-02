@@ -716,17 +716,42 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         )
                     })
             } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
-                let mut ref_result = None;
+                let mut result = None;
                 if result_type == ExpressionType::Reference {
                     // This could be an alias for a fat pointer stored at path.0 (etc.)
                     for (leaf_path, val) in self.current_environment.value_map.iter() {
                         if leaf_path.is_first_leaf_rooted_in(&path) {
-                            ref_result = Some(val.clone());
+                            result = Some(val.clone());
                             break;
                         }
                     }
                 }
-                ref_result.unwrap_or_else(|| {
+                if let PathEnum::QualifiedPath {
+                    qualifier,
+                    selector,
+                    ..
+                } = &path.value
+                {
+                    if *selector.as_ref() == PathSelector::Deref && result_type.is_integer() {
+                        let qualifier_val = self.lookup_path_and_refine_result(
+                            qualifier.clone(),
+                            ExpressionType::Reference,
+                        );
+                        debug!("qualifier_val {:?}", qualifier_val);
+                        if qualifier_val.is_contained_in_zeroed_abstract_heap_block() {
+                            result = Some(Rc::new(
+                                if result_type.is_signed_integer() {
+                                    self.constant_value_cache.get_i128_for(0)
+                                } else {
+                                    self.constant_value_cache.get_u128_for(0)
+                                }
+                                .clone()
+                                .into(),
+                            ))
+                        }
+                    }
+                }
+                result.unwrap_or_else(|| {
                     let result = AbstractValue::make_from(
                         Expression::Variable {
                             path: path.clone(),
@@ -853,7 +878,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // with the (unknown) values of the parameters and locals of the current context.
 
         // The byte size of the closure object is not used, so we just fake it.
-        let closure_object = self.get_new_heap_address(Rc::new(0u128.into()));
+        let closure_object = self.get_new_heap_address(Rc::new(0u128.into()), false);
         let closure_path: Rc<Path> = match &closure_object.expression {
             Expression::AbstractHeapAddress { .. } => Rc::new(
                 PathEnum::AbstractHeapAddress {
@@ -2223,6 +2248,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) -> Rc<AbstractValue> {
         match call_info.callee_known_name {
             KnownNames::RustAlloc => self.handle_rust_alloc(call_info),
+            KnownNames::RustAllocZeroed => self.handle_rust_alloc_zeroed(call_info),
             KnownNames::StdSliceLen => {
                 checked_assume!(call_info.actual_args.len() == 1);
                 let slice_val = &call_info.actual_args[0].1;
@@ -2279,28 +2305,27 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
-    /// Set the call result to a new heap local and initialize the length path with
-    /// the given value.
+    /// Returns a new abstract address of a heap memory block with the given byte length.
     #[logfn_inputs(TRACE)]
     fn handle_rust_alloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
         checked_assume!(call_info.actual_args.len() == 2);
-        if let Some((place, ..)) = &call_info.destination {
-            // Get allocation length
-            let length_value = call_info.actual_args[0].1.clone();
+        // Get allocation length
+        let length_value = call_info.actual_args[0].1.clone();
 
-            // Create a heap address for the allocation
-            let heap_address = self.get_new_heap_address(length_value.clone());
+        // Create a heap address for the allocation
+        self.get_new_heap_address(length_value, false)
+    }
 
-            // set length in bytes
-            let target_path = self.visit_place(place);
-            let length_path = Path::new_length(target_path, &self.current_environment);
-            self.current_environment
-                .update_value_at(length_path, length_value);
+    /// Returns a new abstract address of a heap memory block with the given byte length
+    /// and with the zeroed flag set.
+    #[logfn_inputs(TRACE)]
+    fn handle_rust_alloc_zeroed(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
+        checked_assume!(call_info.actual_args.len() == 2);
+        // Get allocation length
+        let length_value = call_info.actual_args[0].1.clone();
 
-            heap_address
-        } else {
-            assume_unreachable!();
-        }
+        // Create a heap address for the allocation
+        self.get_new_heap_address(length_value, true)
     }
 
     /// Set the call result to an offset derived from the arguments. Does no checking.
@@ -3407,7 +3432,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) {
         check_for_early_return!(self);
         let mut value_map = self.current_environment.value_map.clone();
-        // Some qualified rpaths are patterns that represent collections of values.
+        // Some qualified source_paths are patterns that represent collections of values.
         // We need to expand the patterns before doing the actual moves.
         if let PathEnum::QualifiedPath {
             ref qualifier,
@@ -3546,7 +3571,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .get_u128_for(u128::from((to - from) as u64 * elem_size))
             .clone();
         let byte_len_value: Rc<AbstractValue> = Rc::new(byte_len_const.into());
-        let slice_value = self.get_new_heap_address(byte_len_value);
+        let slice_value = self.get_new_heap_address(byte_len_value, false);
         self.current_environment
             .update_value_at(target_path.clone(), slice_value.clone());
         let slice_path = Rc::new(PathEnum::AbstractHeapAddress { value: slice_value }.into());
@@ -3848,7 +3873,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             abstract_value::TOP.into()
         };
         let value = match null_op {
-            mir::NullOp::Box => self.get_new_heap_address(len),
+            mir::NullOp::Box => self.get_new_heap_address(len, false),
             mir::NullOp::SizeOf => len,
         };
         self.current_environment.update_value_at(path, value);
@@ -3860,12 +3885,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Note, however, that this is not good enough for the outer fixed point because the counter
     /// is shared between different functions unless it is reset to 0 for each function.
     #[logfn_inputs(TRACE)]
-    fn get_new_heap_address(&mut self, length: Rc<AbstractValue>) -> Rc<AbstractValue> {
+    fn get_new_heap_address(
+        &mut self,
+        length: Rc<AbstractValue>,
+        is_zeroed: bool,
+    ) -> Rc<AbstractValue> {
         let addresses = &mut self.heap_addresses;
         let constants = &mut self.constant_value_cache;
         addresses
             .entry(self.current_location)
-            .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_address(length), 1))
+            .or_insert_with(|| {
+                AbstractValue::make_from(constants.get_new_heap_address(length, is_zeroed), 1)
+            })
             .clone()
     }
 
@@ -3960,7 +3991,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .clone()
                 .into(),
         );
-        let aggregate_value = self.get_new_heap_address(byte_size_value);
+        let aggregate_value = self.get_new_heap_address(byte_size_value, false);
         self.current_environment
             .update_value_at(path.clone(), aggregate_value);
 
@@ -4488,7 +4519,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 size: 0,
                                 ..
                             })) => {
-                                return self.get_new_heap_address(Rc::new(0u128.into()));
+                                return self.get_new_heap_address(Rc::new(0u128.into()), false);
                             }
                             _ => {
                                 debug!("span: {:?}", self.current_span);
@@ -4562,7 +4593,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw { data, size }))
                 if *size == 1 =>
             {
-                let e = self.get_new_heap_address(Rc::new(1u128.into()));
+                let e = self.get_new_heap_address(Rc::new(1u128.into()), false);
                 if let Expression::AbstractHeapAddress { .. } = &e.expression {
                     let p = Path::new_discriminant(
                         Rc::new(Path::get_as_path(e.clone())),
@@ -4794,7 +4825,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         len: Option<u128>,
     ) -> Rc<AbstractValue> {
         let byte_len = bytes.len();
-        let array_value = self.get_new_heap_address(Rc::new((byte_len as u128).into()));
+        let array_value = self.get_new_heap_address(Rc::new((byte_len as u128).into()), false);
         if byte_len > k_limits::MAX_BYTE_ARRAY_LENGTH {
             return array_value;
         }

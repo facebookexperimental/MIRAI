@@ -34,6 +34,8 @@ pub enum Expression {
         address: usize,
         // The number of bytes that were allocated for this address.
         length: Rc<AbstractValue>,
+        // True if the allocator zeroed out this heap memory block.
+        is_zeroed: bool,
     },
 
     /// An expression that is the sum of left and right. +
@@ -351,8 +353,16 @@ impl Debug for Expression {
         match self {
             Expression::Top => f.write_str("TOP"),
             Expression::Bottom => f.write_str("BOTTOM"),
-            Expression::AbstractHeapAddress { address, length } => {
-                f.write_fmt(format_args!("heap_{}:{:?}", address, length))
+            Expression::AbstractHeapAddress {
+                address,
+                length,
+                is_zeroed,
+            } => {
+                if *is_zeroed {
+                    f.write_fmt(format_args!("heap_{}:{:?} zeroed", address, length))
+                } else {
+                    f.write_fmt(format_args!("heap_{}:{:?}", address, length))
+                }
             }
             Expression::Add { left, right } => {
                 f.write_fmt(format_args!("({:?}) + ({:?})", left, right))
