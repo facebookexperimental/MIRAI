@@ -604,7 +604,7 @@ impl Debug for PathSelector {
                 f.write_fmt(format_args!("[{} : {}, from_end: {}]", from, to, from_end))
             }
             PathSelector::Downcast(name, index) => {
-                f.write_fmt(format_args!(" as {}({})", name, *index))
+                f.write_fmt(format_args!("as {}({})", name, *index))
             }
             PathSelector::ModelField(name) => name.fmt(f),
         }

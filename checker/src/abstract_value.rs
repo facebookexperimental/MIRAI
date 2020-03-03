@@ -14,7 +14,7 @@ use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
 
 use log_derive::{logfn, logfn_inputs};
-use mirai_annotations::{assume_unreachable, checked_assume, checked_precondition};
+use mirai_annotations::*;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -805,10 +805,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 )
             }
             Expression::Widen { path, operand } => operand.dereference(target_type).widen(path),
-            _ => assume_unreachable!(
-                "found unhandled expression that is of type reference: {:?}",
-                self.expression
-            ),
+            _ => {
+                info!(
+                    "found unhandled expression that is of type reference: {:?}",
+                    self.expression
+                );
+                TOP.into()
+            }
         }
     }
 
