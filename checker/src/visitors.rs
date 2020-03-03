@@ -25,6 +25,7 @@ use rpds::HashTrieMap;
 use rustc::mir;
 use rustc::mir::interpret::{ConstValue, Scalar};
 use rustc::session::Session;
+use rustc::ty::layout::VariantIdx;
 use rustc::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc::ty::{
     AdtDef, Const, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig,
@@ -99,6 +100,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     generic_arguments: Option<SubstsRef<'tcx>>,
     generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
+    path_ty_cache: HashMap<Rc<Path>, Ty<'tcx>>,
     post_condition: Option<Rc<AbstractValue>>,
     post_condition_block: Option<mir::BasicBlock>,
     preconditions: Vec<Precondition>,
@@ -126,6 +128,7 @@ struct SavedVisitorState<'analysis, 'tcx> {
     generic_arguments: Option<SubstsRef<'tcx>>,
     generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
+    path_ty_cache: HashMap<Rc<Path>, Ty<'tcx>>,
     post_condition: Option<Rc<AbstractValue>>,
     post_condition_block: Option<mir::BasicBlock>,
     preconditions: Vec<Precondition>,
@@ -198,6 +201,7 @@ impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
             generic_arguments: None,
             generic_argument_map: None,
             heap_addresses: HashMap::default(),
+            path_ty_cache: HashMap::default(),
             post_condition: None,
             post_condition_block: None,
             preconditions: Vec::new(),
@@ -288,6 +292,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             generic_arguments: None,
             generic_argument_map: None,
             heap_addresses: HashMap::default(),
+            path_ty_cache: HashMap::default(),
             post_condition: None,
             post_condition_block: None,
             preconditions: Vec::new(),
@@ -312,6 +317,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.generic_arguments = None;
         self.generic_argument_map = None;
         self.heap_addresses = HashMap::default();
+        self.path_ty_cache = HashMap::default();
         self.post_condition = None;
         self.post_condition_block = None;
         self.preconditions = Vec::new();
@@ -370,6 +376,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             &mut saved_state.generic_argument_map,
         );
         std::mem::swap(&mut self.heap_addresses, &mut saved_state.heap_addresses);
+        std::mem::swap(&mut self.path_ty_cache, &mut saved_state.path_ty_cache);
         std::mem::swap(&mut self.post_condition, &mut saved_state.post_condition);
         std::mem::swap(
             &mut self.post_condition_block,
@@ -1898,10 +1905,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             KnownNames::MiraiShallowClone => {
                 if let Some((place, target)) = &call_info.destination {
                     checked_assume!(call_info.actual_args.len() == 1);
-                    let rpath = call_info.actual_args[0].0.clone();
-                    let rtype = self.get_place_type(place);
+                    let source_path = call_info.actual_args[0].0.clone();
+                    let container_type = self.get_rustc_place_type(place);
                     let target_path = self.visit_place(place);
-                    self.copy_or_move_elements(target_path, rpath, rtype, false);
+                    self.copy_or_move_elements(target_path, source_path, container_type, false);
                     let exit_condition = self.current_environment.entry_condition.clone();
                     self.current_environment.exit_conditions = self
                         .current_environment
@@ -2021,22 +2028,23 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn handle_get_model_field(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         if let Some((place, target)) = &call_info.destination {
-            let rtype = self.get_place_type(place);
+            let container_type = self.get_rustc_place_type(place);
             checked_assume!(call_info.actual_args.len() == 3);
 
             // The current value, if any, of the model field are a set of (path, value) pairs
             // where each path is rooted by qualifier.model_field(..)
             let qualifier = call_info.actual_args[0].0.clone();
             let field_name = self.coerce_to_string(&call_info.actual_args[1].1);
-            let rpath = Path::new_model_field(qualifier, field_name, &self.current_environment)
-                .refine_paths(&self.current_environment);
+            let source_path =
+                Path::new_model_field(qualifier, field_name, &self.current_environment)
+                    .refine_paths(&self.current_environment);
 
             let target_path = self.visit_place(place);
-            if self.current_environment.value_at(&rpath).is_some() {
+            if self.current_environment.value_at(&source_path).is_some() {
                 // Move the model field (path, val) pairs to the target (i.e. the place where
                 // the return value of call to the mirai_get_model_field function would go if
                 // it were a normal call.
-                self.copy_or_move_elements(target_path, rpath, rtype, true);
+                self.copy_or_move_elements(target_path, source_path, container_type, true);
             } else {
                 // If there is no value for the model field in the environment, we should
                 // use the default value, but only if the qualifier is not rooted in a parameter
@@ -2049,7 +2057,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         // using the code below. That is wrong. Generalize the default field.
                         let rval = AbstractValue::make_from(
                             Expression::UnknownModelField {
-                                path: rpath,
+                                path: source_path,
                                 default: call_info.actual_args[2].1.clone(),
                             },
                             1,
@@ -2057,8 +2065,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         self.current_environment.update_value_at(target_path, rval);
                     }
                     _ => {
-                        let rpath = call_info.actual_args[2].0.clone();
-                        self.copy_or_move_elements(target_path, rpath, rtype, true);
+                        let source_path = call_info.actual_args[2].0.clone();
+                        self.copy_or_move_elements(target_path, source_path, container_type, true);
                     }
                 }
             }
@@ -2081,9 +2089,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let field_name = self.coerce_to_string(&call_info.actual_args[1].1);
             let target_path =
                 Path::new_model_field(qualifier, field_name, &self.current_environment);
-            let rpath = call_info.actual_args[2].0.clone();
-            let rtype = call_info.actual_args[2].1.expression.infer_type();
-            self.copy_or_move_elements(target_path, rpath, rtype, true);
+            let source_path = call_info.actual_args[2].0.clone();
+            let container_type = call_info.actual_argument_types[2];
+            self.copy_or_move_elements(target_path, source_path, container_type, true);
             let exit_condition = self.current_environment.entry_condition.clone();
             self.current_environment.exit_conditions = self
                 .current_environment
@@ -3061,6 +3069,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .refine_parameters(arguments, self.fresh_variable_offset)
                 .refine_paths(&self.current_environment);
             let rtype = rvalue.expression.infer_type();
+            let container_type = self.get_path_rustc_type(&tpath);
             match &rvalue.expression {
                 Expression::Offset { .. } => {
                     if self.check_for_errors && self.function_being_analyzed_is_root() {
@@ -3080,7 +3089,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             self.copy_or_move_elements(
                                 tpath.clone(),
                                 path.clone(),
-                                rtype.clone(),
+                                container_type,
                                 false,
                             );
                         }
@@ -3091,7 +3100,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         self.copy_or_move_elements(
                             tpath.clone(),
                             path.clone(),
-                            rtype.clone(),
+                            container_type,
                             false,
                         );
                     }
@@ -3352,22 +3361,21 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let mir::Constant {
                     user_ty, literal, ..
                 } = constant.borrow();
+                let container_type = literal.ty;
                 let const_value = self.visit_constant(*user_ty, &literal);
                 match &const_value.expression {
                     Expression::AbstractHeapAddress { .. } => {
-                        let rtype = ExpressionType::Reference;
                         let rpath = Rc::new(
                             PathEnum::AbstractHeapAddress {
                                 value: const_value.clone(),
                             }
                             .into(),
                         );
-                        self.copy_or_move_elements(path, rpath, rtype, false);
+                        self.copy_or_move_elements(path, rpath, container_type, false);
                     }
                     Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
-                        let rtype = ExpressionType::Reference;
                         let rpath = Path::new_constant(const_value.clone());
-                        self.copy_or_move_elements(path.clone(), rpath, rtype, false);
+                        self.copy_or_move_elements(path.clone(), rpath, container_type, false);
                         self.current_environment.update_value_at(path, const_value);
                     }
                     _ => {
@@ -3384,7 +3392,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_used_copy(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
         let rpath = self.visit_place(place);
-        let rtype = self.get_place_type(place);
+        let rtype = self.get_rustc_place_type(place);
         self.copy_or_move_elements(target_path, rpath, rtype, false);
     }
 
@@ -3393,8 +3401,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn copy_or_move_elements(
         &mut self,
         target_path: Rc<Path>,
-        rpath: Rc<Path>,
-        rtype: ExpressionType,
+        source_path: Rc<Path>,
+        container_type: Ty<'tcx>,
         move_elements: bool,
     ) {
         check_for_early_return!(self);
@@ -3405,7 +3413,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             ref qualifier,
             ref selector,
             ..
-        } = &rpath.value
+        } = &source_path.value
         {
             match **selector {
                 PathSelector::ConstantIndex {
@@ -3430,13 +3438,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         Rc::new(self.constant_value_cache.get_u128_for(index).clone().into());
                     let index_path =
                         Path::new_index(qualifier.clone(), index_val, &self.current_environment);
-                    self.copy_or_move_elements(target_path, index_path, rtype, move_elements);
+                    self.copy_or_move_elements(
+                        target_path,
+                        index_path,
+                        container_type,
+                        move_elements,
+                    );
                     return;
                 }
                 PathSelector::Subslice { from, to, from_end } => {
                     self.copy_or_move_subslice(
                         target_path,
-                        rtype,
+                        container_type,
                         move_elements,
                         qualifier,
                         from,
@@ -3449,7 +3462,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
         };
         // Get here for paths that are not patterns.
-        let value = self.lookup_path_and_refine_result(rpath.clone(), rtype.clone());
+        let container_type: ExpressionType = (&container_type.kind).into();
+        let value = self.lookup_path_and_refine_result(source_path.clone(), container_type.clone());
         let val_type = value.expression.infer_type();
         let mut no_children = true;
         if val_type == ExpressionType::NonPrimitive {
@@ -3458,10 +3472,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .current_environment
                 .value_map
                 .iter()
-                .filter(|(p, _)| p.is_rooted_by(&rpath))
+                .filter(|(p, _)| p.is_rooted_by(&source_path))
             {
                 check_for_early_return!(self);
-                let qualified_path = path.replace_root(&rpath, target_path.clone());
+                let qualified_path = path.replace_root(&source_path, target_path.clone());
                 if move_elements {
                     trace!("moving {:?} to {:?}", value, qualified_path);
                     value_map = value_map.remove(path);
@@ -3472,13 +3486,19 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 no_children = false;
             }
         }
-        if rtype != ExpressionType::NonPrimitive || no_children {
-            let value = self.lookup_path_and_refine_result(rpath.clone(), rtype.clone());
-            value_map = self.expand_aliased_string_literals(&target_path, rtype, value_map, &value);
+        if container_type != ExpressionType::NonPrimitive || no_children {
+            let value =
+                self.lookup_path_and_refine_result(source_path.clone(), container_type.clone());
+            value_map = self.expand_aliased_string_literals(
+                &target_path,
+                container_type,
+                value_map,
+                &value,
+            );
             // Just copy/move (rpath, value) itself.
             if move_elements {
                 trace!("moving {:?} to {:?}", value, target_path);
-                value_map = value_map.remove(&rpath);
+                value_map = value_map.remove(&source_path);
             } else {
                 trace!("copying {:?} to {:?}", value, target_path);
             }
@@ -3496,7 +3516,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn copy_or_move_subslice(
         &mut self,
         target_path: Rc<Path>,
-        rtype: ExpressionType,
+        container_type: Ty<'tcx>,
         move_elements: bool,
         qualifier: &Rc<Path>,
         from: u32,
@@ -3520,11 +3540,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 to
             }
         };
-        //todo: need elem size to make this an actual byte size. That is a big change so leave it
-        //to a future PR.
+        let elem_size = self.get_elem_type_size(container_type);
         let byte_len_const = self
             .constant_value_cache
-            .get_u128_for(u128::from(to - from))
+            .get_u128_for(u128::from((to - from) as u64 * elem_size))
             .clone();
         let byte_len_value: Rc<AbstractValue> = Rc::new(byte_len_const.into());
         let slice_value = self.get_new_heap_address(byte_len_value);
@@ -3559,7 +3578,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 target_index_val,
                 &self.current_environment,
             );
-            self.copy_or_move_elements(indexed_target, index_path, rtype.clone(), move_elements);
+            self.copy_or_move_elements(indexed_target, index_path, container_type, move_elements);
             if self.assume_function_is_angelic {
                 break;
             }
@@ -3608,7 +3627,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_used_move(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
         let rpath = self.visit_place(place);
-        let rtype = self.get_place_type(place);
+        let rtype = self.get_rustc_place_type(place);
         self.copy_or_move_elements(target_path, rpath, rtype, true);
     }
 
@@ -3634,6 +3653,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// path = &x or &mut x or &raw const x
     #[logfn_inputs(TRACE)]
     fn visit_address_of(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
+        let container_type = self.get_rustc_place_type(place);
         let value_path = self
             .visit_place(place)
             .refine_paths(&self.current_environment);
@@ -3646,16 +3666,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 // We are taking a reference to the result of a deref. This is a bit awkward.
                 // The deref essentially does a copy of the value denoted by the qualifier.
                 // If this value is structured and not heap allocated, the copy must be done
-                // with copy_or_move_elements. We use path as the address of the copy and rely
-                // on the type of the value to ensure reference like behavior.
-                let rval = self
-                    .lookup_path_and_refine_result(qualifier.clone(), ExpressionType::Reference);
-                self.copy_or_move_elements(
-                    path,
-                    qualifier.clone(),
-                    rval.expression.infer_type(),
-                    false,
-                );
+                // with copy_or_move_elements.
+                self.copy_or_move_elements(path, qualifier.clone(), container_type, false);
                 return;
             }
             PathEnum::QualifiedPath {
@@ -3887,6 +3899,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .update_value_at(path, discriminant_value);
     }
 
+    /// Returns the size in bytes (including padding) or an element of the given collection type.
+    /// If the type is not a collection, it returns one.
+    fn get_elem_type_size(&self, ty: Ty<'tcx>) -> u64 {
+        match ty.kind {
+            TyKind::Array(ty, _) | TyKind::Slice(ty) => self.get_type_size(ty),
+            TyKind::RawPtr(t) => self.get_type_size(t.ty),
+            _ => 1,
+        }
+    }
+
+    /// Returns the size in bytes (including padding) of an instance of the given type.
     fn get_type_size(&self, ty: Ty<'tcx>) -> u64 {
         let param_env = self.tcx.param_env(self.def_id);
         if let Ok(layout) = self.tcx.layout_of(param_env.and(ty)) {
@@ -4878,6 +4901,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// can be serialized and used as a cache key.
     #[logfn_inputs(TRACE)]
     fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
+        let path = self.get_path_for_place(place);
+        let ty = self.get_rustc_place_type(place);
+        self.path_ty_cache.insert(path.clone(), ty);
+        path
+    }
+
+    fn get_path_for_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let mut is_union = false;
         let base_path: Rc<Path> =
             Path::new_local_parameter_or_result(place.local.as_usize(), self.mir.arg_count);
@@ -4930,6 +4960,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else {
             let ty = self.mir.local_decls[place.local].ty;
             is_union = Self::is_union(ty);
+            if is_union {
+                info!("ty {:?} projection {:?}", ty, place.projection);
+            }
         }
         self.visit_projection(base_path, is_union, &place.projection)
     }
@@ -5051,7 +5084,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// This is a hacky and brittle way to navigate the Rust compiler's type system.
     /// Eventually it should be replaced with a comprehensive and principled mapping.
+    #[logfn_inputs(TRACE)]
     fn get_path_rustc_type(&mut self, path: &Rc<Path>) -> Ty<'tcx> {
+        if let Some(ty) = self.path_ty_cache.get(path) {
+            return ty;
+        }
         match &path.value {
             PathEnum::LocalVariable { ordinal } => {
                 if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
@@ -5061,8 +5098,24 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     self.tcx.mk_ty(TyKind::Error)
                 }
             }
-            PathEnum::Parameter { ordinal } => self.actual_argument_types[*ordinal - 1],
-            PathEnum::Result => self.mir.local_decls[mir::Local::from(0usize)].ty,
+            PathEnum::Parameter { ordinal } => {
+                if self.actual_argument_types.len() >= *ordinal {
+                    self.actual_argument_types[*ordinal - 1]
+                } else if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
+                    self.mir.local_decls[mir::Local::from(*ordinal)].ty
+                } else {
+                    info!("path.value is {:?}", path.value);
+                    self.tcx.mk_ty(TyKind::Error)
+                }
+            }
+            PathEnum::Result => {
+                if self.mir.local_decls.is_empty() {
+                    info!("result type wanted from function without result local");
+                    self.tcx.mk_ty(TyKind::Error)
+                } else {
+                    self.mir.local_decls[mir::Local::from(0usize)].ty
+                }
+            }
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
@@ -5074,11 +5127,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         let bt = Self::get_dereferenced_type(t);
                         match &bt.kind {
                             TyKind::Adt(AdtDef { variants, .. }, substs) => {
-                                if let Some(variant_index) = variants.last() {
-                                    assume!(variant_index.index() == 0);
-                                    let variant = &variants[variant_index];
-                                    let field = &variant.fields[*ordinal];
-                                    return field.ty(self.tcx, substs);
+                                if !Self::is_union(bt) {
+                                    if let Some(variant_index) = variants.last() {
+                                        let variant = &variants[variant_index];
+                                        if *ordinal < variant.fields.len() {
+                                            let field = &variant.fields[*ordinal];
+                                            return field.ty(self.tcx, substs);
+                                        }
+                                    }
                                 }
                             }
                             TyKind::Closure(.., subs) => {
@@ -5097,6 +5153,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     PathSelector::Deref => {
                         return Self::get_dereferenced_type(t);
                     }
+                    PathSelector::Discriminant => {
+                        return self.tcx.types.i32;
+                    }
+                    PathSelector::Downcast(_, ordinal) => {
+                        if let TyKind::Adt(def, _) = &t.kind {
+                            use rustc_index::vec::Idx;
+                            let variant_def_id = def.variants[VariantIdx::new(*ordinal)].def_id;
+                            return self.tcx.type_of(variant_def_id);
+                        }
+                    }
                     PathSelector::Index(_) => match &t.kind {
                         TyKind::Array(elem_ty, _) | TyKind::Slice(elem_ty) => {
                             return elem_ty;
@@ -5107,6 +5173,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
                 info!("t is {:?}", t);
                 info!("selector is {:?}", selector);
+                self.tcx.mk_ty(TyKind::Error)
+            }
+            PathEnum::StaticVariable { def_id, .. } => {
+                if let Some(def_id) = def_id {
+                    return self.tcx.type_of(*def_id);
+                }
+                info!("path.value is {:?}", path.value);
                 self.tcx.mk_ty(TyKind::Error)
             }
             _ => {
