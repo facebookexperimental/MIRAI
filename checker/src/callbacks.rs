@@ -164,6 +164,7 @@ impl MiraiCallbacks {
         file_name.contains("crypto/crypto-derive/src") // resolve error
             || file_name.contains("common/logger/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 10 to point to memory
             || file_name.contains("common/metrics/src") // index out of bounds
+            || file_name.contains("common/security-logger/src") // resolve error
             || file_name.contains("crypto/crypto/src") // resolve error
             || file_name.contains("types/src") // resolve error
             || file_name.contains("config/src") // unimplemented case
@@ -178,6 +179,7 @@ impl MiraiCallbacks {
             || file_name.contains("secure/storage") // Z3 encoding error
             || file_name.contains("state-synchronizer/src") // Z3 encoding error
             || file_name.contains("language/vm/vm-runtime/src") // resolve error
+            || file_name.contains("regex-syntax") // index out of bounds
     }
 
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
