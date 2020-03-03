@@ -11,7 +11,7 @@ use crate::expression::{Expression, ExpressionType};
 use crate::k_limits;
 
 use log_derive::logfn_inputs;
-use mirai_annotations::assume;
+use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
@@ -60,13 +60,32 @@ impl From<PathEnum> for Path {
     }
 }
 
+impl Path {
+    /// Requires an abstract value that is an AbstractHeapAddress expression and
+    /// returns a path can be used as the root of paths that define the heap value.
+    pub fn get_as_path(value: Rc<AbstractValue>) -> Path {
+        precondition!(
+            if let Expression::AbstractHeapAddress { .. } = &value.expression {
+                true
+            } else {
+                false
+            }
+        );
+        if let Expression::AbstractHeapAddress { .. } = &value.expression {
+            PathEnum::AbstractHeapAddress { value }.into()
+        } else {
+            verify_unreachable!()
+        }
+    }
+}
+
 /// A path represents a left hand side expression.
 /// When the actual expression is evaluated at runtime it will resolve to a particular memory
 /// location. During analysis it is used to keep track of state changes.
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PathEnum {
     /// A dynamically allocated memory block.
-    AbstractHeapAddress { ordinal: usize },
+    AbstractHeapAddress { value: Rc<AbstractValue> },
 
     /// Sometimes a constant value needs to be treated as a path during refinement.
     /// Don't use this unless you are really sure you know what you are doing.
@@ -114,9 +133,7 @@ pub enum PathEnum {
 impl Debug for PathEnum {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            PathEnum::AbstractHeapAddress { ordinal } => {
-                f.write_fmt(format_args!("heap_{}", ordinal))
-            }
+            PathEnum::AbstractHeapAddress { value } => f.write_fmt(format_args!("<{:?}>", value)),
             PathEnum::Constant { value } => value.fmt(f),
             PathEnum::LocalVariable { ordinal } => f.write_fmt(format_args!("local_{}", ordinal)),
             PathEnum::Parameter { ordinal } => f.write_fmt(format_args!("param_{}", ordinal)),
@@ -316,7 +333,7 @@ impl Path {
 
     /// Adds any abstract heap addresses found in embedded index values to the given set.
     #[logfn_inputs(TRACE)]
-    pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
+    pub fn record_heap_addresses(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         match &self.value {
             PathEnum::QualifiedPath {
                 qualifier,
@@ -326,8 +343,12 @@ impl Path {
                 (**qualifier).record_heap_addresses(result);
                 selector.record_heap_addresses(result);
             }
-            PathEnum::AbstractHeapAddress { ordinal } => {
-                result.insert(*ordinal);
+            PathEnum::AbstractHeapAddress { value } => {
+                if let Expression::AbstractHeapAddress { .. } = &value.expression {
+                    result.insert(value.clone());
+                } else {
+                    verify_unreachable!()
+                }
             }
             _ => (),
         }
@@ -405,9 +426,12 @@ impl PathRefinement for Rc<Path> {
                     }
                     path.clone()
                 }
-                Expression::AbstractHeapAddress(ordinal) => {
-                    Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into())
-                }
+                Expression::AbstractHeapAddress { .. } => Rc::new(
+                    PathEnum::AbstractHeapAddress {
+                        value: val.refine_paths(environment),
+                    }
+                    .into(),
+                ),
                 Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
                     Path::new_constant(val.clone())
                 }
@@ -590,7 +614,7 @@ impl Debug for PathSelector {
 impl PathSelector {
     /// Adds any abstract heap addresses found in embedded index values to the given set.
     #[logfn_inputs(TRACE)]
-    pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
+    pub fn record_heap_addresses(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         if let PathSelector::Index(value) = self {
             value.record_heap_addresses(result);
         }

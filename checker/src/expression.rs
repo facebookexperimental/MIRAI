@@ -29,7 +29,12 @@ pub enum Expression {
     /// The value of expression is an ordinal used to distinguish this allocation from
     /// other allocations. Because this is static analysis, a given allocation site will
     /// always result in the same ordinal.
-    AbstractHeapAddress(usize),
+    AbstractHeapAddress {
+        // A unique ordinal that distinguishes this allocation from other allocations.
+        address: usize,
+        // The number of bytes that were allocated for this address.
+        length: Rc<AbstractValue>,
+    },
 
     /// An expression that is the sum of left and right. +
     Add {
@@ -346,8 +351,8 @@ impl Debug for Expression {
         match self {
             Expression::Top => f.write_str("TOP"),
             Expression::Bottom => f.write_str("BOTTOM"),
-            Expression::AbstractHeapAddress(ordinal) => {
-                f.write_fmt(format_args!("heap_{}", ordinal))
+            Expression::AbstractHeapAddress { address, length } => {
+                f.write_fmt(format_args!("heap_{}:{:?}", address, length))
             }
             Expression::Add { left, right } => {
                 f.write_fmt(format_args!("({:?}) + ({:?})", left, right))
@@ -483,7 +488,7 @@ impl Expression {
         match self {
             Expression::Top => NonPrimitive,
             Expression::Bottom => NonPrimitive,
-            Expression::AbstractHeapAddress(_) => Reference,
+            Expression::AbstractHeapAddress { .. } => Reference,
             Expression::Add { left, .. } => left.expression.infer_type(),
             Expression::AddOverflows { .. } => Bool,
             Expression::And { .. } => Bool,
@@ -569,10 +574,10 @@ impl Expression {
 
     /// Adds any abstract heap addresses found in the associated expression to the given set.
     #[logfn_inputs(TRACE)]
-    pub fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
+    pub fn record_heap_addresses(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         match &self {
-            Expression::AbstractHeapAddress(ordinal) => {
-                result.insert(*ordinal);
+            Expression::AbstractHeapAddress { .. } => {
+                result.insert(AbstractValue::make_from(self.clone(), 1));
             }
             Expression::Add { left, right }
             | Expression::And { left, right }

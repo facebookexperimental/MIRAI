@@ -20,9 +20,7 @@ use crate::summaries::{PersistentSummaryCache, Precondition, Summary};
 use crate::utils;
 
 use log_derive::*;
-use mirai_annotations::{
-    assume, assume_unreachable, checked_assume, checked_assume_eq, precondition, verify,
-};
+use mirai_annotations::*;
 use rpds::HashTrieMap;
 use rustc::mir;
 use rustc::mir::interpret::{ConstValue, Scalar};
@@ -835,24 +833,43 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         (block_indices, contains_loop)
     }
 
-    /// Rewrite roots of the form local_1.0 into local_1, local_1.1 into local_2 and so on.
+    /// self.async_fn_summary is a summary of the closure that results from rewriting
+    /// the current function body into a generator. The preconditions found in this
+    /// summary are expressed in terms of the closure fields that capture the parameters
+    /// of the current function. The pre-conditions are also governed by a path condition
+    /// that requires the closure (enum) to be in state 0 (have a discriminant value of 0).
+    /// This function rewrites the pre-conditions to instead refer to the parameters of the
+    /// current function and eliminates the condition based on the closure discriminant value.
     fn translate_async_preconditions(&mut self) -> Vec<Precondition> {
-        let root_value = self.get_new_heap_address();
-        let root_path: Rc<Path> = match &root_value.expression {
-            Expression::AbstractHeapAddress(ordinal) => {
-                Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into())
-            }
+        // In order to specialize the closure preconditions to the current context,
+        // we need to allocate a closure object from the heap and to populate its fields
+        // with the (unknown) values of the parameters and locals of the current context.
+
+        // The byte size of the closure object is not used, so we just fake it.
+        let closure_object = self.get_new_heap_address(Rc::new(0u128.into()));
+        let closure_path: Rc<Path> = match &closure_object.expression {
+            Expression::AbstractHeapAddress { .. } => Rc::new(
+                PathEnum::AbstractHeapAddress {
+                    value: closure_object.clone(),
+                }
+                .into(),
+            ),
             _ => assume_unreachable!(),
         };
+
+        // Setting the discriminant to 0 allows the related conditions in the closure's preconditions
+        // to get simplified away.
         let discriminant = Path::new_discriminant(
-            Path::new_field(root_path.clone(), 0, &self.current_environment),
+            Path::new_field(closure_path.clone(), 0, &self.current_environment),
             &self.current_environment,
         );
         let discriminant_val = Rc::new(self.constant_value_cache.get_u128_for(0).clone().into());
+
+        // Populate the closure object fields with the parameters and locals of the current context.
         self.current_environment
             .update_value_at(discriminant, discriminant_val);
         for (i, loc) in self.mir.local_decls.iter().skip(1).enumerate() {
-            let qualifier = root_path.clone();
+            let qualifier = closure_path.clone();
             let closure_path = Path::new_field(
                 Path::new_field(qualifier, 0, &self.current_environment),
                 i,
@@ -871,7 +888,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .update_value_at(closure_path, value);
         }
 
-        let actual_args = vec![(root_path, root_value)];
+        // Now set up the dummy closure object as the actual argument used to specialize
+        // the summary of the closure function.
+        let actual_args = vec![(closure_path, closure_object)];
+
+        // Now specialize/refine the closure summary's preconditions so that they can be used
+        // as the preconditions of the current function (from which the closure function was
+        // derived when turning it into a generator).
         self.async_fn_summary
             .as_ref()
             .unwrap()
@@ -1118,9 +1141,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let promoted_root: Rc<Path> = Rc::new(PathEnum::PromotedConstant { ordinal }.into());
             let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
             match &value.expression {
-                Expression::AbstractHeapAddress(ordinal) => {
-                    let heap_root: Rc<Path> =
-                        Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+                Expression::AbstractHeapAddress { .. } => {
+                    let heap_root: Rc<Path> = Rc::new(
+                        PathEnum::AbstractHeapAddress {
+                            value: value.clone(),
+                        }
+                        .into(),
+                    );
                     for (path, value) in self
                         .exit_environment
                         .value_map
@@ -2197,9 +2224,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                     Expression::Reference(path) => Some(path.clone()),
                     Expression::Variable { path, .. } => Some(path.clone()),
-                    Expression::AbstractHeapAddress(ordinal) => Some(Rc::new(
-                        PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into(),
-                    )),
+                    Expression::AbstractHeapAddress { .. } => {
+                        Some(Rc::new(Path::get_as_path(slice_val.clone())))
+                    }
                     _ => None,
                 };
                 qualifier
@@ -2250,11 +2277,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn handle_rust_alloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
         checked_assume!(call_info.actual_args.len() == 2);
         if let Some((place, ..)) = &call_info.destination {
+            // Get allocation length
+            let length_value = call_info.actual_args[0].1.clone();
+
             // Create a heap address for the allocation
-            let heap_address = self.get_new_heap_address();
+            let heap_address = self.get_new_heap_address(length_value.clone());
 
             // set length in bytes
-            let length_value = call_info.actual_args[0].1.clone();
             let target_path = self.visit_place(place);
             let length_path = Path::new_length(target_path, &self.current_environment);
             self.current_environment
@@ -2291,7 +2320,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             };
             let target_path = self.visit_place(target_place);
             let path0 = Path::new_field(target_path.clone(), 0, &self.current_environment);
-            let path1 = Path::new_field(target_path, 1, &self.current_environment);
+            let path1 = Path::new_field(target_path.clone(), 1, &self.current_environment);
             let target_type = self.get_target_path_type(&path0);
             let left = call_info.actual_args[0].1.clone();
             let right = call_info.actual_args[1].1.clone();
@@ -2308,7 +2337,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let unknown_typed_value = AbstractValue::make_from(
                     Expression::Variable {
                         path: path0.clone(),
-                        var_type: target_type,
+                        var_type: target_type.clone(),
                     },
                     (path0.path_length() as u64) + 1,
                 );
@@ -2321,7 +2350,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .update_value_at(path0, modulo_result);
             self.current_environment
                 .update_value_at(path1, overflow_flag);
-            self.get_new_heap_address()
+            AbstractValue::make_from(
+                Expression::Variable {
+                    path: target_path.clone(),
+                    var_type: target_type,
+                },
+                (target_path.path_length() as u64) + 1,
+            )
         } else {
             assume_unreachable!();
         }
@@ -2346,10 +2381,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn check_offset(&mut self, offset: &AbstractValue) {
         if let Expression::Offset { left, right, .. } = &offset.expression {
             let ge_zero = right.greater_or_equal(Rc::new(ConstantDomain::I128(0).into()));
-            let len = if let Expression::AbstractHeapAddress(ordinal) = &left.expression {
-                self.get_len(Rc::new(
-                    PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into(),
-                ))
+            let len = if let Expression::AbstractHeapAddress { length, .. } = &left.expression {
+                length.clone()
             } else {
                 Rc::new(abstract_value::TOP)
             };
@@ -3321,10 +3354,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 } = constant.borrow();
                 let const_value = self.visit_constant(*user_ty, &literal);
                 match &const_value.expression {
-                    Expression::AbstractHeapAddress(ordinal) => {
+                    Expression::AbstractHeapAddress { .. } => {
                         let rtype = ExpressionType::Reference;
-                        let rpath =
-                            Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+                        let rpath = Rc::new(
+                            PathEnum::AbstractHeapAddress {
+                                value: const_value.clone(),
+                            }
+                            .into(),
+                        );
                         self.copy_or_move_elements(path, rpath, rtype, false);
                     }
                     Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
@@ -3483,28 +3520,25 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 to
             }
         };
-        let slice_value = self.get_new_heap_address();
-        let abstract_heap_address =
-            if let Expression::AbstractHeapAddress(ordinal) = &slice_value.expression {
-                *ordinal
-            } else {
-                assume_unreachable!()
-            };
+        //todo: need elem size to make this an actual byte size. That is a big change so leave it
+        //to a future PR.
+        let byte_len_const = self
+            .constant_value_cache
+            .get_u128_for(u128::from(to - from))
+            .clone();
+        let byte_len_value: Rc<AbstractValue> = Rc::new(byte_len_const.into());
+        let slice_value = self.get_new_heap_address(byte_len_value);
         self.current_environment
-            .update_value_at(target_path.clone(), slice_value);
-        let slice_path = Rc::new(
-            PathEnum::AbstractHeapAddress {
-                ordinal: abstract_heap_address,
-            }
-            .into(),
-        );
+            .update_value_at(target_path.clone(), slice_value.clone());
+        let slice_path = Rc::new(PathEnum::AbstractHeapAddress { value: slice_value }.into());
         let slice_len_path = Path::new_length(slice_path, &self.current_environment);
         let len_const = self
             .constant_value_cache
             .get_u128_for(u128::from(to - from))
             .clone();
+        let len_value: Rc<AbstractValue> = Rc::new(len_const.into());
         self.current_environment
-            .update_value_at(slice_len_path, Rc::new(len_const.into()));
+            .update_value_at(slice_len_path, len_value);
         for i in from..to {
             let index_val = Rc::new(
                 self.constant_value_cache
@@ -3642,9 +3676,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             PathEnum::PromotedConstant { .. } => {
                 if let Some(val) = self.current_environment.value_at(&value_path) {
-                    if let Expression::AbstractHeapAddress(ordinal) = &val.expression {
+                    if let Expression::AbstractHeapAddress { .. } = &val.expression {
                         let heap_path =
-                            Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+                            Rc::new(PathEnum::AbstractHeapAddress { value: val.clone() }.into());
                         AbstractValue::make_from(Expression::Reference(heap_path), 1)
                     } else {
                         AbstractValue::make_from(Expression::Reference(value_path), 1)
@@ -3653,9 +3687,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     AbstractValue::make_from(Expression::Reference(value_path), 1)
                 }
             }
-            PathEnum::AbstractHeapAddress { ordinal } => {
-                AbstractValue::make_from(Expression::AbstractHeapAddress(*ordinal), 1)
-            }
+            PathEnum::AbstractHeapAddress { value } => value.clone(),
             _ => AbstractValue::make_from(Expression::Reference(value_path), 1),
         };
         self.current_environment.update_value_at(path, value);
@@ -3797,12 +3829,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Create a value based on the given type and assign it to path.
     #[logfn_inputs(TRACE)]
     fn visit_nullary_op(&mut self, path: Rc<Path>, null_op: mir::NullOp, ty: rustc::ty::Ty<'tcx>) {
+        let param_env = self.tcx.param_env(self.def_id);
+        let len = if let Ok(layout) = self.tcx.layout_of(param_env.and(ty)) {
+            Rc::new((layout.details.size.bytes() as u128).into())
+        } else {
+            abstract_value::TOP.into()
+        };
         let value = match null_op {
-            mir::NullOp::Box => self.get_new_heap_address(),
-            mir::NullOp::SizeOf => {
-                //todo: figure out how to get the size from ty.
-                Rc::new(abstract_value::TOP)
-            }
+            mir::NullOp::Box => self.get_new_heap_address(len),
+            mir::NullOp::SizeOf => len,
         };
         self.current_environment.update_value_at(path, value);
     }
@@ -3813,12 +3848,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Note, however, that this is not good enough for the outer fixed point because the counter
     /// is shared between different functions unless it is reset to 0 for each function.
     #[logfn_inputs(TRACE)]
-    fn get_new_heap_address(&mut self) -> Rc<AbstractValue> {
+    fn get_new_heap_address(&mut self, length: Rc<AbstractValue>) -> Rc<AbstractValue> {
         let addresses = &mut self.heap_addresses;
         let constants = &mut self.constant_value_cache;
         addresses
             .entry(self.current_location)
-            .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_address(), 1))
+            .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_address(length), 1))
             .clone()
     }
 
@@ -3852,6 +3887,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .update_value_at(path, discriminant_value);
     }
 
+    fn get_type_size(&self, ty: Ty<'tcx>) -> u64 {
+        let param_env = self.tcx.param_env(self.def_id);
+        if let Ok(layout) = self.tcx.layout_of(param_env.and(ty)) {
+            layout.details.size.bytes()
+        } else {
+            0
+        }
+    }
+
     /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.
     /// See https://github.com/rust-lang/rust/issues/48193.
     #[logfn_inputs(TRACE)]
@@ -3861,7 +3905,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         aggregate_kinds: &mir::AggregateKind<'tcx>,
         operands: &[mir::Operand<'tcx>],
     ) {
-        checked_assume!(match *aggregate_kinds {
+        precondition!(match *aggregate_kinds {
             mir::AggregateKind::Array(..) => true,
             _ => false,
         });
@@ -3872,8 +3916,28 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             return;
         }
         let length_path = Path::new_length(path.clone(), &self.current_environment);
+        let length_value: Rc<AbstractValue> = Rc::new(
+            self.constant_value_cache
+                .get_u128_for(operands.len() as u128)
+                .clone()
+                .into(),
+        );
 
-        let aggregate_value = self.get_new_heap_address();
+        let elem_size = match *aggregate_kinds {
+            mir::AggregateKind::Array(ty) => self.get_type_size(ty),
+            _ => verify_unreachable!(),
+        };
+        let mut byte_size = operands.len() as u64;
+        if elem_size > 0 {
+            byte_size *= elem_size
+        };
+        let byte_size_value: Rc<AbstractValue> = Rc::new(
+            self.constant_value_cache
+                .get_u128_for(byte_size as u128)
+                .clone()
+                .into(),
+        );
+        let aggregate_value = self.get_new_heap_address(byte_size_value);
         self.current_environment
             .update_value_at(path.clone(), aggregate_value);
 
@@ -3894,12 +3958,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let index_path = Path::new_index(path.clone(), index_value, &self.current_environment);
             self.visit_used_operand(index_path, operand);
         }
-        let length_value = Rc::new(
-            self.constant_value_cache
-                .get_u128_for(operands.len() as u128)
-                .clone()
-                .into(),
-        );
         self.current_environment
             .update_value_at(length_path, length_value);
     }
@@ -4407,7 +4465,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 size: 0,
                                 ..
                             })) => {
-                                return self.get_new_heap_address();
+                                return self.get_new_heap_address(Rc::new(0u128.into()));
                             }
                             _ => {
                                 debug!("span: {:?}", self.current_span);
@@ -4482,22 +4540,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw { data, size }))
                 if *size == 1 =>
             {
-                let e = self.get_new_heap_address();
-                if let Expression::AbstractHeapAddress(ordinal) = &e.expression {
+                let e = self.get_new_heap_address(Rc::new(1u128.into()));
+                if let Expression::AbstractHeapAddress { .. } = &e.expression {
                     let p = Path::new_discriminant(
-                        Rc::new(Path::from(PathEnum::AbstractHeapAddress {
-                            ordinal: *ordinal,
-                        })),
+                        Rc::new(Path::get_as_path(e.clone())),
                         &self.current_environment,
                     );
                     let d = Rc::new(self.constant_value_cache.get_u128_for(*data).clone().into());
                     self.current_environment.update_value_at(p, d);
                     return e;
                 }
-                debug!("span: {:?}", self.current_span);
-                debug!("type kind {:?}", ty.kind);
-                debug!("unimplemented constant {:?}", literal);
-                result = &ConstantDomain::Unimplemented;
+                verify_unreachable!();
             }
             _ => {
                 debug!("span: {:?}", self.current_span);
@@ -4703,18 +4756,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         elem_type: ExpressionType,
         len: Option<u128>,
     ) -> Rc<AbstractValue> {
-        let array_value = self.get_new_heap_address();
-        if let Some(byte_len) = len {
-            if byte_len > k_limits::MAX_BYTE_ARRAY_LENGTH {
-                return array_value;
-            }
+        let byte_len = bytes.len();
+        let array_value = self.get_new_heap_address(Rc::new((byte_len as u128).into()));
+        if byte_len > k_limits::MAX_BYTE_ARRAY_LENGTH {
+            return array_value;
         }
-        let ordinal = if let Expression::AbstractHeapAddress(ordinal) = array_value.expression {
-            ordinal
-        } else {
-            assume_unreachable!()
-        };
-        let array_path: Rc<Path> = Rc::new(PathEnum::AbstractHeapAddress { ordinal }.into());
+        let array_path: Rc<Path> = Rc::new(Path::get_as_path(array_value.clone()));
         let mut last_index: u128 = 0;
         for (i, operand) in self
             .get_element_values(bytes, elem_type, len)

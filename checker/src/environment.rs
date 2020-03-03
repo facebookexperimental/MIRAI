@@ -131,12 +131,12 @@ impl Environment {
                 ..
             }) => match (&consequent.expression, &alternate.expression) {
                 (
-                    Expression::AbstractHeapAddress(addr1),
-                    Expression::AbstractHeapAddress(addr2),
+                    Expression::AbstractHeapAddress { .. },
+                    Expression::AbstractHeapAddress { .. },
                 ) => Some((
                     condition.clone(),
-                    Rc::new(PathEnum::AbstractHeapAddress { ordinal: *addr1 }.into()),
-                    Rc::new(PathEnum::AbstractHeapAddress { ordinal: *addr2 }.into()),
+                    Rc::new(Path::get_as_path(consequent.clone())),
+                    Rc::new(Path::get_as_path(alternate.clone())),
                 )),
                 (Expression::Reference(path1), Expression::Reference(path2))
                     if path1 != path && path2 != path =>
