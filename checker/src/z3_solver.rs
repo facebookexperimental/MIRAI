@@ -8,7 +8,7 @@ use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::ConstantDomain;
 use crate::expression::{Expression, ExpressionType};
-use crate::path::{Path, PathEnum};
+use crate::path::Path;
 use crate::smt_solver::SmtResult;
 use crate::smt_solver::SmtSolver;
 
@@ -182,8 +182,11 @@ impl Z3Solver {
     #[logfn_inputs(TRACE)]
     fn get_as_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
-            Expression::AbstractHeapAddress(ordinal) => {
-                let path = Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+            Expression::AbstractHeapAddress { .. } => {
+                let path = Rc::new(Path::get_as_path(AbstractValue::make_from(
+                    expression.clone(),
+                    1,
+                )));
                 self.general_variable(&path, &expression.infer_type())
             }
             Expression::Add { .. }
@@ -670,8 +673,11 @@ impl Z3Solver {
     #[logfn_inputs(TRACE)]
     fn get_as_numeric_z3_ast(&self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
         match expression {
-            Expression::AbstractHeapAddress(ordinal) => {
-                let path = Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+            Expression::AbstractHeapAddress { .. } => {
+                let path = Rc::new(Path::get_as_path(AbstractValue::make_from(
+                    expression.clone(),
+                    1,
+                )));
                 self.numeric_variable(expression, &path, &expression.infer_type())
             }
             Expression::Add { left, right } => {
@@ -1201,8 +1207,11 @@ impl Z3Solver {
     #[logfn_inputs(TRACE)]
     fn get_as_bv_z3_ast(&self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
         match expression {
-            Expression::AbstractHeapAddress(ordinal) => {
-                let path = Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+            Expression::AbstractHeapAddress { .. } => {
+                let path = Rc::new(Path::get_as_path(AbstractValue::make_from(
+                    expression.clone(),
+                    1,
+                )));
                 self.bv_variable(&path, &expression.infer_type(), num_bits)
             }
             Expression::Add { left, right } => {

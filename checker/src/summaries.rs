@@ -8,7 +8,7 @@ use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::FunctionReference;
 use crate::environment::Environment;
 use crate::expression::Expression;
-use crate::path::{Path, PathEnum};
+use crate::path::Path;
 use crate::utils;
 
 use log_derive::{logfn, logfn_inputs};
@@ -305,7 +305,7 @@ fn extract_side_effects(
     env: &Environment,
     argument_count: usize,
 ) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {
-    let mut heap_roots: HashSet<usize> = HashSet::new();
+    let mut heap_roots: HashSet<Rc<AbstractValue>> = HashSet::new();
     let mut result = Vec::new();
     for ordinal in 0..=argument_count {
         let root = if ordinal == 0 {
@@ -338,15 +338,15 @@ fn extract_side_effects(
 #[logfn_inputs(TRACE)]
 fn extract_reachable_heap_allocations(
     env: &Environment,
-    heap_roots: &mut HashSet<usize>,
+    heap_roots: &mut HashSet<Rc<AbstractValue>>,
     result: &mut Vec<(Rc<Path>, Rc<AbstractValue>)>,
 ) {
-    let mut visited_heap_roots: HashSet<usize> = HashSet::new();
+    let mut visited_heap_roots: HashSet<Rc<AbstractValue>> = HashSet::new();
     while heap_roots.len() > visited_heap_roots.len() {
-        let mut new_roots: HashSet<usize> = HashSet::new();
-        for ordinal in heap_roots.iter() {
-            if visited_heap_roots.insert(*ordinal) {
-                let root = Rc::new(PathEnum::AbstractHeapAddress { ordinal: *ordinal }.into());
+        let mut new_roots: HashSet<Rc<AbstractValue>> = HashSet::new();
+        for heap_root in heap_roots.iter() {
+            if visited_heap_roots.insert(heap_root.clone()) {
+                let root = Rc::new(Path::get_as_path(heap_root.clone()));
                 for (path, value) in env
                     .value_map
                     .iter()

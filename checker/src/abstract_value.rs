@@ -248,7 +248,7 @@ pub trait AbstractValueTrait: Sized {
     fn logical_not(&self) -> Self;
     fn offset(&self, other: Self) -> Self;
     fn or(&self, other: Self) -> Self;
-    fn record_heap_addresses(&self, result: &mut HashSet<usize>);
+    fn record_heap_addresses(&self, result: &mut HashSet<Rc<AbstractValue>>);
     fn remainder(&self, other: Self) -> Self;
     fn shift_left(&self, other: Self) -> Self;
     fn shl_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
@@ -765,7 +765,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn dereference(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::AbstractHeapAddress(..)
+            Expression::AbstractHeapAddress { .. }
             | Expression::Offset { .. }
             | Expression::Bottom
             | Expression::Top => self.clone(),
@@ -1385,7 +1385,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Adds any abstract heap addresses found in the associated expression to the given set.
     #[logfn_inputs(TRACE)]
-    fn record_heap_addresses(&self, result: &mut HashSet<usize>) {
+    fn record_heap_addresses(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         self.expression.record_heap_addresses(result);
     }
 
@@ -1741,9 +1741,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
-                self.clone()
-            }
+            Expression::Top | Expression::Bottom => self.clone(),
+            Expression::AbstractHeapAddress { address, length } => AbstractValue::make_from(
+                Expression::AbstractHeapAddress {
+                    address: *address,
+                    length: length.refine_paths(environment),
+                },
+                1,
+            ),
             Expression::Add { left, right } => left
                 .refine_paths(environment)
                 .addition(right.refine_paths(environment)),
@@ -1926,8 +1931,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     ) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Top | Expression::Bottom => self.clone(),
-            Expression::AbstractHeapAddress(ordinal) => AbstractValue::make_from(
-                Expression::AbstractHeapAddress(ordinal.wrapping_add(fresh)),
+            Expression::AbstractHeapAddress { address, length } => AbstractValue::make_from(
+                Expression::AbstractHeapAddress {
+                    address: address.wrapping_add(fresh),
+                    length: length.refine_parameters(arguments, fresh),
+                },
                 1,
             ),
             Expression::Add { left, right } => left
@@ -2131,9 +2139,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return self.clone();
         }
         match &self.expression {
-            Expression::Top | Expression::Bottom | Expression::AbstractHeapAddress(..) => {
-                self.clone()
-            }
+            Expression::Top | Expression::Bottom => self.clone(),
+            Expression::AbstractHeapAddress { address, length } => AbstractValue::make_from(
+                Expression::AbstractHeapAddress {
+                    address: *address,
+                    length: length.refine_with(path_condition, depth + 1),
+                },
+                1,
+            ),
             Expression::Add { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .addition(right.refine_with(path_condition, depth + 1)),
@@ -2331,13 +2344,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// in memory at the given path.
     #[logfn_inputs(TRACE)]
     fn widen(&self, path: &Rc<Path>) -> Rc<AbstractValue> {
-        match self.expression {
+        match &self.expression {
             Expression::Widen { .. }
-            | Expression::AbstractHeapAddress(..)
             | Expression::CompileTimeConstant(..)
             | Expression::Reference(..)
             | Expression::Top
             | Expression::Variable { .. } => self.clone(),
+            Expression::AbstractHeapAddress { address, length } => AbstractValue::make_from(
+                Expression::AbstractHeapAddress {
+                    address: *address,
+                    length: length.widen(path),
+                },
+                1,
+            ),
             _ => {
                 if self.expression_size > 1000 {
                     AbstractValue::make_from(
