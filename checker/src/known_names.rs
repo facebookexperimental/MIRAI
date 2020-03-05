@@ -27,6 +27,7 @@ pub enum KnownNames {
     MiraiVerify,
     RustAlloc,
     RustAllocZeroed,
+    RustDealloc,
     StdFutureFromGenerator,
     StdIntrinsicsArithOffset,
     StdIntrinsicsCtpop,
@@ -120,6 +121,7 @@ impl KnownNamesCache {
                         .map(|n| match n.as_str().deref() {
                             "__rust_alloc" => KnownNames::RustAlloc,
                             "__rust_alloc_zeroed" => KnownNames::RustAllocZeroed,
+                            "__rust_dealloc" => KnownNames::RustDealloc,
                             _ => KnownNames::None,
                         })
                         .unwrap_or(KnownNames::None)

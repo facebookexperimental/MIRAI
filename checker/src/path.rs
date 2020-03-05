@@ -284,6 +284,13 @@ impl Path {
         Self::new_qualified(collection_path, selector).refine_paths(environment)
     }
 
+    /// Creates a path to the layout of a heap allocated memory block.
+    #[logfn_inputs(TRACE)]
+    pub fn new_layout(address_path: Rc<Path>) -> Rc<Path> {
+        let selector = Rc::new(PathSelector::Layout);
+        Self::new_qualified(address_path, selector)
+    }
+
     /// Creates a path to the local variable corresponding to the ordinal.
     #[logfn_inputs(TRACE)]
     pub fn new_local(ordinal: usize) -> Rc<Path> {
@@ -557,6 +564,9 @@ pub enum PathSelector {
     /// The length of an array/slice/string.
     Length,
 
+    /// The layout specified to the allocate/deallocate call.
+    Layout,
+
     /// Given a path that denotes a reference, select the thing the reference points to.
     Deref,
 
@@ -607,6 +617,7 @@ impl Debug for PathSelector {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             PathSelector::Length => f.write_str("len()"),
+            PathSelector::Layout => f.write_str("layout"),
             PathSelector::Deref => f.write_str("deref"),
             PathSelector::Discriminant => f.write_str("discr"),
             PathSelector::Field(index) => index.fmt(f),

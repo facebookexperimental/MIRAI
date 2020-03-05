@@ -4,7 +4,6 @@
 // LICENSE file in the root directory of this source tree.
 #![allow(clippy::float_cmp)]
 
-use crate::abstract_value::AbstractValue;
 use crate::expression::{Expression, ExpressionType};
 use crate::known_names::{KnownNames, KnownNamesCache};
 use crate::summaries::PersistentSummaryCache;
@@ -769,16 +768,11 @@ impl<'tcx> ConstantValueCache<'tcx> {
 
     /// Returns a Expression::AbstractHeapAddress with a unique counter value.
     #[logfn_inputs(TRACE)]
-    pub fn get_new_heap_address(
-        &mut self,
-        length: Rc<AbstractValue>,
-        is_zeroed: bool,
-    ) -> Expression {
+    pub fn get_new_heap_address(&mut self, is_zeroed: bool) -> Expression {
         let heap_address_counter = self.heap_address_counter;
         self.heap_address_counter = self.heap_address_counter.wrapping_add(1);
         Expression::AbstractHeapAddress {
             address: heap_address_counter,
-            length,
             is_zeroed,
         }
     }
