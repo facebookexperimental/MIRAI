@@ -32,10 +32,20 @@ pub enum Expression {
     AbstractHeapAddress {
         // A unique ordinal that distinguishes this allocation from other allocations.
         address: usize,
-        // The number of bytes that were allocated for this address.
-        length: Rc<AbstractValue>,
         // True if the allocator zeroed out this heap memory block.
         is_zeroed: bool,
+    },
+
+    /// An expression that represents the byte size, alignment and liveness of a heap allocated memory block.
+    /// It is a separate expression because it can be constructed and propagated independently
+    /// from the heap address resulting from an allocation construct/call.
+    AbstractHeapBlockLayout {
+        // The number of bytes that were allocated.
+        length: Rc<AbstractValue>,
+        // The byte alignment of the memory block.
+        alignment: Rc<AbstractValue>,
+        // True if the associated memory block has not been deallocated.
+        is_alive: bool,
     },
 
     /// An expression that is the sum of left and right. +
@@ -353,17 +363,21 @@ impl Debug for Expression {
         match self {
             Expression::Top => f.write_str("TOP"),
             Expression::Bottom => f.write_str("BOTTOM"),
-            Expression::AbstractHeapAddress {
-                address,
+            Expression::AbstractHeapAddress { address, is_zeroed } => f.write_fmt(format_args!(
+                "{}heap_{}",
+                if *is_zeroed { "zeroed_" } else { "" },
+                *address,
+            )),
+            Expression::AbstractHeapBlockLayout {
                 length,
-                is_zeroed,
-            } => {
-                if *is_zeroed {
-                    f.write_fmt(format_args!("heap_{}:{:?} zeroed", address, length))
-                } else {
-                    f.write_fmt(format_args!("heap_{}:{:?}", address, length))
-                }
-            }
+                alignment,
+                is_alive,
+            } => f.write_fmt(format_args!(
+                "layout({:?}/{:?}{})",
+                length,
+                alignment,
+                if *is_alive { "" } else { " dead" }
+            )),
             Expression::Add { left, right } => {
                 f.write_fmt(format_args!("({:?}) + ({:?})", left, right))
             }
@@ -499,6 +513,7 @@ impl Expression {
             Expression::Top => NonPrimitive,
             Expression::Bottom => NonPrimitive,
             Expression::AbstractHeapAddress { .. } => Reference,
+            Expression::AbstractHeapBlockLayout { .. } => NonPrimitive,
             Expression::Add { left, .. } => left.expression.infer_type(),
             Expression::AddOverflows { .. } => Bool,
             Expression::And { .. } => Bool,

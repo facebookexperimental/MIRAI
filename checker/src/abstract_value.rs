@@ -1756,16 +1756,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::Top | Expression::Bottom => self.clone(),
-            Expression::AbstractHeapAddress {
-                address,
+            Expression::AbstractHeapAddress { .. } | Expression::Top | Expression::Bottom => {
+                self.clone()
+            }
+            Expression::AbstractHeapBlockLayout {
                 length,
-                is_zeroed,
+                alignment,
+                is_alive,
             } => AbstractValue::make_from(
-                Expression::AbstractHeapAddress {
-                    address: *address,
+                Expression::AbstractHeapBlockLayout {
                     length: length.refine_paths(environment),
-                    is_zeroed: *is_zeroed,
+                    alignment: alignment.refine_paths(environment),
+                    is_alive: *is_alive,
                 },
                 1,
             ),
@@ -1950,16 +1952,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         fresh: usize,
     ) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::Top | Expression::Bottom => self.clone(),
-            Expression::AbstractHeapAddress {
-                address,
+            Expression::AbstractHeapAddress { .. } | Expression::Top | Expression::Bottom => {
+                self.clone()
+            }
+            Expression::AbstractHeapBlockLayout {
                 length,
-                is_zeroed,
+                alignment,
+                is_alive,
             } => AbstractValue::make_from(
-                Expression::AbstractHeapAddress {
-                    address: address.wrapping_add(fresh),
+                Expression::AbstractHeapBlockLayout {
                     length: length.refine_parameters(arguments, fresh),
-                    is_zeroed: *is_zeroed,
+                    alignment: alignment.refine_parameters(arguments, fresh),
+                    is_alive: *is_alive,
                 },
                 1,
             ),
@@ -2164,16 +2168,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return self.clone();
         }
         match &self.expression {
-            Expression::Top | Expression::Bottom => self.clone(),
-            Expression::AbstractHeapAddress {
-                address,
+            Expression::AbstractHeapAddress { .. } | Expression::Top | Expression::Bottom => {
+                self.clone()
+            }
+            Expression::AbstractHeapBlockLayout {
                 length,
-                is_zeroed,
+                alignment,
+                is_alive,
             } => AbstractValue::make_from(
-                Expression::AbstractHeapAddress {
-                    address: *address,
+                Expression::AbstractHeapBlockLayout {
                     length: length.refine_with(path_condition, depth + 1),
-                    is_zeroed: *is_zeroed,
+                    alignment: alignment.refine_with(path_condition, depth + 1),
+                    is_alive: *is_alive,
                 },
                 1,
             ),
@@ -2376,19 +2382,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn widen(&self, path: &Rc<Path>) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Widen { .. }
+            | Expression::AbstractHeapAddress { .. } // may as well use the same address for the family of allocations
             | Expression::CompileTimeConstant(..)
             | Expression::Reference(..)
             | Expression::Top
             | Expression::Variable { .. } => self.clone(),
-            Expression::AbstractHeapAddress {
-                address,
+            Expression::AbstractHeapBlockLayout {
                 length,
-                is_zeroed,
+                alignment,
+                ..
             } => AbstractValue::make_from(
-                Expression::AbstractHeapAddress {
-                    address: *address,
+                Expression::AbstractHeapBlockLayout {
                     length: length.widen(path),
-                    is_zeroed: *is_zeroed,
+                    alignment: alignment.widen(path),
+                    is_alive: true,
                 },
                 1,
             ),
