@@ -93,7 +93,7 @@ pub fn argument_types_key_str<'tcx>(
 /// generic trait methods).
 fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) {
     trace!("append_mangled_type {:?} to {}", ty.kind, str);
-    use syntax::ast;
+    use rustc_ast::ast;
     use TyKind::*;
     match ty.kind {
         Bool => str.push_str("bool"),

@@ -618,6 +618,9 @@ pub mod core {
         pub fn write_bytes<T>(_dst: *mut T, _val: u8, _count: usize) {}
 
         pub mod _1 {
+            pub fn assert_inhabited() {}
+            pub fn assert_zero_valid() {}
+            pub fn assert_uninit_valid() {}
             pub fn atomic_fence() {}
             pub fn atomic_fence_acq() {}
             pub fn atomic_fence_rel() {}

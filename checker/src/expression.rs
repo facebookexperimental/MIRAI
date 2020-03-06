@@ -11,11 +11,11 @@ use crate::path::Path;
 use log_derive::logfn_inputs;
 use mirai_annotations::*;
 use rustc::ty::TyKind;
+use rustc_ast::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
-use syntax::ast;
 
 /// Closely based on the expressions found in MIR.
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
