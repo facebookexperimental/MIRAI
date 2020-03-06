@@ -4,7 +4,7 @@ os:
   # - windows
 language: rust
 rust:
-- nightly-2020-02-26
+- nightly-2020-02-27
 
 before_install:
 - if [ ${TRAVIS_OS_NAME} == "osx" ]; then curl -L https://github.com/mozilla/grcov/releases/download/v0.4.3/grcov-osx-x86_64.tar.bz2 | tar jxf -; fi
@@ -17,7 +17,7 @@ before_script:
 # install linter
 - rustup component add clippy
 # install audit
-- if [ ${TRAVIS_OS_NAME} == "osx" ]; then cargo install cargo-audit; fi
+#- if [ ${TRAVIS_OS_NAME} == "osx" ]; then cargo install cargo-audit; fi
 # install z3
 - if [ ${TRAVIS_OS_NAME} == "linux" ]; then export RUSTFLAGS='-Clink-arg=-L./binaries -Clink-arg=-lstdc++'; fi
 - if [ ${TRAVIS_OS_NAME} == "osx" ]; then cp binaries/libz3.dylib /usr/local/lib; fi
@@ -31,7 +31,7 @@ script:
   if [ ${TRAVIS_OS_NAME} == "osx" ]
   then
     # Audit dependencies
-    cargo audit
+    # cargo audit
     # Run format checks
     cargo fmt --all -- --check
     # Run lint checks

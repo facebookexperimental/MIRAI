@@ -175,6 +175,8 @@ impl MiraiCallbacks {
             || file_name.contains("common/num-variants/src") // resolve error
             || file_name.contains("language/bytecode-verifier/src") // stack overflow
             || file_name.contains("language/move-lang/src") // index out of bounds
+            || file_name.contains("language/move-vm/state/src") // false positives
+            || file_name.contains("language/move-vm/runtime/src") // rustc metadata decoder panic
             || file_name.contains("client/cli/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 33 to point to memory
             || file_name.contains("secure/storage") // Z3 encoding error
             || file_name.contains("state-synchronizer/src") // Z3 encoding error
