@@ -162,7 +162,6 @@ impl MiraiCallbacks {
 
     fn is_black_listed(file_name: &str) -> bool {
         file_name.contains("crypto/crypto-derive/src") // resolve error
-            || file_name.contains("common/logger/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 10 to point to memory
             || file_name.contains("common/security-logger/src") // resolve error
             || file_name.contains("crypto/crypto/src") // resolve error
             || file_name.contains("types/src") // resolve error
@@ -170,13 +169,12 @@ impl MiraiCallbacks {
             || file_name.contains("storage/jellyfish-merkle/src") // complex loops beyond what we can handle right now
             || file_name.contains("storage/libradb/src") // resolve error
             || file_name.contains("storage/scratchpad/src") // resolve error
-            || file_name.contains("client/libra_wallet/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 10 to point to memory
             || file_name.contains("common/num-variants/src") // resolve error
             || file_name.contains("language/bytecode-verifier/src") // stack overflow
             || file_name.contains("language/move-lang/src") // Z3 encoding error
             || file_name.contains("language/move-vm/state/src") // false positives
             || file_name.contains("language/move-vm/runtime/src") // rustc metadata decoder panic
-            || file_name.contains("client/cli/src") // src/librustc/mir/interpret/mod.rs:492: expected allocation ID 33 to point to memory
+            || file_name.contains("client/cli/src") // Z3 encoding error
             || file_name.contains("secure/storage") // Z3 encoding error
             || file_name.contains("state-synchronizer/src") // Z3 encoding error
             || file_name.contains("language/vm/vm-runtime/src") // resolve error

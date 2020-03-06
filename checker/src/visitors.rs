@@ -2678,6 +2678,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
             // Transfer side effects
             if function_summary.is_not_default {
+                // Effects on the heap
+                for (path, value) in function_summary.side_effects.iter() {
+                    if path.is_rooted_by_abstract_heap_address() {
+                        let rvalue = value
+                            .clone()
+                            .refine_parameters(call_info.actual_args, self.fresh_variable_offset)
+                            .refine_paths(&self.current_environment);
+                        self.current_environment
+                            .update_value_at(path.clone(), rvalue);
+                    }
+                }
+
                 // Effects on the call result
                 self.transfer_and_refine(
                     &function_summary.side_effects,
@@ -2695,18 +2707,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         &parameter_path,
                         call_info.actual_args,
                     );
-                }
-
-                // Effects on the heap
-                for (path, value) in function_summary.side_effects.iter() {
-                    if path.is_rooted_by_abstract_heap_address() {
-                        let rvalue = value
-                            .clone()
-                            .refine_parameters(call_info.actual_args, self.fresh_variable_offset)
-                            .refine_paths(&self.current_environment);
-                        self.current_environment
-                            .update_value_at(path.clone(), rvalue);
-                    }
                 }
             } else {
                 // We don't know anything other than the return value type.
@@ -4550,7 +4550,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
         }
     }
-
     /// Used for enum typed constants. Currently only simple variants are understood.
     #[logfn_inputs(TRACE)]
     fn get_enum_variant_as_constant(
@@ -4737,6 +4736,21 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 rustc::ty::ConstKind::Value(ConstValue::Scalar(mir::interpret::Scalar::Ptr(
                     ptr,
                 ))) => {
+                    if let Some(rustc::mir::interpret::GlobalAlloc::Static(def_id)) =
+                        self.tcx.alloc_map.lock().get(ptr.alloc_id)
+                    {
+                        let name = utils::summary_key_str(self.tcx, def_id);
+                        let path = Rc::new(
+                            PathEnum::StaticVariable {
+                                def_id: Some(def_id),
+                                summary_cache_key: name,
+                                expression_type: ExpressionType::NonPrimitive,
+                            }
+                            .into(),
+                        );
+                        return self
+                            .lookup_path_and_refine_result(path, ExpressionType::NonPrimitive);
+                    }
                     let alloc = self.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
                     let alloc_len = alloc.len() as u64;
                     let offset_bytes = ptr.offset.bytes();
