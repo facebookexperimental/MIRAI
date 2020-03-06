@@ -4208,7 +4208,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     let lh_type = self.get_path_rustc_type(&target_path);
                     if let TyKind::Ref(_, ty, _) = lh_type.kind {
                         if let TyKind::Slice(elem_ty) = ty.kind {
-                            if let TyKind::Uint(syntax::ast::UintTy::U8) = elem_ty.kind {
+                            if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
                                 let collection_path = Path::new_constant(value.clone());
                                 for (i, ch) in s.as_bytes().iter().enumerate() {
                                     let index = Rc::new((i as u128).into());

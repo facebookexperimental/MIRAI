@@ -68,7 +68,7 @@ impl Environment {
         if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
             // If path is an abstraction that can match more than one path, we need to do weak updates.
             let top = Rc::new(abstract_value::TOP);
-            let true_val = join_condition.clone().conditional_expression(
+            let true_val = join_condition.conditional_expression(
                 value.clone(),
                 self.value_at(&true_path).unwrap_or(&top).clone(),
             );

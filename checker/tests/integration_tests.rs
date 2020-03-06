@@ -16,10 +16,10 @@
 #![feature(box_syntax)]
 
 extern crate mirai;
+extern crate rustc_ast;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_rayon;
-extern crate syntax;
 extern crate tempdir;
 
 use mirai::callbacks;
