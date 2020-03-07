@@ -13,6 +13,7 @@ use crate::k_limits;
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
 
+use crate::known_names::KnownNames;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::*;
 use serde::{Deserialize, Serialize};
@@ -234,6 +235,8 @@ pub trait AbstractValueTrait: Sized {
     fn greater_than(&self, other: Self) -> Self;
     fn implies(&self, other: &Self) -> bool;
     fn implies_not(&self, other: &Self) -> bool;
+    fn intrinsic_binary(&self, other: Self, name: KnownNames) -> Self;
+    fn intrinsic_unary(&self, name: KnownNames) -> Self;
     fn inverse_implies(&self, other: &Rc<AbstractValue>) -> bool;
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool;
     fn is_bottom(&self) -> bool;
@@ -1006,6 +1009,42 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return (**operand).eq(other);
         }
         false
+    }
+
+    /// Returns self.f(other) where f is an intrinsic binary function.
+    #[logfn_inputs(TRACE)]
+    fn intrinsic_binary(&self, other: Self, name: KnownNames) -> Self {
+        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+            (&self.expression, &other.expression)
+        {
+            return Rc::new(v1.intrinsic_binary(v2, name).into());
+        };
+        AbstractValue::make_from(
+            Expression::IntrinsicBinary {
+                left: self.clone(),
+                right: other,
+                name,
+            },
+            self.expression_size.saturating_add(1),
+        )
+    }
+
+    /// Returns self.f() where f is an intrinsic unary function.
+    #[logfn_inputs(TRACE)]
+    fn intrinsic_unary(&self, name: KnownNames) -> Self {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = v1.intrinsic_unary(name);
+            if result != ConstantDomain::Bottom {
+                return Rc::new(result.into());
+            }
+        };
+        AbstractValue::make_from(
+            Expression::IntrinsicUnary {
+                operand: self.clone(),
+                name,
+            },
+            self.expression_size.saturating_add(1),
+        )
     }
 
     /// Returns true if "!self => other" is known at compile time to be true.
@@ -1825,6 +1864,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::GreaterThan { left, right } => left
                 .refine_paths(environment)
                 .greater_than(right.refine_paths(environment)),
+            Expression::IntrinsicBinary { left, right, name } => left
+                .refine_paths(environment)
+                .intrinsic_binary(right.refine_paths(environment), *name),
+            Expression::IntrinsicUnary { operand, name } => {
+                operand.refine_paths(environment).intrinsic_unary(*name)
+            }
             Expression::Join { left, right, path } => left
                 .refine_paths(environment)
                 .join(right.refine_paths(environment), &path),
@@ -2028,6 +2073,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::GreaterThan { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .greater_than(right.refine_parameters(arguments, fresh)),
+            Expression::IntrinsicBinary { left, right, name } => left
+                .refine_parameters(arguments, fresh)
+                .intrinsic_binary(right.refine_parameters(arguments, fresh), *name),
+            Expression::IntrinsicUnary { operand, name } => operand
+                .refine_parameters(arguments, fresh)
+                .intrinsic_unary(*name),
             Expression::Join { left, right, path } => left
                 .refine_parameters(arguments, fresh)
                 .join(right.refine_parameters(arguments, fresh), &path),
@@ -2268,6 +2319,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::GreaterThan { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .greater_than(right.refine_with(path_condition, depth + 1)),
+            Expression::IntrinsicBinary { left, right, name } => left
+                .refine_with(path_condition, depth + 1)
+                .intrinsic_binary(right.refine_with(path_condition, depth + 1), *name),
+            Expression::IntrinsicUnary { operand, name } => operand
+                .refine_with(path_condition, depth + 1)
+                .intrinsic_unary(*name),
             Expression::Join { left, right, path } => left
                 .refine_with(path_condition, depth + 1)
                 .join(right.refine_with(path_condition, depth + 1), &path),

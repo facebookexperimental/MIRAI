@@ -163,6 +163,7 @@ impl MiraiCallbacks {
     fn is_black_listed(file_name: &str) -> bool {
         file_name.contains("crypto/crypto-derive/src") // resolve error
             || file_name.contains("common/security-logger/src") // resolve error
+            || file_name.contains("consensus/src") // Z3 encoding error
             || file_name.contains("crypto/crypto/src") // resolve error
             || file_name.contains("types/src") // resolve error
             || file_name.contains("config/src") // unimplemented case

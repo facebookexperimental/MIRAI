@@ -10,6 +10,7 @@ use crate::summaries::PersistentSummaryCache;
 use crate::utils;
 
 use log_derive::{logfn, logfn_inputs};
+use mirai_annotations::*;
 use rustc::ty::subst::SubstsRef;
 use rustc::ty::{Ty, TyCtxt};
 use rustc_hir::def_id::DefId;
@@ -415,6 +416,162 @@ impl ConstantDomain {
             _ => *self > *other,
         }
         .into()
+    }
+
+    /// Returns self.f() where f is an intrinsic unary function.
+    #[logfn_inputs(TRACE)]
+    pub fn intrinsic_binary(&self, other: &Self, name: KnownNames) -> Self {
+        match (&self, &other) {
+            (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
+                let left = f32::from_bits(*val1);
+                let right = f32::from_bits(*val2);
+                ConstantDomain::F32(
+                    match name {
+                        KnownNames::StdIntrinsicsCopysignf32 => left.copysign(right),
+                        KnownNames::StdIntrinsicsMaxnumf32 => left.max(right),
+                        KnownNames::StdIntrinsicsMinnumf32 => left.min(right),
+                        KnownNames::StdIntrinsicsPowf32 => left.powf(right),
+                        KnownNames::StdIntrinsicsFaddFast => left + right,
+                        KnownNames::StdIntrinsicsFdivFast => left / right,
+                        KnownNames::StdIntrinsicsFmulFast => left * right,
+                        KnownNames::StdIntrinsicsFremFast => left % right,
+                        KnownNames::StdIntrinsicsFsubFast => left - right,
+                        _ => assume_unreachable!("invalid arguments for intrinsic {:?}", name),
+                    }
+                    .to_bits(),
+                )
+            }
+            (ConstantDomain::F32(val1), ConstantDomain::I128(val2)) => {
+                let left = f32::from_bits(*val1);
+                ConstantDomain::F32(
+                    if name == KnownNames::StdIntrinsicsPowif32 {
+                        left.powi(*val2 as i32)
+                    } else {
+                        assume_unreachable!("invalid arguments for intrinsic {:?}", name)
+                    }
+                    .to_bits(),
+                )
+            }
+            (ConstantDomain::F64(val1), ConstantDomain::F64(val2)) => {
+                let left = f64::from_bits(*val1);
+                let right = f64::from_bits(*val2);
+                ConstantDomain::F64(
+                    match name {
+                        KnownNames::StdIntrinsicsCopysignf64 => left.copysign(right),
+                        KnownNames::StdIntrinsicsMaxnumf64 => left.max(right),
+                        KnownNames::StdIntrinsicsMinnumf64 => left.min(right),
+                        KnownNames::StdIntrinsicsPowf64 => left.powf(right),
+                        KnownNames::StdIntrinsicsFaddFast => left + right,
+                        KnownNames::StdIntrinsicsFdivFast => left / right,
+                        KnownNames::StdIntrinsicsFmulFast => left * right,
+                        KnownNames::StdIntrinsicsFremFast => left % right,
+                        KnownNames::StdIntrinsicsFsubFast => left - right,
+                        _ => assume_unreachable!("invalid arguments for intrinsic {:?}", name),
+                    }
+                    .to_bits(),
+                )
+            }
+            (ConstantDomain::F64(val1), ConstantDomain::I128(val2)) => {
+                let left = f64::from_bits(*val1);
+                ConstantDomain::F64(
+                    if name == KnownNames::StdIntrinsicsPowif64 {
+                        left.powi(*val2 as i32)
+                    } else {
+                        assume_unreachable!("invalid arguments for intrinsic {:?}", name)
+                    }
+                    .to_bits(),
+                )
+            }
+
+            _ => assume_unreachable!("invalid arguments for intrinsic {:?}", name),
+        }
+    }
+
+    /// Returns self.f() where f is an intrinsic unary function.
+    #[logfn_inputs(TRACE)]
+    pub fn intrinsic_unary(&self, name: KnownNames) -> Self {
+        match self {
+            ConstantDomain::I128(val) => match name {
+                KnownNames::StdIntrinsicsBitreverse => ConstantDomain::I128(val.reverse_bits()),
+                KnownNames::StdIntrinsicsBswap => ConstantDomain::I128(val.swap_bytes()),
+                KnownNames::StdIntrinsicsCtlz | KnownNames::StdIntrinsicsCtlzNonzero => {
+                    ConstantDomain::U128(val.leading_zeros() as u128)
+                }
+                KnownNames::StdIntrinsicsCttz | KnownNames::StdIntrinsicsCttzNonzero => {
+                    ConstantDomain::U128(val.trailing_zeros() as u128)
+                }
+                _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
+            },
+            ConstantDomain::U128(val) => match name {
+                KnownNames::StdIntrinsicsBitreverse => ConstantDomain::U128(val.reverse_bits()),
+                KnownNames::StdIntrinsicsBswap => ConstantDomain::U128(val.swap_bytes()),
+                KnownNames::StdIntrinsicsCtpop => ConstantDomain::U128(val.count_ones() as u128),
+                KnownNames::StdIntrinsicsCtlz | KnownNames::StdIntrinsicsCtlzNonzero => {
+                    ConstantDomain::U128(val.leading_zeros() as u128)
+                }
+                KnownNames::StdIntrinsicsCttz | KnownNames::StdIntrinsicsCttzNonzero => {
+                    ConstantDomain::U128(val.trailing_zeros() as u128)
+                }
+                _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
+            },
+            ConstantDomain::F32(val) => {
+                let val = f32::from_bits(*val);
+                ConstantDomain::F32(
+                    match name {
+                        KnownNames::StdIntrinsicsCeilf32 => val.ceil(),
+                        KnownNames::StdIntrinsicsCosf32 => val.cos(),
+                        KnownNames::StdIntrinsicsFloorf32 => val.floor(),
+                        KnownNames::StdIntrinsicsExp2f32 => val.exp2(),
+                        KnownNames::StdIntrinsicsExpf32 => val.exp(),
+                        KnownNames::StdIntrinsicsFabsf32 => val.abs(),
+                        KnownNames::StdIntrinsicsLog10f32 => val.log10(),
+                        KnownNames::StdIntrinsicsLog2f32 => val.log2(),
+                        KnownNames::StdIntrinsicsLogf32 => val.ln(),
+                        KnownNames::StdIntrinsicsNearbyintf32 => unsafe {
+                            std::intrinsics::nearbyintf32(val)
+                        },
+                        KnownNames::StdIntrinsicsRintf32 => unsafe {
+                            std::intrinsics::rintf32(val)
+                        },
+                        KnownNames::StdIntrinsicsRoundf32 => val.round(),
+                        KnownNames::StdIntrinsicsSinf32 => val.sin(),
+                        KnownNames::StdIntrinsicsSqrtf32 => val.sqrt(),
+                        KnownNames::StdIntrinsicsTruncf32 => val.trunc(),
+                        _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
+                    }
+                    .to_bits(),
+                )
+            }
+            ConstantDomain::F64(val) => {
+                let val = f64::from_bits(*val);
+                ConstantDomain::F64(
+                    match name {
+                        KnownNames::StdIntrinsicsCeilf64 => val.ceil(),
+                        KnownNames::StdIntrinsicsCosf64 => val.cos(),
+                        KnownNames::StdIntrinsicsFloorf64 => val.floor(),
+                        KnownNames::StdIntrinsicsExp2f64 => val.exp2(),
+                        KnownNames::StdIntrinsicsExpf64 => val.exp(),
+                        KnownNames::StdIntrinsicsFabsf64 => val.abs(),
+                        KnownNames::StdIntrinsicsLog10f64 => val.log10(),
+                        KnownNames::StdIntrinsicsLog2f64 => val.log2(),
+                        KnownNames::StdIntrinsicsLogf64 => val.ln(),
+                        KnownNames::StdIntrinsicsNearbyintf64 => unsafe {
+                            std::intrinsics::nearbyintf64(val)
+                        },
+                        KnownNames::StdIntrinsicsRintf64 => unsafe {
+                            std::intrinsics::rintf64(val)
+                        },
+                        KnownNames::StdIntrinsicsRoundf64 => val.round(),
+                        KnownNames::StdIntrinsicsSinf64 => val.sin(),
+                        KnownNames::StdIntrinsicsSqrtf64 => val.sqrt(),
+                        KnownNames::StdIntrinsicsTruncf64 => val.trunc(),
+                        _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
+                    }
+                    .to_bits(),
+                )
+            }
+            _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
+        }
     }
 
     /// Returns a constant that is "self <= other".

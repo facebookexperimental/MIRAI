@@ -2255,6 +2255,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// cannot be summarized in the standard_contracts crate.
     /// Returns the result of the call, or BOTTOM if the function to call is not a known
     /// special function.
+    #[allow(clippy::cognitive_complexity)]
     #[logfn_inputs(TRACE)]
     fn try_to_inline_special_function(
         &mut self,
@@ -2302,9 +2303,77 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 result.unwrap_or_else(|| abstract_value::BOTTOM.into())
             }
             KnownNames::StdIntrinsicsArithOffset => self.handle_arith_offset(call_info),
-            KnownNames::StdIntrinsicsCtpop => {
+
+            KnownNames::StdIntrinsicsBitreverse
+            | KnownNames::StdIntrinsicsBswap
+            | KnownNames::StdIntrinsicsCeilf32
+            | KnownNames::StdIntrinsicsCeilf64
+            | KnownNames::StdIntrinsicsCosf32
+            | KnownNames::StdIntrinsicsCosf64
+            | KnownNames::StdIntrinsicsCtlz
+            | KnownNames::StdIntrinsicsCtpop
+            | KnownNames::StdIntrinsicsCttz
+            | KnownNames::StdIntrinsicsExp2f32
+            | KnownNames::StdIntrinsicsExp2f64
+            | KnownNames::StdIntrinsicsExpf32
+            | KnownNames::StdIntrinsicsExpf64
+            | KnownNames::StdIntrinsicsFabsf32
+            | KnownNames::StdIntrinsicsFabsf64
+            | KnownNames::StdIntrinsicsFloorf32
+            | KnownNames::StdIntrinsicsFloorf64
+            | KnownNames::StdIntrinsicsLog10f32
+            | KnownNames::StdIntrinsicsLog10f64
+            | KnownNames::StdIntrinsicsLog2f32
+            | KnownNames::StdIntrinsicsLog2f64
+            | KnownNames::StdIntrinsicsLogf32
+            | KnownNames::StdIntrinsicsLogf64
+            | KnownNames::StdIntrinsicsNearbyintf32
+            | KnownNames::StdIntrinsicsNearbyintf64
+            | KnownNames::StdIntrinsicsRintf32
+            | KnownNames::StdIntrinsicsRintf64
+            | KnownNames::StdIntrinsicsRoundf32
+            | KnownNames::StdIntrinsicsRoundf64
+            | KnownNames::StdIntrinsicsSinf32
+            | KnownNames::StdIntrinsicsSinf64
+            | KnownNames::StdIntrinsicsSqrtf32
+            | KnownNames::StdIntrinsicsSqrtf64
+            | KnownNames::StdIntrinsicsTruncf32
+            | KnownNames::StdIntrinsicsTruncf64 => {
                 checked_assume!(call_info.actual_args.len() == 1);
-                call_info.actual_args[0].1.count_ones()
+                call_info.actual_args[0]
+                    .1
+                    .intrinsic_unary(call_info.callee_known_name)
+            }
+            KnownNames::StdIntrinsicsCtlzNonzero | KnownNames::StdIntrinsicsCttzNonzero => {
+                checked_assume!(call_info.actual_args.len() == 1);
+                if self.check_for_errors {
+                    let non_zero = call_info.actual_args[0].1.not_equals(Rc::new(0u128.into()));
+                    self.check_condition(&non_zero, Rc::new("argument is zero".to_owned()), false);
+                }
+                call_info.actual_args[0]
+                    .1
+                    .intrinsic_unary(call_info.callee_known_name)
+            }
+            KnownNames::StdIntrinsicsCopysignf32
+            | KnownNames::StdIntrinsicsCopysignf64
+            | KnownNames::StdIntrinsicsFaddFast
+            | KnownNames::StdIntrinsicsFdivFast
+            | KnownNames::StdIntrinsicsFmulFast
+            | KnownNames::StdIntrinsicsFremFast
+            | KnownNames::StdIntrinsicsFsubFast
+            | KnownNames::StdIntrinsicsMaxnumf32
+            | KnownNames::StdIntrinsicsMaxnumf64
+            | KnownNames::StdIntrinsicsMinnumf32
+            | KnownNames::StdIntrinsicsMinnumf64
+            | KnownNames::StdIntrinsicsPowf32
+            | KnownNames::StdIntrinsicsPowf64
+            | KnownNames::StdIntrinsicsPowif32
+            | KnownNames::StdIntrinsicsPowif64 => {
+                checked_assume!(call_info.actual_args.len() == 2);
+                call_info.actual_args[0].1.intrinsic_binary(
+                    call_info.actual_args[1].1.clone(),
+                    call_info.callee_known_name,
+                )
             }
             KnownNames::StdIntrinsicsMulWithOverflow => {
                 self.handle_checked_binary_operation(call_info)

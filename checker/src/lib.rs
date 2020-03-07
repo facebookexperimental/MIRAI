@@ -15,6 +15,7 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
 #![feature(box_syntax)]
+#![feature(core_intrinsics)]
 #![feature(vec_remove_item)]
 
 extern crate rustc;
