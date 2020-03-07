@@ -28,6 +28,7 @@ pub enum KnownNames {
     RustAlloc,
     RustAllocZeroed,
     RustDealloc,
+    RustRealloc,
     StdFutureFromGenerator,
     StdIntrinsicsArithOffset,
     StdIntrinsicsBitreverse,
@@ -173,6 +174,7 @@ impl KnownNamesCache {
                             "__rust_alloc" => KnownNames::RustAlloc,
                             "__rust_alloc_zeroed" => KnownNames::RustAllocZeroed,
                             "__rust_dealloc" => KnownNames::RustDealloc,
+                            "__rust_realloc" => KnownNames::RustRealloc,
                             _ => KnownNames::None,
                         })
                         .unwrap_or(KnownNames::None)

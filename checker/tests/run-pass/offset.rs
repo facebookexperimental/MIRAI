@@ -44,4 +44,12 @@ pub fn t5() {
     }
 }
 
+pub fn t6() {
+    unsafe {
+        let a1 = std::alloc::alloc(std::alloc::Layout::from_size_align(4, 2).unwrap());
+        let a2 = std::alloc::realloc(a1, std::alloc::Layout::from_size_align(4, 2).unwrap(), 6);
+        let _ = std::intrinsics::offset(a2, 6);
+    }
+}
+
 pub fn main() {}

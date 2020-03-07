@@ -30,4 +30,16 @@ pub fn t2() {
     }
 }
 
+pub fn t3() {
+    unsafe {
+        let z = std::alloc::alloc_zeroed(std::alloc::Layout::from_size_align(4, 2).unwrap());
+        *z = 1;
+        let pu8z = std::intrinsics::offset(z, 1);
+        verify!(*pu8z == 0);
+        let r = std::alloc::realloc(z, std::alloc::Layout::from_size_align(4, 2).unwrap(), 6);
+        let pu8r = std::intrinsics::offset(r, 1);
+        verify!(*pu8r == 0); //~ possible false verification condition
+    }
+}
+
 pub fn main() {}

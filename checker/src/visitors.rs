@@ -8,7 +8,7 @@ use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::{ConstantDomain, ConstantValueCache, FunctionReference};
 use crate::environment::Environment;
-use crate::expression::{Expression, ExpressionType};
+use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
 use crate::known_names::{KnownNames, KnownNamesCache};
 use crate::options::{DiagLevel, Options};
@@ -2264,6 +2264,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         match call_info.callee_known_name {
             KnownNames::RustAlloc => self.handle_rust_alloc(call_info),
             KnownNames::RustAllocZeroed => self.handle_rust_alloc_zeroed(call_info),
+            KnownNames::RustRealloc => self.handle_rust_realloc(call_info),
             KnownNames::StdSliceLen => {
                 checked_assume!(call_info.actual_args.len() == 1);
                 let slice_val = &call_info.actual_args[0].1;
@@ -2428,7 +2429,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             Expression::AbstractHeapBlockLayout {
                 length,
                 alignment,
-                is_alive: false,
+                source: LayoutSource::DeAlloc,
             },
             1,
         );
@@ -2440,6 +2441,50 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         // Signal to the caller that there is no return result
         abstract_value::BOTTOM.into()
+    }
+
+    /// Sets the length of the heap location to a new value and removes index paths as necessary
+    /// if the new length is known and less than the old lengths.
+    #[logfn_inputs(TRACE)]
+    fn handle_rust_realloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
+        checked_assume!(call_info.actual_args.len() == 4);
+        // Get path to abstract address to reallocate
+        let address_path = call_info.actual_args[0].0.clone();
+
+        // Create a layout
+        let length = call_info.actual_args[1].1.clone();
+        let alignment = call_info.actual_args[2].1.clone();
+        let new_length = call_info.actual_args[3].1.clone();
+        // We need to this to check for consistency between the realloc layout arg and the
+        // initial alloc layout.
+        let layout_param = AbstractValue::make_from(
+            Expression::AbstractHeapBlockLayout {
+                length,
+                alignment: alignment.clone(),
+                source: LayoutSource::ReAlloc,
+            },
+            1,
+        );
+        // We need this to keep track of the new length
+        let new_length_layout = AbstractValue::make_from(
+            Expression::AbstractHeapBlockLayout {
+                length: new_length,
+                alignment,
+                source: LayoutSource::ReAlloc,
+            },
+            1,
+        );
+
+        // Get a layout path and update the environment
+        let layout_path = Path::new_layout(address_path).refine_paths(&self.current_environment);
+        self.current_environment
+            .update_value_at(layout_path.clone(), new_length_layout);
+        let layout_path2 = Path::new_layout(layout_path);
+        self.current_environment
+            .update_value_at(layout_path2, layout_param);
+
+        // Return the original heap address as the result
+        call_info.actual_args[0].1.clone()
     }
 
     /// Set the call result to an offset derived from the arguments. Does no checking.
@@ -2525,6 +2570,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Checks that the offset is either in bounds or one byte past the end of an allocated object.
+    #[logfn_inputs(TRACE)]
     fn check_offset(&mut self, offset: &AbstractValue) {
         if let Expression::Offset { left, right, .. } = &offset.expression {
             let ge_zero = right.greater_or_equal(Rc::new(ConstantDomain::I128(0).into()));
@@ -3220,12 +3266,32 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let rtype = rvalue.expression.infer_type();
             let container_type = self.get_path_rustc_type(&tpath);
             match &rvalue.expression {
-                Expression::AbstractHeapBlockLayout { is_alive, .. } if !*is_alive => {
-                    self.purge_abstract_heap_address_from_environment(
-                        effects,
-                        &tpath,
-                        &rvalue.expression,
-                    );
+                Expression::AbstractHeapBlockLayout { source, .. } => {
+                    match source {
+                        LayoutSource::DeAlloc => {
+                            self.purge_abstract_heap_address_from_environment(
+                                &tpath,
+                                &rvalue.expression,
+                            );
+                        }
+                        LayoutSource::ReAlloc => {
+                            let layout_argument_path = Path::new_layout(path.clone());
+                            if let Some((_, val)) =
+                                &effects.iter().find(|(p, _)| p.eq(&layout_argument_path))
+                            {
+                                let realloc_layout_val = val
+                                    .clone()
+                                    .refine_parameters(arguments, self.fresh_variable_offset)
+                                    .refine_paths(&self.current_environment);
+                                self.update_zeroed_flag_for_abstract_heap_address_from_environment(
+                                    &tpath,
+                                    &realloc_layout_val.expression,
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
+
                     self.current_environment.update_value_at(tpath, rvalue);
                     continue;
                 }
@@ -3279,7 +3345,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn purge_abstract_heap_address_from_environment(
         &mut self,
-        effects: &[(Rc<Path>, Rc<AbstractValue>)],
         layout_path: &Rc<Path>,
         new_layout_expression: &Expression,
     ) {
@@ -3318,6 +3383,53 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
+    /// Following a reallocation we are no longer guaranteed that the resulting abstract heap
+    /// memory block has been zeroed out by the allocator. Search the environment for equivalent
+    /// heap address values and update them to clear the zeroed flag (if set).
+    #[logfn_inputs(DEBUG)]
+    fn update_zeroed_flag_for_abstract_heap_address_from_environment(
+        &mut self,
+        layout_path: &Rc<Path>,
+        new_layout_expression: &Expression,
+    ) {
+        if let PathEnum::QualifiedPath { qualifier, .. } = &layout_path.value {
+            if self.check_for_errors {
+                let old_layout = self.lookup_path_and_refine_result(
+                    layout_path.clone(),
+                    ExpressionType::NonPrimitive,
+                );
+                self.check_for_layout_consistency(&old_layout.expression, new_layout_expression);
+            }
+            if let PathEnum::AbstractHeapAddress { value } = &qualifier.value {
+                if let Expression::AbstractHeapAddress { address, is_zeroed } = &value.expression {
+                    if *is_zeroed {
+                        let mut updated_value_map = self.current_environment.value_map.clone();
+                        for (path, value) in self.current_environment.value_map.iter() {
+                            if let Expression::AbstractHeapAddress {
+                                address: a,
+                                is_zeroed: z,
+                            } = &value.expression
+                            {
+                                if *address == *a && *z {
+                                    let new_address = AbstractValue::make_from(
+                                        Expression::AbstractHeapAddress {
+                                            address: *a,
+                                            is_zeroed: false,
+                                        },
+                                        1,
+                                    );
+                                    updated_value_map =
+                                        updated_value_map.insert(path.clone(), new_address);
+                                }
+                            }
+                        }
+                        self.current_environment.value_map = updated_value_map;
+                    }
+                }
+            }
+        }
+    }
+
     /// Checks that the layout used to allocate a pointer has an equivalent runtime value to the
     /// layout used to deallocate the pointer.
     /// Also checks that a pointer is deallocated at most once.
@@ -3328,17 +3440,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             Expression::AbstractHeapBlockLayout {
                 length: old_length,
                 alignment: old_alignment,
-                is_alive: old_is_alive,
+                source: old_source,
             },
             Expression::AbstractHeapBlockLayout {
                 length: new_length,
                 alignment: new_alignment,
-                is_alive: new_is_alive,
+                source: new_source,
             },
         ) = (old_layout, new_layout)
         {
-            checked_assume!(!*new_is_alive); // We should only get here for deallocations
-            if !*old_is_alive {
+            if *old_source == LayoutSource::DeAlloc {
                 let error = self.session.struct_span_err(
                     self.current_span,
                     "the pointer points to memory that has already been deallocated",
@@ -3352,12 +3463,20 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.check_condition_value_and_reachability(&layouts_match);
             if entry_cond_as_bool.unwrap_or(true) && !layouts_match_as_bool.unwrap_or(false) {
                 // The condition may be reachable and it may be false
-                let message = if entry_cond_as_bool.is_none() || layouts_match_as_bool.is_none() {
-                    "possibly deallocates the pointer with layout information inconsistent with the allocation"
-                } else {
-                    "deallocates the pointer with layout information inconsistent with the allocation"
-                };
-                let error = self.session.struct_span_err(self.current_span, message);
+                let message = format!(
+                    "{}{} the pointer with layout information inconsistent with the allocation",
+                    if entry_cond_as_bool.is_none() || layouts_match_as_bool.is_none() {
+                        "possibly "
+                    } else {
+                        ""
+                    },
+                    if *new_source == LayoutSource::ReAlloc {
+                        "reallocates"
+                    } else {
+                        "deallocates"
+                    }
+                );
+                let error = self.session.struct_span_err(self.current_span, &message);
                 self.emit_diagnostic(error);
             }
         }
@@ -4131,7 +4250,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             Expression::AbstractHeapBlockLayout {
                 length,
                 alignment,
-                is_alive: true,
+                source: LayoutSource::Alloc,
             },
             1,
         );
