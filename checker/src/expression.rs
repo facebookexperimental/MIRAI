@@ -42,12 +42,12 @@ pub enum Expression {
     /// It is a separate expression because it can be constructed and propagated independently
     /// from the heap address resulting from an allocation construct/call.
     AbstractHeapBlockLayout {
-        // The number of bytes that were allocated.
+        // The number of bytes allocated to the memory block.
         length: Rc<AbstractValue>,
         // The byte alignment of the memory block.
         alignment: Rc<AbstractValue>,
-        // True if the associated memory block has not been deallocated.
-        is_alive: bool,
+        // The intrinsic call that created this layout.
+        source: LayoutSource,
     },
 
     /// An expression that is the sum of left and right. +
@@ -373,6 +373,14 @@ pub enum Expression {
     },
 }
 
+/// Used by Expression::AbstractHeapBlockLayout
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum LayoutSource {
+    Alloc,
+    DeAlloc,
+    ReAlloc,
+}
+
 impl Debug for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
@@ -386,12 +394,10 @@ impl Debug for Expression {
             Expression::AbstractHeapBlockLayout {
                 length,
                 alignment,
-                is_alive,
+                source,
             } => f.write_fmt(format_args!(
-                "layout({:?}/{:?}{})",
-                length,
-                alignment,
-                if *is_alive { "" } else { " dead" }
+                "layout({:?}/{:?} from {:?})",
+                length, alignment, source
             )),
             Expression::Add { left, right } => {
                 f.write_fmt(format_args!("({:?}) + ({:?})", left, right))

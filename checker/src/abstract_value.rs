@@ -7,7 +7,7 @@
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::Expression::{ConditionalExpression, Join, Widen};
-use crate::expression::{Expression, ExpressionType};
+use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::interval_domain::{self, IntervalDomain};
 use crate::k_limits;
 use crate::path::PathRefinement;
@@ -1801,12 +1801,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::AbstractHeapBlockLayout {
                 length,
                 alignment,
-                is_alive,
+                source,
             } => AbstractValue::make_from(
                 Expression::AbstractHeapBlockLayout {
                     length: length.refine_paths(environment),
                     alignment: alignment.refine_paths(environment),
-                    is_alive: *is_alive,
+                    source: *source,
                 },
                 1,
             ),
@@ -2003,12 +2003,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::AbstractHeapBlockLayout {
                 length,
                 alignment,
-                is_alive,
+                source,
             } => AbstractValue::make_from(
                 Expression::AbstractHeapBlockLayout {
                     length: length.refine_parameters(arguments, fresh),
                     alignment: alignment.refine_parameters(arguments, fresh),
-                    is_alive: *is_alive,
+                    source: *source,
                 },
                 1,
             ),
@@ -2225,12 +2225,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::AbstractHeapBlockLayout {
                 length,
                 alignment,
-                is_alive,
+                source,
             } => AbstractValue::make_from(
                 Expression::AbstractHeapBlockLayout {
                     length: length.refine_with(path_condition, depth + 1),
                     alignment: alignment.refine_with(path_condition, depth + 1),
-                    is_alive: *is_alive,
+                    source: *source,
                 },
                 1,
             ),
@@ -2452,7 +2452,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 Expression::AbstractHeapBlockLayout {
                     length: length.widen(path),
                     alignment: alignment.widen(path),
-                    is_alive: true,
+                    source: LayoutSource::Alloc,
                 },
                 1,
             ),
