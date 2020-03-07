@@ -5,9 +5,11 @@
 
 use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::constant_domain::ConstantDomain;
+use crate::known_names::KnownNames;
 use crate::path::Path;
 
 use log_derive::logfn_inputs;
+use mirai_annotations::*;
 use rustc::ty::TyKind;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -160,6 +162,19 @@ pub enum Expression {
         left: Rc<AbstractValue>,
         // The value of the right operand.
         right: Rc<AbstractValue>,
+    },
+
+    /// An expression that calls the specified intrinsic binary function with given arguments. left.name(right)
+    IntrinsicBinary {
+        left: Rc<AbstractValue>,
+        right: Rc<AbstractValue>,
+        name: KnownNames,
+    },
+
+    /// An expression that calls the specified intrinsic unary function with given argument. operand.name()
+    IntrinsicUnary {
+        operand: Rc<AbstractValue>,
+        name: KnownNames,
     },
 
     /// Either left or right without a condition to tell them apart.
@@ -425,6 +440,12 @@ impl Debug for Expression {
             Expression::GreaterThan { left, right } => {
                 f.write_fmt(format_args!("({:?}) > ({:?})", left, right))
             }
+            Expression::IntrinsicBinary { left, right, name } => {
+                f.write_fmt(format_args!("({:?}).{:?}({:?})", left, name, right))
+            }
+            Expression::IntrinsicUnary { operand, name } => {
+                f.write_fmt(format_args!("({:?}).{:?}()", operand, name))
+            }
             Expression::Join { path, left, right } => f.write_fmt(format_args!(
                 "({:?}) join ({:?}) at {:?}",
                 left, right, path
@@ -520,6 +541,65 @@ impl Expression {
             Expression::BitAnd { left, .. } => left.expression.infer_type(),
             Expression::BitNot { result_type, .. } => result_type.clone(),
             Expression::BitOr { left, .. } => left.expression.infer_type(),
+            Expression::IntrinsicBinary { left, name, .. } => match name {
+                KnownNames::StdIntrinsicsCopysignf32
+                | KnownNames::StdIntrinsicsMaxnumf32
+                | KnownNames::StdIntrinsicsMinnumf32
+                | KnownNames::StdIntrinsicsPowf32
+                | KnownNames::StdIntrinsicsPowif32 => ExpressionType::F32,
+                KnownNames::StdIntrinsicsCopysignf64
+                | KnownNames::StdIntrinsicsMaxnumf64
+                | KnownNames::StdIntrinsicsMinnumf64
+                | KnownNames::StdIntrinsicsPowf64
+                | KnownNames::StdIntrinsicsPowif64 => ExpressionType::F64,
+                KnownNames::StdIntrinsicsFaddFast
+                | KnownNames::StdIntrinsicsFdivFast
+                | KnownNames::StdIntrinsicsFmulFast
+                | KnownNames::StdIntrinsicsFremFast
+                | KnownNames::StdIntrinsicsFsubFast => left.expression.infer_type(),
+                _ => assume_unreachable!("invalid name {:?} for intrinsic binary", name),
+            },
+            Expression::IntrinsicUnary { operand, name, .. } => match name {
+                KnownNames::StdIntrinsicsBitreverse | KnownNames::StdIntrinsicsBswap => {
+                    operand.expression.infer_type()
+                }
+                KnownNames::StdIntrinsicsCtlz
+                | KnownNames::StdIntrinsicsCtlzNonzero
+                | KnownNames::StdIntrinsicsCtpop
+                | KnownNames::StdIntrinsicsCttz
+                | KnownNames::StdIntrinsicsCttzNonzero => ExpressionType::U32,
+                KnownNames::StdIntrinsicsCeilf32
+                | KnownNames::StdIntrinsicsCosf32
+                | KnownNames::StdIntrinsicsFloorf32
+                | KnownNames::StdIntrinsicsExp2f32
+                | KnownNames::StdIntrinsicsExpf32
+                | KnownNames::StdIntrinsicsFabsf32
+                | KnownNames::StdIntrinsicsLog10f32
+                | KnownNames::StdIntrinsicsLog2f32
+                | KnownNames::StdIntrinsicsLogf32
+                | KnownNames::StdIntrinsicsNearbyintf32
+                | KnownNames::StdIntrinsicsRintf32
+                | KnownNames::StdIntrinsicsRoundf32
+                | KnownNames::StdIntrinsicsSinf32
+                | KnownNames::StdIntrinsicsSqrtf32
+                | KnownNames::StdIntrinsicsTruncf32 => ExpressionType::F32,
+                KnownNames::StdIntrinsicsCeilf64
+                | KnownNames::StdIntrinsicsCosf64
+                | KnownNames::StdIntrinsicsFloorf64
+                | KnownNames::StdIntrinsicsExp2f64
+                | KnownNames::StdIntrinsicsExpf64
+                | KnownNames::StdIntrinsicsFabsf64
+                | KnownNames::StdIntrinsicsLog10f64
+                | KnownNames::StdIntrinsicsLog2f64
+                | KnownNames::StdIntrinsicsLogf64
+                | KnownNames::StdIntrinsicsNearbyintf64
+                | KnownNames::StdIntrinsicsRintf64
+                | KnownNames::StdIntrinsicsRoundf64
+                | KnownNames::StdIntrinsicsSinf64
+                | KnownNames::StdIntrinsicsSqrtf64
+                | KnownNames::StdIntrinsicsTruncf64 => ExpressionType::F64,
+                _ => assume_unreachable!("invalid name {:?} for intrinsic unary", name),
+            },
             Expression::BitXor { left, .. } => left.expression.infer_type(),
             Expression::Cast { target_type, .. } => target_type.clone(),
             Expression::CompileTimeConstant(c) => c.into(),
