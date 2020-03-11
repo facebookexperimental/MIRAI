@@ -324,7 +324,7 @@ impl Path {
     /// Creates a path the selects the length of the array/slice/string at the given path.
     #[logfn_inputs(TRACE)]
     pub fn new_length(array_path: Rc<Path>, environment: &Environment) -> Rc<Path> {
-        let selector = Rc::new(PathSelector::Length);
+        let selector = Rc::new(PathSelector::Field(1));
         Self::new_qualified(array_path, selector).refine_paths(environment)
     }
 
@@ -561,9 +561,6 @@ impl PathRefinement for Rc<Path> {
 /// The selector denotes a de-referenced item, field, or element, or slice.
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PathSelector {
-    /// The length of an array/slice/string.
-    Length,
-
     /// The layout specified to the allocate/deallocate call.
     Layout,
 
@@ -616,7 +613,6 @@ pub enum PathSelector {
 impl Debug for PathSelector {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            PathSelector::Length => f.write_str("len()"),
             PathSelector::Layout => f.write_str("layout"),
             PathSelector::Deref => f.write_str("deref"),
             PathSelector::Discriminant => f.write_str("discr"),

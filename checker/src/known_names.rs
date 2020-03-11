@@ -93,8 +93,6 @@ pub enum KnownNames {
     StdOpsFunctionFnOnceCallOnce,
     StdPanickingBeginPanic,
     StdPanickingBeginPanicFmt,
-    StdSliceLen,
-    StdStrLen,
 }
 
 /// An analysis lifetime cache that contains a map from def ids to known names.
@@ -142,20 +140,6 @@ impl KnownNamesCache {
                         _ => None,
                     }
                 })
-            };
-
-        // helper to get next elem from def path and return true if it is Impl path
-        let path_data_elem_is_impl =
-            |def_path_data_elem: Option<&rustc::hir::map::DisambiguatedDefPathData>| {
-                if let Some(DisambiguatedDefPathData { data, .. }) = def_path_data_elem {
-                    if let Impl = data {
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
             };
 
         let path_data_elem_as_disambiguator = |def_path_data_elem: Option<
@@ -312,32 +296,6 @@ impl KnownNamesCache {
                 .unwrap_or(KnownNames::None)
         };
 
-        let get_known_name_for_slice_namespace = |mut def_path_data_iter: Iter<'_>| {
-            if path_data_elem_is_impl(def_path_data_iter.next()) {
-                get_path_data_elem_name(def_path_data_iter.next())
-                    .map(|n| match n.as_str().deref() {
-                        "len" => KnownNames::StdSliceLen,
-                        _ => KnownNames::None,
-                    })
-                    .unwrap_or(KnownNames::None)
-            } else {
-                KnownNames::None
-            }
-        };
-
-        let get_known_name_for_str_namespace = |mut def_path_data_iter: Iter<'_>| {
-            if path_data_elem_is_impl(def_path_data_iter.next()) {
-                get_path_data_elem_name(def_path_data_iter.next())
-                    .map(|n| match n.as_str().deref() {
-                        "len" => KnownNames::StdStrLen,
-                        _ => KnownNames::None,
-                    })
-                    .unwrap_or(KnownNames::None)
-            } else {
-                KnownNames::None
-            }
-        };
-
         let get_known_name_for_known_crate = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
@@ -348,8 +306,6 @@ impl KnownNamesCache {
                     "mem" => get_known_name_for_mem_namespace(def_path_data_iter),
                     "ops" => get_known_name_for_ops_namespace(def_path_data_iter),
                     "panicking" => get_known_name_for_panicking_namespace(def_path_data_iter),
-                    "slice" => get_known_name_for_slice_namespace(def_path_data_iter),
-                    "str" => get_known_name_for_str_namespace(def_path_data_iter),
                     "mirai_abstract_value" => KnownNames::MiraiAbstractValue,
                     "mirai_assume" => KnownNames::MiraiAssume,
                     "mirai_assume_preconditions" => KnownNames::MiraiAssumePreconditions,
