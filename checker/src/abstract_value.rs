@@ -1211,6 +1211,28 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self * other".
     #[logfn_inputs(TRACE)]
     fn multiply(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            match v1 {
+                ConstantDomain::I128(0) | ConstantDomain::U128(0) => {
+                    return self.clone();
+                }
+                ConstantDomain::I128(1) | ConstantDomain::U128(1) => {
+                    return other;
+                }
+                _ => (),
+            }
+        }
+        if let Expression::CompileTimeConstant(v2) = &other.expression {
+            match v2 {
+                ConstantDomain::I128(0) | ConstantDomain::U128(0) => {
+                    return other;
+                }
+                ConstantDomain::I128(1) | ConstantDomain::U128(1) => {
+                    return self.clone();
+                }
+                _ => (),
+            }
+        }
         self.try_to_simplify_binary_op(other, ConstantDomain::mul, Self::multiply, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Mul { left, right })
         })
@@ -1446,6 +1468,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self % other".
     #[logfn_inputs(TRACE)]
     fn remainder(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        if let Expression::Cast { target_type, .. } = &self.expression {
+            if target_type.modulo_value().eq(&other) {
+                return self.clone();
+            }
+        }
         self.try_to_simplify_binary_op(other, ConstantDomain::rem, Self::remainder, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Rem { left, right })
         })

@@ -3226,7 +3226,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .refine_parameters(arguments, self.fresh_variable_offset)
                 .refine_paths(&self.current_environment);
             let rtype = rvalue.expression.infer_type();
-            let container_type = self.get_path_rustc_type(&tpath);
             match &rvalue.expression {
                 Expression::AbstractHeapBlockLayout { source, .. } => {
                     match source {
@@ -3263,6 +3262,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                 }
                 Expression::Variable { path, .. } => {
+                    let container_type = self.get_path_rustc_type(&tpath);
                     if let PathEnum::LocalVariable { ordinal } = &path.value {
                         if *ordinal >= self.fresh_variable_offset {
                             // A fresh variable from the callee adds no information that is not
@@ -5338,9 +5338,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else {
             let ty = self.mir.local_decls[place.local].ty;
             is_union = Self::is_union(ty);
-            if is_union {
-                info!("ty {:?} projection {:?}", ty, place.projection);
-            }
         }
         self.visit_projection(base_path, is_union, &place.projection)
     }
@@ -5535,10 +5532,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         return self.tcx.types.i32;
                     }
                     PathSelector::Downcast(_, ordinal) => {
-                        if let TyKind::Adt(def, _) = &t.kind {
+                        if let TyKind::Adt(def, substs) = &t.kind {
                             use rustc_index::vec::Idx;
-                            let variant_def_id = def.variants[VariantIdx::new(*ordinal)].def_id;
-                            return self.tcx.type_of(variant_def_id);
+                            let variant = &def.variants[VariantIdx::new(*ordinal)];
+                            let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
+                            return self.tcx.mk_tup(field_tys);
                         }
                     }
                     PathSelector::Index(_) => match &t.kind {
@@ -5549,7 +5547,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     },
                     _ => {}
                 }
+                info!("current span is {:?}", self.current_span);
                 info!("t is {:?}", t);
+                info!("qualifier is {:?}", qualifier);
                 info!("selector is {:?}", selector);
                 self.tcx.mk_ty(TyKind::Error)
             }
