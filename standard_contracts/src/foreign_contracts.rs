@@ -11,13 +11,9 @@
 
 pub mod alloc {
     pub mod alloc {
-        pub fn box_free() {}
-
         pub fn handle_alloc_error() {
             // Not something that can be reasonably detected with static analysis, so ignore.
         }
-
-        pub fn __rust_dealloc() {}
     }
 
     pub mod collections {
@@ -132,12 +128,45 @@ pub mod core {
         pub mod AllocRef {
             pub fn alloc(
                 _self: &mut dyn std::alloc::AllocRef,
-                _layout: std::alloc::Layout,
+                layout: std::alloc::Layout,
             ) -> Result<std::ptr::NonNull<u8>, core::alloc::AllocErr> {
-                result!()
+                unsafe {
+                    let buf = std::alloc::alloc(layout);
+                    Ok(std::ptr::NonNull::<u8>::new_unchecked(buf))
+                }
             }
 
-            pub fn dealloc() {}
+            pub fn alloc_zeroed(
+                _self: &mut dyn std::alloc::AllocRef,
+                layout: std::alloc::Layout,
+            ) -> Result<std::ptr::NonNull<u8>, core::alloc::AllocErr> {
+                unsafe {
+                    let buf = std::alloc::alloc_zeroed(layout);
+                    Ok(std::ptr::NonNull::<u8>::new_unchecked(buf))
+                }
+            }
+
+            pub fn dealloc(
+                _self: &mut dyn std::alloc::AllocRef,
+                ptr: std::ptr::NonNull<u8>,
+                layout: std::alloc::Layout,
+            ) {
+                unsafe {
+                    std::alloc::dealloc(ptr.as_ptr(), layout);
+                }
+            }
+
+            pub fn realloc(
+                _self: &mut dyn std::alloc::AllocRef,
+                ptr: std::ptr::NonNull<u8>,
+                layout: std::alloc::Layout,
+                new_size: usize,
+            ) -> Result<std::ptr::NonNull<u8>, core::alloc::AllocErr> {
+                unsafe {
+                    let buf = std::alloc::realloc(ptr.as_ptr(), layout, new_size);
+                    Ok(std::ptr::NonNull::<u8>::new_unchecked(buf))
+                }
+            }
         }
 
         pub mod raw_vec {
@@ -1279,6 +1308,18 @@ pub mod core {
             pub fn get_unchecked_mut<T>() -> T {
                 result!()
             }
+        }
+
+        fn slice_index_len_fail(_index: usize, _len: usize) {
+            panic!("index out of range for slice");
+        }
+
+        fn slice_index_order_fail(_index: usize, _end: usize) {
+            panic!("slice index starts at after slice end");
+        }
+
+        fn slice_index_overflow_fail() {
+            panic!("attempted to index slice up to maximum usize");
         }
     }
 
