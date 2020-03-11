@@ -227,7 +227,6 @@ pub trait AbstractValueTrait: Sized {
     fn bit_xor(&self, other: Self) -> Self;
     fn cast(&self, target_type: ExpressionType) -> Self;
     fn conditional_expression(&self, consequent: Self, alternate: Self) -> Self;
-    fn count_ones(&self) -> Self;
     fn dereference(&self, target_type: ExpressionType) -> Self;
     fn divide(&self, other: Self) -> Self;
     fn equals(&self, other: Self) -> Self;
@@ -236,7 +235,8 @@ pub trait AbstractValueTrait: Sized {
     fn implies(&self, other: &Self) -> bool;
     fn implies_not(&self, other: &Self) -> bool;
     fn intrinsic_binary(&self, other: Self, name: KnownNames) -> Self;
-    fn intrinsic_unary(&self, name: KnownNames) -> Self;
+    fn intrinsic_bit_vector_unary(&self, bit_length: u8, name: KnownNames) -> Self;
+    fn intrinsic_floating_point_unary(&self, name: KnownNames) -> Self;
     fn inverse_implies(&self, other: &Rc<AbstractValue>) -> bool;
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool;
     fn is_bottom(&self) -> bool;
@@ -564,18 +564,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
             ),
         }
-    }
-
-    /// Returns an value that is the number of 1 bits.
-    #[logfn_inputs(TRACE)]
-    fn count_ones(&self) -> Self {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.count_ones();
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
-        AbstractValue::make_unary(self.clone(), |operand| Expression::CountOnes { operand })
     }
 
     /// Returns an element that is "if self { consequent } else { alternate }".
@@ -1029,17 +1017,36 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         )
     }
 
-    /// Returns self.f() where f is an intrinsic unary function.
+    /// Returns (self as u(8|16|64|128)).f() where f is an intrinsic bit vector unary function.
     #[logfn_inputs(TRACE)]
-    fn intrinsic_unary(&self, name: KnownNames) -> Self {
+    fn intrinsic_bit_vector_unary(&self, bit_length: u8, name: KnownNames) -> Self {
         if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.intrinsic_unary(name);
+            let result = v1.intrinsic_bit_vector_unary(bit_length, name);
             if result != ConstantDomain::Bottom {
                 return Rc::new(result.into());
             }
         };
         AbstractValue::make_from(
-            Expression::IntrinsicUnary {
+            Expression::IntrinsicBitVectorUnary {
+                operand: self.clone(),
+                bit_length,
+                name,
+            },
+            self.expression_size.saturating_add(1),
+        )
+    }
+
+    /// Returns self.f() where f is an intrinsic floating point unary function.
+    #[logfn_inputs(TRACE)]
+    fn intrinsic_floating_point_unary(&self, name: KnownNames) -> Self {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = v1.intrinsic_floating_point_unary(name);
+            if result != ConstantDomain::Bottom {
+                return Rc::new(result.into());
+            }
+        };
+        AbstractValue::make_from(
+            Expression::IntrinsicFloatingPointUnary {
                 operand: self.clone(),
                 name,
             },
@@ -1878,7 +1885,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent.refine_paths(environment),
                 alternate.refine_paths(environment),
             ),
-            Expression::CountOnes { operand } => operand.refine_paths(environment).count_ones(),
             Expression::Div { left, right } => left
                 .refine_paths(environment)
                 .divide(right.refine_paths(environment)),
@@ -1894,9 +1900,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::IntrinsicBinary { left, right, name } => left
                 .refine_paths(environment)
                 .intrinsic_binary(right.refine_paths(environment), *name),
-            Expression::IntrinsicUnary { operand, name } => {
-                operand.refine_paths(environment).intrinsic_unary(*name)
-            }
+            Expression::IntrinsicBitVectorUnary {
+                operand,
+                bit_length,
+                name,
+            } => operand
+                .refine_paths(environment)
+                .intrinsic_bit_vector_unary(*bit_length, *name),
+            Expression::IntrinsicFloatingPointUnary { operand, name } => operand
+                .refine_paths(environment)
+                .intrinsic_floating_point_unary(*name),
             Expression::Join { left, right, path } => left
                 .refine_paths(environment)
                 .join(right.refine_paths(environment), &path),
@@ -2085,9 +2098,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     consequent.refine_parameters(arguments, fresh),
                     alternate.refine_parameters(arguments, fresh),
                 ),
-            Expression::CountOnes { operand } => {
-                operand.refine_parameters(arguments, fresh).count_ones()
-            }
             Expression::Div { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .divide(right.refine_parameters(arguments, fresh)),
@@ -2103,9 +2113,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::IntrinsicBinary { left, right, name } => left
                 .refine_parameters(arguments, fresh)
                 .intrinsic_binary(right.refine_parameters(arguments, fresh), *name),
-            Expression::IntrinsicUnary { operand, name } => operand
+            Expression::IntrinsicBitVectorUnary {
+                operand,
+                bit_length,
+                name,
+            } => operand
                 .refine_parameters(arguments, fresh)
-                .intrinsic_unary(*name),
+                .intrinsic_bit_vector_unary(*bit_length, *name),
+            Expression::IntrinsicFloatingPointUnary { operand, name } => operand
+                .refine_parameters(arguments, fresh)
+                .intrinsic_floating_point_unary(*name),
             Expression::Join { left, right, path } => left
                 .refine_parameters(arguments, fresh)
                 .join(right.refine_parameters(arguments, fresh), &path),
@@ -2331,9 +2348,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     refined_condition.conditional_expression(refined_consequent, refined_alternate)
                 }
             }
-            Expression::CountOnes { operand } => {
-                operand.refine_with(path_condition, depth + 1).count_ones()
-            }
             Expression::Div { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .divide(right.refine_with(path_condition, depth + 1)),
@@ -2349,9 +2363,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::IntrinsicBinary { left, right, name } => left
                 .refine_with(path_condition, depth + 1)
                 .intrinsic_binary(right.refine_with(path_condition, depth + 1), *name),
-            Expression::IntrinsicUnary { operand, name } => operand
+            Expression::IntrinsicBitVectorUnary {
+                operand,
+                bit_length,
+                name,
+            } => operand
                 .refine_with(path_condition, depth + 1)
-                .intrinsic_unary(*name),
+                .intrinsic_bit_vector_unary(*bit_length, *name),
+            Expression::IntrinsicFloatingPointUnary { operand, name } => operand
+                .refine_with(path_condition, depth + 1)
+                .intrinsic_floating_point_unary(*name),
             Expression::Join { left, right, path } => left
                 .refine_with(path_condition, depth + 1)
                 .join(right.refine_with(path_condition, depth + 1), &path),
