@@ -2265,44 +2265,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             KnownNames::RustAlloc => self.handle_rust_alloc(call_info),
             KnownNames::RustAllocZeroed => self.handle_rust_alloc_zeroed(call_info),
             KnownNames::RustRealloc => self.handle_rust_realloc(call_info),
-            KnownNames::StdSliceLen => {
-                checked_assume!(call_info.actual_args.len() == 1);
-                let slice_val = &call_info.actual_args[0].1;
-                let qualifier = match &slice_val.expression {
-                    Expression::CompileTimeConstant(ConstantDomain::Str(s)) => {
-                        return Rc::new(ConstantDomain::U128(s.len() as u128).into());
-                    }
-                    Expression::Reference(path) => Some(path.clone()),
-                    Expression::Variable { path, .. } => Some(path.clone()),
-                    Expression::AbstractHeapAddress { .. } => {
-                        Some(Rc::new(Path::get_as_path(slice_val.clone())))
-                    }
-                    _ => None,
-                };
-                qualifier
-                    .map(|qualifier| {
-                        let len_path = Path::new_length(qualifier, &self.current_environment);
-                        self.lookup_path_and_refine_result(len_path, ExpressionType::Usize)
-                    })
-                    .unwrap_or_else(|| abstract_value::BOTTOM.into())
-            }
-            KnownNames::StdStrLen => {
-                checked_assume!(call_info.actual_args.len() == 1);
-                let str_val = &call_info.actual_args[0].1;
-                let result = match &str_val.expression {
-                    Expression::Reference(path) | Expression::Variable { path, .. } => {
-                        let len_path = Path::new_length(path.clone(), &self.current_environment);
-                        let res =
-                            self.lookup_path_and_refine_result(len_path, ExpressionType::U128);
-                        Some(res)
-                    }
-                    Expression::CompileTimeConstant(ConstantDomain::Str(s)) => {
-                        Some(Rc::new(ConstantDomain::U128(s.len() as u128).into()))
-                    }
-                    _ => None,
-                };
-                result.unwrap_or_else(|| abstract_value::BOTTOM.into())
-            }
             KnownNames::StdIntrinsicsArithOffset => self.handle_arith_offset(call_info),
 
             KnownNames::StdIntrinsicsBitreverse
