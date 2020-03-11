@@ -489,31 +489,48 @@ impl ConstantDomain {
 
     /// Returns self.f() where f is an intrinsic unary function.
     #[logfn_inputs(TRACE)]
-    pub fn intrinsic_unary(&self, name: KnownNames) -> Self {
+    pub fn intrinsic_bit_vector_unary(&self, bit_length: u8, name: KnownNames) -> Self {
         match self {
-            ConstantDomain::I128(val) => match name {
-                KnownNames::StdIntrinsicsBitreverse => ConstantDomain::I128(val.reverse_bits()),
-                KnownNames::StdIntrinsicsBswap => ConstantDomain::I128(val.swap_bytes()),
-                KnownNames::StdIntrinsicsCtlz | KnownNames::StdIntrinsicsCtlzNonzero => {
-                    ConstantDomain::U128(val.leading_zeros() as u128)
-                }
-                KnownNames::StdIntrinsicsCttz | KnownNames::StdIntrinsicsCttzNonzero => {
-                    ConstantDomain::U128(val.trailing_zeros() as u128)
-                }
-                _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
+            ConstantDomain::I128(val) => match bit_length {
+                8 => ConstantDomain::I128(Self::call_intrinsic_unary(*val as i8, name) as i128),
+                16 => ConstantDomain::I128(Self::call_intrinsic_unary(*val as i16, name) as i128),
+                32 => ConstantDomain::I128(Self::call_intrinsic_unary(*val as i32, name) as i128),
+                64 => ConstantDomain::I128(Self::call_intrinsic_unary(*val as i64, name) as i128),
+                128 => ConstantDomain::I128(Self::call_intrinsic_unary(*val, name)),
+                _ => assume_unreachable!("invalid bit length for intrinsic {:?}", name),
             },
-            ConstantDomain::U128(val) => match name {
-                KnownNames::StdIntrinsicsBitreverse => ConstantDomain::U128(val.reverse_bits()),
-                KnownNames::StdIntrinsicsBswap => ConstantDomain::U128(val.swap_bytes()),
-                KnownNames::StdIntrinsicsCtpop => ConstantDomain::U128(val.count_ones() as u128),
-                KnownNames::StdIntrinsicsCtlz | KnownNames::StdIntrinsicsCtlzNonzero => {
-                    ConstantDomain::U128(val.leading_zeros() as u128)
-                }
-                KnownNames::StdIntrinsicsCttz | KnownNames::StdIntrinsicsCttzNonzero => {
-                    ConstantDomain::U128(val.trailing_zeros() as u128)
-                }
-                _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
+            ConstantDomain::U128(val) => match bit_length {
+                8 => ConstantDomain::U128(Self::call_intrinsic_unary(*val as u8, name) as u128),
+                16 => ConstantDomain::U128(Self::call_intrinsic_unary(*val as u16, name) as u128),
+                32 => ConstantDomain::U128(Self::call_intrinsic_unary(*val as u32, name) as u128),
+                64 => ConstantDomain::U128(Self::call_intrinsic_unary(*val as u64, name) as u128),
+                128 => ConstantDomain::U128(Self::call_intrinsic_unary(*val, name)),
+                _ => assume_unreachable!("invalid bit length for intrinsic {:?}", name),
             },
+            _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
+        }
+    }
+
+    /// Dispatches val to the named intrinsic function
+    fn call_intrinsic_unary<T>(val: T, name: KnownNames) -> T {
+        unsafe {
+            match name {
+                KnownNames::StdIntrinsicsBitreverse => std::intrinsics::bitreverse(val),
+                KnownNames::StdIntrinsicsBswap => std::intrinsics::bswap(val),
+                KnownNames::StdIntrinsicsCtlz => std::intrinsics::ctlz(val),
+                KnownNames::StdIntrinsicsCtlzNonzero => std::intrinsics::ctlz_nonzero(val),
+                KnownNames::StdIntrinsicsCtpop => std::intrinsics::ctpop(val),
+                KnownNames::StdIntrinsicsCttz => std::intrinsics::cttz_nonzero(val),
+                KnownNames::StdIntrinsicsCttzNonzero => std::intrinsics::cttz_nonzero(val),
+                _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
+            }
+        }
+    }
+
+    /// Returns self.f() where f is an intrinsic unary function.
+    #[logfn_inputs(TRACE)]
+    pub fn intrinsic_floating_point_unary(&self, name: KnownNames) -> Self {
+        match self {
             ConstantDomain::F32(val) => {
                 let val = f32::from_bits(*val);
                 ConstantDomain::F32(

@@ -129,9 +129,6 @@ pub enum Expression {
         alternate: Rc<AbstractValue>,
     },
 
-    /// An expression that counts the number of one bits in the given unsigned integer value
-    CountOnes { operand: Rc<AbstractValue> },
-
     /// An expression that is the left value divided by the right value. /
     Div {
         // The value of the left operand.
@@ -171,8 +168,15 @@ pub enum Expression {
         name: KnownNames,
     },
 
-    /// An expression that calls the specified intrinsic unary function with given argument. operand.name()
-    IntrinsicUnary {
+    /// An expression that calls the specified intrinsic bit vector function with given argument. (operand as u(8|16|64|128)).name()
+    IntrinsicBitVectorUnary {
+        operand: Rc<AbstractValue>,
+        bit_length: u8,
+        name: KnownNames,
+    },
+
+    /// An expression that calls the specified intrinsic floating point unary function with given argument. operand.name()
+    IntrinsicFloatingPointUnary {
         operand: Rc<AbstractValue>,
         name: KnownNames,
     },
@@ -431,9 +435,6 @@ impl Debug for Expression {
                 "if {:?} {{ {:?} }} else {{ {:?} }}",
                 condition, consequent, alternate
             )),
-            Expression::CountOnes { operand } => {
-                f.write_fmt(format_args!("({:?}).count_ones()", operand))
-            }
             Expression::Div { left, right } => {
                 f.write_fmt(format_args!("({:?}) / ({:?})", left, right))
             }
@@ -449,7 +450,15 @@ impl Debug for Expression {
             Expression::IntrinsicBinary { left, right, name } => {
                 f.write_fmt(format_args!("({:?}).{:?}({:?})", left, name, right))
             }
-            Expression::IntrinsicUnary { operand, name } => {
+            Expression::IntrinsicBitVectorUnary {
+                operand,
+                bit_length,
+                name,
+            } => f.write_fmt(format_args!(
+                "({:?} as (i|u){}).{:?}()",
+                operand, bit_length, name
+            )),
+            Expression::IntrinsicFloatingPointUnary { operand, name } => {
                 f.write_fmt(format_args!("({:?}).{:?}()", operand, name))
             }
             Expression::Join { path, left, right } => f.write_fmt(format_args!(
@@ -565,7 +574,7 @@ impl Expression {
                 | KnownNames::StdIntrinsicsFsubFast => left.expression.infer_type(),
                 _ => assume_unreachable!("invalid name {:?} for intrinsic binary", name),
             },
-            Expression::IntrinsicUnary { operand, name, .. } => match name {
+            Expression::IntrinsicBitVectorUnary { operand, name, .. } => match name {
                 KnownNames::StdIntrinsicsBitreverse | KnownNames::StdIntrinsicsBswap => {
                     operand.expression.infer_type()
                 }
@@ -574,6 +583,9 @@ impl Expression {
                 | KnownNames::StdIntrinsicsCtpop
                 | KnownNames::StdIntrinsicsCttz
                 | KnownNames::StdIntrinsicsCttzNonzero => ExpressionType::U32,
+                _ => assume_unreachable!("invalid name {:?} for intrinsic bit vector unary", name),
+            },
+            Expression::IntrinsicFloatingPointUnary { name, .. } => match name {
                 KnownNames::StdIntrinsicsCeilf32
                 | KnownNames::StdIntrinsicsCosf32
                 | KnownNames::StdIntrinsicsFloorf32
@@ -620,7 +632,6 @@ impl Expression {
                     consequent.expression.infer_type()
                 }
             }
-            Expression::CountOnes { .. } => ExpressionType::U32,
             Expression::Div { left, .. } => left.expression.infer_type(),
             Expression::Equals { .. } => Bool,
             Expression::GreaterOrEqual { .. } => Bool,

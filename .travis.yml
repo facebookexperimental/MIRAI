@@ -52,6 +52,7 @@ script:
     export CARGO_INCREMENTAL=0
     export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads"
     cargo build
+    export RUSTFLAGS=""
     cargo test
     zip -0 ccov.zip `find . \( -name "mirai*.gc*" \) -print`
     ./grcov ccov.zip --ignore-not-existing --llvm --ignore-dir "/*" -t lcov  > lcov.info

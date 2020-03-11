@@ -2266,16 +2266,34 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             KnownNames::RustAllocZeroed => self.handle_rust_alloc_zeroed(call_info),
             KnownNames::RustRealloc => self.handle_rust_realloc(call_info),
             KnownNames::StdIntrinsicsArithOffset => self.handle_arith_offset(call_info),
-
             KnownNames::StdIntrinsicsBitreverse
             | KnownNames::StdIntrinsicsBswap
-            | KnownNames::StdIntrinsicsCeilf32
+            | KnownNames::StdIntrinsicsCtlz
+            | KnownNames::StdIntrinsicsCtpop
+            | KnownNames::StdIntrinsicsCttz => {
+                checked_assume!(call_info.actual_args.len() == 1);
+                let arg_type: ExpressionType = (&call_info.actual_argument_types[0].kind).into();
+                let bit_length = arg_type.bit_length();
+                call_info.actual_args[0]
+                    .1
+                    .intrinsic_bit_vector_unary(bit_length, call_info.callee_known_name)
+            }
+            KnownNames::StdIntrinsicsCtlzNonzero | KnownNames::StdIntrinsicsCttzNonzero => {
+                checked_assume!(call_info.actual_args.len() == 1);
+                if self.check_for_errors {
+                    let non_zero = call_info.actual_args[0].1.not_equals(Rc::new(0u128.into()));
+                    self.check_condition(&non_zero, Rc::new("argument is zero".to_owned()), false);
+                }
+                let arg_type: ExpressionType = (&call_info.actual_argument_types[0].kind).into();
+                let bit_length = arg_type.bit_length();
+                call_info.actual_args[0]
+                    .1
+                    .intrinsic_bit_vector_unary(bit_length, call_info.callee_known_name)
+            }
+            KnownNames::StdIntrinsicsCeilf32
             | KnownNames::StdIntrinsicsCeilf64
             | KnownNames::StdIntrinsicsCosf32
             | KnownNames::StdIntrinsicsCosf64
-            | KnownNames::StdIntrinsicsCtlz
-            | KnownNames::StdIntrinsicsCtpop
-            | KnownNames::StdIntrinsicsCttz
             | KnownNames::StdIntrinsicsExp2f32
             | KnownNames::StdIntrinsicsExp2f64
             | KnownNames::StdIntrinsicsExpf32
@@ -2305,17 +2323,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 checked_assume!(call_info.actual_args.len() == 1);
                 call_info.actual_args[0]
                     .1
-                    .intrinsic_unary(call_info.callee_known_name)
-            }
-            KnownNames::StdIntrinsicsCtlzNonzero | KnownNames::StdIntrinsicsCttzNonzero => {
-                checked_assume!(call_info.actual_args.len() == 1);
-                if self.check_for_errors {
-                    let non_zero = call_info.actual_args[0].1.not_equals(Rc::new(0u128.into()));
-                    self.check_condition(&non_zero, Rc::new("argument is zero".to_owned()), false);
-                }
-                call_info.actual_args[0]
-                    .1
-                    .intrinsic_unary(call_info.callee_known_name)
+                    .intrinsic_floating_point_unary(call_info.callee_known_name)
             }
             KnownNames::StdIntrinsicsCopysignf32
             | KnownNames::StdIntrinsicsCopysignf64
