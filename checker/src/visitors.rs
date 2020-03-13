@@ -3797,14 +3797,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if let Expression::CompileTimeConstant(..) = &value.expression {
                     // fall through, the target path is unique
                 } else {
-                    let elem_type = Self::get_element_type(target_type);
-                    self.weak_updates(
-                        qualifier,
-                        value,
-                        source_path.clone(),
-                        elem_type,
-                        |v1, v2| v1.equals(v2),
-                    );
+                    self.weak_updates(qualifier, value, &source_path, |v1, v2| v1.equals(v2));
                     // and now fall through for a strong update of target_path
                 }
             }
@@ -3940,42 +3933,71 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &mut self,
         target_path_root: &Rc<Path>,
         target_index: &Rc<AbstractValue>,
-        source_path: Rc<Path>,
-        elem_type: Ty<'tcx>,
+        source_path: &Rc<Path>,
         make_condition: fn(Rc<AbstractValue>, Rc<AbstractValue>) -> Rc<AbstractValue>,
     ) {
         let old_value_map = self.current_environment.value_map.clone();
         let mut new_value_map = old_value_map.clone();
-        for (path, current_value) in old_value_map
+        for (path, value) in old_value_map
             .iter()
             .filter(|(path, _)| path.is_rooted_by(target_path_root))
         {
-            new_value_map = new_value_map.remove(path);
-            if let PathEnum::QualifiedPath {
-                qualifier,
-                selector,
-                ..
-            } = &path.value
-            {
-                if qualifier.eq(target_path_root) {
-                    if let PathSelector::Index(source_index) = selector.as_ref() {
-                        let result_type: ExpressionType = (&elem_type.kind).into();
-                        if result_type.is_primitive() {
-                            let source_value = self
-                                .lookup_path_and_refine_result(source_path.clone(), result_type);
-                            let join_condition =
-                                make_condition(target_index.clone(), source_index.clone());
-                            let weak_value = join_condition
-                                .conditional_expression(source_value, current_value.clone());
-                            new_value_map = new_value_map.insert(path.clone(), weak_value);
-                        } else {
-                            //self.copy_or_move_elements()
-                        }
-                    }
-                }
+            // See if path is of the form target_root_path[index_value].some_or_no_selectors
+            let mut subsequent_selectors: Vec<Rc<PathSelector>> = Vec::new();
+            if let Some(index_value) = self.extract_index_and_subsequent_selectors(
+                path,
+                target_path_root,
+                &mut subsequent_selectors,
+            ) {
+                // If the join condition is true, the value at path needs updating.
+                let join_condition = make_condition(target_index.clone(), index_value.clone());
+
+                // Look up value at source_path_with_selectors.
+                // source_path_with_selectors is of the form source_path.some_or_no_selectors.
+                // This is the value to bind to path if the join condition is true.
+                let source_path_with_selectors =
+                    Path::add_selectors(source_path, &subsequent_selectors);
+                let additional_value = self.lookup_path_and_refine_result(
+                    source_path_with_selectors,
+                    value.expression.infer_type(),
+                );
+                let updated_value =
+                    join_condition.conditional_expression(additional_value, value.clone());
+
+                new_value_map = new_value_map.insert(path.clone(), updated_value);
             }
         }
         self.current_environment.value_map = new_value_map;
+    }
+
+    /// If the given path is of the form root[index_value].selector1.selector2... then
+    /// return the index_value and appends [selector1, selector2, ..] to selectors.
+    /// Returns None otherwise. Does not append anything if [index_value] is the last selector.
+    #[logfn_inputs(TRACE)]
+    fn extract_index_and_subsequent_selectors(
+        &self,
+        path: &Rc<Path>,
+        root: &Rc<Path>,
+        selectors: &mut Vec<Rc<PathSelector>>,
+    ) -> Option<Rc<AbstractValue>> {
+        if let PathEnum::QualifiedPath {
+            qualifier,
+            selector,
+            ..
+        } = &path.value
+        {
+            if qualifier.eq(&root) {
+                if let PathSelector::Index(index_value) = &**selector {
+                    return Some(index_value.clone());
+                }
+            } else {
+                let index_value =
+                    self.extract_index_and_subsequent_selectors(qualifier, root, selectors);
+                selectors.push(selector.clone());
+                return index_value;
+            }
+        }
+        None
     }
 
     // Check for assignment of a string literal to a byte array reference

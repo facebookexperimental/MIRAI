@@ -61,6 +61,15 @@ impl From<PathEnum> for Path {
 }
 
 impl Path {
+    /// Returns a qualified path of the form root.selectors[0].selectors[1]...
+    pub fn add_selectors(root: &Rc<Path>, selectors: &[Rc<PathSelector>]) -> Rc<Path> {
+        let mut result = root.clone();
+        for selector in selectors.iter() {
+            result = Path::new_qualified(result, selector.clone());
+        }
+        result
+    }
+
     /// Requires an abstract value that is an AbstractHeapAddress expression and
     /// returns a path can be used as the root of paths that define the heap value.
     pub fn get_as_path(value: Rc<AbstractValue>) -> Path {
