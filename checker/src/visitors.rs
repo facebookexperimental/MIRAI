@@ -4288,10 +4288,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         aggregate_kinds: &mir::AggregateKind<'tcx>,
         operands: &[mir::Operand<'tcx>],
     ) {
-        precondition!(match *aggregate_kinds {
-            mir::AggregateKind::Array(..) => true,
-            _ => false,
-        });
+        precondition!(matches!(aggregate_kinds, mir::AggregateKind::Array(..)));
         if path.path_length() >= k_limits::MAX_PATH_LENGTH {
             // If we get to this limit we have a very weird array. Just use Top.
             self.current_environment

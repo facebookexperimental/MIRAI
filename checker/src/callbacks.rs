@@ -178,6 +178,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-vm/state/src") // false positives
             || file_name.contains("language/move-vm/runtime/src") // rustc metadata decoder panic
             || file_name.contains("language/vm/src") // resolve error
+            || file_name.contains("network/src") // false positives
             || file_name.contains("client/cli/src") // Z3 encoding error
             || file_name.contains("client/libra_wallet/src") // resolve error
             || file_name.contains("secure/storage/src") // Z3 encoding error

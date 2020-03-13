@@ -64,13 +64,7 @@ impl Path {
     /// Requires an abstract value that is an AbstractHeapAddress expression and
     /// returns a path can be used as the root of paths that define the heap value.
     pub fn get_as_path(value: Rc<AbstractValue>) -> Path {
-        precondition!(
-            if let Expression::AbstractHeapAddress { .. } = &value.expression {
-                true
-            } else {
-                false
-            }
-        );
+        precondition!(matches!(value.expression, Expression::AbstractHeapAddress {..}));
         if let Expression::AbstractHeapAddress { .. } = &value.expression {
             PathEnum::AbstractHeapAddress { value }.into()
         } else {
