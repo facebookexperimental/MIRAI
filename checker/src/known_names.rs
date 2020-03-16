@@ -35,6 +35,7 @@ pub enum KnownNames {
     StdIntrinsicsBswap,
     StdIntrinsicsCeilf32,
     StdIntrinsicsCeilf64,
+    StdIntrinsicsCopyNonOverlapping,
     StdIntrinsicsCopysignf32,
     StdIntrinsicsCopysignf64,
     StdIntrinsicsCosf32,
@@ -176,8 +177,15 @@ impl KnownNamesCache {
         };
 
         let get_known_name_for_intrinsics_namespace = |mut def_path_data_iter: Iter<'_>| {
-            if let Some(1) = path_data_elem_as_disambiguator(def_path_data_iter.next()) {
-                get_path_data_elem_name(def_path_data_iter.next())
+            let current_elem = def_path_data_iter.next();
+            match path_data_elem_as_disambiguator(current_elem) {
+                Some(0) => get_path_data_elem_name(current_elem)
+                    .map(|n| match n.as_str().deref() {
+                        "copy_nonoverlapping" => KnownNames::StdIntrinsicsCopyNonOverlapping,
+                        _ => KnownNames::None,
+                    })
+                    .unwrap_or(KnownNames::None),
+                Some(1) => get_path_data_elem_name(def_path_data_iter.next())
                     .map(|n| match n.as_str().deref() {
                         "arith_offset" => KnownNames::StdIntrinsicsArithOffset,
                         "bitreverse" => KnownNames::StdIntrinsicsBitreverse,
@@ -237,9 +245,8 @@ impl KnownNamesCache {
                         "truncf64" => KnownNames::StdIntrinsicsTruncf64,
                         _ => KnownNames::None,
                     })
-                    .unwrap_or(KnownNames::None)
-            } else {
-                KnownNames::None
+                    .unwrap_or(KnownNames::None),
+                _ => KnownNames::None,
             }
         };
 

@@ -611,7 +611,6 @@ pub mod core {
         pub fn atomic_umax_relaxed<T>(dst: *mut T, src: T) -> T {
             result!()
         }
-        pub fn copy_nonoverlapping<T>() {}
         pub fn prefetch_read_data<T>(data: *const T, locality: i32) {}
         pub fn prefetch_write_data<T>(data: *const T, locality: i32) {}
         pub fn prefetch_read_instruction<T>(data: *const T, locality: i32) {}
