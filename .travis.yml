@@ -7,7 +7,7 @@ rust:
 - nightly-2020-02-27
 
 before_install:
-- if [ ${TRAVIS_OS_NAME} == "osx" ]; then curl -L https://github.com/mozilla/grcov/releases/download/v0.4.3/grcov-osx-x86_64.tar.bz2 | tar jxf -; fi
+- if [ ${TRAVIS_OS_NAME} == "osx" ]; then curl -L https://github.com/mozilla/grcov/releases/download/v0.5.9/grcov-osx-x86_64.tar.bz2 | tar jxf -; fi
 
 before_script:
 # install rustc-dev
@@ -55,6 +55,6 @@ script:
     export RUSTFLAGS=""
     cargo test
     zip -0 ccov.zip `find . \( -name "mirai*.gc*" \) -print`
-    ./grcov ccov.zip --ignore-not-existing --llvm --ignore-dir "/*" -t lcov  > lcov.info
+    ./grcov ccov.zip -s . -t lcov --llvm --branch --ignore-not-existing --ignore "/*" -o lcov.info;
     bash <(curl -s https://codecov.io/bash) -f lcov.info
   fi

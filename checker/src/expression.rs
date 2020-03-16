@@ -27,29 +27,6 @@ pub enum Expression {
     /// that always panics.
     Bottom,
 
-    /// An expression that represents a block of memory allocated from the heap.
-    /// The value of expression is an ordinal used to distinguish this allocation from
-    /// other allocations. Because this is static analysis, a given allocation site will
-    /// always result in the same ordinal.
-    AbstractHeapAddress {
-        // A unique ordinal that distinguishes this allocation from other allocations.
-        address: usize,
-        // True if the allocator zeroed out this heap memory block.
-        is_zeroed: bool,
-    },
-
-    /// An expression that represents the byte size, alignment and liveness of a heap allocated memory block.
-    /// It is a separate expression because it can be constructed and propagated independently
-    /// from the heap address resulting from an allocation construct/call.
-    AbstractHeapBlockLayout {
-        // The number of bytes allocated to the memory block.
-        length: Rc<AbstractValue>,
-        // The byte alignment of the memory block.
-        alignment: Rc<AbstractValue>,
-        // The intrinsic call that created this layout.
-        source: LayoutSource,
-    },
-
     /// An expression that is the sum of left and right. +
     Add {
         // The value of the left operand.
@@ -159,6 +136,31 @@ pub enum Expression {
         left: Rc<AbstractValue>,
         // The value of the right operand.
         right: Rc<AbstractValue>,
+    },
+
+    /// An expression that represents a block of memory allocated from the heap.
+    /// The value of expression is an ordinal used to distinguish this allocation from
+    /// other allocations. Because this is static analysis, a given allocation site will
+    /// always result in the same ordinal. The implication of this is that there will be
+    /// some loss of precision when heap blocks are allocated inside loops.
+    HeapBlock {
+        // A unique ordinal that distinguishes this allocation from other allocations.
+        // Not an actual memory address.
+        abstract_address: usize,
+        // True if the allocator zeroed out this heap memory block.
+        is_zeroed: bool,
+    },
+
+    /// An expression that represents the byte size, alignment and liveness of a heap allocated memory block.
+    /// It is a separate expression because it can be constructed and propagated independently
+    /// from the heap block resulting from an allocation construct/call.
+    HeapBlockLayout {
+        // The number of bytes allocated to the memory block.
+        length: Rc<AbstractValue>,
+        // The byte alignment of the memory block.
+        alignment: Rc<AbstractValue>,
+        // The intrinsic call that created this layout.
+        source: LayoutSource,
     },
 
     /// An expression that calls the specified intrinsic binary function with given arguments. left.name(right)
@@ -390,19 +392,6 @@ impl Debug for Expression {
         match self {
             Expression::Top => f.write_str("TOP"),
             Expression::Bottom => f.write_str("BOTTOM"),
-            Expression::AbstractHeapAddress { address, is_zeroed } => f.write_fmt(format_args!(
-                "{}heap_{}",
-                if *is_zeroed { "zeroed_" } else { "" },
-                *address,
-            )),
-            Expression::AbstractHeapBlockLayout {
-                length,
-                alignment,
-                source,
-            } => f.write_fmt(format_args!(
-                "layout({:?}/{:?} from {:?})",
-                length, alignment, source
-            )),
             Expression::Add { left, right } => {
                 f.write_fmt(format_args!("({:?}) + ({:?})", left, right))
             }
@@ -447,6 +436,22 @@ impl Debug for Expression {
             Expression::GreaterThan { left, right } => {
                 f.write_fmt(format_args!("({:?}) > ({:?})", left, right))
             }
+            Expression::HeapBlock {
+                abstract_address: address,
+                is_zeroed,
+            } => f.write_fmt(format_args!(
+                "{}heap_{}",
+                if *is_zeroed { "zeroed_" } else { "" },
+                *address,
+            )),
+            Expression::HeapBlockLayout {
+                length,
+                alignment,
+                source,
+            } => f.write_fmt(format_args!(
+                "layout({:?}/{:?} from {:?})",
+                length, alignment, source
+            )),
             Expression::IntrinsicBinary { left, right, name } => {
                 f.write_fmt(format_args!("({:?}).{:?}({:?})", left, name, right))
             }
@@ -548,14 +553,14 @@ impl Expression {
         match self {
             Expression::Top => NonPrimitive,
             Expression::Bottom => NonPrimitive,
-            Expression::AbstractHeapAddress { .. } => Reference,
-            Expression::AbstractHeapBlockLayout { .. } => NonPrimitive,
             Expression::Add { left, .. } => left.expression.infer_type(),
             Expression::AddOverflows { .. } => Bool,
             Expression::And { .. } => Bool,
             Expression::BitAnd { left, .. } => left.expression.infer_type(),
             Expression::BitNot { result_type, .. } => result_type.clone(),
             Expression::BitOr { left, .. } => left.expression.infer_type(),
+            Expression::HeapBlock { .. } => Reference, //todo: change this to NonPrimitive
+            Expression::HeapBlockLayout { .. } => NonPrimitive,
             Expression::IntrinsicBinary { left, name, .. } => match name {
                 KnownNames::StdIntrinsicsCopysignf32
                 | KnownNames::StdIntrinsicsMaxnumf32
@@ -694,13 +699,10 @@ impl Expression {
         false
     }
 
-    /// Adds any abstract heap addresses found in the associated expression to the given set.
+    /// Adds any heap blocks found in the associated expression to the given set.
     #[logfn_inputs(TRACE)]
-    pub fn record_heap_addresses(&self, result: &mut HashSet<Rc<AbstractValue>>) {
+    pub fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         match &self {
-            Expression::AbstractHeapAddress { .. } => {
-                result.insert(AbstractValue::make_from(self.clone(), 1));
-            }
             Expression::Add { left, right }
             | Expression::And { left, right }
             | Expression::BitAnd { left, right }
@@ -720,27 +722,30 @@ impl Expression {
             | Expression::Shl { left, right }
             | Expression::Shr { left, right, .. }
             | Expression::Sub { left, right } => {
-                left.expression.record_heap_addresses(result);
-                right.expression.record_heap_addresses(result);
+                left.expression.record_heap_blocks(result);
+                right.expression.record_heap_blocks(result);
             }
             Expression::ConditionalExpression {
                 condition,
                 consequent,
                 alternate,
             } => {
-                condition.expression.record_heap_addresses(result);
-                consequent.expression.record_heap_addresses(result);
-                alternate.expression.record_heap_addresses(result);
+                condition.expression.record_heap_blocks(result);
+                consequent.expression.record_heap_blocks(result);
+                alternate.expression.record_heap_blocks(result);
+            }
+            Expression::HeapBlock { .. } => {
+                result.insert(AbstractValue::make_from(self.clone(), 1));
             }
             Expression::Join { left, right, .. } => {
-                left.expression.record_heap_addresses(result);
-                right.expression.record_heap_addresses(result);
+                left.expression.record_heap_blocks(result);
+                right.expression.record_heap_blocks(result);
             }
             Expression::Neg { operand } | Expression::LogicalNot { operand } => {
-                operand.expression.record_heap_addresses(result);
+                operand.expression.record_heap_blocks(result);
             }
-            Expression::Reference(path) => path.record_heap_addresses(result),
-            Expression::Variable { path, .. } => path.record_heap_addresses(result),
+            Expression::Reference(path) => path.record_heap_blocks(result),
+            Expression::Variable { path, .. } => path.record_heap_blocks(result),
             _ => (),
         }
     }

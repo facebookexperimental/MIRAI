@@ -130,10 +130,7 @@ impl Environment {
                     },
                 ..
             }) => match (&consequent.expression, &alternate.expression) {
-                (
-                    Expression::AbstractHeapAddress { .. },
-                    Expression::AbstractHeapAddress { .. },
-                ) => Some((
+                (Expression::HeapBlock { .. }, Expression::HeapBlock { .. }) => Some((
                     condition.clone(),
                     Rc::new(Path::get_as_path(consequent.clone())),
                     Rc::new(Path::get_as_path(alternate.clone())),

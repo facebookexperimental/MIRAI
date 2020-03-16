@@ -296,7 +296,7 @@ fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precon
 }
 
 /// Returns a list of (path, value) pairs where each path is rooted by an argument(or the result)
-/// or where the path root is a heap address reachable from an argument (or the result).
+/// or where the path root is a heap block reachable from an argument (or the result).
 /// Since paths are created by writes, these are side-effects.
 /// Since these values are reachable from arguments or the result, they are visible to the caller
 /// and must be included in the summary.
@@ -318,7 +318,7 @@ fn extract_side_effects(
             .iter()
             .filter(|(p, _)| (ordinal == 0 && (**p) == root) || p.is_rooted_by(&root))
         {
-            path.record_heap_addresses(&mut heap_roots);
+            path.record_heap_blocks(&mut heap_roots);
             value.record_heap_addresses(&mut heap_roots);
             if let Expression::Variable { path: vpath, .. } = &value.expression {
                 if vpath.eq(path) {
@@ -352,7 +352,7 @@ fn extract_reachable_heap_allocations(
                     .iter()
                     .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
                 {
-                    path.record_heap_addresses(&mut new_roots);
+                    path.record_heap_blocks(&mut new_roots);
                     value.record_heap_addresses(&mut new_roots);
                     result.push((path.clone(), value.clone()));
                 }
