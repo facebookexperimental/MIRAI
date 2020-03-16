@@ -240,7 +240,7 @@ pub trait AbstractValueTrait: Sized {
     fn inverse_implies(&self, other: &Rc<AbstractValue>) -> bool;
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool;
     fn is_bottom(&self) -> bool;
-    fn is_contained_in_zeroed_abstract_heap_block(&self) -> bool;
+    fn is_contained_in_zeroed_heap_block(&self) -> bool;
     fn is_top(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
@@ -757,10 +757,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn dereference(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::AbstractHeapAddress { .. } //todo: make a var with a deref path
-            | Expression::Offset { .. }
-            | Expression::Bottom
-            | Expression::Top => self.clone(),
+            Expression::Bottom | Expression::Top => self.clone(),
             Expression::Cast {
                 operand,
                 target_type: cast_type,
@@ -777,9 +774,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent.dereference(target_type.clone()),
                 alternate.dereference(target_type),
             ),
+            Expression::HeapBlock { .. } => self.clone(), //todo: this should not be needed
             Expression::Join { path, left, right } => left
                 .dereference(target_type.clone())
                 .join(right.dereference(target_type), path),
+            Expression::Offset { .. } => self.clone(),
             Expression::Reference(path) => AbstractValue::make_from(
                 Expression::Variable {
                     path: path.clone(),
@@ -1096,11 +1095,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// True if the storage referenced by this expression is, or is contained in, a zeroed heap allocation.
     #[logfn_inputs(TRACE)]
-    fn is_contained_in_zeroed_abstract_heap_block(&self) -> bool {
+    fn is_contained_in_zeroed_heap_block(&self) -> bool {
         match &self.expression {
-            Expression::AbstractHeapAddress { is_zeroed, .. } => *is_zeroed,
-            Expression::Offset { left, .. } => left.is_contained_in_zeroed_abstract_heap_block(),
-            Expression::Variable { path, .. } => path.is_rooted_by_zeroed_abstract_heap_address(),
+            Expression::HeapBlock { is_zeroed, .. } => *is_zeroed,
+            Expression::Offset { left, .. } => left.is_contained_in_zeroed_heap_block(),
+            Expression::Variable { path, .. } => path.is_rooted_by_zeroed_heap_block(),
             _ => false,
         }
     }
@@ -1469,7 +1468,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Adds any abstract heap addresses found in the associated expression to the given set.
     #[logfn_inputs(TRACE)]
     fn record_heap_addresses(&self, result: &mut HashSet<Rc<AbstractValue>>) {
-        self.expression.record_heap_addresses(result);
+        self.expression.record_heap_blocks(result);
     }
 
     /// Returns an element that is "self % other".
@@ -1829,21 +1828,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::AbstractHeapAddress { .. } | Expression::Top | Expression::Bottom => {
-                self.clone()
-            }
-            Expression::AbstractHeapBlockLayout {
-                length,
-                alignment,
-                source,
-            } => AbstractValue::make_from(
-                Expression::AbstractHeapBlockLayout {
-                    length: length.refine_paths(environment),
-                    alignment: alignment.refine_paths(environment),
-                    source: *source,
-                },
-                1,
-            ),
+            Expression::Bottom | Expression::Top => self.clone(),
             Expression::Add { left, right } => left
                 .refine_paths(environment)
                 .addition(right.refine_paths(environment)),
@@ -1897,6 +1882,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::GreaterThan { left, right } => left
                 .refine_paths(environment)
                 .greater_than(right.refine_paths(environment)),
+            Expression::HeapBlock { .. } => self.clone(),
+            Expression::HeapBlockLayout {
+                length,
+                alignment,
+                source,
+            } => AbstractValue::make_from(
+                Expression::HeapBlockLayout {
+                    length: length.refine_paths(environment),
+                    alignment: alignment.refine_paths(environment),
+                    source: *source,
+                },
+                1,
+            ),
             Expression::IntrinsicBinary { left, right, name } => left
                 .refine_paths(environment)
                 .intrinsic_binary(right.refine_paths(environment), *name),
@@ -2037,21 +2035,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         fresh: usize,
     ) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::AbstractHeapAddress { .. } | Expression::Top | Expression::Bottom => {
-                self.clone()
-            }
-            Expression::AbstractHeapBlockLayout {
-                length,
-                alignment,
-                source,
-            } => AbstractValue::make_from(
-                Expression::AbstractHeapBlockLayout {
-                    length: length.refine_parameters(arguments, fresh),
-                    alignment: alignment.refine_parameters(arguments, fresh),
-                    source: *source,
-                },
-                1,
-            ),
+            Expression::Bottom | Expression::Top => self.clone(),
             Expression::Add { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .addition(right.refine_parameters(arguments, fresh)),
@@ -2110,6 +2094,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::GreaterThan { left, right } => left
                 .refine_parameters(arguments, fresh)
                 .greater_than(right.refine_parameters(arguments, fresh)),
+            Expression::HeapBlock { .. } => self.clone(),
+            Expression::HeapBlockLayout {
+                length,
+                alignment,
+                source,
+            } => AbstractValue::make_from(
+                Expression::HeapBlockLayout {
+                    length: length.refine_parameters(arguments, fresh),
+                    alignment: alignment.refine_parameters(arguments, fresh),
+                    source: *source,
+                },
+                1,
+            ),
             Expression::IntrinsicBinary { left, right, name } => left
                 .refine_parameters(arguments, fresh)
                 .intrinsic_binary(right.refine_parameters(arguments, fresh), *name),
@@ -2263,21 +2260,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return self.clone();
         }
         match &self.expression {
-            Expression::AbstractHeapAddress { .. } | Expression::Top | Expression::Bottom => {
-                self.clone()
-            }
-            Expression::AbstractHeapBlockLayout {
-                length,
-                alignment,
-                source,
-            } => AbstractValue::make_from(
-                Expression::AbstractHeapBlockLayout {
-                    length: length.refine_with(path_condition, depth + 1),
-                    alignment: alignment.refine_with(path_condition, depth + 1),
-                    source: *source,
-                },
-                1,
-            ),
+            Expression::Bottom | Expression::Top => self.clone(),
             Expression::Add { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .addition(right.refine_with(path_condition, depth + 1)),
@@ -2370,6 +2353,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => operand
                 .refine_with(path_condition, depth + 1)
                 .intrinsic_bit_vector_unary(*bit_length, *name),
+            Expression::HeapBlock { .. } => self.clone(),
+            Expression::HeapBlockLayout {
+                length,
+                alignment,
+                source,
+            } => AbstractValue::make_from(
+                Expression::HeapBlockLayout {
+                    length: length.refine_with(path_condition, depth + 1),
+                    alignment: alignment.refine_with(path_condition, depth + 1),
+                    source: *source,
+                },
+                1,
+            ),
             Expression::IntrinsicFloatingPointUnary { operand, name } => operand
                 .refine_with(path_condition, depth + 1)
                 .intrinsic_floating_point_unary(*name),
@@ -2486,18 +2482,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn widen(&self, path: &Rc<Path>) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::Widen { .. }
-            | Expression::AbstractHeapAddress { .. } // may as well use the same address for the family of allocations
-            | Expression::CompileTimeConstant(..)
+            Expression::CompileTimeConstant(..)
+            | Expression::HeapBlock { .. }
             | Expression::Reference(..)
             | Expression::Top
-            | Expression::Variable { .. } => self.clone(),
-            Expression::AbstractHeapBlockLayout {
-                length,
-                alignment,
-                ..
+            | Expression::Variable { .. }
+            | Expression::Widen { .. } => self.clone(),
+            Expression::HeapBlockLayout {
+                length, alignment, ..
             } => AbstractValue::make_from(
-                Expression::AbstractHeapBlockLayout {
+                Expression::HeapBlockLayout {
                     length: length.widen(path),
                     alignment: alignment.widen(path),
                     source: LayoutSource::Alloc,

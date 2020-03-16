@@ -698,7 +698,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
                 // Effects on the heap
                 for (path, value) in side_effects.iter() {
-                    if path.is_rooted_by_abstract_heap_address() {
+                    if path.is_rooted_by_abstract_heap_block() {
                         self.current_environment
                             .update_value_at(path.clone(), value.clone());
                     }
@@ -738,7 +738,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             ExpressionType::Reference,
                         );
                         debug!("qualifier_val {:?}", qualifier_val);
-                        if qualifier_val.is_contained_in_zeroed_abstract_heap_block() {
+                        if qualifier_val.is_contained_in_zeroed_heap_block() {
                             result = Some(Rc::new(
                                 if result_type.is_signed_integer() {
                                     self.constant_value_cache.get_i128_for(0)
@@ -879,10 +879,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         // The byte size of the closure object is not used, so we just fake it.
         let zero: Rc<AbstractValue> = Rc::new(0u128.into());
-        let closure_object = self.get_new_heap_address(zero.clone(), zero, false);
+        let closure_object = self.get_new_heap_block(zero.clone(), zero, false);
         let closure_path: Rc<Path> = match &closure_object.expression {
-            Expression::AbstractHeapAddress { .. } => Rc::new(
-                PathEnum::AbstractHeapAddress {
+            Expression::HeapBlock { .. } => Rc::new(
+                PathEnum::HeapBlock {
                     value: closure_object.clone(),
                 }
                 .into(),
@@ -1174,9 +1174,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let promoted_root: Rc<Path> = Rc::new(PathEnum::PromotedConstant { ordinal }.into());
             let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
             match &value.expression {
-                Expression::AbstractHeapAddress { .. } => {
+                Expression::HeapBlock { .. } => {
                     let heap_root: Rc<Path> = Rc::new(
-                        PathEnum::AbstractHeapAddress {
+                        PathEnum::HeapBlock {
                             value: value.clone(),
                         }
                         .into(),
@@ -2359,26 +2359,25 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
-    /// Returns a new abstract address of a heap memory block with the given byte length.
+    /// Returns a new heap memory block with the given byte length.
     #[logfn_inputs(TRACE)]
     fn handle_rust_alloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
         checked_assume!(call_info.actual_args.len() == 2);
         let length = call_info.actual_args[0].1.clone();
         let alignment = call_info.actual_args[1].1.clone();
-        self.get_new_heap_address(length, alignment, false)
+        self.get_new_heap_block(length, alignment, false)
     }
 
-    /// Returns a new abstract address of a heap memory block with the given byte length
-    /// and with the zeroed flag set.
+    /// Returns a new heap memory block with the given byte length and with the zeroed flag set.
     #[logfn_inputs(TRACE)]
     fn handle_rust_alloc_zeroed(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
         checked_assume!(call_info.actual_args.len() == 2);
         let length = call_info.actual_args[0].1.clone();
         let alignment = call_info.actual_args[1].1.clone();
-        self.get_new_heap_address(length, alignment, true)
+        self.get_new_heap_block(length, alignment, true)
     }
 
-    /// Removes the heap location and all paths rooted in it from the current environment.
+    /// Removes the heap block and all paths rooted in it from the current environment.
     #[logfn_inputs(TRACE)]
     fn handle_rust_dealloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
         checked_assume!(call_info.actual_args.len() == 3);
@@ -2387,16 +2386,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // library function and has no interesting state to purge.
         // The layout path inserted below will become a side effect of the caller and when that
         // side effect is refined by the caller's caller, the refinement will do the purge if the
-        // qualifier of the path is an abstract heap address path.
+        // qualifier of the path is a heap block path.
 
-        // Get path to abstract address to deallocate
-        let address_path = call_info.actual_args[0].0.clone();
+        // Get path to the heap block to deallocate
+        let heap_block_path = call_info.actual_args[0].0.clone();
 
         // Create a layout
         let length = call_info.actual_args[1].1.clone();
         let alignment = call_info.actual_args[2].1.clone();
         let layout = AbstractValue::make_from(
-            Expression::AbstractHeapBlockLayout {
+            Expression::HeapBlockLayout {
                 length,
                 alignment,
                 source: LayoutSource::DeAlloc,
@@ -2405,7 +2404,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
 
         // Get a layout path and update the environment
-        let layout_path = Path::new_layout(address_path).refine_paths(&self.current_environment);
+        let layout_path = Path::new_layout(heap_block_path).refine_paths(&self.current_environment);
         self.current_environment
             .update_value_at(layout_path, layout);
 
@@ -2413,13 +2412,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         abstract_value::BOTTOM.into()
     }
 
-    /// Sets the length of the heap location to a new value and removes index paths as necessary
+    /// Sets the length of the heap block to a new value and removes index paths as necessary
     /// if the new length is known and less than the old lengths.
     #[logfn_inputs(TRACE)]
     fn handle_rust_realloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
         checked_assume!(call_info.actual_args.len() == 4);
-        // Get path to abstract address to reallocate
-        let address_path = call_info.actual_args[0].0.clone();
+        // Get path to the heap block to reallocate
+        let heap_block_path = call_info.actual_args[0].0.clone();
 
         // Create a layout
         let length = call_info.actual_args[1].1.clone();
@@ -2428,7 +2427,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // We need to this to check for consistency between the realloc layout arg and the
         // initial alloc layout.
         let layout_param = AbstractValue::make_from(
-            Expression::AbstractHeapBlockLayout {
+            Expression::HeapBlockLayout {
                 length,
                 alignment: alignment.clone(),
                 source: LayoutSource::ReAlloc,
@@ -2437,7 +2436,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
         // We need this to keep track of the new length
         let new_length_layout = AbstractValue::make_from(
-            Expression::AbstractHeapBlockLayout {
+            Expression::HeapBlockLayout {
                 length: new_length,
                 alignment,
                 source: LayoutSource::ReAlloc,
@@ -2446,14 +2445,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
 
         // Get a layout path and update the environment
-        let layout_path = Path::new_layout(address_path).refine_paths(&self.current_environment);
+        let layout_path = Path::new_layout(heap_block_path).refine_paths(&self.current_environment);
         self.current_environment
             .update_value_at(layout_path.clone(), new_length_layout);
         let layout_path2 = Path::new_layout(layout_path);
         self.current_environment
             .update_value_at(layout_path2, layout_param);
 
-        // Return the original heap address as the result
+        // Return the original heap block as the result
         call_info.actual_args[0].1.clone()
     }
 
@@ -2545,10 +2544,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if let Expression::Offset { left, right, .. } = &offset.expression {
             let ge_zero = right.greater_or_equal(Rc::new(ConstantDomain::I128(0).into()));
             let top = Rc::new(abstract_value::TOP);
-            let len = if let Expression::AbstractHeapAddress { .. } = &left.expression {
+            let len = if let Expression::HeapBlock { .. } = &left.expression {
                 let heap_path = Rc::new(Path::get_as_path(left.clone()));
                 let layout_path = Path::new_layout(heap_path);
-                if let Expression::AbstractHeapBlockLayout { length, .. } = &self
+                if let Expression::HeapBlockLayout { length, .. } = &self
                     .lookup_path_and_refine_result(layout_path, ExpressionType::NonPrimitive)
                     .expression
                 {
@@ -2845,7 +2844,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             if function_summary.is_not_default {
                 // Effects on the heap
                 for (path, value) in function_summary.side_effects.iter() {
-                    if path.is_rooted_by_abstract_heap_address() {
+                    if path.is_rooted_by_abstract_heap_block() {
                         let rvalue = value
                             .clone()
                             .refine_parameters(call_info.actual_args, self.fresh_variable_offset)
@@ -3236,7 +3235,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .refine_paths(&self.current_environment);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
-                Expression::AbstractHeapBlockLayout { source, .. } => {
+                Expression::HeapBlockLayout { source, .. } => {
                     match source {
                         LayoutSource::DeAlloc => {
                             self.purge_abstract_heap_address_from_environment(
@@ -3253,7 +3252,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                     .clone()
                                     .refine_parameters(arguments, self.fresh_variable_offset)
                                     .refine_paths(&self.current_environment);
-                                self.update_zeroed_flag_for_abstract_heap_address_from_environment(
+                                self.update_zeroed_flag_for_heap_block_from_environment(
                                     &tpath,
                                     &realloc_layout_val.expression,
                                 );
@@ -3304,7 +3303,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
-    /// The abstract heap address rooting layout_path has been deallocated in the function whose
+    /// The heap block rooting layout_path has been deallocated in the function whose
     /// summary is being transferred to the current environment. If we know the identity of the
     /// heap block in the current environment, we need to check the validity of the deallocation
     /// and also have to delete any paths rooted in the heap block.
@@ -3325,7 +3324,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     layout_path.clone(),
                     ExpressionType::NonPrimitive,
                 );
-                if let Expression::AbstractHeapBlockLayout { .. } = &old_layout.expression {
+                if let Expression::HeapBlockLayout { .. } = &old_layout.expression {
                     if self.check_for_errors {
                         self.check_for_layout_consistency(
                             &old_layout.expression,
@@ -3349,11 +3348,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
-    /// Following a reallocation we are no longer guaranteed that the resulting abstract heap
+    /// Following a reallocation we are no longer guaranteed that the resulting heap
     /// memory block has been zeroed out by the allocator. Search the environment for equivalent
-    /// heap address values and update them to clear the zeroed flag (if set).
+    /// heap block values and update them to clear the zeroed flag (if set).
     #[logfn_inputs(DEBUG)]
-    fn update_zeroed_flag_for_abstract_heap_address_from_environment(
+    fn update_zeroed_flag_for_heap_block_from_environment(
         &mut self,
         layout_path: &Rc<Path>,
         new_layout_expression: &Expression,
@@ -3366,20 +3365,24 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 );
                 self.check_for_layout_consistency(&old_layout.expression, new_layout_expression);
             }
-            if let PathEnum::AbstractHeapAddress { value } = &qualifier.value {
-                if let Expression::AbstractHeapAddress { address, is_zeroed } = &value.expression {
+            if let PathEnum::HeapBlock { value } = &qualifier.value {
+                if let Expression::HeapBlock {
+                    abstract_address,
+                    is_zeroed,
+                } = &value.expression
+                {
                     if *is_zeroed {
                         let mut updated_value_map = self.current_environment.value_map.clone();
                         for (path, value) in self.current_environment.value_map.iter() {
-                            if let Expression::AbstractHeapAddress {
-                                address: a,
+                            if let Expression::HeapBlock {
+                                abstract_address: a,
                                 is_zeroed: z,
                             } = &value.expression
                             {
-                                if *address == *a && *z {
+                                if *abstract_address == *a && *z {
                                     let new_address = AbstractValue::make_from(
-                                        Expression::AbstractHeapAddress {
-                                            address: *a,
+                                        Expression::HeapBlock {
+                                            abstract_address: *a,
                                             is_zeroed: false,
                                         },
                                         1,
@@ -3403,12 +3406,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn check_for_layout_consistency(&mut self, old_layout: &Expression, new_layout: &Expression) {
         precondition!(self.check_for_errors);
         if let (
-            Expression::AbstractHeapBlockLayout {
+            Expression::HeapBlockLayout {
                 length: old_length,
                 alignment: old_alignment,
                 source: old_source,
             },
-            Expression::AbstractHeapBlockLayout {
+            Expression::HeapBlockLayout {
                 length: new_length,
                 alignment: new_alignment,
                 source: new_source,
@@ -3698,9 +3701,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let target_type = literal.ty;
                 let const_value = self.visit_constant(*user_ty, &literal);
                 match &const_value.expression {
-                    Expression::AbstractHeapAddress { .. } => {
+                    Expression::HeapBlock { .. } => {
                         let rpath = Rc::new(
-                            PathEnum::AbstractHeapAddress {
+                            PathEnum::HeapBlock {
                                 value: const_value.clone(),
                             }
                             .into(),
@@ -3886,10 +3889,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .clone();
         let length = Rc::new(byte_len_const.into());
         let alignment = Rc::new(1u128.into());
-        let slice_value = self.get_new_heap_address(length, alignment, false);
+        let slice_value = self.get_new_heap_block(length, alignment, false);
         self.current_environment
             .update_value_at(target_path.clone(), slice_value.clone());
-        let slice_path = Rc::new(PathEnum::AbstractHeapAddress { value: slice_value }.into());
+        let slice_path = Rc::new(PathEnum::HeapBlock { value: slice_value }.into());
         let slice_len_path = Path::new_length(slice_path, &self.current_environment);
         let len_const = self
             .constant_value_cache
@@ -4102,9 +4105,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             PathEnum::PromotedConstant { .. } => {
                 if let Some(val) = self.current_environment.value_at(&value_path) {
-                    if let Expression::AbstractHeapAddress { .. } = &val.expression {
-                        let heap_path =
-                            Rc::new(PathEnum::AbstractHeapAddress { value: val.clone() }.into());
+                    if let Expression::HeapBlock { .. } = &val.expression {
+                        let heap_path = Rc::new(PathEnum::HeapBlock { value: val.clone() }.into());
                         AbstractValue::make_from(Expression::Reference(heap_path), 1)
                     } else {
                         AbstractValue::make_from(Expression::Reference(value_path), 1)
@@ -4113,7 +4115,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     AbstractValue::make_from(Expression::Reference(value_path), 1)
                 }
             }
-            PathEnum::AbstractHeapAddress { value } => value.clone(),
+            PathEnum::HeapBlock { value } => value.clone(),
             _ => AbstractValue::make_from(Expression::Reference(value_path), 1),
         };
         self.current_environment.update_value_at(path, value);
@@ -4263,19 +4265,19 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         };
         let alignment = Rc::new(1u128.into());
         let value = match null_op {
-            mir::NullOp::Box => self.get_new_heap_address(len, alignment, false),
+            mir::NullOp::Box => self.get_new_heap_block(len, alignment, false),
             mir::NullOp::SizeOf => len,
         };
         self.current_environment.update_value_at(path, value);
     }
 
-    /// Allocates a new heap address and caches it, keyed with the current location
-    /// so that subsequent visits deterministically use the same address when processing
+    /// Allocates a new heap block and caches it, keyed with the current location
+    /// so that subsequent visits deterministically use the same heap block when processing
     /// the instruction at this location. If we don't do this the fixed point loop wont converge.
     /// Note, however, that this is not good enough for the outer fixed point because the counter
     /// is shared between different functions unless it is reset to 0 for each function.
     #[logfn_inputs(TRACE)]
-    fn get_new_heap_address(
+    fn get_new_heap_block(
         &mut self,
         length: Rc<AbstractValue>,
         alignment: Rc<AbstractValue>,
@@ -4283,16 +4285,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) -> Rc<AbstractValue> {
         let addresses = &mut self.heap_addresses;
         let constants = &mut self.constant_value_cache;
-        let address = addresses
+        let block = addresses
             .entry(self.current_location)
-            .or_insert_with(|| {
-                AbstractValue::make_from(constants.get_new_heap_address(is_zeroed), 1)
-            })
+            .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_block(is_zeroed), 1))
             .clone();
-        let address_path = Rc::new(Path::get_as_path(address.clone()));
-        let layout_path = Path::new_layout(address_path);
+        let block_path = Rc::new(Path::get_as_path(block.clone()));
+        let layout_path = Path::new_layout(block_path);
         let layout = AbstractValue::make_from(
-            Expression::AbstractHeapBlockLayout {
+            Expression::HeapBlockLayout {
                 length,
                 alignment,
                 source: LayoutSource::Alloc,
@@ -4301,7 +4301,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
         self.current_environment
             .update_value_at(layout_path, layout);
-        address
+        block
     }
 
     /// Apply the given unary operator to the operand and assign to path.
@@ -4397,7 +4397,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             } as u128)
                 .into(),
         );
-        let aggregate_value = self.get_new_heap_address(byte_size_value, alignment, false);
+        let aggregate_value = self.get_new_heap_block(byte_size_value, alignment, false);
         self.current_environment
             .update_value_at(path.clone(), aggregate_value);
 
@@ -4925,7 +4925,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 size: 0,
                                 ..
                             })) => {
-                                return self.get_new_heap_address(
+                                return self.get_new_heap_block(
                                     Rc::new(0u128.into()),
                                     Rc::new(1u128.into()),
                                     false,
@@ -5004,8 +5004,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if *size == 1 =>
             {
                 let e =
-                    self.get_new_heap_address(Rc::new(1u128.into()), Rc::new(1u128.into()), false);
-                if let Expression::AbstractHeapAddress { .. } = &e.expression {
+                    self.get_new_heap_block(Rc::new(1u128.into()), Rc::new(1u128.into()), false);
+                if let Expression::HeapBlock { .. } = &e.expression {
                     let p = Path::new_discriminant(
                         Rc::new(Path::get_as_path(e.clone())),
                         &self.current_environment,
@@ -5221,7 +5221,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// Deserializes the given bytes into a constant array of the given element type and then
     /// stores the array elements in the environment with a path for each element, rooted
-    /// in a new abstract heap address that represents the array itself and which is returned
+    /// in a new heap block that represents the array itself and which is returned
     /// as the result of this function. The caller should then copy the path tree to the target
     /// root known to the caller. Since the array is a compile time constant, there is no storage
     /// that needs to get freed or moved.
@@ -5238,7 +5238,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let byte_len = bytes.len();
         let alignment = Rc::new(((elem_type.bit_length() / 8) as u128).into());
         let array_value =
-            self.get_new_heap_address(Rc::new((byte_len as u128).into()), alignment, false);
+            self.get_new_heap_block(Rc::new((byte_len as u128).into()), alignment, false);
         if byte_len > k_limits::MAX_BYTE_ARRAY_LENGTH {
             return array_value;
         }

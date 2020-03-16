@@ -940,13 +940,13 @@ impl<'tcx> ConstantValueCache<'tcx> {
         }
     }
 
-    /// Returns a Expression::AbstractHeapAddress with a unique counter value.
+    /// Returns a Expression::HeapBlock with a unique counter value.
     #[logfn_inputs(TRACE)]
-    pub fn get_new_heap_address(&mut self, is_zeroed: bool) -> Expression {
+    pub fn get_new_heap_block(&mut self, is_zeroed: bool) -> Expression {
         let heap_address_counter = self.heap_address_counter;
         self.heap_address_counter = self.heap_address_counter.wrapping_add(1);
-        Expression::AbstractHeapAddress {
-            address: heap_address_counter,
+        Expression::HeapBlock {
+            abstract_address: heap_address_counter,
             is_zeroed,
         }
     }
@@ -1024,7 +1024,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
         })
     }
 
-    /// Resets the heap address counter to 0.
+    /// Resets the heap block counter to 0.
     /// Do this for every function body to ensure that its analysis is not dependent on what
     /// happened elsewhere. Also remember to relocate heap addresses from summaries of other
     /// functions when transferring callee state to the caller's state.

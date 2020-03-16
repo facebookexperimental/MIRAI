@@ -73,9 +73,9 @@ impl Path {
     /// Requires an abstract value that is an AbstractHeapAddress expression and
     /// returns a path can be used as the root of paths that define the heap value.
     pub fn get_as_path(value: Rc<AbstractValue>) -> Path {
-        precondition!(matches!(value.expression, Expression::AbstractHeapAddress {..}));
-        if let Expression::AbstractHeapAddress { .. } = &value.expression {
-            PathEnum::AbstractHeapAddress { value }.into()
+        precondition!(matches!(value.expression, Expression::HeapBlock {..}));
+        if let Expression::HeapBlock { .. } = &value.expression {
+            PathEnum::HeapBlock { value }.into()
         } else {
             verify_unreachable!()
         }
@@ -87,12 +87,12 @@ impl Path {
 /// location. During analysis it is used to keep track of state changes.
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PathEnum {
-    /// A dynamically allocated memory block.
-    AbstractHeapAddress { value: Rc<AbstractValue> },
-
     /// Sometimes a constant value needs to be treated as a path during refinement.
     /// Don't use this unless you are really sure you know what you are doing.
     Constant { value: Rc<AbstractValue> },
+
+    /// A dynamically allocated memory block.
+    HeapBlock { value: Rc<AbstractValue> },
 
     /// locals [arg_count+1..] are the local variables and compiler temporaries.
     LocalVariable { ordinal: usize },
@@ -136,8 +136,8 @@ pub enum PathEnum {
 impl Debug for PathEnum {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            PathEnum::AbstractHeapAddress { value } => f.write_fmt(format_args!("<{:?}>", value)),
             PathEnum::Constant { value } => value.fmt(f),
+            PathEnum::HeapBlock { value } => f.write_fmt(format_args!("<{:?}>", value)),
             PathEnum::LocalVariable { ordinal } => f.write_fmt(format_args!("local_{}", ordinal)),
             PathEnum::Parameter { ordinal } => f.write_fmt(format_args!("param_{}", ordinal)),
             PathEnum::Result => f.write_str("result"),
@@ -201,29 +201,27 @@ impl Path {
         }
     }
 
-    /// True if path qualifies an abstract heap address, or another qualified path rooted by an
-    /// abstract heap address.
+    /// True if path qualifies an abstract heap block, or another qualified path rooted by an
+    /// abstract heap block.
     #[logfn_inputs(TRACE)]
-    pub fn is_rooted_by_abstract_heap_address(&self) -> bool {
+    pub fn is_rooted_by_abstract_heap_block(&self) -> bool {
         match &self.value {
             PathEnum::QualifiedPath { qualifier, .. } => {
-                qualifier.is_rooted_by_abstract_heap_address()
+                qualifier.is_rooted_by_abstract_heap_block()
             }
-            PathEnum::AbstractHeapAddress { .. } => true,
+            PathEnum::HeapBlock { .. } => true,
             _ => false,
         }
     }
 
-    /// True if path qualifies an abstract heap address, or another qualified path rooted by an
-    /// abstract heap address, where the corresponding memory block has been zeroed by the heap allocator.
+    /// True if path qualifies an abstract heap block, or another qualified path rooted by an
+    /// abstract heap block, where the corresponding memory block has been zeroed by the heap allocator.
     #[logfn_inputs(TRACE)]
-    pub fn is_rooted_by_zeroed_abstract_heap_address(&self) -> bool {
+    pub fn is_rooted_by_zeroed_heap_block(&self) -> bool {
         match &self.value {
-            PathEnum::QualifiedPath { qualifier, .. } => {
-                qualifier.is_rooted_by_zeroed_abstract_heap_address()
-            }
-            PathEnum::AbstractHeapAddress { value, .. } => {
-                if let Expression::AbstractHeapAddress { is_zeroed, .. } = &value.expression {
+            PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_zeroed_heap_block(),
+            PathEnum::HeapBlock { value, .. } => {
+                if let Expression::HeapBlock { is_zeroed, .. } = &value.expression {
                     *is_zeroed
                 } else {
                     false
@@ -360,20 +358,20 @@ impl Path {
         )
     }
 
-    /// Adds any abstract heap addresses found in embedded index values to the given set.
+    /// Adds any heap blocks found in embedded index values to the given set.
     #[logfn_inputs(TRACE)]
-    pub fn record_heap_addresses(&self, result: &mut HashSet<Rc<AbstractValue>>) {
+    pub fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         match &self.value {
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
                 ..
             } => {
-                (**qualifier).record_heap_addresses(result);
+                (**qualifier).record_heap_blocks(result);
                 selector.record_heap_addresses(result);
             }
-            PathEnum::AbstractHeapAddress { value } => {
-                if let Expression::AbstractHeapAddress { .. } = &value.expression {
+            PathEnum::HeapBlock { value } => {
+                if let Expression::HeapBlock { .. } = &value.expression {
                     result.insert(value.clone());
                 } else {
                     verify_unreachable!()
@@ -446,6 +444,15 @@ impl PathRefinement for Rc<Path> {
                 val = operand;
             }
             return match &val.expression {
+                Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
+                    Path::new_constant(val.clone())
+                }
+                Expression::HeapBlock { .. } => Rc::new(
+                    PathEnum::HeapBlock {
+                        value: val.refine_paths(environment),
+                    }
+                    .into(),
+                ),
                 Expression::Variable { path, .. } | Expression::Widen { path, .. } => {
                     if let PathEnum::QualifiedPath { selector, .. } = &path.value {
                         if *selector.as_ref() == PathSelector::Deref {
@@ -454,15 +461,6 @@ impl PathRefinement for Rc<Path> {
                         }
                     }
                     path.clone()
-                }
-                Expression::AbstractHeapAddress { .. } => Rc::new(
-                    PathEnum::AbstractHeapAddress {
-                        value: val.refine_paths(environment),
-                    }
-                    .into(),
-                ),
-                Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
-                    Path::new_constant(val.clone())
                 }
                 _ => self.clone(), // self is canonical
             };

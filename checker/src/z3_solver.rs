@@ -182,7 +182,7 @@ impl Z3Solver {
     #[logfn_inputs(TRACE)]
     fn get_as_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
-            Expression::AbstractHeapAddress { .. } => {
+            Expression::HeapBlock { .. } => {
                 let path = Rc::new(Path::get_as_path(AbstractValue::make_from(
                     expression.clone(),
                     1,
@@ -673,7 +673,7 @@ impl Z3Solver {
     #[logfn_inputs(TRACE)]
     fn get_as_numeric_z3_ast(&self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
         match expression {
-            Expression::AbstractHeapAddress { .. } => {
+            Expression::HeapBlock { .. } => {
                 let path = Rc::new(Path::get_as_path(AbstractValue::make_from(
                     expression.clone(),
                     1,
@@ -1207,7 +1207,7 @@ impl Z3Solver {
     #[logfn_inputs(TRACE)]
     fn get_as_bv_z3_ast(&self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
         match expression {
-            Expression::AbstractHeapAddress { .. } => {
+            Expression::HeapBlock { .. } => {
                 let path = Rc::new(Path::get_as_path(AbstractValue::make_from(
                     expression.clone(),
                     1,
