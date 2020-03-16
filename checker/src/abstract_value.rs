@@ -259,7 +259,7 @@ pub trait AbstractValueTrait: Sized {
     fn logical_not(&self) -> Self;
     fn offset(&self, other: Self) -> Self;
     fn or(&self, other: Self) -> Self;
-    fn record_heap_addresses(&self, result: &mut HashSet<Rc<AbstractValue>>);
+    fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>);
     fn remainder(&self, other: Self) -> Self;
     fn shift_left(&self, other: Self) -> Self;
     fn shl_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
@@ -767,7 +767,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "*self".
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn dereference(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Bottom | Expression::Top => self.clone(),
@@ -1487,7 +1487,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Adds any abstract heap addresses found in the associated expression to the given set.
     #[logfn_inputs(TRACE)]
-    fn record_heap_addresses(&self, result: &mut HashSet<Rc<AbstractValue>>) {
+    fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         self.expression.record_heap_blocks(result);
     }
 

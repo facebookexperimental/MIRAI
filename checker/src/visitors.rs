@@ -616,8 +616,27 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         path: Rc<Path>,
         result_type: ExpressionType,
     ) -> Rc<AbstractValue> {
-        if let PathEnum::Constant { value } = &path.value {
-            return value.clone();
+        match &path.value {
+            PathEnum::Constant { value } => {
+                return value.clone();
+            }
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } if matches!(selector.as_ref(), PathSelector::Deref) => {
+                let path = Path::new_qualified(
+                    qualifier.clone(),
+                    Rc::new(PathSelector::Index(Rc::new(0u128.into()))),
+                );
+                if self.current_environment.value_map.contains_key(&path) {
+                    let refined_val = self.lookup_path_and_refine_result(path, result_type.clone());
+                    if !refined_val.is_bottom() {
+                        return refined_val;
+                    }
+                }
+            }
+            _ => {}
         }
         let refined_val = {
             let bottom = abstract_value::BOTTOM.into();
@@ -645,76 +664,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 ref expression_type,
             } = &path.value
             {
-                let summary;
-                let summary = if let Some(def_id) = def_id {
-                    let generic_args = self.substs_cache.get(def_id).cloned();
-                    let callee_generic_argument_map = if let Some(generic_args) = generic_args {
-                        self.get_generic_arguments_map(*def_id, generic_args, &[])
-                    } else {
-                        None
-                    };
-                    let ty = self.tcx.type_of(*def_id);
-                    let func_const = self
-                        .constant_value_cache
-                        .get_function_constant_for(
-                            *def_id,
-                            ty,
-                            generic_args
-                                .unwrap_or_else(|| self.tcx.empty_substs_for_def_id(*def_id)),
-                            self.tcx,
-                            self.known_names_cache,
-                            self.summary_cache,
-                        )
-                        .clone();
-                    let call_info = CallInfo::new(
-                        *def_id,
-                        generic_args,
-                        callee_generic_argument_map,
-                        func_const,
-                    );
-                    let func_ref = call_info
-                        .callee_func_ref
-                        .clone()
-                        .expect("CallInfo::new should guarantee this");
-                    let cached_summary = self
-                        .summary_cache
-                        .get_summary_for_call_site(&func_ref, None);
-                    if cached_summary.is_not_default {
-                        cached_summary
-                    } else {
-                        summary = self.create_and_cache_function_summary(&call_info);
-                        &summary
-                    }
-                } else {
-                    summary = self
-                        .summary_cache
-                        .get_persistent_summary_for(summary_cache_key);
-                    &summary
-                };
-                let side_effects = summary.side_effects.clone();
-
-                // Effects on the path
-                self.transfer_and_refine(&side_effects, path.clone(), &Path::new_result(), &[]);
-
-                // Effects on the heap
-                for (path, value) in side_effects.iter() {
-                    if path.is_rooted_by_abstract_heap_block() {
-                        self.current_environment
-                            .update_value_at(path.clone(), value.clone());
-                    }
-                }
-                self.current_environment
-                    .value_at(&path)
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        AbstractValue::make_from(
-                            Expression::Variable {
-                                path: path.clone(),
-                                var_type: expression_type.clone(),
-                            },
-                            1,
-                        )
-                    })
+                self.lookup_static(&path, *def_id, summary_cache_key, expression_type)
             } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
                 let mut result = None;
                 if result_type == ExpressionType::Reference {
@@ -789,9 +739,87 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
-    // Path is required to be rooted in a temporary used to track a checked operation result.
-    // The result type of the local will be a tuple (t, bool).
-    // The result of this function is the t part.
+    /// Gets the value of the given static variable by obtaining a summary for the corresponding def_id.
+    #[logfn_inputs(TRACE)]
+    fn lookup_static(
+        &mut self,
+        path: &Rc<Path>,
+        def_id: Option<DefId>,
+        summary_cache_key: &Rc<String>,
+        expression_type: &ExpressionType,
+    ) -> Rc<AbstractValue> {
+        let summary;
+        let summary = if let Some(def_id) = def_id {
+            let generic_args = self.substs_cache.get(&def_id).cloned();
+            let callee_generic_argument_map = if let Some(generic_args) = generic_args {
+                self.get_generic_arguments_map(def_id, generic_args, &[])
+            } else {
+                None
+            };
+            let ty = self.tcx.type_of(def_id);
+            let func_const = self
+                .constant_value_cache
+                .get_function_constant_for(
+                    def_id,
+                    ty,
+                    generic_args.unwrap_or_else(|| self.tcx.empty_substs_for_def_id(def_id)),
+                    self.tcx,
+                    self.known_names_cache,
+                    self.summary_cache,
+                )
+                .clone();
+            let call_info = CallInfo::new(
+                def_id,
+                generic_args,
+                callee_generic_argument_map,
+                func_const,
+            );
+            let func_ref = call_info
+                .callee_func_ref
+                .clone()
+                .expect("CallInfo::new should guarantee this");
+            let cached_summary = self
+                .summary_cache
+                .get_summary_for_call_site(&func_ref, None);
+            if cached_summary.is_not_default {
+                cached_summary
+            } else {
+                summary = self.create_and_cache_function_summary(&call_info);
+                &summary
+            }
+        } else {
+            summary = self
+                .summary_cache
+                .get_persistent_summary_for(summary_cache_key);
+            &summary
+        };
+        let side_effects = summary.side_effects.clone();
+        // Effects on the path
+        self.transfer_and_refine(&side_effects, path.clone(), &Path::new_result(), &[]);
+        // Effects on the heap
+        for (path, value) in side_effects.iter() {
+            if path.is_rooted_by_abstract_heap_block() {
+                self.current_environment
+                    .update_value_at(path.clone(), value.clone());
+            }
+        }
+        self.current_environment
+            .value_at(&path)
+            .cloned()
+            .unwrap_or_else(|| {
+                AbstractValue::make_from(
+                    Expression::Variable {
+                        path: path.clone(),
+                        var_type: expression_type.clone(),
+                    },
+                    1,
+                )
+            })
+    }
+
+    /// Path is required to be rooted in a temporary used to track a checked operation result.
+    /// The result type of the local will be a tuple (t, bool).
+    /// The result of this function is the t part.
     #[logfn_inputs(TRACE)]
     fn get_first_part_of_target_path_type_tuple(&mut self, path: &Rc<Path>) -> ExpressionType {
         match &self.get_path_rustc_type(path).kind {
@@ -1315,7 +1343,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Write the RHS Rvalue to the LHS Place.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn visit_assign(&mut self, place: &mir::Place<'tcx>, rvalue: &mir::Rvalue<'tcx>) {
         let path = self.visit_place(place);
         if PathEnum::PhantomData == path.value {
@@ -2008,6 +2036,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.async_fn_summary = self.get_function_summary(&call_info);
                 return true;
             }
+            KnownNames::StdIntrinsicsCopyNonOverlapping => {
+                self.handle_copy_non_overlapping(call_info);
+                if let Some((_, target)) = &call_info.destination {
+                    let exit_condition = self.current_environment.entry_condition.clone();
+                    self.current_environment.exit_conditions = self
+                        .current_environment
+                        .exit_conditions
+                        .insert(*target, exit_condition);
+                }
+                return true;
+            }
             KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
                 if self.check_for_errors {
                     self.report_calls_to_special_functions(call_info); //known_name, actual_args);
@@ -2469,6 +2508,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let base_val = &call_info.actual_args[0].1;
         let offset_val = &call_info.actual_args[1].1;
         base_val.offset(offset_val.clone())
+    }
+
+    /// Copies a slice of elements from the source to the destination.
+    #[logfn_inputs(TRACE)]
+    fn handle_copy_non_overlapping(&mut self, call_info: &CallInfo<'_, 'tcx>) {
+        checked_assume!(call_info.actual_args.len() == 3);
+        let target_root = call_info.actual_args[0].0.clone();
+        let source_path = call_info.actual_args[1].0.clone();
+        let count = call_info.actual_args[2].1.clone();
+        let target_path = Path::new_slice(target_root, count, &self.current_environment);
+        let collection_type = call_info.actual_argument_types[0];
+        self.copy_or_move_elements(target_path, source_path, collection_type, false);
     }
 
     /// Update the state to reflect a call to an intrinsic binary operation that returns a tuple
@@ -3239,6 +3290,20 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
                 Expression::HeapBlock { .. } => {
+                    if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
+                        if let PathSelector::Slice(..) = &selector.as_ref() {
+                            let source_path = Rc::new(Path::get_as_path(rvalue.clone()));
+                            let target_type =
+                                Self::get_element_type(self.get_path_rustc_type(&target_path));
+                            self.copy_or_move_elements(
+                                tpath.clone(),
+                                source_path,
+                                target_type,
+                                false,
+                            );
+                            continue;
+                        }
+                    }
                     self.current_environment.update_value_at(tpath, rvalue);
                     continue;
                 }
@@ -3745,7 +3810,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Copies/moves all paths rooted in rpath to corresponding paths rooted in target_path.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn copy_or_move_elements(
         &mut self,
         target_path: Rc<Path>,
@@ -3788,7 +3853,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     self.copy_or_move_elements(target_path, index_path, target_type, move_elements);
                     return;
                 }
-                PathSelector::Subslice { from, to, from_end } => {
+                PathSelector::ConstantSlice { from, to, from_end } => {
                     self.copy_or_move_subslice(
                         target_path,
                         target_type,
@@ -3804,19 +3869,46 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
         };
 
-        // Some target paths are not unique and need to be dealt with via weak updates
+        // Some target paths are wild card patterns and need to be dealt with via weak updates
         if let PathEnum::QualifiedPath {
             ref qualifier,
             ref selector,
             ..
         } = &target_path.value
         {
-            if let PathSelector::Index(value) = &**selector {
-                if let Expression::CompileTimeConstant(..) = &value.expression {
-                    // fall through, the target path is unique
-                } else {
-                    self.weak_updates(qualifier, value, &source_path, |v1, v2| v1.equals(v2));
-                    // and now fall through for a strong update of target_path
+            match &**selector {
+                PathSelector::Index(value) => {
+                    if let Expression::CompileTimeConstant(..) = &value.expression {
+                        // fall through, the target path is unique
+                    } else {
+                        self.weak_updates(qualifier, &source_path, |v| value.equals(v));
+                        // and now fall through for a strong update of target_path
+                    }
+                }
+                PathSelector::Slice(count) => {
+                    // if the count is known at this point, expand it like a pattern.
+                    if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
+                        &count.expression
+                    {
+                        self.copy_or_move_subslice(
+                            qualifier.clone(),
+                            target_type,
+                            move_elements,
+                            &source_path,
+                            0,
+                            *val as u32,
+                            false,
+                        );
+                    } else {
+                        //todo: just add target_path[0..count], lookup(source_path[0..count]) to the environment
+                        //When that gets refined into a constant slice, then get back here.
+                        // We do, however, have to havoc all of the existing bindings, conditionally,
+                        // using index < count as the condition.
+                    }
+                    // fall through
+                }
+                _ => {
+                    // fall through
                 }
             }
         }
@@ -3946,14 +4038,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// Update all index entries rooted at target_path_root to reflect the possibility
     /// that an assignment via an unknown index value might change their current value.
-    #[logfn_inputs(TRACE)]
-    fn weak_updates(
+    fn weak_updates<F>(
         &mut self,
         target_path_root: &Rc<Path>,
-        target_index: &Rc<AbstractValue>,
         source_path: &Rc<Path>,
-        make_condition: fn(Rc<AbstractValue>, Rc<AbstractValue>) -> Rc<AbstractValue>,
-    ) {
+        make_condition: F,
+    ) where
+        F: Fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
+    {
         let old_value_map = self.current_environment.value_map.clone();
         let mut new_value_map = old_value_map.clone();
         for (path, value) in old_value_map
@@ -3968,7 +4060,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 &mut subsequent_selectors,
             ) {
                 // If the join condition is true, the value at path needs updating.
-                let join_condition = make_condition(target_index.clone(), index_value.clone());
+                let join_condition = make_condition(index_value.clone());
 
                 // Look up value at source_path_with_selectors.
                 // source_path_with_selectors is of the form source_path.some_or_no_selectors.
@@ -5490,7 +5582,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 min_length: *min_length,
                 from_end: *from_end,
             },
-            mir::ProjectionElem::Subslice { from, to, from_end } => PathSelector::Subslice {
+            mir::ProjectionElem::Subslice { from, to, from_end } => PathSelector::ConstantSlice {
                 from: *from,
                 to: *to,
                 from_end: *from_end,
@@ -5590,6 +5682,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             } => {
                 let t = self.get_path_rustc_type(qualifier);
                 match &**selector {
+                    PathSelector::ConstantSlice { .. } | PathSelector::Slice(_) => {
+                        return t;
+                    }
                     PathSelector::Field(ordinal) => {
                         let bt = Self::get_dereferenced_type(t);
                         match &bt.kind {
@@ -5671,6 +5766,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn get_element_type(ty: Ty<'tcx>) -> Ty<'tcx> {
         match &ty.kind {
             TyKind::Array(t, _) => *t,
+            TyKind::Ref(_, t, _) => match &t.kind {
+                TyKind::Array(t, _) => *t,
+                TyKind::Slice(t) => *t,
+                _ => t,
+            },
             TyKind::Slice(t) => *t,
             _ => ty,
         }
