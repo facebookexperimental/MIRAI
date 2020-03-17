@@ -10,7 +10,7 @@ use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::k_limits;
 
-use log_derive::logfn_inputs;
+use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
@@ -256,6 +256,13 @@ impl Path {
         Rc::new(PathEnum::Constant { value }.into())
     }
 
+    /// Creates a path to the target memory of a reference value.
+    #[logfn_inputs(TRACE)]
+    pub fn new_deref(address_path: Rc<Path>) -> Rc<Path> {
+        let selector = Rc::new(PathSelector::Deref);
+        Self::new_qualified(address_path, selector)
+    }
+
     /// Creates a path the selects the discriminant of the enum at the given path.
     #[logfn_inputs(TRACE)]
     pub fn new_discriminant(enum_path: Rc<Path>, environment: &Environment) -> Rc<Path> {
@@ -447,12 +454,9 @@ impl PathRefinement for Rc<Path> {
                 Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
                     Path::new_constant(val.clone())
                 }
-                Expression::HeapBlock { .. } => Rc::new(
-                    PathEnum::HeapBlock {
-                        value: val.refine_paths(environment),
-                    }
-                    .into(),
-                ),
+                Expression::HeapBlock { .. } => {
+                    Rc::new(PathEnum::HeapBlock { value: val.clone() }.into())
+                }
                 Expression::Variable { path, .. } | Expression::Widen { path, .. } => {
                     if let PathEnum::QualifiedPath { selector, .. } = &path.value {
                         if *selector.as_ref() == PathSelector::Deref {
@@ -508,8 +512,17 @@ impl PathRefinement for Rc<Path> {
                     Expression::Reference(path) => {
                         match refined_selector.as_ref() {
                             PathSelector::Deref => {
-                                // if selector is a deref we can just drop the &* sequence
-                                return path.clone();
+                                // We have a *&path sequence. If path is a is heap block, we
+                                // turn self into path[0]. If not, we drop the sequence and return path.
+                                return if matches!(&path.value, PathEnum::HeapBlock {..}) {
+                                    Path::new_index(
+                                        path.clone(),
+                                        Rc::new(0u128.into()),
+                                        environment,
+                                    )
+                                } else {
+                                    path.clone()
+                                };
                             }
                             _ => {
                                 // drop the explicit reference

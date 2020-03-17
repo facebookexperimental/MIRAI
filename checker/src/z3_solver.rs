@@ -259,6 +259,10 @@ impl Z3Solver {
             Expression::LogicalNot { operand } => self.general_logical_not(operand),
             Expression::Ne { left, right } => self.general_ne(left, right),
             Expression::Neg { operand } => self.general_negation(operand),
+            Expression::Offset { .. } => unsafe {
+                let sort = self.get_sort_for(&expression.infer_type());
+                z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort)
+            },
             Expression::Or { left, right } => {
                 self.general_boolean_op(left, right, z3_sys::Z3_mk_or)
             }
@@ -740,6 +744,20 @@ impl Z3Solver {
                 alternate,
             } => self.numeric_conditional(condition, consequent, alternate),
             Expression::Neg { operand } => self.numeric_neg(operand),
+            Expression::Offset { .. } => unsafe {
+                use self::ExpressionType::*;
+                let expr_type = expression.infer_type();
+                let expr_type = match expr_type {
+                    Bool | Reference | NonPrimitive => ExpressionType::I128,
+                    _ => expr_type,
+                };
+                let is_float = expr_type.is_floating_point_number();
+                let sort = self.get_sort_for(&expr_type);
+                (
+                    is_float,
+                    z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort),
+                )
+            },
             Expression::Reference(path) => self.numeric_reference(path),
             Expression::Shl { left, right } => self.numeric_shl(left, right),
             Expression::Shr { left, right, .. } => self.numeric_shr(left, right),

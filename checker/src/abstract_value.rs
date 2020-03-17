@@ -208,6 +208,13 @@ impl AbstractValue {
             interval: RefCell::new(None),
         })
     }
+
+    /// Creates an abstract value that is a reference to the memory named by the given path.
+    #[logfn_inputs(TRACE)]
+    pub fn make_reference(path: Rc<Path>) -> Rc<AbstractValue> {
+        let path_length = path.path_length() as u64;
+        AbstractValue::make_from(Expression::Reference(path), path_length)
+    }
 }
 
 pub trait AbstractValueTrait: Sized {
@@ -555,14 +562,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Join { left, right, path } => left
                 .cast(target_type.clone())
                 .join(right.cast(target_type), &path),
-            _ => AbstractValue::make_typed_unary(
-                self.clone(),
-                target_type,
-                |operand, target_type| Expression::Cast {
-                    operand,
-                    target_type,
-                },
-            ),
+            _ => {
+                if self.expression.infer_type() != target_type {
+                    AbstractValue::make_typed_unary(
+                        self.clone(),
+                        target_type,
+                        |operand, target_type| Expression::Cast {
+                            operand,
+                            target_type,
+                        },
+                    )
+                } else {
+                    self.clone()
+                }
+            }
         }
     }
 
@@ -774,18 +787,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent.dereference(target_type.clone()),
                 alternate.dereference(target_type),
             ),
-            Expression::HeapBlock { .. } => self.clone(), //todo: this should not be needed
             Expression::Join { path, left, right } => left
                 .dereference(target_type.clone())
                 .join(right.dereference(target_type), path),
             Expression::Offset { .. } => self.clone(),
-            Expression::Reference(path) => AbstractValue::make_from(
-                Expression::Variable {
-                    path: path.clone(),
-                    var_type: target_type,
-                },
-                1,
-            ),
+            Expression::Reference(path) => {
+                if let PathEnum::HeapBlock { value } = &path.value {
+                    value.clone()
+                } else {
+                    AbstractValue::make_from(
+                        Expression::Variable {
+                            path: path.clone(),
+                            var_type: target_type,
+                        },
+                        1,
+                    )
+                }
+            }
             Expression::UninterpretedCall { path, .. } | Expression::Variable { path, .. } => {
                 AbstractValue::make_from(
                     Expression::Variable {
@@ -1099,7 +1117,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match &self.expression {
             Expression::HeapBlock { is_zeroed, .. } => *is_zeroed,
             Expression::Offset { left, .. } => left.is_contained_in_zeroed_heap_block(),
-            Expression::Variable { path, .. } => path.is_rooted_by_zeroed_heap_block(),
+            Expression::Reference(path) | Expression::Variable { path, .. } => {
+                path.is_rooted_by_zeroed_heap_block()
+            }
             _ => false,
         }
     }
@@ -1940,7 +1960,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .or(right.refine_paths(environment)),
             Expression::Reference(path) => {
                 let refined_path = path.refine_paths(environment);
-                AbstractValue::make_from(Expression::Reference(refined_path), 1)
+                AbstractValue::make_reference(refined_path)
             }
             Expression::Rem { left, right } => left
                 .refine_paths(environment)
@@ -2160,7 +2180,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].1.clone(),
                     _ => {
                         let refined_path = path.refine_parameters(arguments, fresh);
-                        AbstractValue::make_from(Expression::Reference(refined_path), 1)
+                        AbstractValue::make_reference(refined_path)
                     }
                 }
             }
