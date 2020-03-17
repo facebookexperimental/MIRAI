@@ -732,10 +732,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     ..
                 } = &path.value
                 {
-                    if *selector.as_ref() == PathSelector::Deref && result_type.is_integer() {
+                    if matches!(
+                        *selector.as_ref(),
+                        PathSelector::Deref | PathSelector::Index(..)
+                    ) && result_type.is_integer()
+                    {
                         let qualifier_val = self.lookup_path_and_refine_result(
                             qualifier.clone(),
-                            ExpressionType::Reference,
+                            ExpressionType::NonPrimitive,
                         );
                         debug!("qualifier_val {:?}", qualifier_val);
                         if qualifier_val.is_contained_in_zeroed_heap_block() {
@@ -1192,7 +1196,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     environment.update_value_at(promoted_root.clone(), value.clone());
                 }
                 Expression::Reference(local_path) => {
-                    // value is reference to a local of the promoted constant function so we
+                    // local_path is reference to a local of the promoted constant function so we
                     // need to rename the local so that it does not clash with the parent function's
                     // locals.
                     let new_local: Rc<Path> = Rc::new(
@@ -1210,7 +1214,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         let renamed_path = path.replace_root(local_path, new_local.clone());
                         environment.update_value_at(renamed_path, value.clone());
                     }
-                    let new_value = AbstractValue::make_from(Expression::Reference(new_local), 1);
+                    let new_value = AbstractValue::make_reference(new_local);
                     environment.update_value_at(promoted_root.clone(), new_value);
                 }
                 _ => {
@@ -2365,7 +2369,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         checked_assume!(call_info.actual_args.len() == 2);
         let length = call_info.actual_args[0].1.clone();
         let alignment = call_info.actual_args[1].1.clone();
-        self.get_new_heap_block(length, alignment, false)
+        let heap_path = Path::get_as_path(self.get_new_heap_block(length, alignment, false));
+        AbstractValue::make_reference(Rc::new(heap_path))
     }
 
     /// Returns a new heap memory block with the given byte length and with the zeroed flag set.
@@ -2374,7 +2379,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         checked_assume!(call_info.actual_args.len() == 2);
         let length = call_info.actual_args[0].1.clone();
         let alignment = call_info.actual_args[1].1.clone();
-        self.get_new_heap_block(length, alignment, true)
+        let heap_path = Path::get_as_path(self.get_new_heap_block(length, alignment, true));
+        AbstractValue::make_reference(Rc::new(heap_path))
     }
 
     /// Removes the heap block and all paths rooted in it from the current environment.
@@ -2418,7 +2424,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn handle_rust_realloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
         checked_assume!(call_info.actual_args.len() == 4);
         // Get path to the heap block to reallocate
-        let heap_block_path = call_info.actual_args[0].0.clone();
+        let heap_block_path = Path::new_deref(call_info.actual_args[0].0.clone());
 
         // Create a layout
         let length = call_info.actual_args[1].1.clone();
@@ -2452,7 +2458,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.current_environment
             .update_value_at(layout_path2, layout_param);
 
-        // Return the original heap block as the result
+        // Return the original heap block reference as the result
         call_info.actual_args[0].1.clone()
     }
 
@@ -2543,20 +2549,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn check_offset(&mut self, offset: &AbstractValue) {
         if let Expression::Offset { left, right, .. } = &offset.expression {
             let ge_zero = right.greater_or_equal(Rc::new(ConstantDomain::I128(0).into()));
-            let top = Rc::new(abstract_value::TOP);
-            let len = if let Expression::HeapBlock { .. } = &left.expression {
-                let heap_path = Rc::new(Path::get_as_path(left.clone()));
-                let layout_path = Path::new_layout(heap_path);
-                if let Expression::HeapBlockLayout { length, .. } = &self
-                    .lookup_path_and_refine_result(layout_path, ExpressionType::NonPrimitive)
-                    .expression
-                {
-                    length.clone()
-                } else {
-                    top
+            let mut len = left.clone();
+            if let Expression::Reference(path) = &left.expression {
+                if matches!(&path.value, PathEnum::HeapBlock{..}) {
+                    let layout_path = Path::new_layout(path.clone());
+                    if let Expression::HeapBlockLayout { length, .. } = &self
+                        .lookup_path_and_refine_result(layout_path, ExpressionType::NonPrimitive)
+                        .expression
+                    {
+                        len = length.clone();
+                    }
                 }
-            } else {
-                top
             };
             let le_one_past =
                 right.less_or_equal(len.addition(Rc::new(ConstantDomain::I128(1).into())));
@@ -3235,6 +3238,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .refine_paths(&self.current_environment);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
+                Expression::HeapBlock { .. } => {
+                    self.current_environment.update_value_at(tpath, rvalue);
+                    continue;
+                }
                 Expression::HeapBlockLayout { source, .. } => {
                     match source {
                         LayoutSource::DeAlloc => {
@@ -3374,21 +3381,29 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if *is_zeroed {
                         let mut updated_value_map = self.current_environment.value_map.clone();
                         for (path, value) in self.current_environment.value_map.iter() {
-                            if let Expression::HeapBlock {
-                                abstract_address: a,
-                                is_zeroed: z,
-                            } = &value.expression
-                            {
-                                if *abstract_address == *a && *z {
-                                    let new_address = AbstractValue::make_from(
-                                        Expression::HeapBlock {
-                                            abstract_address: *a,
-                                            is_zeroed: false,
-                                        },
-                                        1,
-                                    );
-                                    updated_value_map =
-                                        updated_value_map.insert(path.clone(), new_address);
+                            if let Expression::Reference(p) = &value.expression {
+                                if let PathEnum::HeapBlock { value } = &p.value {
+                                    if let Expression::HeapBlock {
+                                        abstract_address: a,
+                                        is_zeroed: z,
+                                    } = &value.expression
+                                    {
+                                        if *abstract_address == *a && *z {
+                                            let new_block = AbstractValue::make_from(
+                                                Expression::HeapBlock {
+                                                    abstract_address: *a,
+                                                    is_zeroed: false,
+                                                },
+                                                1,
+                                            );
+                                            let new_block_path =
+                                                Rc::new(Path::get_as_path(new_block));
+                                            let new_reference =
+                                                AbstractValue::make_reference(new_block_path);
+                                            updated_value_map = updated_value_map
+                                                .insert(path.clone(), new_reference);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -4098,25 +4113,25 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let refined_qualifier = qualifier.refine_paths(&self.current_environment);
                 if refined_qualifier != *qualifier {
                     let refined_path = Path::new_qualified(refined_qualifier, selector.clone());
-                    AbstractValue::make_from(Expression::Reference(refined_path), 1)
+                    AbstractValue::make_reference(refined_path)
                 } else {
-                    AbstractValue::make_from(Expression::Reference(value_path), 1)
+                    AbstractValue::make_reference(value_path)
                 }
             }
             PathEnum::PromotedConstant { .. } => {
                 if let Some(val) = self.current_environment.value_at(&value_path) {
                     if let Expression::HeapBlock { .. } = &val.expression {
                         let heap_path = Rc::new(PathEnum::HeapBlock { value: val.clone() }.into());
-                        AbstractValue::make_from(Expression::Reference(heap_path), 1)
+                        AbstractValue::make_reference(heap_path)
                     } else {
-                        AbstractValue::make_from(Expression::Reference(value_path), 1)
+                        AbstractValue::make_reference(value_path)
                     }
                 } else {
-                    AbstractValue::make_from(Expression::Reference(value_path), 1)
+                    AbstractValue::make_reference(value_path)
                 }
             }
             PathEnum::HeapBlock { value } => value.clone(),
-            _ => AbstractValue::make_from(Expression::Reference(value_path), 1),
+            _ => AbstractValue::make_reference(value_path),
         };
         self.current_environment.update_value_at(path, value);
     }
@@ -4973,7 +4988,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         }
                         .into(),
                     );
-                    return AbstractValue::make_from(Expression::Reference(path), 1);
+                    return AbstractValue::make_reference(path);
                 }
                 debug!("span: {:?}", self.current_span);
                 debug!("type kind {:?}", ty.kind);
@@ -5125,12 +5140,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         {
             let len = *data;
             let e_type = ExpressionType::from(&elem_type.kind);
-            if e_type != ExpressionType::U8 {
-                info!(
-                    "Untested case of rustc::ty::ConstKind::Scalar found at {:?}",
-                    self.current_span
-                );
-            }
             match &literal.val {
                 rustc::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
                     // The Rust compiler should ensure this.
@@ -5242,7 +5251,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if byte_len > k_limits::MAX_BYTE_ARRAY_LENGTH {
             return array_value;
         }
-        let array_path: Rc<Path> = Rc::new(Path::get_as_path(array_value.clone()));
+        let array_path: Rc<Path> = Rc::new(Path::get_as_path(array_value));
         let mut last_index: u128 = 0;
         for (i, operand) in self
             .get_element_values(bytes, elem_type, len)
@@ -5261,7 +5270,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.current_environment
                 .update_value_at(index_path, operand);
         }
-        let length_path = Path::new_length(array_path, &self.current_environment);
+        let length_path = Path::new_length(array_path.clone(), &self.current_environment);
         let length_value = Rc::new(
             self.constant_value_cache
                 .get_u128_for(last_index + 1)
@@ -5270,7 +5279,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
         self.current_environment
             .update_value_at(length_path, length_value);
-        array_value
+        AbstractValue::make_reference(array_path)
     }
 
     /// A helper for deconstruct_constant_array. See its comments.
@@ -5356,7 +5365,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Returns a Path instance that is the essentially the same as the Place instance, but which
-    /// can be serialized and used as a cache key.
+    /// can be serialized and used as a cache key. Also caches the place type with the path as key.
     #[logfn_inputs(TRACE)]
     fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let path = self.get_path_for_place(place);
@@ -5365,6 +5374,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         path
     }
 
+    /// Returns a Path instance that is the essentially the same as the Place instance, but which
+    /// can be serialized and used as a cache key.
+    #[logfn(TRACE)]
     fn get_path_for_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let mut is_union = false;
         let base_path: Rc<Path> =
