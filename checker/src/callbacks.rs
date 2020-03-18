@@ -175,6 +175,7 @@ impl MiraiCallbacks {
             || file_name.contains("storage/scratchpad/src") // resolve error
             || file_name.contains("common/num-variants/src") // resolve error
             || file_name.contains("language/bytecode-verifier/src") // stack overflow
+            || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
             || file_name.contains("language/transaction-builder/src") // slice len
             || file_name.contains("language/move-lang/src") // Z3 encoding error
             || file_name.contains("language/move-vm/state/src") // false positives

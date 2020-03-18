@@ -414,7 +414,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.active_calls.push(self.def_id);
         let (mut block_indices, contains_loop) = self.get_sorted_block_indices();
 
-        let (mut in_state, mut out_state) =
+        let (mut in_state, mut out_state, mut terminator_state) =
             <MirVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
 
         // The entry block has no predecessors and its initial state is the function parameters
@@ -432,6 +432,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             contains_loop,
             &mut in_state,
             &mut out_state,
+            &mut terminator_state,
             &first_state,
         );
 
@@ -447,8 +448,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         if !self.assume_function_is_angelic {
             // Now traverse the blocks again, doing checks and emitting diagnostics.
-            // in_state[bb] is now complete for every basic block bb in the body.
-            self.check_for_errors(&block_indices, &in_state);
+            // terminator_state[bb] is now complete for every basic block bb in the body.
+            self.check_for_errors(&block_indices, &mut terminator_state);
             self.active_calls.pop();
 
             // Now create a summary of the body that can be in-lined into call sites.
@@ -475,7 +476,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// values of any function parameters. Then cache it.
     #[logfn_inputs(TRACE)]
     fn create_and_cache_function_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Summary {
-        debug!(
+        trace!(
             "summarizing {:?}: {:?}",
             call_info.callee_def_id,
             self.tcx.type_of(call_info.callee_def_id)
@@ -498,7 +499,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .get_summary_key_for(call_info.callee_def_id)
                 .clone();
             let summary = self.visit_body(call_info.function_constant_args);
-            debug!("summary {:?} {:?}", self.function_name, summary);
+            trace!("summary {:?} {:?}", self.function_name, summary);
             if let Some(func_ref) = &call_info.callee_func_ref {
                 // We cache the summary with call site details included so that
                 // cached summaries are specialized with respect to call site generic arguments and
@@ -521,7 +522,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// If call_info.callee_def_id is a trait (virtual) then this tries to get the def_id of the
     /// concrete method that implements the given virtual method and returns the summary of that,
     /// computing it if necessary.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn try_to_devirtualize(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Option<Summary> {
         let env_def_id = if self.tcx.is_closure(self.def_id) {
             self.tcx.closure_base_def_id(self.def_id)
@@ -530,25 +531,26 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         };
         if let Some(gen_args) = call_info.callee_generic_arguments {
             if !utils::are_concrete(gen_args) {
-                debug!("non concrete generic args {:?}", gen_args);
+                trace!("non concrete generic args {:?}", gen_args);
                 return None;
             }
             // The parameter environment of the caller provides a resolution context for the callee.
             let param_env = self.tcx.param_env(env_def_id);
-            debug!(
+            trace!(
                 "devirtualize resolving def_id {:?}: {:?}",
                 call_info.callee_def_id,
                 self.tcx.type_of(call_info.callee_def_id)
             );
-            debug!("gen_args {:?}", gen_args);
+            trace!("gen_args {:?}", gen_args);
             if let Some(instance) =
                 rustc::ty::Instance::resolve(self.tcx, param_env, call_info.callee_def_id, gen_args)
             {
                 let resolved_def_id = instance.def.def_id();
                 let resolved_ty = self.tcx.type_of(resolved_def_id);
-                debug!(
+                trace!(
                     "devirtualize resolved def_id {:?}: {:?}",
-                    resolved_def_id, resolved_ty
+                    resolved_def_id,
+                    resolved_ty
                 );
                 if !self.active_calls.contains(&resolved_def_id)
                     && self.tcx.is_mir_available(resolved_def_id)
@@ -988,6 +990,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         contains_loop: bool,
         mut in_state: &mut HashMap<mir::BasicBlock, Environment>,
         mut out_state: &mut HashMap<mir::BasicBlock, Environment>,
+        mut terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
         first_state: &Environment,
     ) -> u64 {
         let mut iteration_count = 0;
@@ -998,6 +1001,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 &mut block_indices,
                 &mut in_state,
                 &mut out_state,
+                &mut terminator_state,
                 &first_state,
                 iteration_count,
             );
@@ -1029,13 +1033,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn check_for_errors(
         &mut self,
         block_indices: &[mir::BasicBlock],
-        in_state: &HashMap<mir::BasicBlock, Environment>,
+        terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
     ) {
         self.check_for_errors = true;
         for bb in block_indices.iter() {
-            let i_state = (&in_state[bb]).clone();
-            self.current_environment = i_state;
-            self.visit_basic_block(*bb);
+            let t_state = (&terminator_state[bb]).clone();
+            self.current_environment = t_state;
+            self.visit_basic_block(*bb, terminator_state);
         }
     }
 
@@ -1045,16 +1049,20 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) -> (
         HashMap<mir::BasicBlock, Environment>,
         HashMap<mir::BasicBlock, Environment>,
+        HashMap<mir::BasicBlock, Environment>,
     ) {
         // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
         let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
         // out_state[bb] is the environment that results from analyzing block bb, given in_state[bb]
         let mut out_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
+        // terminator_state[bb] is the environment that should be used to error check the terminator of bb
+        let mut terminator_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
         for bb in block_indices.iter() {
             in_state.insert(*bb, Environment::default());
             out_state.insert(*bb, Environment::default());
+            terminator_state.insert(*bb, Environment::default());
         }
-        (in_state, out_state)
+        (in_state, out_state, terminator_state)
     }
 
     /// Visits each block in block_indices, after computing a precondition and initial state for
@@ -1066,6 +1074,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         block_indices: &mut Vec<mir::BasicBlock>,
         in_state: &mut HashMap<mir::BasicBlock, Environment>,
         out_state: &mut HashMap<mir::BasicBlock, Environment>,
+        terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
         first_state: &Environment,
         iteration_count: usize,
     ) -> bool {
@@ -1082,7 +1091,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             // Analyze the basic block
             in_state.insert(*bb, i_state.clone());
             self.current_environment = i_state;
-            self.visit_basic_block(*bb);
+            self.visit_basic_block(*bb, terminator_state);
 
             // Check for a fixed point.
             if !self.current_environment.subset(&out_state[bb]) {
@@ -1273,7 +1282,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_promoted_constants_block(&mut self) {
         let (mut block_indices, contains_loop) = self.get_sorted_block_indices();
 
-        let (mut in_state, mut out_state) =
+        let (mut in_state, mut out_state, mut terminator_state) =
             <MirVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
 
         // The entry block has no predecessors and its initial state is the function parameters
@@ -1285,15 +1294,20 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             contains_loop,
             &mut in_state,
             &mut out_state,
+            &mut terminator_state,
             &first_state,
         );
 
-        self.check_for_errors(&block_indices, &in_state);
+        self.check_for_errors(&block_indices, &mut terminator_state);
     }
 
     /// Visits each statement in order and then visits the terminator.
     #[logfn_inputs(TRACE)]
-    fn visit_basic_block(&mut self, bb: mir::BasicBlock) {
+    fn visit_basic_block(
+        &mut self,
+        bb: mir::BasicBlock,
+        terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
+    ) {
         let mir::BasicBlockData {
             ref statements,
             ref terminator,
@@ -1302,10 +1316,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let mut location = bb.start_location();
         let terminator_index = statements.len();
 
-        while location.statement_index < terminator_index {
-            self.visit_statement(location, &statements[location.statement_index]);
-            check_for_early_return!(self);
-            location.statement_index += 1;
+        if !self.check_for_errors {
+            while location.statement_index < terminator_index {
+                self.visit_statement(location, &statements[location.statement_index]);
+                check_for_early_return!(self);
+                location.statement_index += 1;
+            }
+            terminator_state.insert(bb, self.current_environment.clone());
         }
 
         if let Some(mir::Terminator {
@@ -1313,7 +1330,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             ref kind,
         }) = *terminator
         {
-            self.visit_terminator(*source_info, kind);
+            self.visit_terminator(location, *source_info, kind);
         }
     }
 
@@ -1343,7 +1360,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Write the RHS Rvalue to the LHS Place.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn visit_assign(&mut self, place: &mir::Place<'tcx>, rvalue: &mir::Rvalue<'tcx>) {
         let path = self.visit_place(place);
         if PathEnum::PhantomData == path.value {
@@ -1387,14 +1404,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Execute a piece of inline Assembly.
     #[logfn_inputs(TRACE)]
     fn visit_inline_asm(&mut self, inline_asm: &mir::InlineAsm<'tcx>) {
-        if self.check_for_errors {
-            let span = self.current_span;
-            let err = self.session.struct_span_warn(
-                span,
-                "Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
-            );
-            self.emit_diagnostic(err);
-        }
+        let span = self.current_span;
+        let err = self.session.struct_span_warn(
+            span,
+            "Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
+        );
+        self.emit_diagnostic(err);
+        self.assume_function_is_angelic = true;
     }
 
     /// Retag references in the given place, ensuring they got fresh tags.  This is
@@ -1413,8 +1429,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// Calls a specialized visitor for each kind of terminator.
     #[logfn_inputs(TRACE)]
-    fn visit_terminator(&mut self, source_info: mir::SourceInfo, kind: &mir::TerminatorKind<'tcx>) {
+    fn visit_terminator(
+        &mut self,
+        location: mir::Location,
+        source_info: mir::SourceInfo,
+        kind: &mir::TerminatorKind<'tcx>,
+    ) {
         trace!("env {:?}", self.current_environment);
+        self.current_location = location;
         self.current_span = source_info.span;
         match kind {
             mir::TerminatorKind::Goto { target } => self.visit_goto(*target),
@@ -1593,9 +1615,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // a million local variables.
         self.fresh_variable_offset += 1_000_000;
 
-        debug!("visit_call {:?} {:?}", func, args);
-        debug!("self.generic_argument_map {:?}", self.generic_argument_map);
-        debug!("env {:?}", self.current_environment);
+        trace!("visit_call {:?} {:?}", func, args);
+        trace!("self.generic_argument_map {:?}", self.generic_argument_map);
+        trace!("env {:?}", self.current_environment);
         let func_to_call = self.visit_operand(func);
         let func_ref = self.get_func_ref(&func_to_call);
         let func_ref_to_call;
@@ -2883,7 +2905,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Updates the current state to reflect the effects of a normal return from the function call.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn transfer_and_refine_normal_return_state(
         &mut self,
         call_info: &CallInfo<'_, 'tcx>,
@@ -3157,6 +3179,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// this will just set it for the first time. If there is already a post condition.
     /// we check whether it is safe to extend it. It is considered safe if the block where
     /// it was set dominates the existing one.
+    #[logfn_inputs(TRACE)]
     fn try_extend_post_condition(&mut self, cond: &Rc<AbstractValue>) {
         precondition!(self.check_for_errors);
         let this_block = self.current_location.block;
@@ -3267,7 +3290,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// for which the path is rooted by source_path and where rpath is path re-rooted with
     /// target_path and rvalue is value refined by replacing all occurrences of parameter values
     /// with the corresponding actual values.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn transfer_and_refine(
         &mut self,
         effects: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -3279,7 +3302,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
         {
-            debug!("effect {:?} {:?}", path, value);
+            trace!("effect {:?} {:?}", path, value);
             let tpath = Rc::new(path.clone())
                 .replace_root(source_path, target_path.clone())
                 .refine_paths(&self.current_environment);
@@ -3810,7 +3833,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Copies/moves all paths rooted in rpath to corresponding paths rooted in target_path.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn copy_or_move_elements(
         &mut self,
         target_path: Rc<Path>,
