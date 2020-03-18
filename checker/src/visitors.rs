@@ -3303,13 +3303,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
         {
             trace!("effect {:?} {:?}", path, value);
-            let tpath = Rc::new(path.clone())
-                .replace_root(source_path, target_path.clone())
+            let dummy_root = Path::new_local(999);
+            let refined_dummy_root = Path::new_local(self.fresh_variable_offset + 999);
+            let tpath = path
+                .replace_root(source_path, dummy_root)
+                .refine_parameters(arguments, self.fresh_variable_offset)
+                .replace_root(&refined_dummy_root, target_path.clone())
                 .refine_paths(&self.current_environment);
             let rvalue = value
-                .clone()
                 .refine_parameters(arguments, self.fresh_variable_offset)
                 .refine_paths(&self.current_environment);
+            trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
                 Expression::HeapBlock { .. } => {
