@@ -687,23 +687,27 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if matches!(
                         *selector.as_ref(),
                         PathSelector::Deref | PathSelector::Index(..)
-                    ) && result_type.is_integer()
-                    {
-                        let qualifier_val = self.lookup_path_and_refine_result(
-                            qualifier.clone(),
-                            ExpressionType::NonPrimitive,
-                        );
-                        debug!("qualifier_val {:?}", qualifier_val);
-                        if qualifier_val.is_contained_in_zeroed_heap_block() {
-                            result = Some(Rc::new(
-                                if result_type.is_signed_integer() {
-                                    self.constant_value_cache.get_i128_for(0)
-                                } else {
-                                    self.constant_value_cache.get_u128_for(0)
-                                }
-                                .clone()
-                                .into(),
-                            ))
+                    ) {
+                        if let PathSelector::Index(index_val) = selector.as_ref() {
+                            result = self.lookup_weak_value(qualifier, index_val);
+                        }
+                        if result.is_none() && result_type.is_integer() {
+                            let qualifier_val = self.lookup_path_and_refine_result(
+                                qualifier.clone(),
+                                ExpressionType::NonPrimitive,
+                            );
+                            debug!("qualifier_val {:?}", qualifier_val);
+                            if qualifier_val.is_contained_in_zeroed_heap_block() {
+                                result = Some(Rc::new(
+                                    if result_type.is_signed_integer() {
+                                        self.constant_value_cache.get_i128_for(0)
+                                    } else {
+                                        self.constant_value_cache.get_u128_for(0)
+                                    }
+                                    .clone()
+                                    .into(),
+                                ))
+                            }
                         }
                     }
                 }
@@ -739,6 +743,40 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else {
             result
         }
+    }
+
+    /// If there is a path of the form key_qualifier[0..n] = v then return v.
+    /// todo: if there are paths of the form key_qualifier[i] = vi where we could have i == key_index
+    /// at runtime, then return a conditional expression that uses v as the default value (if there
+    /// is a [0..n] path, otherwise zero or unknown).
+    #[logfn_inputs(TRACE)]
+    fn lookup_weak_value(
+        &mut self,
+        key_qualifier: &Rc<Path>,
+        _key_index: &Rc<AbstractValue>,
+    ) -> Option<Rc<AbstractValue>> {
+        for (path, value) in self.current_environment.value_map.iter() {
+            if let PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } = &path.value
+            {
+                if let PathSelector::Slice(..) = selector.as_ref() {
+                    if value.expression.infer_type().is_primitive() && key_qualifier.eq(qualifier) {
+                        // This is the supported case for arrays constructed via a repeat expression.
+                        // We assume that index is in range since that has already been checked.
+                        // todo: deal with the case where there is another path that aliases the slice.
+                        // i.e. a situation that arises if a repeat initialized array has been updated
+                        // with an index that is not an exact match for key_index.
+                        return Some(value.clone());
+                    }
+                }
+                // todo: deal with PathSelector::Index when there is a possibility that
+                // key_index might match it at runtime.
+            }
+        }
+        None
     }
 
     /// Gets the value of the given static variable by obtaining a summary for the corresponding def_id.
@@ -3318,7 +3356,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             match &rvalue.expression {
                 Expression::HeapBlock { .. } => {
                     if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
-                        if let PathSelector::Slice(..) = &selector.as_ref() {
+                        if let PathSelector::Slice(..) = selector.as_ref() {
                             let source_path = Rc::new(Path::get_as_path(rvalue.clone()));
                             let target_type =
                                 Self::get_element_type(self.get_path_rustc_type(&target_path));
@@ -3679,10 +3717,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// If the abstract domains are undecided, resort to using the SMT solver.
     /// Only call this when doing actual error checking, since this is expensive.
     #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
     fn check_condition_value_and_reachability(
         &mut self,
         cond_val: &Rc<AbstractValue>,
     ) -> (Option<bool>, Option<bool>) {
+        trace!(
+            "entry condition {:?}",
+            self.current_environment.entry_condition
+        );
         // Check if the condition is always true (or false) if we get here.
         let mut cond_as_bool = cond_val.as_bool_if_known();
         // Check if we can prove that every call to the current function will reach this call site.
@@ -4185,20 +4228,19 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// path = [x; 32]
     #[logfn_inputs(TRACE)]
     fn visit_repeat(&mut self, path: Rc<Path>, operand: &mir::Operand<'tcx>, count: u64) {
-        let length_path = Path::new_length(path, &self.current_environment);
-        let length_value = Rc::new(
+        let length_path = Path::new_length(path.clone(), &self.current_environment);
+        let length_value: Rc<AbstractValue> = Rc::new(
             self.constant_value_cache
                 .get_u128_for(u128::from(count))
                 .clone()
                 .into(),
         );
         self.current_environment
-            .update_value_at(length_path, length_value);
-        //todo: also need to write a path that summarizes count paths and give it the value
-        //  of operand.
-        //We do not yet have a way to summarize paths.
-        //Meanwhile just visit the operand to at least look at its validity.
-        self.visit_operand(operand);
+            .update_value_at(length_path, length_value.clone());
+        let slice_path = Path::new_slice(path, length_value, &self.current_environment);
+        let initial_value = self.visit_operand(operand);
+        self.current_environment
+            .update_value_at(slice_path, initial_value);
     }
 
     /// path = &x or &mut x or &raw const x
