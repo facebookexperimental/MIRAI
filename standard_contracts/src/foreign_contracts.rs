@@ -1309,15 +1309,21 @@ pub mod core {
             }
         }
 
-        fn slice_index_len_fail(_index: usize, _len: usize) {
+        pub unsafe fn from_raw_parts<'a, T>(data: *const T, len: usize) -> &'a [T] {
+            let result = std::slice::from_raw_parts(data, len);
+            assumed_postcondition!(result.len() == len);
+            result
+        }
+
+        pub fn slice_index_len_fail(_index: usize, _len: usize) {
             panic!("index out of range for slice");
         }
 
-        fn slice_index_order_fail(_index: usize, _end: usize) {
+        pub fn slice_index_order_fail(_index: usize, _end: usize) {
             panic!("slice index starts at after slice end");
         }
 
-        fn slice_index_overflow_fail() {
+        pub fn slice_index_overflow_fail() {
             panic!("attempted to index slice up to maximum usize");
         }
     }
