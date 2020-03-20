@@ -491,7 +491,7 @@ impl Debug for Expression {
                 f.write_fmt(format_args!("({:?}) || ({:?})", left, right))
             }
             Expression::Offset { left, right } => {
-                f.write_fmt(format_args!("({:?})[{:?}]", left, right))
+                f.write_fmt(format_args!("&({:?})[{:?}]", left, right))
             }
             Expression::Reference(path) => f.write_fmt(format_args!("&({:?})", path)),
             Expression::Rem { left, right } => {

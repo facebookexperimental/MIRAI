@@ -212,6 +212,9 @@ impl AbstractValue {
     /// Creates an abstract value that is a reference to the memory named by the given path.
     #[logfn_inputs(TRACE)]
     pub fn make_reference(path: Rc<Path>) -> Rc<AbstractValue> {
+        if let PathEnum::Offset { value } = &path.value {
+            return value.clone();
+        }
         let path_length = path.path_length() as u64;
         AbstractValue::make_from(Expression::Reference(path), path_length)
     }
@@ -790,7 +793,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Join { path, left, right } => left
                 .dereference(target_type.clone())
                 .join(right.dereference(target_type), path),
-            Expression::Offset { .. } => self.clone(),
+            Expression::Offset { .. } => self.clone(), //todo: this seems wrong
             Expression::Reference(path) => {
                 if let PathEnum::HeapBlock { value } = &path.value {
                     value.clone()
@@ -1324,6 +1327,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self.other".
     #[logfn_inputs(TRACE)]
     fn offset(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        if matches!(
+            other.expression,
+            Expression::CompileTimeConstant(ConstantDomain::I128(0))
+        ) {
+            return self.clone();
+        }
         if let Expression::Offset { left, right } = &self.expression {
             AbstractValue::make_binary(left.clone(), right.addition(other), |left, right| {
                 Expression::Offset { left, right }

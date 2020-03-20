@@ -1726,6 +1726,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
         self.transfer_and_refine_cleanup_state(&call_info, &function_summary);
         debug!("post env {:?}", self.current_environment);
+        if function_summary.post_condition.is_some() {
+            if let Some((_, b)) = &call_info.destination {
+                debug!(
+                    "post exit conditions {:?}",
+                    self.current_environment.exit_conditions.get(b)
+                );
+            }
+        }
     }
 
     #[logfn_inputs(TRACE)]
@@ -3027,8 +3035,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 return_value_env.update_value_at(return_value_path, result_val);
                 let refined_post_condition = post_condition
                     .refine_parameters(call_info.actual_args, self.fresh_variable_offset)
-                    .refine_paths(&return_value_env)
-                    .refine_paths(&self.current_environment);
+                    .refine_paths(&return_value_env);
+                debug!(
+                    "refined post condition before path refinement {:?}",
+                    refined_post_condition
+                );
+                let refined_post_condition =
+                    refined_post_condition.refine_paths(&self.current_environment);
+                debug!("refined post condition {:?}", refined_post_condition);
                 exit_condition = exit_condition.and(refined_post_condition);
             }
 

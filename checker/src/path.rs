@@ -62,6 +62,7 @@ impl From<PathEnum> for Path {
 
 impl Path {
     /// Returns a qualified path of the form root.selectors[0].selectors[1]...
+    #[logfn_inputs(TRACE)]
     pub fn add_selectors(root: &Rc<Path>, selectors: &[Rc<PathSelector>]) -> Rc<Path> {
         let mut result = root.clone();
         for selector in selectors.iter() {
@@ -72,12 +73,16 @@ impl Path {
 
     /// Requires an abstract value that is an AbstractHeapAddress expression and
     /// returns a path can be used as the root of paths that define the heap value.
+    #[logfn_inputs(TRACE)]
     pub fn get_as_path(value: Rc<AbstractValue>) -> Path {
         precondition!(matches!(value.expression, Expression::HeapBlock {..}));
-        if let Expression::HeapBlock { .. } = &value.expression {
-            PathEnum::HeapBlock { value }.into()
-        } else {
-            verify_unreachable!()
+        match &value.expression {
+            Expression::HeapBlock { .. } => PathEnum::HeapBlock { value }.into(),
+            Expression::Offset { .. } => PathEnum::Offset { value }.into(),
+            Expression::Reference(path)
+            | Expression::Variable { path, .. }
+            | Expression::Widen { path, .. } => path.as_ref().clone(),
+            _ => verify_unreachable!(),
         }
     }
 }
@@ -96,6 +101,9 @@ pub enum PathEnum {
 
     /// locals [arg_count+1..] are the local variables and compiler temporaries.
     LocalVariable { ordinal: usize },
+
+    /// An offset into a memory block
+    Offset { value: Rc<AbstractValue> },
 
     /// locals [1..=arg_count] are the parameters
     Parameter { ordinal: usize },
@@ -139,6 +147,7 @@ impl Debug for PathEnum {
             PathEnum::Constant { value } => value.fmt(f),
             PathEnum::HeapBlock { value } => f.write_fmt(format_args!("<{:?}>", value)),
             PathEnum::LocalVariable { ordinal } => f.write_fmt(format_args!("local_{}", ordinal)),
+            PathEnum::Offset { value } => f.write_fmt(format_args!("<{:?}>", value)),
             PathEnum::Parameter { ordinal } => f.write_fmt(format_args!("param_{}", ordinal)),
             PathEnum::Result => f.write_str("result"),
             PathEnum::StaticVariable {
@@ -210,6 +219,16 @@ impl Path {
                 qualifier.is_rooted_by_abstract_heap_block()
             }
             PathEnum::HeapBlock { .. } => true,
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, .. } = &value.expression {
+                    if let Expression::Reference(path) | Expression::Variable { path, .. } =
+                        &left.expression
+                    {
+                        return path.is_rooted_by_abstract_heap_block();
+                    }
+                }
+                false
+            }
             _ => false,
         }
     }
@@ -226,6 +245,16 @@ impl Path {
                 } else {
                     false
                 }
+            }
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, .. } = &value.expression {
+                    if let Expression::Reference(path) | Expression::Variable { path, .. } =
+                        &left.expression
+                    {
+                        return path.is_rooted_by_zeroed_heap_block();
+                    }
+                }
+                false
             }
             _ => false,
         }
@@ -395,6 +424,12 @@ impl Path {
                     verify_unreachable!()
                 }
             }
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, right } = &value.expression {
+                    left.record_heap_blocks(result);
+                    right.record_heap_blocks(result);
+                }
+            }
             _ => (),
         }
     }
@@ -432,6 +467,9 @@ impl PathRefinement for Rc<Path> {
                 // This is a handy place to put a break point.
                 Path::new_local(ordinal + fresh)
             }
+            PathEnum::Offset { value } => {
+                Rc::new(Path::get_as_path(value.refine_parameters(arguments, fresh)))
+            }
             PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].0.clone(),
             PathEnum::Result => Path::new_local(fresh),
             PathEnum::QualifiedPath {
@@ -465,8 +503,8 @@ impl PathRefinement for Rc<Path> {
                 Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
                     Path::new_constant(val.clone())
                 }
-                Expression::HeapBlock { .. } => {
-                    Rc::new(PathEnum::HeapBlock { value: val.clone() }.into())
+                Expression::HeapBlock { .. } | Expression::Offset { .. } => {
+                    Rc::new(Path::get_as_path(val.refine_paths(environment)))
                 }
                 Expression::Variable { path, .. } | Expression::Widen { path, .. } => {
                     if let PathEnum::QualifiedPath { selector, .. } = &path.value {
@@ -482,58 +520,78 @@ impl PathRefinement for Rc<Path> {
         };
         // self is a path that is not a key in the environment. This could be because it is not
         // canonical, which can only be the case if self is a qualified path.
-        if let PathEnum::QualifiedPath {
-            qualifier,
-            selector,
-            ..
-        } = &self.value
-        {
-            let refined_selector = selector.refine_paths(environment);
-            let refined_qualifier = qualifier.refine_paths(environment);
-            // The qualifier is now canonical. But in the context of a selector, we
-            // might be able to simplify the qualifier by dropping an explicit dereference
-            // or an explicit reference.
-            if let PathEnum::QualifiedPath {
-                qualifier: base_qualifier,
-                selector: base_selector,
-                ..
-            } = &refined_qualifier.value
-            {
-                if *base_selector.as_ref() == PathSelector::Deref {
-                    // no need for an explicit deref in a qualifier
-                    return Path::new_qualified(base_qualifier.clone(), selector.clone());
-                }
+        match &self.value {
+            PathEnum::Offset { value } => {
+                Rc::new(Path::get_as_path(value.refine_paths(environment)))
             }
-            if let Some(val) = environment.value_at(&refined_qualifier) {
-                match &val.expression {
-                    Expression::Variable { path, .. } => {
-                        // if path is a deref we just drop it because it becomes implicit
-                        if let PathEnum::QualifiedPath {
-                            qualifier,
-                            selector: var_path_selector,
-                            ..
-                        } = &path.value
-                        {
-                            if let PathSelector::Deref = var_path_selector.as_ref() {
-                                // drop the explicit deref
-                                return Path::new_qualified(qualifier.clone(), selector.clone());
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } => {
+                let refined_selector = selector.refine_paths(environment);
+                let refined_qualifier = qualifier.refine_paths(environment);
+                // The qualifier is now canonical. But in the context of a selector, we
+                // might be able to simplify the qualifier by dropping an explicit dereference
+                // or an explicit reference.
+                if let PathEnum::QualifiedPath {
+                    qualifier: base_qualifier,
+                    selector: base_selector,
+                    ..
+                } = &refined_qualifier.value
+                {
+                    if *base_selector.as_ref() == PathSelector::Deref {
+                        // no need for an explicit deref in a qualifier
+                        return Path::new_qualified(base_qualifier.clone(), selector.clone());
+                    }
+                }
+                if let Some(val) = environment.value_at(&refined_qualifier) {
+                    match &val.expression {
+                        Expression::Variable { path, .. } => {
+                            // if path is a deref we just drop it because it becomes implicit
+                            if let PathEnum::QualifiedPath {
+                                qualifier,
+                                selector: var_path_selector,
+                                ..
+                            } = &path.value
+                            {
+                                if let PathSelector::Deref = var_path_selector.as_ref() {
+                                    // drop the explicit deref
+                                    return Path::new_qualified(
+                                        qualifier.clone(),
+                                        selector.clone(),
+                                    );
+                                }
                             }
                         }
+                        Expression::Reference(path) => {
+                            match refined_selector.as_ref() {
+                                PathSelector::Deref => {
+                                    // We have a *&path sequence. If path is a is heap block, we
+                                    // turn self into path[0]. If not, we drop the sequence and return path.
+                                    return if matches!(&path.value, PathEnum::HeapBlock {..}) {
+                                        Path::new_index(
+                                            path.clone(),
+                                            Rc::new(0u128.into()),
+                                            environment,
+                                        )
+                                    } else {
+                                        path.clone()
+                                    };
+                                }
+                                _ => {
+                                    // drop the explicit reference
+                                    return Path::new_qualified(path.clone(), selector.clone());
+                                }
+                            }
+                        }
+                        _ => (),
                     }
-                    Expression::Reference(path) => {
+                    if let Expression::Reference(path) = &val.expression {
                         match refined_selector.as_ref() {
                             PathSelector::Deref => {
-                                // We have a *&path sequence. If path is a is heap block, we
-                                // turn self into path[0]. If not, we drop the sequence and return path.
-                                return if matches!(&path.value, PathEnum::HeapBlock {..}) {
-                                    Path::new_index(
-                                        path.clone(),
-                                        Rc::new(0u128.into()),
-                                        environment,
-                                    )
-                                } else {
-                                    path.clone()
-                                };
+                                // if selector is a deref we can just drop the &* sequence
+                                return path.clone();
                             }
                             _ => {
                                 // drop the explicit reference
@@ -541,24 +599,12 @@ impl PathRefinement for Rc<Path> {
                             }
                         }
                     }
-                    _ => (),
                 }
-                if let Expression::Reference(path) = &val.expression {
-                    match refined_selector.as_ref() {
-                        PathSelector::Deref => {
-                            // if selector is a deref we can just drop the &* sequence
-                            return path.clone();
-                        }
-                        _ => {
-                            // drop the explicit reference
-                            return Path::new_qualified(path.clone(), selector.clone());
-                        }
-                    }
-                }
+                Path::new_qualified(refined_qualifier, refined_selector)
             }
-            Path::new_qualified(refined_qualifier, refined_selector)
-        } else {
-            self.clone() // Non qualified paths are already canonical
+            _ => {
+                self.clone() // Non qualified, non offset paths are already canonical
+            }
         }
     }
 
