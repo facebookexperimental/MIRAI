@@ -633,7 +633,9 @@ pub mod core {
                 result!()
             }
             pub fn abort() {}
-            pub fn unreachable() {}
+            pub fn unreachable() {
+                assume_unreachable!()
+            }
             pub fn assume(b: bool) {
                 assumed_postcondition!(b)
             }
