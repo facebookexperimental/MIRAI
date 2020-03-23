@@ -242,7 +242,7 @@ impl Summary {
 #[allow(clippy::too_many_arguments)]
 pub fn summarize(
     argument_count: usize,
-    exit_environment: &Environment,
+    exit_environment: Option<&Environment>,
     preconditions: &[Precondition],
     post_condition: &Option<Rc<AbstractValue>>,
     unwind_condition: Option<Rc<AbstractValue>>,
@@ -258,7 +258,11 @@ pub fn summarize(
         unwind_environment
     );
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
-    let mut side_effects = extract_side_effects(exit_environment, argument_count);
+    let mut side_effects = if let Some(exit_environment) = exit_environment {
+        extract_side_effects(exit_environment, argument_count)
+    } else {
+        vec![]
+    };
     let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
 
     preconditions.sort();

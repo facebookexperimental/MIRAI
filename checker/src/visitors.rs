@@ -95,7 +95,7 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     current_location: mir::Location,
     current_span: rustc_span::Span,
     start_instant: Instant,
-    exit_environment: Environment,
+    exit_environment: Option<Environment>,
     function_name: Rc<String>,
     generic_arguments: Option<SubstsRef<'tcx>>,
     generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
@@ -122,7 +122,7 @@ struct SavedVisitorState<'analysis, 'tcx> {
     current_environment: Environment,
     current_location: mir::Location,
     current_span: rustc_span::Span,
-    exit_environment: Environment,
+    exit_environment: Option<Environment>,
     function_name: Rc<String>,
     fresh_variable_offset: usize,
     generic_arguments: Option<SubstsRef<'tcx>>,
@@ -195,7 +195,7 @@ impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
             current_environment: Environment::default(),
             current_location: mir::Location::START,
             current_span: rustc_span::DUMMY_SP,
-            exit_environment: Environment::default(),
+            exit_environment: None,
             function_name: Rc::new("".into()),
             fresh_variable_offset: 0,
             generic_arguments: None,
@@ -287,7 +287,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             current_location: mir::Location::START,
             current_span: rustc_span::DUMMY_SP,
             start_instant: Instant::now(),
-            exit_environment: Environment::default(),
+            exit_environment: None,
             function_name,
             generic_arguments: None,
             generic_argument_map: None,
@@ -313,7 +313,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.current_location = mir::Location::START;
         self.current_span = rustc_span::DUMMY_SP;
         self.start_instant = Instant::now();
-        self.exit_environment = Environment::default();
+        self.exit_environment = None;
         self.generic_arguments = None;
         self.generic_argument_map = None;
         self.heap_addresses = HashMap::default();
@@ -460,7 +460,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
             summaries::summarize(
                 self.mir.arg_count,
-                &self.exit_environment,
+                self.exit_environment.as_ref(),
                 &self.preconditions,
                 &self.post_condition,
                 self.unwind_condition.clone(),
@@ -1079,6 +1079,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.current_environment = t_state;
             self.visit_basic_block(*bb, terminator_state);
         }
+        if self.exit_environment.is_none() {
+            // Can only happen if there has been no return statement in the body,
+            // which only happens if there is no way for the function to return to its
+            // caller. We model this as a false post condition.
+            self.post_condition = Some(Rc::new(abstract_value::FALSE));
+        }
     }
 
     #[logfn_inputs(TRACE)]
@@ -1249,63 +1255,72 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.mir = constant_mir.unwrap_read_only();
             let result_type = self.get_type_for_local(0);
             self.visit_promoted_constants_block();
-
-            let promoted_root: Rc<Path> = Rc::new(PathEnum::PromotedConstant { ordinal }.into());
-            let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
-            match &value.expression {
-                Expression::HeapBlock { .. } => {
-                    let heap_root: Rc<Path> = Rc::new(
-                        PathEnum::HeapBlock {
-                            value: value.clone(),
+            if self.exit_environment.is_some() {
+                let promoted_root: Rc<Path> =
+                    Rc::new(PathEnum::PromotedConstant { ordinal }.into());
+                let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
+                match &value.expression {
+                    Expression::HeapBlock { .. } => {
+                        let heap_root: Rc<Path> = Rc::new(
+                            PathEnum::HeapBlock {
+                                value: value.clone(),
+                            }
+                            .into(),
+                        );
+                        for (path, value) in self
+                            .exit_environment
+                            .as_ref()
+                            .unwrap()
+                            .value_map
+                            .iter()
+                            .filter(|(p, _)| p.is_rooted_by(&heap_root))
+                        {
+                            environment.update_value_at(path.clone(), value.clone());
                         }
-                        .into(),
-                    );
-                    for (path, value) in self
-                        .exit_environment
-                        .value_map
-                        .iter()
-                        .filter(|(p, _)| p.is_rooted_by(&heap_root))
-                    {
-                        environment.update_value_at(path.clone(), value.clone());
-                    }
-                    environment.update_value_at(promoted_root.clone(), value.clone());
-                }
-                Expression::Reference(local_path) => {
-                    // local_path is reference to a local of the promoted constant function so we
-                    // need to rename the local so that it does not clash with the parent function's
-                    // locals.
-                    let new_local: Rc<Path> = Rc::new(
-                        PathEnum::PromotedConstant {
-                            ordinal: ordinal + 1000,
-                        }
-                        .into(),
-                    );
-                    for (path, value) in self
-                        .exit_environment
-                        .value_map
-                        .iter()
-                        .filter(|(p, _)| (*p) == local_path || p.is_rooted_by(local_path))
-                    {
-                        let renamed_path = path.replace_root(local_path, new_local.clone());
-                        environment.update_value_at(renamed_path, value.clone());
-                    }
-                    let new_value = AbstractValue::make_reference(new_local);
-                    environment.update_value_at(promoted_root.clone(), new_value);
-                }
-                _ => {
-                    for (path, value) in self
-                        .exit_environment
-                        .value_map
-                        .iter()
-                        .filter(|(p, _)| p.is_rooted_by(&result_root))
-                    {
-                        let promoted_path = path.replace_root(&result_root, promoted_root.clone());
-                        environment.update_value_at(promoted_path, value.clone());
-                    }
-                    if let Expression::Variable { .. } = &value.expression {
-                        // The constant is a stack allocated struct. No need for a separate entry.
-                    } else {
                         environment.update_value_at(promoted_root.clone(), value.clone());
+                    }
+                    Expression::Reference(local_path) => {
+                        // local_path is reference to a local of the promoted constant function so we
+                        // need to rename the local so that it does not clash with the parent function's
+                        // locals.
+                        let new_local: Rc<Path> = Rc::new(
+                            PathEnum::PromotedConstant {
+                                ordinal: ordinal + 1000,
+                            }
+                            .into(),
+                        );
+                        for (path, value) in self
+                            .exit_environment
+                            .as_ref()
+                            .unwrap()
+                            .value_map
+                            .iter()
+                            .filter(|(p, _)| (*p) == local_path || p.is_rooted_by(local_path))
+                        {
+                            let renamed_path = path.replace_root(local_path, new_local.clone());
+                            environment.update_value_at(renamed_path, value.clone());
+                        }
+                        let new_value = AbstractValue::make_reference(new_local);
+                        environment.update_value_at(promoted_root.clone(), new_value);
+                    }
+                    _ => {
+                        for (path, value) in self
+                            .exit_environment
+                            .as_ref()
+                            .unwrap()
+                            .value_map
+                            .iter()
+                            .filter(|(p, _)| p.is_rooted_by(&result_root))
+                        {
+                            let promoted_path =
+                                path.replace_root(&result_root, promoted_root.clone());
+                            environment.update_value_at(promoted_path, value.clone());
+                        }
+                        if let Expression::Variable { .. } = &value.expression {
+                            // The constant is a stack allocated struct. No need for a separate entry.
+                        } else {
+                            environment.update_value_at(promoted_root.clone(), value.clone());
+                        }
                     }
                 }
             }
@@ -1583,12 +1598,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             // Done with fixed point, so prepare to summarize.
             if self.post_condition.is_none() && !self.current_environment.entry_condition.is_top() {
                 let return_guard = self.current_environment.entry_condition.as_bool_if_known();
-                if return_guard.is_none() {
+                if !return_guard.unwrap_or(false) {
                     self.post_condition = Some(self.current_environment.entry_condition.clone());
                 }
             }
             // When the summary is prepared the current environment might be different, so remember this one.
-            self.exit_environment = self.current_environment.clone();
+            self.exit_environment = Some(self.current_environment.clone());
         }
     }
 
