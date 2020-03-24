@@ -3232,7 +3232,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         spans: if self.def_id.is_local() {
                             vec![span]
                         } else {
-                            vec![] // The span is likely inside a standard macro
+                            vec![] // The span is likely inside a standard macro, i.e. panic! etc.
                         },
                     };
                     self.preconditions.push(precondition);

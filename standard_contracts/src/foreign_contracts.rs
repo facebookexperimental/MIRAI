@@ -13,6 +13,7 @@ pub mod alloc {
     pub mod alloc {
         pub fn handle_alloc_error() {
             // Not something that can be reasonably detected with static analysis, so ignore.
+            assume_unreachable!();
         }
     }
 
@@ -25,74 +26,6 @@ pub mod alloc {
                     >() -> T {
                         result!()
                     }
-                }
-            }
-        }
-        pub mod vec_deque {
-            pub const INITIAL_CAPACITY: usize = 7; // 2^3 - 1
-            pub const MINIMUM_CAPACITY: usize = 1; // 2 - 1
-            #[cfg(target_pointer_width = "16")]
-            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (16 - 1); // Largest possible power of two
-            #[cfg(target_pointer_width = "32")]
-            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (32 - 1); // Largest possible power of two
-            #[cfg(target_pointer_width = "64")]
-            pub const MAXIMUM_ZST_CAPACITY: usize = 1 << (64 - 1); // Largest possible power of two
-
-            pub struct VecDeque<T> {
-                _phantom: std::marker::PhantomData<T>,
-                capacity: usize,
-                len: usize,
-            }
-
-            pub mod implement_vec_deque {
-                use crate::foreign_contracts::alloc::collections::vec_deque::VecDeque;
-
-                pub fn new<T>() -> VecDeque<T> {
-                    VecDeque {
-                        _phantom: std::marker::PhantomData,
-                        capacity: 0,
-                        len: 0,
-                    }
-                }
-
-                pub fn len<T>(_self: &VecDeque<T>) -> usize {
-                    _self.len
-                }
-
-                pub fn is_empty<T>(_self: &VecDeque<T>) -> bool {
-                    _self.len == 0
-                }
-
-                pub fn pop_front<T>(_self: &mut VecDeque<T>) -> Option<T> {
-                    if _self.len == 0 {
-                        None
-                    } else {
-                        _self.len -= 1;
-                        result!()
-                    }
-                }
-
-                pub fn pop_back<T>(_self: &mut VecDeque<T>) -> Option<T> {
-                    if _self.len == 0 {
-                        None
-                    } else {
-                        _self.len -= 1;
-                        result!()
-                    }
-                }
-
-                pub fn push_front<T>(_self: &mut VecDeque<T>, _value: T) {
-                    assume!(_self.len < usize::max_value());
-                    _self.len += 1;
-                }
-
-                pub fn push_back<T>(_self: &mut VecDeque<T>, _value: T) {
-                    assume!(_self.len < usize::max_value());
-                    _self.len += 1;
-                }
-
-                pub fn contains<T>(_self: &VecDeque<T>, _value: T) -> bool {
-                    result!()
                 }
             }
         }
@@ -110,14 +43,6 @@ pub mod alloc {
         }
     }
 
-    pub mod rc {
-        pub mod implement_rc {
-            pub fn hash<T, H>(_self: T, state: &mut H) {
-                result!()
-            }
-        }
-    }
-
     pub mod vec {
         pub mod SpecExtend {
             pub fn spec_extend() {}
@@ -131,20 +56,20 @@ pub mod core {
             pub fn alloc(
                 _self: &mut dyn std::alloc::AllocRef,
                 layout: std::alloc::Layout,
-            ) -> Result<std::ptr::NonNull<u8>, core::alloc::AllocErr> {
+            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr> {
                 unsafe {
                     let buf = std::alloc::alloc(layout);
-                    Ok(std::ptr::NonNull::<u8>::new_unchecked(buf))
+                    Ok((std::ptr::NonNull::<u8>::new_unchecked(buf), layout.size()))
                 }
             }
 
             pub fn alloc_zeroed(
                 _self: &mut dyn std::alloc::AllocRef,
                 layout: std::alloc::Layout,
-            ) -> Result<std::ptr::NonNull<u8>, core::alloc::AllocErr> {
+            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr> {
                 unsafe {
                     let buf = std::alloc::alloc_zeroed(layout);
-                    Ok(std::ptr::NonNull::<u8>::new_unchecked(buf))
+                    Ok((std::ptr::NonNull::<u8>::new_unchecked(buf), layout.size()))
                 }
             }
 
@@ -163,10 +88,10 @@ pub mod core {
                 ptr: std::ptr::NonNull<u8>,
                 layout: std::alloc::Layout,
                 new_size: usize,
-            ) -> Result<std::ptr::NonNull<u8>, core::alloc::AllocErr> {
+            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr> {
                 unsafe {
                     let buf = std::alloc::realloc(ptr.as_ptr(), layout, new_size);
-                    Ok(std::ptr::NonNull::<u8>::new_unchecked(buf))
+                    Ok((std::ptr::NonNull::<u8>::new_unchecked(buf), layout.size()))
                 }
             }
         }
@@ -667,7 +592,9 @@ pub mod core {
             pub fn type_id<T: ?Sized + 'static>() -> u64 {
                 result!()
             }
-            pub fn panic_if_uninhabited<T>() {}
+            pub fn panic_if_uninhabited<T>() {
+                // Compiler bootstrapping support. Nothing to do here when analyzing.
+            }
             pub fn caller_location<T>() -> T {
                 result!()
             }
@@ -918,14 +845,15 @@ pub mod core {
     pub mod iter {
         pub mod raw_vec {
             pub fn capacity_overflow() {
+                // Not something that can be prevented statically.
+                // Never returns to its caller.
                 assume_unreachable!("capacity overflow");
             }
         }
 
         pub mod result {
-            pub fn unwrap_failed(_msg: &str, _error: &dyn std::fmt::Debug) {
-                // todo: put something here that compiles OK here, but causes a diagnostic in the caller
-                // i.e. something like a false precondition
+            pub fn unwrap_failed() {
+                panic!("unwrap failed")
             }
         }
 
@@ -1297,7 +1225,9 @@ pub mod core {
 
     pub mod option {
         pub fn expect_failed() {
-            panic!("expect failed");
+            // We currently treat expect as an explicit assumption made by the programmer for
+            // reasons that are beyond the analyzer.
+            assume_unreachable!()
         }
     }
 
@@ -1306,8 +1236,8 @@ pub mod core {
     }
 
     pub mod result {
-        fn unwrap_failed(msg: &str) -> ! {
-            panic!("{}", msg)
+        fn unwrap_failed() -> ! {
+            panic!("unwrap failed")
         }
     }
 
@@ -1334,14 +1264,6 @@ pub mod core {
 
         pub fn slice_index_overflow_fail() {
             panic!("attempted to index slice up to maximum usize");
-        }
-    }
-
-    pub mod str {
-        pub mod implement_str {
-            pub fn is_empty(_self: &str) -> bool {
-                _self.len() == 0
-            }
         }
     }
 
