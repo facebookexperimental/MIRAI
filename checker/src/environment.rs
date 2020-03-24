@@ -227,7 +227,7 @@ impl Environment {
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
-                    let val2 = if val1.is_top() || path.is_result_or_is_rooted_by_result() {
+                    let val2 = if !path.is_rooted_by_parameter() {
                         val1.clone()
                     } else {
                         AbstractValue::make_from(
@@ -246,7 +246,7 @@ impl Environment {
         for (path, val2) in value_map2.iter() {
             if !value_map1.contains_key(path) {
                 checked_assume!(!val2.is_bottom());
-                let val1 = if val2.is_top() || path.is_result_or_is_rooted_by_result() {
+                let val1 = if !path.is_rooted_by_parameter() {
                     val2.clone()
                 } else {
                     AbstractValue::make_from(

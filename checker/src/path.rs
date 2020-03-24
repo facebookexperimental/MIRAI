@@ -82,7 +82,7 @@ impl Path {
             Expression::Reference(path)
             | Expression::Variable { path, .. }
             | Expression::Widen { path, .. } => path.as_ref().clone(),
-            _ => verify_unreachable!(),
+            _ => verify_unreachable!("value is {:?}", value),
         }
     }
 }
@@ -464,8 +464,11 @@ impl PathRefinement for Rc<Path> {
     ) -> Rc<Path> {
         match &self.value {
             PathEnum::LocalVariable { ordinal } => {
-                // This is a handy place to put a break point.
-                Path::new_local(ordinal + fresh)
+                if (*ordinal) != 999 {
+                    // This is a handy place to put a break point.
+                    let _x = *ordinal;
+                }
+                Path::new_local((*ordinal) + fresh)
             }
             PathEnum::Offset { value } => {
                 Rc::new(Path::get_as_path(value.refine_parameters(arguments, fresh)))

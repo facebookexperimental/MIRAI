@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test for VecDeque::contains
+// A test for VecDeque::is_empty
 
 #[macro_use]
 extern crate mirai_annotations;
