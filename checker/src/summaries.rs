@@ -325,8 +325,8 @@ fn extract_side_effects(
             path.record_heap_blocks(&mut heap_roots);
             value.record_heap_blocks(&mut heap_roots);
             if let Expression::Variable { path: vpath, .. } = &value.expression {
-                if vpath.eq(path) {
-                    // The is not an update, but just what was there at function entry.
+                if ordinal > 0 && vpath.eq(path) {
+                    // The value is not an update, but just what was there at function entry.
                     continue;
                 }
             }
