@@ -105,7 +105,9 @@ pub mod alloc {
     }
 
     pub mod raw_vec {
-        pub fn capacity_overflow() {}
+        pub fn capacity_overflow() {
+            assume_unreachable!("capacity overflow");
+        }
     }
 
     pub mod rc {
@@ -915,7 +917,9 @@ pub mod core {
 
     pub mod iter {
         pub mod raw_vec {
-            pub fn capacity_overflow() {}
+            pub fn capacity_overflow() {
+                assume_unreachable!("capacity overflow");
+            }
         }
 
         pub mod result {

@@ -770,7 +770,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "*self".
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn dereference(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Bottom | Expression::Top => self.clone(),
