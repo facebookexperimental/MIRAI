@@ -74,16 +74,16 @@ impl Path {
     /// Requires an abstract value that is an AbstractHeapAddress expression and
     /// returns a path can be used as the root of paths that define the heap value.
     #[logfn_inputs(TRACE)]
-    pub fn get_as_path(value: Rc<AbstractValue>) -> Path {
+    pub fn get_as_path(value: Rc<AbstractValue>) -> Rc<Path> {
         precondition!(matches!(value.expression, Expression::HeapBlock {..}));
-        match &value.expression {
+        Rc::new(match &value.expression {
             Expression::HeapBlock { .. } => PathEnum::HeapBlock { value }.into(),
             Expression::Offset { .. } => PathEnum::Offset { value }.into(),
             Expression::Reference(path)
             | Expression::Variable { path, .. }
             | Expression::Widen { path, .. } => path.as_ref().clone(),
             _ => verify_unreachable!("value is {:?}", value),
-        }
+        })
     }
 }
 
@@ -471,7 +471,7 @@ impl PathRefinement for Rc<Path> {
                 Path::new_local((*ordinal) + fresh)
             }
             PathEnum::Offset { value } => {
-                Rc::new(Path::get_as_path(value.refine_parameters(arguments, fresh)))
+                Path::get_as_path(value.refine_parameters(arguments, fresh))
             }
             PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].0.clone(),
             PathEnum::Result => Path::new_local(fresh),
@@ -507,7 +507,7 @@ impl PathRefinement for Rc<Path> {
                     Path::new_constant(val.clone())
                 }
                 Expression::HeapBlock { .. } | Expression::Offset { .. } => {
-                    Rc::new(Path::get_as_path(val.refine_paths(environment)))
+                    Path::get_as_path(val.refine_paths(environment))
                 }
                 Expression::Variable { path, .. } | Expression::Widen { path, .. } => {
                     if let PathEnum::QualifiedPath { selector, .. } = &path.value {
@@ -524,9 +524,7 @@ impl PathRefinement for Rc<Path> {
         // self is a path that is not a key in the environment. This could be because it is not
         // canonical, which can only be the case if self is a qualified path.
         match &self.value {
-            PathEnum::Offset { value } => {
-                Rc::new(Path::get_as_path(value.refine_paths(environment)))
-            }
+            PathEnum::Offset { value } => Path::get_as_path(value.refine_paths(environment)),
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,

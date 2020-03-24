@@ -183,10 +183,7 @@ impl Z3Solver {
     fn get_as_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
             Expression::HeapBlock { .. } => {
-                let path = Rc::new(Path::get_as_path(AbstractValue::make_from(
-                    expression.clone(),
-                    1,
-                )));
+                let path = Path::get_as_path(AbstractValue::make_from(expression.clone(), 1));
                 self.general_variable(&path, &expression.infer_type())
             }
             Expression::Add { .. }
@@ -678,10 +675,7 @@ impl Z3Solver {
     fn get_as_numeric_z3_ast(&self, expression: &Expression) -> (bool, z3_sys::Z3_ast) {
         match expression {
             Expression::HeapBlock { .. } => {
-                let path = Rc::new(Path::get_as_path(AbstractValue::make_from(
-                    expression.clone(),
-                    1,
-                )));
+                let path = Path::get_as_path(AbstractValue::make_from(expression.clone(), 1));
                 self.numeric_variable(expression, &path, &expression.infer_type())
             }
             Expression::Add { left, right } => {
@@ -1226,10 +1220,7 @@ impl Z3Solver {
     fn get_as_bv_z3_ast(&self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
         match expression {
             Expression::HeapBlock { .. } => {
-                let path = Rc::new(Path::get_as_path(AbstractValue::make_from(
-                    expression.clone(),
-                    1,
-                )));
+                let path = Path::get_as_path(AbstractValue::make_from(expression.clone(), 1));
                 self.bv_variable(&path, &expression.infer_type(), num_bits)
             }
             Expression::Add { left, right } => {

@@ -350,7 +350,7 @@ fn extract_reachable_heap_allocations(
         let mut new_roots: HashSet<Rc<AbstractValue>> = HashSet::new();
         for heap_root in heap_roots.iter() {
             if visited_heap_roots.insert(heap_root.clone()) {
-                let root = Rc::new(Path::get_as_path(heap_root.clone()));
+                let root = Path::get_as_path(heap_root.clone());
                 for (path, value) in env
                     .value_map
                     .iter()

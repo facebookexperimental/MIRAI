@@ -132,8 +132,8 @@ impl Environment {
             }) => match (&consequent.expression, &alternate.expression) {
                 (Expression::HeapBlock { .. }, Expression::HeapBlock { .. }) => Some((
                     condition.clone(),
-                    Rc::new(Path::get_as_path(consequent.clone())),
-                    Rc::new(Path::get_as_path(alternate.clone())),
+                    Path::get_as_path(consequent.clone()),
+                    Path::get_as_path(alternate.clone()),
                 )),
                 (Expression::Reference(path1), Expression::Reference(path2))
                     if path1 != path && path2 != path =>
