@@ -2492,7 +2492,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let length = call_info.actual_args[0].1.clone();
         let alignment = call_info.actual_args[1].1.clone();
         let heap_path = Path::get_as_path(self.get_new_heap_block(length, alignment, false));
-        AbstractValue::make_reference(Rc::new(heap_path))
+        AbstractValue::make_reference(heap_path)
     }
 
     /// Returns a new heap memory block with the given byte length and with the zeroed flag set.
@@ -2502,7 +2502,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let length = call_info.actual_args[0].1.clone();
         let alignment = call_info.actual_args[1].1.clone();
         let heap_path = Path::get_as_path(self.get_new_heap_block(length, alignment, true));
-        AbstractValue::make_reference(Rc::new(heap_path))
+        AbstractValue::make_reference(heap_path)
     }
 
     /// Removes the heap block and all paths rooted in it from the current environment.
@@ -3386,7 +3386,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 Expression::HeapBlock { .. } => {
                     if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                         if let PathSelector::Slice(..) = selector.as_ref() {
-                            let source_path = Rc::new(Path::get_as_path(rvalue.clone()));
+                            let source_path = Path::get_as_path(rvalue.clone());
                             let target_type =
                                 Self::get_element_type(self.get_path_rustc_type(&target_path));
                             self.copy_or_move_elements(
@@ -3555,8 +3555,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                                 },
                                                 1,
                                             );
-                                            let new_block_path =
-                                                Rc::new(Path::get_as_path(new_block));
+                                            let new_block_path = Path::get_as_path(new_block);
                                             let new_reference =
                                                 AbstractValue::make_reference(new_block_path);
                                             updated_value_map = updated_value_map
@@ -4494,7 +4493,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .entry(self.current_location)
             .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_block(is_zeroed), 1))
             .clone();
-        let block_path = Rc::new(Path::get_as_path(block.clone()));
+        let block_path = Path::get_as_path(block.clone());
         let layout_path = Path::new_layout(block_path);
         let layout = AbstractValue::make_from(
             Expression::HeapBlockLayout {
@@ -5212,7 +5211,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     self.get_new_heap_block(Rc::new(1u128.into()), Rc::new(1u128.into()), false);
                 if let Expression::HeapBlock { .. } = &e.expression {
                     let p = Path::new_discriminant(
-                        Rc::new(Path::get_as_path(e.clone())),
+                        Path::get_as_path(e.clone()),
                         &self.current_environment,
                     );
                     let d = Rc::new(self.constant_value_cache.get_u128_for(*data).clone().into());
@@ -5441,7 +5440,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if byte_len > k_limits::MAX_BYTE_ARRAY_LENGTH {
             return array_value;
         }
-        let array_path: Rc<Path> = Rc::new(Path::get_as_path(array_value));
+        let array_path = Path::get_as_path(array_value);
         let mut last_index: u128 = 0;
         for (i, operand) in self
             .get_element_values(bytes, elem_type, len)
