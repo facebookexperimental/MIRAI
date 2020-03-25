@@ -672,7 +672,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if result_type == ExpressionType::Reference {
                     // This could be an alias for a fat pointer stored at path.0 (etc.)
                     for (leaf_path, val) in self.current_environment.value_map.iter() {
-                        if leaf_path.is_first_leaf_rooted_in(&path) {
+                        if leaf_path.is_first_leaf_rooted_in(&path)
+                            && val.expression.infer_type() == ExpressionType::Reference
+                        {
                             result = Some(val.clone());
                             break;
                         }

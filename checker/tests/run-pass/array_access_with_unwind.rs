@@ -6,38 +6,8 @@
 
 // A test that needs to do cleanup if an array access is out of bounds.
 
-#![allow(non_snake_case)]
-
-#[macro_use]
-extern crate mirai_annotations;
-
-pub mod foreign_contracts {
-    pub mod core {
-        pub mod iter {
-            pub mod traits {
-                pub mod iterator {
-                    pub mod Iterator {
-                        pub fn next<T>() -> T {
-                            result!()
-                        }
-                    }
-                }
-            }
-        }
-        pub mod slice {
-            pub mod SliceIndex {
-                pub fn get_unchecked_mut<T>() -> T {
-                    result!()
-                }
-            }
-        }
-    }
-}
-
-//todo: remove this and make foo public when analysis of String::from has been fixed
-#[allow(dead_code)]
-fn foo(arr: &mut [i32], i: usize) -> String {
-    arr[i] = 123; // ~ possible index out of bounds
+pub fn foo(arr: &mut [i32], i: usize) -> String {
+    arr[i] = 123; //~ possible index out of bounds
     let result = String::from("foo"); // allocate something that needs explicit cleanup
     let _e = arr[i]; // no warning here because we can't get here unless the assignment succeeded
     result

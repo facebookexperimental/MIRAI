@@ -478,6 +478,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self & other".
     #[logfn_inputs(TRACE)]
     fn bit_and(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        let self_bool = self.as_bool_if_known();
+        if let Some(false) = self_bool {
+            return Rc::new(FALSE);
+        };
+        let other_bool = other.as_bool_if_known();
+        if let Some(false) = other_bool {
+            return Rc::new(FALSE);
+        };
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
