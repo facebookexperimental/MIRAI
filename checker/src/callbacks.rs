@@ -162,34 +162,33 @@ impl MiraiCallbacks {
 
     fn is_black_listed(file_name: &str) -> bool {
         file_name.contains("admission_control/admission-control-proto/src") // z3 encoding error
+            || file_name.contains("bindgen") // resolve error
             || file_name.contains("crypto/crypto-derive/src") // resolve error
             || file_name.contains("common/bitvec/src") // stack overflow
             || file_name.contains("common/security-logger/src") // resolve error
             || file_name.contains("consensus/src") // Z3 encoding error
-            || file_name.contains("consensus/safety-rules/src") // Z3 encoding error
             || file_name.contains("crypto/crypto/src") // resolve error
-            || file_name.contains("types/src") // resolve error
             || file_name.contains("config/src") // unimplemented case
-            || file_name.contains("storage/jellyfish-merkle/src") // complex loops beyond what we can handle right now
-            || file_name.contains("storage/libradb/src") // resolve error
-            || file_name.contains("storage/scratchpad/src") // resolve error
             || file_name.contains("common/num-variants/src") // resolve error
+            || file_name.contains("env_logger") // unreachable code
             || file_name.contains("language/bytecode-verifier/src") // stack overflow
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // unreachable code
             || file_name.contains("language/stdlib/src") // unreachable code
-            || file_name.contains("language/transaction-builder/src") // slice len
-            || file_name.contains("language/move-lang/src") // Z3 encoding error
+            || file_name.contains("language/move-lang/src") // takes too long
             || file_name.contains("language/move-vm/state/src") // false positives
             || file_name.contains("language/move-vm/runtime/src") // rustc metadata decoder panic
+            || file_name.contains("language/vm/vm-runtime/src") // resolve error
             || file_name.contains("language/vm/src") // resolve error
             || file_name.contains("network/src") // false positives
-            || file_name.contains("client/cli/src") // Z3 encoding error
+            || file_name.contains("client/cli/src") // takes too long
             || file_name.contains("client/libra_wallet/src") // resolve error
-            || file_name.contains("secure/storage/src") // Z3 encoding error
-            || file_name.contains("secure/net/src") // slice len
-            || file_name.contains("state-synchronizer/src") // Z3 encoding error
-            || file_name.contains("language/vm/vm-runtime/src") // resolve error
+            || file_name.contains("regex") // index of bounds
+            || file_name.contains("state-synchronizer/src") // false positives
+            || file_name.contains("storage/jellyfish-merkle/src") // complex loops beyond what we can handle right now
+            || file_name.contains("storage/libradb/src") // resolve error
+            || file_name.contains("storage/scratchpad/src") // resolve error
+            || file_name.contains("types/src") // resolve error
     }
 
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
