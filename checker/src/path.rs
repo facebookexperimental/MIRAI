@@ -75,14 +75,13 @@ impl Path {
     /// returns a path can be used as the root of paths that define the heap value.
     #[logfn_inputs(TRACE)]
     pub fn get_as_path(value: Rc<AbstractValue>) -> Rc<Path> {
-        precondition!(matches!(value.expression, Expression::HeapBlock {..}));
         Rc::new(match &value.expression {
             Expression::HeapBlock { .. } => PathEnum::HeapBlock { value }.into(),
             Expression::Offset { .. } => PathEnum::Offset { value }.into(),
             Expression::Reference(path)
             | Expression::Variable { path, .. }
             | Expression::Widen { path, .. } => path.as_ref().clone(),
-            _ => verify_unreachable!("value is {:?}", value),
+            _ => PathEnum::Constant { value }.into(),
         })
     }
 }
