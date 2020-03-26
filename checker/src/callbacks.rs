@@ -170,11 +170,9 @@ impl MiraiCallbacks {
             || file_name.contains("crypto/crypto/src") // resolve error
             || file_name.contains("config/src") // unimplemented case
             || file_name.contains("common/num-variants/src") // resolve error
-            || file_name.contains("env_logger") // unreachable code
             || file_name.contains("language/bytecode-verifier/src") // stack overflow
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
-            || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // unreachable code
-            || file_name.contains("language/stdlib/src") // unreachable code
+            || file_name.contains("language/stdlib/src") // false positives
             || file_name.contains("language/move-lang/src") // takes too long
             || file_name.contains("language/move-vm/state/src") // false positives
             || file_name.contains("language/move-vm/runtime/src") // rustc metadata decoder panic
