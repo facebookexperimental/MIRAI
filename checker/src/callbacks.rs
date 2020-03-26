@@ -165,6 +165,7 @@ impl MiraiCallbacks {
             || file_name.contains("bindgen") // resolve error
             || file_name.contains("crypto/crypto-derive/src") // resolve error
             || file_name.contains("common/bitvec/src") // stack overflow
+            || file_name.contains("common/debug-interface") // false positives
             || file_name.contains("common/security-logger/src") // resolve error
             || file_name.contains("consensus/src") // Z3 encoding error
             || file_name.contains("crypto/crypto/src") // resolve error
@@ -181,7 +182,6 @@ impl MiraiCallbacks {
             || file_name.contains("network/src") // false positives
             || file_name.contains("client/cli/src") // takes too long
             || file_name.contains("client/libra_wallet/src") // resolve error
-            || file_name.contains("regex") // index of bounds
             || file_name.contains("state-synchronizer/src") // false positives
             || file_name.contains("storage/jellyfish-merkle/src") // complex loops beyond what we can handle right now
             || file_name.contains("storage/libradb/src") // resolve error

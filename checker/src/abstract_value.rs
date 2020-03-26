@@ -307,6 +307,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
+        if let Expression::Neg { operand } = &other.expression {
+            return self.subtract(operand.clone());
+        }
         self.try_to_simplify_binary_op(other, ConstantDomain::add, Self::addition, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Add { left, right })
         })
@@ -574,6 +577,35 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .cast(target_type.clone())
                 .join(right.cast(target_type), &path),
             _ => {
+                match &self.expression {
+                    // [(x as t1) as target_type] -> x as target_type if t1.max_value() >= target_type.max_value()
+                    Expression::Cast {
+                        operand,
+                        target_type: t1,
+                    } => {
+                        if t1.is_integer()
+                            && target_type.is_unsigned_integer()
+                            && t1
+                                .max_value()
+                                .greater_or_equal(&target_type.max_value())
+                                .as_bool_if_known()
+                                .unwrap_or(false)
+                        {
+                            return operand.cast(target_type);
+                        }
+                    }
+                    // [(x % c1) as t] -> (x as t) if c1 == t.modulo_value()
+                    Expression::Rem { left, right } => {
+                        if right
+                            .equals(target_type.modulo_value())
+                            .as_bool_if_known()
+                            .unwrap_or(false)
+                        {
+                            return left.cast(target_type);
+                        }
+                    }
+                    _ => (),
+                }
                 if self.expression.infer_type() != target_type {
                     AbstractValue::make_typed_unary(
                         self.clone(),
@@ -838,6 +870,48 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self / other".
     #[logfn_inputs(TRACE)]
     fn divide(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        match (&self.expression, &other.expression) {
+            // [(x * y) / x] -> y
+            // [(x * y) / y] -> x
+            (Expression::Mul { left: x, right: y }, _) => {
+                if x.expression == other.expression {
+                    // todo: this seems to interfere with other simplifications. Fix it, somehow.
+                    // return y.clone();
+                } else if y.expression == other.expression {
+                    return x.clone();
+                }
+            }
+            (
+                Expression::Cast {
+                    operand,
+                    target_type,
+                },
+                Expression::CompileTimeConstant(ConstantDomain::U128(c2)),
+            ) => {
+                if let Expression::Mul { left: x, right: y } = &operand.expression {
+                    if x.expression == other.expression {
+                        // [((x * y) as target_type) / x] -> y as target_type
+                        return y.cast(target_type.clone());
+                    } else if y.expression == other.expression {
+                        // [((x * y) as target_type) / y] -> x as target_type
+                        return x.cast(target_type.clone());
+                    } else {
+                        // [((c1 * y) as t) / c2] -> ((c1 / c2) * y) as t if c1 >= c2 and c1 % c2 == 0
+                        if let Expression::CompileTimeConstant(ConstantDomain::U128(c1)) =
+                            &x.expression
+                        {
+                            if *c1 > *c2 && *c1 % *c2 == 0 {
+                                return x
+                                    .divide(other)
+                                    .multiply(y.clone())
+                                    .cast(target_type.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            _ => (),
+        }
         self.try_to_simplify_binary_op(other, ConstantDomain::div, Self::divide, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Div { left, right })
         })
@@ -1259,15 +1333,27 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 _ => (),
             }
         }
-        if let Expression::CompileTimeConstant(v2) = &other.expression {
-            match v2 {
+        if let Expression::CompileTimeConstant(c2) = &other.expression {
+            match c2 {
                 ConstantDomain::I128(0) | ConstantDomain::U128(0) => {
                     return other;
                 }
                 ConstantDomain::I128(1) | ConstantDomain::U128(1) => {
                     return self.clone();
                 }
-                _ => (),
+                _ => {
+                    // [(x / c1) * c2] -> x / (c1 / c2) if c1 > c2 && c1 % c2 == 0
+                    if let Expression::Div { left: x, right } = &self.expression {
+                        if let Expression::CompileTimeConstant(c1) = &right.expression {
+                            if let (ConstantDomain::U128(c1), ConstantDomain::U128(c2)) = (c1, c2) {
+                                if c1 > c2 && c1 % c2 == 0 {
+                                    let c1_div_c2: Rc<AbstractValue> = Rc::new((c1 / c2).into());
+                                    return x.divide(c1_div_c2);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         self.try_to_simplify_binary_op(other, ConstantDomain::mul, Self::multiply, |l, r| {
@@ -1511,9 +1597,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self % other".
     #[logfn_inputs(TRACE)]
     fn remainder(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if let Expression::Cast { target_type, .. } = &self.expression {
-            if target_type.modulo_value().eq(&other) {
-                return self.clone();
+        // [(x as t) % c] -> x % c if c.is_power_of_two() && c <= t.modulo_value()
+        if let Expression::Cast {
+            operand: x,
+            target_type: t,
+            ..
+        } = &self.expression
+        {
+            if let Expression::CompileTimeConstant(ConstantDomain::U128(c)) = &other.expression {
+                if c.is_power_of_two()
+                    && other
+                        .less_or_equal(t.modulo_value())
+                        .as_bool_if_known()
+                        .expect("constant folding to work")
+                {
+                    return x.remainder(other);
+                }
             }
         }
         self.try_to_simplify_binary_op(other, ConstantDomain::rem, Self::remainder, |l, r| {
@@ -2295,6 +2394,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         checked_precondition!(path_condition.as_bool_if_known().is_none());
         if depth >= k_limits::MAX_REFINE_DEPTH {
             return self.clone();
+        }
+        if let Expression::Equals { left, right } = &path_condition.expression {
+            if let Expression::CompileTimeConstant(..) = &left.expression {
+                if self.eq(right) {
+                    return left.clone();
+                }
+            }
+            if let Expression::CompileTimeConstant(..) = &right.expression {
+                if self.eq(left) {
+                    return right.clone();
+                }
+            }
         }
         match &self.expression {
             Expression::Bottom | Expression::Top => self.clone(),
