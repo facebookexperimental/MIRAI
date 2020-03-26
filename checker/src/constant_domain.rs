@@ -64,7 +64,7 @@ impl Debug for ConstantDomain {
             ConstantDomain::F32(val) => (f32::from_bits(*val)).fmt(f),
             ConstantDomain::Str(str_val) => str_val.fmt(f),
             ConstantDomain::True => f.write_str("true"),
-            ConstantDomain::U128(val) => val.fmt(f),
+            ConstantDomain::U128(val) => f.write_fmt(format_args!("{}u", val)),
             ConstantDomain::Unimplemented => f.write_str("unimplemented"),
         }
     }
@@ -181,6 +181,16 @@ impl ConstantDomain {
             }
             .into(),
             _ => ConstantDomain::Bottom,
+        }
+    }
+
+    /// The Boolean value of this constant, if it is a Boolean constant, otherwise None.
+    #[logfn_inputs(TRACE)]
+    pub fn as_bool_if_known(&self) -> Option<bool> {
+        match &self {
+            ConstantDomain::True => Some(true),
+            ConstantDomain::False => Some(false),
+            _ => None,
         }
     }
 
@@ -382,6 +392,12 @@ impl ConstantDomain {
             }
             (ConstantDomain::F64(val1), ConstantDomain::F64(val2)) => {
                 f64::from_bits(*val1) == f64::from_bits(*val2)
+            }
+            (ConstantDomain::I128(val1), ConstantDomain::U128(val2)) => {
+                *val1 >= 0 && (*val1 as u128) == *val2
+            }
+            (ConstantDomain::U128(val1), ConstantDomain::I128(val2)) => {
+                *val2 >= 0 && (*val2 as u128) == *val1
             }
             _ => *self == *other,
         }

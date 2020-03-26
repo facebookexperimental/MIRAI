@@ -3,8 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-use crate::abstract_value::AbstractValue;
-use crate::abstract_value::AbstractValueTrait;
+use crate::abstract_value::{self, AbstractValue, AbstractValueTrait};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
@@ -472,7 +471,14 @@ impl PathRefinement for Rc<Path> {
             PathEnum::Offset { value } => {
                 Path::get_as_path(value.refine_parameters(arguments, fresh))
             }
-            PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].0.clone(),
+            PathEnum::Parameter { ordinal } => {
+                if *ordinal > arguments.len() {
+                    debug!("Summary refers to a parameter that does not have a matching argument");
+                    Path::new_constant(Rc::new(abstract_value::BOTTOM))
+                } else {
+                    arguments[*ordinal - 1].0.clone()
+                }
+            }
             PathEnum::Result => Path::new_local(fresh),
             PathEnum::QualifiedPath {
                 qualifier,
