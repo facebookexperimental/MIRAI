@@ -152,10 +152,10 @@ impl AbstractValue {
         right: Rc<AbstractValue>,
         operation: fn(Rc<AbstractValue>, Rc<AbstractValue>) -> Expression,
     ) -> Rc<AbstractValue> {
-        if left.is_top() {
+        if left.is_top() || left.is_bottom() {
             return left;
         }
-        if right.is_top() {
+        if right.is_top() || right.is_bottom() {
             return right;
         }
         let expression_size = left.expression_size.saturating_add(right.expression_size);
@@ -390,24 +390,28 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn and(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         let self_bool = self.as_bool_if_known();
         if let Some(false) = self_bool {
+            // [false && other] -> false
             return Rc::new(FALSE);
         };
         let other_bool = other.as_bool_if_known();
         if let Some(false) = other_bool {
+            // [self && false] -> false
             return Rc::new(FALSE);
         };
         if self_bool.unwrap_or(false) {
             if other_bool.unwrap_or(false) {
+                // [true && true] -> true
                 Rc::new(TRUE)
             } else {
+                // [true && other] -> other
                 other
             }
-        } else if other_bool.unwrap_or(false)
-            || other.is_top()
-            || self.is_bottom() && other.is_bottom()
-        {
+        } else if other_bool.unwrap_or(false) || self.is_bottom() {
+            // [self && true] -> self
+            // [BOTTOM && other] -> BOTTOM
             self.clone()
-        } else if self.is_top() {
+        } else if other.is_bottom() {
+            // [self && BOTTOM] -> BOTTOM
             other
         } else {
             if let Expression::Or { left: x, right: y } = &self.expression {
@@ -708,6 +712,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
         }
 
+        // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
+        consequent = consequent.refine_with(self, 1);
+        alternate = alternate.refine_with(&self.logical_not(), 1);
+
         let expression_size = self
             .expression_size
             .saturating_add(consequent.expression_size)
@@ -875,8 +883,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [(x * y) / y] -> x
             (Expression::Mul { left: x, right: y }, _) => {
                 if x.expression == other.expression {
-                    // todo: this seems to interfere with other simplifications. Fix it, somehow.
-                    // return y.clone();
+                    return y.clone();
                 } else if y.expression == other.expression {
                     return x.clone();
                 }
@@ -1456,11 +1463,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
         }
 
-        if self.as_bool_if_known().unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
-            Rc::new(TRUE)
-        } else if other.is_top() || self.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
+        let self_as_bool = self.as_bool_if_known();
+        if !self_as_bool.unwrap_or(true) {
+            // [false || y] -> y
             other
-        } else if self.is_top() || other.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
+        } else if self_as_bool.unwrap_or(false) || other.as_bool_if_known().unwrap_or(false) {
+            // [true || true] -> true
+            Rc::new(TRUE)
+        } else if other.is_top() || other.is_bottom() || !self.as_bool_if_known().unwrap_or(true) {
+            // [self || TOP] -> TOP
+            // [self || BOTTOM] -> BOTTOM
+            // [false || other] -> other
+            other
+        } else if self.is_top() || self.is_bottom() || !other.as_bool_if_known().unwrap_or(true) {
+            // [TOP || other] -> TOP
+            // [BOTTOM || other] -> BOTTOM
+            // [self || false] -> self
             self.clone()
         } else {
             // [x || x] -> x
@@ -1488,9 +1506,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
 
             match (&self.expression, &other.expression) {
+                // [!x || x] -> true
                 (Expression::LogicalNot { ref operand }, _) if (**operand).eq(&other) => {
                     Rc::new(TRUE)
                 }
+                // [x || !x] -> true
                 (_, Expression::LogicalNot { ref operand }) if (**operand).eq(&self) => {
                     Rc::new(TRUE)
                 }
@@ -1725,6 +1745,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self - other".
     #[logfn_inputs(TRACE)]
     fn subtract(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        // [0 - other] -> -other
+        if let Expression::CompileTimeConstant(ConstantDomain::I128(0))
+        | Expression::CompileTimeConstant(ConstantDomain::U128(0)) = &self.expression
+        {
+            return other.negate();
+        };
+        // [self - (- operand)] -> self + operand
+        if let Expression::Neg { operand } = &other.expression {
+            return self.addition(operand.clone());
+        }
         self.try_to_simplify_binary_op(other, ConstantDomain::sub, Self::subtract, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Sub { left, right })
         })
