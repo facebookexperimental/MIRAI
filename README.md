@@ -1,4 +1,4 @@
-# MIRAI  [![Build Status](https://travis-ci.com/facebookexperimental/MIRAI.svg?token=uaX9rExVwSVz5FfMFphz&branch=master)](https://travis-ci.com/facebookexperimental/MIRAI) [![codecov](https://codecov.io/gh/facebookexperimental/MIRAI/branch/master/graph/badge.svg?token=q4jzL09Ahl)](https://codecov.io/gh/facebookexperimental/MIRAI) [![deps.rs](https://deps.rs/repo/github/facebookexperimental/MIRAI/status.svg)](https://deps.rs/repo/github/facebookexperimental/MIRAI)
+# MIRAI  [![Build Status](https://travis-ci.com/facebookexperimental/MIRAI.svg?token=uaX9rExVwSVz5FfMFphz&branch=master)](https://travis-ci.com/facebookexperimental/MIRAI) [![deps.rs](https://deps.rs/repo/github/facebookexperimental/MIRAI/status.svg)](https://deps.rs/repo/github/facebookexperimental/MIRAI)
 MIRAI is an abstract interpreter for the [Rust](https://www.rust-lang.org/) compiler's [mid-level intermediate
 representation](https://github.com/rust-lang/rfcs/blob/master/text/1211-mir.md) (MIR).
 It is intended to become a widely used static analysis tool for Rust.
@@ -33,11 +33,8 @@ there are no more warnings.
 
 At this stage your code will be better documented and more readable. Perhaps you'll also have found and fixed a few bugs.
 
-Set the verbosity level of output from MIRAI by setting the environment variable `MIRAI_LOG` to one of
-`info`, `warn`, `debug`, or `trace`.
-
-You can also use the environment variable `MIRAI_FLAGS` to provide options to MIRAI. The value is a string which
-can contain any of the following flags:
+You can use the environment variable `MIRAI_FLAGS` to provide command line options to MIRAI. The value is a string
+which can contain any of the following flags:
 
 - `--test_only`: instructs MIRAI to analyze only test methods in your crate. You must also provide the `--tests`
   option to the `cargo build` command to include those tests actually into your build.
@@ -47,18 +44,19 @@ can contain any of the following flags:
 - `--single_func <name>`: the name of a specific function you want to analyze.
 - `--`: any arguments after this marker are passed on to rustc.
 
-A more comprehensive command line interface for MIRAI is planned, but currently not implemented.
+You can get some insight into the inner workings of MIRAI by setting the verbosity level of log output  to one of 
+`warn`, `info`, `debug`, or `trace`, via the environment variable `MIRAI_LOG`.
 
-## Using MIRAI together with the contracts crate
+## Using MIRAI together with the Rust design by contracts crate
 
-Preliminary support for MIRAI is available in the [contracts crate](https://gitlab.com/karroffel/contracts). There
+Preliminary support for MIRAI is available in the [design by contracts crate](https://gitlab.com/karroffel/contracts). There
 is currently no official release containing this support on crates.io, so you must directly refer to the gitlab
 repo using a dependency like below in your Cargo.toml:
 ```toml
 contracts = { git = "https://gitlab.com/karroffel/contracts.git", branch = "master", features = [ "mirai_assertions" ]}
 ```
 
-See the shopping cart example for usage.
+See the [shopping cart example](https://github.com/facebookexperimental/MIRAI/blob/master/examples/shopping_cart/src/main.rs) for usage.
 
 ## Developing MIRAI
 See the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation//DeveloperGuide.md)
@@ -71,18 +69,16 @@ for instructions on how to build, run and debug MIRAI.
 * [Further reading](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/FurtherReading.md).
 
 ## Road map
-* Stabilize MIRAI and get rid of crashing bugs and OOMs
+* Stabilize MIRAI and get rid of crashing bugs.
+* Summaries for intrinsics and standard library functions without MIR.
+* Loop discovery
+* Explicit loop invariants
+* Loop invariant inference
 * Model (ghost) variables
 * Quantifiers
-* Explicit loop invariants
-* Structure invariants
-* More standard library contracts
-* Upgrade log message that affect soundness into compiler warnings
 * Publish MIRAI to crates.io
 * Support linting interfaces
 * Tutorials and worked examples
-* Loop discovery
-* Loop invariant inference
 
 ## Join the MIRAI community
 <!-- * Website:
