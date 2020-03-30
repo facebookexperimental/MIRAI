@@ -728,7 +728,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     result
                 })
             } else {
-                Rc::new(abstract_value::TOP)
+                AbstractValue::make_typed_unknown(result_type.clone())
             }
         } else {
             refined_val
@@ -1600,7 +1600,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             // Done with fixed point, so prepare to summarize.
             if self.post_condition.is_none() && !self.current_environment.entry_condition.is_top() {
                 let return_guard = self.current_environment.entry_condition.as_bool_if_known();
-                if !return_guard.unwrap_or(false) {
+                if return_guard.is_none() {
+                    // If no post condition has been explicitly supplied and if the entry condition is interesting
+                    // then make the entry condition a post condition, because the function only returns
+                    // if this condition is true and thus the caller can assume the condition in its
+                    // normal return path.
                     self.post_condition = Some(self.current_environment.entry_condition.clone());
                 }
             }
@@ -1614,9 +1618,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_unreachable(&mut self) {
         // An unreachable terminator is the compiler's way to tell us that this block will
         // actually never be reached because the type system says so.
-        // Why it is necessary in such a case to actually generate unreachable code is something
-        // to ponder, but it is not our concern.
-        // We don't have to do anything more here because this block precedes no other block.
+        // Having the block in the control flow graph allows the join to remove the condition
+        // guarding entry to this block.
     }
 
     /// Drop the Place
@@ -1997,9 +2000,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             KnownNames::StdOpsFunctionFnCall
             | KnownNames::StdOpsFunctionFnMutCallMut
             | KnownNames::StdOpsFunctionFnOnceCallOnce => {
-                return !self
-                    .try_to_inline_indirectly_called_function(call_info)
-                    .is_bottom();
+                self.inline_indirectly_called_function(call_info);
+                return true;
             }
             KnownNames::MiraiAbstractValue => {
                 checked_assume!(call_info.actual_args.len() == 1);
@@ -2713,7 +2715,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     }
 
     /// Gets the size in bytes of the type parameter T of the std::mem::size_of<T> function.
-    /// Returns TOP if T is not a concrete type.
+    /// Returns and unknown value of type u128 if T is not a concrete type.
     #[logfn_inputs(TRACE)]
     fn handle_size_of(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
         checked_assume!(call_info.actual_args.is_empty());
@@ -2726,7 +2728,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if let Ok(layout) = self.tcx.layout_of(param_env.and(*t)) {
             Rc::new((layout.details.size.bytes() as u128).into())
         } else {
-            abstract_value::TOP.into()
+            AbstractValue::make_typed_unknown(ExpressionType::U128)
         }
     }
 
@@ -2738,10 +2740,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ///
     /// All of this happens in code that is not encoded as MIR, so MIRAI needs built in support for it.
     #[logfn_inputs(TRACE)]
-    fn try_to_inline_indirectly_called_function(
-        &mut self,
-        caller_call_info: &CallInfo<'_, 'tcx>,
-    ) -> Rc<AbstractValue> {
+    fn inline_indirectly_called_function(&mut self, caller_call_info: &CallInfo<'_, 'tcx>) {
         checked_assume!(caller_call_info.actual_args.len() == 2);
         // Get the function to call (it is either a function pointer or a closure)
         let callee = caller_call_info.actual_args[0].1.clone();
@@ -2827,7 +2826,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.check_preconditions_if_necessary(&call_info, &function_summary);
         self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
         self.transfer_and_refine_cleanup_state(&call_info, &function_summary);
-        abstract_value::TOP.into()
     }
 
     /// Checks if the preconditions obtained from the summary of the function being called
@@ -4467,7 +4465,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let len = if let Ok(layout) = self.tcx.layout_of(param_env.and(ty)) {
             Rc::new((layout.details.size.bytes() as u128).into())
         } else {
-            abstract_value::TOP.into()
+            AbstractValue::make_typed_unknown(ExpressionType::U128)
         };
         let alignment = Rc::new(1u128.into());
         let value = match null_op {
@@ -4570,12 +4568,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         operands: &[mir::Operand<'tcx>],
     ) {
         precondition!(matches!(aggregate_kinds, mir::AggregateKind::Array(..)));
-        if path.path_length() >= k_limits::MAX_PATH_LENGTH {
-            // If we get to this limit we have a very weird array. Just use Top.
-            self.current_environment
-                .update_value_at(path, abstract_value::TOP.into());
-            return;
-        }
         let length_path = Path::new_length(path.clone(), &self.current_environment);
         let length_value: Rc<AbstractValue> = Rc::new(
             self.constant_value_cache

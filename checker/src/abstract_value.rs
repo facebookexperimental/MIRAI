@@ -200,13 +200,14 @@ impl AbstractValue {
     #[logfn_inputs(TRACE)]
     pub fn make_from(expression: Expression, expression_size: u64) -> Rc<AbstractValue> {
         if expression_size > k_limits::MAX_EXPRESSION_SIZE {
-            return Rc::new(TOP);
+            AbstractValue::make_typed_unknown(expression.infer_type())
+        } else {
+            Rc::new(AbstractValue {
+                expression,
+                expression_size,
+                interval: RefCell::new(None),
+            })
         }
-        Rc::new(AbstractValue {
-            expression,
-            expression_size,
-            interval: RefCell::new(None),
-        })
     }
 
     /// Creates an abstract value that is a reference to the memory named by the given path.
@@ -217,6 +218,18 @@ impl AbstractValue {
         }
         let path_length = path.path_length() as u64;
         AbstractValue::make_from(Expression::Reference(path), path_length)
+    }
+
+    /// Creates an abstract value about which nothing is known other than its type.
+    #[logfn_inputs(TRACE)]
+    pub fn make_typed_unknown(var_type: ExpressionType) -> Rc<AbstractValue> {
+        AbstractValue::make_from(
+            Expression::Variable {
+                path: Path::new_constant(TOP.into()), //todo: maybe something unique here?
+                var_type,
+            },
+            1,
+        )
     }
 }
 
@@ -870,7 +883,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     "found unhandled expression that is of type reference: {:?}",
                     self.expression
                 );
-                TOP.into()
+                AbstractValue::make_typed_unknown(target_type)
             }
         }
     }
