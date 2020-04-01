@@ -200,7 +200,25 @@ impl AbstractValue {
     #[logfn_inputs(TRACE)]
     pub fn make_from(expression: Expression, expression_size: u64) -> Rc<AbstractValue> {
         if expression_size > k_limits::MAX_EXPRESSION_SIZE {
-            AbstractValue::make_typed_unknown(expression.infer_type())
+            // If the expression gets too large, refining it gets expensive and composing it
+            // into other expressions leads to exponential growth. We therefore need to abstract
+            // (go up in the lattice). We do that by making the expression a typed variable and
+            // by eagerly computing and caching any other domains, such as the interval domain.
+            let var_type = expression.infer_type();
+            let val = Rc::new(AbstractValue {
+                expression,
+                expression_size,
+                interval: RefCell::new(None),
+            });
+            let interval = val.get_as_interval();
+            Rc::new(AbstractValue {
+                expression: Expression::Variable {
+                    path: Path::new_constant(TOP.into()), //todo: maybe something unique here?
+                    var_type,
+                },
+                expression_size: 1,
+                interval: RefCell::new(Some(Rc::new(interval))),
+            })
         } else {
             Rc::new(AbstractValue {
                 expression,

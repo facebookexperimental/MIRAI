@@ -197,6 +197,15 @@ pub mod core {
         }
 
         pub trait Ord {
+            fn cmp__i128(a: i128, b: i128) -> std::cmp::Ordering {
+                if a < b {
+                    std::cmp::Ordering::Less
+                } else if a == b {
+                    std::cmp::Ordering::Equal
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            }
             fn cmp__usize(a: usize, b: usize) -> std::cmp::Ordering {
                 if a < b {
                     std::cmp::Ordering::Less
