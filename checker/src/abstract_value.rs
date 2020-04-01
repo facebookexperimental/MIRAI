@@ -427,6 +427,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [self && BOTTOM] -> BOTTOM
             other
         } else {
+            let other = if self_bool.is_none() {
+                other.refine_with(self, 1)
+            } else {
+                other
+            };
             if let Expression::Or { left: x, right: y } = &self.expression {
                 // [(x || y) && x] -> x
                 // [(x || y) && y] -> y
@@ -1461,6 +1466,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Returns an element that is "self || other".
     #[logfn_inputs(TRACE)]
+    #[allow(clippy::cognitive_complexity)]
     fn or(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         fn unsimplified(x: &Rc<AbstractValue>, y: Rc<AbstractValue>) -> Rc<AbstractValue> {
             AbstractValue::make_binary(x.clone(), y, |left, right| Expression::Or { left, right })
@@ -1613,6 +1619,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // [(x && !y) || y] -> (y || x)
                 (Expression::And { left: x, right }, _) => match &right.expression {
                     Expression::LogicalNot { operand: y } if *y == other => y.or(x.clone()),
+                    _ => unsimplified(self, other),
+                },
+
+                // [x || !(x || y)] -> x || !y
+                (_, Expression::LogicalNot { operand }) => match &operand.expression {
+                    Expression::Or { left: x2, right: y } if *self == *x2 => {
+                        self.or(y.logical_not())
+                    }
                     _ => unsimplified(self, other),
                 },
 
