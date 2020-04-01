@@ -177,6 +177,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-lang/src") // takes too long
             || file_name.contains("language/move-vm/state/src") // false positives
             || file_name.contains("language/move-vm/runtime/src") // rustc metadata decoder panic
+            || file_name.contains("language/transaction-builder/src") // resolve error
             || file_name.contains("language/vm/vm-runtime/src") // resolve error
             || file_name.contains("language/vm/src") // resolve error
             || file_name.contains("network/src") // false positives
