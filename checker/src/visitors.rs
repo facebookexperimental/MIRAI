@@ -524,22 +524,21 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// computing it if necessary.
     #[logfn_inputs(TRACE)]
     fn try_to_devirtualize(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Option<Summary> {
-        let env_def_id = if self.tcx.is_closure(self.def_id) {
-            self.tcx.closure_base_def_id(self.def_id)
-        } else {
-            self.def_id
-        };
         if let Some(gen_args) = call_info.callee_generic_arguments {
             if !utils::are_concrete(gen_args) {
                 trace!("non concrete generic args {:?}", gen_args);
                 return None;
             }
             // The parameter environment of the caller provides a resolution context for the callee.
-            let param_env = self.tcx.param_env(env_def_id);
+            let param_env = self.get_param_env();
             trace!(
                 "devirtualize resolving def_id {:?}: {:?}",
                 call_info.callee_def_id,
                 self.tcx.type_of(call_info.callee_def_id)
+            );
+            trace!(
+                "devirtualize resolving func_ref {:?}",
+                call_info.callee_func_ref,
             );
             trace!("gen_args {:?}", gen_args);
             if let Some(instance) =
@@ -1673,6 +1672,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // a million local variables.
         self.fresh_variable_offset += 1_000_000;
 
+        trace!("source location {:?}", self.current_span);
+        trace!("call stack {:?}", self.active_calls);
         trace!("visit_call {:?} {:?}", func, args);
         trace!("self.generic_argument_map {:?}", self.generic_argument_map);
         trace!("env {:?}", self.current_environment);
@@ -4461,7 +4462,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Create a value based on the given type and assign it to path.
     #[logfn_inputs(TRACE)]
     fn visit_nullary_op(&mut self, path: Rc<Path>, null_op: mir::NullOp, ty: rustc::ty::Ty<'tcx>) {
-        let param_env = self.tcx.param_env(self.def_id);
+        let param_env = self.get_param_env();
         let len = if let Ok(layout) = self.tcx.layout_of(param_env.and(ty)) {
             Rc::new((layout.details.size.bytes() as u128).into())
         } else {
@@ -4550,12 +4551,22 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// Returns the size in bytes (including padding) of an instance of the given type.
     fn get_type_size(&self, ty: Ty<'tcx>) -> u64 {
-        let param_env = self.tcx.param_env(self.def_id);
+        let param_env = self.get_param_env();
         if let Ok(layout) = self.tcx.layout_of(param_env.and(ty)) {
             layout.details.size.bytes()
         } else {
             0
         }
+    }
+
+    /// Returns a parameter environment for the current function.
+    fn get_param_env(&self) -> rustc::ty::ParamEnv<'tcx> {
+        let env_def_id = if self.tcx.is_closure(self.def_id) {
+            self.tcx.closure_base_def_id(self.def_id)
+        } else {
+            self.def_id
+        };
+        self.tcx.param_env(env_def_id)
     }
 
     /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.

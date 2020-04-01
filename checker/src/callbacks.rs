@@ -162,15 +162,15 @@ impl MiraiCallbacks {
 
     fn is_black_listed(file_name: &str) -> bool {
         file_name.contains("admission_control/admission-control-proto/src") // z3 encoding error
-            || file_name.contains("bindgen") // resolve error
-            || file_name.contains("crypto/crypto-derive/src") // resolve error
+            || file_name.contains("crypto/crypto/src") // resolve error because of Box::as_ref not being inlined
+            || file_name.contains("crypto/crypto-derive/src") // resolve error because of Box::as_ref not being inlined
             || file_name.contains("common/bitvec/src") // stack overflow
-            || file_name.contains("common/debug-interface") // false positives
-            || file_name.contains("common/security-logger/src") // resolve error
+            || file_name.contains("common/bounded-executor/src") // false positive: possible assertion failed: ptr.as_ptr() as usize & NUM_FLAG == 0
+            || file_name.contains("common/debug-interface/src") // false positives
+            || file_name.contains("common/futures-semaphore/src") // false positive: possible assertion failed: ptr.as_ptr() as usize & NUM_FLAG == 0
+            || file_name.contains("common/metrics/src") // takes too long
             || file_name.contains("consensus/src") // Z3 encoding error
-            || file_name.contains("crypto/crypto/src") // resolve error
             || file_name.contains("config/src") // unimplemented case
-            || file_name.contains("common/num-variants/src") // resolve error
             || file_name.contains("language/bytecode-verifier/src") // stack overflow
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
             || file_name.contains("language/stdlib/src") // false positives
@@ -178,14 +178,14 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-vm/state/src") // false positives
             || file_name.contains("language/move-vm/runtime/src") // rustc metadata decoder panic
             || file_name.contains("language/transaction-builder/src") // resolve error
-            || file_name.contains("language/vm/vm-runtime/src") // resolve error
-            || file_name.contains("language/vm/src") // resolve error
+            || file_name.contains("language/vm/src") // takes too long
             || file_name.contains("network/src") // false positives
             || file_name.contains("client/cli/src") // takes too long
-            || file_name.contains("client/libra_wallet/src") // resolve error
+            || file_name.contains("client/libra_wallet/src") // false positive: self.execute(offset, len, |buffer| dst[..len].copy_from_slice(buffer));
             || file_name.contains("state-synchronizer/src") // false positives
-            || file_name.contains("storage/jellyfish-merkle/src") // complex loops beyond what we can handle right now
-            || file_name.contains("storage/libradb/src") // resolve error
+            || file_name.contains("storage/jellyfish-merkle/src") // false positives due to complex loops beyond what we can handle right now
+            || file_name.contains("storage/libradb/src") // takes too long
+            || file_name.contains("storage/schemadb/src") // takes too long
             || file_name.contains("storage/scratchpad/src") // resolve error
             || file_name.contains("types/src") // resolve error
     }
