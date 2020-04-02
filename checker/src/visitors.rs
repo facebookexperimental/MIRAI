@@ -443,7 +443,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.function_name, elapsed_time_in_seconds,
             );
             self.active_calls.pop();
-            return Summary::default();
+            self.assume_function_is_angelic = true;
         }
 
         if !self.assume_function_is_angelic {
@@ -468,7 +468,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.tcx,
             )
         } else {
-            Summary::default()
+            let mut result = Summary::default();
+            result.is_computed = true; // Otherwise this function keeps getting re-analyzed
+            result.is_angelic = true; // Callers have to make possibly false assumptions.
+            result
         }
     }
 
@@ -564,7 +567,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     let cached_summary = self
                         .summary_cache
                         .get_summary_for_call_site(&func_ref, None);
-                    if cached_summary.is_not_default {
+                    if cached_summary.is_computed {
                         return Some(cached_summary.clone());
                     }
 
@@ -822,7 +825,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let cached_summary = self
                 .summary_cache
                 .get_summary_for_call_site(&func_ref, None);
-            if cached_summary.is_not_default {
+            if cached_summary.is_computed {
                 cached_summary
             } else {
                 summary = self.create_and_cache_function_summary(&call_info);
@@ -1735,7 +1738,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let function_summary = self
             .get_function_summary(&call_info)
             .unwrap_or_else(Summary::default);
-        if self.check_for_errors && !function_summary.is_not_default {
+        if self.check_for_errors && (!function_summary.is_computed || function_summary.is_angelic) {
             self.deal_with_missing_summary(&call_info);
         }
         debug!(
@@ -1860,7 +1863,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     // Give a diagnostic about this call, and make it the programmer's problem.
                     let error = self.session.struct_span_err(
                         self.current_span,
-                        "the called function has no body and has not been summarized, all bets are off",
+                        "the called function could not be summarized, all bets are off",
                     );
                     self.emit_diagnostic(error);
                 }
@@ -1893,7 +1896,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .summary_cache
                 .get_summary_for_call_site(&func_ref, func_args)
                 .clone();
-            if result.is_not_default || func_ref.def_id.is_none() {
+            if result.is_computed || func_ref.def_id.is_none() {
                 return Some(result);
             }
             if !self.active_calls.contains(&func_ref.def_id.unwrap()) {
@@ -2979,7 +2982,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let return_value_path = Path::new_result();
 
             // Transfer side effects
-            if function_summary.is_not_default {
+            if function_summary.is_computed && !function_summary.is_angelic {
                 // Effects on the heap
                 for (path, value) in function_summary.side_effects.iter() {
                     if path.is_rooted_by_abstract_heap_block() {
