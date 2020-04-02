@@ -53,7 +53,18 @@ use std::rc::Rc;
 pub struct Summary {
     /// If true this summary was computed. If false, it is a default summary.
     /// Used to distinguish a computed empty summary from a default summary.
-    pub is_not_default: bool,
+    /// In the latter case, the summary should be computed from MIR, if available.
+    /// If no MIR is available, the summary is left empty but marked as is_computed so that
+    /// there are no repeated attempts at recomputing the summary.
+    pub is_computed: bool,
+
+    /// If true, the summary is "angelic", which is to say it is assumed to have no preconditions
+    /// and to always return, but it also provides no post condition.
+    /// This happens if the computation of the computation of this summary failed for some reason,
+    /// for example no MIR body or a time-out.
+    /// A function that makes use of an angelic summary cannot be fully analyzed and thus becomes
+    /// angelic in turn.
+    pub is_angelic: bool,
 
     // Conditions that should hold prior to the call.
     // Callers should substitute parameter values with argument values and simplify the results
@@ -192,7 +203,8 @@ impl Summary {
         );
 
         Summary {
-            is_not_default: true,
+            is_computed: true,
+            is_angelic: self.is_angelic || other.is_angelic,
             preconditions: other.preconditions.clone(),
             side_effects,
             post_condition: other.post_condition.clone(),
@@ -270,7 +282,8 @@ pub fn summarize(
     unwind_side_effects.sort();
 
     Summary {
-        is_not_default: true,
+        is_computed: true,
+        is_angelic: false,
         preconditions,
         side_effects,
         post_condition: post_condition.clone(),
