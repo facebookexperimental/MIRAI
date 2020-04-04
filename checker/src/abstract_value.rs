@@ -446,7 +446,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             other
         } else {
             let other = if self_bool.is_none() {
-                other.refine_with(self, 1)
+                other.refine_with(self, 5)
             } else {
                 other
             };
@@ -750,8 +750,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
 
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
-        consequent = consequent.refine_with(self, 1);
-        alternate = alternate.refine_with(&self.logical_not(), 1);
+        consequent = consequent.refine_with(self, 5);
+        alternate = alternate.refine_with(&self.logical_not(), 5);
 
         let expression_size = self
             .expression_size
