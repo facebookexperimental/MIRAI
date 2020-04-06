@@ -2815,6 +2815,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         call_info.function_constant_args = &function_constant_args;
         let function_summary = if let Some(func_ref) = &call_info.callee_func_ref {
             call_info.callee_def_id = func_ref.def_id.expect("defined when used here");
+            call_info.callee_generic_arguments =
+                self.substs_cache.get(&call_info.callee_def_id).cloned();
             let summary = self.get_function_summary(&call_info);
             if let Some(summary) = summary {
                 summary
@@ -4894,7 +4896,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     ) {
                         let item_def_id = instance.def.def_id();
                         let item_type = self.tcx.type_of(item_def_id);
-                        self.specialize_generic_argument_type(item_type, map)
+                        if item_type == gen_arg_type {
+                            // Can happen if the projection just adds a life time
+                            item_type
+                        } else {
+                            self.specialize_generic_argument_type(item_type, map)
+                        }
                     } else {
                         debug!("could not resolve an associated type with concrete type arguments");
                         gen_arg_type
