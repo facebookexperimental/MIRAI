@@ -15,7 +15,7 @@ cargo audit
 cargo clippy -- -D warnings
 # Build
 cd checker; cargo rustc --lib -- -D rust-2018-idioms
-cd ..; cargo build
+cd ..
 
 # Install MIRAI into cargo
 cargo uninstall mirai || true
