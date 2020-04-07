@@ -22,18 +22,18 @@ use crate::utils;
 use log_derive::*;
 use mirai_annotations::*;
 use rpds::HashTrieMap;
-use rustc::mir;
-use rustc::mir::interpret::{ConstValue, Scalar};
-use rustc::session::Session;
-use rustc::ty::layout::VariantIdx;
-use rustc::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
-use rustc::ty::{
-    AdtDef, Const, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig,
-    ParamTy, Ty, TyCtxt, TyKind, TypeAndMut, UserTypeAnnotationIndex,
-};
 use rustc_data_structures::graph::dominators::Dominators;
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
+use rustc_middle::mir;
+use rustc_middle::mir::interpret::{ConstValue, Scalar};
+use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
+use rustc_middle::ty::{
+    AdtDef, Const, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig,
+    ParamTy, Ty, TyCtxt, TyKind, TypeAndMut, UserTypeAnnotationIndex,
+};
+use rustc_session::Session;
+use rustc_target::abi::VariantIdx;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -580,9 +580,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 call_info.callee_func_ref,
             );
             trace!("gen_args {:?}", gen_args);
-            if let Some(instance) =
-                rustc::ty::Instance::resolve(self.tcx, param_env, call_info.callee_def_id, gen_args)
-            {
+            if let Some(instance) = rustc_middle::ty::Instance::resolve(
+                self.tcx,
+                param_env,
+                call_info.callee_def_id,
+                gen_args,
+            ) {
                 let resolved_def_id = instance.def.def_id();
                 let resolved_ty = self.tcx.type_of(resolved_def_id);
                 trace!(
@@ -1450,7 +1453,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             } => self.visit_set_discriminant(place, *variant_index),
             mir::StatementKind::StorageLive(local) => self.visit_storage_live(*local),
             mir::StatementKind::StorageDead(local) => self.visit_storage_dead(*local),
-            mir::StatementKind::InlineAsm(inline_asm) => self.visit_inline_asm(inline_asm),
+            mir::StatementKind::LlvmInlineAsm(inline_asm) => self.visit_inline_asm(inline_asm),
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
             mir::StatementKind::AscribeUserType(..) => assume_unreachable!(),
             mir::StatementKind::Nop => (),
@@ -1473,7 +1476,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_set_discriminant(
         &mut self,
         place: &mir::Place<'tcx>,
-        variant_index: rustc::ty::layout::VariantIdx,
+        variant_index: rustc_target::abi::VariantIdx,
     ) {
         let target_path =
             Path::new_discriminant(self.visit_place(place), &self.current_environment);
@@ -1501,7 +1504,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// Execute a piece of inline Assembly.
     #[logfn_inputs(TRACE)]
-    fn visit_inline_asm(&mut self, inline_asm: &mir::InlineAsm<'tcx>) {
+    fn visit_inline_asm(&mut self, inline_asm: &mir::LlvmInlineAsm<'tcx>) {
         let span = self.current_span;
         let err = self.session.struct_span_warn(
             span,
@@ -1599,7 +1602,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_switch_int(
         &mut self,
         discr: &mir::Operand<'tcx>,
-        switch_ty: rustc::ty::Ty<'tcx>,
+        switch_ty: rustc_middle::ty::Ty<'tcx>,
         values: &[u128],
         targets: &[mir::BasicBlock],
     ) {
@@ -2773,8 +2776,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .get(&sym)
             .expect("std::mem::size must have generic argument T");
         let param_env = self.tcx.param_env(call_info.callee_def_id);
-        if let Ok(layout) = self.tcx.layout_of(param_env.and(*t)) {
-            Rc::new((layout.details.size.bytes() as u128).into())
+        if let Ok(ty_and_layout) = self.tcx.layout_of(param_env.and(*t)) {
+            Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
         } else {
             AbstractValue::make_typed_unknown(ExpressionType::U128)
         }
@@ -4310,14 +4313,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// path = [x; 32]
     #[logfn_inputs(TRACE)]
-    fn visit_repeat(&mut self, path: Rc<Path>, operand: &mir::Operand<'tcx>, count: u64) {
+    fn visit_repeat(&mut self, path: Rc<Path>, operand: &mir::Operand<'tcx>, count: &Const<'tcx>) {
         let length_path = Path::new_length(path.clone(), &self.current_environment);
-        let length_value: Rc<AbstractValue> = Rc::new(
-            self.constant_value_cache
-                .get_u128_for(u128::from(count))
-                .clone()
-                .into(),
-        );
+        let length_value = self.visit_constant(None, count);
         self.current_environment
             .update_value_at(length_path, length_value.clone());
         let slice_path = Path::new_slice(path, length_value, &self.current_environment);
@@ -4409,7 +4407,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         path: Rc<Path>,
         cast_kind: mir::CastKind,
         operand: &mir::Operand<'tcx>,
-        ty: rustc::ty::Ty<'tcx>,
+        ty: rustc_middle::ty::Ty<'tcx>,
     ) {
         let operand = self.visit_operand(operand);
         let result = if cast_kind == mir::CastKind::Misc {
@@ -4515,10 +4513,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
     /// Create a value based on the given type and assign it to path.
     #[logfn_inputs(TRACE)]
-    fn visit_nullary_op(&mut self, path: Rc<Path>, null_op: mir::NullOp, ty: rustc::ty::Ty<'tcx>) {
+    fn visit_nullary_op(
+        &mut self,
+        path: Rc<Path>,
+        null_op: mir::NullOp,
+        ty: rustc_middle::ty::Ty<'tcx>,
+    ) {
         let param_env = self.get_param_env();
-        let len = if let Ok(layout) = self.tcx.layout_of(param_env.and(ty)) {
-            Rc::new((layout.details.size.bytes() as u128).into())
+        let len = if let Ok(ty_and_layout) = self.tcx.layout_of(param_env.and(ty)) {
+            Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
         } else {
             AbstractValue::make_typed_unknown(ExpressionType::U128)
         };
@@ -4605,15 +4608,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Returns the size in bytes (including padding) of an instance of the given type.
     fn get_type_size(&self, ty: Ty<'tcx>) -> u64 {
         let param_env = self.get_param_env();
-        if let Ok(layout) = self.tcx.layout_of(param_env.and(ty)) {
-            layout.details.size.bytes()
+        if let Ok(ty_and_layout) = self.tcx.layout_of(param_env.and(ty)) {
+            ty_and_layout.layout.size.bytes()
         } else {
             0
         }
     }
 
     /// Returns a parameter environment for the current function.
-    fn get_param_env(&self) -> rustc::ty::ParamEnv<'tcx> {
+    fn get_param_env(&self) -> rustc_middle::ty::ParamEnv<'tcx> {
         let env_def_id = if self.tcx.is_closure(self.def_id) {
             self.tcx.closure_base_def_id(self.def_id)
         } else {
@@ -4840,9 +4843,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
                 self.tcx.mk_slice(specialized_elem_ty)
             }
-            TyKind::RawPtr(rustc::ty::TypeAndMut { ty, mutbl }) => {
+            TyKind::RawPtr(rustc_middle::ty::TypeAndMut { ty, mutbl }) => {
                 let specialized_ty = self.specialize_generic_argument_type(ty, map);
-                self.tcx.mk_ptr(rustc::ty::TypeAndMut {
+                self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
                     ty: specialized_ty,
                     mutbl,
                 })
@@ -4851,7 +4854,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let specialized_ty = self.specialize_generic_argument_type(ty, map);
                 self.tcx.mk_ref(
                     region,
-                    rustc::ty::TypeAndMut {
+                    rustc_middle::ty::TypeAndMut {
                         ty: specialized_ty,
                         mutbl,
                     },
@@ -4879,7 +4882,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.tcx.mk_fn_ptr(specialized_fn_sig)
             }
             TyKind::Dynamic(predicates, region) => {
-                let map_predicates = |predicates: &rustc::ty::List<ExistentialPredicate<'tcx>>| {
+                let map_predicates = |predicates: &rustc_middle::ty::List<
+                    ExistentialPredicate<'tcx>,
+                >| {
                     self.tcx.mk_existential_predicates(predicates.iter().map(
                         |pred: &ExistentialPredicate<'tcx>| match pred {
                             ExistentialPredicate::Trait(ExistentialTraitRef { def_id, substs }) => {
@@ -4912,7 +4917,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     .mk_generator(def_id, self.specialize_substs(substs, map), movability)
             }
             TyKind::GeneratorWitness(bound_types) => {
-                let map_types = |types: &rustc::ty::List<Ty<'tcx>>| {
+                let map_types = |types: &rustc_middle::ty::List<Ty<'tcx>>| {
                     self.tcx.mk_type_list(
                         types
                             .iter()
@@ -4937,7 +4942,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         .tcx
                         .param_env(self.tcx.associated_item(item_def_id).container.id());
                     let specialized_substs = self.specialize_substs(projection.substs, map);
-                    if let Some(instance) = rustc::ty::Instance::resolve(
+                    if let Some(instance) = rustc_middle::ty::Instance::resolve(
                         self.tcx,
                         param_env,
                         item_def_id,
@@ -5006,7 +5011,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let ty = literal.ty;
 
         match &literal.val {
-            rustc::ty::ConstKind::Unevaluated(def_id, substs, promoted) => {
+            rustc_middle::ty::ConstKind::Unevaluated(def_id, substs, promoted) => {
                 let substs = self.specialize_substs(substs, &self.generic_argument_map);
                 self.substs_cache.insert(*def_id, substs);
                 let name = utils::summary_key_str(self.tcx, *def_id);
@@ -5036,10 +5041,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     | TyKind::Float(..)
                     | TyKind::Int(..)
                     | TyKind::Uint(..) => {
-                        if let rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
-                            data,
-                            size,
-                        })) = &literal.val
+                        if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
+                            Scalar::Raw { data, size },
+                        )) = &literal.val
                         {
                             result = self.get_constant_from_scalar(&ty.kind, *data, *size);
                         } else {
@@ -5054,12 +5058,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                     TyKind::Ref(
                         _,
-                        &rustc::ty::TyS {
+                        &rustc_middle::ty::TyS {
                             kind: TyKind::Str, ..
                         },
                         _,
                     ) => {
-                        result = if let rustc::ty::ConstKind::Value(ConstValue::Slice {
+                        result = if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice {
                             data,
                             start,
                             end,
@@ -5074,9 +5078,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                     // invent a pointer, only the offset is relevant anyway
                                     mir::interpret::Pointer::new(
                                         mir::interpret::AllocId(0),
-                                        rustc::ty::layout::Size::from_bytes(*start as u64),
+                                        rustc_target::abi::Size::from_bytes(*start as u64),
                                     ),
-                                    rustc::ty::layout::Size::from_bytes(slice_len as u64),
+                                    rustc_target::abi::Size::from_bytes(slice_len as u64),
                                 )
                                 .unwrap();
 
@@ -5098,7 +5102,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                     TyKind::Ref(
                         _,
-                        &rustc::ty::TyS {
+                        &rustc_middle::ty::TyS {
                             kind: TyKind::Array(elem_type, length),
                             ..
                         },
@@ -5108,13 +5112,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                     TyKind::Ref(
                         _,
-                        &rustc::ty::TyS {
+                        &rustc_middle::ty::TyS {
                             kind: TyKind::Slice(elem_type),
                             ..
                         },
                         _,
                     ) => match &literal.val {
-                        rustc::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
+                        rustc_middle::ty::ConstKind::Value(ConstValue::Slice {
+                            data,
+                            start,
+                            end,
+                        }) => {
                             // The rust compiler should ensure this.
                             assume!(*end >= *start);
                             let slice_len = *end - *start;
@@ -5124,9 +5132,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                     // invent a pointer, only the offset is relevant anyway
                                     mir::interpret::Pointer::new(
                                         mir::interpret::AllocId(0),
-                                        rustc::ty::layout::Size::from_bytes(*start as u64),
+                                        rustc_target::abi::Size::from_bytes(*start as u64),
                                     ),
-                                    rustc::ty::layout::Size::from_bytes(slice_len as u64),
+                                    rustc_target::abi::Size::from_bytes(slice_len as u64),
                                 )
                                 .unwrap();
 
@@ -5134,7 +5142,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             let e_type = ExpressionType::from(&elem_type.kind);
                             return self.deconstruct_constant_array(slice, e_type, None);
                         }
-                        rustc::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
+                        rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                             let e_type = ExpressionType::from(&elem_type.kind);
                             let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
                             let len = alloc.len() as u64;
@@ -5151,7 +5159,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 .get_bytes_with_undef_and_ptr(
                                     &self.tcx,
                                     ptr,
-                                    rustc::ty::layout::Size::from_bytes(num_bytes),
+                                    rustc_target::abi::Size::from_bytes(num_bytes),
                                 )
                                 .unwrap();
                             return self.deconstruct_constant_array(&bytes, e_type, None);
@@ -5161,12 +5169,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             unimplemented!();
                         }
                     },
-                    TyKind::RawPtr(rustc::ty::TypeAndMut {
+                    TyKind::RawPtr(rustc_middle::ty::TypeAndMut {
                         ty,
                         mutbl: rustc_hir::Mutability::Mut,
                     })
                     | TyKind::Ref(_, ty, rustc_hir::Mutability::Mut) => match &literal.val {
-                        rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
+                        rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
                             let summary_cache_key = format!("{:?}", p).into();
                             let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
                             let path = Rc::new(
@@ -5189,10 +5197,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                     TyKind::Tuple(..) | TyKind::Adt(..) => {
                         match &literal.val {
-                            rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
-                                size: 0,
-                                ..
-                            })) => {
+                            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
+                                Scalar::Raw { size: 0, .. },
+                            )) => {
                                 return self.get_new_heap_block(
                                     Rc::new(0u128.into()),
                                     Rc::new(1u128.into()),
@@ -5223,12 +5230,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn get_reference_to_constant(
         &mut self,
-        literal: &rustc::ty::Const<'tcx>,
+        literal: &rustc_middle::ty::Const<'tcx>,
         ty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
         match &literal.val {
-            rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
-                if let Some(rustc::mir::interpret::GlobalAlloc::Static(def_id)) =
+            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
+                if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
                     self.tcx.alloc_map.lock().get(p.alloc_id)
                 {
                     let name = utils::summary_key_str(self.tcx, def_id);
@@ -5248,7 +5255,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 debug!("ptr {:?}", p);
                 assume_unreachable!();
             }
-            rustc::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
+            rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
                 self.get_value_from_slice(&ty.kind, *data, *start, *end)
             }
             _ => {
@@ -5263,12 +5270,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn get_enum_variant_as_constant(
         &mut self,
-        literal: &rustc::ty::Const<'tcx>,
+        literal: &rustc_middle::ty::Const<'tcx>,
         ty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
         let result;
         match &literal.val {
-            rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw { data, size }))
+            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw { data, size }))
                 if *size == 1 =>
             {
                 let e =
@@ -5349,9 +5356,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 // invent a pointer, only the offset is relevant anyway
                 mir::interpret::Pointer::new(
                     mir::interpret::AllocId(0),
-                    rustc::ty::layout::Size::from_bytes(start as u64),
+                    rustc_target::abi::Size::from_bytes(start as u64),
                 ),
-                rustc::ty::layout::Size::from_bytes(slice_len as u64),
+                rustc_target::abi::Size::from_bytes(slice_len as u64),
             )
             .unwrap();
         let slice = &bytes[start..end];
@@ -5382,19 +5389,21 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_reference_to_array_constant(
         &mut self,
-        literal: &rustc::ty::Const<'tcx>,
-        elem_type: &rustc::ty::TyS<'tcx>,
-        length: &rustc::ty::Const<'tcx>,
+        literal: &rustc_middle::ty::Const<'tcx>,
+        elem_type: &rustc_middle::ty::TyS<'tcx>,
+        length: &rustc_middle::ty::Const<'tcx>,
     ) -> Rc<AbstractValue> {
-        use rustc::mir::interpret::{ConstValue, Scalar};
+        use rustc_middle::mir::interpret::{ConstValue, Scalar};
 
-        if let rustc::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw { data, .. }, ..)) =
-            &length.val
+        if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
+            Scalar::Raw { data, .. },
+            ..,
+        )) = &length.val
         {
             let len = *data;
             let e_type = ExpressionType::from(&elem_type.kind);
             match &literal.val {
-                rustc::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
+                rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
                     // The Rust compiler should ensure this.
                     assume!(*end > *start);
                     let slice_len = *end - *start;
@@ -5404,15 +5413,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             // invent a pointer, only the offset is relevant anyway
                             mir::interpret::Pointer::new(
                                 mir::interpret::AllocId(0),
-                                rustc::ty::layout::Size::from_bytes(*start as u64),
+                                rustc_target::abi::Size::from_bytes(*start as u64),
                             ),
-                            rustc::ty::layout::Size::from_bytes(slice_len as u64),
+                            rustc_target::abi::Size::from_bytes(slice_len as u64),
                         )
                         .unwrap();
                     let slice = &bytes[*start..*end];
                     self.deconstruct_constant_array(slice, e_type, Some(len))
                 }
-                rustc::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
+                rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                     //todo: there is no test coverage for this case
                     let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
                     let alloc_len = alloc.len() as u64;
@@ -5422,7 +5431,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     let num_bytes = alloc_len - offset_bytes;
                     let ptr = mir::interpret::Pointer::new(
                         id,
-                        rustc::ty::layout::Size::from_bytes(offset.bytes()),
+                        rustc_target::abi::Size::from_bytes(offset.bytes()),
                     );
                     //todo: this is all wrong. It gets the bytes that contains the reference,
                     // not the bytes that the reference points to.
@@ -5432,15 +5441,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         .get_bytes_with_undef_and_ptr(
                             &self.tcx,
                             ptr,
-                            rustc::ty::layout::Size::from_bytes(num_bytes),
+                            rustc_target::abi::Size::from_bytes(num_bytes),
                         )
                         .unwrap();
                     self.deconstruct_constant_array(&bytes, e_type, Some(len))
                 }
-                rustc::ty::ConstKind::Value(ConstValue::Scalar(mir::interpret::Scalar::Ptr(
-                    ptr,
-                ))) => {
-                    if let Some(rustc::mir::interpret::GlobalAlloc::Static(def_id)) =
+                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
+                    mir::interpret::Scalar::Ptr(ptr),
+                )) => {
+                    if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
                         self.tcx.alloc_map.lock().get(ptr.alloc_id)
                     {
                         let name = utils::summary_key_str(self.tcx, def_id);
@@ -5465,7 +5474,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         .get_bytes(
                             &self.tcx,
                             *ptr,
-                            rustc::ty::layout::Size::from_bytes(num_bytes),
+                            rustc_target::abi::Size::from_bytes(num_bytes),
                         )
                         .unwrap();
                     self.deconstruct_constant_array(&bytes, e_type, Some(len))
@@ -5718,7 +5727,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_projection_elem(
         &mut self,
         base_is_union: &mut bool,
-        projection_elem: &mir::ProjectionElem<mir::Local, &rustc::ty::TyS<'tcx>>,
+        projection_elem: &mir::ProjectionElem<mir::Local, &rustc_middle::ty::TyS<'tcx>>,
     ) -> PathSelector {
         match projection_elem {
             mir::ProjectionElem::Deref => PathSelector::Deref,
@@ -5789,7 +5798,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if t_par.name.as_str() == "Self" && !self.actual_argument_types.is_empty() {
                         return self.tcx.mk_ref(
                             region,
-                            rustc::ty::TypeAndMut {
+                            rustc_middle::ty::TypeAndMut {
                                 ty: self.actual_argument_types[0],
                                 mutbl,
                             },
@@ -5942,7 +5951,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn get_type_for_projection_element(
         &self,
         base_ty: Ty<'tcx>,
-        place_projection: &[rustc::mir::PlaceElem<'tcx>],
+        place_projection: &[rustc_middle::mir::PlaceElem<'tcx>],
     ) -> Ty<'tcx> {
         place_projection
             .iter()

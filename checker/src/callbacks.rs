@@ -15,13 +15,13 @@ use crate::z3_solver::Z3Solver;
 
 use log::info;
 use log_derive::{logfn, logfn_inputs};
-use rustc::mir;
-use rustc::ty::subst::SubstsRef;
-use rustc::ty::TyCtxt;
 use rustc_driver::Compilation;
 use rustc_errors::{Diagnostic, DiagnosticBuilder};
 use rustc_hir::def_id::{DefId, LOCAL_CRATE};
 use rustc_interface::{interface, Queries};
+use rustc_middle::mir;
+use rustc_middle::ty::subst::SubstsRef;
+use rustc_middle::ty::TyCtxt;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
@@ -438,7 +438,9 @@ impl MiraiCallbacks {
                         mir::Rvalue::Use(mir::Operand::Constant(box ref con)),
                     )) = s.kind
                     {
-                        if let rustc::ty::ConstKind::Unevaluated(def_id, _, _) = con.literal.val {
+                        if let rustc_middle::ty::ConstKind::Unevaluated(def_id, _, _) =
+                            con.literal.val
+                        {
                             result.push(utils::def_id_display_name(tcx, def_id));
                         }
                     }

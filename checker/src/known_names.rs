@@ -3,9 +3,9 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use rustc::hir::map::{DefPathData, DisambiguatedDefPathData};
-use rustc::ty::TyCtxt;
 use rustc_hir::def_id::DefId;
+use rustc_hir::definitions::{DefPathData, DisambiguatedDefPathData};
+use rustc_middle::ty::TyCtxt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -101,7 +101,7 @@ pub struct KnownNamesCache {
     name_cache: HashMap<DefId, KnownNames>,
 }
 
-type Iter<'a> = std::slice::Iter<'a, rustc::hir::map::DisambiguatedDefPathData>;
+type Iter<'a> = std::slice::Iter<'a, rustc_hir::definitions::DisambiguatedDefPathData>;
 
 impl KnownNamesCache {
     /// Create an empty known names cache.
@@ -133,7 +133,7 @@ impl KnownNamesCache {
 
         // helper to get next elem from def path and return its name, if it has one
         let get_path_data_elem_name =
-            |def_path_data_elem: Option<&rustc::hir::map::DisambiguatedDefPathData>| {
+            |def_path_data_elem: Option<&rustc_hir::definitions::DisambiguatedDefPathData>| {
                 def_path_data_elem.and_then(|ref elem| {
                     let DisambiguatedDefPathData { data, .. } = elem;
                     match &data {
@@ -144,7 +144,7 @@ impl KnownNamesCache {
             };
 
         let path_data_elem_as_disambiguator = |def_path_data_elem: Option<
-            &rustc::hir::map::DisambiguatedDefPathData,
+            &rustc_hir::definitions::DisambiguatedDefPathData,
         >| {
             def_path_data_elem.map(|DisambiguatedDefPathData { disambiguator, .. }| *disambiguator)
         };

@@ -12,7 +12,7 @@ use crate::path::{Path, PathEnum, PathRefinement};
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::checked_assume;
 use rpds::HashTrieMap;
-use rustc::mir::BasicBlock;
+use rustc_middle::mir::BasicBlock;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 

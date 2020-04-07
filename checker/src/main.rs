@@ -17,17 +17,17 @@
 
 extern crate env_logger;
 extern crate mirai;
-extern crate rustc;
 extern crate rustc_driver;
 extern crate rustc_interface;
+extern crate rustc_session;
 
 use log::*;
 use mirai::callbacks;
 use mirai::options::Options;
 use mirai::utils;
 use mirai_annotations::*;
-use rustc::session::config::ErrorOutputType;
-use rustc::session::early_error;
+use rustc_session::config::ErrorOutputType;
+use rustc_session::early_error;
 use std::env;
 use std::path::Path;
 
