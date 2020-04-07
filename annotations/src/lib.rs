@@ -210,6 +210,10 @@ macro_rules! assumed_postcondition {
         {
             mirai_annotations::mirai_postcondition($condition, true, "")
         }
+        #[cfg(not(mirai))]
+        {
+            debug_assert!($condition);
+        }
     };
 }
 

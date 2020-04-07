@@ -660,10 +660,10 @@ pub mod core {
             }
             pub fn abort() {}
             pub fn unreachable() {
-                assume_unreachable!()
+                assume_unreachable!();
             }
             pub fn assume(b: bool) {
-                assumed_postcondition!(b)
+                assumed_postcondition!(b);
             }
             pub fn likely(b: bool) -> bool {
                 result!()
@@ -1326,7 +1326,7 @@ pub mod core {
         pub fn expect_failed() {
             // We currently treat expect as an explicit assumption made by the programmer for
             // reasons that are beyond the analyzer.
-            assume_unreachable!()
+            assume_unreachable!();
         }
     }
 
