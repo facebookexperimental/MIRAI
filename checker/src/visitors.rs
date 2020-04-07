@@ -315,7 +315,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.start_instant = Instant::now();
         self.exit_environment = None;
         self.generic_arguments = None;
-        self.generic_argument_map = None;
         self.heap_addresses = HashMap::default();
         self.path_ty_cache = HashMap::default();
         self.post_condition = None;
@@ -4708,9 +4707,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         generic_args: SubstsRef<'tcx>,
         actual_argument_types: &[Ty<'tcx>],
     ) -> Option<HashMap<rustc_span::Symbol, Ty<'tcx>>> {
-        if generic_args.is_empty() {
-            return None;
-        }
         let mut substitution_map = self.generic_argument_map.clone();
         let mut map: HashMap<rustc_span::Symbol, Ty<'tcx>> = HashMap::new();
 
@@ -4744,7 +4740,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let self_sym = rustc_span::Symbol::intern("Self");
             map.entry(self_sym).or_insert(self_ty);
         }
-        Some(map)
+        if map.is_empty() {
+            None
+        } else {
+            Some(map)
+        }
     }
 
     #[logfn_inputs(TRACE)]
@@ -4783,9 +4783,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
         match gen_arg_type.kind {
             TyKind::Adt(def, substs) => self.tcx.mk_adt(def, self.specialize_substs(substs, map)),
-            TyKind::Array(elem_ty, _) => {
+            TyKind::Array(elem_ty, len) => {
                 let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
-                self.tcx.mk_array(specialized_elem_ty, 1) //todo: use the actual value
+                self.tcx.mk_ty(TyKind::Array(specialized_elem_ty, len))
             }
             TyKind::Slice(elem_ty) => {
                 let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);

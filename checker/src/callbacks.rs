@@ -162,7 +162,7 @@ impl MiraiCallbacks {
 
     fn is_black_listed(file_name: &str) -> bool {
         file_name.contains("admission_control/admission-control-proto/src") // z3 encoding error
-            || file_name.contains("crypto/crypto/src") // resolve error because of Box::as_ref not being inlined
+            || file_name.contains("crypto/crypto/src") // false positives
             || file_name.contains("crypto/crypto-derive/src") // false positives
             || file_name.contains("common/bitvec/src") // false positives
             || file_name.contains("common/bounded-executor/src") // false positive: possible assertion failed: ptr.as_ptr() as usize & NUM_FLAG == 0
@@ -184,7 +184,7 @@ impl MiraiCallbacks {
             || file_name.contains("storage/jellyfish-merkle/src") // false positives due to complex loops beyond what we can handle right now
             || file_name.contains("storage/libradb/src") // takes too long
             || file_name.contains("storage/schemadb/src") // takes too long
-            || file_name.contains("storage/scratchpad/src") // resolve error
+            || file_name.contains("storage/scratchpad/src") // false positives
             || file_name.contains("types/src") // takes too long
     }
 
