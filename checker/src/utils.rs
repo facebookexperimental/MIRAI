@@ -6,12 +6,12 @@
 use log::debug;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::assume_unreachable;
-use rustc::hir::map::{DefPathData, DisambiguatedDefPathData};
-use rustc::ty::print::{FmtPrinter, Printer};
-use rustc::ty::subst::{GenericArgKind, SubstsRef};
-use rustc::ty::{DefIdTree, ProjectionTy, Ty, TyCtxt, TyKind};
 use rustc_hir::def_id::DefId;
+use rustc_hir::definitions::{DefPathData, DisambiguatedDefPathData};
 use rustc_hir::{ItemKind, Node};
+use rustc_middle::ty::print::{FmtPrinter, Printer};
+use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
+use rustc_middle::ty::{DefIdTree, ProjectionTy, Ty, TyCtxt, TyKind};
 use std::rc::Rc;
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.

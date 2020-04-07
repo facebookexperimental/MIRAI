@@ -65,14 +65,14 @@ impl Z3Solver {
             let symbol = z3_sys::Z3_mk_string_symbol(z3_context, empty_str);
 
             let any_sort = z3_sys::Z3_mk_uninterpreted_sort(z3_context, symbol);
-            let bool_sort = { z3_sys::Z3_mk_bool_sort(z3_context) };
-            let int_sort = { z3_sys::Z3_mk_int_sort(z3_context) };
-            let f32_sort = { z3_sys::Z3_mk_fpa_sort_32(z3_context) };
-            let f64_sort = { z3_sys::Z3_mk_fpa_sort_64(z3_context) };
-            let nearest_even = { z3_sys::Z3_mk_fpa_round_nearest_ties_to_even(z3_context) };
-            let zero = { z3_sys::Z3_mk_int(z3_context, 0, int_sort) };
-            let one = { z3_sys::Z3_mk_int(z3_context, 1, int_sort) };
-            let two = { z3_sys::Z3_mk_int(z3_context, 2, int_sort) };
+            let bool_sort = z3_sys::Z3_mk_bool_sort(z3_context);
+            let int_sort = z3_sys::Z3_mk_int_sort(z3_context);
+            let f32_sort = z3_sys::Z3_mk_fpa_sort_32(z3_context);
+            let f64_sort = z3_sys::Z3_mk_fpa_sort_64(z3_context);
+            let nearest_even = z3_sys::Z3_mk_fpa_round_nearest_ties_to_even(z3_context);
+            let zero = z3_sys::Z3_mk_int(z3_context, 0, int_sort);
+            let one = z3_sys::Z3_mk_int(z3_context, 1, int_sort);
+            let two = z3_sys::Z3_mk_int(z3_context, 2, int_sort);
 
             Z3Solver {
                 z3_context,

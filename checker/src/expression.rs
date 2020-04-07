@@ -10,8 +10,8 @@ use crate::path::Path;
 
 use log_derive::logfn_inputs;
 use mirai_annotations::*;
-use rustc::ty::{Ty, TyCtxt, TyKind};
 use rustc_ast::ast;
+use rustc_middle::ty::{Ty, TyCtxt, TyKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};

@@ -13,8 +13,8 @@ use crate::utils;
 
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::{assume, assume_unreachable};
-use rustc::ty::TyCtxt;
 use rustc_hir::def_id::DefId;
+use rustc_middle::ty::TyCtxt;
 use serde::{Deserialize, Serialize};
 use sled::{Config, Db};
 use std::collections::{HashMap, HashSet};

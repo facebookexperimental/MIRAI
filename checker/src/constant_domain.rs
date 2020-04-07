@@ -11,9 +11,9 @@ use crate::utils;
 
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::*;
-use rustc::ty::subst::SubstsRef;
-use rustc::ty::{Ty, TyCtxt};
 use rustc_hir::def_id::DefId;
+use rustc_middle::ty::subst::SubstsRef;
+use rustc_middle::ty::{Ty, TyCtxt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
@@ -528,7 +528,10 @@ impl ConstantDomain {
     }
 
     /// Dispatches val to the named intrinsic function
-    fn call_intrinsic_unary<T>(val: T, name: KnownNames) -> T {
+    fn call_intrinsic_unary<T>(val: T, name: KnownNames) -> T
+    where
+        T: Copy,
+    {
         unsafe {
             match name {
                 KnownNames::StdIntrinsicsBitreverse => std::intrinsics::bitreverse(val),
