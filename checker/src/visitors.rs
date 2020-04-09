@@ -403,6 +403,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     pub fn visit_body(
         &mut self,
         function_constant_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        parameter_types: &[Ty<'tcx>],
     ) -> Summary {
         if cfg!(DEBUG) {
             let mut stdout = std::io::stdout();
@@ -423,7 +424,40 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         // Add function constants.
         for (path, val) in function_constant_args.iter() {
-            first_state.value_map = first_state.value_map.insert(path.clone(), val.clone())
+            if let PathEnum::Parameter { ordinal } = &path.value {
+                if *ordinal > 0 && *ordinal <= parameter_types.len() {
+                    if let TyKind::Closure(_, substs) = parameter_types[*ordinal - 1].kind {
+                        if let Some(i) = substs.iter().position(|gen_arg| {
+                            if let GenericArgKind::Type(ty) = gen_arg.unpack() {
+                                matches!(ty.kind, TyKind::FnPtr(..))
+                            } else {
+                                false
+                            }
+                        }) {
+                            for j in (i + 1)..substs.len() {
+                                let var_type: ExpressionType =
+                                    (&substs.get(j).unwrap().expect_ty().kind).into();
+                                let closure_field_path = Path::new_field(
+                                    path.clone(),
+                                    j - (i + 1),
+                                    &self.current_environment,
+                                );
+                                let closure_field_val = AbstractValue::make_from(
+                                    Expression::Variable {
+                                        path: closure_field_path.clone(),
+                                        var_type,
+                                    },
+                                    1,
+                                );
+                                first_state.value_map = first_state
+                                    .value_map
+                                    .insert(closure_field_path, closure_field_val);
+                            }
+                        }
+                    }
+                }
+            }
+            first_state.value_map = first_state.value_map.insert(path.clone(), val.clone());
         }
 
         let elapsed_time_in_seconds = self.compute_fixed_point(
@@ -500,7 +534,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 .summary_cache
                 .get_summary_key_for(call_info.callee_def_id)
                 .clone();
-            let summary = self.visit_body(call_info.function_constant_args);
+            let summary = self.visit_body(
+                call_info.function_constant_args,
+                call_info.actual_argument_types,
+            );
             trace!("summary {:?} {:?}", self.function_name, summary);
             if let Some(func_ref) = &call_info.callee_func_ref {
                 // We cache the summary with call site details included so that
@@ -2761,7 +2798,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .collect();
 
         checked_assume!(generic_argument_types.len() == 2);
-        let actual_argument_types: Vec<Ty<'tcx>>;
+        let mut actual_argument_types: Vec<Ty<'tcx>>;
         if let TyKind::Tuple(tuple_types) = generic_argument_types[1].kind {
             actual_argument_types = tuple_types
                 .iter()
@@ -2792,6 +2829,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
         if self.get_def_id_from_closure(closure_ty).is_some() {
             actual_args.insert(0, caller_call_info.actual_args[0].clone());
+            actual_argument_types.insert(0, closure_ty);
             if let TyKind::Closure(_, substs) = closure_ty.kind {
                 let mut map = call_info
                     .callee_generic_argument_map
@@ -4018,11 +4056,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         // Get here for paths that are not patterns.
         let mut value_map = self.current_environment.value_map.clone();
+        let is_closure = matches!(&target_type.kind, TyKind::Closure(..));
         let target_type: ExpressionType = (&target_type.kind).into();
         let value = self.lookup_path_and_refine_result(source_path.clone(), target_type.clone());
         let val_type = value.expression.infer_type();
         let mut no_children = true;
-        if val_type == ExpressionType::NonPrimitive {
+        if val_type == ExpressionType::NonPrimitive || is_closure {
             // First look at paths that are rooted in rpath.
             for (path, value) in self
                 .current_environment
@@ -4033,10 +4072,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 check_for_early_return!(self);
                 let qualified_path = path.replace_root(&source_path, target_path.clone());
                 if move_elements {
-                    debug!("moving {:?} to {:?}", value, qualified_path);
+                    trace!("moving child {:?} to {:?}", value, qualified_path);
                     value_map = value_map.remove(path);
                 } else {
-                    debug!("copying {:?} to {:?}", value, qualified_path);
+                    trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
                 value_map = value_map.insert(qualified_path, value.clone());
                 no_children = false;

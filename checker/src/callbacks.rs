@@ -392,7 +392,7 @@ impl MiraiCallbacks {
             substs_cache: &mut analysis_info.substs_cache,
             buffered_diagnostics: &mut buffered_diagnostics,
         });
-        let summary = mir_visitor.visit_body(&[]);
+        let summary = mir_visitor.visit_body(&[], &[]);
         // Analysis local foreign contracts are not summarized and cached on demand, so we need to do it here.
         if utils::is_foreign_contract(tcx, def_id) {
             analysis_info
