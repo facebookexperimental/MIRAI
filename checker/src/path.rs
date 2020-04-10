@@ -584,10 +584,11 @@ impl PathRefinement for Rc<Path> {
                                     // drop the explicit deref
                                     return Path::new_qualified(
                                         qualifier.clone(),
-                                        selector.clone(),
+                                        refined_selector,
                                     );
                                 }
                             }
+                            return Path::new_qualified(path.clone(), refined_selector);
                         }
                         Expression::Reference(path) => {
                             match refined_selector.as_ref() {
@@ -606,7 +607,10 @@ impl PathRefinement for Rc<Path> {
                                 }
                                 _ => {
                                     // drop the explicit reference
-                                    return Path::new_qualified(path.clone(), selector.clone());
+                                    return Path::new_qualified(
+                                        path.clone(),
+                                        refined_selector.clone(),
+                                    );
                                 }
                             }
                         }
@@ -620,7 +624,7 @@ impl PathRefinement for Rc<Path> {
                             }
                             _ => {
                                 // drop the explicit reference
-                                return Path::new_qualified(path.clone(), selector.clone());
+                                return Path::new_qualified(path.clone(), refined_selector.clone());
                             }
                         }
                     }
