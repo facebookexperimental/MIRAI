@@ -213,7 +213,7 @@ impl AbstractValue {
             let interval = val.get_as_interval();
             Rc::new(AbstractValue {
                 expression: Expression::Variable {
-                    path: Path::new_constant(TOP.into()), //todo: maybe something unique here?
+                    path: Path::new_alias(TOP.into()), //todo: maybe something unique here?
                     var_type,
                 },
                 expression_size: 1,
@@ -243,7 +243,7 @@ impl AbstractValue {
     pub fn make_typed_unknown(var_type: ExpressionType) -> Rc<AbstractValue> {
         AbstractValue::make_from(
             Expression::Variable {
-                path: Path::new_constant(TOP.into()), //todo: maybe something unique here?
+                path: Path::new_alias(TOP.into()), //todo: maybe something unique here?
                 var_type,
             },
             1,
@@ -282,6 +282,7 @@ pub trait AbstractValueTrait: Sized {
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool;
     fn is_bottom(&self) -> bool;
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
+    fn is_path_alias(&self) -> bool;
     fn is_top(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
@@ -1287,6 +1288,25 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
+    /// True if the value is derived from one or more memory locations whose values were not known
+    /// when the value was constructed.
+    #[logfn_inputs(TRACE)]
+    fn is_path_alias(&self) -> bool {
+        match &self.expression {
+            Expression::Reference(..)
+            | Expression::UninterpretedCall { .. }
+            | Expression::UnknownModelField { .. }
+            | Expression::Variable { .. }
+            | Expression::Widen { .. } => true,
+            Expression::ConditionalExpression {
+                consequent,
+                alternate,
+                ..
+            } => consequent.is_path_alias() || alternate.is_path_alias(),
+            _ => false,
+        }
+    }
+
     /// True if all possible concrete values are elements of the set corresponding to this domain.
     #[logfn_inputs(TRACE)]
     fn is_top(&self) -> bool {
@@ -2249,7 +2269,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     val.clone()
                 } else {
                     let refined_path = path.refine_paths(environment);
-                    if let PathEnum::Constant { value } = &refined_path.value {
+                    if let PathEnum::Alias { value } = &refined_path.value {
                         value.clone()
                     } else if let Some(val) = environment.value_at(&refined_path) {
                         val.clone()
@@ -2455,7 +2475,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 result_type, path, ..
             } => {
                 let refined_path = path.refine_parameters(arguments, fresh);
-                if let PathEnum::Constant { value } = &refined_path.value {
+                if let PathEnum::Alias { value } = &refined_path.value {
                     value.clone()
                 } else {
                     AbstractValue::make_from(
@@ -2479,7 +2499,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             Expression::Variable { path, var_type } => {
                 let refined_path = path.refine_parameters(arguments, fresh);
-                if let PathEnum::Constant { value } = &refined_path.value {
+                if let PathEnum::Alias { value } = &refined_path.value {
                     value.clone()
                 } else {
                     AbstractValue::make_from(
