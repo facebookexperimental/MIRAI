@@ -80,7 +80,7 @@ impl Path {
             Expression::Reference(path)
             | Expression::Variable { path, .. }
             | Expression::Widen { path, .. } => path.as_ref().clone(),
-            _ => PathEnum::Constant { value }.into(),
+            _ => PathEnum::Alias { value }.into(),
         })
     }
 }
@@ -90,9 +90,16 @@ impl Path {
 /// location. During analysis it is used to keep track of state changes.
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PathEnum {
-    /// Sometimes a constant value needs to be treated as a path during refinement.
-    /// Don't use this unless you are really sure you know what you are doing.
-    Constant { value: Rc<AbstractValue> },
+    /// A path to a value that is not stored at a single memory location.
+    /// For example, a compile time constant will not have a location.
+    /// Another example is a conditional value with is either a parameter or a local variable,
+    /// depending on a condition.
+    /// In general, such a paths is needed when the value is an argument to a function call and
+    /// the corresponding parameter shows up in the function summary as part of a path (usually a
+    /// qualifier). In order to replace the parameter with the argument value, we need a path that
+    /// wraps the argument value. When the value thus wrapped contains a reference to another path
+    /// (or paths), the wrapper path is an alias to those paths.
+    Alias { value: Rc<AbstractValue> },
 
     /// A dynamically allocated memory block.
     HeapBlock { value: Rc<AbstractValue> },
@@ -142,7 +149,7 @@ pub enum PathEnum {
 impl Debug for PathEnum {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            PathEnum::Constant { value } => value.fmt(f),
+            PathEnum::Alias { value } => value.fmt(f),
             PathEnum::HeapBlock { value } => f.write_fmt(format_args!("<{:?}>", value)),
             PathEnum::LocalVariable { ordinal } => f.write_fmt(format_args!("local_{}", ordinal)),
             PathEnum::Offset { value } => f.write_fmt(format_args!("<{:?}>", value)),
@@ -277,10 +284,10 @@ impl Path {
         }
     }
 
-    /// Creates a path that denotes a constant value without a specified memory location.
+    /// Creates a path that aliases once or more paths contained inside the value.
     #[logfn_inputs(TRACE)]
-    pub fn new_constant(value: Rc<AbstractValue>) -> Rc<Path> {
-        Rc::new(PathEnum::Constant { value }.into())
+    pub fn new_alias(value: Rc<AbstractValue>) -> Rc<Path> {
+        Rc::new(PathEnum::Alias { value }.into())
     }
 
     /// Creates a path to the target memory of a reference value.
@@ -388,7 +395,7 @@ impl Path {
     /// Creates a path the qualifies the given root path with the given selector.
     #[logfn_inputs(TRACE)]
     pub fn new_qualified(qualifier: Rc<Path>, selector: Rc<PathSelector>) -> Rc<Path> {
-        if let PathEnum::Constant { value } = &qualifier.value {
+        if let PathEnum::Alias { value } = &qualifier.value {
             if value.is_bottom() {
                 return qualifier;
             }
@@ -479,7 +486,7 @@ impl PathRefinement for Rc<Path> {
             PathEnum::Parameter { ordinal } => {
                 if *ordinal > arguments.len() {
                     debug!("Summary refers to a parameter that does not have a matching argument");
-                    Path::new_constant(Rc::new(abstract_value::BOTTOM))
+                    Path::new_alias(Rc::new(abstract_value::BOTTOM))
                 } else {
                     arguments[*ordinal - 1].0.clone()
                 }
@@ -514,7 +521,7 @@ impl PathRefinement for Rc<Path> {
             }
             return match &val.expression {
                 Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
-                    Path::new_constant(val.clone())
+                    Path::new_alias(val.clone())
                 }
                 Expression::HeapBlock { .. } | Expression::Offset { .. } => {
                     Path::get_as_path(val.refine_paths(environment))
@@ -565,7 +572,7 @@ impl PathRefinement for Rc<Path> {
                         {
                             if (*variant as u128) != *ordinal {
                                 // The downcast is impossible in this calling context
-                                return Path::new_constant(Rc::new(abstract_value::BOTTOM));
+                                return Path::new_alias(Rc::new(abstract_value::BOTTOM));
                             }
                         }
                     }
@@ -614,7 +621,14 @@ impl PathRefinement for Rc<Path> {
                                 }
                             }
                         }
-                        _ => (),
+                        _ => {
+                            if val.is_path_alias() {
+                                return Path::new_qualified(
+                                    Path::new_alias(val.clone()),
+                                    refined_selector,
+                                );
+                            }
+                        }
                     }
                     if let Expression::Reference(path) = &val.expression {
                         match refined_selector.as_ref() {

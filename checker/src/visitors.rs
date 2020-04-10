@@ -657,7 +657,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         result_type: ExpressionType,
     ) -> Rc<AbstractValue> {
         match &path.value {
-            PathEnum::Constant { value } => {
+            PathEnum::Alias { value } => {
                 return value.clone();
             }
             PathEnum::QualifiedPath {
@@ -1829,7 +1829,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
         }
         for (i, (path, value)) in actual_args.iter().enumerate() {
-            if let PathEnum::Constant { value: val } = &path.value {
+            if let PathEnum::Alias { value: val } = &path.value {
                 if *val == *value {
                     if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) =
                         &value.expression
@@ -3932,7 +3932,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         self.copy_or_move_elements(path, rpath, target_type, false);
                     }
                     _ => {
-                        let rpath = Path::new_constant(const_value.clone());
+                        let rpath = Path::new_alias(const_value.clone());
                         self.copy_or_move_elements(path, rpath, target_type, false);
                     }
                 }
@@ -4267,7 +4267,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if let TyKind::Ref(_, ty, _) = lh_type.kind {
                         if let TyKind::Slice(elem_ty) = ty.kind {
                             if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
-                                let collection_path = Path::new_constant(value.clone());
+                                let collection_path = Path::new_alias(value.clone());
                                 for (i, ch) in s.as_bytes().iter().enumerate() {
                                     let index = Rc::new((i as u128).into());
                                     let ch_const = Rc::new((*ch as u128).into());
@@ -4702,7 +4702,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn get_operand_path(&mut self, operand: &mir::Operand<'tcx>) -> Rc<Path> {
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => self.visit_place(place),
-            mir::Operand::Constant(..) => Path::new_constant(self.visit_operand(operand)),
+            mir::Operand::Constant(..) => Path::new_alias(self.visit_operand(operand)),
         }
     }
 
@@ -5076,7 +5076,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 Rc::new(ConstantDomain::U128(s.len() as u128).into());
                             let res = &mut self.constant_value_cache.get_string_for(s);
 
-                            let path = Path::new_constant(Rc::new(res.clone().into()));
+                            let path = Path::new_alias(Rc::new(res.clone().into()));
                             let len_path = Path::new_length(path, &self.current_environment);
                             self.current_environment.update_value_at(len_path, len_val);
 
@@ -5357,7 +5357,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     let res: Rc<AbstractValue> =
                         Rc::new(self.constant_value_cache.get_string_for(s).clone().into());
 
-                    let path = Path::new_constant(res.clone());
+                    let path = Path::new_alias(res.clone());
                     let len_path = Path::new_length(path, &self.current_environment);
                     self.current_environment.update_value_at(len_path, len_val);
                     res
