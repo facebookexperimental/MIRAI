@@ -388,6 +388,11 @@ impl Path {
     /// Creates a path the qualifies the given root path with the given selector.
     #[logfn_inputs(TRACE)]
     pub fn new_qualified(qualifier: Rc<Path>, selector: Rc<PathSelector>) -> Rc<Path> {
+        if let PathEnum::Constant { value } = &qualifier.value {
+            if value.is_bottom() {
+                return qualifier;
+            }
+        }
         let qualifier_length = qualifier.path_length();
         if qualifier_length >= k_limits::MAX_PATH_LENGTH {
             warn!("max path length exceeded {:?}.{:?}", qualifier, selector);
@@ -549,6 +554,20 @@ impl PathRefinement for Rc<Path> {
                     if *base_selector.as_ref() == PathSelector::Deref {
                         // no need for an explicit deref in a qualifier
                         return Path::new_qualified(base_qualifier.clone(), selector.clone());
+                    }
+                }
+                if let PathSelector::Downcast(_, variant) = refined_selector.as_ref() {
+                    let discriminator =
+                        Path::new_discriminant(refined_qualifier.clone(), environment);
+                    if let Some(val) = environment.value_at(&discriminator) {
+                        if let Expression::CompileTimeConstant(ConstantDomain::U128(ordinal)) =
+                            &val.expression
+                        {
+                            if (*variant as u128) != *ordinal {
+                                // The downcast is impossible in this calling context
+                                return Path::new_constant(Rc::new(abstract_value::BOTTOM));
+                            }
+                        }
                     }
                 }
                 if let Some(val) = environment.value_at(&refined_qualifier) {
