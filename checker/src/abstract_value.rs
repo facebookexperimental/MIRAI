@@ -753,6 +753,40 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         consequent = consequent.refine_with(self, 5);
         alternate = alternate.refine_with(&self.logical_not(), 5);
 
+        if let Expression::ConditionalExpression {
+            condition: c2,
+            consequent: a,
+            alternate: b,
+        } = &consequent.expression
+        {
+            // [if self { if c2 { a } else { b } } else { b }] -> if condition && c2 { a } else { b }
+            if b.eq(&alternate) {
+                return self
+                    .and(c2.clone())
+                    .conditional_expression(a.clone(), alternate);
+            }
+            // [if self { if c2 { a } else { b } } else { a }] -> if self && !c2 { b } else { a }
+            if a.eq(&alternate) {
+                return self
+                    .and(c2.logical_not())
+                    .conditional_expression(b.clone(), alternate);
+            }
+        }
+
+        // [if self { a } else { if c2 { a } else { b } }] -> if self || c2 { a } else { b }
+        if let Expression::ConditionalExpression {
+            condition: c2,
+            consequent: a,
+            alternate: b,
+        } = &alternate.expression
+        {
+            if a.eq(&consequent) {
+                return self
+                    .or(c2.clone())
+                    .conditional_expression(consequent, b.clone());
+            }
+        }
+
         let expression_size = self
             .expression_size
             .saturating_add(consequent.expression_size)
