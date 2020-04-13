@@ -29,7 +29,7 @@ use rustc::ty::layout::VariantIdx;
 use rustc::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc::ty::{
     AdtDef, Const, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig,
-    ParamTy, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex,
+    ParamTy, Ty, TyCtxt, TyKind, TypeAndMut, UserTypeAnnotationIndex,
 };
 use rustc_data_structures::graph::dominators::Dominators;
 use rustc_errors::DiagnosticBuilder;
@@ -654,8 +654,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn lookup_path_and_refine_result(
         &mut self,
         path: Rc<Path>,
-        result_type: ExpressionType,
+        result_rustc_type: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
+        let result_type: ExpressionType = (&result_rustc_type.kind).into();
         match &path.value {
             PathEnum::Alias { value } => {
                 return value.clone();
@@ -670,7 +671,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     Rc::new(PathSelector::Index(Rc::new(0u128.into()))),
                 );
                 if self.current_environment.value_map.contains_key(&path) {
-                    let refined_val = self.lookup_path_and_refine_result(path, result_type.clone());
+                    let refined_val = self.lookup_path_and_refine_result(path, result_rustc_type);
                     if !refined_val.is_bottom() {
                         return refined_val;
                     }
@@ -707,14 +708,20 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.lookup_static(&path, *def_id, summary_cache_key, expression_type)
             } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
                 let mut result = None;
-                if result_type == ExpressionType::Reference {
-                    // This could be an alias for a fat pointer stored at path.0 (etc.)
-                    for (leaf_path, val) in self.current_environment.value_map.iter() {
-                        if leaf_path.is_first_leaf_rooted_in(&path)
-                            && val.expression.infer_type() == ExpressionType::Reference
-                        {
-                            result = Some(val.clone());
-                            break;
+                // Potentially-fat pointers.
+                if let TyKind::Ref(_, pointee, _) | TyKind::RawPtr(TypeAndMut { ty: pointee, .. }) =
+                    &result_rustc_type.kind
+                {
+                    if let TyKind::Str | TyKind::Slice(..) = &pointee.kind {
+                        // result_rustc_type is a fat pointer and looking it up without qualification
+                        // is the same as looking up field 0.
+                        for (leaf_path, val) in self.current_environment.value_map.iter() {
+                            if leaf_path.is_first_leaf_rooted_in(&path)
+                                && val.expression.infer_type() == ExpressionType::Reference
+                            {
+                                result = Some(val.clone());
+                                break;
+                            }
                         }
                     }
                 }
@@ -734,7 +741,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         if result.is_none() && result_type.is_integer() {
                             let qualifier_val = self.lookup_path_and_refine_result(
                                 qualifier.clone(),
-                                ExpressionType::NonPrimitive,
+                                ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
                             );
                             debug!("qualifier_val {:?}", qualifier_val);
                             if qualifier_val.is_contained_in_zeroed_heap_block() {
@@ -914,12 +921,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         (&self.get_path_rustc_type(path).kind).into()
     }
 
-    /// Lookups up the local definition for this ordinal and maps the type information
-    /// onto ExpressionType.
+    /// Returns the rustc type for the local variable corresponding to the given ordinal.
     #[logfn_inputs(TRACE)]
-    fn get_type_for_local(&self, ordinal: usize) -> ExpressionType {
-        let loc = &self.mir.local_decls[mir::Local::from(ordinal)];
-        (&loc.ty.kind).into()
+    fn get_rustc_type_for_local(&self, ordinal: usize) -> Ty<'tcx> {
+        self.mir.local_decls[mir::Local::from(ordinal)].ty
     }
 
     /// Do a topological sort, breaking loops by preferring lower block indices, using dominance
@@ -1027,8 +1032,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             } else {
                 Path::new_local(i + 1)
             };
-            let ty: ExpressionType = (&loc.ty.kind).into();
-            let value = self.lookup_path_and_refine_result(path, ty);
+            let value = self.lookup_path_and_refine_result(path, loc.ty);
             self.current_environment
                 .update_value_at(closure_path, value);
         }
@@ -1293,12 +1297,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let result_root: Rc<Path> = Path::new_result();
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
             self.mir = constant_mir.unwrap_read_only();
-            let result_type = self.get_type_for_local(0);
+            let result_rustc_type = self.get_rustc_type_for_local(0);
             self.visit_promoted_constants_block();
             if self.exit_environment.is_some() {
                 let promoted_root: Rc<Path> =
                     Rc::new(PathEnum::PromotedConstant { ordinal }.into());
-                let value = self.lookup_path_and_refine_result(result_root.clone(), result_type);
+                let value =
+                    self.lookup_path_and_refine_result(result_root.clone(), result_rustc_type);
                 match &value.expression {
                     Expression::HeapBlock { .. } => {
                         let heap_root: Rc<Path> = Rc::new(
@@ -2107,10 +2112,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             KnownNames::MiraiResult => {
                 if let Some((place, target)) = &call_info.destination {
                     let target_path = self.visit_place(place);
-                    let target_type = self.get_place_type(place);
+                    let target_rustc_type = self.get_rustc_place_type(place);
                     let return_value_path = Path::new_result();
                     let return_value =
-                        self.lookup_path_and_refine_result(return_value_path, target_type);
+                        self.lookup_path_and_refine_result(return_value_path, target_rustc_type);
                     self.current_environment
                         .update_value_at(target_path, return_value);
                     let exit_condition = self.current_environment.entry_condition.clone();
@@ -2732,7 +2737,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if matches!(&path.value, PathEnum::HeapBlock{..}) {
                     let layout_path = Path::new_layout(path.clone());
                     if let Expression::HeapBlockLayout { length, .. } = &self
-                        .lookup_path_and_refine_result(layout_path, ExpressionType::NonPrimitive)
+                        .lookup_path_and_refine_result(
+                            layout_path,
+                            ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
+                        )
                         .expression
                     {
                         len = length.clone();
@@ -2814,8 +2822,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .map(|(i, t)| {
                 let arg_path =
                     Path::new_field(callee_arg_array_path.clone(), i, &self.current_environment);
-                let arg_val =
-                    self.lookup_path_and_refine_result(arg_path.clone(), (&t.kind).into());
+                let arg_val = self.lookup_path_and_refine_result(arg_path.clone(), t);
                 (arg_path, arg_val)
             })
             .collect();
@@ -3531,7 +3538,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             if *selector.as_ref() == PathSelector::Layout {
                 let old_layout = self.lookup_path_and_refine_result(
                     layout_path.clone(),
-                    ExpressionType::NonPrimitive,
+                    ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
                 );
                 if let Expression::HeapBlockLayout { .. } = &old_layout.expression {
                     if self.check_for_errors {
@@ -3570,7 +3577,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             if self.check_for_errors {
                 let old_layout = self.lookup_path_and_refine_result(
                     layout_path.clone(),
-                    ExpressionType::NonPrimitive,
+                    ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
                 );
                 self.check_for_layout_consistency(&old_layout.expression, new_layout_expression);
             }
@@ -3956,7 +3963,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &mut self,
         target_path: Rc<Path>,
         source_path: Rc<Path>,
-        target_type: Ty<'tcx>,
+        target_rustc_type: Ty<'tcx>,
         move_elements: bool,
     ) {
         check_for_early_return!(self);
@@ -3991,13 +3998,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         Rc::new(self.constant_value_cache.get_u128_for(index).clone().into());
                     let index_path =
                         Path::new_index(qualifier.clone(), index_val, &self.current_environment);
-                    self.copy_or_move_elements(target_path, index_path, target_type, move_elements);
+                    self.copy_or_move_elements(
+                        target_path,
+                        index_path,
+                        target_rustc_type,
+                        move_elements,
+                    );
                     return;
                 }
                 PathSelector::ConstantSlice { from, to, from_end } => {
                     self.copy_or_move_subslice(
                         target_path,
-                        target_type,
+                        target_rustc_type,
                         move_elements,
                         qualifier,
                         from,
@@ -4033,7 +4045,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     {
                         self.copy_or_move_subslice(
                             qualifier.clone(),
-                            target_type,
+                            target_rustc_type,
                             move_elements,
                             &source_path,
                             0,
@@ -4056,9 +4068,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         // Get here for paths that are not patterns.
         let mut value_map = self.current_environment.value_map.clone();
-        let is_closure = matches!(&target_type.kind, TyKind::Closure(..));
-        let target_type: ExpressionType = (&target_type.kind).into();
-        let value = self.lookup_path_and_refine_result(source_path.clone(), target_type.clone());
+        let is_closure = matches!(&target_rustc_type.kind, TyKind::Closure(..));
+        let value = self.lookup_path_and_refine_result(source_path.clone(), target_rustc_type);
         let val_type = value.expression.infer_type();
         let mut no_children = true;
         if val_type == ExpressionType::NonPrimitive || is_closure {
@@ -4081,9 +4092,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 no_children = false;
             }
         }
+        let target_type: ExpressionType = (&target_rustc_type.kind).into();
         if target_type != ExpressionType::NonPrimitive || no_children {
-            let value =
-                self.lookup_path_and_refine_result(source_path.clone(), target_type.clone());
+            let value = self.lookup_path_and_refine_result(source_path.clone(), target_rustc_type);
             value_map =
                 self.expand_aliased_string_literals(&target_path, target_type, value_map, &value);
             // Just copy/move (rpath, value) itself.
@@ -4209,10 +4220,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 // This is the value to bind to path if the join condition is true.
                 let source_path_with_selectors =
                     Path::add_selectors(source_path, &subsequent_selectors);
-                let additional_value = self.lookup_path_and_refine_result(
-                    source_path_with_selectors,
-                    value.expression.infer_type(),
-                );
+                let result_type = value.expression.infer_type();
+                let result_rustc_type = result_type.as_rustc_type(self.tcx);
+                let additional_value = self
+                    .lookup_path_and_refine_result(source_path_with_selectors, result_rustc_type);
                 let updated_value =
                     join_condition.conditional_expression(additional_value, value.clone());
 
@@ -4388,7 +4399,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn get_len(&mut self, path: Rc<Path>) -> Rc<AbstractValue> {
         let length_path = Path::new_length(path, &self.current_environment);
-        self.lookup_path_and_refine_result(length_path, ExpressionType::Usize)
+        self.lookup_path_and_refine_result(length_path, self.tcx.types.usize)
     }
 
     /// path = operand as ty.
@@ -4575,9 +4586,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         let discriminant_path =
             Path::new_discriminant(self.visit_place(place), &self.current_environment);
-        let discriminant_type = ExpressionType::U128;
         let discriminant_value =
-            self.lookup_path_and_refine_result(discriminant_path, discriminant_type);
+            self.lookup_path_and_refine_result(discriminant_path, self.tcx.types.u128);
         self.current_environment
             .update_value_at(path, discriminant_value);
     }
@@ -4970,8 +4980,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_copy(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
         let path = self.visit_place(place);
-        let place_type = self.get_place_type(place);
-        self.lookup_path_and_refine_result(path, place_type)
+        let rust_place_type = self.get_rustc_place_type(place);
+        self.lookup_path_and_refine_result(path, rust_place_type)
     }
 
     /// Move: The value (including old borrows of it) will not be used again.
@@ -4982,8 +4992,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_move(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
         let path = self.visit_place(place);
-        let place_type = self.get_place_type(place);
-        self.lookup_path_and_refine_result(path, place_type)
+        let rust_place_type = self.get_rustc_place_type(place);
+        self.lookup_path_and_refine_result(path, rust_place_type)
     }
 
     /// Synthesizes a constant value. Also used for static variable values.
@@ -5010,12 +5020,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         PathEnum::StaticVariable {
                             def_id: Some(*def_id),
                             summary_cache_key: name,
-                            expression_type: expression_type.clone(),
+                            expression_type,
                         }
                         .into(),
                     ),
                 };
-                self.lookup_path_and_refine_result(path, expression_type)
+                self.lookup_path_and_refine_result(path, ty)
             }
 
             _ => {
@@ -5163,11 +5173,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 PathEnum::StaticVariable {
                                     def_id: None,
                                     summary_cache_key,
-                                    expression_type: expression_type.clone(),
+                                    expression_type,
                                 }
                                 .into(),
                             );
-                            return self.lookup_path_and_refine_result(path, expression_type);
+                            return self.lookup_path_and_refine_result(path, ty);
                         }
                         _ => assume_unreachable!(),
                     },
@@ -5442,8 +5452,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             }
                             .into(),
                         );
-                        return self
-                            .lookup_path_and_refine_result(path, ExpressionType::NonPrimitive);
+                        let rustc_ty = self.tcx.type_of(def_id);
+                        return self.lookup_path_and_refine_result(path, rustc_ty);
                     }
                     let alloc = self.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
                     let alloc_len = alloc.len() as u64;
@@ -5721,7 +5731,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let local_path =
                     Path::new_local_parameter_or_result(local.as_usize(), self.mir.arg_count);
                 let index_value =
-                    self.lookup_path_and_refine_result(local_path, ExpressionType::Usize);
+                    self.lookup_path_and_refine_result(local_path, self.tcx.types.usize);
                 PathSelector::Index(index_value)
             }
             mir::ProjectionElem::ConstantIndex {
@@ -5805,7 +5815,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     self.mir.local_decls[mir::Local::from(*ordinal)].ty
                 } else {
                     info!("path.value is {:?}", path.value);
-                    self.tcx.mk_ty(TyKind::Error)
+                    self.tcx.types.err
                 }
             }
             PathEnum::Parameter { ordinal } => {
@@ -5815,13 +5825,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     self.mir.local_decls[mir::Local::from(*ordinal)].ty
                 } else {
                     info!("path.value is {:?}", path.value);
-                    self.tcx.mk_ty(TyKind::Error)
+                    self.tcx.types.err
                 }
             }
             PathEnum::Result => {
                 if self.mir.local_decls.is_empty() {
                     info!("result type wanted from function without result local");
-                    self.tcx.mk_ty(TyKind::Error)
+                    self.tcx.types.err
                 } else {
                     self.mir.local_decls[mir::Local::from(0usize)].ty
                 }
@@ -5889,18 +5899,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 info!("t is {:?}", t);
                 info!("qualifier is {:?}", qualifier);
                 info!("selector is {:?}", selector);
-                self.tcx.mk_ty(TyKind::Error)
+                self.tcx.types.err
             }
             PathEnum::StaticVariable { def_id, .. } => {
                 if let Some(def_id) = def_id {
                     return self.tcx.type_of(*def_id);
                 }
                 info!("path.value is {:?}", path.value);
-                self.tcx.mk_ty(TyKind::Error)
+                self.tcx.types.err
             }
             _ => {
                 info!("path.value is {:?}", path.value);
-                self.tcx.mk_ty(TyKind::Error)
+                self.tcx.types.err
             }
         }
     }

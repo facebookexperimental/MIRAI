@@ -10,7 +10,7 @@ use crate::path::Path;
 
 use log_derive::logfn_inputs;
 use mirai_annotations::*;
-use rustc::ty::TyKind;
+use rustc::ty::{Ty, TyCtxt, TyKind};
 use rustc_ast::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -834,6 +834,30 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
 }
 
 impl ExpressionType {
+    pub fn as_rustc_type<'a>(&self, tcx: TyCtxt<'a>) -> Ty<'a> {
+        use self::ExpressionType::*;
+        match self {
+            Bool => tcx.types.bool,
+            Char => tcx.types.char,
+            F32 => tcx.types.f32,
+            F64 => tcx.types.f64,
+            I8 => tcx.types.i8,
+            I16 => tcx.types.i16,
+            I32 => tcx.types.i32,
+            I64 => tcx.types.i64,
+            I128 => tcx.types.i128,
+            Isize => tcx.types.isize,
+            U8 => tcx.types.u8,
+            U16 => tcx.types.u16,
+            U32 => tcx.types.u32,
+            U64 => tcx.types.u64,
+            U128 => tcx.types.u128,
+            Usize => tcx.types.usize,
+            Reference => tcx.mk_ty(TyKind::Str),
+            NonPrimitive => tcx.types.trait_object_dummy_self,
+        }
+    }
+
     /// Returns true if this type is one of the floating point number types.
     #[logfn_inputs(TRACE)]
     pub fn is_floating_point_number(&self) -> bool {
