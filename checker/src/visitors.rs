@@ -437,11 +437,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             for j in (i + 1)..substs.len() {
                                 let var_type: ExpressionType =
                                     (&substs.get(j).unwrap().expect_ty().kind).into();
-                                let closure_field_path = Path::new_field(
-                                    path.clone(),
-                                    j - (i + 1),
-                                    &self.current_environment,
-                                );
+                                let closure_field_path = Path::new_field(path.clone(), j - (i + 1))
+                                    .refine_paths(&self.current_environment);
                                 let closure_field_val = AbstractValue::make_from(
                                     Expression::Variable {
                                         path: closure_field_path.clone(),
@@ -1013,8 +1010,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // Setting the discriminant to 0 allows the related conditions in the closure's preconditions
         // to get simplified away.
         let discriminant = Path::new_discriminant(
-            Path::new_field(closure_path.clone(), 0, &self.current_environment),
-            &self.current_environment,
+            Path::new_field(closure_path.clone(), 0).refine_paths(&self.current_environment),
         );
         let discriminant_val = Rc::new(self.constant_value_cache.get_u128_for(0).clone().into());
 
@@ -1023,11 +1019,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .update_value_at(discriminant, discriminant_val);
         for (i, loc) in self.mir.local_decls.iter().skip(1).enumerate() {
             let qualifier = closure_path.clone();
-            let closure_path = Path::new_field(
-                Path::new_field(qualifier, 0, &self.current_environment),
-                i,
-                &self.current_environment,
-            );
+            let closure_path = Path::new_field(Path::new_field(qualifier, 0), i)
+                .refine_paths(&self.current_environment);
             // skip(1) above ensures this
             assume!(i < usize::max_value());
             let path = if i < self.mir.arg_count {
@@ -1478,8 +1471,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         place: &mir::Place<'tcx>,
         variant_index: rustc_target::abi::VariantIdx,
     ) {
-        let target_path =
-            Path::new_discriminant(self.visit_place(place), &self.current_environment);
+        let target_path = Path::new_discriminant(self.visit_place(place));
         let index_val = Rc::new(
             self.constant_value_cache
                 .get_u128_for(variant_index.as_usize() as u128)
@@ -2252,9 +2244,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             // where each path is rooted by qualifier.model_field(..)
             let qualifier = call_info.actual_args[0].0.clone();
             let field_name = self.coerce_to_string(&call_info.actual_args[1].1);
-            let source_path =
-                Path::new_model_field(qualifier, field_name, &self.current_environment)
-                    .refine_paths(&self.current_environment);
+            let source_path = Path::new_model_field(qualifier, field_name)
+                .refine_paths(&self.current_environment);
 
             let target_path = self.visit_place(place);
             if self.current_environment.value_at(&source_path).is_some() {
@@ -2304,8 +2295,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if let Some((_, target)) = &call_info.destination {
             let qualifier = call_info.actual_args[0].0.clone();
             let field_name = self.coerce_to_string(&call_info.actual_args[1].1);
-            let target_path =
-                Path::new_model_field(qualifier, field_name, &self.current_environment);
+            let target_path = Path::new_model_field(qualifier, field_name)
+                .refine_paths(&self.current_environment);
             let source_path = call_info.actual_args[2].0.clone();
             let target_type = call_info.actual_argument_types[2];
             self.copy_or_move_elements(target_path, source_path, target_type, true);
@@ -2652,7 +2643,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let target_root = call_info.actual_args[0].0.clone();
         let source_path = call_info.actual_args[1].0.clone();
         let count = call_info.actual_args[2].1.clone();
-        let target_path = Path::new_slice(target_root, count, &self.current_environment);
+        let target_path =
+            Path::new_slice(target_root, count).refine_paths(&self.current_environment);
         let collection_type = call_info.actual_argument_types[0];
         self.copy_or_move_elements(target_path, source_path, collection_type, false);
     }
@@ -2672,8 +2664,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 _ => assume_unreachable!(),
             };
             let target_path = self.visit_place(target_place);
-            let path0 = Path::new_field(target_path.clone(), 0, &self.current_environment);
-            let path1 = Path::new_field(target_path.clone(), 1, &self.current_environment);
+            let path0 =
+                Path::new_field(target_path.clone(), 0).refine_paths(&self.current_environment);
+            let path1 =
+                Path::new_field(target_path.clone(), 1).refine_paths(&self.current_environment);
             let target_type = self.get_target_path_type(&path0);
             let left = call_info.actual_args[0].1.clone();
             let right = call_info.actual_args[1].1.clone();
@@ -2823,8 +2817,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let arg_path =
-                    Path::new_field(callee_arg_array_path.clone(), i, &self.current_environment);
+                let arg_path = Path::new_field(callee_arg_array_path.clone(), i)
+                    .refine_paths(&self.current_environment);
                 let arg_val = self.lookup_path_and_refine_result(arg_path.clone(), t);
                 (arg_path, arg_val)
             })
@@ -3240,13 +3234,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 } else {
                     let index = Rc::new(0u128.into());
                     let args_pieces_0 = Path::new_index(
-                        Path::new_field(
-                            call_info.actual_args[0].0.clone(),
-                            0,
-                            &self.current_environment,
-                        ),
+                        Path::new_field(call_info.actual_args[0].0.clone(), 0),
                         index,
-                        &self.current_environment,
                     )
                     .refine_paths(&self.current_environment);
                     self.lookup_path_and_refine_result(
@@ -4023,8 +4012,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     };
                     let index_val =
                         Rc::new(self.constant_value_cache.get_u128_for(index).clone().into());
-                    let index_path =
-                        Path::new_index(qualifier.clone(), index_val, &self.current_environment);
+                    let index_path = Path::new_index(qualifier.clone(), index_val)
+                        .refine_paths(&self.current_environment);
                     self.copy_or_move_elements(
                         target_path,
                         index_path,
@@ -4180,7 +4169,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.current_environment
             .update_value_at(target_path.clone(), slice_value.clone());
         let slice_path = Rc::new(PathEnum::HeapBlock { value: slice_value }.into());
-        let slice_len_path = Path::new_length(slice_path, &self.current_environment);
+        let slice_len_path = Path::new_length(slice_path);
         let len_const = self
             .constant_value_cache
             .get_u128_for(u128::from(to - from))
@@ -4195,19 +4184,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     .clone()
                     .into(),
             );
-            let index_path =
-                Path::new_index(qualifier.clone(), index_val, &self.current_environment);
+            let index_path = Path::new_index(qualifier.clone(), index_val)
+                .refine_paths(&self.current_environment);
             let target_index_val = Rc::new(
                 self.constant_value_cache
                     .get_u128_for(u128::try_from(i - from).unwrap())
                     .clone()
                     .into(),
             );
-            let indexed_target = Path::new_index(
-                target_path.clone(),
-                target_index_val,
-                &self.current_environment,
-            );
+            let indexed_target = Path::new_index(target_path.clone(), target_index_val)
+                .refine_paths(&self.current_environment);
             self.copy_or_move_elements(indexed_target, index_path, target_type, move_elements);
             if self.assume_function_is_angelic {
                 break;
@@ -4309,11 +4295,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 for (i, ch) in s.as_bytes().iter().enumerate() {
                                     let index = Rc::new((i as u128).into());
                                     let ch_const = Rc::new((*ch as u128).into());
-                                    let path = Path::new_index(
-                                        collection_path.clone(),
-                                        index,
-                                        &self.current_environment,
-                                    );
+                                    let path = Path::new_index(collection_path.clone(), index)
+                                        .refine_paths(&self.current_environment);
                                     value_map = value_map.insert(path, ch_const);
                                 }
                             }
@@ -4338,11 +4321,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// path = [x; 32]
     #[logfn_inputs(TRACE)]
     fn visit_repeat(&mut self, path: Rc<Path>, operand: &mir::Operand<'tcx>, count: &Const<'tcx>) {
-        let length_path = Path::new_length(path.clone(), &self.current_environment);
+        let length_path = Path::new_length(path.clone());
         let length_value = self.visit_constant(None, count);
         self.current_environment
             .update_value_at(length_path, length_value.clone());
-        let slice_path = Path::new_slice(path, length_value, &self.current_environment);
+        let slice_path =
+            Path::new_slice(path, length_value).refine_paths(&self.current_environment);
         let initial_value = self.visit_operand(operand);
         self.current_environment
             .update_value_at(slice_path, initial_value);
@@ -4420,7 +4404,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Get the length of an array. Will be a compile time constant if the array length is known.
     #[logfn_inputs(TRACE)]
     fn get_len(&mut self, path: Rc<Path>) -> Rc<AbstractValue> {
-        let length_path = Path::new_length(path, &self.current_environment);
+        let length_path = Path::new_length(path).refine_paths(&self.current_environment);
         self.lookup_path_and_refine_result(length_path, self.tcx.types.usize)
     }
 
@@ -4494,9 +4478,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let (result, overflow_flag) = Self::do_checked_binary_op(bin_op, target_type, left, right);
-        let path0 = Path::new_field(path.clone(), 0, &self.current_environment);
+        let path0 = Path::new_field(path.clone(), 0).refine_paths(&self.current_environment);
         self.current_environment.update_value_at(path0, result);
-        let path1 = Path::new_field(path, 1, &self.current_environment);
+        let path1 = Path::new_field(path, 1).refine_paths(&self.current_environment);
         self.current_environment
             .update_value_at(path1, overflow_flag);
     }
@@ -4611,8 +4595,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Read the discriminant of an enum and assign to path.
     #[logfn_inputs(TRACE)]
     fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
-        let discriminant_path =
-            Path::new_discriminant(self.visit_place(place), &self.current_environment);
+        let discriminant_path = Path::new_discriminant(self.visit_place(place));
         let discriminant_value =
             self.lookup_path_and_refine_result(discriminant_path, self.tcx.types.u128);
         self.current_environment
@@ -4659,7 +4642,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         operands: &[mir::Operand<'tcx>],
     ) {
         precondition!(matches!(aggregate_kinds, mir::AggregateKind::Array(..)));
-        let length_path = Path::new_length(path.clone(), &self.current_environment);
+        let length_path = Path::new_length(path.clone()).refine_paths(&self.current_environment);
         let length_value: Rc<AbstractValue> = Rc::new(
             self.constant_value_cache
                 .get_u128_for(operands.len() as u128)
@@ -4704,7 +4687,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     .clone()
                     .into(),
             );
-            let index_path = Path::new_index(path.clone(), index_value, &self.current_environment);
+            let index_path =
+                Path::new_index(path.clone(), index_value).refine_paths(&self.current_environment);
             self.visit_used_operand(index_path, operand);
         }
         self.current_environment
@@ -5115,7 +5099,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             let res = &mut self.constant_value_cache.get_string_for(s);
 
                             let path = Path::new_alias(Rc::new(res.clone().into()));
-                            let len_path = Path::new_length(path, &self.current_environment);
+                            let len_path = Path::new_length(path);
                             self.current_environment.update_value_at(len_path, len_val);
 
                             res
@@ -5305,10 +5289,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let e =
                     self.get_new_heap_block(Rc::new(1u128.into()), Rc::new(1u128.into()), false);
                 if let Expression::HeapBlock { .. } = &e.expression {
-                    let p = Path::new_discriminant(
-                        Path::get_as_path(e.clone()),
-                        &self.current_environment,
-                    );
+                    let p = Path::new_discriminant(Path::get_as_path(e.clone()));
                     let d = Rc::new(self.constant_value_cache.get_u128_for(*data).clone().into());
                     self.current_environment.update_value_at(p, d);
                     return e;
@@ -5399,7 +5380,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         Rc::new(self.constant_value_cache.get_string_for(s).clone().into());
 
                     let path = Path::new_alias(res.clone());
-                    let len_path = Path::new_length(path, &self.current_environment);
+                    let len_path = Path::new_length(path);
                     self.current_environment.update_value_at(len_path, len_val);
                     res
                 }
@@ -5551,12 +5532,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     .clone()
                     .into(),
             );
-            let index_path =
-                Path::new_index(array_path.clone(), index_value, &self.current_environment);
+            let index_path = Path::new_index(array_path.clone(), index_value)
+                .refine_paths(&self.current_environment); //todo: maybe not needed?
             self.current_environment
                 .update_value_at(index_path, operand);
         }
-        let length_path = Path::new_length(array_path.clone(), &self.current_environment);
+        let length_path = Path::new_length(array_path.clone());
         let length_value = Rc::new(
             self.constant_value_cache
                 .get_u128_for(last_index + 1)
@@ -5678,7 +5659,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
                 TyKind::Array(_, len) => {
                     let len_val = self.visit_constant(None, &len);
-                    let len_path = Path::new_length(base_path.clone(), &self.current_environment);
+                    let len_path =
+                        Path::new_length(base_path.clone()).refine_paths(&self.current_environment);
                     self.current_environment.update_value_at(len_path, len_val);
                 }
                 TyKind::Closure(def_id, generic_args, ..) => {
