@@ -299,42 +299,30 @@ impl Path {
 
     /// Creates a path the selects the discriminant of the enum at the given path.
     #[logfn_inputs(TRACE)]
-    pub fn new_discriminant(enum_path: Rc<Path>, environment: &Environment) -> Rc<Path> {
+    pub fn new_discriminant(enum_path: Rc<Path>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Discriminant);
-        Self::new_qualified(enum_path, selector).refine_paths(environment)
+        Self::new_qualified(enum_path, selector)
     }
 
     /// Creates a path the selects the given field of the struct at the given path.
     #[logfn_inputs(TRACE)]
-    pub fn new_field(
-        qualifier: Rc<Path>,
-        field_index: usize,
-        environment: &Environment,
-    ) -> Rc<Path> {
+    pub fn new_field(qualifier: Rc<Path>, field_index: usize) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Field(field_index));
-        Self::new_qualified(qualifier, selector).refine_paths(environment)
+        Self::new_qualified(qualifier, selector)
     }
 
     /// Creates a path the selects the element at the given index value of the array at the given path.
     #[logfn_inputs(TRACE)]
-    pub fn new_index(
-        collection_path: Rc<Path>,
-        index_value: Rc<AbstractValue>,
-        environment: &Environment,
-    ) -> Rc<Path> {
+    pub fn new_index(collection_path: Rc<Path>, index_value: Rc<AbstractValue>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Index(index_value));
-        Self::new_qualified(collection_path, selector).refine_paths(environment)
+        Self::new_qualified(collection_path, selector)
     }
 
     /// Creates a path the selects a slice, [0..count_value], from the value at collection_path.
     #[logfn_inputs(TRACE)]
-    pub fn new_slice(
-        collection_path: Rc<Path>,
-        count_value: Rc<AbstractValue>,
-        environment: &Environment,
-    ) -> Rc<Path> {
+    pub fn new_slice(collection_path: Rc<Path>, count_value: Rc<AbstractValue>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Slice(count_value));
-        Self::new_qualified(collection_path, selector).refine_paths(environment)
+        Self::new_qualified(collection_path, selector)
     }
 
     /// Creates a path to the layout of a heap allocated memory block.
@@ -376,20 +364,16 @@ impl Path {
 
     /// Creates a path the selects the length of the array/slice/string at the given path.
     #[logfn_inputs(TRACE)]
-    pub fn new_length(array_path: Rc<Path>, environment: &Environment) -> Rc<Path> {
+    pub fn new_length(array_path: Rc<Path>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Field(1));
-        Self::new_qualified(array_path, selector).refine_paths(environment)
+        Self::new_qualified(array_path, selector)
     }
 
     /// Creates a path the selects the given model field of the value at the given path.
     #[logfn_inputs(TRACE)]
-    pub fn new_model_field(
-        qualifier: Rc<Path>,
-        field_name: Rc<String>,
-        environment: &Environment,
-    ) -> Rc<Path> {
+    pub fn new_model_field(qualifier: Rc<Path>, field_name: Rc<String>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::ModelField(field_name));
-        Self::new_qualified(qualifier, selector).refine_paths(environment)
+        Self::new_qualified(qualifier, selector)
     }
 
     /// Creates a path the qualifies the given root path with the given selector.
@@ -564,8 +548,7 @@ impl PathRefinement for Rc<Path> {
                     }
                 }
                 if let PathSelector::Downcast(_, variant) = refined_selector.as_ref() {
-                    let discriminator =
-                        Path::new_discriminant(refined_qualifier.clone(), environment);
+                    let discriminator = Path::new_discriminant(refined_qualifier.clone());
                     if let Some(val) = environment.value_at(&discriminator) {
                         if let Expression::CompileTimeConstant(ConstantDomain::U128(ordinal)) =
                             &val.expression
@@ -603,11 +586,8 @@ impl PathRefinement for Rc<Path> {
                                     // We have a *&path sequence. If path is a is heap block, we
                                     // turn self into path[0]. If not, we drop the sequence and return path.
                                     return if matches!(&path.value, PathEnum::HeapBlock {..}) {
-                                        Path::new_index(
-                                            path.clone(),
-                                            Rc::new(0u128.into()),
-                                            environment,
-                                        )
+                                        Path::new_index(path.clone(), Rc::new(0u128.into()))
+                                            .refine_paths(environment)
                                     } else {
                                         path.clone()
                                     };
