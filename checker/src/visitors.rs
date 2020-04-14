@@ -467,42 +467,55 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
 
         if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            // This body is beyond MIRAI for now
-            warn!(
-                "analysis of {} timed out after {} seconds",
-                self.function_name, elapsed_time_in_seconds,
-            );
-            self.active_calls.pop();
-            self.assume_function_is_angelic = true;
+            self.report_timeout(elapsed_time_in_seconds);
         }
 
         if !self.assume_function_is_angelic {
             // Now traverse the blocks again, doing checks and emitting diagnostics.
             // terminator_state[bb] is now complete for every basic block bb in the body.
-            self.check_for_errors(&block_indices, &mut terminator_state);
+            let elapsed_time_in_seconds =
+                self.check_for_errors(&block_indices, &mut terminator_state);
             self.active_calls.pop();
+            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+                self.report_timeout(elapsed_time_in_seconds);
+            } else {
+                // Now create a summary of the body that can be in-lined into call sites.
+                if self.async_fn_summary.is_some() {
+                    self.preconditions = self.translate_async_preconditions();
+                    // todo: also translate side-effects, return result and post-condition
+                };
 
-            // Now create a summary of the body that can be in-lined into call sites.
-            if self.async_fn_summary.is_some() {
-                self.preconditions = self.translate_async_preconditions();
-                // todo: also translate side-effects, return result and post-condition
-            };
-
-            summaries::summarize(
-                self.mir.arg_count,
-                self.exit_environment.as_ref(),
-                &self.preconditions,
-                &self.post_condition,
-                self.unwind_condition.clone(),
-                &self.unwind_environment,
-                self.tcx,
-            )
-        } else {
-            let mut result = Summary::default();
-            result.is_computed = true; // Otherwise this function keeps getting re-analyzed
-            result.is_angelic = true; // Callers have to make possibly false assumptions.
-            result
+                return summaries::summarize(
+                    self.mir.arg_count,
+                    self.exit_environment.as_ref(),
+                    &self.preconditions,
+                    &self.post_condition,
+                    self.unwind_condition.clone(),
+                    &self.unwind_environment,
+                    self.tcx,
+                );
+            }
         }
+        let mut result = Summary::default();
+        result.is_computed = true; // Otherwise this function keeps getting re-analyzed
+        result.is_angelic = true; // Callers have to make possibly false assumptions.
+        result
+    }
+
+    fn report_timeout(&mut self, elapsed_time_in_seconds: u64) {
+        // This body is beyond MIRAI for now
+        if self.options.diag_level != DiagLevel::RELAXED {
+            let error = self
+                .session
+                .struct_span_err(self.current_span, "The analysis of this function timed out");
+            self.emit_diagnostic(error);
+        }
+        warn!(
+            "analysis of {} timed out after {} seconds",
+            self.function_name, elapsed_time_in_seconds,
+        );
+        self.active_calls.pop();
+        self.assume_function_is_angelic = true;
     }
 
     /// Summarize the referenced function, specialized by its generic arguments and the actual
@@ -1112,7 +1125,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         &mut self,
         block_indices: &[mir::BasicBlock],
         terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
-    ) {
+    ) -> u64 {
         self.check_for_errors = true;
         for bb in block_indices.iter() {
             let t_state = (&terminator_state[bb]).clone();
@@ -1125,6 +1138,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             // caller. We model this as a false post condition.
             self.post_condition = Some(Rc::new(abstract_value::FALSE));
         }
+        self.start_instant.elapsed().as_secs()
     }
 
     #[logfn_inputs(TRACE)]
@@ -1872,7 +1886,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             "".to_string()
         };
         info!(
-            "function {} can't be reliably analyzed because it calls function {} which has no body and no summary{}.",
+            "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
             utils::summary_key_str(self.tcx, self.def_id),
             utils::summary_key_str(self.tcx, call_info.callee_def_id),
             argument_type_hint,
@@ -3036,6 +3050,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         self.current_environment
                             .update_value_at(path.clone(), rvalue);
                     }
+                    check_for_early_return!(self);
                 }
 
                 // Effects on the call result
@@ -3055,6 +3070,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         &parameter_path,
                         call_info.actual_args,
                     );
+                    check_for_early_return!(self);
                 }
             } else {
                 // We don't know anything other than the return value type.
