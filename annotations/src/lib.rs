@@ -621,6 +621,19 @@ macro_rules! debug_checked_precondition_ne {
     );
 }
 
+/// Terminates the program with a panic that is tagged as being an unrecoverable error.
+/// Use this for errors that arise in correct programs due to external factors.
+/// For example, if a file that is essential for running cannot be found for some reason.
+#[macro_export]
+macro_rules! unrecoverable {
+    ($fmt:expr) => (
+        panic!(concat!("unrecoverable: ", stringify!($fmt)));
+    );
+    ($fmt:expr, $($arg:tt)+) => (
+        panic!(concat!("unrecoverable: ", stringify!($fmt)), $($arg)+);
+    );
+}
+
 /// Equivalent to a no op when used with an unmodified Rust compiler.
 /// When compiled with MIRAI, this causes MIRAI to check the condition and
 /// emit a diagnostic unless it can prove it to be true.
