@@ -3232,14 +3232,38 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     return;
                 }
 
-                let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(ref msg)) =
-                    call_info.actual_args[0].1.expression
+                let fmt_string = if matches!(
+                    call_info.callee_known_name,
+                    KnownNames::StdPanickingBeginPanic
+                ) {
+                    call_info.actual_args[0].1.clone()
+                } else {
+                    let index = Rc::new(0u128.into());
+                    let args_pieces_0 = Path::new_index(
+                        Path::new_field(
+                            call_info.actual_args[0].0.clone(),
+                            0,
+                            &self.current_environment,
+                        ),
+                        index,
+                        &self.current_environment,
+                    )
+                    .refine_paths(&self.current_environment);
+                    self.lookup_path_and_refine_result(
+                        args_pieces_0,
+                        ExpressionType::Reference.as_rustc_type(self.tcx),
+                    )
+                };
+                let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(msg)) =
+                    &fmt_string.expression
                 {
                     if msg.contains("entered unreachable code")
                         || msg.contains("not yet implemented")
+                        || msg.starts_with("unrecoverable: ")
                     {
                         // We treat unreachable!() as an assumption rather than an assertion to prove.
                         // unimplemented!() is unlikely to be a programmer mistake, so need to fixate on that either.
+                        // unrecoverable! is way for the programmer to indicate that termination is not a mistake.
                         return;
                     } else {
                         if path_cond.is_none() && msg.as_str() == "statement is reachable" {
