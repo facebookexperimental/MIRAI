@@ -978,9 +978,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
                 1,
             ),
-            Expression::Widen { path, operand, .. } => {
-                operand.try_to_retype_as(target_type).widen(&path)
-            }
+            Expression::Widen { .. } => self.clone(),
 
             _ => self.clone(),
         }
@@ -1259,6 +1257,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Returns true if "self => other" is known at compile time to be true.
     /// Returning false does not imply the implication is false, just that we do not know.
+    ///
+    /// Important: keep the performance of this function proportional to the size of self.
     #[logfn_inputs(TRACE)]
     fn implies(&self, other: &Rc<AbstractValue>) -> bool {
         // x => true, is always true
@@ -2083,7 +2083,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // The universal set is not a subset of any set other than the universal set.
             (Expression::Top, _) => false,
             // Widened expressions are equal if their paths are equal, regardless of their operand values.
-            (Expression::Widen { path: p1, .. }, Expression::Widen { path: p2, .. }) => p1 == p2,
+            (Expression::Widen { path: p1, .. }, Expression::Widen { path: p2, .. }) => *p1 == *p2,
             // (condition ? consequent : alternate) is a subset of x if both consequent and alternate are subsets of x.
             (
                 Expression::ConditionalExpression {
@@ -2461,7 +2461,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
-            Expression::Widen { .. } => self.clone(),
+            Expression::Widen { path, operand, .. } => {
+                operand.refine_paths(environment).widen(&path)
+            }
         }
     }
 
@@ -2686,20 +2688,44 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     )
                 }
             }
-            Expression::Widen { .. } => self.clone(),
+            Expression::Widen { path, operand, .. } => {
+                operand.refine_parameters(arguments, fresh).widen(&path)
+            }
         }
     }
 
     /// Returns a domain that is simplified (refined) by using the current path conditions
     /// (conditions known to be true in the current context). If no refinement is possible
     /// the result is simply a clone of this domain.
+    ///
+    /// This function is performance critical and involves a tricky trade-off: Invoking it
+    /// is expensive, particularly when expressions get large (hence k_limits::MAX_EXPRESSION_SIZE).
+    /// One reason for this is that expressions are traversed without doing any kind of occurs check,
+    /// so expressions that are not large in memory usage (because of sharing) can still be too large
+    /// to traverse. Currently there is no really efficient way to add an occurs check, so the
+    /// k-limit approach is cheaper, at the cost of losing precision.
+    ///
+    /// On the other hand, getting rid of this refinement (and the k-limits it needs) will cause
+    /// a lot of expressions to get much larger because of joining and composing. This will increase
+    /// the cost of refine_parameters, which is essential. Likewise, it wil also increase the cost
+    /// of refine_paths, which ensures that paths stay unique (dealing with aliasing is expensive).
     #[logfn_inputs(TRACE)]
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Rc<AbstractValue> {
         //do not use false path conditions to refine things
         checked_precondition!(path_condition.as_bool_if_known().is_none());
         if depth >= k_limits::MAX_REFINE_DEPTH {
+            //todo: perhaps this should go away.
+            // right now it deals with the situation where some large expressions have sizes
+            // that are not accurately tracked. These really should get fixed.
             return self.clone();
         }
+        // In this context path_condition is true
+        if path_condition.eq(self) {
+            return Rc::new(TRUE);
+        }
+
+        // If the path context constrains the self expression to be equal to a constant, just
+        // return the constant.
         if let Expression::Equals { left, right } = &path_condition.expression {
             if let Expression::CompileTimeConstant(..) = &left.expression {
                 if self.eq(right) {
@@ -2712,6 +2738,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
+        // Traverse the self expression, looking for recursive refinement opportunities.
+        // Important, keep the traversal as trivial as possible and put optimizations in
+        // the transfer functions. Also, keep the transfer functions constant in cost as
+        // much as possible. Any time they are not, this function becomes quadratic and
+        // performance becomes terrible.
         match &self.expression {
             Expression::Bottom | Expression::Top => self.clone(),
             Expression::Add { left, right } => left
@@ -2725,20 +2756,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 right.refine_with(path_condition, depth + 1),
                 result_type.clone(),
             ),
-            Expression::And { left, right } => {
-                if path_condition.implies(&left) {
-                    if path_condition.implies(&right) {
-                        Rc::new(TRUE)
-                    } else {
-                        right.refine_with(path_condition, depth + 1)
-                    }
-                } else if path_condition.implies_not(&left) || path_condition.implies_not(&right) {
-                    Rc::new(FALSE)
-                } else {
-                    left.refine_with(path_condition, depth + 1)
-                        .and(right.refine_with(path_condition, depth + 1))
-                }
-            }
+            Expression::And { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .and(right.refine_with(path_condition, depth + 1)),
             Expression::BitAnd { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .bit_and(right.refine_with(path_condition, depth + 1)),
@@ -2766,6 +2786,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent,
                 alternate,
             } => {
+                // The implies checks should be redundant, but currently help with precision
+                // presumably because they are not k-limited like the refinement of the path
+                // condition. They might also help with performance because they avoid
+                // two refinements and the expensive and constructor, if they succeed.
+                // If they mostly fail, they will cost more than they save. It is not
+                // clear at this point if they are a win, but they are kept for the sake of precision.
                 if path_condition.implies(&condition) {
                     consequent.refine_with(path_condition, depth + 1)
                 } else if path_condition.implies_not(&condition) {
@@ -2781,10 +2807,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     if !refined_condition_as_bool.unwrap_or(true) {
                         return refined_alternate;
                     }
-                    let refined_consequent =
-                        refined_consequent.refine_with(&refined_condition, depth + 1);
-                    let refined_alternate =
-                        refined_alternate.refine_with(&refined_condition.logical_not(), depth + 1);
                     refined_condition.conditional_expression(refined_consequent, refined_alternate)
                 }
             }
@@ -2851,18 +2873,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .not_equals(right.refine_with(path_condition, depth + 1)),
             Expression::Neg { operand } => operand.refine_with(path_condition, depth + 1).negate(),
             Expression::LogicalNot { operand } => {
-                if path_condition.implies(&operand) {
-                    Rc::new(FALSE)
-                } else if path_condition.implies_not(&operand) {
-                    Rc::new(TRUE)
-                } else {
-                    operand.refine_with(path_condition, depth + 1).logical_not()
-                }
+                operand.refine_with(path_condition, depth + 1).logical_not()
             }
             Expression::Offset { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .offset(right.refine_with(path_condition, depth + 1)),
             Expression::Or { left, right } => {
+                // Ideally the constructor should do the simplifications, but in practice or
+                // expressions grow quite large due to composition and it really helps to avoid
+                // refining the right expression whenever possible, even at the expense of
+                // more checks here. If the performance of implies and implies_not should become
+                // significantly worse than it is now, this could become a performance bottle neck.
                 if path_condition.implies(&left) || path_condition.implies(&right) {
                     Rc::new(TRUE)
                 } else if path_condition.implies_not(&left) {
@@ -2922,14 +2943,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ),
             Expression::UninterpretedCall { .. } => self.clone(),
             Expression::UnknownModelField { .. } => self.clone(),
-            Expression::Variable { .. } => {
-                if path_condition.implies(&self) {
-                    Rc::new(TRUE)
-                } else if path_condition.implies_not(&self) {
-                    Rc::new(FALSE)
-                } else {
-                    self.clone()
+            Expression::Variable { var_type, .. } => {
+                if *var_type == ExpressionType::Bool {
+                    if path_condition.implies(&self) {
+                        return Rc::new(TRUE);
+                    } else if path_condition.implies_not(&self) {
+                        return Rc::new(FALSE);
+                    }
                 }
+                self.clone()
             }
             Expression::Widen { path, operand } => {
                 operand.refine_with(path_condition, depth + 1).widen(&path)
