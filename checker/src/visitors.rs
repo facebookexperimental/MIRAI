@@ -3847,13 +3847,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
         } else {
             // Check if path implies condition
-            if self.current_environment.entry_condition.implies(cond_val) {
+            if cond_as_bool.unwrap_or(false)
+                || self.current_environment.entry_condition.implies(cond_val)
+            {
                 return (Some(true), None);
             }
-            if self
-                .current_environment
-                .entry_condition
-                .implies_not(cond_val)
+            if !cond_as_bool.unwrap_or(true)
+                || self
+                    .current_environment
+                    .entry_condition
+                    .implies_not(cond_val)
             {
                 return (Some(false), None);
             }
