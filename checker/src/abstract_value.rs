@@ -1904,7 +1904,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && other
                         .less_or_equal(t.modulo_value())
                         .as_bool_if_known()
-                        .expect("constant folding to work")
+                        .unwrap_or(false)
                 {
                     return x.remainder(other);
                 }

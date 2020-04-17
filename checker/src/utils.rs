@@ -9,6 +9,7 @@ use mirai_annotations::assume_unreachable;
 use rustc_hir::def_id::DefId;
 use rustc_hir::definitions::{DefPathData, DisambiguatedDefPathData};
 use rustc_hir::{ItemKind, Node};
+use rustc_middle::ty;
 use rustc_middle::ty::print::{FmtPrinter, Printer};
 use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
 use rustc_middle::ty::{DefIdTree, ProjectionTy, Ty, TyCtxt, TyKind};
@@ -143,7 +144,20 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
                 }
             }
         }
-        Dynamic(..) => str.push_str(&format!("dyn_{:?}", ty)),
+        Dynamic(trait_data, ..) => {
+            str.push_str("trait_");
+            if let Some(principal) = trait_data.principal() {
+                let principal = tcx
+                    .normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), &principal);
+                str.push_str(qualified_type_name(tcx, principal.def_id).as_str());
+                for sub in principal.substs {
+                    if let GenericArgKind::Type(ty) = sub.unpack() {
+                        str.push('_');
+                        append_mangled_type(str, ty, tcx);
+                    }
+                }
+            }
+        }
         Foreign(def_id) => {
             str.push_str("extern_type_");
             str.push_str(qualified_type_name(tcx, def_id).as_str());
@@ -226,12 +240,8 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
             });
         }
         Param(param_ty) => {
-            let pty: Ty<'tcx> = param_ty.to_ty(tcx);
-            if ty.eq(pty) {
-                str.push_str(&format!("{:?}", ty));
-            } else {
-                append_mangled_type(str, pty, tcx);
-            }
+            str.push_str("generic_par_");
+            str.push_str(&param_ty.name.as_str());
         }
         Projection(projection_ty) => {
             append_mangled_type(str, projection_ty.self_ty(), tcx);
