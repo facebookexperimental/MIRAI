@@ -169,7 +169,6 @@ impl MiraiCallbacks {
             || file_name.contains("common/debug-interface/src") // false positives
             || file_name.contains("common/futures-semaphore/src") // false positive: possible assertion failed: ptr.as_ptr() as usize & NUM_FLAG == 0
             || file_name.contains("common/metrics/src") // false positives
-            || file_name.contains("consensus/src") // Z3 encoding error
             || file_name.contains("language/bytecode-verifier/src") // takes too long
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // false positives

@@ -8,6 +8,7 @@ use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::ConstantDomain;
 use crate::expression::{Expression, ExpressionType};
+use crate::known_names::KnownNames;
 use crate::path::Path;
 use crate::smt_solver::SmtResult;
 use crate::smt_solver::SmtSolver;
@@ -189,6 +190,8 @@ impl Z3Solver {
             Expression::Add { .. }
             | Expression::AddOverflows { .. }
             | Expression::Div { .. }
+            | Expression::IntrinsicBinary { .. }
+            | Expression::IntrinsicFloatingPointUnary { .. }
             | Expression::Mul { .. }
             | Expression::MulOverflows { .. }
             | Expression::Rem { .. }
@@ -237,6 +240,9 @@ impl Z3Solver {
                 z3_sys::Z3_mk_bvsgt,
                 z3_sys::Z3_mk_bvugt,
             ),
+            Expression::IntrinsicBitVectorUnary { bit_length, .. } => {
+                self.get_as_bv_z3_ast(expression, u32::from(*bit_length))
+            }
             Expression::LessOrEqual { left, right } => self.general_relational(
                 left,
                 right,
@@ -737,6 +743,23 @@ impl Z3Solver {
                 consequent,
                 alternate,
             } => self.numeric_conditional(condition, consequent, alternate),
+            Expression::IntrinsicBinary { .. } => unsafe {
+                let expresssion_type = expression.infer_type();
+                let sort = self.get_sort_for(&expresssion_type);
+                //todo: use the name to select an appropriate Z3 floating point function
+                (
+                    expresssion_type.is_floating_point_number(),
+                    z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort),
+                )
+            },
+            Expression::IntrinsicFloatingPointUnary { .. } => unsafe {
+                let sort = self.get_sort_for(&expression.infer_type());
+                //todo: use the name to select an appropriate Z3 floating point function
+                (
+                    true,
+                    z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort),
+                )
+            },
             Expression::Neg { operand } => self.numeric_neg(operand),
             Expression::Offset { .. } => unsafe {
                 use self::ExpressionType::*;
@@ -1302,6 +1325,14 @@ impl Z3Solver {
                 consequent,
                 alternate,
             } => self.bv_conditional(num_bits, condition, consequent, alternate),
+            Expression::IntrinsicBitVectorUnary { name, .. } => match name {
+                KnownNames::StdIntrinsicsCtlz
+                | KnownNames::StdIntrinsicsCtlzNonzero
+                | KnownNames::StdIntrinsicsCtpop
+                | KnownNames::StdIntrinsicsCttz
+                | KnownNames::StdIntrinsicsCttzNonzero => self.numeric_fresh_const().1,
+                _ => self.bv_fresh_const(num_bits),
+            },
             Expression::Join { path, .. } => self.bv_join(num_bits, path),
             Expression::Neg { operand } => self.bv_neg(num_bits, operand),
             Expression::Reference(path) => self.bv_reference(num_bits, path),
