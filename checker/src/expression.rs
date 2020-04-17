@@ -579,7 +579,11 @@ impl Expression {
                 | KnownNames::StdIntrinsicsFsubFast => left.expression.infer_type(),
                 _ => assume_unreachable!("invalid name {:?} for intrinsic binary", name),
             },
-            Expression::IntrinsicBitVectorUnary { operand, name, .. } => match name {
+            Expression::IntrinsicBitVectorUnary {
+                operand,
+                name,
+                bit_length,
+            } => match name {
                 KnownNames::StdIntrinsicsBitreverse | KnownNames::StdIntrinsicsBswap => {
                     operand.expression.infer_type()
                 }
@@ -587,7 +591,17 @@ impl Expression {
                 | KnownNames::StdIntrinsicsCtlzNonzero
                 | KnownNames::StdIntrinsicsCtpop
                 | KnownNames::StdIntrinsicsCttz
-                | KnownNames::StdIntrinsicsCttzNonzero => ExpressionType::U32,
+                | KnownNames::StdIntrinsicsCttzNonzero => {
+                    // u(8|16|32|64|128)
+                    match bit_length {
+                        8 => ExpressionType::U8,
+                        16 => ExpressionType::U16,
+                        32 => ExpressionType::U32,
+                        64 => ExpressionType::U64,
+                        128 => ExpressionType::U128,
+                        _ => unreachable!("the type checker should not allow this"),
+                    }
+                }
                 _ => assume_unreachable!("invalid name {:?} for intrinsic bit vector unary", name),
             },
             Expression::IntrinsicFloatingPointUnary { name, .. } => match name {

@@ -1313,7 +1313,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         )
     }
 
-    /// Returns (self as u(8|16|64|128)).f() where f is an intrinsic bit vector unary function.
+    /// Returns (self as u(8|16|32|64|128)).f() where f is an intrinsic bit vector unary function.
     #[logfn_inputs(TRACE)]
     fn intrinsic_bit_vector_unary(&self, bit_length: u8, name: KnownNames) -> Self {
         if let Expression::CompileTimeConstant(v1) = &self.expression {
