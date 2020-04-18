@@ -37,6 +37,7 @@ extern crate log;
 pub mod abstract_value;
 pub mod callbacks;
 pub mod constant_domain;
+pub mod crate_visitor;
 pub mod environment;
 pub mod expected_errors;
 pub mod expression;
