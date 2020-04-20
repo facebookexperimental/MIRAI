@@ -3,7 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::{ConstantDomain, ConstantValueCache, FunctionReference};
@@ -17,7 +16,9 @@ use crate::path::{Path, PathEnum, PathSelector};
 use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries;
 use crate::summaries::{PersistentSummaryCache, Precondition, Summary};
+use crate::type_visitor::TypeVisitor;
 use crate::utils;
+use crate::{abstract_value, type_visitor};
 
 use log_derive::*;
 use mirai_annotations::*;
@@ -27,13 +28,9 @@ use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{ConstValue, Scalar};
-use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
-use rustc_middle::ty::{
-    AdtDef, Const, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig,
-    ParamTy, Ty, TyCtxt, TyKind, TypeAndMut, UserTypeAnnotationIndex,
-};
+use rustc_middle::ty::subst::SubstsRef;
+use rustc_middle::ty::{Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
 use rustc_session::Session;
-use rustc_target::abi::VariantIdx;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -83,7 +80,6 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
 
     active_calls: Vec<DefId>,
-    actual_argument_types: Vec<Ty<'tcx>>,
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     // True if the current function cannot be analyzed and hence is just assumed to be correct.
     assume_function_is_angelic: bool,
@@ -97,23 +93,20 @@ pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
     start_instant: Instant,
     exit_environment: Option<Environment>,
     function_name: Rc<String>,
-    generic_arguments: Option<SubstsRef<'tcx>>,
-    generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
-    path_ty_cache: HashMap<Rc<Path>, Ty<'tcx>>,
     post_condition: Option<Rc<AbstractValue>>,
     post_condition_block: Option<mir::BasicBlock>,
     preconditions: Vec<Precondition>,
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
     fresh_variable_offset: usize,
+    type_visitor: TypeVisitor<'analysis, 'tcx>,
 }
 
 struct SavedVisitorState<'analysis, 'tcx> {
     def_id: DefId,
     mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
 
-    actual_argument_types: Vec<Ty<'tcx>>,
     already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     assume_preconditions_of_next_call: bool,
     async_fn_summary: Option<Summary>,
@@ -125,15 +118,13 @@ struct SavedVisitorState<'analysis, 'tcx> {
     exit_environment: Option<Environment>,
     function_name: Rc<String>,
     fresh_variable_offset: usize,
-    generic_arguments: Option<SubstsRef<'tcx>>,
-    generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
     heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
-    path_ty_cache: HashMap<Rc<Path>, Ty<'tcx>>,
     post_condition: Option<Rc<AbstractValue>>,
     post_condition_block: Option<mir::BasicBlock>,
     preconditions: Vec<Precondition>,
     unwind_condition: Option<Rc<AbstractValue>>,
     unwind_environment: Environment,
+    type_visitor: TypeVisitor<'analysis, 'tcx>,
 }
 
 #[derive(Clone, Debug)]
@@ -182,11 +173,11 @@ impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
     pub fn new(
         def_id: DefId,
         mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
+        tcx: TyCtxt<'tcx>,
     ) -> SavedVisitorState<'analysis, 'tcx> {
         SavedVisitorState {
             def_id,
             mir,
-            actual_argument_types: vec![],
             already_reported_errors_for_call_to: HashSet::new(),
             assume_preconditions_of_next_call: false,
             async_fn_summary: None,
@@ -198,15 +189,13 @@ impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
             exit_environment: None,
             function_name: Rc::new("".into()),
             fresh_variable_offset: 0,
-            generic_arguments: None,
-            generic_argument_map: None,
             heap_addresses: HashMap::default(),
-            path_ty_cache: HashMap::default(),
             post_condition: None,
             post_condition_block: None,
             preconditions: Vec::new(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
+            type_visitor: TypeVisitor::new(def_id, mir, tcx),
         }
     }
 }
@@ -276,7 +265,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             buffered_diagnostics: crate_context.buffered_diagnostics,
 
             active_calls: Vec::new(),
-            actual_argument_types: vec![],
             already_reported_errors_for_call_to: HashSet::new(),
             assume_function_is_angelic: false,
             assume_preconditions_of_next_call: false,
@@ -289,16 +277,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             start_instant: Instant::now(),
             exit_environment: None,
             function_name,
-            generic_arguments: None,
-            generic_argument_map: None,
             heap_addresses: HashMap::default(),
-            path_ty_cache: HashMap::default(),
             post_condition: None,
             post_condition_block: None,
             preconditions: Vec::new(),
             unwind_condition: None,
             unwind_environment: Environment::default(),
             fresh_variable_offset: 0,
+            type_visitor: TypeVisitor::new(
+                crate_context.def_id,
+                crate_context.mir,
+                crate_context.tcx,
+            ),
         }
     }
 
@@ -314,24 +304,19 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         self.current_span = rustc_span::DUMMY_SP;
         self.start_instant = Instant::now();
         self.exit_environment = None;
-        self.generic_arguments = None;
         self.heap_addresses = HashMap::default();
-        self.path_ty_cache = HashMap::default();
         self.post_condition = None;
         self.post_condition_block = None;
         self.preconditions = Vec::new();
         self.unwind_condition = None;
         self.unwind_environment = Environment::default();
         self.fresh_variable_offset = 1000;
+        self.type_visitor.reset_visitor_state();
     }
 
     fn swap_visitor_state(&mut self, saved_state: &mut SavedVisitorState<'analysis, 'tcx>) {
         std::mem::swap(&mut self.def_id, &mut saved_state.def_id);
         std::mem::swap(&mut self.mir, &mut saved_state.mir);
-        std::mem::swap(
-            &mut self.actual_argument_types,
-            &mut saved_state.actual_argument_types,
-        );
         std::mem::swap(
             &mut self.already_reported_errors_for_call_to,
             &mut saved_state.already_reported_errors_for_call_to,
@@ -366,16 +351,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             &mut saved_state.exit_environment,
         );
         std::mem::swap(&mut self.function_name, &mut saved_state.function_name);
-        std::mem::swap(
-            &mut self.generic_arguments,
-            &mut saved_state.generic_arguments,
-        );
-        std::mem::swap(
-            &mut self.generic_argument_map,
-            &mut saved_state.generic_argument_map,
-        );
         std::mem::swap(&mut self.heap_addresses, &mut saved_state.heap_addresses);
-        std::mem::swap(&mut self.path_ty_cache, &mut saved_state.path_ty_cache);
         std::mem::swap(&mut self.post_condition, &mut saved_state.post_condition);
         std::mem::swap(
             &mut self.post_condition_block,
@@ -394,6 +370,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             &mut self.fresh_variable_offset,
             &mut saved_state.fresh_variable_offset,
         );
+        std::mem::swap(&mut self.type_visitor, &mut saved_state.type_visitor);
     }
 
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
@@ -424,36 +401,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         // Add function constants.
         for (path, val) in function_constant_args.iter() {
-            if let PathEnum::Parameter { ordinal } = &path.value {
-                if *ordinal > 0 && *ordinal <= parameter_types.len() {
-                    if let TyKind::Closure(_, substs) = parameter_types[*ordinal - 1].kind {
-                        if let Some(i) = substs.iter().position(|gen_arg| {
-                            if let GenericArgKind::Type(ty) = gen_arg.unpack() {
-                                matches!(ty.kind, TyKind::FnPtr(..))
-                            } else {
-                                false
-                            }
-                        }) {
-                            for j in (i + 1)..substs.len() {
-                                let var_type: ExpressionType =
-                                    (&substs.get(j).unwrap().expect_ty().kind).into();
-                                let closure_field_path = Path::new_field(path.clone(), j - (i + 1))
-                                    .refine_paths(&self.current_environment);
-                                let closure_field_val = AbstractValue::make_from(
-                                    Expression::Variable {
-                                        path: closure_field_path.clone(),
-                                        var_type,
-                                    },
-                                    1,
-                                );
-                                first_state.value_map = first_state
-                                    .value_map
-                                    .insert(closure_field_path, closure_field_val);
-                            }
-                        }
-                    }
-                }
-            }
+            TypeVisitor::add_function_constants_reachable_from(
+                &mut self.current_environment,
+                parameter_types,
+                &mut first_state,
+                &path,
+            );
             first_state.value_map = first_state.value_map.insert(path.clone(), val.clone());
         }
 
@@ -529,16 +482,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
         if self.tcx.is_mir_available(call_info.callee_def_id) {
             let elapsed_time = self.start_instant.elapsed();
-            let mut saved_state = SavedVisitorState::new(self.def_id, self.mir);
+            let mut saved_state = SavedVisitorState::new(self.def_id, self.mir, self.tcx);
             self.swap_visitor_state(&mut saved_state);
             self.def_id = call_info.callee_def_id;
             self.mir = self
                 .tcx
                 .optimized_mir(call_info.callee_def_id)
                 .unwrap_read_only();
-            self.actual_argument_types = call_info.actual_argument_types.into();
-            self.generic_arguments = call_info.callee_generic_arguments;
-            self.generic_argument_map = call_info.callee_generic_argument_map.clone();
+            self.type_visitor.def_id = self.def_id;
+            self.type_visitor.mir = self.mir;
+            self.type_visitor.actual_argument_types = call_info.actual_argument_types.into();
+            self.type_visitor.generic_arguments = call_info.callee_generic_arguments;
+            self.type_visitor.generic_argument_map = call_info.callee_generic_argument_map.clone();
             self.start_instant = Instant::now();
             self.function_name = self
                 .summary_cache
@@ -579,7 +534,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 return None;
             }
             // The parameter environment of the caller provides a resolution context for the callee.
-            let param_env = self.get_param_env();
+            let param_env = self.type_visitor.get_param_env();
             trace!(
                 "devirtualize resolving def_id {:?}: {:?}",
                 call_info.callee_def_id,
@@ -624,8 +579,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     devirtualized_call_info.callee_def_id = resolved_def_id;
                     devirtualized_call_info.callee_func_ref = Some(func_ref);
                     devirtualized_call_info.callee_generic_arguments = Some(instance.substs);
-                    devirtualized_call_info.callee_generic_argument_map = self
-                        .get_generic_arguments_map(
+                    devirtualized_call_info.callee_generic_argument_map =
+                        self.type_visitor.get_generic_arguments_map(
                             resolved_def_id,
                             instance.substs,
                             call_info.actual_argument_types,
@@ -720,24 +675,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             {
                 self.lookup_static(&path, *def_id, summary_cache_key, expression_type)
             } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
-                let mut result = None;
-                // Potentially-fat pointers.
-                if let TyKind::Ref(_, pointee, _) | TyKind::RawPtr(TypeAndMut { ty: pointee, .. }) =
-                    &result_rustc_type.kind
-                {
-                    if let TyKind::Str | TyKind::Slice(..) = &pointee.kind {
-                        // result_rustc_type is a fat pointer and looking it up without qualification
-                        // is the same as looking up field 0.
-                        for (leaf_path, val) in self.current_environment.value_map.iter() {
-                            if leaf_path.is_first_leaf_rooted_in(&path)
-                                && val.expression.infer_type() == ExpressionType::Reference
-                            {
-                                result = Some(val.clone());
-                                break;
-                            }
-                        }
-                    }
-                }
+                let mut result = TypeVisitor::try_lookup_fat_pointer_ptr(
+                    &self.current_environment,
+                    &path,
+                    &result_rustc_type,
+                );
                 if let PathEnum::QualifiedPath {
                     qualifier,
                     selector,
@@ -852,7 +794,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let summary = if let Some(def_id) = def_id {
             let generic_args = self.substs_cache.get(&def_id).cloned();
             let callee_generic_argument_map = if let Some(generic_args) = generic_args {
-                self.get_generic_arguments_map(def_id, generic_args, &[])
+                self.type_visitor
+                    .get_generic_arguments_map(def_id, generic_args, &[])
             } else {
                 None
             };
@@ -915,29 +858,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     1,
                 )
             })
-    }
-
-    /// Path is required to be rooted in a temporary used to track a checked operation result.
-    /// The result type of the local will be a tuple (t, bool).
-    /// The result of this function is the t part.
-    #[logfn_inputs(TRACE)]
-    fn get_first_part_of_target_path_type_tuple(&mut self, path: &Rc<Path>) -> ExpressionType {
-        match &self.get_path_rustc_type(path).kind {
-            TyKind::Tuple(types) => (&types[0].expect_ty().kind).into(),
-            _ => assume_unreachable!(),
-        }
-    }
-
-    // Path is required to be rooted in a temporary used to track an operation result.
-    #[logfn_inputs(TRACE)]
-    fn get_target_path_type(&mut self, path: &Rc<Path>) -> ExpressionType {
-        (&self.get_path_rustc_type(path).kind).into()
-    }
-
-    /// Returns the rustc type for the local variable corresponding to the given ordinal.
-    #[logfn_inputs(TRACE)]
-    fn get_rustc_type_for_local(&self, ordinal: usize) -> Ty<'tcx> {
-        self.mir.local_decls[mir::Local::from(ordinal)].ty
     }
 
     /// Do a topological sort, breaking loops by preferring lower block indices, using dominance
@@ -1307,7 +1227,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let result_root: Rc<Path> = Path::new_result();
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
             self.mir = constant_mir.unwrap_read_only();
-            let result_rustc_type = self.get_rustc_type_for_local(0);
+            self.type_visitor.mir = self.mir;
+            let result_rustc_type = self.mir.local_decls[mir::Local::from(0usize)].ty;
             self.visit_promoted_constants_block();
             if self.exit_environment.is_some() {
                 let promoted_root: Rc<Path> =
@@ -1382,6 +1303,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.reset_visitor_state();
         }
         self.mir = saved_mir;
+        self.type_visitor.mir = saved_mir;
         environment
     }
 
@@ -1728,7 +1650,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         trace!("source location {:?}", self.current_span);
         trace!("call stack {:?}", self.active_calls);
         trace!("visit_call {:?} {:?}", func, args);
-        trace!("self.generic_argument_map {:?}", self.generic_argument_map);
+        trace!(
+            "self.generic_argument_map {:?}",
+            self.type_visitor.generic_argument_map
+        );
         trace!("env {:?}", self.current_environment);
         let func_to_call = self.visit_operand(func);
         let func_ref = self.get_func_ref(&func_to_call);
@@ -1750,7 +1675,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .substs_cache
             .get(&callee_def_id)
             .expect("MIR should ensure this");
-        let callee_generic_arguments = self.specialize_substs(substs, &self.generic_argument_map);
+        let callee_generic_arguments = self
+            .type_visitor
+            .specialize_substs(substs, &self.type_visitor.generic_argument_map);
         let actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = args
             .iter()
             .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
@@ -1759,10 +1686,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .map(|arg| {
                 let arg_ty = self.get_operand_rustc_type(arg);
-                self.specialize_generic_argument_type(arg_ty, &self.generic_argument_map)
+                self.type_visitor.specialize_generic_argument_type(
+                    arg_ty,
+                    &self.type_visitor.generic_argument_map,
+                )
             })
             .collect();
-        let callee_generic_argument_map = self.get_generic_arguments_map(
+        let callee_generic_argument_map = self.type_visitor.get_generic_arguments_map(
             callee_def_id,
             callee_generic_arguments,
             &actual_argument_types,
@@ -1976,11 +1906,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 path,
                 var_type: ExpressionType::Reference,
             } => {
-                let closure_ty = self.get_path_rustc_type(path);
+                let closure_ty = self
+                    .type_visitor
+                    .get_path_rustc_type(path, self.current_span);
                 match closure_ty.kind {
                     TyKind::Closure(def_id, substs) => {
-                        let specialized_substs =
-                            self.specialize_substs(substs, &self.generic_argument_map);
+                        let specialized_substs = self
+                            .type_visitor
+                            .specialize_substs(substs, &self.type_visitor.generic_argument_map);
                         return extract_func_ref(self.visit_function_reference(
                             def_id,
                             closure_ty,
@@ -1989,8 +1922,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                     TyKind::Ref(_, ty, _) => {
                         if let TyKind::Closure(def_id, substs) = ty.kind {
-                            let specialized_substs =
-                                self.specialize_substs(substs, &self.generic_argument_map);
+                            let specialized_substs = self
+                                .type_visitor
+                                .specialize_substs(substs, &self.type_visitor.generic_argument_map);
                             return extract_func_ref(self.visit_function_reference(
                                 def_id,
                                 ty,
@@ -1999,24 +1933,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         }
                     }
                     _ => {}
-                }
-            }
-            _ => {}
-        }
-        None
-    }
-
-    /// Extracts the def_id of a closure, given the type of a value that is known to be a closure.
-    /// Returns None otherwise.
-    #[logfn_inputs(TRACE)]
-    fn get_def_id_from_closure(&mut self, closure_ty: Ty<'tcx>) -> Option<DefId> {
-        match closure_ty.kind {
-            TyKind::Closure(def_id, _) => {
-                return Some(def_id);
-            }
-            TyKind::Ref(_, ty, _) => {
-                if let TyKind::Closure(def_id, _) = ty.kind {
-                    return Some(def_id);
                 }
             }
             _ => {}
@@ -2105,7 +2021,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if let Some((place, target)) = &call_info.destination {
                     checked_assume!(call_info.actual_args.len() == 1);
                     let source_path = call_info.actual_args[0].0.clone();
-                    let target_type = self.get_rustc_place_type(place);
+                    let target_type = self
+                        .type_visitor
+                        .get_rustc_place_type(place, self.current_span);
                     let target_path = self.visit_place(place);
                     self.copy_or_move_elements(target_path, source_path, target_type, false);
                     let exit_condition = self.current_environment.entry_condition.clone();
@@ -2121,7 +2039,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             KnownNames::MiraiResult => {
                 if let Some((place, target)) = &call_info.destination {
                     let target_path = self.visit_place(place);
-                    let target_rustc_type = self.get_rustc_place_type(place);
+                    let target_rustc_type = self
+                        .type_visitor
+                        .get_rustc_place_type(place, self.current_span);
                     let return_value_path = Path::new_result();
                     let return_value =
                         self.lookup_path_and_refine_result(return_value_path, target_rustc_type);
@@ -2226,7 +2146,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn handle_abstract_value(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         if let Some((place, target)) = &call_info.destination {
             let path = self.visit_place(place);
-            let expression_type = self.get_place_type(place);
+            let expression_type = self.type_visitor.get_place_type(place, self.current_span);
             let abstract_value = AbstractValue::make_from(
                 Expression::Variable {
                     path: path.clone(),
@@ -2251,7 +2171,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn handle_get_model_field(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         if let Some((place, target)) = &call_info.destination {
-            let target_type = self.get_rustc_place_type(place);
+            let target_type = self
+                .type_visitor
+                .get_rustc_place_type(place, self.current_span);
             checked_assume!(call_info.actual_args.len() == 3);
 
             // The current value, if any, of the model field are a set of (path, value) pairs
@@ -2682,7 +2604,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 Path::new_field(target_path.clone(), 0).refine_paths(&self.current_environment);
             let path1 =
                 Path::new_field(target_path.clone(), 1).refine_paths(&self.current_environment);
-            let target_type = self.get_target_path_type(&path0);
+            let target_type = self
+                .type_visitor
+                .get_target_path_type(&path0, self.current_span);
             let left = call_info.actual_args[0].1.clone();
             let right = call_info.actual_args[1].1.clone();
             let modulo = target_type.modulo_value();
@@ -2845,7 +2769,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if let TyKind::Ref(_, ty, _) = closure_ty.kind {
             closure_ty = ty;
         }
-        if self.get_def_id_from_closure(closure_ty).is_some() {
+        if type_visitor::get_def_id_from_closure(closure_ty).is_some() {
             actual_args.insert(0, caller_call_info.actual_args[0].clone());
             actual_argument_types.insert(0, closure_ty);
             if let TyKind::Closure(_, substs) = closure_ty.kind {
@@ -3075,7 +2999,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             } else {
                 // We don't know anything other than the return value type.
                 // We'll assume there were no side effects and no preconditions (but check this later if possible).
-                let result_type = self.get_place_type(place);
+                let result_type = self.type_visitor.get_place_type(place, self.current_span);
                 let result = AbstractValue::make_from(
                     Expression::UninterpretedCall {
                         callee: call_info.callee_fun_val.clone(),
@@ -3100,7 +3024,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             if let Some(post_condition) = &function_summary.post_condition {
                 let mut return_value_env = Environment::default();
-                let var_type = self.get_place_type(place);
+                let var_type = self.type_visitor.get_place_type(place, self.current_span);
                 let result_val = AbstractValue::make_from(
                     Expression::Variable {
                         path: target_path,
@@ -3469,8 +3393,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                         if let PathSelector::Slice(..) = selector.as_ref() {
                             let source_path = Path::get_as_path(rvalue.clone());
-                            let target_type =
-                                Self::get_element_type(self.get_path_rustc_type(&target_path));
+                            let target_type = type_visitor::get_element_type(
+                                self.type_visitor
+                                    .get_path_rustc_type(&target_path, self.current_span),
+                            );
                             self.copy_or_move_elements(
                                 tpath.clone(),
                                 source_path,
@@ -3518,7 +3444,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                 }
                 Expression::Variable { path, .. } => {
-                    let target_type = self.get_path_rustc_type(&tpath);
+                    let target_type = self
+                        .type_visitor
+                        .get_path_rustc_type(&tpath, self.current_span);
                     if let PathEnum::LocalVariable { ordinal } = &path.value {
                         if *ordinal >= self.fresh_variable_offset {
                             // A fresh variable from the callee adds no information that is not
@@ -3988,7 +3916,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_used_copy(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
         let rpath = self.visit_place(place);
-        let rtype = self.get_rustc_place_type(place);
+        let rtype = self
+            .type_visitor
+            .get_rustc_place_type(place, self.current_span);
         self.copy_or_move_elements(target_path, rpath, rtype, false);
     }
 
@@ -4177,7 +4107,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 to
             }
         };
-        let elem_size = self.get_elem_type_size(target_type);
+        let elem_size = self.type_visitor.get_elem_type_size(target_type);
         let byte_len_const = self
             .constant_value_cache
             .get_u128_for(u128::from((to - from) as u64 * elem_size))
@@ -4306,7 +4236,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         if rtype == ExpressionType::Reference {
             if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
                 if let PathEnum::LocalVariable { .. } = &target_path.value {
-                    let lh_type = self.get_path_rustc_type(&target_path);
+                    let lh_type = self
+                        .type_visitor
+                        .get_path_rustc_type(&target_path, self.current_span);
                     if let TyKind::Ref(_, ty, _) = lh_type.kind {
                         if let TyKind::Slice(elem_ty) = ty.kind {
                             if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
@@ -4333,7 +4265,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_used_move(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
         let rpath = self.visit_place(place);
-        let rtype = self.get_rustc_place_type(place);
+        let rtype = self
+            .type_visitor
+            .get_rustc_place_type(place, self.current_span);
         self.copy_or_move_elements(target_path, rpath, rtype, true);
     }
 
@@ -4354,7 +4288,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// path = &x or &mut x or &raw const x
     #[logfn_inputs(TRACE)]
     fn visit_address_of(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
-        let target_type = self.get_rustc_place_type(place);
+        let target_type = self
+            .type_visitor
+            .get_rustc_place_type(place, self.current_span);
         let value_path = self
             .visit_place(place)
             .refine_paths(&self.current_environment);
@@ -4408,7 +4344,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// path = length of a [X] or [X;n] value.
     #[logfn_inputs(TRACE)]
     fn visit_len(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
-        let place_ty = self.get_rustc_place_type(place);
+        let place_ty = self
+            .type_visitor
+            .get_rustc_place_type(place, self.current_span);
         let len_value = if let TyKind::Array(_, len) = &place_ty.kind {
             // We only get here if "-Z mir-opt-level=0" was specified.
             // With more optimization the len instruction becomes a constant.
@@ -4474,7 +4412,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             mir::BinOp::Shl => left.shift_left(right),
             mir::BinOp::Shr => {
                 // We assume that path is a temporary used to track the operation result.
-                let target_type = self.get_target_path_type(&path);
+                let target_type = self
+                    .type_visitor
+                    .get_target_path_type(&path, self.current_span);
                 left.shr(right, target_type)
             }
             mir::BinOp::Sub => left.subtract(right),
@@ -4493,7 +4433,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         right_operand: &mir::Operand<'tcx>,
     ) {
         // We assume that path is a temporary used to track the operation result and its overflow status.
-        let target_type = self.get_first_part_of_target_path_type_tuple(&path);
+        let target_type = self
+            .type_visitor
+            .get_first_part_of_target_path_type_tuple(&path, self.current_span);
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let (result, overflow_flag) = Self::do_checked_binary_op(bin_op, target_type, left, right);
@@ -4546,7 +4488,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         null_op: mir::NullOp,
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
-        let param_env = self.get_param_env();
+        let param_env = self.type_visitor.get_param_env();
         let len = if let Ok(ty_and_layout) = self.tcx.layout_of(param_env.and(ty)) {
             Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
         } else {
@@ -4600,7 +4542,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let result = match un_op {
             mir::UnOp::Neg => operand.negate(),
             mir::UnOp::Not => {
-                let result_type = self.get_target_path_type(&path);
+                let result_type = self
+                    .type_visitor
+                    .get_target_path_type(&path, self.current_span);
                 if result_type.is_integer() {
                     operand.bit_not(result_type)
                 } else {
@@ -4619,36 +4563,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.lookup_path_and_refine_result(discriminant_path, self.tcx.types.u128);
         self.current_environment
             .update_value_at(path, discriminant_value);
-    }
-
-    /// Returns the size in bytes (including padding) or an element of the given collection type.
-    /// If the type is not a collection, it returns one.
-    fn get_elem_type_size(&self, ty: Ty<'tcx>) -> u64 {
-        match ty.kind {
-            TyKind::Array(ty, _) | TyKind::Slice(ty) => self.get_type_size(ty),
-            TyKind::RawPtr(t) => self.get_type_size(t.ty),
-            _ => 1,
-        }
-    }
-
-    /// Returns the size in bytes (including padding) of an instance of the given type.
-    fn get_type_size(&self, ty: Ty<'tcx>) -> u64 {
-        let param_env = self.get_param_env();
-        if let Ok(ty_and_layout) = self.tcx.layout_of(param_env.and(ty)) {
-            ty_and_layout.layout.size.bytes()
-        } else {
-            0
-        }
-    }
-
-    /// Returns a parameter environment for the current function.
-    fn get_param_env(&self) -> rustc_middle::ty::ParamEnv<'tcx> {
-        let env_def_id = if self.tcx.is_closure(self.def_id) {
-            self.tcx.closure_base_def_id(self.def_id)
-        } else {
-            self.def_id
-        };
-        self.tcx.param_env(env_def_id)
     }
 
     /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.
@@ -4670,7 +4584,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
 
         let elem_size = match *aggregate_kinds {
-            mir::AggregateKind::Array(ty) => self.get_type_size(ty),
+            mir::AggregateKind::Array(ty) => self.type_visitor.get_type_size(ty),
             _ => verify_unreachable!(),
         };
         let byte_size = (operands.len() as u64) * elem_size.max(1);
@@ -4750,9 +4664,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn get_operand_rustc_type(&mut self, operand: &mir::Operand<'tcx>) -> Ty<'tcx> {
         match operand {
-            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
-                self.get_rustc_place_type(place)
-            }
+            mir::Operand::Copy(place) | mir::Operand::Move(place) => self
+                .type_visitor
+                .get_rustc_place_type(place, self.current_span),
             mir::Operand::Constant(constant) => {
                 let mir::Constant { literal, .. } = constant.borrow();
                 literal.ty
@@ -4776,235 +4690,6 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
     }
 
-    /// If Operand corresponds to a compile time constant function, return
-    /// the generic parameter substitutions (type arguments) that are used by
-    /// the call instruction whose operand this is.
-    #[logfn_inputs(TRACE)]
-    fn get_generic_arguments_map(
-        &self,
-        def_id: DefId,
-        generic_args: SubstsRef<'tcx>,
-        actual_argument_types: &[Ty<'tcx>],
-    ) -> Option<HashMap<rustc_span::Symbol, Ty<'tcx>>> {
-        let mut substitution_map = self.generic_argument_map.clone();
-        let mut map: HashMap<rustc_span::Symbol, Ty<'tcx>> = HashMap::new();
-
-        // This iterates over the callee's generic parameter definitions.
-        // If the parent of the callee is generic, those definitions are iterated
-        // as well. This applies recursively. Note that a child cannot mask the
-        // generic parameters of its parent with one of its own, so each parameter
-        // definition in this iteration will have a unique name.
-        InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
-            if let Some(gen_arg) = generic_args.get(param_def.index as usize) {
-                if let GenericArgKind::Type(ty) = gen_arg.unpack() {
-                    let specialized_gen_arg_ty =
-                        self.specialize_generic_argument_type(ty, &substitution_map);
-                    if let Some(substitution_map) = &mut substitution_map {
-                        substitution_map.insert(param_def.name, specialized_gen_arg_ty);
-                    }
-                    map.insert(param_def.name, specialized_gen_arg_ty);
-                }
-            } else {
-                debug!("unmapped generic param def");
-            }
-            self.tcx.mk_param_from_def(param_def) // not used
-        });
-        // Add "Self" -> actual_argument_types[0]
-        if let Some(self_ty) = actual_argument_types.get(0) {
-            let self_ty = if let TyKind::Ref(_, ty, _) = self_ty.kind {
-                ty
-            } else {
-                self_ty
-            };
-            let self_sym = rustc_span::Symbol::intern("Self");
-            map.entry(self_sym).or_insert(self_ty);
-        }
-        if map.is_empty() {
-            None
-        } else {
-            Some(map)
-        }
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn specialize_generic_argument(
-        &self,
-        gen_arg: GenericArg<'tcx>,
-        map: &Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
-    ) -> GenericArg<'tcx> {
-        match gen_arg.unpack() {
-            GenericArgKind::Type(ty) => self.specialize_generic_argument_type(ty, map).into(),
-            _ => gen_arg,
-        }
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn specialize_substs(
-        &self,
-        substs: SubstsRef<'tcx>,
-        map: &Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
-    ) -> SubstsRef<'tcx> {
-        let specialized_generic_args: Vec<GenericArg<'_>> = substs
-            .iter()
-            .map(|gen_arg| self.specialize_generic_argument(*gen_arg, &map))
-            .collect();
-        self.tcx.intern_substs(&specialized_generic_args)
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn specialize_generic_argument_type(
-        &self,
-        gen_arg_type: Ty<'tcx>,
-        map: &Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
-    ) -> Ty<'tcx> {
-        if map.is_none() {
-            return gen_arg_type;
-        }
-        match gen_arg_type.kind {
-            TyKind::Adt(def, substs) => self.tcx.mk_adt(def, self.specialize_substs(substs, map)),
-            TyKind::Array(elem_ty, len) => {
-                let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
-                self.tcx.mk_ty(TyKind::Array(specialized_elem_ty, len))
-            }
-            TyKind::Slice(elem_ty) => {
-                let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
-                self.tcx.mk_slice(specialized_elem_ty)
-            }
-            TyKind::RawPtr(rustc_middle::ty::TypeAndMut { ty, mutbl }) => {
-                let specialized_ty = self.specialize_generic_argument_type(ty, map);
-                self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                    ty: specialized_ty,
-                    mutbl,
-                })
-            }
-            TyKind::Ref(region, ty, mutbl) => {
-                let specialized_ty = self.specialize_generic_argument_type(ty, map);
-                self.tcx.mk_ref(
-                    region,
-                    rustc_middle::ty::TypeAndMut {
-                        ty: specialized_ty,
-                        mutbl,
-                    },
-                )
-            }
-            TyKind::FnDef(def_id, substs) => self
-                .tcx
-                .mk_fn_def(def_id, self.specialize_substs(substs, map)),
-            TyKind::FnPtr(fn_sig) => {
-                let map_fn_sig = |fn_sig: FnSig<'tcx>| {
-                    let specialized_inputs_and_output = self.tcx.mk_type_list(
-                        fn_sig
-                            .inputs_and_output
-                            .iter()
-                            .map(|ty| self.specialize_generic_argument_type(ty, map)),
-                    );
-                    FnSig {
-                        inputs_and_output: specialized_inputs_and_output,
-                        c_variadic: fn_sig.c_variadic,
-                        unsafety: fn_sig.unsafety,
-                        abi: fn_sig.abi,
-                    }
-                };
-                let specialized_fn_sig = fn_sig.map_bound(map_fn_sig);
-                self.tcx.mk_fn_ptr(specialized_fn_sig)
-            }
-            TyKind::Dynamic(predicates, region) => {
-                let map_predicates = |predicates: &rustc_middle::ty::List<
-                    ExistentialPredicate<'tcx>,
-                >| {
-                    self.tcx.mk_existential_predicates(predicates.iter().map(
-                        |pred: &ExistentialPredicate<'tcx>| match pred {
-                            ExistentialPredicate::Trait(ExistentialTraitRef { def_id, substs }) => {
-                                ExistentialPredicate::Trait(ExistentialTraitRef {
-                                    def_id: *def_id,
-                                    substs: self.specialize_substs(substs, map),
-                                })
-                            }
-                            ExistentialPredicate::Projection(ExistentialProjection {
-                                item_def_id,
-                                substs,
-                                ty,
-                            }) => ExistentialPredicate::Projection(ExistentialProjection {
-                                item_def_id: *item_def_id,
-                                substs: self.specialize_substs(substs, map),
-                                ty: self.specialize_generic_argument_type(ty, map),
-                            }),
-                            ExistentialPredicate::AutoTrait(_) => *pred,
-                        },
-                    ))
-                };
-                let specialized_predicates = predicates.map_bound(map_predicates);
-                self.tcx.mk_dynamic(specialized_predicates, region)
-            }
-            TyKind::Closure(def_id, substs) => self
-                .tcx
-                .mk_closure(def_id, self.specialize_substs(substs, map)),
-            TyKind::Generator(def_id, substs, movability) => {
-                self.tcx
-                    .mk_generator(def_id, self.specialize_substs(substs, map), movability)
-            }
-            TyKind::GeneratorWitness(bound_types) => {
-                let map_types = |types: &rustc_middle::ty::List<Ty<'tcx>>| {
-                    self.tcx.mk_type_list(
-                        types
-                            .iter()
-                            .map(|ty| self.specialize_generic_argument_type(ty, map)),
-                    )
-                };
-                let specialized_types = bound_types.map_bound(map_types);
-                self.tcx.mk_generator_witness(specialized_types)
-            }
-            TyKind::Tuple(substs) => self.tcx.mk_tup(
-                self.specialize_substs(substs, map)
-                    .iter()
-                    .map(|gen_arg| gen_arg.expect_ty()),
-            ),
-            // The projection of an associated type. For example,
-            // `<T as Trait<..>>::N`.
-            TyKind::Projection(projection) => {
-                let specialized_substs = self.specialize_substs(projection.substs, map);
-                let item_def_id = projection.item_def_id;
-                if utils::are_concrete(specialized_substs) {
-                    let param_env = self
-                        .tcx
-                        .param_env(self.tcx.associated_item(item_def_id).container.id());
-                    let specialized_substs = self.specialize_substs(projection.substs, map);
-                    if let Some(instance) = rustc_middle::ty::Instance::resolve(
-                        self.tcx,
-                        param_env,
-                        item_def_id,
-                        specialized_substs,
-                    ) {
-                        let item_def_id = instance.def.def_id();
-                        let item_type = self.tcx.type_of(item_def_id);
-                        if item_type == gen_arg_type {
-                            // Can happen if the projection just adds a life time
-                            item_type
-                        } else {
-                            self.specialize_generic_argument_type(item_type, map)
-                        }
-                    } else {
-                        debug!("could not resolve an associated type with concrete type arguments");
-                        gen_arg_type
-                    }
-                } else {
-                    self.tcx
-                        .mk_projection(projection.item_def_id, specialized_substs)
-                }
-            }
-            TyKind::Opaque(def_id, substs) => self
-                .tcx
-                .mk_opaque(def_id, self.specialize_substs(substs, map)),
-            TyKind::Param(ParamTy { name, .. }) => {
-                if let Some(ty) = map.as_ref().unwrap().get(&name) {
-                    return *ty;
-                }
-                gen_arg_type
-            }
-            _ => gen_arg_type,
-        }
-    }
-
     /// Copy: The value must be available for use afterwards.
     ///
     /// This implies that the type of the place must be `Copy`; this is true
@@ -5012,7 +4697,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_copy(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
         let path = self.visit_place(place);
-        let rust_place_type = self.get_rustc_place_type(place);
+        let rust_place_type = self
+            .type_visitor
+            .get_rustc_place_type(place, self.current_span);
         self.lookup_path_and_refine_result(path, rust_place_type)
     }
 
@@ -5024,7 +4711,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_move(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
         let path = self.visit_place(place);
-        let rust_place_type = self.get_rustc_place_type(place);
+        let rust_place_type = self
+            .type_visitor
+            .get_rustc_place_type(place, self.current_span);
         self.lookup_path_and_refine_result(path, rust_place_type)
     }
 
@@ -5039,7 +4728,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
         match &literal.val {
             rustc_middle::ty::ConstKind::Unevaluated(def_id, substs, promoted) => {
-                let substs = self.specialize_substs(substs, &self.generic_argument_map);
+                let substs = self
+                    .type_visitor
+                    .specialize_substs(substs, &self.type_visitor.generic_argument_map);
                 self.substs_cache.insert(*def_id, substs);
                 let name = utils::summary_key_str(self.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
@@ -5080,7 +4771,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     TyKind::FnDef(def_id, substs)
                     | TyKind::Closure(def_id, substs)
                     | TyKind::Generator(def_id, substs, ..) => {
-                        let substs = self.specialize_substs(substs, &self.generic_argument_map);
+                        let substs = self
+                            .type_visitor
+                            .specialize_substs(substs, &self.type_visitor.generic_argument_map);
                         result = self.visit_function_reference(def_id, ty, substs);
                     }
                     TyKind::Ref(
@@ -5655,8 +5348,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let path = self.get_path_for_place(place);
-        let ty = self.get_rustc_place_type(place);
-        self.path_ty_cache.insert(path.clone(), ty);
+        let ty = self
+            .type_visitor
+            .get_rustc_place_type(place, self.current_span);
+        self.type_visitor.path_ty_cache.insert(path.clone(), ty);
         path
     }
 
@@ -5668,7 +5363,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let base_path: Rc<Path> =
             Path::new_local_parameter_or_result(place.local.as_usize(), self.mir.arg_count);
         if place.projection.is_empty() {
-            let ty = self.get_rustc_place_type(place);
+            let ty = self
+                .type_visitor
+                .get_rustc_place_type(place, self.current_span);
             match &ty.kind {
                 TyKind::Adt(def, ..) => {
                     let ty_name = self.known_names_cache.get(self.tcx, def.did);
@@ -5716,18 +5413,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
         } else {
             let ty = self.mir.local_decls[place.local].ty;
-            is_union = Self::is_union(ty);
+            is_union = type_visitor::is_union(ty);
         }
         self.visit_projection(base_path, is_union, &place.projection)
-    }
-
-    /// Returns true if the ty is a union.
-    fn is_union(ty: Ty<'_>) -> bool {
-        if let TyKind::Adt(def, ..) = ty.kind {
-            def.is_union()
-        } else {
-            false
-        }
     }
 
     /// Returns a path that is qualified by the selector corresponding to projection.elem.
@@ -5758,7 +5446,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, field_ty) => {
                 let r = PathSelector::Field(if *base_is_union { 0 } else { field.index() });
-                *base_is_union = Self::is_union(*field_ty);
+                *base_is_union = type_visitor::is_union(*field_ty);
                 r
             }
             mir::ProjectionElem::Index(local) => {
@@ -5791,225 +5479,5 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 PathSelector::Downcast(Rc::new(name_str), index.as_usize())
             }
         }
-    }
-
-    /// Returns an ExpressionType value corresponding to the Rustc type of the place.
-    #[logfn_inputs(TRACE)]
-    fn get_place_type(&mut self, place: &mir::Place<'tcx>) -> ExpressionType {
-        (&self.get_rustc_place_type(place).kind).into()
-    }
-
-    /// Returns the rustc Ty of the given place in memory.
-    #[logfn_inputs(TRACE)]
-    #[logfn(TRACE)]
-    fn get_rustc_place_type(&self, place: &mir::Place<'tcx>) -> Ty<'tcx> {
-        let result = {
-            let base_type = self.mir.local_decls[place.local].ty;
-            self.get_type_for_projection_element(base_type, &place.projection)
-        };
-        match result.kind {
-            TyKind::Param(t_par) => {
-                if let Some(generic_args) = self.generic_arguments {
-                    if let Some(gen_arg) = generic_args.as_ref().get(t_par.index as usize) {
-                        return gen_arg.expect_ty();
-                    }
-                    if t_par.name.as_str() == "Self" && !self.actual_argument_types.is_empty() {
-                        return self.actual_argument_types[0];
-                    }
-                }
-            }
-            TyKind::Ref(region, ty, mutbl) => {
-                if let TyKind::Param(t_par) = ty.kind {
-                    if t_par.name.as_str() == "Self" && !self.actual_argument_types.is_empty() {
-                        return self.tcx.mk_ref(
-                            region,
-                            rustc_middle::ty::TypeAndMut {
-                                ty: self.actual_argument_types[0],
-                                mutbl,
-                            },
-                        );
-                    }
-                }
-            }
-            _ => {}
-        }
-        result
-    }
-
-    /// This is a hacky and brittle way to navigate the Rust compiler's type system.
-    /// Eventually it should be replaced with a comprehensive and principled mapping.
-    #[logfn_inputs(TRACE)]
-    fn get_path_rustc_type(&mut self, path: &Rc<Path>) -> Ty<'tcx> {
-        if let Some(ty) = self.path_ty_cache.get(path) {
-            return ty;
-        }
-        match &path.value {
-            PathEnum::LocalVariable { ordinal } => {
-                if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
-                    self.mir.local_decls[mir::Local::from(*ordinal)].ty
-                } else {
-                    info!("path.value is {:?}", path.value);
-                    self.tcx.types.err
-                }
-            }
-            PathEnum::Parameter { ordinal } => {
-                if self.actual_argument_types.len() >= *ordinal {
-                    self.actual_argument_types[*ordinal - 1]
-                } else if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
-                    self.mir.local_decls[mir::Local::from(*ordinal)].ty
-                } else {
-                    info!("path.value is {:?}", path.value);
-                    self.tcx.types.err
-                }
-            }
-            PathEnum::Result => {
-                if self.mir.local_decls.is_empty() {
-                    info!("result type wanted from function without result local");
-                    self.tcx.types.err
-                } else {
-                    self.mir.local_decls[mir::Local::from(0usize)].ty
-                }
-            }
-            PathEnum::QualifiedPath {
-                qualifier,
-                selector,
-                ..
-            } => {
-                let t = self.get_path_rustc_type(qualifier);
-                match &**selector {
-                    PathSelector::ConstantSlice { .. } | PathSelector::Slice(_) => {
-                        return t;
-                    }
-                    PathSelector::Field(ordinal) => {
-                        let bt = Self::get_dereferenced_type(t);
-                        match &bt.kind {
-                            TyKind::Adt(AdtDef { variants, .. }, substs) => {
-                                if !Self::is_union(bt) {
-                                    if let Some(variant_index) = variants.last() {
-                                        let variant = &variants[variant_index];
-                                        if *ordinal < variant.fields.len() {
-                                            let field = &variant.fields[*ordinal];
-                                            return field.ty(self.tcx, substs);
-                                        }
-                                    }
-                                }
-                            }
-                            TyKind::Closure(.., subs) => {
-                                if *ordinal + 4 < subs.len() {
-                                    return subs.as_ref()[*ordinal + 4].expect_ty();
-                                }
-                            }
-                            TyKind::Tuple(types) => {
-                                if let Some(gen_arg) = types.get(*ordinal as usize) {
-                                    return gen_arg.expect_ty();
-                                }
-                            }
-                            _ => (),
-                        }
-                    }
-                    PathSelector::Deref => {
-                        return Self::get_dereferenced_type(t);
-                    }
-                    PathSelector::Discriminant => {
-                        return self.tcx.types.i32;
-                    }
-                    PathSelector::Downcast(_, ordinal) => {
-                        if let TyKind::Adt(def, substs) = &t.kind {
-                            use rustc_index::vec::Idx;
-                            let variant = &def.variants[VariantIdx::new(*ordinal)];
-                            let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
-                            return self.tcx.mk_tup(field_tys);
-                        }
-                    }
-                    PathSelector::Index(_) => match &t.kind {
-                        TyKind::Array(elem_ty, _) | TyKind::Slice(elem_ty) => {
-                            return elem_ty;
-                        }
-                        _ => (),
-                    },
-                    _ => {}
-                }
-                info!("current span is {:?}", self.current_span);
-                info!("t is {:?}", t);
-                info!("qualifier is {:?}", qualifier);
-                info!("selector is {:?}", selector);
-                self.tcx.types.err
-            }
-            PathEnum::StaticVariable { def_id, .. } => {
-                if let Some(def_id) = def_id {
-                    return self.tcx.type_of(*def_id);
-                }
-                info!("path.value is {:?}", path.value);
-                self.tcx.types.err
-            }
-            _ => {
-                info!("path.value is {:?}", path.value);
-                self.tcx.types.err
-            }
-        }
-    }
-
-    /// Returns the target type of a reference type.
-    fn get_dereferenced_type(ty: Ty<'tcx>) -> Ty<'tcx> {
-        match &ty.kind {
-            TyKind::Ref(_, t, _) => *t,
-            _ => ty,
-        }
-    }
-
-    /// Returns the element type of an array or slice type.
-    fn get_element_type(ty: Ty<'tcx>) -> Ty<'tcx> {
-        match &ty.kind {
-            TyKind::Array(t, _) => *t,
-            TyKind::Ref(_, t, _) => match &t.kind {
-                TyKind::Array(t, _) => *t,
-                TyKind::Slice(t) => *t,
-                _ => t,
-            },
-            TyKind::Slice(t) => *t,
-            _ => ty,
-        }
-    }
-
-    /// Returns the rustc TyKind of the element selected by projection_elem.
-    #[logfn_inputs(TRACE)]
-    fn get_type_for_projection_element(
-        &self,
-        base_ty: Ty<'tcx>,
-        place_projection: &[rustc_middle::mir::PlaceElem<'tcx>],
-    ) -> Ty<'tcx> {
-        place_projection
-            .iter()
-            .fold(base_ty, |base_ty, projection_elem| match projection_elem {
-                mir::ProjectionElem::Deref => match &base_ty.kind {
-                    TyKind::Adt(..) => base_ty,
-                    TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
-                    TyKind::Ref(_, ty, _) => *ty,
-                    _ => {
-                        debug!(
-                            "span: {:?}\nelem: {:?} type: {:?}",
-                            self.current_span, projection_elem, base_ty
-                        );
-                        assume_unreachable!();
-                    }
-                },
-                mir::ProjectionElem::Field(_, ty) => ty,
-                mir::ProjectionElem::Index(_)
-                | mir::ProjectionElem::ConstantIndex { .. }
-                | mir::ProjectionElem::Subslice { .. } => match &base_ty.kind {
-                    TyKind::Adt(..) => base_ty,
-                    TyKind::Array(ty, _) => *ty,
-                    TyKind::Ref(_, ty, _) => Self::get_element_type(*ty),
-                    TyKind::Slice(ty) => *ty,
-                    _ => {
-                        debug!(
-                            "span: {:?}\nelem: {:?} type: {:?}",
-                            self.current_span, projection_elem, base_ty
-                        );
-                        assume_unreachable!();
-                    }
-                },
-                mir::ProjectionElem::Downcast(..) => base_ty,
-            })
     }
 }
