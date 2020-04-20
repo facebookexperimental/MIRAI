@@ -48,6 +48,7 @@ pub mod options;
 pub mod path;
 pub mod smt_solver;
 pub mod summaries;
+pub mod type_visitor;
 pub mod utils;
 pub mod visitors;
 pub mod z3_solver;
