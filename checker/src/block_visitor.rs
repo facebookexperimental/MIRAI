@@ -5,222 +5,38 @@
 
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
-use crate::constant_domain::{ConstantDomain, ConstantValueCache, FunctionReference};
+use crate::constant_domain::{ConstantDomain, FunctionReference};
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
-use crate::known_names::{KnownNames, KnownNamesCache};
-use crate::options::{DiagLevel, Options};
+use crate::known_names::KnownNames;
+use crate::options::DiagLevel;
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
-use crate::smt_solver::{SmtResult, SmtSolver};
-use crate::summaries;
-use crate::summaries::{PersistentSummaryCache, Precondition, Summary};
-use crate::type_visitor::TypeVisitor;
+use crate::smt_solver::SmtResult;
+use crate::summaries::{Precondition, Summary};
 use crate::utils;
 use crate::{abstract_value, type_visitor};
 
+use crate::body_visitor::{BodyVisitor, CallInfo};
 use log_derive::*;
 use mirai_annotations::*;
 use rpds::HashTrieMap;
-use rustc_data_structures::graph::dominators::Dominators;
-use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{ConstValue, Scalar};
 use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{Const, Ty, TyCtxt, TyKind, UserTypeAnnotationIndex};
-use rustc_session::Session;
+use rustc_middle::ty::{Const, Ty, TyKind, UserTypeAnnotationIndex};
 use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt::{Debug, Formatter, Result};
-use std::io::Write;
 use std::rc::Rc;
-use std::time::Instant;
 
-// 'compilation is the lifetime of compiler interface object supplied to the after_analysis call back.
-// 'tcx is the lifetime of the type context created during the lifetime of the after_analysis call back.
-// 'analysis is the life time of the analyze_with_mirai call back that is invoked with the type context.
-pub struct MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E> {
-    pub options: &'compilation Options,
-    pub session: &'compilation Session,
-    pub tcx: TyCtxt<'tcx>,
-    pub def_id: DefId,
-    pub mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
-    pub constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
-    pub known_names_cache: &'analysis mut KnownNamesCache,
-    pub summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
-    pub smt_solver: &'analysis mut dyn SmtSolver<E>,
-    pub substs_cache: &'analysis mut HashMap<DefId, SubstsRef<'tcx>>,
-    pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
-}
-
-impl<'analysis, 'compilation, 'tcx, E> Debug
-    for MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E>
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        "MirVisitorCrateContext".fmt(f)
-    }
-}
-
-/// Holds the state for the MIR test visitor.
-pub struct MirVisitor<'analysis, 'compilation, 'tcx, E> {
-    options: &'compilation Options,
-    session: &'compilation Session,
-    tcx: TyCtxt<'tcx>,
-    def_id: DefId,
-    mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
-    constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
-    known_names_cache: &'analysis mut KnownNamesCache,
-    summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
-    smt_solver: &'analysis mut dyn SmtSolver<E>,
-    substs_cache: &'analysis mut HashMap<DefId, SubstsRef<'tcx>>,
-    buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
-
-    active_calls: Vec<DefId>,
-    already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
-    // True if the current function cannot be analyzed and hence is just assumed to be correct.
-    assume_function_is_angelic: bool,
-    assume_preconditions_of_next_call: bool,
-    async_fn_summary: Option<Summary>,
-    check_for_errors: bool,
-    check_for_unconditional_precondition: bool,
-    current_environment: Environment,
-    current_location: mir::Location,
-    current_span: rustc_span::Span,
-    start_instant: Instant,
-    exit_environment: Option<Environment>,
-    function_name: Rc<String>,
-    heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
-    post_condition: Option<Rc<AbstractValue>>,
-    post_condition_block: Option<mir::BasicBlock>,
-    preconditions: Vec<Precondition>,
-    unwind_condition: Option<Rc<AbstractValue>>,
-    unwind_environment: Environment,
-    fresh_variable_offset: usize,
-    type_visitor: TypeVisitor<'analysis, 'tcx>,
-}
-
-struct SavedVisitorState<'analysis, 'tcx> {
-    def_id: DefId,
-    mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
-
-    already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
-    assume_preconditions_of_next_call: bool,
-    async_fn_summary: Option<Summary>,
-    check_for_errors: bool,
-    check_for_unconditional_precondition: bool,
-    current_environment: Environment,
-    current_location: mir::Location,
-    current_span: rustc_span::Span,
-    exit_environment: Option<Environment>,
-    function_name: Rc<String>,
-    fresh_variable_offset: usize,
-    heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
-    post_condition: Option<Rc<AbstractValue>>,
-    post_condition_block: Option<mir::BasicBlock>,
-    preconditions: Vec<Precondition>,
-    unwind_condition: Option<Rc<AbstractValue>>,
-    unwind_environment: Environment,
-    type_visitor: TypeVisitor<'analysis, 'tcx>,
-}
-
-#[derive(Clone, Debug)]
-struct CallInfo<'callinfo, 'tcx> {
-    callee_def_id: DefId,
-    callee_func_ref: Option<Rc<FunctionReference>>,
-    callee_fun_val: Rc<AbstractValue>,
-    callee_generic_arguments: Option<SubstsRef<'tcx>>,
-    callee_known_name: KnownNames,
-    callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
-    actual_args: &'callinfo [(Rc<Path>, Rc<AbstractValue>)],
-    actual_argument_types: &'callinfo [Ty<'tcx>],
-    cleanup: Option<mir::BasicBlock>,
-    destination: Option<(mir::Place<'tcx>, mir::BasicBlock)>,
-    function_constant_args: &'callinfo [(Rc<Path>, Rc<AbstractValue>)],
-}
-
-impl<'callinfo, 'tcx> CallInfo<'callinfo, 'tcx> {
-    fn new(
-        callee_def_id: DefId,
-        callee_generic_arguments: Option<SubstsRef<'tcx>>,
-        callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
-        func_const: ConstantDomain,
-    ) -> CallInfo<'callinfo, 'tcx> {
-        if let ConstantDomain::Function(func_ref) = &func_const {
-            CallInfo {
-                callee_def_id,
-                callee_func_ref: Some(func_ref.clone()),
-                callee_fun_val: Rc::new(func_const.into()),
-                callee_generic_arguments,
-                callee_known_name: KnownNames::None,
-                callee_generic_argument_map,
-                actual_args: &[],
-                actual_argument_types: &[],
-                cleanup: None,
-                destination: None,
-                function_constant_args: &[],
-            }
-        } else {
-            unreachable!("caller should supply a constant function")
-        }
-    }
-}
-
-impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
-    pub fn new(
-        def_id: DefId,
-        mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
-        tcx: TyCtxt<'tcx>,
-    ) -> SavedVisitorState<'analysis, 'tcx> {
-        SavedVisitorState {
-            def_id,
-            mir,
-            already_reported_errors_for_call_to: HashSet::new(),
-            assume_preconditions_of_next_call: false,
-            async_fn_summary: None,
-            check_for_errors: false,
-            check_for_unconditional_precondition: false, // logging + new mir code gen breaks this for now
-            current_environment: Environment::default(),
-            current_location: mir::Location::START,
-            current_span: rustc_span::DUMMY_SP,
-            exit_environment: None,
-            function_name: Rc::new("".into()),
-            fresh_variable_offset: 0,
-            heap_addresses: HashMap::default(),
-            post_condition: None,
-            post_condition_block: None,
-            preconditions: Vec::new(),
-            unwind_condition: None,
-            unwind_environment: Environment::default(),
-            type_visitor: TypeVisitor::new(def_id, mir, tcx),
-        }
-    }
-}
-
-impl<'analysis, 'compilation, 'tcx, E> Debug for MirVisitor<'analysis, 'compilation, 'tcx, E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        "MirVisitor".fmt(f)
-    }
-}
-
-/// If the currently analyzed function has been marked as angelic because was discovered
-/// to do something that cannot be analyzed, or if the time taken to analyze the current
-/// function exceeded k_limits::MAX_ANALYSIS_TIME_FOR_BODY, break out of the current loop.
-/// When a timeout happens, currently analyzed function is marked as angelic.
-macro_rules! check_for_early_break {
-    ($sel:ident) => {
-        if $sel.assume_function_is_angelic {
-            break;
-        }
-        let elapsed_time_in_seconds = $sel.start_instant.elapsed().as_secs();
-        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            $sel.assume_function_is_angelic = true;
-            break;
-        }
-    };
+/// Holds the state for the basic block visitor
+pub struct BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E> {
+    bv: &'block mut BodyVisitor<'analysis, 'compilation, 'tcx, E>,
 }
 
 /// If the currently analyzed function has been marked as angelic because was discovered
@@ -229,1111 +45,39 @@ macro_rules! check_for_early_break {
 /// When a timeout happens, currently analyzed function is marked as angelic.
 macro_rules! check_for_early_return {
     ($sel:ident) => {
-        if $sel.assume_function_is_angelic {
+        if $sel.bv.assume_function_is_angelic {
             return;
         }
-        let elapsed_time_in_seconds = $sel.start_instant.elapsed().as_secs();
+        let elapsed_time_in_seconds = $sel.bv.start_instant.elapsed().as_secs();
         if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            $sel.assume_function_is_angelic = true;
+            $sel.bv.assume_function_is_angelic = true;
             return;
         }
     };
 }
 
+impl<'block, 'analysis, 'compilation, 'tcx, E> Debug
+    for BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        "BlockVisitor".fmt(f)
+    }
+}
+
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
 /// so that we can test a call to every default implementation of the MirVisitor trait.
-impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx, E> {
-    #[logfn_inputs(TRACE)]
+impl<'block, 'analysis, 'compilation, 'tcx, E>
+    BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E>
+{
     pub fn new(
-        crate_context: MirVisitorCrateContext<'analysis, 'compilation, 'tcx, E>,
-    ) -> MirVisitor<'analysis, 'compilation, 'tcx, E> {
-        let function_name = crate_context
-            .summary_cache
-            .get_summary_key_for(crate_context.def_id)
-            .clone();
-        MirVisitor {
-            options: crate_context.options,
-            session: crate_context.session,
-            tcx: crate_context.tcx,
-            def_id: crate_context.def_id,
-            mir: crate_context.mir,
-            constant_value_cache: crate_context.constant_value_cache,
-            known_names_cache: crate_context.known_names_cache,
-            summary_cache: crate_context.summary_cache,
-            smt_solver: crate_context.smt_solver,
-            substs_cache: crate_context.substs_cache,
-            buffered_diagnostics: crate_context.buffered_diagnostics,
-
-            active_calls: Vec::new(),
-            already_reported_errors_for_call_to: HashSet::new(),
-            assume_function_is_angelic: false,
-            assume_preconditions_of_next_call: false,
-            async_fn_summary: None,
-            check_for_errors: false,
-            check_for_unconditional_precondition: false, // logging + new mir code gen breaks this for now
-            current_environment: Environment::default(),
-            current_location: mir::Location::START,
-            current_span: rustc_span::DUMMY_SP,
-            start_instant: Instant::now(),
-            exit_environment: None,
-            function_name,
-            heap_addresses: HashMap::default(),
-            post_condition: None,
-            post_condition_block: None,
-            preconditions: Vec::new(),
-            unwind_condition: None,
-            unwind_environment: Environment::default(),
-            fresh_variable_offset: 0,
-            type_visitor: TypeVisitor::new(
-                crate_context.def_id,
-                crate_context.mir,
-                crate_context.tcx,
-            ),
-        }
-    }
-
-    /// Restores the method only state to its initial state.
-    #[logfn_inputs(TRACE)]
-    fn reset_visitor_state(&mut self) {
-        self.already_reported_errors_for_call_to = HashSet::new();
-        self.assume_function_is_angelic = false;
-        self.check_for_errors = false;
-        self.check_for_unconditional_precondition = false;
-        self.current_environment = Environment::default();
-        self.current_location = mir::Location::START;
-        self.current_span = rustc_span::DUMMY_SP;
-        self.start_instant = Instant::now();
-        self.exit_environment = None;
-        self.heap_addresses = HashMap::default();
-        self.post_condition = None;
-        self.post_condition_block = None;
-        self.preconditions = Vec::new();
-        self.unwind_condition = None;
-        self.unwind_environment = Environment::default();
-        self.fresh_variable_offset = 1000;
-        self.type_visitor.reset_visitor_state();
-    }
-
-    fn swap_visitor_state(&mut self, saved_state: &mut SavedVisitorState<'analysis, 'tcx>) {
-        std::mem::swap(&mut self.def_id, &mut saved_state.def_id);
-        std::mem::swap(&mut self.mir, &mut saved_state.mir);
-        std::mem::swap(
-            &mut self.already_reported_errors_for_call_to,
-            &mut saved_state.already_reported_errors_for_call_to,
-        );
-        std::mem::swap(
-            &mut self.assume_preconditions_of_next_call,
-            &mut saved_state.assume_preconditions_of_next_call,
-        );
-        std::mem::swap(
-            &mut self.async_fn_summary,
-            &mut saved_state.async_fn_summary,
-        );
-        std::mem::swap(
-            &mut self.check_for_errors,
-            &mut saved_state.check_for_errors,
-        );
-        std::mem::swap(
-            &mut self.check_for_unconditional_precondition,
-            &mut saved_state.check_for_unconditional_precondition,
-        );
-        std::mem::swap(
-            &mut self.current_environment,
-            &mut saved_state.current_environment,
-        );
-        std::mem::swap(
-            &mut self.current_location,
-            &mut saved_state.current_location,
-        );
-        std::mem::swap(&mut self.current_span, &mut saved_state.current_span);
-        std::mem::swap(
-            &mut self.exit_environment,
-            &mut saved_state.exit_environment,
-        );
-        std::mem::swap(&mut self.function_name, &mut saved_state.function_name);
-        std::mem::swap(&mut self.heap_addresses, &mut saved_state.heap_addresses);
-        std::mem::swap(&mut self.post_condition, &mut saved_state.post_condition);
-        std::mem::swap(
-            &mut self.post_condition_block,
-            &mut saved_state.post_condition_block,
-        );
-        std::mem::swap(&mut self.preconditions, &mut saved_state.preconditions);
-        std::mem::swap(
-            &mut self.unwind_condition,
-            &mut saved_state.unwind_condition,
-        );
-        std::mem::swap(
-            &mut self.unwind_environment,
-            &mut saved_state.unwind_environment,
-        );
-        std::mem::swap(
-            &mut self.fresh_variable_offset,
-            &mut saved_state.fresh_variable_offset,
-        );
-        std::mem::swap(&mut self.type_visitor, &mut saved_state.type_visitor);
-    }
-
-    /// Analyze the body and store a summary of its behavior in self.summary_cache.
-    /// Returns true if the newly computed summary is different from the summary (if any)
-    /// that is already in the cache.
-    #[logfn_inputs(TRACE)]
-    pub fn visit_body(
-        &mut self,
-        function_constant_args: &[(Rc<Path>, Rc<AbstractValue>)],
-        parameter_types: &[Ty<'tcx>],
-    ) -> Summary {
-        if cfg!(DEBUG) {
-            let mut stdout = std::io::stdout();
-            stdout.write_fmt(format_args!("{:?}", self.def_id)).unwrap();
-            rustc_mir::util::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
-            info!("{:?}", stdout.flush());
-        }
-        self.active_calls.push(self.def_id);
-        let (mut block_indices, contains_loop) = self.get_sorted_block_indices();
-
-        let (mut in_state, mut out_state, mut terminator_state) =
-            <MirVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
-
-        // The entry block has no predecessors and its initial state is the function parameters
-        // (which we omit here so that we can lazily provision them with additional context)
-        // as well any promoted constants.
-        let mut first_state = self.promote_constants();
-
-        // Add function constants.
-        for (path, val) in function_constant_args.iter() {
-            TypeVisitor::add_function_constants_reachable_from(
-                &mut self.current_environment,
-                parameter_types,
-                &mut first_state,
-                &path,
-            );
-            first_state.value_map = first_state.value_map.insert(path.clone(), val.clone());
-        }
-
-        let elapsed_time_in_seconds = self.compute_fixed_point(
-            &mut block_indices,
-            contains_loop,
-            &mut in_state,
-            &mut out_state,
-            &mut terminator_state,
-            &first_state,
-        );
-
-        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            self.report_timeout(elapsed_time_in_seconds);
-        }
-
-        if !self.assume_function_is_angelic {
-            // Now traverse the blocks again, doing checks and emitting diagnostics.
-            // terminator_state[bb] is now complete for every basic block bb in the body.
-            let elapsed_time_in_seconds =
-                self.check_for_errors(&block_indices, &mut terminator_state);
-            self.active_calls.pop();
-            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-                self.report_timeout(elapsed_time_in_seconds);
-            } else {
-                // Now create a summary of the body that can be in-lined into call sites.
-                if self.async_fn_summary.is_some() {
-                    self.preconditions = self.translate_async_preconditions();
-                    // todo: also translate side-effects, return result and post-condition
-                };
-
-                return summaries::summarize(
-                    self.mir.arg_count,
-                    self.exit_environment.as_ref(),
-                    &self.preconditions,
-                    &self.post_condition,
-                    self.unwind_condition.clone(),
-                    &self.unwind_environment,
-                    self.tcx,
-                );
-            }
-        }
-        let mut result = Summary::default();
-        result.is_computed = true; // Otherwise this function keeps getting re-analyzed
-        result.is_angelic = true; // Callers have to make possibly false assumptions.
-        result
-    }
-
-    fn report_timeout(&mut self, elapsed_time_in_seconds: u64) {
-        // This body is beyond MIRAI for now
-        if self.options.diag_level != DiagLevel::RELAXED {
-            let error = self
-                .session
-                .struct_span_err(self.current_span, "The analysis of this function timed out");
-            self.emit_diagnostic(error);
-        }
-        warn!(
-            "analysis of {} timed out after {} seconds",
-            self.function_name, elapsed_time_in_seconds,
-        );
-        self.active_calls.pop();
-        self.assume_function_is_angelic = true;
-    }
-
-    /// Summarize the referenced function, specialized by its generic arguments and the actual
-    /// values of any function parameters. Then cache it.
-    #[logfn_inputs(TRACE)]
-    fn create_and_cache_function_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Summary {
-        trace!(
-            "summarizing {:?}: {:?}",
-            call_info.callee_def_id,
-            self.tcx.type_of(call_info.callee_def_id)
-        );
-        if self.tcx.is_mir_available(call_info.callee_def_id) {
-            let elapsed_time = self.start_instant.elapsed();
-            let mut saved_state = SavedVisitorState::new(self.def_id, self.mir, self.tcx);
-            self.swap_visitor_state(&mut saved_state);
-            self.def_id = call_info.callee_def_id;
-            self.mir = self
-                .tcx
-                .optimized_mir(call_info.callee_def_id)
-                .unwrap_read_only();
-            self.type_visitor.def_id = self.def_id;
-            self.type_visitor.mir = self.mir;
-            self.type_visitor.actual_argument_types = call_info.actual_argument_types.into();
-            self.type_visitor.generic_arguments = call_info.callee_generic_arguments;
-            self.type_visitor.generic_argument_map = call_info.callee_generic_argument_map.clone();
-            self.start_instant = Instant::now();
-            self.function_name = self
-                .summary_cache
-                .get_summary_key_for(call_info.callee_def_id)
-                .clone();
-            let summary = self.visit_body(
-                call_info.function_constant_args,
-                call_info.actual_argument_types,
-            );
-            trace!("summary {:?} {:?}", self.function_name, summary);
-            if let Some(func_ref) = &call_info.callee_func_ref {
-                // We cache the summary with call site details included so that
-                // cached summaries are specialized with respect to call site generic arguments and
-                // function constants arguments. Subsequent calls with the call site signature
-                // will not need to re-summarize the function, thus avoiding exponential blow up.
-                let signature =
-                    self.get_function_constant_signature(call_info.function_constant_args);
-                self.summary_cache
-                    .set_summary_for_call_site(func_ref, signature, summary.clone());
-            }
-            self.swap_visitor_state(&mut saved_state);
-            self.start_instant = Instant::now() - elapsed_time;
-            return summary;
-        } else if let Some(devirtualized_summary) = self.try_to_devirtualize(call_info) {
-            return devirtualized_summary;
-        }
-        Summary::default()
-    }
-
-    /// If call_info.callee_def_id is a trait (virtual) then this tries to get the def_id of the
-    /// concrete method that implements the given virtual method and returns the summary of that,
-    /// computing it if necessary.
-    #[logfn_inputs(TRACE)]
-    fn try_to_devirtualize(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Option<Summary> {
-        if let Some(gen_args) = call_info.callee_generic_arguments {
-            if !utils::are_concrete(gen_args) {
-                trace!("non concrete generic args {:?}", gen_args);
-                return None;
-            }
-            // The parameter environment of the caller provides a resolution context for the callee.
-            let param_env = self.type_visitor.get_param_env();
-            trace!(
-                "devirtualize resolving def_id {:?}: {:?}",
-                call_info.callee_def_id,
-                self.tcx.type_of(call_info.callee_def_id)
-            );
-            trace!(
-                "devirtualize resolving func_ref {:?}",
-                call_info.callee_func_ref,
-            );
-            trace!("gen_args {:?}", gen_args);
-            if let Some(instance) = rustc_middle::ty::Instance::resolve(
-                self.tcx,
-                param_env,
-                call_info.callee_def_id,
-                gen_args,
-            ) {
-                let resolved_def_id = instance.def.def_id();
-                let resolved_ty = self.tcx.type_of(resolved_def_id);
-                trace!(
-                    "devirtualize resolved def_id {:?}: {:?}",
-                    resolved_def_id,
-                    resolved_ty
-                );
-                if !self.active_calls.contains(&resolved_def_id)
-                    && self.tcx.is_mir_available(resolved_def_id)
-                {
-                    let func_ref = if let ConstantDomain::Function(fr) =
-                        self.visit_function_reference(resolved_def_id, resolved_ty, instance.substs)
-                    {
-                        fr.clone()
-                    } else {
-                        unreachable!()
-                    };
-                    let cached_summary = self
-                        .summary_cache
-                        .get_summary_for_call_site(&func_ref, None);
-                    if cached_summary.is_computed {
-                        return Some(cached_summary.clone());
-                    }
-
-                    let mut devirtualized_call_info = call_info.clone();
-                    devirtualized_call_info.callee_def_id = resolved_def_id;
-                    devirtualized_call_info.callee_func_ref = Some(func_ref);
-                    devirtualized_call_info.callee_generic_arguments = Some(instance.substs);
-                    devirtualized_call_info.callee_generic_argument_map =
-                        self.type_visitor.get_generic_arguments_map(
-                            resolved_def_id,
-                            instance.substs,
-                            call_info.actual_argument_types,
-                        );
-                    return Some(self.create_and_cache_function_summary(&devirtualized_call_info));
-                } else {
-                    return None;
-                }
-            }
-        }
-        None
-    }
-
-    /// Adds the given diagnostic builder to the buffer.
-    /// Buffering diagnostics gives us the chance to sort them before printing them out,
-    /// which is desirable for tools that compare the diagnostics from one run of MIRAI with another.
-    #[logfn_inputs(TRACE)]
-    fn emit_diagnostic(&mut self, mut diagnostic_builder: DiagnosticBuilder<'compilation>) {
-        precondition!(self.check_for_errors);
-        // Do not emit diagnostics for code generated by derive macros since it is currently
-        // unlikely that the end user of the diagnostic will be able to anything about it.
-        use rustc_span::hygiene::{ExpnData, ExpnKind, MacroKind};
-        if let [span] = &diagnostic_builder.span.primary_spans() {
-            if let Some(ExpnData {
-                kind: ExpnKind::Macro(MacroKind::Derive, ..),
-                ..
-            }) = span.source_callee()
-            {
-                info!("derive macro has warning: {:?}", diagnostic_builder);
-                diagnostic_builder.cancel();
-                return;
-            }
-        }
-        self.buffered_diagnostics.push(diagnostic_builder);
-    }
-
-    /// Use the local and global environments to resolve Path to an abstract value.
-    #[logfn_inputs(TRACE)]
-    fn lookup_path_and_refine_result(
-        &mut self,
-        path: Rc<Path>,
-        result_rustc_type: Ty<'tcx>,
-    ) -> Rc<AbstractValue> {
-        let result_type: ExpressionType = (&result_rustc_type.kind).into();
-        match &path.value {
-            PathEnum::Alias { value } => {
-                return value.clone();
-            }
-            PathEnum::QualifiedPath {
-                qualifier,
-                selector,
-                ..
-            } if matches!(selector.as_ref(), PathSelector::Deref) => {
-                let path = Path::new_qualified(
-                    qualifier.clone(),
-                    Rc::new(PathSelector::Index(Rc::new(0u128.into()))),
-                );
-                if self.current_environment.value_map.contains_key(&path) {
-                    let refined_val = self.lookup_path_and_refine_result(path, result_rustc_type);
-                    if !refined_val.is_bottom() {
-                        return refined_val;
-                    }
-                }
-            }
-            _ => {}
-        }
-        let refined_val = {
-            let bottom = abstract_value::BOTTOM.into();
-            let local_val = self
-                .current_environment
-                .value_at(&path)
-                .unwrap_or(&bottom)
-                .clone();
-            if self
-                .current_environment
-                .entry_condition
-                .as_bool_if_known()
-                .is_none()
-            {
-                local_val.refine_with(&self.current_environment.entry_condition, 0)
-            } else {
-                local_val
-            }
-        };
-        let result = if refined_val.is_bottom() {
-            // Not found locally, so try statics.
-            if let PathEnum::StaticVariable {
-                def_id,
-                ref summary_cache_key,
-                ref expression_type,
-            } = &path.value
-            {
-                self.lookup_static(&path, *def_id, summary_cache_key, expression_type)
-            } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
-                let mut result = TypeVisitor::try_lookup_fat_pointer_ptr(
-                    &self.current_environment,
-                    &path,
-                    &result_rustc_type,
-                );
-                if let PathEnum::QualifiedPath {
-                    qualifier,
-                    selector,
-                    ..
-                } = &path.value
-                {
-                    if matches!(
-                        *selector.as_ref(),
-                        PathSelector::Deref | PathSelector::Index(..)
-                    ) {
-                        if let PathSelector::Index(index_val) = selector.as_ref() {
-                            result = self.lookup_weak_value(qualifier, index_val);
-                        }
-                        if result.is_none() && result_type.is_integer() {
-                            let qualifier_val = self.lookup_path_and_refine_result(
-                                qualifier.clone(),
-                                ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
-                            );
-                            debug!("qualifier_val {:?}", qualifier_val);
-                            if qualifier_val.is_contained_in_zeroed_heap_block() {
-                                result = Some(Rc::new(
-                                    if result_type.is_signed_integer() {
-                                        self.constant_value_cache.get_i128_for(0)
-                                    } else {
-                                        self.constant_value_cache.get_u128_for(0)
-                                    }
-                                    .clone()
-                                    .into(),
-                                ))
-                            }
-                        }
-                    }
-                }
-                result.unwrap_or_else(|| {
-                    let result = AbstractValue::make_from(
-                        Expression::Variable {
-                            path: path.clone(),
-                            var_type: result_type.clone(),
-                        },
-                        1,
-                    );
-                    if result_type != ExpressionType::NonPrimitive {
-                        self.current_environment
-                            .update_value_at(path, result.clone());
-                    }
-                    result
-                })
-            } else {
-                AbstractValue::make_typed_unknown(result_type.clone())
-            }
-        } else {
-            refined_val
-        };
-        if result_type == ExpressionType::Bool
-            && self.current_environment.entry_condition.implies(&result)
-        {
-            return Rc::new(abstract_value::TRUE);
-        }
-        if result_type != ExpressionType::Reference
-            && result.expression.infer_type() == ExpressionType::Reference
-        {
-            result.dereference(result_type)
-        } else {
-            result
-        }
-    }
-
-    /// If there is a path of the form key_qualifier[0..n] = v then return v.
-    /// todo: if there are paths of the form key_qualifier[i] = vi where we could have i == key_index
-    /// at runtime, then return a conditional expression that uses v as the default value (if there
-    /// is a [0..n] path, otherwise zero or unknown).
-    #[logfn_inputs(TRACE)]
-    fn lookup_weak_value(
-        &mut self,
-        key_qualifier: &Rc<Path>,
-        _key_index: &Rc<AbstractValue>,
-    ) -> Option<Rc<AbstractValue>> {
-        for (path, value) in self.current_environment.value_map.iter() {
-            if let PathEnum::QualifiedPath {
-                qualifier,
-                selector,
-                ..
-            } = &path.value
-            {
-                if let PathSelector::Slice(..) = selector.as_ref() {
-                    if value.expression.infer_type().is_primitive() && key_qualifier.eq(qualifier) {
-                        // This is the supported case for arrays constructed via a repeat expression.
-                        // We assume that index is in range since that has already been checked.
-                        // todo: deal with the case where there is another path that aliases the slice.
-                        // i.e. a situation that arises if a repeat initialized array has been updated
-                        // with an index that is not an exact match for key_index.
-                        return Some(value.clone());
-                    }
-                }
-                // todo: deal with PathSelector::Index when there is a possibility that
-                // key_index might match it at runtime.
-            }
-        }
-        None
-    }
-
-    /// Gets the value of the given static variable by obtaining a summary for the corresponding def_id.
-    #[logfn_inputs(TRACE)]
-    fn lookup_static(
-        &mut self,
-        path: &Rc<Path>,
-        def_id: Option<DefId>,
-        summary_cache_key: &Rc<String>,
-        expression_type: &ExpressionType,
-    ) -> Rc<AbstractValue> {
-        let summary;
-        let summary = if let Some(def_id) = def_id {
-            let generic_args = self.substs_cache.get(&def_id).cloned();
-            let callee_generic_argument_map = if let Some(generic_args) = generic_args {
-                self.type_visitor
-                    .get_generic_arguments_map(def_id, generic_args, &[])
-            } else {
-                None
-            };
-            let ty = self.tcx.type_of(def_id);
-            let func_const = self
-                .constant_value_cache
-                .get_function_constant_for(
-                    def_id,
-                    ty,
-                    generic_args.unwrap_or_else(|| self.tcx.empty_substs_for_def_id(def_id)),
-                    self.tcx,
-                    self.known_names_cache,
-                    self.summary_cache,
-                )
-                .clone();
-            let call_info = CallInfo::new(
-                def_id,
-                generic_args,
-                callee_generic_argument_map,
-                func_const,
-            );
-            let func_ref = call_info
-                .callee_func_ref
-                .clone()
-                .expect("CallInfo::new should guarantee this");
-            let cached_summary = self
-                .summary_cache
-                .get_summary_for_call_site(&func_ref, None);
-            if cached_summary.is_computed {
-                cached_summary
-            } else {
-                summary = self.create_and_cache_function_summary(&call_info);
-                &summary
-            }
-        } else {
-            summary = self
-                .summary_cache
-                .get_persistent_summary_for(summary_cache_key);
-            &summary
-        };
-        let side_effects = summary.side_effects.clone();
-        // Effects on the path
-        self.transfer_and_refine(&side_effects, path.clone(), &Path::new_result(), &[]);
-        // Effects on the heap
-        for (path, value) in side_effects.iter() {
-            if path.is_rooted_by_abstract_heap_block() {
-                self.current_environment
-                    .update_value_at(path.clone(), value.clone());
-            }
-        }
-        self.current_environment
-            .value_at(&path)
-            .cloned()
-            .unwrap_or_else(|| {
-                AbstractValue::make_from(
-                    Expression::Variable {
-                        path: path.clone(),
-                        var_type: expression_type.clone(),
-                    },
-                    1,
-                )
-            })
-    }
-
-    /// Do a topological sort, breaking loops by preferring lower block indices, using dominance
-    /// to determine if there is a loop (if a is predecessor of b and b dominates a then they
-    /// form a loop and we'll emit the one with the lower index first).
-    #[logfn_inputs(TRACE)]
-    fn add_predecessors_then_root_block(
-        &self,
-        root_block: mir::BasicBlock,
-        dominators: &Dominators<mir::BasicBlock>,
-        contains_loop: &mut bool,
-        block_indices: &mut Vec<mir::BasicBlock>,
-        already_added: &mut HashSet<mir::BasicBlock>,
-    ) {
-        if !already_added.insert(root_block) {
-            return;
-        }
-        for pred_bb in self.mir.predecessors_for(root_block).iter() {
-            if already_added.contains(pred_bb) {
-                continue;
-            };
-            if dominators.is_dominated_by(*pred_bb, root_block) {
-                *contains_loop = true;
-                continue;
-            }
-            self.add_predecessors_then_root_block(
-                *pred_bb,
-                dominators,
-                contains_loop,
-                block_indices,
-                already_added,
-            );
-        }
-        assume!(block_indices.len() < std::usize::MAX); // We'll run out of memory long  before this overflows
-        block_indices.push(root_block);
-    }
-
-    // Perform a topological sort on the basic blocks so that blocks are analyzed after their
-    // predecessors (except in the case of loop anchors).
-    #[logfn_inputs(TRACE)]
-    fn get_sorted_block_indices(&mut self) -> (Vec<mir::BasicBlock>, bool) {
-        let dominators = self.mir.dominators();
-        let mut block_indices = Vec::new();
-        let mut already_added = HashSet::new();
-        let mut contains_loop = false;
-        for bb in self.mir.basic_blocks().indices() {
-            self.add_predecessors_then_root_block(
-                bb,
-                &dominators,
-                &mut contains_loop,
-                &mut block_indices,
-                &mut already_added,
-            );
-        }
-        (block_indices, contains_loop)
-    }
-
-    /// self.async_fn_summary is a summary of the closure that results from rewriting
-    /// the current function body into a generator. The preconditions found in this
-    /// summary are expressed in terms of the closure fields that capture the parameters
-    /// of the current function. The pre-conditions are also governed by a path condition
-    /// that requires the closure (enum) to be in state 0 (have a discriminant value of 0).
-    /// This function rewrites the pre-conditions to instead refer to the parameters of the
-    /// current function and eliminates the condition based on the closure discriminant value.
-    fn translate_async_preconditions(&mut self) -> Vec<Precondition> {
-        // In order to specialize the closure preconditions to the current context,
-        // we need to allocate a closure object from the heap and to populate its fields
-        // with the (unknown) values of the parameters and locals of the current context.
-
-        // The byte size of the closure object is not used, so we just fake it.
-        let zero: Rc<AbstractValue> = Rc::new(0u128.into());
-        let closure_object = self.get_new_heap_block(zero.clone(), zero, false);
-        let closure_path: Rc<Path> = match &closure_object.expression {
-            Expression::HeapBlock { .. } => Rc::new(
-                PathEnum::HeapBlock {
-                    value: closure_object.clone(),
-                }
-                .into(),
-            ),
-            _ => assume_unreachable!(),
-        };
-
-        // Setting the discriminant to 0 allows the related conditions in the closure's preconditions
-        // to get simplified away.
-        let discriminant = Path::new_discriminant(
-            Path::new_field(closure_path.clone(), 0).refine_paths(&self.current_environment),
-        );
-        let discriminant_val = Rc::new(self.constant_value_cache.get_u128_for(0).clone().into());
-
-        // Populate the closure object fields with the parameters and locals of the current context.
-        self.current_environment
-            .update_value_at(discriminant, discriminant_val);
-        for (i, loc) in self.mir.local_decls.iter().skip(1).enumerate() {
-            let qualifier = closure_path.clone();
-            let closure_path = Path::new_field(Path::new_field(qualifier, 0), i)
-                .refine_paths(&self.current_environment);
-            // skip(1) above ensures this
-            assume!(i < usize::max_value());
-            let path = if i < self.mir.arg_count {
-                Path::new_parameter(i + 1)
-            } else {
-                Path::new_local(i + 1)
-            };
-            let value = self.lookup_path_and_refine_result(path, loc.ty);
-            self.current_environment
-                .update_value_at(closure_path, value);
-        }
-
-        // Now set up the dummy closure object as the actual argument used to specialize
-        // the summary of the closure function.
-        let actual_args = vec![(closure_path, closure_object)];
-
-        // Now specialize/refine the closure summary's preconditions so that they can be used
-        // as the preconditions of the current function (from which the closure function was
-        // derived when turning it into a generator).
-        self.async_fn_summary
-            .as_ref()
-            .unwrap()
-            .preconditions
-            .iter()
-            .map(|precondition| {
-                let refined_condition = precondition
-                    .condition
-                    .refine_parameters(&actual_args, self.fresh_variable_offset)
-                    .refine_paths(&self.current_environment);
-                Precondition {
-                    condition: refined_condition,
-                    message: precondition.message.clone(),
-                    provenance: precondition.provenance.clone(),
-                    spans: precondition.spans.clone(),
-                }
-            })
-            .collect()
-    }
-
-    /// Compute a fixed point, which is a value of out_state that will not grow with more iterations.
-    #[logfn_inputs(TRACE)]
-    fn compute_fixed_point(
-        &mut self,
-        mut block_indices: &mut Vec<mir::BasicBlock>,
-        contains_loop: bool,
-        mut in_state: &mut HashMap<mir::BasicBlock, Environment>,
-        mut out_state: &mut HashMap<mir::BasicBlock, Environment>,
-        mut terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
-        first_state: &Environment,
-    ) -> u64 {
-        let mut iteration_count = 0;
-        let mut changed = true;
-        while changed {
-            self.fresh_variable_offset = 0;
-            changed = self.visit_blocks(
-                &mut block_indices,
-                &mut in_state,
-                &mut out_state,
-                &mut terminator_state,
-                &first_state,
-                iteration_count,
-            );
-            if !contains_loop {
-                break;
-            }
-            check_for_early_break!(self);
-            if iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
-                break;
-            }
-            iteration_count += 1;
-        }
-        if iteration_count > 10 {
-            warn!(
-                "Fixed point loop took {} iterations for {}.",
-                iteration_count, self.function_name
-            );
-        } else {
-            trace!(
-                "Fixed point loop took {} iterations for {}.",
-                iteration_count,
-                self.function_name
-            );
-        }
-        self.start_instant.elapsed().as_secs()
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn check_for_errors(
-        &mut self,
-        block_indices: &[mir::BasicBlock],
-        terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
-    ) -> u64 {
-        self.check_for_errors = true;
-        for bb in block_indices.iter() {
-            let t_state = (&terminator_state[bb]).clone();
-            self.current_environment = t_state;
-            self.visit_basic_block(*bb, terminator_state);
-        }
-        if self.exit_environment.is_none() {
-            // Can only happen if there has been no return statement in the body,
-            // which only happens if there is no way for the function to return to its
-            // caller. We model this as a false post condition.
-            self.post_condition = Some(Rc::new(abstract_value::FALSE));
-        }
-        self.start_instant.elapsed().as_secs()
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn initialize_state_maps(
-        block_indices: &[mir::BasicBlock],
-    ) -> (
-        HashMap<mir::BasicBlock, Environment>,
-        HashMap<mir::BasicBlock, Environment>,
-        HashMap<mir::BasicBlock, Environment>,
-    ) {
-        // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
-        let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
-        // out_state[bb] is the environment that results from analyzing block bb, given in_state[bb]
-        let mut out_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
-        // terminator_state[bb] is the environment that should be used to error check the terminator of bb
-        let mut terminator_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
-        for bb in block_indices.iter() {
-            in_state.insert(*bb, Environment::default());
-            out_state.insert(*bb, Environment::default());
-            terminator_state.insert(*bb, Environment::default());
-        }
-        (in_state, out_state, terminator_state)
-    }
-
-    /// Visits each block in block_indices, after computing a precondition and initial state for
-    /// each block by joining together the exit conditions and exit states of its predecessors.
-    /// Returns true if one or more of the blocks changed their output states.
-    #[logfn_inputs(TRACE)]
-    fn visit_blocks(
-        &mut self,
-        block_indices: &mut Vec<mir::BasicBlock>,
-        in_state: &mut HashMap<mir::BasicBlock, Environment>,
-        out_state: &mut HashMap<mir::BasicBlock, Environment>,
-        terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
-        first_state: &Environment,
-        iteration_count: usize,
-    ) -> bool {
-        let mut changed = false;
-        for bb in block_indices.iter() {
-            check_for_early_break!(self);
-
-            // Merge output states of predecessors of bb
-            let i_state = if bb.index() == 0 {
-                first_state.clone()
-            } else {
-                self.get_initial_state_from_predecessors(*bb, in_state, out_state, iteration_count)
-            };
-            // Analyze the basic block
-            in_state.insert(*bb, i_state.clone());
-            self.current_environment = i_state;
-            self.visit_basic_block(*bb, terminator_state);
-
-            // Check for a fixed point.
-            if !self.current_environment.subset(&out_state[bb]) {
-                // There is some path for which self.current_environment.value_at(path) includes
-                // a value this is not present in out_state[bb].value_at(path), so any block
-                // that used out_state[bb] as part of its input state now needs to get reanalyzed.
-                out_state.insert(*bb, self.current_environment.clone());
-                changed = true;
-            } else {
-                // If the environment at the end of this block does not have any new values,
-                // we have reached a fixed point for this block.
-                // We update out_state anyway, since exit conditions may have changed.
-                // This is particularly a problem when the current entry is the dummy entry
-                // and the current state is empty except for the exit condition.
-                out_state
-                    .get_mut(bb)
-                    .expect("incorrectly initialized out_state")
-                    .exit_conditions = self.current_environment.exit_conditions.clone();
-            }
-        }
-        changed
-    }
-
-    /// Join the exit states from all predecessors blocks to get the entry state fo this block.
-    /// If a predecessor has not yet been analyzed, its state does not form part of the join.
-    /// If no predecessors have been analyzed, the entry state is a default entry state with an
-    /// entry condition of TOP.
-    #[logfn_inputs(TRACE)]
-    fn get_initial_state_from_predecessors(
-        &mut self,
-        bb: mir::BasicBlock,
-        in_state: &HashMap<mir::BasicBlock, Environment>,
-        out_state: &HashMap<mir::BasicBlock, Environment>,
-        iteration_count: usize,
-    ) -> Environment {
-        let mut predecessor_states_and_conditions: Vec<(&Environment, Option<&Rc<AbstractValue>>)> =
-            self.mir
-                .predecessors_for(bb)
-                .iter()
-                .map(|pred_bb| {
-                    let pred_state = &out_state[pred_bb];
-                    let pred_exit_condition = pred_state.exit_conditions.get(&bb);
-                    (pred_state, pred_exit_condition)
-                })
-                .filter(|(_, pred_exit_condition)| pred_exit_condition.is_some())
-                .collect();
-        if predecessor_states_and_conditions.is_empty() {
-            // nothing is currently known about the predecessors
-            let mut i_state = in_state[&bb].clone();
-            i_state.entry_condition = Rc::new(abstract_value::TOP);
-            i_state
-        } else {
-            // Remove predecessors that cannot reach this block
-            predecessor_states_and_conditions = predecessor_states_and_conditions
-                .into_iter()
-                .filter(|(_, pred_exit_condition)| {
-                    if let Some(cond) = pred_exit_condition {
-                        cond.as_bool_if_known().unwrap_or(true)
-                    } else {
-                        false
-                    }
-                })
-                .collect();
-            if predecessor_states_and_conditions.is_empty() {
-                let mut i_state = in_state[&bb].clone();
-                i_state.entry_condition = Rc::new(abstract_value::FALSE);
-                return i_state;
-            }
-            // We want to do right associative operations and that is easier if we reverse.
-            predecessor_states_and_conditions.reverse();
-            let (p_state, pred_exit_condition) = predecessor_states_and_conditions[0];
-            let mut i_state = p_state.clone();
-            i_state.entry_condition = pred_exit_condition
-                .expect("something went wrong with filter")
-                .clone();
-            for (p_state, pred_exit_condition) in predecessor_states_and_conditions.iter().skip(1) {
-                let mut path_condition = pred_exit_condition
-                    .expect("something went wrong with filter")
-                    .clone();
-                if path_condition.as_bool_if_known().unwrap_or(false) {
-                    // A true path condition tells us nothing. If we are already widening,
-                    // then replace the true condition with equalities from the corresponding
-                    // environment.
-                    path_condition =
-                        path_condition.add_equalities_for_widened_vars(p_state, &i_state);
-                }
-                // Once all paths have already been analyzed for a second time (iteration_count == 2)
-                // all blocks not involved in loops will have their final values.
-                // If there are no loops, the next iteration will be a no-op, but since we
-                // don't know if there are loops or not, we do iteration_count == 3 while still
-                // joining. Once we get to iteration_count == 4, we start widening in
-                // order to converge on a fixed point.
-                let mut j_state = if iteration_count < 4 {
-                    p_state.join(&i_state, &path_condition)
-                } else {
-                    p_state.widen(&i_state, &path_condition)
-                };
-                let joined_condition = path_condition.or(i_state.entry_condition.clone());
-                if joined_condition.expression_size > k_limits::MAX_EXPRESSION_SIZE {
-                    j_state.entry_condition = Rc::new(abstract_value::TRUE);
-                } else {
-                    j_state.entry_condition = joined_condition;
-                }
-                i_state = j_state;
-            }
-            i_state
-        }
-    }
-
-    /// Use the visitor to compute the state corresponding to promoted constants.
-    #[logfn_inputs(TRACE)]
-    fn promote_constants(&mut self) -> Environment {
-        let mut environment = Environment::default();
-        let saved_mir = self.mir;
-        let result_root: Rc<Path> = Path::new_result();
-        for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
-            self.mir = constant_mir.unwrap_read_only();
-            self.type_visitor.mir = self.mir;
-            let result_rustc_type = self.mir.local_decls[mir::Local::from(0usize)].ty;
-            self.visit_promoted_constants_block();
-            if self.exit_environment.is_some() {
-                let promoted_root: Rc<Path> =
-                    Rc::new(PathEnum::PromotedConstant { ordinal }.into());
-                let value =
-                    self.lookup_path_and_refine_result(result_root.clone(), result_rustc_type);
-                match &value.expression {
-                    Expression::HeapBlock { .. } => {
-                        let heap_root: Rc<Path> = Rc::new(
-                            PathEnum::HeapBlock {
-                                value: value.clone(),
-                            }
-                            .into(),
-                        );
-                        for (path, value) in self
-                            .exit_environment
-                            .as_ref()
-                            .unwrap()
-                            .value_map
-                            .iter()
-                            .filter(|(p, _)| p.is_rooted_by(&heap_root))
-                        {
-                            environment.update_value_at(path.clone(), value.clone());
-                        }
-                        environment.update_value_at(promoted_root.clone(), value.clone());
-                    }
-                    Expression::Reference(local_path) => {
-                        // local_path is reference to a local of the promoted constant function so we
-                        // need to rename the local so that it does not clash with the parent function's
-                        // locals.
-                        let new_local: Rc<Path> = Rc::new(
-                            PathEnum::PromotedConstant {
-                                ordinal: ordinal + 1000,
-                            }
-                            .into(),
-                        );
-                        for (path, value) in self
-                            .exit_environment
-                            .as_ref()
-                            .unwrap()
-                            .value_map
-                            .iter()
-                            .filter(|(p, _)| (*p) == local_path || p.is_rooted_by(local_path))
-                        {
-                            let renamed_path = path.replace_root(local_path, new_local.clone());
-                            environment.update_value_at(renamed_path, value.clone());
-                        }
-                        let new_value = AbstractValue::make_reference(new_local);
-                        environment.update_value_at(promoted_root.clone(), new_value);
-                    }
-                    _ => {
-                        for (path, value) in self
-                            .exit_environment
-                            .as_ref()
-                            .unwrap()
-                            .value_map
-                            .iter()
-                            .filter(|(p, _)| p.is_rooted_by(&result_root))
-                        {
-                            let promoted_path =
-                                path.replace_root(&result_root, promoted_root.clone());
-                            environment.update_value_at(promoted_path, value.clone());
-                        }
-                        if let Expression::Variable { .. } = &value.expression {
-                            // The constant is a stack allocated struct. No need for a separate entry.
-                        } else {
-                            environment.update_value_at(promoted_root.clone(), value.clone());
-                        }
-                    }
-                }
-            }
-            self.reset_visitor_state();
-        }
-        self.mir = saved_mir;
-        self.type_visitor.mir = saved_mir;
-        environment
-    }
-
-    /// Computes a fixed point over the blocks of the MIR for a promoted constant block
-    #[logfn_inputs(TRACE)]
-    fn visit_promoted_constants_block(&mut self) {
-        let (mut block_indices, contains_loop) = self.get_sorted_block_indices();
-
-        let (mut in_state, mut out_state, mut terminator_state) =
-            <MirVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
-
-        // The entry block has no predecessors and its initial state is the function parameters
-        // (which we omit here so that we can lazily provision them with additional context).
-        let first_state = Environment::default();
-
-        self.compute_fixed_point(
-            &mut block_indices,
-            contains_loop,
-            &mut in_state,
-            &mut out_state,
-            &mut terminator_state,
-            &first_state,
-        );
-
-        self.check_for_errors(&block_indices, &mut terminator_state);
+        body_visitor: &'block mut BodyVisitor<'analysis, 'compilation, 'tcx, E>,
+    ) -> BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E> {
+        BlockVisitor { bv: body_visitor }
     }
 
     /// Visits each statement in order and then visits the terminator.
     #[logfn_inputs(TRACE)]
-    fn visit_basic_block(
+    pub fn visit_basic_block(
         &mut self,
         bb: mir::BasicBlock,
         terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
@@ -1342,17 +86,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             ref statements,
             ref terminator,
             ..
-        } = &self.mir[bb];
+        } = &self.bv.mir[bb];
         let mut location = bb.start_location();
         let terminator_index = statements.len();
 
-        if !self.check_for_errors {
+        if !self.bv.check_for_errors {
             while location.statement_index < terminator_index {
                 self.visit_statement(location, &statements[location.statement_index]);
                 check_for_early_return!(self);
                 location.statement_index += 1;
             }
-            terminator_state.insert(bb, self.current_environment.clone());
+            terminator_state.insert(bb, self.bv.current_environment.clone());
         }
 
         if let Some(mir::Terminator {
@@ -1367,10 +111,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Calls a specialized visitor for each kind of statement.
     #[logfn_inputs(TRACE)]
     fn visit_statement(&mut self, location: mir::Location, statement: &mir::Statement<'tcx>) {
-        trace!("env {:?}", self.current_environment);
-        self.current_location = location;
+        trace!("env {:?}", self.bv.current_environment);
+        self.bv.current_location = location;
         let mir::Statement { kind, source_info } = statement;
-        self.current_span = source_info.span;
+        self.bv.current_span = source_info.span;
         match kind {
             mir::StatementKind::Assign(box (place, rvalue)) => {
                 self.visit_assign(place, rvalue.borrow())
@@ -1409,12 +153,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) {
         let target_path = Path::new_discriminant(self.visit_place(place));
         let index_val = Rc::new(
-            self.constant_value_cache
+            self.bv
+                .constant_value_cache
                 .get_u128_for(variant_index.as_usize() as u128)
                 .clone()
                 .into(),
         );
-        self.current_environment
+        self.bv
+            .current_environment
             .update_value_at(target_path, index_val);
     }
 
@@ -1425,21 +171,22 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// End the current live range for the storage of the local.
     #[logfn_inputs(TRACE)]
     fn visit_storage_dead(&mut self, local: mir::Local) {
-        let path = Path::new_local_parameter_or_result(local.as_usize(), self.mir.arg_count);
-        self.current_environment
+        let path = Path::new_local_parameter_or_result(local.as_usize(), self.bv.mir.arg_count);
+        self.bv
+            .current_environment
             .update_value_at(path, abstract_value::BOTTOM.into());
     }
 
     /// Execute a piece of inline Assembly.
     #[logfn_inputs(TRACE)]
     fn visit_inline_asm(&mut self, inline_asm: &mir::LlvmInlineAsm<'tcx>) {
-        let span = self.current_span;
-        let err = self.session.struct_span_warn(
+        let span = self.bv.current_span;
+        let err = self.bv.session.struct_span_warn(
             span,
             "Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
         );
-        self.emit_diagnostic(err);
-        self.assume_function_is_angelic = true;
+        self.bv.emit_diagnostic(err);
+        self.bv.assume_function_is_angelic = true;
     }
 
     /// Retag references in the given place, ensuring they got fresh tags.  This is
@@ -1464,9 +211,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         source_info: mir::SourceInfo,
         kind: &mir::TerminatorKind<'tcx>,
     ) {
-        trace!("env {:?}", self.current_environment);
-        self.current_location = location;
-        self.current_span = source_info.span;
+        trace!("env {:?}", self.bv.current_environment);
+        self.bv.current_location = location;
+        self.bv.current_span = source_info.span;
         match kind {
             mir::TerminatorKind::Goto { target } => self.visit_goto(*target),
             mir::TerminatorKind::SwitchInt {
@@ -1510,10 +257,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_goto(&mut self, target: mir::BasicBlock) {
         // Propagate the entry condition to the successor block.
-        self.current_environment.exit_conditions = self
+        self.bv.current_environment.exit_conditions = self
+            .bv
             .current_environment
             .exit_conditions
-            .insert(target, self.current_environment.entry_condition.clone());
+            .insert(target, self.bv.current_environment.entry_condition.clone());
     }
 
     /// `discr` evaluates to an integer; jump depending on its value
@@ -1535,22 +283,28 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         targets: &[mir::BasicBlock],
     ) {
         assume!(targets.len() == values.len() + 1);
-        let mut default_exit_condition = self.current_environment.entry_condition.clone();
+        let mut default_exit_condition = self.bv.current_environment.entry_condition.clone();
         let discr = self.visit_operand(discr);
         let discr = discr.as_int_if_known().unwrap_or(discr);
         for i in 0..values.len() {
             let val: Rc<AbstractValue> = Rc::new(ConstantDomain::U128(values[i]).into());
             let cond = discr.equals(val);
-            let exit_condition = self.current_environment.entry_condition.and(cond.clone());
+            let exit_condition = self
+                .bv
+                .current_environment
+                .entry_condition
+                .and(cond.clone());
             let not_cond = cond.logical_not();
             default_exit_condition = default_exit_condition.and(not_cond);
             let target = targets[i];
-            self.current_environment.exit_conditions = self
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(target, exit_condition);
         }
-        self.current_environment.exit_conditions = self
+        self.bv.current_environment.exit_conditions = self
+            .bv
             .current_environment
             .exit_conditions
             .insert(targets[values.len()], default_exit_condition);
@@ -1570,20 +324,27 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// been filled in by now. This should occur at most once.
     #[logfn_inputs(TRACE)]
     fn visit_return(&mut self) {
-        if self.check_for_errors {
+        if self.bv.check_for_errors {
             // Done with fixed point, so prepare to summarize.
-            if self.post_condition.is_none() && !self.current_environment.entry_condition.is_top() {
-                let return_guard = self.current_environment.entry_condition.as_bool_if_known();
+            if self.bv.post_condition.is_none()
+                && !self.bv.current_environment.entry_condition.is_top()
+            {
+                let return_guard = self
+                    .bv
+                    .current_environment
+                    .entry_condition
+                    .as_bool_if_known();
                 if return_guard.is_none() {
                     // If no post condition has been explicitly supplied and if the entry condition is interesting
                     // then make the entry condition a post condition, because the function only returns
                     // if this condition is true and thus the caller can assume the condition in its
                     // normal return path.
-                    self.post_condition = Some(self.current_environment.entry_condition.clone());
+                    self.bv.post_condition =
+                        Some(self.bv.current_environment.entry_condition.clone());
                 }
             }
             // When the summary is prepared the current environment might be different, so remember this one.
-            self.exit_environment = Some(self.current_environment.clone());
+            self.bv.exit_environment = Some(self.bv.current_environment.clone());
         }
     }
 
@@ -1605,15 +366,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         unwind: Option<mir::BasicBlock>,
     ) {
         // Propagate the entry condition to the successor blocks.
-        self.current_environment.exit_conditions = self
+        self.bv.current_environment.exit_conditions = self
+            .bv
             .current_environment
             .exit_conditions
-            .insert(target, self.current_environment.entry_condition.clone());
+            .insert(target, self.bv.current_environment.entry_condition.clone());
         if let Some(unwind_target) = unwind {
-            self.current_environment.exit_conditions =
-                self.current_environment.exit_conditions.insert(
+            self.bv.current_environment.exit_conditions =
+                self.bv.current_environment.exit_conditions.insert(
                     unwind_target,
-                    self.current_environment.entry_condition.clone(),
+                    self.bv.current_environment.entry_condition.clone(),
                 );
         }
     }
@@ -1645,16 +407,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // a field reachable from a mutable parameter.
         // We assume that no program that does not make MIRAI run out of memory will have more than
         // a million local variables.
-        self.fresh_variable_offset += 1_000_000;
+        self.bv.fresh_variable_offset += 1_000_000;
 
-        trace!("source location {:?}", self.current_span);
-        trace!("call stack {:?}", self.active_calls);
+        trace!("source location {:?}", self.bv.current_span);
+        trace!("call stack {:?}", self.bv.active_calls);
         trace!("visit_call {:?} {:?}", func, args);
         trace!(
             "self.generic_argument_map {:?}",
-            self.type_visitor.generic_argument_map
+            self.bv.type_visitor.generic_argument_map
         );
-        trace!("env {:?}", self.current_environment);
+        trace!("env {:?}", self.bv.current_environment);
         let func_to_call = self.visit_operand(func);
         let func_ref = self.get_func_ref(&func_to_call);
         let func_ref_to_call;
@@ -1664,7 +426,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             self.report_missing_summary();
             info!(
                 "function {} can't be reliably analyzed because it calls an unknown function.",
-                utils::summary_key_str(self.tcx, self.def_id),
+                utils::summary_key_str(self.bv.tcx, self.bv.def_id),
             );
             return;
         }
@@ -1672,12 +434,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .def_id
             .expect("callee obtained via operand should have def id");
         let substs = self
+            .bv
             .substs_cache
             .get(&callee_def_id)
             .expect("MIR should ensure this");
         let callee_generic_arguments = self
+            .bv
             .type_visitor
-            .specialize_substs(substs, &self.type_visitor.generic_argument_map);
+            .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
         let actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = args
             .iter()
             .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
@@ -1686,13 +450,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .iter()
             .map(|arg| {
                 let arg_ty = self.get_operand_rustc_type(arg);
-                self.type_visitor.specialize_generic_argument_type(
+                self.bv.type_visitor.specialize_generic_argument_type(
                     arg_ty,
-                    &self.type_visitor.generic_argument_map,
+                    &self.bv.type_visitor.generic_argument_map,
                 )
             })
             .collect();
-        let callee_generic_argument_map = self.type_visitor.get_generic_arguments_map(
+        let callee_generic_argument_map = self.bv.type_visitor.get_generic_arguments_map(
             callee_def_id,
             callee_generic_arguments,
             &actual_argument_types,
@@ -1718,23 +482,25 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let function_summary = self
             .get_function_summary(&call_info)
             .unwrap_or_else(Summary::default);
-        if self.check_for_errors && (!function_summary.is_computed || function_summary.is_angelic) {
+        if self.bv.check_for_errors
+            && (!function_summary.is_computed || function_summary.is_angelic)
+        {
             self.deal_with_missing_summary(&call_info);
         }
         debug!(
             "summary {:?} {:?}",
             func_ref_to_call.summary_cache_key, function_summary
         );
-        debug!("pre env {:?}", self.current_environment);
+        debug!("pre env {:?}", self.bv.current_environment);
         self.check_preconditions_if_necessary(&call_info, &function_summary);
         self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
         self.transfer_and_refine_cleanup_state(&call_info, &function_summary);
-        debug!("post env {:?}", self.current_environment);
+        debug!("post env {:?}", self.bv.current_environment);
         if function_summary.post_condition.is_some() {
             if let Some((_, b)) = &call_info.destination {
                 debug!(
                     "post exit conditions {:?}",
-                    self.current_environment.exit_conditions.get(b)
+                    self.bv.current_environment.exit_conditions.get(b)
                 );
             }
         }
@@ -1746,7 +512,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
     ) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {
         let mut result = vec![];
-        for (path, value) in self.current_environment.value_map.iter() {
+        for (path, value) in self.bv.current_environment.value_map.iter() {
             if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &value.expression
             {
                 for (i, (arg_path, arg_val)) in actual_args.iter().enumerate() {
@@ -1787,26 +553,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         result
     }
 
-    /// Extract a list of function references from an environment of function constant arguments
-    #[logfn_inputs(TRACE)]
-    fn get_function_constant_signature(
-        &mut self,
-        func_args: &[(Rc<Path>, Rc<AbstractValue>)],
-    ) -> Option<Vec<Rc<FunctionReference>>> {
-        if func_args.is_empty() {
-            return None;
-        }
-        let vec: Vec<Rc<FunctionReference>> = func_args
-            .iter()
-            .filter_map(|(_, v)| self.get_func_ref(v))
-            .collect();
-        if vec.is_empty() {
-            return None;
-        }
-        Some(vec)
-    }
-
-    /// Give diagnostic or mark the call chain as angelic, depending on self.options.diag_level
+    /// Give diagnostic or mark the call chain as angelic, depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     fn deal_with_missing_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         self.report_missing_summary();
@@ -1817,35 +564,35 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         };
         info!(
             "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
-            utils::summary_key_str(self.tcx, self.def_id),
-            utils::summary_key_str(self.tcx, call_info.callee_def_id),
+            utils::summary_key_str(self.bv.tcx, self.bv.def_id),
+            utils::summary_key_str(self.bv.tcx, call_info.callee_def_id),
             argument_type_hint,
         );
         debug!("def_id {:?}", call_info.callee_def_id);
     }
 
-    /// Give diagnostic, depending on self.options.diag_level
+    /// Give diagnostic, depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     fn report_missing_summary(&mut self) {
-        match self.options.diag_level {
+        match self.bv.options.diag_level {
             DiagLevel::RELAXED => {
                 // Assume the callee is perfect and assume the caller and all of its callers are perfect
                 // little angels as well. This cuts down on false positives caused by missing post
                 // conditions.
-                self.assume_function_is_angelic = true;
+                self.bv.assume_function_is_angelic = true;
             }
             DiagLevel::STRICT => {
                 // Assume the callee is perfect and that the caller does not need to prove any
                 // preconditions and that the callee guarantees no post conditions.
             }
             DiagLevel::PARANOID => {
-                if self.check_for_errors {
+                if self.bv.check_for_errors {
                     // Give a diagnostic about this call, and make it the programmer's problem.
-                    let error = self.session.struct_span_err(
-                        self.current_span,
+                    let error = self.bv.session.struct_span_err(
+                        self.bv.current_span,
                         "the called function could not be summarized, all bets are off",
                     );
-                    self.emit_diagnostic(error);
+                    self.bv.emit_diagnostic(error);
                 }
             }
         }
@@ -1873,14 +620,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     None
                 };
             let result = self
+                .bv
                 .summary_cache
                 .get_summary_for_call_site(&func_ref, func_args)
                 .clone();
             if result.is_computed || func_ref.def_id.is_none() {
                 return Some(result);
             }
-            if !self.active_calls.contains(&func_ref.def_id.unwrap()) {
-                return Some(self.create_and_cache_function_summary(call_info));
+            if !self.bv.active_calls.contains(&func_ref.def_id.unwrap()) {
+                return Some(self.bv.create_and_cache_function_summary(call_info));
             }
         }
         None
@@ -1907,13 +655,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 var_type: ExpressionType::Reference,
             } => {
                 let closure_ty = self
+                    .bv
                     .type_visitor
-                    .get_path_rustc_type(path, self.current_span);
+                    .get_path_rustc_type(path, self.bv.current_span);
                 match closure_ty.kind {
                     TyKind::Closure(def_id, substs) => {
                         let specialized_substs = self
+                            .bv
                             .type_visitor
-                            .specialize_substs(substs, &self.type_visitor.generic_argument_map);
+                            .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
                         return extract_func_ref(self.visit_function_reference(
                             def_id,
                             closure_ty,
@@ -1922,9 +672,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                     TyKind::Ref(_, ty, _) => {
                         if let TyKind::Closure(def_id, substs) = ty.kind {
-                            let specialized_substs = self
-                                .type_visitor
-                                .specialize_substs(substs, &self.type_visitor.generic_argument_map);
+                            let specialized_substs = self.bv.type_visitor.specialize_substs(
+                                substs,
+                                &self.bv.type_visitor.generic_argument_map,
+                            );
                             return extract_func_ref(self.visit_function_reference(
                                 def_id,
                                 ty,
@@ -1949,15 +700,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         call_info: &CallInfo<'_, 'tcx>,
         function_summary: &Summary,
     ) {
-        if self.check_for_errors
-            && !self.assume_preconditions_of_next_call
+        if self.bv.check_for_errors
+            && !self.bv.assume_preconditions_of_next_call
             && !self
+                .bv
                 .already_reported_errors_for_call_to
                 .contains(&call_info.callee_fun_val)
         {
             self.check_function_preconditions(call_info, function_summary);
         } else {
-            self.assume_preconditions_of_next_call = false;
+            self.bv.assume_preconditions_of_next_call = false;
         }
     }
 
@@ -1980,7 +732,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             KnownNames::MiraiAssume => {
                 checked_assume!(call_info.actual_args.len() == 1);
-                if self.check_for_errors {
+                if self.bv.check_for_errors {
                     self.report_calls_to_special_functions(call_info);
                 }
                 self.handle_assume(call_info);
@@ -1988,7 +740,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             KnownNames::MiraiAssumePreconditions => {
                 checked_assume!(call_info.actual_args.is_empty());
-                self.assume_preconditions_of_next_call = true;
+                self.bv.assume_preconditions_of_next_call = true;
                 return true;
             }
             KnownNames::MiraiGetModelField => {
@@ -1997,7 +749,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             KnownNames::MiraiPostcondition => {
                 checked_assume!(call_info.actual_args.len() == 3);
-                if self.check_for_errors {
+                if self.bv.check_for_errors {
                     self.report_calls_to_special_functions(call_info);
                 }
                 self.handle_post_condition(call_info);
@@ -2022,12 +774,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     checked_assume!(call_info.actual_args.len() == 1);
                     let source_path = call_info.actual_args[0].0.clone();
                     let target_type = self
+                        .bv
                         .type_visitor
-                        .get_rustc_place_type(place, self.current_span);
+                        .get_rustc_place_type(place, self.bv.current_span);
                     let target_path = self.visit_place(place);
                     self.copy_or_move_elements(target_path, source_path, target_type, false);
-                    let exit_condition = self.current_environment.entry_condition.clone();
-                    self.current_environment.exit_conditions = self
+                    let exit_condition = self.bv.current_environment.entry_condition.clone();
+                    self.bv.current_environment.exit_conditions = self
+                        .bv
                         .current_environment
                         .exit_conditions
                         .insert(*target, exit_condition);
@@ -2040,15 +794,19 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if let Some((place, target)) = &call_info.destination {
                     let target_path = self.visit_place(place);
                     let target_rustc_type = self
+                        .bv
                         .type_visitor
-                        .get_rustc_place_type(place, self.current_span);
+                        .get_rustc_place_type(place, self.bv.current_span);
                     let return_value_path = Path::new_result();
-                    let return_value =
-                        self.lookup_path_and_refine_result(return_value_path, target_rustc_type);
-                    self.current_environment
+                    let return_value = self
+                        .bv
+                        .lookup_path_and_refine_result(return_value_path, target_rustc_type);
+                    self.bv
+                        .current_environment
                         .update_value_at(target_path, return_value);
-                    let exit_condition = self.current_environment.entry_condition.clone();
-                    self.current_environment.exit_conditions = self
+                    let exit_condition = self.bv.current_environment.entry_condition.clone();
+                    self.bv.current_environment.exit_conditions = self
+                        .bv
                         .current_environment
                         .exit_conditions
                         .insert(*target, exit_condition);
@@ -2059,7 +817,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             KnownNames::MiraiVerify => {
                 checked_assume!(call_info.actual_args.len() == 2);
-                if self.check_for_errors {
+                if self.bv.check_for_errors {
                     self.report_calls_to_special_functions(call_info);
                 }
                 let mut call_info = call_info.clone();
@@ -2070,8 +828,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             KnownNames::RustDealloc => {
                 self.handle_rust_dealloc(call_info);
                 if let Some((_, target)) = &call_info.destination {
-                    let exit_condition = self.current_environment.entry_condition.clone();
-                    self.current_environment.exit_conditions = self
+                    let exit_condition = self.bv.current_environment.entry_condition.clone();
+                    self.bv.current_environment.exit_conditions = self
+                        .bv
                         .current_environment
                         .exit_conditions
                         .insert(*target, exit_condition);
@@ -2094,14 +853,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 call_info.actual_args = &[];
                 call_info.actual_argument_types = &[];
                 call_info.callee_generic_arguments = None;
-                self.async_fn_summary = self.get_function_summary(&call_info);
+                self.bv.async_fn_summary = self.get_function_summary(&call_info);
                 return true;
             }
             KnownNames::StdIntrinsicsCopyNonOverlapping => {
                 self.handle_copy_non_overlapping(call_info);
                 if let Some((_, target)) = &call_info.destination {
-                    let exit_condition = self.current_environment.entry_condition.clone();
-                    self.current_environment.exit_conditions = self
+                    let exit_condition = self.bv.current_environment.entry_condition.clone();
+                    self.bv.current_environment.exit_conditions = self
+                        .bv
                         .current_environment
                         .exit_conditions
                         .insert(*target, exit_condition);
@@ -2109,11 +869,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 return true;
             }
             KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
-                if self.check_for_errors {
+                if self.bv.check_for_errors {
                     self.report_calls_to_special_functions(call_info); //known_name, actual_args);
                 }
                 if let Some((_, target)) = &call_info.destination {
-                    self.current_environment.exit_conditions = self
+                    self.bv.current_environment.exit_conditions = self
+                        .bv
                         .current_environment
                         .exit_conditions
                         .insert(*target, abstract_value::FALSE.into());
@@ -2125,10 +886,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if !result.is_bottom() {
                     if let Some((place, target)) = &call_info.destination {
                         let target_path = self.visit_place(place);
-                        self.current_environment
+                        self.bv
+                            .current_environment
                             .update_value_at(target_path, result);
-                        let exit_condition = self.current_environment.entry_condition.clone();
-                        self.current_environment.exit_conditions = self
+                        let exit_condition = self.bv.current_environment.entry_condition.clone();
+                        self.bv.current_environment.exit_conditions = self
+                            .bv
                             .current_environment
                             .exit_conditions
                             .insert(*target, exit_condition);
@@ -2146,7 +909,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn handle_abstract_value(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         if let Some((place, target)) = &call_info.destination {
             let path = self.visit_place(place);
-            let expression_type = self.type_visitor.get_place_type(place, self.current_span);
+            let expression_type = self
+                .bv
+                .type_visitor
+                .get_place_type(place, self.bv.current_span);
             let abstract_value = AbstractValue::make_from(
                 Expression::Variable {
                     path: path.clone(),
@@ -2154,10 +920,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 },
                 1,
             );
-            self.current_environment
+            self.bv
+                .current_environment
                 .update_value_at(path, abstract_value);
-            let exit_condition = self.current_environment.entry_condition.clone();
-            self.current_environment.exit_conditions = self
+            let exit_condition = self.bv.current_environment.entry_condition.clone();
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(*target, exit_condition);
@@ -2172,8 +940,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn handle_get_model_field(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         if let Some((place, target)) = &call_info.destination {
             let target_type = self
+                .bv
                 .type_visitor
-                .get_rustc_place_type(place, self.current_span);
+                .get_rustc_place_type(place, self.bv.current_span);
             checked_assume!(call_info.actual_args.len() == 3);
 
             // The current value, if any, of the model field are a set of (path, value) pairs
@@ -2181,10 +950,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let qualifier = call_info.actual_args[0].0.clone();
             let field_name = self.coerce_to_string(&call_info.actual_args[1].1);
             let source_path = Path::new_model_field(qualifier, field_name)
-                .refine_paths(&self.current_environment);
+                .refine_paths(&self.bv.current_environment);
 
             let target_path = self.visit_place(place);
-            if self.current_environment.value_at(&source_path).is_some() {
+            if self.bv.current_environment.value_at(&source_path).is_some() {
                 // Move the model field (path, val) pairs to the target (i.e. the place where
                 // the return value of call to the mirai_get_model_field function would go if
                 // it were a normal call.
@@ -2206,7 +975,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             },
                             1,
                         );
-                        self.current_environment.update_value_at(target_path, rval);
+                        self.bv
+                            .current_environment
+                            .update_value_at(target_path, rval);
                     }
                     _ => {
                         let source_path = call_info.actual_args[2].0.clone();
@@ -2214,8 +985,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     }
                 }
             }
-            let exit_condition = self.current_environment.entry_condition.clone();
-            self.current_environment.exit_conditions = self
+            let exit_condition = self.bv.current_environment.entry_condition.clone();
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(*target, exit_condition);
@@ -2232,12 +1004,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let qualifier = call_info.actual_args[0].0.clone();
             let field_name = self.coerce_to_string(&call_info.actual_args[1].1);
             let target_path = Path::new_model_field(qualifier, field_name)
-                .refine_paths(&self.current_environment);
+                .refine_paths(&self.bv.current_environment);
             let source_path = call_info.actual_args[2].0.clone();
             let target_type = call_info.actual_argument_types[2];
             self.copy_or_move_elements(target_path, source_path, target_type, true);
-            let exit_condition = self.current_environment.entry_condition.clone();
-            self.current_environment.exit_conditions = self
+            let exit_condition = self.bv.current_environment.entry_condition.clone();
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(*target, exit_condition);
@@ -2255,12 +1028,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         match &value.expression {
             Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s.clone(),
             _ => {
-                if self.check_for_errors {
-                    let error = self.session.struct_span_err(
-                        self.current_span,
+                if self.bv.check_for_errors {
+                    let error = self.bv.session.struct_span_err(
+                        self.bv.current_span,
                         "this argument should be a string literal, do not call this function directly",
                     );
-                    self.emit_diagnostic(error);
+                    self.bv.emit_diagnostic(error);
                 }
                 Rc::new("dummy argument".to_string())
             }
@@ -2274,11 +1047,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         precondition!(call_info.actual_args.len() == 1);
         let assumed_condition = &call_info.actual_args[0].1;
         let exit_condition = self
+            .bv
             .current_environment
             .entry_condition
             .and(assumed_condition.clone());
         if let Some((_, target)) = &call_info.destination {
-            self.current_environment.exit_conditions = self
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(*target, exit_condition);
@@ -2286,7 +1061,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             assume_unreachable!();
         }
         if let Some(cleanup_target) = call_info.cleanup {
-            self.current_environment.exit_conditions = self
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(cleanup_target, abstract_value::FALSE.into());
@@ -2296,9 +1072,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn handle_post_condition(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         precondition!(call_info.actual_args.len() == 3);
         let condition = call_info.actual_args[0].1.clone();
-        let exit_condition = self.current_environment.entry_condition.and(condition);
+        let exit_condition = self.bv.current_environment.entry_condition.and(condition);
         if let Some((_, target)) = &call_info.destination {
-            self.current_environment.exit_conditions = self
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(*target, exit_condition);
@@ -2311,24 +1088,27 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// should be part of the precondition.
     #[logfn_inputs(TRACE)]
     fn handle_precondition_start(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        if self.check_for_errors
-            && self.check_for_unconditional_precondition
+        if self.bv.check_for_errors
+            && self.bv.check_for_unconditional_precondition
             && !self
+                .bv
                 .current_environment
                 .entry_condition
                 .as_bool_if_known()
                 .unwrap_or(false)
         {
-            let span = self.current_span;
+            let span = self.bv.current_span;
             let warning = self
+                .bv
                 .session
                 .struct_span_warn(span, "preconditions should be reached unconditionally");
-            self.emit_diagnostic(warning);
-            self.check_for_unconditional_precondition = false;
+            self.bv.emit_diagnostic(warning);
+            self.bv.check_for_unconditional_precondition = false;
         }
-        let exit_condition = self.current_environment.entry_condition.clone();
+        let exit_condition = self.bv.current_environment.entry_condition.clone();
         if let Some((_, target)) = &call_info.destination {
-            self.current_environment.exit_conditions = self
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(*target, exit_condition);
@@ -2342,16 +1122,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn handle_precondition(&mut self, call_info: &CallInfo<'_, 'tcx>) {
         precondition!(call_info.actual_args.len() == 2);
-        if self.check_for_errors {
+        if self.bv.check_for_errors {
             let condition = call_info.actual_args[0].1.clone();
             let message = self.coerce_to_string(&call_info.actual_args[1].1);
             let precondition = Precondition {
                 condition,
                 message,
                 provenance: None,
-                spans: vec![self.current_span],
+                spans: vec![self.bv.current_span],
             };
-            self.preconditions.push(precondition);
+            self.bv.preconditions.push(precondition);
         }
     }
 
@@ -2385,7 +1165,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             KnownNames::StdIntrinsicsCtlzNonzero | KnownNames::StdIntrinsicsCttzNonzero => {
                 checked_assume!(call_info.actual_args.len() == 1);
-                if self.check_for_errors {
+                if self.bv.check_for_errors {
                     let non_zero = call_info.actual_args[0].1.not_equals(Rc::new(0u128.into()));
                     self.check_condition(&non_zero, Rc::new("argument is zero".to_owned()), false);
                 }
@@ -2470,7 +1250,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         checked_assume!(call_info.actual_args.len() == 2);
         let length = call_info.actual_args[0].1.clone();
         let alignment = call_info.actual_args[1].1.clone();
-        let heap_path = Path::get_as_path(self.get_new_heap_block(length, alignment, false));
+        let heap_path = Path::get_as_path(self.bv.get_new_heap_block(length, alignment, false));
         AbstractValue::make_reference(heap_path)
     }
 
@@ -2480,7 +1260,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         checked_assume!(call_info.actual_args.len() == 2);
         let length = call_info.actual_args[0].1.clone();
         let alignment = call_info.actual_args[1].1.clone();
-        let heap_path = Path::get_as_path(self.get_new_heap_block(length, alignment, true));
+        let heap_path = Path::get_as_path(self.bv.get_new_heap_block(length, alignment, true));
         AbstractValue::make_reference(heap_path)
     }
 
@@ -2511,8 +1291,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
 
         // Get a layout path and update the environment
-        let layout_path = Path::new_layout(heap_block_path).refine_paths(&self.current_environment);
-        self.current_environment
+        let layout_path =
+            Path::new_layout(heap_block_path).refine_paths(&self.bv.current_environment);
+        self.bv
+            .current_environment
             .update_value_at(layout_path, layout);
 
         // Signal to the caller that there is no return result
@@ -2552,11 +1334,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         );
 
         // Get a layout path and update the environment
-        let layout_path = Path::new_layout(heap_block_path).refine_paths(&self.current_environment);
-        self.current_environment
+        let layout_path =
+            Path::new_layout(heap_block_path).refine_paths(&self.bv.current_environment);
+        self.bv
+            .current_environment
             .update_value_at(layout_path.clone(), new_length_layout);
         let layout_path2 = Path::new_layout(layout_path);
-        self.current_environment
+        self.bv
+            .current_environment
             .update_value_at(layout_path2, layout_param);
 
         // Return the original heap block reference as the result
@@ -2580,7 +1365,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let source_path = call_info.actual_args[1].0.clone();
         let count = call_info.actual_args[2].1.clone();
         let target_path =
-            Path::new_slice(target_root, count).refine_paths(&self.current_environment);
+            Path::new_slice(target_root, count).refine_paths(&self.bv.current_environment);
         let collection_type = call_info.actual_argument_types[0];
         self.copy_or_move_elements(target_path, source_path, collection_type, false);
     }
@@ -2601,12 +1386,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             };
             let target_path = self.visit_place(target_place);
             let path0 =
-                Path::new_field(target_path.clone(), 0).refine_paths(&self.current_environment);
+                Path::new_field(target_path.clone(), 0).refine_paths(&self.bv.current_environment);
             let path1 =
-                Path::new_field(target_path.clone(), 1).refine_paths(&self.current_environment);
+                Path::new_field(target_path.clone(), 1).refine_paths(&self.bv.current_environment);
             let target_type = self
+                .bv
                 .type_visitor
-                .get_target_path_type(&path0, self.current_span);
+                .get_target_path_type(&path0, self.bv.current_span);
             let left = call_info.actual_args[0].1.clone();
             let right = call_info.actual_args[1].1.clone();
             let modulo = target_type.modulo_value();
@@ -2631,9 +1417,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     overflow_flag,
                 )
             };
-            self.current_environment
+            self.bv
+                .current_environment
                 .update_value_at(path0, modulo_result);
-            self.current_environment
+            self.bv
+                .current_environment
                 .update_value_at(path1, overflow_flag);
             AbstractValue::make_from(
                 Expression::Variable {
@@ -2656,7 +1444,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let base_val = &call_info.actual_args[0].1;
         let offset_val = &call_info.actual_args[1].1;
         let result = base_val.offset(offset_val.clone());
-        if self.check_for_errors && self.function_being_analyzed_is_root() {
+        if self.bv.check_for_errors && self.function_being_analyzed_is_root() {
             self.check_offset(&result)
         }
         result
@@ -2672,9 +1460,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if matches!(&path.value, PathEnum::HeapBlock{..}) {
                     let layout_path = Path::new_layout(path.clone());
                     if let Expression::HeapBlockLayout { length, .. } = &self
+                        .bv
                         .lookup_path_and_refine_result(
                             layout_path,
-                            ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
+                            ExpressionType::NonPrimitive.as_rustc_type(self.bv.tcx),
                         )
                         .expression
                     {
@@ -2689,10 +1478,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.check_condition_value_and_reachability(&in_range);
             //todo: eventually give a warning if in_range_as_bool is unknown. For now, that is too noisy.
             if entry_cond_as_bool.unwrap_or(true) && !in_range_as_bool.unwrap_or(true) {
-                let span = self.current_span;
+                let span = self.bv.current_span;
                 let message = "effective offset is outside allocated range";
-                let warning = self.session.struct_span_warn(span, message);
-                self.emit_diagnostic(warning);
+                let warning = self.bv.session.struct_span_warn(span, message);
+                self.bv.emit_diagnostic(warning);
             }
         }
     }
@@ -2707,8 +1496,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .expect("std::mem::size_of must be called with generic arguments")
             .get(&sym)
             .expect("std::mem::size must have generic argument T");
-        let param_env = self.tcx.param_env(call_info.callee_def_id);
-        if let Ok(ty_and_layout) = self.tcx.layout_of(param_env.and(*t)) {
+        let param_env = self.bv.tcx.param_env(call_info.callee_def_id);
+        if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(*t)) {
             Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
         } else {
             AbstractValue::make_typed_unknown(ExpressionType::U128)
@@ -2756,8 +1545,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             .enumerate()
             .map(|(i, t)| {
                 let arg_path = Path::new_field(callee_arg_array_path.clone(), i)
-                    .refine_paths(&self.current_environment);
-                let arg_val = self.lookup_path_and_refine_result(arg_path.clone(), t);
+                    .refine_paths(&self.bv.current_environment);
+                let arg_val = self.bv.lookup_path_and_refine_result(arg_path.clone(), t);
                 (arg_path, arg_val)
             })
             .collect();
@@ -2795,7 +1584,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let function_summary = if let Some(func_ref) = &call_info.callee_func_ref {
             call_info.callee_def_id = func_ref.def_id.expect("defined when used here");
             call_info.callee_generic_arguments =
-                self.substs_cache.get(&call_info.callee_def_id).cloned();
+                self.bv.substs_cache.get(&call_info.callee_def_id).cloned();
             let summary = self.get_function_summary(&call_info);
             if let Some(summary) = summary {
                 summary
@@ -2824,20 +1613,21 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         call_info: &CallInfo<'_, 'tcx>,
         function_summary: &Summary,
     ) {
-        verify!(self.check_for_errors);
+        verify!(self.bv.check_for_errors);
         for precondition in &function_summary.preconditions {
             let mut refined_condition = precondition
                 .condition
-                .refine_parameters(call_info.actual_args, self.fresh_variable_offset)
-                .refine_paths(&self.current_environment);
+                .refine_parameters(call_info.actual_args, self.bv.fresh_variable_offset)
+                .refine_paths(&self.bv.current_environment);
             if self
+                .bv
                 .current_environment
                 .entry_condition
                 .as_bool_if_known()
                 .is_none()
             {
                 refined_condition =
-                    refined_condition.refine_with(&self.current_environment.entry_condition, 0);
+                    refined_condition.refine_with(&self.bv.current_environment.entry_condition, 0);
             }
             let (refined_precondition_as_bool, entry_cond_as_bool) =
                 self.check_condition_value_and_reachability(&refined_condition);
@@ -2865,12 +1655,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
             // If the current function is not an analysis root, promote the precondition, subject to a k-limit.
             if !self.function_being_analyzed_is_root()
-                && self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
+                && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
             {
                 // Promote the callee precondition to a precondition of the current function.
                 // Unless, of course, if the precondition is already a precondition of the
                 // current function.
-                let seen_precondition = self.preconditions.iter().any(|pc| {
+                let seen_precondition = self.bv.preconditions.iter().any(|pc| {
                     pc.spans.last() == precondition.spans.last()
                         || pc.provenance == precondition.provenance
                 });
@@ -2878,11 +1668,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     continue;
                 }
                 let promoted_condition = self
+                    .bv
                     .current_environment
                     .entry_condition
                     .logical_not()
                     .or(refined_condition);
-                let mut stacked_spans = vec![self.current_span];
+                let mut stacked_spans = vec![self.bv.current_span];
                 stacked_spans.append(&mut precondition.spans.clone());
                 let promoted_precondition = Precondition {
                     condition: promoted_condition,
@@ -2890,7 +1681,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     provenance: precondition.provenance.clone(),
                     spans: stacked_spans,
                 };
-                self.preconditions.push(promoted_precondition);
+                self.bv.preconditions.push(promoted_precondition);
                 return;
             }
 
@@ -2908,13 +1699,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         precondition: &Precondition,
         warn: bool,
     ) {
-        if self.check_for_errors
+        if self.bv.check_for_errors
             && !self
+                .bv
                 .already_reported_errors_for_call_to
                 .contains(&call_info.callee_fun_val)
         {
             self.emit_diagnostic_for_precondition(precondition, warn);
-            self.already_reported_errors_for_call_to
+            self.bv
+                .already_reported_errors_for_call_to
                 .insert(call_info.callee_fun_val.clone());
         }
     }
@@ -2923,7 +1716,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// of the called function. Use the provenance and spans of the precondition to point out related locations.
     #[logfn_inputs(TRACE)]
     fn emit_diagnostic_for_precondition(&mut self, precondition: &Precondition, warn: bool) {
-        precondition!(self.check_for_errors);
+        precondition!(self.bv.check_for_errors);
         let mut diagnostic = if warn {
             Rc::new(format!("possible {}", precondition.message))
         } else {
@@ -2937,17 +1730,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 diagnostic = Rc::new(buffer);
             }
         }
-        let span = self.current_span;
-        let mut err = self.session.struct_span_warn(span, diagnostic.as_str());
+        let span = self.bv.current_span;
+        let mut err = self.bv.session.struct_span_warn(span, diagnostic.as_str());
         for pc_span in precondition.spans.iter() {
-            let span_str = self.tcx.sess.source_map().span_to_string(*pc_span);
+            let span_str = self.bv.tcx.sess.source_map().span_to_string(*pc_span);
             if span_str.starts_with("/rustc/") {
                 err.span_note(pc_span.clone(), &format!("related location {}", span_str));
             } else {
                 err.span_note(pc_span.clone(), "related location");
             };
         }
-        self.emit_diagnostic(err);
+        self.bv.emit_diagnostic(err);
     }
 
     /// Updates the current state to reflect the effects of a normal return from the function call.
@@ -2969,9 +1762,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     if path.is_rooted_by_abstract_heap_block() {
                         let rvalue = value
                             .clone()
-                            .refine_parameters(call_info.actual_args, self.fresh_variable_offset)
-                            .refine_paths(&self.current_environment);
-                        self.current_environment
+                            .refine_parameters(call_info.actual_args, self.bv.fresh_variable_offset)
+                            .refine_paths(&self.bv.current_environment);
+                        self.bv
+                            .current_environment
                             .update_value_at(path.clone(), rvalue);
                     }
                     check_for_early_return!(self);
@@ -2999,7 +1793,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             } else {
                 // We don't know anything other than the return value type.
                 // We'll assume there were no side effects and no preconditions (but check this later if possible).
-                let result_type = self.type_visitor.get_place_type(place, self.current_span);
+                let result_type = self
+                    .bv
+                    .type_visitor
+                    .get_place_type(place, self.bv.current_span);
                 let result = AbstractValue::make_from(
                     Expression::UninterpretedCall {
                         callee: call_info.callee_fun_val.clone(),
@@ -3013,18 +1810,22 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     },
                     1,
                 );
-                self.current_environment
+                self.bv
+                    .current_environment
                     .update_value_at(return_value_path, result);
             }
 
             // Add post conditions to entry condition
-            let mut exit_condition = self.current_environment.entry_condition.clone();
+            let mut exit_condition = self.bv.current_environment.entry_condition.clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
                 exit_condition = exit_condition.and(unwind_condition.logical_not());
             }
             if let Some(post_condition) = &function_summary.post_condition {
                 let mut return_value_env = Environment::default();
-                let var_type = self.type_visitor.get_place_type(place, self.current_span);
+                let var_type = self
+                    .bv
+                    .type_visitor
+                    .get_place_type(place, self.bv.current_span);
                 let result_val = AbstractValue::make_from(
                     Expression::Variable {
                         path: target_path,
@@ -3032,23 +1833,24 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     },
                     1,
                 );
-                let return_value_path = Path::new_local(self.fresh_variable_offset);
+                let return_value_path = Path::new_local(self.bv.fresh_variable_offset);
 
                 return_value_env.update_value_at(return_value_path, result_val);
                 let refined_post_condition = post_condition
-                    .refine_parameters(call_info.actual_args, self.fresh_variable_offset)
+                    .refine_parameters(call_info.actual_args, self.bv.fresh_variable_offset)
                     .refine_paths(&return_value_env);
                 debug!(
                     "refined post condition before path refinement {:?}",
                     refined_post_condition
                 );
                 let refined_post_condition =
-                    refined_post_condition.refine_paths(&self.current_environment);
+                    refined_post_condition.refine_paths(&self.bv.current_environment);
                 debug!("refined post condition {:?}", refined_post_condition);
                 exit_condition = exit_condition.and(refined_post_condition);
             }
 
-            self.current_environment.exit_conditions = self
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(*target, exit_condition);
@@ -3072,11 +1874,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     call_info.actual_args,
                 );
             }
-            let mut exit_condition = self.current_environment.entry_condition.clone();
+            let mut exit_condition = self.bv.current_environment.entry_condition.clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
                 exit_condition = exit_condition.and(unwind_condition.clone());
             }
-            self.current_environment.exit_conditions = self
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(cleanup_target, exit_condition);
@@ -3087,7 +1890,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// std.panicking.begin_panic then report a diagnostic or create a precondition as appropriate.
     #[logfn_inputs(TRACE)]
     fn report_calls_to_special_functions(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        precondition!(self.check_for_errors);
+        precondition!(self.bv.check_for_errors);
         match call_info.callee_known_name {
             KnownNames::MiraiAssume => {
                 assume!(call_info.actual_args.len() == 1);
@@ -3097,21 +1900,22 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
 
                 // If we never get here, rather call unreachable!()
                 if !entry_cond_as_bool.unwrap_or(true) {
-                    let span = self.current_span;
+                    let span = self.bv.current_span;
                     let message =
                         "this is unreachable, mark it as such by using the unreachable! macro";
-                    let warning = self.session.struct_span_warn(span, message);
-                    self.emit_diagnostic(warning);
+                    let warning = self.bv.session.struct_span_warn(span, message);
+                    self.bv.emit_diagnostic(warning);
                     return;
                 }
 
                 // If the condition is always true, this assumption is redundant
                 if cond_as_bool.unwrap_or(false) {
-                    let span = self.current_span;
+                    let span = self.bv.current_span;
                     let warning = self
+                        .bv
                         .session
                         .struct_span_warn(span, "assumption is provably true and can be deleted");
-                    self.emit_diagnostic(warning);
+                    self.bv.emit_diagnostic(warning);
                 }
             }
             KnownNames::MiraiPostcondition => {
@@ -3134,8 +1938,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if let Some(warning) = self.check_condition(cond, message, false) {
                     // Push a precondition so that any known or unknown caller of this function
                     // is warned that this function will fail if the precondition is not met.
-                    if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                    if self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
                         let condition = self
+                            .bv
                             .current_environment
                             .entry_condition
                             .logical_not()
@@ -3144,20 +1949,24 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             condition,
                             message: Rc::new(warning),
                             provenance: None,
-                            spans: vec![self.current_span],
+                            spans: vec![self.bv.current_span],
                         };
-                        self.preconditions.push(precondition);
+                        self.bv.preconditions.push(precondition);
                     }
                 }
             }
             KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
                 assume!(!call_info.actual_args.is_empty()); // The type checker ensures this.
-                let mut path_cond = self.current_environment.entry_condition.as_bool_if_known();
+                let mut path_cond = self
+                    .bv
+                    .current_environment
+                    .entry_condition
+                    .as_bool_if_known();
                 if path_cond.is_none() {
                     // Try the SMT solver
-                    let path_expr = &self.current_environment.entry_condition.expression;
-                    let path_smt = self.smt_solver.get_as_smt_predicate(path_expr);
-                    if self.smt_solver.solve_expression(&path_smt) == SmtResult::Unsatisfiable {
+                    let path_expr = &self.bv.current_environment.entry_condition.expression;
+                    let path_smt = self.bv.smt_solver.get_as_smt_predicate(path_expr);
+                    if self.bv.smt_solver.solve_expression(&path_smt) == SmtResult::Unsatisfiable {
                         path_cond = Some(false)
                     }
                 }
@@ -3177,10 +1986,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         Path::new_field(call_info.actual_args[0].0.clone(), 0),
                         index,
                     )
-                    .refine_paths(&self.current_environment);
-                    self.lookup_path_and_refine_result(
+                    .refine_paths(&self.bv.current_environment);
+                    self.bv.lookup_path_and_refine_result(
                         args_pieces_0,
-                        ExpressionType::Reference.as_rustc_type(self.tcx),
+                        ExpressionType::Reference.as_rustc_type(self.bv.tcx),
                     )
                 };
                 let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(msg)) =
@@ -3205,15 +2014,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 } else {
                     Rc::new(String::from("execution panic"))
                 };
-                let span = self.current_span;
+                let span = self.bv.current_span;
 
                 if path_cond.unwrap_or(false) && self.function_being_analyzed_is_root() {
                     // We always get to this call and we have to assume that the function will
                     // get called, so keep the message certain.
                     // Don't, however, complain about panics in the standard contract summaries
                     if std::env::var("MIRAI_START_FRESH").is_err() {
-                        let err = self.session.struct_span_warn(span, msg.as_str());
-                        self.emit_diagnostic(err);
+                        let err = self.bv.session.struct_span_warn(span, msg.as_str());
+                        self.bv.emit_diagnostic(err);
                     }
                 } else {
                     // We might get to this call, depending on the state at the call site.
@@ -3230,18 +2039,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     // their assertions should use the mirai_annotations::verify! macro instead.
                     //
                     // We **do** have to push a precondition since this is the probable intent.
-                    let condition = self.current_environment.entry_condition.logical_not();
+                    let condition = self.bv.current_environment.entry_condition.logical_not();
                     let precondition = Precondition {
                         condition,
                         message: msg,
                         provenance: None,
-                        spans: if self.def_id.is_local() {
+                        spans: if self.bv.def_id.is_local() {
                             vec![span]
                         } else {
                             vec![] // The span is likely inside a standard macro, i.e. panic! etc.
                         },
                     };
-                    self.preconditions.push(precondition);
+                    self.bv.preconditions.push(precondition);
                 }
             }
             _ => assume_unreachable!(),
@@ -3254,28 +2063,28 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// it was set dominates the existing one.
     #[logfn_inputs(TRACE)]
     fn try_extend_post_condition(&mut self, cond: &Rc<AbstractValue>) {
-        precondition!(self.check_for_errors);
-        let this_block = self.current_location.block;
-        match (self.post_condition.clone(), self.post_condition_block) {
+        precondition!(self.bv.check_for_errors);
+        let this_block = self.bv.current_location.block;
+        match (self.bv.post_condition.clone(), self.bv.post_condition_block) {
             (Some(last_cond), Some(last_block)) => {
-                let dominators = self.mir.dominators();
+                let dominators = self.bv.mir.dominators();
                 if dominators.is_dominated_by(this_block, last_block) {
                     // We can extend the last condition as all paths to this condition
                     // lead over it
-                    self.post_condition = Some(last_cond.and(cond.clone()));
-                    self.post_condition_block = Some(this_block);
+                    self.bv.post_condition = Some(last_cond.and(cond.clone()));
+                    self.bv.post_condition_block = Some(this_block);
                 } else {
-                    let span = self.current_span;
-                    let warning = self.session.struct_span_warn(
+                    let span = self.bv.current_span;
+                    let warning = self.bv.session.struct_span_warn(
                         span,
                         "multiple post conditions must be on the same execution path",
                     );
-                    self.emit_diagnostic(warning);
+                    self.bv.emit_diagnostic(warning);
                 }
             }
             (_, _) => {
-                self.post_condition = Some(cond.clone());
-                self.post_condition_block = Some(this_block);
+                self.bv.post_condition = Some(cond.clone());
+                self.bv.post_condition_block = Some(this_block);
             }
         }
     }
@@ -3290,16 +2099,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         message: Rc<String>,
         is_post_condition: bool,
     ) -> Option<String> {
-        precondition!(self.check_for_errors);
+        precondition!(self.bv.check_for_errors);
         let (cond_as_bool, entry_cond_as_bool) = self.check_condition_value_and_reachability(cond);
 
         // If we never get here, rather call unreachable!()
         if !entry_cond_as_bool.unwrap_or(true) {
-            let span = self.current_span;
+            let span = self.bv.current_span;
             let message =
                 "this is unreachable, mark it as such by using the verify_unreachable! macro";
-            let warning = self.session.struct_span_warn(span, message);
-            self.emit_diagnostic(warning);
+            let warning = self.bv.session.struct_span_warn(span, message);
+            self.bv.emit_diagnostic(warning);
             return None;
         }
 
@@ -3311,18 +2120,19 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // If the condition is always false, give an error since that is bad style.
         if !cond_as_bool.unwrap_or(true) {
             // If the condition is always false, give a style error
-            let span = self.current_span;
+            let span = self.bv.current_span;
             let error = self
+                .bv
                 .session
                 .struct_span_err(span, "provably false verification condition");
-            self.emit_diagnostic(error);
+            self.bv.emit_diagnostic(error);
             if !is_post_condition
                 && entry_cond_as_bool.is_none()
-                && self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
+                && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
             {
                 // promote the path as a precondition. I.e. the program is only correct,
                 // albeit badly written, if we never get here.
-                let condition = self.current_environment.entry_condition.logical_not();
+                let condition = self.bv.current_environment.entry_condition.logical_not();
                 let message = Rc::new(format!("possible {}", message));
                 let precondition = Precondition {
                     condition,
@@ -3330,7 +2140,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     provenance: None,
                     spans: vec![span],
                 };
-                self.preconditions.push(precondition);
+                self.bv.preconditions.push(precondition);
             }
             return None;
         }
@@ -3340,14 +2150,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
         if self.function_being_analyzed_is_root()
-            || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+            || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
             // We expect public functions to have programmer supplied preconditions
             // that preclude any assertions from failing. So, at this stage we get to
             // complain a bit.
-            let span = self.current_span;
-            let warning = self.session.struct_span_warn(span, warning.as_str());
-            self.emit_diagnostic(warning);
+            let span = self.bv.current_span;
+            let warning = self.bv.session.struct_span_warn(span, warning.as_str());
+            self.bv.emit_diagnostic(warning);
         }
 
         Some(warning)
@@ -3356,7 +2166,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Returns true if the function being analyzed is an analysis root.
     #[logfn_inputs(TRACE)]
     fn function_being_analyzed_is_root(&mut self) -> bool {
-        self.active_calls.len() <= 1
+        self.bv.active_calls.len() <= 1
     }
 
     /// Adds a (rpath, rvalue) pair to the current environment for every pair in effects
@@ -3377,15 +2187,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         {
             trace!("effect {:?} {:?}", path, value);
             let dummy_root = Path::new_local(999);
-            let refined_dummy_root = Path::new_local(self.fresh_variable_offset + 999);
+            let refined_dummy_root = Path::new_local(self.bv.fresh_variable_offset + 999);
             let tpath = path
                 .replace_root(source_path, dummy_root)
-                .refine_parameters(arguments, self.fresh_variable_offset)
+                .refine_parameters(arguments, self.bv.fresh_variable_offset)
                 .replace_root(&refined_dummy_root, target_path.clone())
-                .refine_paths(&self.current_environment);
+                .refine_paths(&self.bv.current_environment);
             let rvalue = value
-                .refine_parameters(arguments, self.fresh_variable_offset)
-                .refine_paths(&self.current_environment);
+                .refine_parameters(arguments, self.bv.fresh_variable_offset)
+                .refine_paths(&self.bv.current_environment);
             trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
@@ -3394,8 +2204,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         if let PathSelector::Slice(..) = selector.as_ref() {
                             let source_path = Path::get_as_path(rvalue.clone());
                             let target_type = type_visitor::get_element_type(
-                                self.type_visitor
-                                    .get_path_rustc_type(&target_path, self.current_span),
+                                self.bv
+                                    .type_visitor
+                                    .get_path_rustc_type(&target_path, self.bv.current_span),
                             );
                             self.copy_or_move_elements(
                                 tpath.clone(),
@@ -3406,7 +2217,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             continue;
                         }
                     }
-                    self.current_environment.update_value_at(tpath, rvalue);
+                    self.bv.current_environment.update_value_at(tpath, rvalue);
                     continue;
                 }
                 Expression::HeapBlockLayout { source, .. } => {
@@ -3424,8 +2235,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             {
                                 let realloc_layout_val = val
                                     .clone()
-                                    .refine_parameters(arguments, self.fresh_variable_offset)
-                                    .refine_paths(&self.current_environment);
+                                    .refine_parameters(arguments, self.bv.fresh_variable_offset)
+                                    .refine_paths(&self.bv.current_environment);
                                 self.update_zeroed_flag_for_heap_block_from_environment(
                                     &tpath,
                                     &realloc_layout_val.expression,
@@ -3435,24 +2246,25 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         _ => {}
                     }
 
-                    self.current_environment.update_value_at(tpath, rvalue);
+                    self.bv.current_environment.update_value_at(tpath, rvalue);
                     continue;
                 }
                 Expression::Offset { .. } => {
-                    if self.check_for_errors && self.function_being_analyzed_is_root() {
+                    if self.bv.check_for_errors && self.function_being_analyzed_is_root() {
                         self.check_offset(&rvalue);
                     }
                 }
                 Expression::Variable { path, .. } => {
                     let target_type = self
+                        .bv
                         .type_visitor
-                        .get_path_rustc_type(&tpath, self.current_span);
+                        .get_path_rustc_type(&tpath, self.bv.current_span);
                     if let PathEnum::LocalVariable { ordinal } = &path.value {
-                        if *ordinal >= self.fresh_variable_offset {
+                        if *ordinal >= self.bv.fresh_variable_offset {
                             // A fresh variable from the callee adds no information that is not
                             // already inherent in the target location.
-                            self.current_environment.value_map =
-                                self.current_environment.value_map.remove(&tpath);
+                            self.bv.current_environment.value_map =
+                                self.bv.current_environment.value_map.remove(&tpath);
                             continue;
                         }
                         if rtype == ExpressionType::NonPrimitive {
@@ -3464,7 +2276,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             );
                         }
                     } else if path.is_rooted_by_parameter() {
-                        self.current_environment.update_value_at(tpath, rvalue);
+                        self.bv.current_environment.update_value_at(tpath, rvalue);
                         continue;
                     } else if rtype == ExpressionType::NonPrimitive {
                         self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
@@ -3473,7 +2285,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 _ => {}
             }
             if rtype != ExpressionType::NonPrimitive {
-                self.current_environment.update_value_at(tpath, rvalue);
+                self.bv.current_environment.update_value_at(tpath, rvalue);
             }
             check_for_early_return!(self);
         }
@@ -3496,19 +2308,20 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } = &layout_path.value
         {
             if *selector.as_ref() == PathSelector::Layout {
-                let old_layout = self.lookup_path_and_refine_result(
+                let old_layout = self.bv.lookup_path_and_refine_result(
                     layout_path.clone(),
-                    ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
+                    ExpressionType::NonPrimitive.as_rustc_type(self.bv.tcx),
                 );
                 if let Expression::HeapBlockLayout { .. } = &old_layout.expression {
-                    if self.check_for_errors {
+                    if self.bv.check_for_errors {
                         self.check_for_layout_consistency(
                             &old_layout.expression,
                             new_layout_expression,
                         );
                     }
-                    let mut purged_map = self.current_environment.value_map.clone();
+                    let mut purged_map = self.bv.current_environment.value_map.clone();
                     for (path, _) in self
+                        .bv
                         .current_environment
                         .value_map
                         .iter()
@@ -3516,7 +2329,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     {
                         purged_map = purged_map.remove(path);
                     }
-                    self.current_environment.value_map = purged_map;
+                    self.bv.current_environment.value_map = purged_map;
                 }
             }
         } else {
@@ -3534,10 +2347,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         new_layout_expression: &Expression,
     ) {
         if let PathEnum::QualifiedPath { qualifier, .. } = &layout_path.value {
-            if self.check_for_errors {
-                let old_layout = self.lookup_path_and_refine_result(
+            if self.bv.check_for_errors {
+                let old_layout = self.bv.lookup_path_and_refine_result(
                     layout_path.clone(),
-                    ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
+                    ExpressionType::NonPrimitive.as_rustc_type(self.bv.tcx),
                 );
                 self.check_for_layout_consistency(&old_layout.expression, new_layout_expression);
             }
@@ -3548,8 +2361,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 } = &value.expression
                 {
                     if *is_zeroed {
-                        let mut updated_value_map = self.current_environment.value_map.clone();
-                        for (path, value) in self.current_environment.value_map.iter() {
+                        let mut updated_value_map = self.bv.current_environment.value_map.clone();
+                        for (path, value) in self.bv.current_environment.value_map.iter() {
                             if let Expression::Reference(p) = &value.expression {
                                 if let PathEnum::HeapBlock { value } = &p.value {
                                     if let Expression::HeapBlock {
@@ -3575,7 +2388,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 }
                             }
                         }
-                        self.current_environment.value_map = updated_value_map;
+                        self.bv.current_environment.value_map = updated_value_map;
                     }
                 }
             }
@@ -3587,7 +2400,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     /// Also checks that a pointer is deallocated at most once.
     #[logfn_inputs(TRACE)]
     fn check_for_layout_consistency(&mut self, old_layout: &Expression, new_layout: &Expression) {
-        precondition!(self.check_for_errors);
+        precondition!(self.bv.check_for_errors);
         if let (
             Expression::HeapBlockLayout {
                 length: old_length,
@@ -3602,11 +2415,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         ) = (old_layout, new_layout)
         {
             if *old_source == LayoutSource::DeAlloc {
-                let error = self.session.struct_span_err(
-                    self.current_span,
+                let error = self.bv.session.struct_span_err(
+                    self.bv.current_span,
                     "the pointer points to memory that has already been deallocated",
                 );
-                self.emit_diagnostic(error);
+                self.bv.emit_diagnostic(error);
             }
             let layouts_match = old_length
                 .equals(new_length.clone())
@@ -3628,8 +2441,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         "deallocates"
                     }
                 );
-                let error = self.session.struct_span_err(self.current_span, &message);
-                self.emit_diagnostic(error);
+                let error = self
+                    .bv
+                    .session
+                    .struct_span_err(self.bv.current_span, &message);
+                self.bv.emit_diagnostic(error);
             }
         }
     }
@@ -3649,28 +2465,38 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let cond_val = self.visit_operand(cond);
         let not_cond_val = cond_val.logical_not();
         if let Some(cleanup_target) = cleanup {
-            let panic_exit_condition = self.current_environment.entry_condition.and(if expected {
-                not_cond_val.clone()
-            } else {
-                cond_val.clone()
-            });
-            self.current_environment.exit_conditions = self
+            let panic_exit_condition =
+                self.bv
+                    .current_environment
+                    .entry_condition
+                    .and(if expected {
+                        not_cond_val.clone()
+                    } else {
+                        cond_val.clone()
+                    });
+            self.bv.current_environment.exit_conditions = self
+                .bv
                 .current_environment
                 .exit_conditions
                 .insert(cleanup_target, panic_exit_condition);
         };
-        let normal_exit_condition = self.current_environment.entry_condition.and(if expected {
-            cond_val.clone()
-        } else {
-            not_cond_val
-        });
-        self.current_environment.exit_conditions = self
+        let normal_exit_condition = self
+            .bv
+            .current_environment
+            .entry_condition
+            .and(if expected {
+                cond_val.clone()
+            } else {
+                not_cond_val
+            });
+        self.bv.current_environment.exit_conditions = self
+            .bv
             .current_environment
             .exit_conditions
             .insert(target, normal_exit_condition);
 
         // Check the condition and issue a warning or infer a precondition.
-        if self.check_for_errors {
+        if self.bv.check_for_errors {
             if let mir::Operand::Constant(..) = cond {
                 // Do not complain about compile time constants known to the compiler.
                 // Leave that to the compiler.
@@ -3692,9 +2518,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     // emit a diagnostic.
                     if entry_cond_as_bool.unwrap_or(false) {
                         let error = get_assert_msg_description(msg);
-                        let span = self.current_span;
-                        let error = self.session.struct_span_warn(span, error);
-                        self.emit_diagnostic(error);
+                        let span = self.bv.current_span;
+                        let error = self.bv.session.struct_span_warn(span, error);
+                        self.bv.emit_diagnostic(error);
                         // No need to push a precondition, the caller can never satisfy it.
                         return;
                     }
@@ -3703,22 +2529,24 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 // At this point, we don't know that this assert is unreachable and we don't know
                 // that the condition is as expected, so we need to warn about it somewhere.
                 if self.function_being_analyzed_is_root()
-                    || self.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+                    || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
                 {
                     // Can't make this the caller's problem.
                     let warning = format!("possible {}", get_assert_msg_description(msg));
-                    let span = self.current_span;
-                    let warning = self.session.struct_span_warn(span, warning.as_str());
-                    self.emit_diagnostic(warning);
+                    let span = self.bv.current_span;
+                    let warning = self.bv.session.struct_span_warn(span, warning.as_str());
+                    self.bv.emit_diagnostic(warning);
                     return;
                 }
 
                 // Make it the caller's problem by pushing a precondition.
                 // After, of course, removing any promoted preconditions that match the current
                 // source span.
-                let sp = self.current_span;
-                self.preconditions.retain(|pc| pc.spans.last() != Some(&sp));
-                if self.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                let sp = self.bv.current_span;
+                self.bv
+                    .preconditions
+                    .retain(|pc| pc.spans.last() != Some(&sp));
+                if self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
                     let expected_cond = if expected {
                         cond_val
                     } else {
@@ -3727,6 +2555,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     // To make sure that this assertion never fails, we should either never
                     // get here (!entry_condition) or expected_cond should be true.
                     let condition = self
+                        .bv
                         .current_environment
                         .entry_condition
                         .logical_not()
@@ -3736,9 +2565,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         condition,
                         message,
                         provenance: None,
-                        spans: vec![self.current_span],
+                        spans: vec![self.bv.current_span],
                     };
-                    self.preconditions.push(precondition);
+                    self.bv.preconditions.push(precondition);
                 }
             }
         };
@@ -3762,12 +2591,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) -> (Option<bool>, Option<bool>) {
         trace!(
             "entry condition {:?}",
-            self.current_environment.entry_condition
+            self.bv.current_environment.entry_condition
         );
         // Check if the condition is always true (or false) if we get here.
         let mut cond_as_bool = cond_val.as_bool_if_known();
         // Check if we can prove that every call to the current function will reach this call site.
-        let mut entry_cond_as_bool = self.current_environment.entry_condition.as_bool_if_known();
+        let mut entry_cond_as_bool = self
+            .bv
+            .current_environment
+            .entry_condition
+            .as_bool_if_known();
         // Use SMT solver if need be.
         if let Some(entry_cond_as_bool) = entry_cond_as_bool {
             if entry_cond_as_bool && cond_as_bool.is_none() {
@@ -3776,12 +2609,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else {
             // Check if path implies condition
             if cond_as_bool.unwrap_or(false)
-                || self.current_environment.entry_condition.implies(cond_val)
+                || self
+                    .bv
+                    .current_environment
+                    .entry_condition
+                    .implies(cond_val)
             {
                 return (Some(true), None);
             }
             if !cond_as_bool.unwrap_or(true)
                 || self
+                    .bv
                     .current_environment
                     .entry_condition
                     .implies_not(cond_val)
@@ -3792,12 +2630,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             // (If it could decide that the condition is always false, we wouldn't be here.)
             // See if the SMT solver can prove that the entry condition is always true.
             let smt_expr = {
-                let ec = &self.current_environment.entry_condition.expression;
-                self.smt_solver.get_as_smt_predicate(ec)
+                let ec = &self.bv.current_environment.entry_condition.expression;
+                self.bv.smt_solver.get_as_smt_predicate(ec)
             };
-            self.smt_solver.set_backtrack_position();
-            self.smt_solver.assert(&smt_expr);
-            if self.smt_solver.solve() == SmtResult::Unsatisfiable {
+            self.bv.smt_solver.set_backtrack_position();
+            self.bv.smt_solver.assert(&smt_expr);
+            if self.bv.smt_solver.solve() == SmtResult::Unsatisfiable {
                 // The solver can prove that the entry condition is always false.
                 entry_cond_as_bool = Some(false);
             }
@@ -3805,7 +2643,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 // The abstract domains are unable to decide what the value of cond is.
                 cond_as_bool = self.solve_condition(cond_val)
             }
-            self.smt_solver.backtrack();
+            self.bv.smt_solver.backtrack();
         }
         (cond_as_bool, entry_cond_as_bool)
     }
@@ -3813,8 +2651,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn solve_condition(&mut self, cond_val: &Rc<AbstractValue>) -> Option<bool> {
         let ce = &cond_val.expression;
-        let cond_smt_expr = self.smt_solver.get_as_smt_predicate(ce);
-        match self.smt_solver.solve_expression(&cond_smt_expr) {
+        let cond_smt_expr = self.bv.smt_solver.get_as_smt_predicate(ce);
+        match self.bv.smt_solver.solve_expression(&cond_smt_expr) {
             SmtResult::Unsatisfiable => {
                 // If we get here, the solver can prove that cond_val is always false.
                 Some(false)
@@ -3823,8 +2661,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 // We could get here with cond_val being true. Or perhaps not.
                 // So lets see if !cond_val is provably false.
                 let not_cond_expr = &cond_val.logical_not().expression;
-                let smt_expr = self.smt_solver.get_as_smt_predicate(not_cond_expr);
-                if self.smt_solver.solve_expression(&smt_expr) == SmtResult::Unsatisfiable {
+                let smt_expr = self.bv.smt_solver.get_as_smt_predicate(not_cond_expr);
+                if self.bv.smt_solver.solve_expression(&smt_expr) == SmtResult::Unsatisfiable {
                     // The solver can prove that !cond_val is always false.
                     Some(true)
                 } else {
@@ -3917,8 +2755,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_used_copy(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
         let rpath = self.visit_place(place);
         let rtype = self
+            .bv
             .type_visitor
-            .get_rustc_place_type(place, self.current_span);
+            .get_rustc_place_type(place, self.bv.current_span);
         self.copy_or_move_elements(target_path, rpath, rtype, false);
     }
 
@@ -3959,10 +2798,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     } else {
                         u128::from(offset)
                     };
-                    let index_val =
-                        Rc::new(self.constant_value_cache.get_u128_for(index).clone().into());
+                    let index_val = Rc::new(
+                        self.bv
+                            .constant_value_cache
+                            .get_u128_for(index)
+                            .clone()
+                            .into(),
+                    );
                     let index_path = Path::new_index(qualifier.clone(), index_val)
-                        .refine_paths(&self.current_environment);
+                        .refine_paths(&self.bv.current_environment);
                     self.copy_or_move_elements(
                         target_path,
                         index_path,
@@ -4032,14 +2876,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
 
         // Get here for paths that are not patterns.
-        let mut value_map = self.current_environment.value_map.clone();
+        let mut value_map = self.bv.current_environment.value_map.clone();
         let is_closure = matches!(&target_rustc_type.kind, TyKind::Closure(..));
-        let value = self.lookup_path_and_refine_result(source_path.clone(), target_rustc_type);
+        let value = self
+            .bv
+            .lookup_path_and_refine_result(source_path.clone(), target_rustc_type);
         let val_type = value.expression.infer_type();
         let mut no_children = true;
         if val_type == ExpressionType::NonPrimitive || is_closure {
             // First look at paths that are rooted in rpath.
             for (path, value) in self
+                .bv
                 .current_environment
                 .value_map
                 .iter()
@@ -4059,7 +2906,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         }
         let target_type: ExpressionType = (&target_rustc_type.kind).into();
         if target_type != ExpressionType::NonPrimitive || no_children {
-            let value = self.lookup_path_and_refine_result(source_path.clone(), target_rustc_type);
+            let value = self
+                .bv
+                .lookup_path_and_refine_result(source_path.clone(), target_rustc_type);
             value_map =
                 self.expand_aliased_string_literals(&target_path, target_type, value_map, &value);
             // Just copy/move (rpath, value) itself.
@@ -4069,11 +2918,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             } else {
                 trace!("copying {:?} to {:?}", value, target_path);
             }
-            self.current_environment.value_map = value_map;
-            self.current_environment.update_value_at(target_path, value);
+            self.bv.current_environment.value_map = value_map;
+            self.bv
+                .current_environment
+                .update_value_at(target_path, value);
             return;
         }
-        self.current_environment.value_map = value_map;
+        self.bv.current_environment.value_map = value_map;
     }
 
     //from_end slice[from:-to] in Python terms.
@@ -4107,44 +2958,50 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 to
             }
         };
-        let elem_size = self.type_visitor.get_elem_type_size(target_type);
+        let elem_size = self.bv.type_visitor.get_elem_type_size(target_type);
         let byte_len_const = self
+            .bv
             .constant_value_cache
             .get_u128_for(u128::from((to - from) as u64 * elem_size))
             .clone();
         let length = Rc::new(byte_len_const.into());
         let alignment = Rc::new(1u128.into());
-        let slice_value = self.get_new_heap_block(length, alignment, false);
-        self.current_environment
+        let slice_value = self.bv.get_new_heap_block(length, alignment, false);
+        self.bv
+            .current_environment
             .update_value_at(target_path.clone(), slice_value.clone());
         let slice_path = Rc::new(PathEnum::HeapBlock { value: slice_value }.into());
         let slice_len_path = Path::new_length(slice_path);
         let len_const = self
+            .bv
             .constant_value_cache
             .get_u128_for(u128::from(to - from))
             .clone();
         let len_value: Rc<AbstractValue> = Rc::new(len_const.into());
-        self.current_environment
+        self.bv
+            .current_environment
             .update_value_at(slice_len_path, len_value);
         for i in from..to {
             let index_val = Rc::new(
-                self.constant_value_cache
+                self.bv
+                    .constant_value_cache
                     .get_u128_for(u128::from(i))
                     .clone()
                     .into(),
             );
             let index_path = Path::new_index(qualifier.clone(), index_val)
-                .refine_paths(&self.current_environment);
+                .refine_paths(&self.bv.current_environment);
             let target_index_val = Rc::new(
-                self.constant_value_cache
+                self.bv
+                    .constant_value_cache
                     .get_u128_for(u128::try_from(i - from).unwrap())
                     .clone()
                     .into(),
             );
             let indexed_target = Path::new_index(target_path.clone(), target_index_val)
-                .refine_paths(&self.current_environment);
+                .refine_paths(&self.bv.current_environment);
             self.copy_or_move_elements(indexed_target, index_path, target_type, move_elements);
-            if self.assume_function_is_angelic {
+            if self.bv.assume_function_is_angelic {
                 break;
             }
             check_for_early_return!(self);
@@ -4161,7 +3018,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) where
         F: Fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
     {
-        let old_value_map = self.current_environment.value_map.clone();
+        let old_value_map = self.bv.current_environment.value_map.clone();
         let mut new_value_map = old_value_map.clone();
         for (path, value) in old_value_map
             .iter()
@@ -4183,8 +3040,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 let source_path_with_selectors =
                     Path::add_selectors(source_path, &subsequent_selectors);
                 let result_type = value.expression.infer_type();
-                let result_rustc_type = result_type.as_rustc_type(self.tcx);
+                let result_rustc_type = result_type.as_rustc_type(self.bv.tcx);
                 let additional_value = self
+                    .bv
                     .lookup_path_and_refine_result(source_path_with_selectors, result_rustc_type);
                 let updated_value =
                     join_condition.conditional_expression(additional_value, value.clone());
@@ -4192,7 +3050,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 new_value_map = new_value_map.insert(path.clone(), updated_value);
             }
         }
-        self.current_environment.value_map = new_value_map;
+        self.bv.current_environment.value_map = new_value_map;
     }
 
     /// If the given path is of the form root[index_value].selector1.selector2... then
@@ -4237,8 +3095,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
                 if let PathEnum::LocalVariable { .. } = &target_path.value {
                     let lh_type = self
+                        .bv
                         .type_visitor
-                        .get_path_rustc_type(&target_path, self.current_span);
+                        .get_path_rustc_type(&target_path, self.bv.current_span);
                     if let TyKind::Ref(_, ty, _) = lh_type.kind {
                         if let TyKind::Slice(elem_ty) = ty.kind {
                             if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
@@ -4247,7 +3106,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                     let index = Rc::new((i as u128).into());
                                     let ch_const = Rc::new((*ch as u128).into());
                                     let path = Path::new_index(collection_path.clone(), index)
-                                        .refine_paths(&self.current_environment);
+                                        .refine_paths(&self.bv.current_environment);
                                     value_map = value_map.insert(path, ch_const);
                                 }
                             }
@@ -4266,8 +3125,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_used_move(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
         let rpath = self.visit_place(place);
         let rtype = self
+            .bv
             .type_visitor
-            .get_rustc_place_type(place, self.current_span);
+            .get_rustc_place_type(place, self.bv.current_span);
         self.copy_or_move_elements(target_path, rpath, rtype, true);
     }
 
@@ -4276,12 +3136,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_repeat(&mut self, path: Rc<Path>, operand: &mir::Operand<'tcx>, count: &Const<'tcx>) {
         let length_path = Path::new_length(path.clone());
         let length_value = self.visit_constant(None, count);
-        self.current_environment
+        self.bv
+            .current_environment
             .update_value_at(length_path, length_value.clone());
         let slice_path =
-            Path::new_slice(path, length_value).refine_paths(&self.current_environment);
+            Path::new_slice(path, length_value).refine_paths(&self.bv.current_environment);
         let initial_value = self.visit_operand(operand);
-        self.current_environment
+        self.bv
+            .current_environment
             .update_value_at(slice_path, initial_value);
     }
 
@@ -4289,11 +3151,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     #[logfn_inputs(TRACE)]
     fn visit_address_of(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         let target_type = self
+            .bv
             .type_visitor
-            .get_rustc_place_type(place, self.current_span);
+            .get_rustc_place_type(place, self.bv.current_span);
         let value_path = self
             .visit_place(place)
-            .refine_paths(&self.current_environment);
+            .refine_paths(&self.bv.current_environment);
         let value = match &value_path.value {
             PathEnum::QualifiedPath {
                 qualifier,
@@ -4315,7 +3178,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 // We are taking a reference to a path that may be rooted in a local that
                 // itself contains a reference. We'd like to eliminate that local to keep
                 // paths canonical and to avoid leaking locals into summaries.
-                let refined_qualifier = qualifier.refine_paths(&self.current_environment);
+                let refined_qualifier = qualifier.refine_paths(&self.bv.current_environment);
                 if refined_qualifier != *qualifier {
                     let refined_path = Path::new_qualified(refined_qualifier, selector.clone());
                     AbstractValue::make_reference(refined_path)
@@ -4324,7 +3187,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
             }
             PathEnum::PromotedConstant { .. } => {
-                if let Some(val) = self.current_environment.value_at(&value_path) {
+                if let Some(val) = self.bv.current_environment.value_at(&value_path) {
                     if let Expression::HeapBlock { .. } = &val.expression {
                         let heap_path = Rc::new(PathEnum::HeapBlock { value: val.clone() }.into());
                         AbstractValue::make_reference(heap_path)
@@ -4338,15 +3201,16 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             PathEnum::HeapBlock { value } => value.clone(),
             _ => AbstractValue::make_reference(value_path),
         };
-        self.current_environment.update_value_at(path, value);
+        self.bv.current_environment.update_value_at(path, value);
     }
 
     /// path = length of a [X] or [X;n] value.
     #[logfn_inputs(TRACE)]
     fn visit_len(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         let place_ty = self
+            .bv
             .type_visitor
-            .get_rustc_place_type(place, self.current_span);
+            .get_rustc_place_type(place, self.bv.current_span);
         let len_value = if let TyKind::Array(_, len) = &place_ty.kind {
             // We only get here if "-Z mir-opt-level=0" was specified.
             // With more optimization the len instruction becomes a constant.
@@ -4355,14 +3219,15 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             let value_path = self.visit_place(place);
             self.get_len(value_path)
         };
-        self.current_environment.update_value_at(path, len_value);
+        self.bv.current_environment.update_value_at(path, len_value);
     }
 
     /// Get the length of an array. Will be a compile time constant if the array length is known.
     #[logfn_inputs(TRACE)]
     fn get_len(&mut self, path: Rc<Path>) -> Rc<AbstractValue> {
-        let length_path = Path::new_length(path).refine_paths(&self.current_environment);
-        self.lookup_path_and_refine_result(length_path, self.tcx.types.usize)
+        let length_path = Path::new_length(path).refine_paths(&self.bv.current_environment);
+        self.bv
+            .lookup_path_and_refine_result(length_path, self.bv.tcx.types.usize)
     }
 
     /// path = operand as ty.
@@ -4380,7 +3245,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         } else {
             operand
         };
-        self.current_environment.update_value_at(path, result);
+        self.bv.current_environment.update_value_at(path, result);
     }
 
     /// Apply the given binary operator to the two operands and assign result to path.
@@ -4413,13 +3278,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             mir::BinOp::Shr => {
                 // We assume that path is a temporary used to track the operation result.
                 let target_type = self
+                    .bv
                     .type_visitor
-                    .get_target_path_type(&path, self.current_span);
+                    .get_target_path_type(&path, self.bv.current_span);
                 left.shr(right, target_type)
             }
             mir::BinOp::Sub => left.subtract(right),
         };
-        self.current_environment.update_value_at(path, result);
+        self.bv.current_environment.update_value_at(path, result);
     }
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate
@@ -4434,15 +3300,17 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     ) {
         // We assume that path is a temporary used to track the operation result and its overflow status.
         let target_type = self
+            .bv
             .type_visitor
-            .get_first_part_of_target_path_type_tuple(&path, self.current_span);
+            .get_first_part_of_target_path_type_tuple(&path, self.bv.current_span);
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let (result, overflow_flag) = Self::do_checked_binary_op(bin_op, target_type, left, right);
-        let path0 = Path::new_field(path.clone(), 0).refine_paths(&self.current_environment);
-        self.current_environment.update_value_at(path0, result);
-        let path1 = Path::new_field(path, 1).refine_paths(&self.current_environment);
-        self.current_environment
+        let path0 = Path::new_field(path.clone(), 0).refine_paths(&self.bv.current_environment);
+        self.bv.current_environment.update_value_at(path0, result);
+        let path1 = Path::new_field(path, 1).refine_paths(&self.bv.current_environment);
+        self.bv
+            .current_environment
             .update_value_at(path1, overflow_flag);
     }
 
@@ -4488,51 +3356,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         null_op: mir::NullOp,
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
-        let param_env = self.type_visitor.get_param_env();
-        let len = if let Ok(ty_and_layout) = self.tcx.layout_of(param_env.and(ty)) {
+        let param_env = self.bv.type_visitor.get_param_env();
+        let len = if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
             Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
         } else {
             AbstractValue::make_typed_unknown(ExpressionType::U128)
         };
         let alignment = Rc::new(1u128.into());
         let value = match null_op {
-            mir::NullOp::Box => self.get_new_heap_block(len, alignment, false),
+            mir::NullOp::Box => self.bv.get_new_heap_block(len, alignment, false),
             mir::NullOp::SizeOf => len,
         };
-        self.current_environment.update_value_at(path, value);
-    }
-
-    /// Allocates a new heap block and caches it, keyed with the current location
-    /// so that subsequent visits deterministically use the same heap block when processing
-    /// the instruction at this location. If we don't do this the fixed point loop wont converge.
-    /// Note, however, that this is not good enough for the outer fixed point because the counter
-    /// is shared between different functions unless it is reset to 0 for each function.
-    #[logfn_inputs(TRACE)]
-    fn get_new_heap_block(
-        &mut self,
-        length: Rc<AbstractValue>,
-        alignment: Rc<AbstractValue>,
-        is_zeroed: bool,
-    ) -> Rc<AbstractValue> {
-        let addresses = &mut self.heap_addresses;
-        let constants = &mut self.constant_value_cache;
-        let block = addresses
-            .entry(self.current_location)
-            .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_block(is_zeroed), 1))
-            .clone();
-        let block_path = Path::get_as_path(block.clone());
-        let layout_path = Path::new_layout(block_path);
-        let layout = AbstractValue::make_from(
-            Expression::HeapBlockLayout {
-                length,
-                alignment,
-                source: LayoutSource::Alloc,
-            },
-            1,
-        );
-        self.current_environment
-            .update_value_at(layout_path, layout);
-        block
+        self.bv.current_environment.update_value_at(path, value);
     }
 
     /// Apply the given unary operator to the operand and assign to path.
@@ -4543,8 +3378,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             mir::UnOp::Neg => operand.negate(),
             mir::UnOp::Not => {
                 let result_type = self
+                    .bv
                     .type_visitor
-                    .get_target_path_type(&path, self.current_span);
+                    .get_target_path_type(&path, self.bv.current_span);
                 if result_type.is_integer() {
                     operand.bit_not(result_type)
                 } else {
@@ -4552,16 +3388,18 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
             }
         };
-        self.current_environment.update_value_at(path, result);
+        self.bv.current_environment.update_value_at(path, result);
     }
 
     /// Read the discriminant of an enum and assign to path.
     #[logfn_inputs(TRACE)]
     fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         let discriminant_path = Path::new_discriminant(self.visit_place(place));
-        let discriminant_value =
-            self.lookup_path_and_refine_result(discriminant_path, self.tcx.types.u128);
-        self.current_environment
+        let discriminant_value = self
+            .bv
+            .lookup_path_and_refine_result(discriminant_path, self.bv.tcx.types.u128);
+        self.bv
+            .current_environment
             .update_value_at(path, discriminant_value);
     }
 
@@ -4575,21 +3413,23 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         operands: &[mir::Operand<'tcx>],
     ) {
         precondition!(matches!(aggregate_kinds, mir::AggregateKind::Array(..)));
-        let length_path = Path::new_length(path.clone()).refine_paths(&self.current_environment);
+        let length_path = Path::new_length(path.clone()).refine_paths(&self.bv.current_environment);
         let length_value: Rc<AbstractValue> = Rc::new(
-            self.constant_value_cache
+            self.bv
+                .constant_value_cache
                 .get_u128_for(operands.len() as u128)
                 .clone()
                 .into(),
         );
 
         let elem_size = match *aggregate_kinds {
-            mir::AggregateKind::Array(ty) => self.type_visitor.get_type_size(ty),
+            mir::AggregateKind::Array(ty) => self.bv.type_visitor.get_type_size(ty),
             _ => verify_unreachable!(),
         };
         let byte_size = (operands.len() as u64) * elem_size.max(1);
         let byte_size_value: Rc<AbstractValue> = Rc::new(
-            self.constant_value_cache
+            self.bv
+                .constant_value_cache
                 .get_u128_for(byte_size as u128)
                 .clone()
                 .into(),
@@ -4602,29 +3442,34 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             } as u128)
                 .into(),
         );
-        let aggregate_value = self.get_new_heap_block(byte_size_value, alignment, false);
-        self.current_environment
+        let aggregate_value = self
+            .bv
+            .get_new_heap_block(byte_size_value, alignment, false);
+        self.bv
+            .current_environment
             .update_value_at(path.clone(), aggregate_value);
 
         // remove the length path from current environment if present (it is no longer canonical).
-        self.current_environment.value_map =
-            self.current_environment.value_map.remove(&length_path);
+        self.bv.current_environment.value_map =
+            self.bv.current_environment.value_map.remove(&length_path);
 
         // Re-canonicalize length_path
-        let length_path = length_path.refine_paths(&self.current_environment);
+        let length_path = length_path.refine_paths(&self.bv.current_environment);
 
         for (i, operand) in operands.iter().enumerate() {
             let index_value = Rc::new(
-                self.constant_value_cache
+                self.bv
+                    .constant_value_cache
                     .get_u128_for(i as u128)
                     .clone()
                     .into(),
             );
-            let index_path =
-                Path::new_index(path.clone(), index_value).refine_paths(&self.current_environment);
+            let index_path = Path::new_index(path.clone(), index_value)
+                .refine_paths(&self.bv.current_environment);
             self.visit_used_operand(index_path, operand);
         }
-        self.current_environment
+        self.bv
+            .current_environment
             .update_value_at(length_path, length_value);
     }
 
@@ -4645,7 +3490,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     user_ty, literal, ..
                 } = constant.borrow();
                 let const_value = self.visit_constant(*user_ty, &literal);
-                self.current_environment
+                self.bv
+                    .current_environment
                     .update_value_at(target_path, const_value);
             }
         };
@@ -4665,8 +3511,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn get_operand_rustc_type(&mut self, operand: &mir::Operand<'tcx>) -> Ty<'tcx> {
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => self
+                .bv
                 .type_visitor
-                .get_rustc_place_type(place, self.current_span),
+                .get_rustc_place_type(place, self.bv.current_span),
             mir::Operand::Constant(constant) => {
                 let mir::Constant { literal, .. } = constant.borrow();
                 literal.ty
@@ -4698,9 +3545,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_copy(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
         let path = self.visit_place(place);
         let rust_place_type = self
+            .bv
             .type_visitor
-            .get_rustc_place_type(place, self.current_span);
-        self.lookup_path_and_refine_result(path, rust_place_type)
+            .get_rustc_place_type(place, self.bv.current_span);
+        self.bv.lookup_path_and_refine_result(path, rust_place_type)
     }
 
     /// Move: The value (including old borrows of it) will not be used again.
@@ -4712,9 +3560,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_move(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
         let path = self.visit_place(place);
         let rust_place_type = self
+            .bv
             .type_visitor
-            .get_rustc_place_type(place, self.current_span);
-        self.lookup_path_and_refine_result(path, rust_place_type)
+            .get_rustc_place_type(place, self.bv.current_span);
+        self.bv.lookup_path_and_refine_result(path, rust_place_type)
     }
 
     /// Synthesizes a constant value. Also used for static variable values.
@@ -4729,10 +3578,11 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         match &literal.val {
             rustc_middle::ty::ConstKind::Unevaluated(def_id, substs, promoted) => {
                 let substs = self
+                    .bv
                     .type_visitor
-                    .specialize_substs(substs, &self.type_visitor.generic_argument_map);
-                self.substs_cache.insert(*def_id, substs);
-                let name = utils::summary_key_str(self.tcx, *def_id);
+                    .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
+                self.bv.substs_cache.insert(*def_id, substs);
+                let name = utils::summary_key_str(self.bv.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
                 let path = match promoted {
                     Some(promoted) => {
@@ -4748,7 +3598,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         .into(),
                     ),
                 };
-                self.lookup_path_and_refine_result(path, ty)
+                self.bv.lookup_path_and_refine_result(path, ty)
             }
 
             _ => {
@@ -4772,8 +3622,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     | TyKind::Closure(def_id, substs)
                     | TyKind::Generator(def_id, substs, ..) => {
                         let substs = self
+                            .bv
                             .type_visitor
-                            .specialize_substs(substs, &self.type_visitor.generic_argument_map);
+                            .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
                         result = self.visit_function_reference(def_id, ty, substs);
                     }
                     TyKind::Ref(
@@ -4794,7 +3645,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             let slice_len = *end - *start;
                             let bytes = data
                                 .get_bytes(
-                                    &self.tcx,
+                                    &self.bv.tcx,
                                     // invent a pointer, only the offset is relevant anyway
                                     mir::interpret::Pointer::new(
                                         mir::interpret::AllocId(0),
@@ -4808,11 +3659,13 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             let s = std::str::from_utf8(slice).expect("non utf8 str");
                             let len_val: Rc<AbstractValue> =
                                 Rc::new(ConstantDomain::U128(s.len() as u128).into());
-                            let res = &mut self.constant_value_cache.get_string_for(s);
+                            let res = &mut self.bv.constant_value_cache.get_string_for(s);
 
                             let path = Path::new_alias(Rc::new(res.clone().into()));
                             let len_path = Path::new_length(path);
-                            self.current_environment.update_value_at(len_path, len_val);
+                            self.bv
+                                .current_environment
+                                .update_value_at(len_path, len_val);
 
                             res
                         } else {
@@ -4848,7 +3701,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             let slice_len = *end - *start;
                             let bytes = data
                                 .get_bytes(
-                                    &self.tcx,
+                                    &self.bv.tcx,
                                     // invent a pointer, only the offset is relevant anyway
                                     mir::interpret::Pointer::new(
                                         mir::interpret::AllocId(0),
@@ -4864,7 +3717,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         }
                         rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                             let e_type = ExpressionType::from(&elem_type.kind);
-                            let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
+                            let id = self.bv.tcx.alloc_map.lock().create_memory_alloc(alloc);
                             let len = alloc.len() as u64;
                             let offset_in_bytes: u64 = offset.bytes();
                             // The rust compiler should ensure this.
@@ -4877,7 +3730,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             // Keeping this wrong behavior maintains the currently incorrect status quo.
                             let bytes = alloc
                                 .get_bytes_with_undef_and_ptr(
-                                    &self.tcx,
+                                    &self.bv.tcx,
                                     ptr,
                                     rustc_target::abi::Size::from_bytes(num_bytes),
                                 )
@@ -4905,7 +3758,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                                 }
                                 .into(),
                             );
-                            return self.lookup_path_and_refine_result(path, ty);
+                            return self.bv.lookup_path_and_refine_result(path, ty);
                         }
                         _ => assume_unreachable!(),
                     },
@@ -4920,14 +3773,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
                                 Scalar::Raw { size: 0, .. },
                             )) => {
-                                return self.get_new_heap_block(
+                                return self.bv.get_new_heap_block(
                                     Rc::new(0u128.into()),
                                     Rc::new(1u128.into()),
                                     false,
                                 );
                             }
                             _ => {
-                                debug!("span: {:?}", self.current_span);
+                                debug!("span: {:?}", self.bv.current_span);
                                 debug!("type kind {:?}", ty.kind);
                                 debug!("unimplemented constant {:?}", literal);
                                 result = &ConstantDomain::Unimplemented;
@@ -4935,7 +3788,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         };
                     }
                     _ => {
-                        debug!("span: {:?}", self.current_span);
+                        debug!("span: {:?}", self.bv.current_span);
                         debug!("type kind {:?}", ty.kind);
                         debug!("unimplemented constant {:?}", literal);
                         result = &ConstantDomain::Unimplemented;
@@ -4956,9 +3809,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         match &literal.val {
             rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
                 if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
-                    self.tcx.alloc_map.lock().get(p.alloc_id)
+                    self.bv.tcx.alloc_map.lock().get(p.alloc_id)
                 {
-                    let name = utils::summary_key_str(self.tcx, def_id);
+                    let name = utils::summary_key_str(self.bv.tcx, def_id);
                     let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
                     let path = Rc::new(
                         PathEnum::StaticVariable {
@@ -4970,7 +3823,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     );
                     return AbstractValue::make_reference(path);
                 }
-                debug!("span: {:?}", self.current_span);
+                debug!("span: {:?}", self.bv.current_span);
                 debug!("type kind {:?}", ty.kind);
                 debug!("ptr {:?}", p);
                 assume_unreachable!();
@@ -4979,7 +3832,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 self.get_value_from_slice(&ty.kind, *data, *start, *end)
             }
             _ => {
-                debug!("span: {:?}", self.current_span);
+                debug!("span: {:?}", self.bv.current_span);
                 debug!("type kind {:?}", ty.kind);
                 debug!("unimplemented constant {:?}", literal);
                 assume_unreachable!();
@@ -4999,17 +3852,24 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 if *size == 1 =>
             {
                 let e =
-                    self.get_new_heap_block(Rc::new(1u128.into()), Rc::new(1u128.into()), false);
+                    self.bv
+                        .get_new_heap_block(Rc::new(1u128.into()), Rc::new(1u128.into()), false);
                 if let Expression::HeapBlock { .. } = &e.expression {
                     let p = Path::new_discriminant(Path::get_as_path(e.clone()));
-                    let d = Rc::new(self.constant_value_cache.get_u128_for(*data).clone().into());
-                    self.current_environment.update_value_at(p, d);
+                    let d = Rc::new(
+                        self.bv
+                            .constant_value_cache
+                            .get_u128_for(*data)
+                            .clone()
+                            .into(),
+                    );
+                    self.bv.current_environment.update_value_at(p, d);
                     return e;
                 }
                 verify_unreachable!();
             }
             _ => {
-                debug!("span: {:?}", self.current_span);
+                debug!("span: {:?}", self.bv.current_span);
                 debug!("type kind {:?}", ty.kind);
                 debug!("unimplemented constant {:?}", literal);
                 result = &ConstantDomain::Unimplemented;
@@ -5035,11 +3895,12 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
             }
             TyKind::Char => &mut self
+                .bv
                 .constant_value_cache
                 .get_char_for(char::try_from(data as u32).unwrap()),
             TyKind::Float(..) => match size {
-                4 => &mut self.constant_value_cache.get_f32_for(data as u32),
-                _ => &mut self.constant_value_cache.get_f64_for(data as u64),
+                4 => &mut self.bv.constant_value_cache.get_f32_for(data as u32),
+                _ => &mut self.bv.constant_value_cache.get_f64_for(data as u64),
             },
             TyKind::Int(..) => {
                 let value: i128 = match size {
@@ -5049,9 +3910,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     8 => i128::from(data as i64),
                     _ => data as i128,
                 };
-                &mut self.constant_value_cache.get_i128_for(value)
+                &mut self.bv.constant_value_cache.get_i128_for(value)
             }
-            TyKind::Uint(..) => &mut self.constant_value_cache.get_u128_for(data),
+            TyKind::Uint(..) => &mut self.bv.constant_value_cache.get_u128_for(data),
             _ => assume_unreachable!(),
         }
     }
@@ -5069,7 +3930,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let slice_len = end - start;
         let bytes = data
             .get_bytes(
-                &self.tcx,
+                &self.bv.tcx,
                 // invent a pointer, only the offset is relevant anyway
                 mir::interpret::Pointer::new(
                     mir::interpret::AllocId(0),
@@ -5088,12 +3949,19 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     let s = std::str::from_utf8(slice).expect("non utf8 str");
                     let len_val: Rc<AbstractValue> =
                         Rc::new(ConstantDomain::U128(s.len() as u128).into());
-                    let res: Rc<AbstractValue> =
-                        Rc::new(self.constant_value_cache.get_string_for(s).clone().into());
+                    let res: Rc<AbstractValue> = Rc::new(
+                        self.bv
+                            .constant_value_cache
+                            .get_string_for(s)
+                            .clone()
+                            .into(),
+                    );
 
                     let path = Path::new_alias(res.clone());
                     let len_path = Path::new_length(path);
-                    self.current_environment.update_value_at(len_path, len_val);
+                    self.bv
+                        .current_environment
+                        .update_value_at(len_path, len_val);
                     res
                 }
                 _ => assume_unreachable!(),
@@ -5126,7 +3994,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     let slice_len = *end - *start;
                     let bytes = data
                         .get_bytes(
-                            &self.tcx,
+                            &self.bv.tcx,
                             // invent a pointer, only the offset is relevant anyway
                             mir::interpret::Pointer::new(
                                 mir::interpret::AllocId(0),
@@ -5140,7 +4008,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                 }
                 rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                     //todo: there is no test coverage for this case
-                    let id = self.tcx.alloc_map.lock().create_memory_alloc(alloc);
+                    let id = self.bv.tcx.alloc_map.lock().create_memory_alloc(alloc);
                     let alloc_len = alloc.len() as u64;
                     let offset_bytes = offset.bytes();
                     // The Rust compiler should ensure this.
@@ -5156,7 +4024,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     // Keeping this wrong behavior maintains the currently incorrect status quo.
                     let bytes = alloc
                         .get_bytes_with_undef_and_ptr(
-                            &self.tcx,
+                            &self.bv.tcx,
                             ptr,
                             rustc_target::abi::Size::from_bytes(num_bytes),
                         )
@@ -5167,9 +4035,9 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     mir::interpret::Scalar::Ptr(ptr),
                 )) => {
                     if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
-                        self.tcx.alloc_map.lock().get(ptr.alloc_id)
+                        self.bv.tcx.alloc_map.lock().get(ptr.alloc_id)
                     {
-                        let name = utils::summary_key_str(self.tcx, def_id);
+                        let name = utils::summary_key_str(self.bv.tcx, def_id);
                         let path = Rc::new(
                             PathEnum::StaticVariable {
                                 def_id: Some(def_id),
@@ -5178,10 +4046,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                             }
                             .into(),
                         );
-                        let rustc_ty = self.tcx.type_of(def_id);
-                        return self.lookup_path_and_refine_result(path, rustc_ty);
+                        let rustc_ty = self.bv.tcx.type_of(def_id);
+                        return self.bv.lookup_path_and_refine_result(path, rustc_ty);
                     }
-                    let alloc = self.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
+                    let alloc = self.bv.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
                     let alloc_len = alloc.len() as u64;
                     let offset_bytes = ptr.offset.bytes();
                     // The Rust compiler should ensure this.
@@ -5189,7 +4057,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                     let num_bytes = alloc_len - offset_bytes;
                     let bytes = alloc
                         .get_bytes(
-                            &self.tcx,
+                            &self.bv.tcx,
                             *ptr,
                             rustc_target::abi::Size::from_bytes(num_bytes),
                         )
@@ -5226,7 +4094,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         let byte_len = bytes.len();
         let alignment = Rc::new(((elem_type.bit_length() / 8) as u128).into());
         let array_value =
-            self.get_new_heap_block(Rc::new((byte_len as u128).into()), alignment, false);
+            self.bv
+                .get_new_heap_block(Rc::new((byte_len as u128).into()), alignment, false);
         if byte_len > k_limits::MAX_BYTE_ARRAY_LENGTH {
             return array_value;
         }
@@ -5239,24 +4108,28 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         {
             last_index = i as u128;
             let index_value = Rc::new(
-                self.constant_value_cache
+                self.bv
+                    .constant_value_cache
                     .get_u128_for(last_index)
                     .clone()
                     .into(),
             );
             let index_path = Path::new_index(array_path.clone(), index_value)
-                .refine_paths(&self.current_environment); //todo: maybe not needed?
-            self.current_environment
+                .refine_paths(&self.bv.current_environment); //todo: maybe not needed?
+            self.bv
+                .current_environment
                 .update_value_at(index_path, operand);
         }
         let length_path = Path::new_length(array_path.clone());
         let length_value = Rc::new(
-            self.constant_value_cache
+            self.bv
+                .constant_value_cache
                 .get_u128_for(last_index + 1)
                 .clone()
                 .into(),
         );
-        self.current_environment
+        self.bv
+            .current_environment
             .update_value_at(length_path, length_value);
         AbstractValue::make_reference(array_path)
     }
@@ -5332,14 +4205,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         ty: Ty<'tcx>,
         generic_args: SubstsRef<'tcx>,
     ) -> &ConstantDomain {
-        self.substs_cache.insert(def_id, generic_args);
-        &mut self.constant_value_cache.get_function_constant_for(
+        self.bv.substs_cache.insert(def_id, generic_args);
+        &mut self.bv.constant_value_cache.get_function_constant_for(
             def_id,
             ty,
             generic_args,
-            self.tcx,
-            self.known_names_cache,
-            self.summary_cache,
+            self.bv.tcx,
+            self.bv.known_names_cache,
+            self.bv.summary_cache,
         )
     }
 
@@ -5349,9 +4222,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let path = self.get_path_for_place(place);
         let ty = self
+            .bv
             .type_visitor
-            .get_rustc_place_type(place, self.current_span);
-        self.type_visitor.path_ty_cache.insert(path.clone(), ty);
+            .get_rustc_place_type(place, self.bv.current_span);
+        self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
         path
     }
 
@@ -5361,23 +4235,26 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
     fn get_path_for_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let mut is_union = false;
         let base_path: Rc<Path> =
-            Path::new_local_parameter_or_result(place.local.as_usize(), self.mir.arg_count);
+            Path::new_local_parameter_or_result(place.local.as_usize(), self.bv.mir.arg_count);
         if place.projection.is_empty() {
             let ty = self
+                .bv
                 .type_visitor
-                .get_rustc_place_type(place, self.current_span);
+                .get_rustc_place_type(place, self.bv.current_span);
             match &ty.kind {
                 TyKind::Adt(def, ..) => {
-                    let ty_name = self.known_names_cache.get(self.tcx, def.did);
+                    let ty_name = self.bv.known_names_cache.get(self.bv.tcx, def.did);
                     if ty_name == KnownNames::StdMarkerPhantomData {
                         return Rc::new(PathEnum::PhantomData.into());
                     }
                 }
                 TyKind::Array(_, len) => {
                     let len_val = self.visit_constant(None, &len);
-                    let len_path =
-                        Path::new_length(base_path.clone()).refine_paths(&self.current_environment);
-                    self.current_environment.update_value_at(len_path, len_val);
+                    let len_path = Path::new_length(base_path.clone())
+                        .refine_paths(&self.bv.current_environment);
+                    self.bv
+                        .current_environment
+                        .update_value_at(len_path, len_val);
                 }
                 TyKind::Closure(def_id, generic_args, ..) => {
                     let func_const = self.visit_function_reference(
@@ -5386,7 +4263,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         generic_args.as_closure().substs,
                     );
                     let func_val = Rc::new(func_const.clone().into());
-                    self.current_environment
+                    self.bv
+                        .current_environment
                         .update_value_at(base_path.clone(), func_val);
                 }
                 TyKind::FnDef(def_id, generic_args) => {
@@ -5396,7 +4274,8 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         generic_args.as_closure().substs,
                     );
                     let func_val = Rc::new(func_const.clone().into());
-                    self.current_environment
+                    self.bv
+                        .current_environment
                         .update_value_at(base_path.clone(), func_val);
                 }
                 TyKind::Generator(def_id, generic_args, ..) => {
@@ -5406,13 +4285,14 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
                         generic_args.as_generator().substs,
                     );
                     let func_val = Rc::new(func_const.clone().into());
-                    self.current_environment
+                    self.bv
+                        .current_environment
                         .update_value_at(base_path.clone(), func_val);
                 }
                 _ => (),
             }
         } else {
-            let ty = self.mir.local_decls[place.local].ty;
+            let ty = self.bv.mir.local_decls[place.local].ty;
             is_union = type_visitor::is_union(ty);
         }
         self.visit_projection(base_path, is_union, &place.projection)
@@ -5430,7 +4310,7 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
         projection.iter().fold(base_path, |base_path, elem| {
             let selector = self.visit_projection_elem(&mut base_is_union, &elem);
             Path::new_qualified(base_path, Rc::new(selector))
-                .refine_paths(&self.current_environment)
+                .refine_paths(&self.bv.current_environment)
         })
     }
 
@@ -5451,9 +4331,10 @@ impl<'analysis, 'compilation, 'tcx, E> MirVisitor<'analysis, 'compilation, 'tcx,
             }
             mir::ProjectionElem::Index(local) => {
                 let local_path =
-                    Path::new_local_parameter_or_result(local.as_usize(), self.mir.arg_count);
-                let index_value =
-                    self.lookup_path_and_refine_result(local_path, self.tcx.types.usize);
+                    Path::new_local_parameter_or_result(local.as_usize(), self.bv.mir.arg_count);
+                let index_value = self
+                    .bv
+                    .lookup_path_and_refine_result(local_path, self.bv.tcx.types.usize);
                 PathSelector::Index(index_value)
             }
             mir::ProjectionElem::ConstantIndex {
