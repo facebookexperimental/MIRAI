@@ -7,13 +7,13 @@
 // 'tcx is the lifetime of the type context created during the lifetime of the after_analysis call back.
 // 'analysis is the life time of the analyze_with_mirai call back that is invoked with the type context.
 
+use crate::body_visitor::BodyVisitor;
 use crate::constant_domain::ConstantValueCache;
 use crate::expected_errors;
 use crate::known_names::KnownNamesCache;
 use crate::options::Options;
 use crate::summaries::PersistentSummaryCache;
 use crate::utils;
-use crate::visitors::{MirVisitor, MirVisitorCrateContext};
 use crate::z3_solver::Z3Solver;
 
 use log::*;
@@ -138,24 +138,12 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     #[logfn(TRACE)]
     fn analyze_body(&mut self, def_id: DefId) {
         let mut diagnostics: Vec<DiagnosticBuilder<'compilation>> = vec![];
-        let mir = self.tcx.optimized_mir(def_id).unwrap_read_only();
+        // let mir = self.tcx.optimized_mir(def_id).unwrap_read_only();
         let mut z3_solver = Z3Solver::default();
         self.constant_value_cache.reset_heap_counter();
-        let mut mir_visitor = MirVisitor::new(MirVisitorCrateContext {
-            options: self.options,
-            session: self.session,
-            tcx: self.tcx,
-            def_id,
-            mir,
-            summary_cache: &mut self.summary_cache,
-            constant_value_cache: &mut self.constant_value_cache,
-            known_names_cache: &mut self.known_names_cache,
-            smt_solver: &mut z3_solver,
-            substs_cache: &mut self.substs_cache,
-            buffered_diagnostics: &mut diagnostics,
-        });
+        let mut body_visitor = BodyVisitor::new(self, def_id, &mut z3_solver, &mut diagnostics);
         // Analysis local foreign contracts are not summarized and cached on demand, so we need to do it here.
-        let summary = mir_visitor.visit_body(&[], &[]);
+        let summary = body_visitor.visit_body(&[], &[]);
         if utils::is_foreign_contract(self.tcx, def_id) {
             self.summary_cache.set_summary_for(def_id, summary);
         }

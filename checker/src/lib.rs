@@ -35,6 +35,8 @@ extern crate rustc_target;
 extern crate log;
 
 pub mod abstract_value;
+pub mod block_visitor;
+pub mod body_visitor;
 pub mod callbacks;
 pub mod constant_domain;
 pub mod crate_visitor;
@@ -50,5 +52,4 @@ pub mod smt_solver;
 pub mod summaries;
 pub mod type_visitor;
 pub mod utils;
-pub mod visitors;
 pub mod z3_solver;
