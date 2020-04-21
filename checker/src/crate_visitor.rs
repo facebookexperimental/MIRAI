@@ -137,11 +137,17 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     /// and collect any diagnostics into the buffer.
     #[logfn(TRACE)]
     fn analyze_body(&mut self, def_id: DefId) {
-        let mut diagnostics: Vec<DiagnosticBuilder<'compilation>> = vec![];
-        // let mir = self.tcx.optimized_mir(def_id).unwrap_read_only();
+        let mut diagnostics: Vec<DiagnosticBuilder<'compilation>> = Vec::new();
+        let mut active_calls: Vec<DefId> = Vec::new();
         let mut z3_solver = Z3Solver::default();
         self.constant_value_cache.reset_heap_counter();
-        let mut body_visitor = BodyVisitor::new(self, def_id, &mut z3_solver, &mut diagnostics);
+        let mut body_visitor = BodyVisitor::new(
+            self,
+            def_id,
+            &mut z3_solver,
+            &mut diagnostics,
+            &mut active_calls,
+        );
         // Analysis local foreign contracts are not summarized and cached on demand, so we need to do it here.
         let summary = body_visitor.visit_body(&[], &[]);
         if utils::is_foreign_contract(self.tcx, def_id) {
