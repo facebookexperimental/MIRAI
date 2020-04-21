@@ -5,17 +5,17 @@
 
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
-use crate::constant_domain::{ConstantDomain, ConstantValueCache, FunctionReference};
+use crate::constant_domain::{ConstantDomain, FunctionReference};
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
-use crate::known_names::{KnownNames, KnownNamesCache};
-use crate::options::{DiagLevel, Options};
+use crate::known_names::KnownNames;
+use crate::options::DiagLevel;
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
 use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries;
-use crate::summaries::{PersistentSummaryCache, Precondition, Summary};
+use crate::summaries::{Precondition, Summary};
 use crate::type_visitor::TypeVisitor;
 use crate::utils;
 use crate::{abstract_value, type_visitor};
@@ -31,7 +31,6 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{Ty, TyCtxt, TyKind};
-use rustc_session::Session;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Formatter, Result};
@@ -41,19 +40,14 @@ use std::time::Instant;
 
 /// Holds the state for the function body visitor.
 pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
-    pub options: &'compilation Options,
-    pub session: &'compilation Session,
+    pub cv: &'analysis mut CrateVisitor<'compilation, 'tcx>,
     pub tcx: TyCtxt<'tcx>,
     pub def_id: DefId,
     pub mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
-    pub constant_value_cache: &'analysis mut ConstantValueCache<'tcx>,
-    pub known_names_cache: &'analysis mut KnownNamesCache,
-    pub summary_cache: &'analysis mut PersistentSummaryCache<'tcx>,
     pub smt_solver: &'analysis mut dyn SmtSolver<E>,
-    pub substs_cache: &'analysis mut HashMap<DefId, SubstsRef<'tcx>>,
     pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
+    pub active_calls: &'analysis mut Vec<DefId>,
 
-    pub active_calls: Vec<DefId>,
     pub already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     // True if the current function cannot be analyzed and hence is just assumed to be correct.
     pub assume_function_is_angelic: bool,
@@ -75,30 +69,6 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub unwind_environment: Environment,
     pub fresh_variable_offset: usize,
     pub type_visitor: TypeVisitor<'analysis, 'tcx>,
-}
-
-struct SavedVisitorState<'analysis, 'tcx> {
-    def_id: DefId,
-    mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
-
-    already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
-    assume_preconditions_of_next_call: bool,
-    async_fn_summary: Option<Summary>,
-    check_for_errors: bool,
-    check_for_unconditional_precondition: bool,
-    current_environment: Environment,
-    current_location: mir::Location,
-    current_span: rustc_span::Span,
-    exit_environment: Option<Environment>,
-    function_name: Rc<String>,
-    fresh_variable_offset: usize,
-    heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
-    post_condition: Option<Rc<AbstractValue>>,
-    post_condition_block: Option<mir::BasicBlock>,
-    preconditions: Vec<Precondition>,
-    unwind_condition: Option<Rc<AbstractValue>>,
-    unwind_environment: Environment,
-    type_visitor: TypeVisitor<'analysis, 'tcx>,
 }
 
 #[derive(Clone, Debug)]
@@ -139,37 +109,6 @@ impl<'callinfo, 'tcx> CallInfo<'callinfo, 'tcx> {
             }
         } else {
             unreachable!("caller should supply a constant function")
-        }
-    }
-}
-
-impl<'analysis, 'tcx> SavedVisitorState<'analysis, 'tcx> {
-    pub fn new(
-        def_id: DefId,
-        mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
-        tcx: TyCtxt<'tcx>,
-    ) -> SavedVisitorState<'analysis, 'tcx> {
-        SavedVisitorState {
-            def_id,
-            mir,
-            already_reported_errors_for_call_to: HashSet::new(),
-            assume_preconditions_of_next_call: false,
-            async_fn_summary: None,
-            check_for_errors: false,
-            check_for_unconditional_precondition: false, // logging + new mir code gen breaks this for now
-            current_environment: Environment::default(),
-            current_location: mir::Location::START,
-            current_span: rustc_span::DUMMY_SP,
-            exit_environment: None,
-            function_name: Rc::new("".into()),
-            fresh_variable_offset: 0,
-            heap_addresses: HashMap::default(),
-            post_condition: None,
-            post_condition_block: None,
-            preconditions: Vec::new(),
-            unwind_condition: None,
-            unwind_environment: Environment::default(),
-            type_visitor: TypeVisitor::new(def_id, mir, tcx),
         }
     }
 }
@@ -222,26 +161,23 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         def_id: DefId,
         smt_solver: &'analysis mut dyn SmtSolver<E>,
         buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
+        active_calls: &'analysis mut Vec<DefId>,
     ) -> BodyVisitor<'analysis, 'compilation, 'tcx, E> {
         let function_name = crate_visitor
             .summary_cache
             .get_summary_key_for(def_id)
             .clone();
         let mir = crate_visitor.tcx.optimized_mir(def_id).unwrap_read_only();
+        let tcx = crate_visitor.tcx;
         BodyVisitor {
-            options: crate_visitor.options,
-            session: crate_visitor.session,
-            tcx: crate_visitor.tcx,
+            cv: crate_visitor,
+            tcx,
             def_id,
             mir,
-            constant_value_cache: &mut crate_visitor.constant_value_cache,
-            known_names_cache: &mut crate_visitor.known_names_cache,
-            summary_cache: &mut crate_visitor.summary_cache,
             smt_solver,
-            substs_cache: &mut crate_visitor.substs_cache,
             buffered_diagnostics,
+            active_calls,
 
-            active_calls: Vec::new(),
             already_reported_errors_for_call_to: HashSet::new(),
             assume_function_is_angelic: false,
             assume_preconditions_of_next_call: false,
@@ -261,7 +197,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             unwind_condition: None,
             unwind_environment: Environment::default(),
             fresh_variable_offset: 0,
-            type_visitor: TypeVisitor::new(def_id, mir, crate_visitor.tcx),
+            type_visitor: TypeVisitor::new(def_id, mir, tcx),
         }
     }
 
@@ -285,65 +221,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         self.unwind_environment = Environment::default();
         self.fresh_variable_offset = 1000;
         self.type_visitor.reset_visitor_state();
-    }
-
-    fn swap_visitor_state(&mut self, saved_state: &mut SavedVisitorState<'analysis, 'tcx>) {
-        std::mem::swap(&mut self.def_id, &mut saved_state.def_id);
-        std::mem::swap(&mut self.mir, &mut saved_state.mir);
-        std::mem::swap(
-            &mut self.already_reported_errors_for_call_to,
-            &mut saved_state.already_reported_errors_for_call_to,
-        );
-        std::mem::swap(
-            &mut self.assume_preconditions_of_next_call,
-            &mut saved_state.assume_preconditions_of_next_call,
-        );
-        std::mem::swap(
-            &mut self.async_fn_summary,
-            &mut saved_state.async_fn_summary,
-        );
-        std::mem::swap(
-            &mut self.check_for_errors,
-            &mut saved_state.check_for_errors,
-        );
-        std::mem::swap(
-            &mut self.check_for_unconditional_precondition,
-            &mut saved_state.check_for_unconditional_precondition,
-        );
-        std::mem::swap(
-            &mut self.current_environment,
-            &mut saved_state.current_environment,
-        );
-        std::mem::swap(
-            &mut self.current_location,
-            &mut saved_state.current_location,
-        );
-        std::mem::swap(&mut self.current_span, &mut saved_state.current_span);
-        std::mem::swap(
-            &mut self.exit_environment,
-            &mut saved_state.exit_environment,
-        );
-        std::mem::swap(&mut self.function_name, &mut saved_state.function_name);
-        std::mem::swap(&mut self.heap_addresses, &mut saved_state.heap_addresses);
-        std::mem::swap(&mut self.post_condition, &mut saved_state.post_condition);
-        std::mem::swap(
-            &mut self.post_condition_block,
-            &mut saved_state.post_condition_block,
-        );
-        std::mem::swap(&mut self.preconditions, &mut saved_state.preconditions);
-        std::mem::swap(
-            &mut self.unwind_condition,
-            &mut saved_state.unwind_condition,
-        );
-        std::mem::swap(
-            &mut self.unwind_environment,
-            &mut saved_state.unwind_environment,
-        );
-        std::mem::swap(
-            &mut self.fresh_variable_offset,
-            &mut saved_state.fresh_variable_offset,
-        );
-        std::mem::swap(&mut self.type_visitor, &mut saved_state.type_visitor);
     }
 
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
@@ -430,8 +307,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
     fn report_timeout(&mut self, elapsed_time_in_seconds: u64) {
         // This body is beyond MIRAI for now
-        if self.options.diag_level != DiagLevel::RELAXED {
+        if self.cv.options.diag_level != DiagLevel::RELAXED {
             let error = self
+                .cv
                 .session
                 .struct_span_err(self.current_span, "The analysis of this function timed out");
             self.emit_diagnostic(error);
@@ -454,29 +332,24 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             self.tcx.type_of(call_info.callee_def_id)
         );
         if self.tcx.is_mir_available(call_info.callee_def_id) {
+            let mut body_visitor = BodyVisitor::new(
+                self.cv,
+                call_info.callee_def_id,
+                self.smt_solver,
+                self.buffered_diagnostics,
+                self.active_calls,
+            );
+            body_visitor.type_visitor.actual_argument_types =
+                call_info.actual_argument_types.into();
+            body_visitor.type_visitor.generic_arguments = call_info.callee_generic_arguments;
+            body_visitor.type_visitor.generic_argument_map =
+                call_info.callee_generic_argument_map.clone();
             let elapsed_time = self.start_instant.elapsed();
-            let mut saved_state = SavedVisitorState::new(self.def_id, self.mir, self.tcx);
-            self.swap_visitor_state(&mut saved_state);
-            self.def_id = call_info.callee_def_id;
-            self.mir = self
-                .tcx
-                .optimized_mir(call_info.callee_def_id)
-                .unwrap_read_only();
-            self.type_visitor.def_id = self.def_id;
-            self.type_visitor.mir = self.mir;
-            self.type_visitor.actual_argument_types = call_info.actual_argument_types.into();
-            self.type_visitor.generic_arguments = call_info.callee_generic_arguments;
-            self.type_visitor.generic_argument_map = call_info.callee_generic_argument_map.clone();
-            self.start_instant = Instant::now();
-            self.function_name = self
-                .summary_cache
-                .get_summary_key_for(call_info.callee_def_id)
-                .clone();
-            let summary = self.visit_body(
+            let summary = body_visitor.visit_body(
                 call_info.function_constant_args,
                 call_info.actual_argument_types,
             );
-            self.swap_visitor_state(&mut saved_state);
+            let call_was_angelic = body_visitor.assume_function_is_angelic;
             trace!("summary {:?} {:?}", self.function_name, summary);
             if let Some(func_ref) = &call_info.callee_func_ref {
                 // We cache the summary with call site details included so that
@@ -485,9 +358,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 // will not need to re-summarize the function, thus avoiding exponential blow up.
                 let signature =
                     self.get_function_constant_signature(call_info.function_constant_args);
-                self.summary_cache
-                    .set_summary_for_call_site(func_ref, signature, summary.clone());
+                self.cv.summary_cache.set_summary_for_call_site(
+                    func_ref,
+                    signature,
+                    summary.clone(),
+                );
             }
+            self.assume_function_is_angelic |= call_was_angelic;
             self.start_instant = Instant::now() - elapsed_time;
             return summary;
         } else if let Some(devirtualized_summary) = self.try_to_devirtualize(call_info) {
@@ -542,6 +419,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         unreachable!()
                     };
                     let cached_summary = self
+                        .cv
                         .summary_cache
                         .get_summary_for_call_site(&func_ref, None);
                     if cached_summary.is_computed {
@@ -588,6 +466,26 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
         }
         self.buffered_diagnostics.push(diagnostic_builder);
+    }
+
+    pub fn get_i128_const_val(&mut self, val: i128) -> Rc<AbstractValue> {
+        Rc::new(
+            self.cv
+                .constant_value_cache
+                .get_i128_for(val)
+                .clone()
+                .into(),
+        )
+    }
+
+    pub fn get_u128_const_val(&mut self, val: u128) -> Rc<AbstractValue> {
+        Rc::new(
+            self.cv
+                .constant_value_cache
+                .get_u128_for(val)
+                .clone()
+                .into(),
+        )
     }
 
     /// Use the local and global environments to resolve Path to an abstract value.
@@ -673,15 +571,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             );
                             debug!("qualifier_val {:?}", qualifier_val);
                             if qualifier_val.is_contained_in_zeroed_heap_block() {
-                                result = Some(Rc::new(
-                                    if result_type.is_signed_integer() {
-                                        self.constant_value_cache.get_i128_for(0)
-                                    } else {
-                                        self.constant_value_cache.get_u128_for(0)
-                                    }
-                                    .clone()
-                                    .into(),
-                                ))
+                                result = Some(if result_type.is_signed_integer() {
+                                    self.get_i128_const_val(0)
+                                } else {
+                                    self.get_u128_const_val(0)
+                                })
                             }
                         }
                     }
@@ -765,7 +659,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) -> Rc<AbstractValue> {
         let summary;
         let summary = if let Some(def_id) = def_id {
-            let generic_args = self.substs_cache.get(&def_id).cloned();
+            let generic_args = self.cv.substs_cache.get(&def_id).cloned();
             let callee_generic_argument_map = if let Some(generic_args) = generic_args {
                 self.type_visitor
                     .get_generic_arguments_map(def_id, generic_args, &[])
@@ -774,14 +668,15 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             };
             let ty = self.tcx.type_of(def_id);
             let func_const = self
+                .cv
                 .constant_value_cache
                 .get_function_constant_for(
                     def_id,
                     ty,
                     generic_args.unwrap_or_else(|| self.tcx.empty_substs_for_def_id(def_id)),
                     self.tcx,
-                    self.known_names_cache,
-                    self.summary_cache,
+                    &mut self.cv.known_names_cache,
+                    &mut self.cv.summary_cache,
                 )
                 .clone();
             let call_info = CallInfo::new(
@@ -795,6 +690,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .clone()
                 .expect("CallInfo::new should guarantee this");
             let cached_summary = self
+                .cv
                 .summary_cache
                 .get_summary_for_call_site(&func_ref, None);
             if cached_summary.is_computed {
@@ -805,6 +701,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
         } else {
             summary = self
+                .cv
                 .summary_cache
                 .get_persistent_summary_for(summary_cache_key);
             &summary
@@ -918,7 +815,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         let discriminant = Path::new_discriminant(
             Path::new_field(closure_path.clone(), 0).refine_paths(&self.current_environment),
         );
-        let discriminant_val = Rc::new(self.constant_value_cache.get_u128_for(0).clone().into());
+        let discriminant_val = self.get_u128_const_val(0);
 
         // Populate the closure object fields with the parameters and locals of the current context.
         self.current_environment
@@ -1417,7 +1314,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             if entry_cond_as_bool.unwrap_or(true) && !in_range_as_bool.unwrap_or(true) {
                 let span = self.current_span;
                 let message = "effective offset is outside allocated range";
-                let warning = self.session.struct_span_warn(span, message);
+                let warning = self.cv.session.struct_span_warn(span, message);
                 self.emit_diagnostic(warning);
             }
         }
@@ -1672,7 +1569,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         ) = (old_layout, new_layout)
         {
             if *old_source == LayoutSource::DeAlloc {
-                let error = self.session.struct_span_err(
+                let error = self.cv.session.struct_span_err(
                     self.current_span,
                     "the pointer points to memory that has already been deallocated",
                 );
@@ -1698,7 +1595,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         "deallocates"
                     }
                 );
-                let error = self.session.struct_span_err(self.current_span, &message);
+                let error = self.cv.session.struct_span_err(self.current_span, &message);
                 self.emit_diagnostic(error);
             }
         }
@@ -1825,8 +1722,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     } else {
                         u128::from(offset)
                     };
-                    let index_val =
-                        Rc::new(self.constant_value_cache.get_u128_for(index).clone().into());
+                    let index_val = self.get_u128_const_val(index);
                     let index_path = Path::new_index(qualifier.clone(), index_val)
                         .refine_paths(&self.current_environment);
                     self.copy_or_move_elements(
@@ -1974,39 +1870,21 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
         };
         let elem_size = self.type_visitor.get_elem_type_size(target_type);
-        let byte_len_const = self
-            .constant_value_cache
-            .get_u128_for(u128::from((to - from) as u64 * elem_size))
-            .clone();
-        let length = Rc::new(byte_len_const.into());
+        let length = self.get_u128_const_val(u128::from((to - from) as u64 * elem_size));
         let alignment = Rc::new(1u128.into());
         let slice_value = self.get_new_heap_block(length, alignment, false);
         self.current_environment
             .update_value_at(target_path.clone(), slice_value.clone());
         let slice_path = Rc::new(PathEnum::HeapBlock { value: slice_value }.into());
         let slice_len_path = Path::new_length(slice_path);
-        let len_const = self
-            .constant_value_cache
-            .get_u128_for(u128::from(to - from))
-            .clone();
-        let len_value: Rc<AbstractValue> = Rc::new(len_const.into());
+        let len_value = self.get_u128_const_val(u128::from(to - from));
         self.current_environment
             .update_value_at(slice_len_path, len_value);
         for i in from..to {
-            let index_val = Rc::new(
-                self.constant_value_cache
-                    .get_u128_for(u128::from(i))
-                    .clone()
-                    .into(),
-            );
+            let index_val = self.get_u128_const_val(u128::from(i));
             let index_path = Path::new_index(qualifier.clone(), index_val)
                 .refine_paths(&self.current_environment);
-            let target_index_val = Rc::new(
-                self.constant_value_cache
-                    .get_u128_for(u128::try_from(i - from).unwrap())
-                    .clone()
-                    .into(),
-            );
+            let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
             let indexed_target = Path::new_index(target_path.clone(), target_index_val)
                 .refine_paths(&self.current_environment);
             self.copy_or_move_elements(indexed_target, index_path, target_type, move_elements);
@@ -2145,7 +2023,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         is_zeroed: bool,
     ) -> Rc<AbstractValue> {
         let addresses = &mut self.heap_addresses;
-        let constants = &mut self.constant_value_cache;
+        let constants = &mut self.cv.constant_value_cache;
         let block = addresses
             .entry(self.current_location)
             .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_block(is_zeroed), 1))
@@ -2182,14 +2060,14 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         ty: Ty<'tcx>,
         generic_args: SubstsRef<'tcx>,
     ) -> &ConstantDomain {
-        self.substs_cache.insert(def_id, generic_args);
-        &mut self.constant_value_cache.get_function_constant_for(
+        self.cv.substs_cache.insert(def_id, generic_args);
+        &mut self.cv.constant_value_cache.get_function_constant_for(
             def_id,
             ty,
             generic_args,
             self.tcx,
-            self.known_names_cache,
-            self.summary_cache,
+            &mut self.cv.known_names_cache,
+            &mut self.cv.summary_cache,
         )
     }
 }

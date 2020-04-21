@@ -152,13 +152,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         variant_index: rustc_target::abi::VariantIdx,
     ) {
         let target_path = Path::new_discriminant(self.visit_place(place));
-        let index_val = Rc::new(
-            self.bv
-                .constant_value_cache
-                .get_u128_for(variant_index.as_usize() as u128)
-                .clone()
-                .into(),
-        );
+        let index_val = self.get_u128_const_val(variant_index.as_usize() as u128);
         self.bv
             .current_environment
             .update_value_at(target_path, index_val);
@@ -181,7 +175,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_inline_asm(&mut self, inline_asm: &mir::LlvmInlineAsm<'tcx>) {
         let span = self.bv.current_span;
-        let err = self.bv.session.struct_span_warn(
+        let err = self.bv.cv.session.struct_span_warn(
             span,
             "Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
         );
@@ -435,6 +429,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .expect("callee obtained via operand should have def id");
         let substs = self
             .bv
+            .cv
             .substs_cache
             .get(&callee_def_id)
             .expect("MIR should ensure this");
@@ -574,7 +569,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Give diagnostic, depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     fn report_missing_summary(&mut self) {
-        match self.bv.options.diag_level {
+        match self.bv.cv.options.diag_level {
             DiagLevel::RELAXED => {
                 // Assume the callee is perfect and assume the caller and all of its callers are perfect
                 // little angels as well. This cuts down on false positives caused by missing post
@@ -588,7 +583,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             DiagLevel::PARANOID => {
                 if self.bv.check_for_errors {
                     // Give a diagnostic about this call, and make it the programmer's problem.
-                    let error = self.bv.session.struct_span_err(
+                    let error = self.bv.cv.session.struct_span_err(
                         self.bv.current_span,
                         "the called function could not be summarized, all bets are off",
                     );
@@ -621,6 +616,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 };
             let result = self
                 .bv
+                .cv
                 .summary_cache
                 .get_summary_for_call_site(&func_ref, func_args)
                 .clone();
@@ -689,6 +685,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             _ => {}
         }
         None
+    }
+
+    pub fn get_i128_const_val(&mut self, val: i128) -> Rc<AbstractValue> {
+        self.bv.get_i128_const_val(val)
+    }
+
+    pub fn get_u128_const_val(&mut self, val: u128) -> Rc<AbstractValue> {
+        self.bv.get_u128_const_val(val)
     }
 
     /// If we are checking for errors and have not assumed the preconditions of the called function
@@ -1029,7 +1033,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s.clone(),
             _ => {
                 if self.bv.check_for_errors {
-                    let error = self.bv.session.struct_span_err(
+                    let error = self.bv.cv.session.struct_span_err(
                         self.bv.current_span,
                         "this argument should be a string literal, do not call this function directly",
                     );
@@ -1100,6 +1104,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             let span = self.bv.current_span;
             let warning = self
                 .bv
+                .cv
                 .session
                 .struct_span_warn(span, "preconditions should be reached unconditionally");
             self.bv.emit_diagnostic(warning);
@@ -1480,7 +1485,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             if entry_cond_as_bool.unwrap_or(true) && !in_range_as_bool.unwrap_or(true) {
                 let span = self.bv.current_span;
                 let message = "effective offset is outside allocated range";
-                let warning = self.bv.session.struct_span_warn(span, message);
+                let warning = self.bv.cv.session.struct_span_warn(span, message);
                 self.bv.emit_diagnostic(warning);
             }
         }
@@ -1583,8 +1588,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         call_info.function_constant_args = &function_constant_args;
         let function_summary = if let Some(func_ref) = &call_info.callee_func_ref {
             call_info.callee_def_id = func_ref.def_id.expect("defined when used here");
-            call_info.callee_generic_arguments =
-                self.bv.substs_cache.get(&call_info.callee_def_id).cloned();
+            call_info.callee_generic_arguments = self
+                .bv
+                .cv
+                .substs_cache
+                .get(&call_info.callee_def_id)
+                .cloned();
             let summary = self.get_function_summary(&call_info);
             if let Some(summary) = summary {
                 summary
@@ -1731,7 +1740,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
         let span = self.bv.current_span;
-        let mut err = self.bv.session.struct_span_warn(span, diagnostic.as_str());
+        let mut err = self
+            .bv
+            .cv
+            .session
+            .struct_span_warn(span, diagnostic.as_str());
         for pc_span in precondition.spans.iter() {
             let span_str = self.bv.tcx.sess.source_map().span_to_string(*pc_span);
             if span_str.starts_with("/rustc/") {
@@ -1903,7 +1916,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     let span = self.bv.current_span;
                     let message =
                         "this is unreachable, mark it as such by using the unreachable! macro";
-                    let warning = self.bv.session.struct_span_warn(span, message);
+                    let warning = self.bv.cv.session.struct_span_warn(span, message);
                     self.bv.emit_diagnostic(warning);
                     return;
                 }
@@ -1913,6 +1926,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     let span = self.bv.current_span;
                     let warning = self
                         .bv
+                        .cv
                         .session
                         .struct_span_warn(span, "assumption is provably true and can be deleted");
                     self.bv.emit_diagnostic(warning);
@@ -2021,7 +2035,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // get called, so keep the message certain.
                     // Don't, however, complain about panics in the standard contract summaries
                     if std::env::var("MIRAI_START_FRESH").is_err() {
-                        let err = self.bv.session.struct_span_warn(span, msg.as_str());
+                        let err = self.bv.cv.session.struct_span_warn(span, msg.as_str());
                         self.bv.emit_diagnostic(err);
                     }
                 } else {
@@ -2075,7 +2089,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     self.bv.post_condition_block = Some(this_block);
                 } else {
                     let span = self.bv.current_span;
-                    let warning = self.bv.session.struct_span_warn(
+                    let warning = self.bv.cv.session.struct_span_warn(
                         span,
                         "multiple post conditions must be on the same execution path",
                     );
@@ -2107,7 +2121,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             let span = self.bv.current_span;
             let message =
                 "this is unreachable, mark it as such by using the verify_unreachable! macro";
-            let warning = self.bv.session.struct_span_warn(span, message);
+            let warning = self.bv.cv.session.struct_span_warn(span, message);
             self.bv.emit_diagnostic(warning);
             return None;
         }
@@ -2123,6 +2137,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             let span = self.bv.current_span;
             let error = self
                 .bv
+                .cv
                 .session
                 .struct_span_err(span, "provably false verification condition");
             self.bv.emit_diagnostic(error);
@@ -2156,7 +2171,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             // that preclude any assertions from failing. So, at this stage we get to
             // complain a bit.
             let span = self.bv.current_span;
-            let warning = self.bv.session.struct_span_warn(span, warning.as_str());
+            let warning = self.bv.cv.session.struct_span_warn(span, warning.as_str());
             self.bv.emit_diagnostic(warning);
         }
 
@@ -2415,7 +2430,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         ) = (old_layout, new_layout)
         {
             if *old_source == LayoutSource::DeAlloc {
-                let error = self.bv.session.struct_span_err(
+                let error = self.bv.cv.session.struct_span_err(
                     self.bv.current_span,
                     "the pointer points to memory that has already been deallocated",
                 );
@@ -2443,6 +2458,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 );
                 let error = self
                     .bv
+                    .cv
                     .session
                     .struct_span_err(self.bv.current_span, &message);
                 self.bv.emit_diagnostic(error);
@@ -2519,7 +2535,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     if entry_cond_as_bool.unwrap_or(false) {
                         let error = get_assert_msg_description(msg);
                         let span = self.bv.current_span;
-                        let error = self.bv.session.struct_span_warn(span, error);
+                        let error = self.bv.cv.session.struct_span_warn(span, error);
                         self.bv.emit_diagnostic(error);
                         // No need to push a precondition, the caller can never satisfy it.
                         return;
@@ -2534,7 +2550,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // Can't make this the caller's problem.
                     let warning = format!("possible {}", get_assert_msg_description(msg));
                     let span = self.bv.current_span;
-                    let warning = self.bv.session.struct_span_warn(span, warning.as_str());
+                    let warning = self.bv.cv.session.struct_span_warn(span, warning.as_str());
                     self.bv.emit_diagnostic(warning);
                     return;
                 }
@@ -2798,13 +2814,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     } else {
                         u128::from(offset)
                     };
-                    let index_val = Rc::new(
-                        self.bv
-                            .constant_value_cache
-                            .get_u128_for(index)
-                            .clone()
-                            .into(),
-                    );
+                    let index_val = self.get_u128_const_val(index);
                     let index_path = Path::new_index(qualifier.clone(), index_val)
                         .refine_paths(&self.bv.current_environment);
                     self.copy_or_move_elements(
@@ -2959,12 +2969,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         };
         let elem_size = self.bv.type_visitor.get_elem_type_size(target_type);
-        let byte_len_const = self
-            .bv
-            .constant_value_cache
-            .get_u128_for(u128::from((to - from) as u64 * elem_size))
-            .clone();
-        let length = Rc::new(byte_len_const.into());
+        let length = self.get_u128_const_val(u128::from((to - from) as u64 * elem_size));
         let alignment = Rc::new(1u128.into());
         let slice_value = self.bv.get_new_heap_block(length, alignment, false);
         self.bv
@@ -2972,32 +2977,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .update_value_at(target_path.clone(), slice_value.clone());
         let slice_path = Rc::new(PathEnum::HeapBlock { value: slice_value }.into());
         let slice_len_path = Path::new_length(slice_path);
-        let len_const = self
-            .bv
-            .constant_value_cache
-            .get_u128_for(u128::from(to - from))
-            .clone();
-        let len_value: Rc<AbstractValue> = Rc::new(len_const.into());
+        let len_value = self.get_u128_const_val(u128::from(to - from));
         self.bv
             .current_environment
             .update_value_at(slice_len_path, len_value);
         for i in from..to {
-            let index_val = Rc::new(
-                self.bv
-                    .constant_value_cache
-                    .get_u128_for(u128::from(i))
-                    .clone()
-                    .into(),
-            );
+            let index_val = self.get_u128_const_val(u128::from(i));
             let index_path = Path::new_index(qualifier.clone(), index_val)
                 .refine_paths(&self.bv.current_environment);
-            let target_index_val = Rc::new(
-                self.bv
-                    .constant_value_cache
-                    .get_u128_for(u128::try_from(i - from).unwrap())
-                    .clone()
-                    .into(),
-            );
+            let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
             let indexed_target = Path::new_index(target_path.clone(), target_index_val)
                 .refine_paths(&self.bv.current_environment);
             self.copy_or_move_elements(indexed_target, index_path, target_type, move_elements);
@@ -3414,26 +3402,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     ) {
         precondition!(matches!(aggregate_kinds, mir::AggregateKind::Array(..)));
         let length_path = Path::new_length(path.clone()).refine_paths(&self.bv.current_environment);
-        let length_value: Rc<AbstractValue> = Rc::new(
-            self.bv
-                .constant_value_cache
-                .get_u128_for(operands.len() as u128)
-                .clone()
-                .into(),
-        );
+        let length_value = self.get_u128_const_val(operands.len() as u128);
 
         let elem_size = match *aggregate_kinds {
             mir::AggregateKind::Array(ty) => self.bv.type_visitor.get_type_size(ty),
             _ => verify_unreachable!(),
         };
         let byte_size = (operands.len() as u64) * elem_size.max(1);
-        let byte_size_value: Rc<AbstractValue> = Rc::new(
-            self.bv
-                .constant_value_cache
-                .get_u128_for(byte_size as u128)
-                .clone()
-                .into(),
-        );
+        let byte_size_value = self.get_u128_const_val(byte_size as u128);
         let alignment: Rc<AbstractValue> = Rc::new(
             (match elem_size {
                 0 => 1,
@@ -3457,13 +3433,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let length_path = length_path.refine_paths(&self.bv.current_environment);
 
         for (i, operand) in operands.iter().enumerate() {
-            let index_value = Rc::new(
-                self.bv
-                    .constant_value_cache
-                    .get_u128_for(i as u128)
-                    .clone()
-                    .into(),
-            );
+            let index_value = self.get_u128_const_val(i as u128);
             let index_path = Path::new_index(path.clone(), index_value)
                 .refine_paths(&self.bv.current_environment);
             self.visit_used_operand(index_path, operand);
@@ -3581,7 +3551,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .type_visitor
                     .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
-                self.bv.substs_cache.insert(*def_id, substs);
+                self.bv.cv.substs_cache.insert(*def_id, substs);
                 let name = utils::summary_key_str(self.bv.tcx, *def_id);
                 let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
                 let path = match promoted {
@@ -3659,7 +3629,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             let s = std::str::from_utf8(slice).expect("non utf8 str");
                             let len_val: Rc<AbstractValue> =
                                 Rc::new(ConstantDomain::U128(s.len() as u128).into());
-                            let res = &mut self.bv.constant_value_cache.get_string_for(s);
+                            let res = &mut self.bv.cv.constant_value_cache.get_string_for(s);
 
                             let path = Path::new_alias(Rc::new(res.clone().into()));
                             let len_path = Path::new_length(path);
@@ -3856,13 +3826,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         .get_new_heap_block(Rc::new(1u128.into()), Rc::new(1u128.into()), false);
                 if let Expression::HeapBlock { .. } = &e.expression {
                     let p = Path::new_discriminant(Path::get_as_path(e.clone()));
-                    let d = Rc::new(
-                        self.bv
-                            .constant_value_cache
-                            .get_u128_for(*data)
-                            .clone()
-                            .into(),
-                    );
+                    let d = self.get_u128_const_val(*data);
                     self.bv.current_environment.update_value_at(p, d);
                     return e;
                 }
@@ -3896,11 +3860,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             TyKind::Char => &mut self
                 .bv
+                .cv
                 .constant_value_cache
                 .get_char_for(char::try_from(data as u32).unwrap()),
             TyKind::Float(..) => match size {
-                4 => &mut self.bv.constant_value_cache.get_f32_for(data as u32),
-                _ => &mut self.bv.constant_value_cache.get_f64_for(data as u64),
+                4 => &mut self.bv.cv.constant_value_cache.get_f32_for(data as u32),
+                _ => &mut self.bv.cv.constant_value_cache.get_f64_for(data as u64),
             },
             TyKind::Int(..) => {
                 let value: i128 = match size {
@@ -3910,9 +3875,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     8 => i128::from(data as i64),
                     _ => data as i128,
                 };
-                &mut self.bv.constant_value_cache.get_i128_for(value)
+                &mut self.bv.cv.constant_value_cache.get_i128_for(value)
             }
-            TyKind::Uint(..) => &mut self.bv.constant_value_cache.get_u128_for(data),
+            TyKind::Uint(..) => &mut self.bv.cv.constant_value_cache.get_u128_for(data),
             _ => assume_unreachable!(),
         }
     }
@@ -3951,6 +3916,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         Rc::new(ConstantDomain::U128(s.len() as u128).into());
                     let res: Rc<AbstractValue> = Rc::new(
                         self.bv
+                            .cv
                             .constant_value_cache
                             .get_string_for(s)
                             .clone()
@@ -4092,10 +4058,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         len: Option<u128>,
     ) -> Rc<AbstractValue> {
         let byte_len = bytes.len();
-        let alignment = Rc::new(((elem_type.bit_length() / 8) as u128).into());
-        let array_value =
-            self.bv
-                .get_new_heap_block(Rc::new((byte_len as u128).into()), alignment, false);
+        let alignment = self.get_u128_const_val((elem_type.bit_length() / 8) as u128);
+        let byte_len_value = self.get_u128_const_val(byte_len as u128);
+        let array_value = self.bv.get_new_heap_block(byte_len_value, alignment, false);
         if byte_len > k_limits::MAX_BYTE_ARRAY_LENGTH {
             return array_value;
         }
@@ -4107,13 +4072,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .enumerate()
         {
             last_index = i as u128;
-            let index_value = Rc::new(
-                self.bv
-                    .constant_value_cache
-                    .get_u128_for(last_index)
-                    .clone()
-                    .into(),
-            );
+            let index_value = self.get_u128_const_val(last_index);
             let index_path = Path::new_index(array_path.clone(), index_value)
                 .refine_paths(&self.bv.current_environment); //todo: maybe not needed?
             self.bv
@@ -4121,13 +4080,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .update_value_at(index_path, operand);
         }
         let length_path = Path::new_length(array_path.clone());
-        let length_value = Rc::new(
-            self.bv
-                .constant_value_cache
-                .get_u128_for(last_index + 1)
-                .clone()
-                .into(),
-        );
+        let length_value = self.get_u128_const_val(last_index + 1);
         self.bv
             .current_environment
             .update_value_at(length_path, length_value);
@@ -4205,14 +4158,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         ty: Ty<'tcx>,
         generic_args: SubstsRef<'tcx>,
     ) -> &ConstantDomain {
-        self.bv.substs_cache.insert(def_id, generic_args);
-        &mut self.bv.constant_value_cache.get_function_constant_for(
+        self.bv.cv.substs_cache.insert(def_id, generic_args);
+        &mut self.bv.cv.constant_value_cache.get_function_constant_for(
             def_id,
             ty,
             generic_args,
             self.bv.tcx,
-            self.bv.known_names_cache,
-            self.bv.summary_cache,
+            &mut self.bv.cv.known_names_cache,
+            &mut self.bv.cv.summary_cache,
         )
     }
 
@@ -4243,7 +4196,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .get_rustc_place_type(place, self.bv.current_span);
             match &ty.kind {
                 TyKind::Adt(def, ..) => {
-                    let ty_name = self.bv.known_names_cache.get(self.bv.tcx, def.did);
+                    let ty_name = self.bv.cv.known_names_cache.get(self.bv.tcx, def.did);
                     if ty_name == KnownNames::StdMarkerPhantomData {
                         return Rc::new(PathEnum::PhantomData.into());
                     }
