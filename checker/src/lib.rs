@@ -34,9 +34,44 @@ extern crate rustc_target;
 #[macro_use]
 extern crate log;
 
+/// If the currently analyzed function has been marked as angelic because was discovered
+/// to do something that cannot be analyzed, or if the time taken to analyze the current
+/// function exceeded k_limits::MAX_ANALYSIS_TIME_FOR_BODY, break out of the current loop.
+/// When a timeout happens, currently analyzed function is marked as angelic.
+macro_rules! check_for_early_break {
+    ($sel:expr) => {
+        if $sel.assume_function_is_angelic {
+            break;
+        }
+        let elapsed_time_in_seconds = $sel.start_instant.elapsed().as_secs();
+        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+            $sel.assume_function_is_angelic = true;
+            break;
+        }
+    };
+}
+
+/// If the currently analyzed function has been marked as angelic because was discovered
+/// to do something that cannot be analyzed, or if the time taken to analyze the current
+/// function exceeded k_limits::MAX_ANALYSIS_TIME_FOR_BODY, return to the caller.
+/// When a timeout happens, currently analyzed function is marked as angelic.
+macro_rules! check_for_early_return {
+    ($sel:expr) => {
+        if $sel.assume_function_is_angelic {
+            return;
+        }
+        let elapsed_time_in_seconds = $sel.start_instant.elapsed().as_secs();
+        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+            $sel.assume_function_is_angelic = true;
+            return;
+        }
+    };
+}
+
 pub mod abstract_value;
 pub mod block_visitor;
 pub mod body_visitor;
+pub mod call_visitor;
 pub mod callbacks;
 pub mod constant_domain;
 pub mod crate_visitor;

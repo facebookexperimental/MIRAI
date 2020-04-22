@@ -5,11 +5,10 @@
 
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
-use crate::constant_domain::{ConstantDomain, FunctionReference};
+use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
-use crate::known_names::KnownNames;
 use crate::options::DiagLevel;
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
@@ -17,10 +16,10 @@ use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries;
 use crate::summaries::{Precondition, Summary};
 use crate::type_visitor::TypeVisitor;
-use crate::utils;
 use crate::{abstract_value, type_visitor};
 
 use crate::block_visitor::BlockVisitor;
+use crate::call_visitor::CallVisitor;
 use crate::crate_visitor::CrateVisitor;
 use log_derive::*;
 use mirai_annotations::*;
@@ -29,7 +28,6 @@ use rustc_data_structures::graph::dominators::Dominators;
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{Ty, TyCtxt, TyKind};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -71,86 +69,10 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub type_visitor: TypeVisitor<'analysis, 'tcx>,
 }
 
-#[derive(Clone, Debug)]
-pub struct CallInfo<'callinfo, 'tcx> {
-    pub callee_def_id: DefId,
-    pub callee_func_ref: Option<Rc<FunctionReference>>,
-    pub callee_fun_val: Rc<AbstractValue>,
-    pub callee_generic_arguments: Option<SubstsRef<'tcx>>,
-    pub callee_known_name: KnownNames,
-    pub callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
-    pub actual_args: &'callinfo [(Rc<Path>, Rc<AbstractValue>)],
-    pub actual_argument_types: &'callinfo [Ty<'tcx>],
-    pub cleanup: Option<mir::BasicBlock>,
-    pub destination: Option<(mir::Place<'tcx>, mir::BasicBlock)>,
-    pub function_constant_args: &'callinfo [(Rc<Path>, Rc<AbstractValue>)],
-}
-
-impl<'callinfo, 'tcx> CallInfo<'callinfo, 'tcx> {
-    fn new(
-        callee_def_id: DefId,
-        callee_generic_arguments: Option<SubstsRef<'tcx>>,
-        callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
-        func_const: ConstantDomain,
-    ) -> CallInfo<'callinfo, 'tcx> {
-        if let ConstantDomain::Function(func_ref) = &func_const {
-            CallInfo {
-                callee_def_id,
-                callee_func_ref: Some(func_ref.clone()),
-                callee_fun_val: Rc::new(func_const.into()),
-                callee_generic_arguments,
-                callee_known_name: KnownNames::None,
-                callee_generic_argument_map,
-                actual_args: &[],
-                actual_argument_types: &[],
-                cleanup: None,
-                destination: None,
-                function_constant_args: &[],
-            }
-        } else {
-            unreachable!("caller should supply a constant function")
-        }
-    }
-}
-
 impl<'analysis, 'compilation, 'tcx, E> Debug for BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "BodyVisitor".fmt(f)
     }
-}
-
-/// If the currently analyzed function has been marked as angelic because was discovered
-/// to do something that cannot be analyzed, or if the time taken to analyze the current
-/// function exceeded k_limits::MAX_ANALYSIS_TIME_FOR_BODY, break out of the current loop.
-/// When a timeout happens, currently analyzed function is marked as angelic.
-macro_rules! check_for_early_break {
-    ($sel:ident) => {
-        if $sel.assume_function_is_angelic {
-            break;
-        }
-        let elapsed_time_in_seconds = $sel.start_instant.elapsed().as_secs();
-        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            $sel.assume_function_is_angelic = true;
-            break;
-        }
-    };
-}
-
-/// If the currently analyzed function has been marked as angelic because was discovered
-/// to do something that cannot be analyzed, or if the time taken to analyze the current
-/// function exceeded k_limits::MAX_ANALYSIS_TIME_FOR_BODY, return to the caller.
-/// When a timeout happens, currently analyzed function is marked as angelic.
-macro_rules! check_for_early_return {
-    ($sel:ident) => {
-        if $sel.assume_function_is_angelic {
-            return;
-        }
-        let elapsed_time_in_seconds = $sel.start_instant.elapsed().as_secs();
-        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            $sel.assume_function_is_angelic = true;
-            return;
-        }
-    };
 }
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
@@ -320,129 +242,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         );
         self.active_calls.pop();
         self.assume_function_is_angelic = true;
-    }
-
-    /// Summarize the referenced function, specialized by its generic arguments and the actual
-    /// values of any function parameters. Then cache it.
-    #[logfn_inputs(TRACE)]
-    pub fn create_and_cache_function_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Summary {
-        trace!(
-            "summarizing {:?}: {:?}",
-            call_info.callee_def_id,
-            self.tcx.type_of(call_info.callee_def_id)
-        );
-        if self.tcx.is_mir_available(call_info.callee_def_id) {
-            let mut body_visitor = BodyVisitor::new(
-                self.cv,
-                call_info.callee_def_id,
-                self.smt_solver,
-                self.buffered_diagnostics,
-                self.active_calls,
-            );
-            body_visitor.type_visitor.actual_argument_types =
-                call_info.actual_argument_types.into();
-            body_visitor.type_visitor.generic_arguments = call_info.callee_generic_arguments;
-            body_visitor.type_visitor.generic_argument_map =
-                call_info.callee_generic_argument_map.clone();
-            let elapsed_time = self.start_instant.elapsed();
-            let summary = body_visitor.visit_body(
-                call_info.function_constant_args,
-                call_info.actual_argument_types,
-            );
-            let call_was_angelic = body_visitor.assume_function_is_angelic;
-            trace!("summary {:?} {:?}", self.function_name, summary);
-            if let Some(func_ref) = &call_info.callee_func_ref {
-                // We cache the summary with call site details included so that
-                // cached summaries are specialized with respect to call site generic arguments and
-                // function constants arguments. Subsequent calls with the call site signature
-                // will not need to re-summarize the function, thus avoiding exponential blow up.
-                let signature =
-                    self.get_function_constant_signature(call_info.function_constant_args);
-                self.cv.summary_cache.set_summary_for_call_site(
-                    func_ref,
-                    signature,
-                    summary.clone(),
-                );
-            }
-            self.assume_function_is_angelic |= call_was_angelic;
-            self.start_instant = Instant::now() - elapsed_time;
-            return summary;
-        } else if let Some(devirtualized_summary) = self.try_to_devirtualize(call_info) {
-            return devirtualized_summary;
-        }
-        Summary::default()
-    }
-
-    /// If call_info.callee_def_id is a trait (virtual) then this tries to get the def_id of the
-    /// concrete method that implements the given virtual method and returns the summary of that,
-    /// computing it if necessary.
-    #[logfn_inputs(TRACE)]
-    fn try_to_devirtualize(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Option<Summary> {
-        if let Some(gen_args) = call_info.callee_generic_arguments {
-            if !utils::are_concrete(gen_args) {
-                trace!("non concrete generic args {:?}", gen_args);
-                return None;
-            }
-            // The parameter environment of the caller provides a resolution context for the callee.
-            let param_env = self.type_visitor.get_param_env();
-            trace!(
-                "devirtualize resolving def_id {:?}: {:?}",
-                call_info.callee_def_id,
-                self.tcx.type_of(call_info.callee_def_id)
-            );
-            trace!(
-                "devirtualize resolving func_ref {:?}",
-                call_info.callee_func_ref,
-            );
-            trace!("gen_args {:?}", gen_args);
-            if let Some(instance) = rustc_middle::ty::Instance::resolve(
-                self.tcx,
-                param_env,
-                call_info.callee_def_id,
-                gen_args,
-            ) {
-                let resolved_def_id = instance.def.def_id();
-                let resolved_ty = self.tcx.type_of(resolved_def_id);
-                trace!(
-                    "devirtualize resolved def_id {:?}: {:?}",
-                    resolved_def_id,
-                    resolved_ty
-                );
-                if !self.active_calls.contains(&resolved_def_id)
-                    && self.tcx.is_mir_available(resolved_def_id)
-                {
-                    let func_ref = if let ConstantDomain::Function(fr) =
-                        self.visit_function_reference(resolved_def_id, resolved_ty, instance.substs)
-                    {
-                        fr.clone()
-                    } else {
-                        unreachable!()
-                    };
-                    let cached_summary = self
-                        .cv
-                        .summary_cache
-                        .get_summary_for_call_site(&func_ref, None);
-                    if cached_summary.is_computed {
-                        return Some(cached_summary.clone());
-                    }
-
-                    let mut devirtualized_call_info = call_info.clone();
-                    devirtualized_call_info.callee_def_id = resolved_def_id;
-                    devirtualized_call_info.callee_func_ref = Some(func_ref);
-                    devirtualized_call_info.callee_generic_arguments = Some(instance.substs);
-                    devirtualized_call_info.callee_generic_argument_map =
-                        self.type_visitor.get_generic_arguments_map(
-                            resolved_def_id,
-                            instance.substs,
-                            call_info.actual_argument_types,
-                        );
-                    return Some(self.create_and_cache_function_summary(&devirtualized_call_info));
-                } else {
-                    return None;
-                }
-            }
-        }
-        None
     }
 
     /// Adds the given diagnostic builder to the buffer.
@@ -657,6 +456,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         summary_cache_key: &Rc<String>,
         expression_type: &ExpressionType,
     ) -> Rc<AbstractValue> {
+        let mut block_visitor;
         let summary;
         let summary = if let Some(def_id) = def_id {
             let generic_args = self.cv.substs_cache.get(&def_id).cloned();
@@ -679,24 +479,28 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     &mut self.cv.summary_cache,
                 )
                 .clone();
-            let call_info = CallInfo::new(
+            block_visitor = BlockVisitor::new(self);
+            let mut call_visitor = CallVisitor::<E>::new(
+                &mut block_visitor,
                 def_id,
                 generic_args,
                 callee_generic_argument_map,
                 func_const,
             );
-            let func_ref = call_info
+            let func_ref = call_visitor
                 .callee_func_ref
                 .clone()
-                .expect("CallInfo::new should guarantee this");
-            let cached_summary = self
+                .expect("CallVisitor::new should guarantee this");
+            let cached_summary = call_visitor
+                .block_visitor
+                .bv
                 .cv
                 .summary_cache
                 .get_summary_for_call_site(&func_ref, None);
             if cached_summary.is_computed {
                 cached_summary
             } else {
-                summary = self.create_and_cache_function_summary(&call_info);
+                summary = call_visitor.create_and_cache_function_summary();
                 &summary
             }
         } else {
@@ -1210,79 +1014,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) {
         let mut block_visitor = BlockVisitor::new(self);
         block_visitor.visit_basic_block(bb, terminator_state)
-    }
-
-    /// Extract a list of function references from an environment of function constant arguments
-    #[logfn_inputs(TRACE)]
-    fn get_function_constant_signature(
-        &mut self,
-        func_args: &[(Rc<Path>, Rc<AbstractValue>)],
-    ) -> Option<Vec<Rc<FunctionReference>>> {
-        if func_args.is_empty() {
-            return None;
-        }
-        let vec: Vec<Rc<FunctionReference>> = func_args
-            .iter()
-            .filter_map(|(_, v)| self.get_func_ref(v))
-            .collect();
-        if vec.is_empty() {
-            return None;
-        }
-        Some(vec)
-    }
-
-    /// Returns the function reference part of the value, if there is one.
-    #[logfn_inputs(TRACE)]
-    fn get_func_ref(&mut self, val: &Rc<AbstractValue>) -> Option<Rc<FunctionReference>> {
-        let extract_func_ref = |c: &ConstantDomain| match c {
-            ConstantDomain::Function(func_ref) => Some(func_ref.clone()),
-            _ => None,
-        };
-        match &val.expression {
-            Expression::CompileTimeConstant(c) => {
-                return extract_func_ref(c);
-            }
-            Expression::Reference(path)
-            | Expression::Variable {
-                path,
-                var_type: ExpressionType::NonPrimitive,
-            }
-            | Expression::Variable {
-                path,
-                var_type: ExpressionType::Reference,
-            } => {
-                let closure_ty = self
-                    .type_visitor
-                    .get_path_rustc_type(path, self.current_span);
-                match closure_ty.kind {
-                    TyKind::Closure(def_id, substs) => {
-                        let specialized_substs = self
-                            .type_visitor
-                            .specialize_substs(substs, &self.type_visitor.generic_argument_map);
-                        return extract_func_ref(self.visit_function_reference(
-                            def_id,
-                            closure_ty,
-                            specialized_substs,
-                        ));
-                    }
-                    TyKind::Ref(_, ty, _) => {
-                        if let TyKind::Closure(def_id, substs) = ty.kind {
-                            let specialized_substs = self
-                                .type_visitor
-                                .specialize_substs(substs, &self.type_visitor.generic_argument_map);
-                            return extract_func_ref(self.visit_function_reference(
-                                def_id,
-                                ty,
-                                specialized_substs,
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-        None
     }
 
     /// Checks that the offset is either in bounds or one byte past the end of an allocated object.
@@ -2041,33 +1772,5 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         self.current_environment
             .update_value_at(layout_path, layout);
         block
-    }
-
-    /// The anonymous type of a function declaration/definition. Each
-    /// function has a unique type, which is output (for a function
-    /// named `foo` returning an `i32`) as `fn() -> i32 {foo}`.
-    ///
-    /// For example the type of `bar` here:
-    ///
-    /// ```rust
-    /// fn foo() -> i32 { 1 }
-    /// let bar = foo; // bar: fn() -> i32 {foo}
-    /// ```
-    #[logfn_inputs(TRACE)]
-    fn visit_function_reference(
-        &mut self,
-        def_id: DefId,
-        ty: Ty<'tcx>,
-        generic_args: SubstsRef<'tcx>,
-    ) -> &ConstantDomain {
-        self.cv.substs_cache.insert(def_id, generic_args);
-        &mut self.cv.constant_value_cache.get_function_constant_for(
-            def_id,
-            ty,
-            generic_args,
-            self.tcx,
-            &mut self.cv.known_names_cache,
-            &mut self.cv.summary_cache,
-        )
     }
 }

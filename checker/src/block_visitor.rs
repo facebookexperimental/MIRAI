@@ -7,7 +7,7 @@ use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::{ConstantDomain, FunctionReference};
 use crate::environment::Environment;
-use crate::expression::{Expression, ExpressionType, LayoutSource};
+use crate::expression::{Expression, ExpressionType};
 use crate::k_limits;
 use crate::known_names::KnownNames;
 use crate::options::DiagLevel;
@@ -18,7 +18,8 @@ use crate::summaries::{Precondition, Summary};
 use crate::utils;
 use crate::{abstract_value, type_visitor};
 
-use crate::body_visitor::{BodyVisitor, CallInfo};
+use crate::body_visitor::BodyVisitor;
+use crate::call_visitor::CallVisitor;
 use log_derive::*;
 use mirai_annotations::*;
 use rpds::HashTrieMap;
@@ -36,24 +37,7 @@ use std::rc::Rc;
 
 /// Holds the state for the basic block visitor
 pub struct BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E> {
-    bv: &'block mut BodyVisitor<'analysis, 'compilation, 'tcx, E>,
-}
-
-/// If the currently analyzed function has been marked as angelic because was discovered
-/// to do something that cannot be analyzed, or if the time taken to analyze the current
-/// function exceeded k_limits::MAX_ANALYSIS_TIME_FOR_BODY, return to the caller.
-/// When a timeout happens, currently analyzed function is marked as angelic.
-macro_rules! check_for_early_return {
-    ($sel:ident) => {
-        if $sel.bv.assume_function_is_angelic {
-            return;
-        }
-        let elapsed_time_in_seconds = $sel.bv.start_instant.elapsed().as_secs();
-        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            $sel.bv.assume_function_is_angelic = true;
-            return;
-        }
-    };
+    pub bv: &'block mut BodyVisitor<'analysis, 'compilation, 'tcx, E>,
 }
 
 impl<'block, 'analysis, 'compilation, 'tcx, E> Debug
@@ -93,7 +77,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         if !self.bv.check_for_errors {
             while location.statement_index < terminator_index {
                 self.visit_statement(location, &statements[location.statement_index]);
-                check_for_early_return!(self);
+                check_for_early_return!(self.bv);
                 location.statement_index += 1;
             }
             terminator_state.insert(bb, self.bv.current_environment.clone());
@@ -457,42 +441,50 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             &actual_argument_types,
         );
 
-        let call_info = CallInfo {
+        let func_const = ConstantDomain::Function(func_ref_to_call.clone());
+        let func_const_args = &self.get_function_constant_args(&actual_args);
+        let mut call_visitor = CallVisitor::new(
+            self,
             callee_def_id,
-            callee_known_name: func_ref_to_call.known_name,
-            callee_func_ref: Some(func_ref_to_call.clone()),
-            callee_fun_val: func_to_call,
-            callee_generic_arguments: Some(callee_generic_arguments),
-            callee_generic_argument_map,
-            actual_args: &actual_args,
-            actual_argument_types: &actual_argument_types,
-            cleanup,
-            destination: *destination,
-            function_constant_args: &self.get_function_constant_args(&actual_args),
-        };
-        debug!("calling func {:?}", call_info);
-        if self.handled_as_special_function_call(&call_info) {
+            Some(callee_generic_arguments),
+            callee_generic_argument_map.clone(),
+            func_const,
+        );
+        call_visitor.actual_args = &actual_args;
+        call_visitor.actual_argument_types = &actual_argument_types;
+        call_visitor.cleanup = cleanup;
+        call_visitor.destination = *destination;
+        call_visitor.callee_fun_val = func_to_call;
+        call_visitor.function_constant_args = func_const_args;
+        debug!("calling func {:?}", call_visitor.callee_func_ref);
+        if call_visitor.handled_as_special_function_call() {
             return;
         }
-        let function_summary = self
-            .get_function_summary(&call_info)
+        let function_summary = call_visitor
+            .get_function_summary()
             .unwrap_or_else(Summary::default);
-        if self.bv.check_for_errors
+        if call_visitor.block_visitor.bv.check_for_errors
             && (!function_summary.is_computed || function_summary.is_angelic)
         {
-            self.deal_with_missing_summary(&call_info);
+            call_visitor.deal_with_missing_summary();
         }
         debug!(
             "summary {:?} {:?}",
             func_ref_to_call.summary_cache_key, function_summary
         );
-        debug!("pre env {:?}", self.bv.current_environment);
-        self.check_preconditions_if_necessary(&call_info, &function_summary);
-        self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
-        self.transfer_and_refine_cleanup_state(&call_info, &function_summary);
-        debug!("post env {:?}", self.bv.current_environment);
+        debug!(
+            "pre env {:?}",
+            call_visitor.block_visitor.bv.current_environment
+        );
+        call_visitor.check_preconditions_if_necessary(&function_summary);
+        call_visitor.transfer_and_refine_normal_return_state(&function_summary);
+        call_visitor.transfer_and_refine_cleanup_state(&function_summary);
+        debug!(
+            "post env {:?}",
+            call_visitor.block_visitor.bv.current_environment
+        );
         if function_summary.post_condition.is_some() {
-            if let Some((_, b)) = &call_info.destination {
+            if let Some((_, b)) = &call_visitor.destination {
                 debug!(
                     "post exit conditions {:?}",
                     self.bv.current_environment.exit_conditions.get(b)
@@ -548,24 +540,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         result
     }
 
-    /// Give diagnostic or mark the call chain as angelic, depending on self.bv.options.diag_level
-    #[logfn_inputs(TRACE)]
-    fn deal_with_missing_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        self.report_missing_summary();
-        let argument_type_hint = if let Some(func) = &call_info.callee_func_ref {
-            format!(" (foreign fn argument key: {})", func.argument_type_key)
-        } else {
-            "".to_string()
-        };
-        info!(
-            "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
-            utils::summary_key_str(self.bv.tcx, self.bv.def_id),
-            utils::summary_key_str(self.bv.tcx, call_info.callee_def_id),
-            argument_type_hint,
-        );
-        debug!("def_id {:?}", call_info.callee_def_id);
-    }
-
     /// Give diagnostic, depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     fn report_missing_summary(&mut self) {
@@ -591,43 +565,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
             }
         }
-    }
-
-    /// Returns a summary of the function to call, obtained from the summary cache.
-    #[logfn_inputs(TRACE)]
-    fn get_function_summary(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Option<Summary> {
-        if let Some(func_ref) = self.get_func_ref(&call_info.callee_fun_val) {
-            // If the actual arguments include any function constants, collect them together
-            // and pass them to get_summary_for_function_constant so that their signatures
-            // can be included in the type specific key that is used to look up non generic
-            // predefined summaries.
-            let func_args: Option<Vec<Rc<FunctionReference>>> =
-                if !call_info.function_constant_args.is_empty() {
-                    Some(
-                        call_info
-                            .function_constant_args
-                            .iter()
-                            .filter_map(|(_, v)| self.get_func_ref(v))
-                            .collect(),
-                    )
-                } else {
-                    // common case
-                    None
-                };
-            let result = self
-                .bv
-                .cv
-                .summary_cache
-                .get_summary_for_call_site(&func_ref, func_args)
-                .clone();
-            if result.is_computed || func_ref.def_id.is_none() {
-                return Some(result);
-            }
-            if !self.bv.active_calls.contains(&func_ref.def_id.unwrap()) {
-                return Some(self.bv.create_and_cache_function_summary(call_info));
-            }
-        }
-        None
     }
 
     /// Returns the function reference part of the value, if there is one.
@@ -695,1036 +632,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         self.bv.get_u128_const_val(val)
     }
 
-    /// If we are checking for errors and have not assumed the preconditions of the called function
-    /// and we are not in angelic mode and have not already reported an error for this call,
-    /// then check the preconditions and report any conditions that are not known to hold at this point.
-    #[logfn_inputs(TRACE)]
-    fn check_preconditions_if_necessary(
-        &mut self,
-        call_info: &CallInfo<'_, 'tcx>,
-        function_summary: &Summary,
-    ) {
-        if self.bv.check_for_errors
-            && !self.bv.assume_preconditions_of_next_call
-            && !self
-                .bv
-                .already_reported_errors_for_call_to
-                .contains(&call_info.callee_fun_val)
-        {
-            self.check_function_preconditions(call_info, function_summary);
-        } else {
-            self.bv.assume_preconditions_of_next_call = false;
-        }
-    }
-
-    /// If the current call is to a well known function for which we don't have a cached summary,
-    /// this function will update the environment as appropriate and return true. If the return
-    /// result is false, just carry on with the normal logic.
-    #[logfn_inputs(TRACE)]
-    fn handled_as_special_function_call(&mut self, call_info: &CallInfo<'_, 'tcx>) -> bool {
-        match call_info.callee_known_name {
-            KnownNames::StdOpsFunctionFnCall
-            | KnownNames::StdOpsFunctionFnMutCallMut
-            | KnownNames::StdOpsFunctionFnOnceCallOnce => {
-                self.inline_indirectly_called_function(call_info);
-                return true;
-            }
-            KnownNames::MiraiAbstractValue => {
-                checked_assume!(call_info.actual_args.len() == 1);
-                self.handle_abstract_value(call_info);
-                return true;
-            }
-            KnownNames::MiraiAssume => {
-                checked_assume!(call_info.actual_args.len() == 1);
-                if self.bv.check_for_errors {
-                    self.report_calls_to_special_functions(call_info);
-                }
-                self.handle_assume(call_info);
-                return true;
-            }
-            KnownNames::MiraiAssumePreconditions => {
-                checked_assume!(call_info.actual_args.is_empty());
-                self.bv.assume_preconditions_of_next_call = true;
-                return true;
-            }
-            KnownNames::MiraiGetModelField => {
-                self.handle_get_model_field(call_info);
-                return true;
-            }
-            KnownNames::MiraiPostcondition => {
-                checked_assume!(call_info.actual_args.len() == 3);
-                if self.bv.check_for_errors {
-                    self.report_calls_to_special_functions(call_info);
-                }
-                self.handle_post_condition(call_info);
-                return true;
-            }
-            KnownNames::MiraiPreconditionStart => {
-                self.handle_precondition_start(call_info);
-                return true;
-            }
-            KnownNames::MiraiPrecondition => {
-                checked_assume!(call_info.actual_args.len() == 2);
-                self.handle_precondition(call_info);
-                self.handle_assume(call_info);
-                return true;
-            }
-            KnownNames::MiraiSetModelField => {
-                self.handle_set_model_field(call_info);
-                return true;
-            }
-            KnownNames::MiraiShallowClone => {
-                if let Some((place, target)) = &call_info.destination {
-                    checked_assume!(call_info.actual_args.len() == 1);
-                    let source_path = call_info.actual_args[0].0.clone();
-                    let target_type = self
-                        .bv
-                        .type_visitor
-                        .get_rustc_place_type(place, self.bv.current_span);
-                    let target_path = self.visit_place(place);
-                    self.copy_or_move_elements(target_path, source_path, target_type, false);
-                    let exit_condition = self.bv.current_environment.entry_condition.clone();
-                    self.bv.current_environment.exit_conditions = self
-                        .bv
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
-                } else {
-                    assume_unreachable!();
-                }
-                return true;
-            }
-            KnownNames::MiraiResult => {
-                if let Some((place, target)) = &call_info.destination {
-                    let target_path = self.visit_place(place);
-                    let target_rustc_type = self
-                        .bv
-                        .type_visitor
-                        .get_rustc_place_type(place, self.bv.current_span);
-                    let return_value_path = Path::new_result();
-                    let return_value = self
-                        .bv
-                        .lookup_path_and_refine_result(return_value_path, target_rustc_type);
-                    self.bv
-                        .current_environment
-                        .update_value_at(target_path, return_value);
-                    let exit_condition = self.bv.current_environment.entry_condition.clone();
-                    self.bv.current_environment.exit_conditions = self
-                        .bv
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
-                } else {
-                    assume_unreachable!();
-                }
-                return true;
-            }
-            KnownNames::MiraiVerify => {
-                checked_assume!(call_info.actual_args.len() == 2);
-                if self.bv.check_for_errors {
-                    self.report_calls_to_special_functions(call_info);
-                }
-                let mut call_info = call_info.clone();
-                call_info.actual_args = &call_info.actual_args[0..1];
-                self.handle_assume(&call_info);
-                return true;
-            }
-            KnownNames::RustDealloc => {
-                self.handle_rust_dealloc(call_info);
-                if let Some((_, target)) = &call_info.destination {
-                    let exit_condition = self.bv.current_environment.entry_condition.clone();
-                    self.bv.current_environment.exit_conditions = self
-                        .bv
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
-                } else {
-                    assume_unreachable!("a call to __rust_dealloc should have a target block");
-                }
-                return true;
-            }
-            KnownNames::StdFutureFromGenerator => {
-                checked_assume!(call_info.actual_args.len() == 1);
-                let mut call_info = call_info.clone();
-                call_info.callee_fun_val = call_info.actual_args[0].1.clone();
-                call_info.callee_func_ref = self.get_func_ref(&call_info.callee_fun_val);
-                call_info.callee_def_id = call_info
-                    .callee_func_ref
-                    .clone()
-                    .expect("a fun ref")
-                    .def_id
-                    .expect("a def id");
-                call_info.actual_args = &[];
-                call_info.actual_argument_types = &[];
-                call_info.callee_generic_arguments = None;
-                self.bv.async_fn_summary = self.get_function_summary(&call_info);
-                return true;
-            }
-            KnownNames::StdIntrinsicsCopyNonOverlapping => {
-                self.handle_copy_non_overlapping(call_info);
-                if let Some((_, target)) = &call_info.destination {
-                    let exit_condition = self.bv.current_environment.entry_condition.clone();
-                    self.bv.current_environment.exit_conditions = self
-                        .bv
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
-                }
-                return true;
-            }
-            KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
-                if self.bv.check_for_errors {
-                    self.report_calls_to_special_functions(call_info); //known_name, actual_args);
-                }
-                if let Some((_, target)) = &call_info.destination {
-                    self.bv.current_environment.exit_conditions = self
-                        .bv
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, abstract_value::FALSE.into());
-                }
-                return true;
-            }
-            _ => {
-                let result = self.try_to_inline_special_function(call_info);
-                if !result.is_bottom() {
-                    if let Some((place, target)) = &call_info.destination {
-                        let target_path = self.visit_place(place);
-                        self.bv
-                            .current_environment
-                            .update_value_at(target_path, result);
-                        let exit_condition = self.bv.current_environment.entry_condition.clone();
-                        self.bv.current_environment.exit_conditions = self
-                            .bv
-                            .current_environment
-                            .exit_conditions
-                            .insert(*target, exit_condition);
-                        return true;
-                    }
-                }
-            }
-        }
-        false
-    }
-
-    /// Replace the call result with an abstract value of the same type as the
-    /// destination place.
-    #[logfn_inputs(TRACE)]
-    fn handle_abstract_value(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        if let Some((place, target)) = &call_info.destination {
-            let path = self.visit_place(place);
-            let expression_type = self
-                .bv
-                .type_visitor
-                .get_place_type(place, self.bv.current_span);
-            let abstract_value = AbstractValue::make_from(
-                Expression::Variable {
-                    path: path.clone(),
-                    var_type: expression_type,
-                },
-                1,
-            );
-            self.bv
-                .current_environment
-                .update_value_at(path, abstract_value);
-            let exit_condition = self.bv.current_environment.entry_condition.clone();
-            self.bv.current_environment.exit_conditions = self
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(*target, exit_condition);
-        } else {
-            assume_unreachable!();
-        }
-    }
-
-    /// Update the state so that the call result is the value of the model field (or the default
-    /// value if there is no field).
-    #[logfn_inputs(TRACE)]
-    fn handle_get_model_field(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        if let Some((place, target)) = &call_info.destination {
-            let target_type = self
-                .bv
-                .type_visitor
-                .get_rustc_place_type(place, self.bv.current_span);
-            checked_assume!(call_info.actual_args.len() == 3);
-
-            // The current value, if any, of the model field are a set of (path, value) pairs
-            // where each path is rooted by qualifier.model_field(..)
-            let qualifier = call_info.actual_args[0].0.clone();
-            let field_name = self.coerce_to_string(&call_info.actual_args[1].1);
-            let source_path = Path::new_model_field(qualifier, field_name)
-                .refine_paths(&self.bv.current_environment);
-
-            let target_path = self.visit_place(place);
-            if self.bv.current_environment.value_at(&source_path).is_some() {
-                // Move the model field (path, val) pairs to the target (i.e. the place where
-                // the return value of call to the mirai_get_model_field function would go if
-                // it were a normal call.
-                self.copy_or_move_elements(target_path, source_path, target_type, true);
-            } else {
-                // If there is no value for the model field in the environment, we should
-                // use the default value, but only if the qualifier is not rooted in a parameter
-                // value since only the caller will know what the values of the fields are.
-                match &call_info.actual_args[0].1.expression {
-                    Expression::Reference(path) | Expression::Variable { path, .. }
-                        if path.is_rooted_by_parameter() =>
-                    {
-                        //todo: if the default value is a non primitive then we lose the structure
-                        // using the code below. That is wrong. Generalize the default field.
-                        let rval = AbstractValue::make_from(
-                            Expression::UnknownModelField {
-                                path: source_path,
-                                default: call_info.actual_args[2].1.clone(),
-                            },
-                            1,
-                        );
-                        self.bv
-                            .current_environment
-                            .update_value_at(target_path, rval);
-                    }
-                    _ => {
-                        let source_path = call_info.actual_args[2].0.clone();
-                        self.copy_or_move_elements(target_path, source_path, target_type, true);
-                    }
-                }
-            }
-            let exit_condition = self.bv.current_environment.entry_condition.clone();
-            self.bv.current_environment.exit_conditions = self
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(*target, exit_condition);
-        } else {
-            assume_unreachable!();
-        }
-    }
-
-    /// Update the state to reflect the assignment of the model field.
-    #[logfn_inputs(TRACE)]
-    fn handle_set_model_field(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        checked_assume!(call_info.actual_args.len() == 3);
-        if let Some((_, target)) = &call_info.destination {
-            let qualifier = call_info.actual_args[0].0.clone();
-            let field_name = self.coerce_to_string(&call_info.actual_args[1].1);
-            let target_path = Path::new_model_field(qualifier, field_name)
-                .refine_paths(&self.bv.current_environment);
-            let source_path = call_info.actual_args[2].0.clone();
-            let target_type = call_info.actual_argument_types[2];
-            self.copy_or_move_elements(target_path, source_path, target_type, true);
-            let exit_condition = self.bv.current_environment.entry_condition.clone();
-            self.bv.current_environment.exit_conditions = self
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(*target, exit_condition);
-        } else {
-            assume_unreachable!();
-        }
-    }
-
-    /// Extracts the string from an AbstractDomain that is required to be a string literal.
-    /// This is the case for helper MIRAI helper functions that are hidden in the documentation
-    /// and that are required to be invoked via macros that ensure that the argument providing
-    /// this value is always a string literal.
-    #[logfn_inputs(TRACE)]
-    fn coerce_to_string(&mut self, value: &AbstractValue) -> Rc<String> {
-        match &value.expression {
-            Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s.clone(),
-            _ => {
-                if self.bv.check_for_errors {
-                    let error = self.bv.cv.session.struct_span_err(
-                        self.bv.current_span,
-                        "this argument should be a string literal, do not call this function directly",
-                    );
-                    self.bv.emit_diagnostic(error);
-                }
-                Rc::new("dummy argument".to_string())
-            }
-        }
-    }
-
-    /// Adds the first and only value in actual_args to the path condition of the destination.
-    /// No check is performed, since we get to assume this condition without proof.
-    #[logfn_inputs(TRACE)]
-    fn handle_assume(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        precondition!(call_info.actual_args.len() == 1);
-        let assumed_condition = &call_info.actual_args[0].1;
-        let exit_condition = self
-            .bv
-            .current_environment
-            .entry_condition
-            .and(assumed_condition.clone());
-        if let Some((_, target)) = &call_info.destination {
-            self.bv.current_environment.exit_conditions = self
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(*target, exit_condition);
-        } else {
-            assume_unreachable!();
-        }
-        if let Some(cleanup_target) = call_info.cleanup {
-            self.bv.current_environment.exit_conditions = self
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(cleanup_target, abstract_value::FALSE.into());
-        }
-    }
-
-    fn handle_post_condition(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        precondition!(call_info.actual_args.len() == 3);
-        let condition = call_info.actual_args[0].1.clone();
-        let exit_condition = self.bv.current_environment.entry_condition.and(condition);
-        if let Some((_, target)) = &call_info.destination {
-            self.bv.current_environment.exit_conditions = self
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(*target, exit_condition);
-        } else {
-            assume_unreachable!();
-        }
-    }
-
-    /// It is bad style for a precondition to be reached conditionally, since well, that condition
-    /// should be part of the precondition.
-    #[logfn_inputs(TRACE)]
-    fn handle_precondition_start(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        if self.bv.check_for_errors
-            && self.bv.check_for_unconditional_precondition
-            && !self
-                .bv
-                .current_environment
-                .entry_condition
-                .as_bool_if_known()
-                .unwrap_or(false)
-        {
-            let span = self.bv.current_span;
-            let warning = self
-                .bv
-                .cv
-                .session
-                .struct_span_warn(span, "preconditions should be reached unconditionally");
-            self.bv.emit_diagnostic(warning);
-            self.bv.check_for_unconditional_precondition = false;
-        }
-        let exit_condition = self.bv.current_environment.entry_condition.clone();
-        if let Some((_, target)) = &call_info.destination {
-            self.bv.current_environment.exit_conditions = self
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(*target, exit_condition);
-        } else {
-            assume_unreachable!();
-        }
-    }
-
-    /// Adds the first and only value in actual_args to the current list of preconditions.
-    /// No check is performed, since we get to assume the caller has verified this condition.
-    #[logfn_inputs(TRACE)]
-    fn handle_precondition(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        precondition!(call_info.actual_args.len() == 2);
-        if self.bv.check_for_errors {
-            let condition = call_info.actual_args[0].1.clone();
-            let message = self.coerce_to_string(&call_info.actual_args[1].1);
-            let precondition = Precondition {
-                condition,
-                message,
-                provenance: None,
-                spans: vec![self.bv.current_span],
-            };
-            self.bv.preconditions.push(precondition);
-        }
-    }
-
-    /// Provides special handling of functions that have no MIR bodies or that need to access
-    /// internal MIRAI state in ways that cannot be expressed in normal Rust and therefore
-    /// cannot be summarized in the standard_contracts crate.
-    /// Returns the result of the call, or BOTTOM if the function to call is not a known
-    /// special function.
-    #[allow(clippy::cognitive_complexity)]
-    #[logfn_inputs(TRACE)]
-    fn try_to_inline_special_function(
-        &mut self,
-        call_info: &CallInfo<'_, 'tcx>,
-    ) -> Rc<AbstractValue> {
-        match call_info.callee_known_name {
-            KnownNames::RustAlloc => self.handle_rust_alloc(call_info),
-            KnownNames::RustAllocZeroed => self.handle_rust_alloc_zeroed(call_info),
-            KnownNames::RustRealloc => self.handle_rust_realloc(call_info),
-            KnownNames::StdIntrinsicsArithOffset => self.handle_arith_offset(call_info),
-            KnownNames::StdIntrinsicsBitreverse
-            | KnownNames::StdIntrinsicsBswap
-            | KnownNames::StdIntrinsicsCtlz
-            | KnownNames::StdIntrinsicsCtpop
-            | KnownNames::StdIntrinsicsCttz => {
-                checked_assume!(call_info.actual_args.len() == 1);
-                let arg_type: ExpressionType = (&call_info.actual_argument_types[0].kind).into();
-                let bit_length = arg_type.bit_length();
-                call_info.actual_args[0]
-                    .1
-                    .intrinsic_bit_vector_unary(bit_length, call_info.callee_known_name)
-            }
-            KnownNames::StdIntrinsicsCtlzNonzero | KnownNames::StdIntrinsicsCttzNonzero => {
-                checked_assume!(call_info.actual_args.len() == 1);
-                if self.bv.check_for_errors {
-                    let non_zero = call_info.actual_args[0].1.not_equals(Rc::new(0u128.into()));
-                    self.check_condition(&non_zero, Rc::new("argument is zero".to_owned()), false);
-                }
-                let arg_type: ExpressionType = (&call_info.actual_argument_types[0].kind).into();
-                let bit_length = arg_type.bit_length();
-                call_info.actual_args[0]
-                    .1
-                    .intrinsic_bit_vector_unary(bit_length, call_info.callee_known_name)
-            }
-            KnownNames::StdIntrinsicsCeilf32
-            | KnownNames::StdIntrinsicsCeilf64
-            | KnownNames::StdIntrinsicsCosf32
-            | KnownNames::StdIntrinsicsCosf64
-            | KnownNames::StdIntrinsicsExp2f32
-            | KnownNames::StdIntrinsicsExp2f64
-            | KnownNames::StdIntrinsicsExpf32
-            | KnownNames::StdIntrinsicsExpf64
-            | KnownNames::StdIntrinsicsFabsf32
-            | KnownNames::StdIntrinsicsFabsf64
-            | KnownNames::StdIntrinsicsFloorf32
-            | KnownNames::StdIntrinsicsFloorf64
-            | KnownNames::StdIntrinsicsLog10f32
-            | KnownNames::StdIntrinsicsLog10f64
-            | KnownNames::StdIntrinsicsLog2f32
-            | KnownNames::StdIntrinsicsLog2f64
-            | KnownNames::StdIntrinsicsLogf32
-            | KnownNames::StdIntrinsicsLogf64
-            | KnownNames::StdIntrinsicsNearbyintf32
-            | KnownNames::StdIntrinsicsNearbyintf64
-            | KnownNames::StdIntrinsicsRintf32
-            | KnownNames::StdIntrinsicsRintf64
-            | KnownNames::StdIntrinsicsRoundf32
-            | KnownNames::StdIntrinsicsRoundf64
-            | KnownNames::StdIntrinsicsSinf32
-            | KnownNames::StdIntrinsicsSinf64
-            | KnownNames::StdIntrinsicsSqrtf32
-            | KnownNames::StdIntrinsicsSqrtf64
-            | KnownNames::StdIntrinsicsTruncf32
-            | KnownNames::StdIntrinsicsTruncf64 => {
-                checked_assume!(call_info.actual_args.len() == 1);
-                call_info.actual_args[0]
-                    .1
-                    .intrinsic_floating_point_unary(call_info.callee_known_name)
-            }
-            KnownNames::StdIntrinsicsCopysignf32
-            | KnownNames::StdIntrinsicsCopysignf64
-            | KnownNames::StdIntrinsicsFaddFast
-            | KnownNames::StdIntrinsicsFdivFast
-            | KnownNames::StdIntrinsicsFmulFast
-            | KnownNames::StdIntrinsicsFremFast
-            | KnownNames::StdIntrinsicsFsubFast
-            | KnownNames::StdIntrinsicsMaxnumf32
-            | KnownNames::StdIntrinsicsMaxnumf64
-            | KnownNames::StdIntrinsicsMinnumf32
-            | KnownNames::StdIntrinsicsMinnumf64
-            | KnownNames::StdIntrinsicsPowf32
-            | KnownNames::StdIntrinsicsPowf64
-            | KnownNames::StdIntrinsicsPowif32
-            | KnownNames::StdIntrinsicsPowif64 => {
-                checked_assume!(call_info.actual_args.len() == 2);
-                call_info.actual_args[0].1.intrinsic_binary(
-                    call_info.actual_args[1].1.clone(),
-                    call_info.callee_known_name,
-                )
-            }
-            KnownNames::StdIntrinsicsMulWithOverflow => {
-                self.handle_checked_binary_operation(call_info)
-            }
-            KnownNames::StdIntrinsicsOffset => self.handle_offset(call_info),
-            KnownNames::StdIntrinsicsTransmute => {
-                checked_assume!(call_info.actual_args.len() == 1);
-                call_info.actual_args[0].1.clone()
-            }
-            KnownNames::StdMemSizeOf => self.handle_size_of(call_info),
-            _ => abstract_value::BOTTOM.into(),
-        }
-    }
-
-    /// Returns a new heap memory block with the given byte length.
-    #[logfn_inputs(TRACE)]
-    fn handle_rust_alloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
-        checked_assume!(call_info.actual_args.len() == 2);
-        let length = call_info.actual_args[0].1.clone();
-        let alignment = call_info.actual_args[1].1.clone();
-        let heap_path = Path::get_as_path(self.bv.get_new_heap_block(length, alignment, false));
-        AbstractValue::make_reference(heap_path)
-    }
-
-    /// Returns a new heap memory block with the given byte length and with the zeroed flag set.
-    #[logfn_inputs(TRACE)]
-    fn handle_rust_alloc_zeroed(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
-        checked_assume!(call_info.actual_args.len() == 2);
-        let length = call_info.actual_args[0].1.clone();
-        let alignment = call_info.actual_args[1].1.clone();
-        let heap_path = Path::get_as_path(self.bv.get_new_heap_block(length, alignment, true));
-        AbstractValue::make_reference(heap_path)
-    }
-
-    /// Removes the heap block and all paths rooted in it from the current environment.
-    #[logfn_inputs(TRACE)]
-    fn handle_rust_dealloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
-        checked_assume!(call_info.actual_args.len() == 3);
-
-        // The current environment is that that of the caller, but the caller is a standard
-        // library function and has no interesting state to purge.
-        // The layout path inserted below will become a side effect of the caller and when that
-        // side effect is refined by the caller's caller, the refinement will do the purge if the
-        // qualifier of the path is a heap block path.
-
-        // Get path to the heap block to deallocate
-        let heap_block_path = call_info.actual_args[0].0.clone();
-
-        // Create a layout
-        let length = call_info.actual_args[1].1.clone();
-        let alignment = call_info.actual_args[2].1.clone();
-        let layout = AbstractValue::make_from(
-            Expression::HeapBlockLayout {
-                length,
-                alignment,
-                source: LayoutSource::DeAlloc,
-            },
-            1,
-        );
-
-        // Get a layout path and update the environment
-        let layout_path =
-            Path::new_layout(heap_block_path).refine_paths(&self.bv.current_environment);
-        self.bv
-            .current_environment
-            .update_value_at(layout_path, layout);
-
-        // Signal to the caller that there is no return result
-        abstract_value::BOTTOM.into()
-    }
-
-    /// Sets the length of the heap block to a new value and removes index paths as necessary
-    /// if the new length is known and less than the old lengths.
-    #[logfn_inputs(TRACE)]
-    fn handle_rust_realloc(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
-        checked_assume!(call_info.actual_args.len() == 4);
-        // Get path to the heap block to reallocate
-        let heap_block_path = Path::new_deref(call_info.actual_args[0].0.clone());
-
-        // Create a layout
-        let length = call_info.actual_args[1].1.clone();
-        let alignment = call_info.actual_args[2].1.clone();
-        let new_length = call_info.actual_args[3].1.clone();
-        // We need to this to check for consistency between the realloc layout arg and the
-        // initial alloc layout.
-        let layout_param = AbstractValue::make_from(
-            Expression::HeapBlockLayout {
-                length,
-                alignment: alignment.clone(),
-                source: LayoutSource::ReAlloc,
-            },
-            1,
-        );
-        // We need this to keep track of the new length
-        let new_length_layout = AbstractValue::make_from(
-            Expression::HeapBlockLayout {
-                length: new_length,
-                alignment,
-                source: LayoutSource::ReAlloc,
-            },
-            1,
-        );
-
-        // Get a layout path and update the environment
-        let layout_path =
-            Path::new_layout(heap_block_path).refine_paths(&self.bv.current_environment);
-        self.bv
-            .current_environment
-            .update_value_at(layout_path.clone(), new_length_layout);
-        let layout_path2 = Path::new_layout(layout_path);
-        self.bv
-            .current_environment
-            .update_value_at(layout_path2, layout_param);
-
-        // Return the original heap block reference as the result
-        call_info.actual_args[0].1.clone()
-    }
-
-    /// Set the call result to an offset derived from the arguments. Does no checking.
-    #[logfn_inputs(TRACE)]
-    fn handle_arith_offset(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
-        checked_assume!(call_info.actual_args.len() == 2);
-        let base_val = &call_info.actual_args[0].1;
-        let offset_val = &call_info.actual_args[1].1;
-        base_val.offset(offset_val.clone())
-    }
-
-    /// Copies a slice of elements from the source to the destination.
-    #[logfn_inputs(TRACE)]
-    fn handle_copy_non_overlapping(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        checked_assume!(call_info.actual_args.len() == 3);
-        let target_root = call_info.actual_args[0].0.clone();
-        let source_path = call_info.actual_args[1].0.clone();
-        let count = call_info.actual_args[2].1.clone();
-        let target_path =
-            Path::new_slice(target_root, count).refine_paths(&self.bv.current_environment);
-        let collection_type = call_info.actual_argument_types[0];
-        self.copy_or_move_elements(target_path, source_path, collection_type, false);
-    }
-
-    /// Update the state to reflect a call to an intrinsic binary operation that returns a tuple
-    /// of an operation result, modulo its max value, and a flag that indicates if the max value
-    /// was exceeded.
-    #[logfn_inputs(TRACE)]
-    fn handle_checked_binary_operation(
-        &mut self,
-        call_info: &CallInfo<'_, 'tcx>,
-    ) -> Rc<AbstractValue> {
-        checked_assume!(call_info.actual_args.len() == 2);
-        if let Some((target_place, _)) = &call_info.destination {
-            let bin_op = match call_info.callee_known_name {
-                KnownNames::StdIntrinsicsMulWithOverflow => mir::BinOp::Mul,
-                _ => assume_unreachable!(),
-            };
-            let target_path = self.visit_place(target_place);
-            let path0 =
-                Path::new_field(target_path.clone(), 0).refine_paths(&self.bv.current_environment);
-            let path1 =
-                Path::new_field(target_path.clone(), 1).refine_paths(&self.bv.current_environment);
-            let target_type = self
-                .bv
-                .type_visitor
-                .get_target_path_type(&path0, self.bv.current_span);
-            let left = call_info.actual_args[0].1.clone();
-            let right = call_info.actual_args[1].1.clone();
-            let modulo = target_type.modulo_value();
-            let (modulo_result, overflow_flag) = if !modulo.is_bottom() {
-                let (result, overflow_flag) =
-                    Self::do_checked_binary_op(bin_op, target_type.clone(), left, right);
-                (result.remainder(target_type.modulo_value()), overflow_flag)
-            } else {
-                let (result, overflow_flag) =
-                    Self::do_checked_binary_op(bin_op, target_type.clone(), left, right);
-                // todo: figure out an expression that represents the truncated overflow of a
-                // signed operation.
-                let unknown_typed_value = AbstractValue::make_from(
-                    Expression::Variable {
-                        path: path0.clone(),
-                        var_type: target_type.clone(),
-                    },
-                    (path0.path_length() as u64) + 1,
-                );
-                (
-                    overflow_flag.conditional_expression(unknown_typed_value, result),
-                    overflow_flag,
-                )
-            };
-            self.bv
-                .current_environment
-                .update_value_at(path0, modulo_result);
-            self.bv
-                .current_environment
-                .update_value_at(path1, overflow_flag);
-            AbstractValue::make_from(
-                Expression::Variable {
-                    path: target_path.clone(),
-                    var_type: target_type,
-                },
-                (target_path.path_length() as u64) + 1,
-            )
-        } else {
-            assume_unreachable!();
-        }
-    }
-
-    /// Set the call result to an offset derived from the arguments.
-    /// Checks that the resulting offset is either in bounds or one
-    /// byte past the end of an allocated object.
-    #[logfn_inputs(TRACE)]
-    fn handle_offset(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
-        checked_assume!(call_info.actual_args.len() == 2);
-        let base_val = &call_info.actual_args[0].1;
-        let offset_val = &call_info.actual_args[1].1;
-        let result = base_val.offset(offset_val.clone());
-        if self.bv.check_for_errors && self.function_being_analyzed_is_root() {
-            self.check_offset(&result)
-        }
-        result
-    }
-
-    /// Checks that the offset is either in bounds or one byte past the end of an allocated object.
-    #[logfn_inputs(TRACE)]
-    fn check_offset(&mut self, offset: &AbstractValue) {
-        if let Expression::Offset { left, right, .. } = &offset.expression {
-            let ge_zero = right.greater_or_equal(Rc::new(ConstantDomain::I128(0).into()));
-            let mut len = left.clone();
-            if let Expression::Reference(path) = &left.expression {
-                if matches!(&path.value, PathEnum::HeapBlock{..}) {
-                    let layout_path = Path::new_layout(path.clone());
-                    if let Expression::HeapBlockLayout { length, .. } = &self
-                        .bv
-                        .lookup_path_and_refine_result(
-                            layout_path,
-                            ExpressionType::NonPrimitive.as_rustc_type(self.bv.tcx),
-                        )
-                        .expression
-                    {
-                        len = length.clone();
-                    }
-                }
-            };
-            let le_one_past =
-                right.less_or_equal(len.addition(Rc::new(ConstantDomain::I128(1).into())));
-            let in_range = ge_zero.and(le_one_past);
-            let (in_range_as_bool, entry_cond_as_bool) =
-                self.check_condition_value_and_reachability(&in_range);
-            //todo: eventually give a warning if in_range_as_bool is unknown. For now, that is too noisy.
-            if entry_cond_as_bool.unwrap_or(true) && !in_range_as_bool.unwrap_or(true) {
-                let span = self.bv.current_span;
-                let message = "effective offset is outside allocated range";
-                let warning = self.bv.cv.session.struct_span_warn(span, message);
-                self.bv.emit_diagnostic(warning);
-            }
-        }
-    }
-
-    /// Gets the size in bytes of the type parameter T of the std::mem::size_of<T> function.
-    /// Returns and unknown value of type u128 if T is not a concrete type.
-    #[logfn_inputs(TRACE)]
-    fn handle_size_of(&mut self, call_info: &CallInfo<'_, 'tcx>) -> Rc<AbstractValue> {
-        checked_assume!(call_info.actual_args.is_empty());
-        let sym = rustc_span::Symbol::intern("T");
-        let t = (call_info.callee_generic_argument_map.as_ref())
-            .expect("std::mem::size_of must be called with generic arguments")
-            .get(&sym)
-            .expect("std::mem::size must have generic argument T");
-        let param_env = self.bv.tcx.param_env(call_info.callee_def_id);
-        if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(*t)) {
-            Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
-        } else {
-            AbstractValue::make_typed_unknown(ExpressionType::U128)
-        }
-    }
-
-    /// Fn::call, FnMut::call_mut, FnOnce::call_once all receive two arguments:
-    /// 1. A function pointer or closure instance to call.
-    /// 2. A tuple of argument values for the call.
-    /// The tuple is unpacked and the callee is then invoked with its normal function signature.
-    /// In the case of calling a closure, the closure signature includes the closure as the first argument.
-    ///
-    /// All of this happens in code that is not encoded as MIR, so MIRAI needs built in support for it.
-    #[logfn_inputs(TRACE)]
-    fn inline_indirectly_called_function(&mut self, caller_call_info: &CallInfo<'_, 'tcx>) {
-        checked_assume!(caller_call_info.actual_args.len() == 2);
-        // Get the function to call (it is either a function pointer or a closure)
-        let callee = caller_call_info.actual_args[0].1.clone();
-
-        // Get the path of the tuple containing the arguments.
-        let callee_arg_array_path = caller_call_info.actual_args[1].0.clone();
-
-        // Unpack the arguments. We use the generic arguments of the caller as a proxy for the callee function signature.
-        let generic_argument_types: Vec<Ty<'tcx>> = caller_call_info
-            .callee_generic_arguments
-            .expect("call_once, etc. are generic")
-            .as_ref()
-            .iter()
-            .map(|gen_arg| gen_arg.expect_ty())
-            .collect();
-
-        checked_assume!(generic_argument_types.len() == 2);
-        let mut actual_argument_types: Vec<Ty<'tcx>>;
-        if let TyKind::Tuple(tuple_types) = generic_argument_types[1].kind {
-            actual_argument_types = tuple_types
-                .iter()
-                .map(|gen_arg| gen_arg.expect_ty())
-                .collect();
-        } else {
-            assume_unreachable!("expected second type argument to be a tuple type");
-        }
-
-        let mut actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = actual_argument_types
-            .iter()
-            .enumerate()
-            .map(|(i, t)| {
-                let arg_path = Path::new_field(callee_arg_array_path.clone(), i)
-                    .refine_paths(&self.bv.current_environment);
-                let arg_val = self.bv.lookup_path_and_refine_result(arg_path.clone(), t);
-                (arg_path, arg_val)
-            })
-            .collect();
-
-        // Prepend the closure (if there is one) to the unpacked arguments vector.
-        // Also update the Self parameter in the arguments map.
-        let mut call_info = caller_call_info.clone();
-        let mut closure_ty = caller_call_info.actual_argument_types[0];
-        if let TyKind::Ref(_, ty, _) = closure_ty.kind {
-            closure_ty = ty;
-        }
-        if type_visitor::get_def_id_from_closure(closure_ty).is_some() {
-            actual_args.insert(0, caller_call_info.actual_args[0].clone());
-            actual_argument_types.insert(0, closure_ty);
-            if let TyKind::Closure(_, substs) = closure_ty.kind {
-                let mut map = call_info
-                    .callee_generic_argument_map
-                    .unwrap_or_else(HashMap::new);
-                if let Some(ty) = substs.types().next() {
-                    let self_sym = rustc_span::Symbol::intern("Self");
-                    map.insert(self_sym, ty);
-                }
-                call_info.callee_generic_argument_map = Some(map);
-            }
-        }
-
-        let function_constant_args = self.get_function_constant_args(&actual_args);
-        let callee_func_ref = self.get_func_ref(&callee);
-        call_info.callee_func_ref = callee_func_ref;
-        call_info.callee_fun_val = callee;
-        call_info.callee_known_name = KnownNames::None;
-        call_info.actual_args = &actual_args;
-        call_info.actual_argument_types = &actual_argument_types;
-        call_info.function_constant_args = &function_constant_args;
-        let function_summary = if let Some(func_ref) = &call_info.callee_func_ref {
-            call_info.callee_def_id = func_ref.def_id.expect("defined when used here");
-            call_info.callee_generic_arguments = self
-                .bv
-                .cv
-                .substs_cache
-                .get(&call_info.callee_def_id)
-                .cloned();
-            let summary = self.get_function_summary(&call_info);
-            if let Some(summary) = summary {
-                summary
-            } else {
-                self.deal_with_missing_summary(&call_info);
-                Summary::default()
-            }
-        } else {
-            self.deal_with_missing_summary(&call_info);
-            Summary::default()
-        };
-
-        self.check_preconditions_if_necessary(&call_info, &function_summary);
-        self.transfer_and_refine_normal_return_state(&call_info, &function_summary);
-        self.transfer_and_refine_cleanup_state(&call_info, &function_summary);
-    }
-
-    /// Checks if the preconditions obtained from the summary of the function being called
-    /// are met by the current state and arguments of the calling function.
-    /// Preconditions that are definitely false and reachable cause diagnostic messages.
-    /// Preconditions that are maybe false become preconditions of the calling function
-    /// unless the calling function is an analysis root, in which case a diagnostic message is issued.
-    #[logfn_inputs(TRACE)]
-    fn check_function_preconditions(
-        &mut self,
-        call_info: &CallInfo<'_, 'tcx>,
-        function_summary: &Summary,
-    ) {
-        verify!(self.bv.check_for_errors);
-        for precondition in &function_summary.preconditions {
-            let mut refined_condition = precondition
-                .condition
-                .refine_parameters(call_info.actual_args, self.bv.fresh_variable_offset)
-                .refine_paths(&self.bv.current_environment);
-            if self
-                .bv
-                .current_environment
-                .entry_condition
-                .as_bool_if_known()
-                .is_none()
-            {
-                refined_condition =
-                    refined_condition.refine_with(&self.bv.current_environment.entry_condition, 0);
-            }
-            let (refined_precondition_as_bool, entry_cond_as_bool) =
-                self.check_condition_value_and_reachability(&refined_condition);
-
-            if refined_precondition_as_bool.unwrap_or(false) {
-                // The precondition is definitely true.
-                continue;
-            };
-
-            let warn;
-            if !refined_precondition_as_bool.unwrap_or(true) {
-                // The precondition is definitely false.
-                if entry_cond_as_bool.unwrap_or(false) {
-                    // We always get to this call
-                    self.issue_diagnostic_for_call(call_info, precondition, false);
-                    return;
-                } else {
-                    // Promote the precondition, but be assertive.
-                    // When the caller fails to meet the precondition, failure is certain.
-                    warn = false;
-                }
-            } else {
-                warn = true;
-            }
-
-            // If the current function is not an analysis root, promote the precondition, subject to a k-limit.
-            if !self.function_being_analyzed_is_root()
-                && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
-            {
-                // Promote the callee precondition to a precondition of the current function.
-                // Unless, of course, if the precondition is already a precondition of the
-                // current function.
-                let seen_precondition = self.bv.preconditions.iter().any(|pc| {
-                    pc.spans.last() == precondition.spans.last()
-                        || pc.provenance == precondition.provenance
-                });
-                if seen_precondition {
-                    continue;
-                }
-                let promoted_condition = self
-                    .bv
-                    .current_environment
-                    .entry_condition
-                    .logical_not()
-                    .or(refined_condition);
-                let mut stacked_spans = vec![self.bv.current_span];
-                stacked_spans.append(&mut precondition.spans.clone());
-                let promoted_precondition = Precondition {
-                    condition: promoted_condition,
-                    message: precondition.message.clone(),
-                    provenance: precondition.provenance.clone(),
-                    spans: stacked_spans,
-                };
-                self.bv.preconditions.push(promoted_precondition);
-                return;
-            }
-
-            // The precondition cannot be promoted, so the buck stops here.
-            self.issue_diagnostic_for_call(call_info, precondition, warn);
-        }
-    }
-
-    // Issue a diagnostic, but only if there isn't already a diagnostic for this
-    // function call.
-    #[logfn_inputs(TRACE)]
-    fn issue_diagnostic_for_call(
-        &mut self,
-        call_info: &CallInfo<'_, 'tcx>,
-        precondition: &Precondition,
-        warn: bool,
-    ) {
-        if self.bv.check_for_errors
-            && !self
-                .bv
-                .already_reported_errors_for_call_to
-                .contains(&call_info.callee_fun_val)
-        {
-            self.emit_diagnostic_for_precondition(precondition, warn);
-            self.bv
-                .already_reported_errors_for_call_to
-                .insert(call_info.callee_fun_val.clone());
-        }
-    }
-
     /// Emit a diagnostic to the effect that the current call might violate a the given precondition
     /// of the called function. Use the provenance and spans of the precondition to point out related locations.
     #[logfn_inputs(TRACE)]
-    fn emit_diagnostic_for_precondition(&mut self, precondition: &Precondition, warn: bool) {
+    pub fn emit_diagnostic_for_precondition(&mut self, precondition: &Precondition, warn: bool) {
         precondition!(self.bv.check_for_errors);
         let mut diagnostic = if warn {
             Rc::new(format!("possible {}", precondition.message))
@@ -1756,327 +667,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         self.bv.emit_diagnostic(err);
     }
 
-    /// Updates the current state to reflect the effects of a normal return from the function call.
-    #[logfn_inputs(TRACE)]
-    fn transfer_and_refine_normal_return_state(
-        &mut self,
-        call_info: &CallInfo<'_, 'tcx>,
-        function_summary: &Summary,
-    ) {
-        if let Some((place, target)) = &call_info.destination {
-            // Assign function result to place
-            let target_path = self.visit_place(place);
-            let return_value_path = Path::new_result();
-
-            // Transfer side effects
-            if function_summary.is_computed && !function_summary.is_angelic {
-                // Effects on the heap
-                for (path, value) in function_summary.side_effects.iter() {
-                    if path.is_rooted_by_abstract_heap_block() {
-                        let rvalue = value
-                            .clone()
-                            .refine_parameters(call_info.actual_args, self.bv.fresh_variable_offset)
-                            .refine_paths(&self.bv.current_environment);
-                        self.bv
-                            .current_environment
-                            .update_value_at(path.clone(), rvalue);
-                    }
-                    check_for_early_return!(self);
-                }
-
-                // Effects on the call result
-                self.transfer_and_refine(
-                    &function_summary.side_effects,
-                    target_path.clone(),
-                    &return_value_path,
-                    call_info.actual_args,
-                );
-
-                // Effects on the call arguments
-                for (i, (target_path, _)) in call_info.actual_args.iter().enumerate() {
-                    let parameter_path = Path::new_parameter(i + 1);
-                    self.transfer_and_refine(
-                        &function_summary.side_effects,
-                        target_path.clone(),
-                        &parameter_path,
-                        call_info.actual_args,
-                    );
-                    check_for_early_return!(self);
-                }
-            } else {
-                // We don't know anything other than the return value type.
-                // We'll assume there were no side effects and no preconditions (but check this later if possible).
-                let result_type = self
-                    .bv
-                    .type_visitor
-                    .get_place_type(place, self.bv.current_span);
-                let result = AbstractValue::make_from(
-                    Expression::UninterpretedCall {
-                        callee: call_info.callee_fun_val.clone(),
-                        arguments: call_info
-                            .actual_args
-                            .iter()
-                            .map(|(_, arg)| arg.clone())
-                            .collect(),
-                        result_type,
-                        path: return_value_path.clone(),
-                    },
-                    1,
-                );
-                self.bv
-                    .current_environment
-                    .update_value_at(return_value_path, result);
-            }
-
-            // Add post conditions to entry condition
-            let mut exit_condition = self.bv.current_environment.entry_condition.clone();
-            if let Some(unwind_condition) = &function_summary.unwind_condition {
-                exit_condition = exit_condition.and(unwind_condition.logical_not());
-            }
-            if let Some(post_condition) = &function_summary.post_condition {
-                let mut return_value_env = Environment::default();
-                let var_type = self
-                    .bv
-                    .type_visitor
-                    .get_place_type(place, self.bv.current_span);
-                let result_val = AbstractValue::make_from(
-                    Expression::Variable {
-                        path: target_path,
-                        var_type,
-                    },
-                    1,
-                );
-                let return_value_path = Path::new_local(self.bv.fresh_variable_offset);
-
-                return_value_env.update_value_at(return_value_path, result_val);
-                let refined_post_condition = post_condition
-                    .refine_parameters(call_info.actual_args, self.bv.fresh_variable_offset)
-                    .refine_paths(&return_value_env);
-                debug!(
-                    "refined post condition before path refinement {:?}",
-                    refined_post_condition
-                );
-                let refined_post_condition =
-                    refined_post_condition.refine_paths(&self.bv.current_environment);
-                debug!("refined post condition {:?}", refined_post_condition);
-                exit_condition = exit_condition.and(refined_post_condition);
-            }
-
-            self.bv.current_environment.exit_conditions = self
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(*target, exit_condition);
-        }
-    }
-
-    /// Handle the case where the called function does not complete normally.
-    #[logfn_inputs(TRACE)]
-    fn transfer_and_refine_cleanup_state(
-        &mut self,
-        call_info: &CallInfo<'_, 'tcx>,
-        function_summary: &Summary,
-    ) {
-        if let Some(cleanup_target) = call_info.cleanup {
-            for (i, (target_path, _)) in call_info.actual_args.iter().enumerate() {
-                let parameter_path = Path::new_parameter(i + 1);
-                self.transfer_and_refine(
-                    &function_summary.unwind_side_effects,
-                    target_path.clone(),
-                    &parameter_path,
-                    call_info.actual_args,
-                );
-            }
-            let mut exit_condition = self.bv.current_environment.entry_condition.clone();
-            if let Some(unwind_condition) = &function_summary.unwind_condition {
-                exit_condition = exit_condition.and(unwind_condition.clone());
-            }
-            self.bv.current_environment.exit_conditions = self
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(cleanup_target, exit_condition);
-        }
-    }
-
-    /// If the function being called is a special function like mirai_annotations.mirai_verify or
-    /// std.panicking.begin_panic then report a diagnostic or create a precondition as appropriate.
-    #[logfn_inputs(TRACE)]
-    fn report_calls_to_special_functions(&mut self, call_info: &CallInfo<'_, 'tcx>) {
-        precondition!(self.bv.check_for_errors);
-        match call_info.callee_known_name {
-            KnownNames::MiraiAssume => {
-                assume!(call_info.actual_args.len() == 1);
-                let (_, cond) = &call_info.actual_args[0];
-                let (cond_as_bool, entry_cond_as_bool) =
-                    self.check_condition_value_and_reachability(cond);
-
-                // If we never get here, rather call unreachable!()
-                if !entry_cond_as_bool.unwrap_or(true) {
-                    let span = self.bv.current_span;
-                    let message =
-                        "this is unreachable, mark it as such by using the unreachable! macro";
-                    let warning = self.bv.cv.session.struct_span_warn(span, message);
-                    self.bv.emit_diagnostic(warning);
-                    return;
-                }
-
-                // If the condition is always true, this assumption is redundant
-                if cond_as_bool.unwrap_or(false) {
-                    let span = self.bv.current_span;
-                    let warning = self
-                        .bv
-                        .cv
-                        .session
-                        .struct_span_warn(span, "assumption is provably true and can be deleted");
-                    self.bv.emit_diagnostic(warning);
-                }
-            }
-            KnownNames::MiraiPostcondition => {
-                assume!(call_info.actual_args.len() == 3); // The type checker ensures this.
-                let (_, assumption) = &call_info.actual_args[1];
-                let (_, cond) = &call_info.actual_args[0];
-                if !assumption.as_bool_if_known().unwrap_or(false) {
-                    let message = self.coerce_to_string(&call_info.actual_args[2].1);
-                    if self.check_condition(cond, message, true).is_none() {
-                        self.try_extend_post_condition(&cond);
-                    }
-                } else {
-                    self.try_extend_post_condition(&cond);
-                }
-            }
-            KnownNames::MiraiVerify => {
-                assume!(call_info.actual_args.len() == 2); // The type checker ensures this.
-                let (_, cond) = &call_info.actual_args[0];
-                let message = self.coerce_to_string(&call_info.actual_args[1].1);
-                if let Some(warning) = self.check_condition(cond, message, false) {
-                    // Push a precondition so that any known or unknown caller of this function
-                    // is warned that this function will fail if the precondition is not met.
-                    if self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
-                        let condition = self
-                            .bv
-                            .current_environment
-                            .entry_condition
-                            .logical_not()
-                            .or(cond.clone());
-                        let precondition = Precondition {
-                            condition,
-                            message: Rc::new(warning),
-                            provenance: None,
-                            spans: vec![self.bv.current_span],
-                        };
-                        self.bv.preconditions.push(precondition);
-                    }
-                }
-            }
-            KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
-                assume!(!call_info.actual_args.is_empty()); // The type checker ensures this.
-                let mut path_cond = self
-                    .bv
-                    .current_environment
-                    .entry_condition
-                    .as_bool_if_known();
-                if path_cond.is_none() {
-                    // Try the SMT solver
-                    let path_expr = &self.bv.current_environment.entry_condition.expression;
-                    let path_smt = self.bv.smt_solver.get_as_smt_predicate(path_expr);
-                    if self.bv.smt_solver.solve_expression(&path_smt) == SmtResult::Unsatisfiable {
-                        path_cond = Some(false)
-                    }
-                }
-                if !path_cond.unwrap_or(true) {
-                    // We never get to this call, so nothing to report.
-                    return;
-                }
-
-                let fmt_string = if matches!(
-                    call_info.callee_known_name,
-                    KnownNames::StdPanickingBeginPanic
-                ) {
-                    call_info.actual_args[0].1.clone()
-                } else {
-                    let index = Rc::new(0u128.into());
-                    let args_pieces_0 = Path::new_index(
-                        Path::new_field(call_info.actual_args[0].0.clone(), 0),
-                        index,
-                    )
-                    .refine_paths(&self.bv.current_environment);
-                    self.bv.lookup_path_and_refine_result(
-                        args_pieces_0,
-                        ExpressionType::Reference.as_rustc_type(self.bv.tcx),
-                    )
-                };
-                let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(msg)) =
-                    &fmt_string.expression
-                {
-                    if msg.contains("entered unreachable code")
-                        || msg.contains("not yet implemented")
-                        || msg.starts_with("unrecoverable: ")
-                    {
-                        // We treat unreachable!() as an assumption rather than an assertion to prove.
-                        // unimplemented!() is unlikely to be a programmer mistake, so need to fixate on that either.
-                        // unrecoverable! is way for the programmer to indicate that termination is not a mistake.
-                        return;
-                    } else {
-                        if path_cond.is_none() && msg.as_str() == "statement is reachable" {
-                            // verify_unreachable should always complain if possibly reachable
-                            // and the current function is public or root.
-                            path_cond = Some(true);
-                        }
-                        msg.clone()
-                    }
-                } else {
-                    Rc::new(String::from("execution panic"))
-                };
-                let span = self.bv.current_span;
-
-                if path_cond.unwrap_or(false) && self.function_being_analyzed_is_root() {
-                    // We always get to this call and we have to assume that the function will
-                    // get called, so keep the message certain.
-                    // Don't, however, complain about panics in the standard contract summaries
-                    if std::env::var("MIRAI_START_FRESH").is_err() {
-                        let err = self.bv.cv.session.struct_span_warn(span, msg.as_str());
-                        self.bv.emit_diagnostic(err);
-                    }
-                } else {
-                    // We might get to this call, depending on the state at the call site.
-                    //
-                    // In the case when an assert macro has been called, the inverse of the assertion
-                    // was conjoined into the entry condition and this condition was simplified.
-                    // We therefore cannot distinguish the case of maybe reaching a definitely
-                    // false assertion from the case of definitely reaching a maybe false assertion.
-                    //
-                    // Since the assert and panic macros are commonly used to create preconditions
-                    // it would be very inconvenient if this possibly false assertion were reported
-                    // as a problem since there would be no way to shut it up. We therefore do not
-                    // report this and instead insist that anyone who wants to have MIRAI check
-                    // their assertions should use the mirai_annotations::verify! macro instead.
-                    //
-                    // We **do** have to push a precondition since this is the probable intent.
-                    let condition = self.bv.current_environment.entry_condition.logical_not();
-                    let precondition = Precondition {
-                        condition,
-                        message: msg,
-                        provenance: None,
-                        spans: if self.bv.def_id.is_local() {
-                            vec![span]
-                        } else {
-                            vec![] // The span is likely inside a standard macro, i.e. panic! etc.
-                        },
-                    };
-                    self.bv.preconditions.push(precondition);
-                }
-            }
-            _ => assume_unreachable!(),
-        }
-    }
-
     /// Extend the current post condition by the given `cond`. If none was set before,
     /// this will just set it for the first time. If there is already a post condition.
     /// we check whether it is safe to extend it. It is considered safe if the block where
     /// it was set dominates the existing one.
     #[logfn_inputs(TRACE)]
-    fn try_extend_post_condition(&mut self, cond: &Rc<AbstractValue>) {
+    pub fn try_extend_post_condition(&mut self, cond: &Rc<AbstractValue>) {
         precondition!(self.bv.check_for_errors);
         let this_block = self.bv.current_location.block;
         match (self.bv.post_condition.clone(), self.bv.post_condition_block) {
@@ -2107,7 +703,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// If not issue a warning if the function is public and return the warning message, if
     /// the condition is not a post condition.
     #[logfn_inputs(TRACE)]
-    fn check_condition(
+    pub fn check_condition(
         &mut self,
         cond: &Rc<AbstractValue>,
         message: Rc<String>,
@@ -2180,290 +776,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
     /// Returns true if the function being analyzed is an analysis root.
     #[logfn_inputs(TRACE)]
-    fn function_being_analyzed_is_root(&mut self) -> bool {
+    pub fn function_being_analyzed_is_root(&mut self) -> bool {
         self.bv.active_calls.len() <= 1
-    }
-
-    /// Adds a (rpath, rvalue) pair to the current environment for every pair in effects
-    /// for which the path is rooted by source_path and where rpath is path re-rooted with
-    /// target_path and rvalue is value refined by replacing all occurrences of parameter values
-    /// with the corresponding actual values.
-    #[logfn_inputs(TRACE)]
-    fn transfer_and_refine(
-        &mut self,
-        effects: &[(Rc<Path>, Rc<AbstractValue>)],
-        target_path: Rc<Path>,
-        source_path: &Rc<Path>,
-        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
-    ) {
-        for (path, value) in effects
-            .iter()
-            .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
-        {
-            trace!("effect {:?} {:?}", path, value);
-            let dummy_root = Path::new_local(999);
-            let refined_dummy_root = Path::new_local(self.bv.fresh_variable_offset + 999);
-            let tpath = path
-                .replace_root(source_path, dummy_root)
-                .refine_parameters(arguments, self.bv.fresh_variable_offset)
-                .replace_root(&refined_dummy_root, target_path.clone())
-                .refine_paths(&self.bv.current_environment);
-            let rvalue = value
-                .refine_parameters(arguments, self.bv.fresh_variable_offset)
-                .refine_paths(&self.bv.current_environment);
-            trace!("refined effect {:?} {:?}", tpath, rvalue);
-            let rtype = rvalue.expression.infer_type();
-            match &rvalue.expression {
-                Expression::HeapBlock { .. } => {
-                    if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
-                        if let PathSelector::Slice(..) = selector.as_ref() {
-                            let source_path = Path::get_as_path(rvalue.clone());
-                            let target_type = type_visitor::get_element_type(
-                                self.bv
-                                    .type_visitor
-                                    .get_path_rustc_type(&target_path, self.bv.current_span),
-                            );
-                            self.copy_or_move_elements(
-                                tpath.clone(),
-                                source_path,
-                                target_type,
-                                false,
-                            );
-                            continue;
-                        }
-                    }
-                    self.bv.current_environment.update_value_at(tpath, rvalue);
-                    continue;
-                }
-                Expression::HeapBlockLayout { source, .. } => {
-                    match source {
-                        LayoutSource::DeAlloc => {
-                            self.purge_abstract_heap_address_from_environment(
-                                &tpath,
-                                &rvalue.expression,
-                            );
-                        }
-                        LayoutSource::ReAlloc => {
-                            let layout_argument_path = Path::new_layout(path.clone());
-                            if let Some((_, val)) =
-                                &effects.iter().find(|(p, _)| p.eq(&layout_argument_path))
-                            {
-                                let realloc_layout_val = val
-                                    .clone()
-                                    .refine_parameters(arguments, self.bv.fresh_variable_offset)
-                                    .refine_paths(&self.bv.current_environment);
-                                self.update_zeroed_flag_for_heap_block_from_environment(
-                                    &tpath,
-                                    &realloc_layout_val.expression,
-                                );
-                            }
-                        }
-                        _ => {}
-                    }
-
-                    self.bv.current_environment.update_value_at(tpath, rvalue);
-                    continue;
-                }
-                Expression::Offset { .. } => {
-                    if self.bv.check_for_errors && self.function_being_analyzed_is_root() {
-                        self.check_offset(&rvalue);
-                    }
-                }
-                Expression::Variable { path, .. } => {
-                    let target_type = self
-                        .bv
-                        .type_visitor
-                        .get_path_rustc_type(&tpath, self.bv.current_span);
-                    if let PathEnum::LocalVariable { ordinal } = &path.value {
-                        if *ordinal >= self.bv.fresh_variable_offset {
-                            // A fresh variable from the callee adds no information that is not
-                            // already inherent in the target location.
-                            self.bv.current_environment.value_map =
-                                self.bv.current_environment.value_map.remove(&tpath);
-                            continue;
-                        }
-                        if rtype == ExpressionType::NonPrimitive {
-                            self.copy_or_move_elements(
-                                tpath.clone(),
-                                path.clone(),
-                                target_type,
-                                false,
-                            );
-                        }
-                    } else if path.is_rooted_by_parameter() {
-                        self.bv.current_environment.update_value_at(tpath, rvalue);
-                        continue;
-                    } else if rtype == ExpressionType::NonPrimitive {
-                        self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
-                    }
-                }
-                _ => {}
-            }
-            if rtype != ExpressionType::NonPrimitive {
-                self.bv.current_environment.update_value_at(tpath, rvalue);
-            }
-            check_for_early_return!(self);
-        }
-    }
-
-    /// The heap block rooting layout_path has been deallocated in the function whose
-    /// summary is being transferred to the current environment. If we know the identity of the
-    /// heap block in the current environment, we need to check the validity of the deallocation
-    /// and also have to delete any paths rooted in the heap block.
-    #[logfn_inputs(TRACE)]
-    fn purge_abstract_heap_address_from_environment(
-        &mut self,
-        layout_path: &Rc<Path>,
-        new_layout_expression: &Expression,
-    ) {
-        if let PathEnum::QualifiedPath {
-            qualifier,
-            selector,
-            ..
-        } = &layout_path.value
-        {
-            if *selector.as_ref() == PathSelector::Layout {
-                let old_layout = self.bv.lookup_path_and_refine_result(
-                    layout_path.clone(),
-                    ExpressionType::NonPrimitive.as_rustc_type(self.bv.tcx),
-                );
-                if let Expression::HeapBlockLayout { .. } = &old_layout.expression {
-                    if self.bv.check_for_errors {
-                        self.check_for_layout_consistency(
-                            &old_layout.expression,
-                            new_layout_expression,
-                        );
-                    }
-                    let mut purged_map = self.bv.current_environment.value_map.clone();
-                    for (path, _) in self
-                        .bv
-                        .current_environment
-                        .value_map
-                        .iter()
-                        .filter(|(p, _)| p.is_rooted_by(&qualifier))
-                    {
-                        purged_map = purged_map.remove(path);
-                    }
-                    self.bv.current_environment.value_map = purged_map;
-                }
-            }
-        } else {
-            assume_unreachable!("Layout values should only be associated with layout paths");
-        }
-    }
-
-    /// Following a reallocation we are no longer guaranteed that the resulting heap
-    /// memory block has been zeroed out by the allocator. Search the environment for equivalent
-    /// heap block values and update them to clear the zeroed flag (if set).
-    #[logfn_inputs(DEBUG)]
-    fn update_zeroed_flag_for_heap_block_from_environment(
-        &mut self,
-        layout_path: &Rc<Path>,
-        new_layout_expression: &Expression,
-    ) {
-        if let PathEnum::QualifiedPath { qualifier, .. } = &layout_path.value {
-            if self.bv.check_for_errors {
-                let old_layout = self.bv.lookup_path_and_refine_result(
-                    layout_path.clone(),
-                    ExpressionType::NonPrimitive.as_rustc_type(self.bv.tcx),
-                );
-                self.check_for_layout_consistency(&old_layout.expression, new_layout_expression);
-            }
-            if let PathEnum::HeapBlock { value } = &qualifier.value {
-                if let Expression::HeapBlock {
-                    abstract_address,
-                    is_zeroed,
-                } = &value.expression
-                {
-                    if *is_zeroed {
-                        let mut updated_value_map = self.bv.current_environment.value_map.clone();
-                        for (path, value) in self.bv.current_environment.value_map.iter() {
-                            if let Expression::Reference(p) = &value.expression {
-                                if let PathEnum::HeapBlock { value } = &p.value {
-                                    if let Expression::HeapBlock {
-                                        abstract_address: a,
-                                        is_zeroed: z,
-                                    } = &value.expression
-                                    {
-                                        if *abstract_address == *a && *z {
-                                            let new_block = AbstractValue::make_from(
-                                                Expression::HeapBlock {
-                                                    abstract_address: *a,
-                                                    is_zeroed: false,
-                                                },
-                                                1,
-                                            );
-                                            let new_block_path = Path::get_as_path(new_block);
-                                            let new_reference =
-                                                AbstractValue::make_reference(new_block_path);
-                                            updated_value_map = updated_value_map
-                                                .insert(path.clone(), new_reference);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        self.bv.current_environment.value_map = updated_value_map;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Checks that the layout used to allocate a pointer has an equivalent runtime value to the
-    /// layout used to deallocate the pointer.
-    /// Also checks that a pointer is deallocated at most once.
-    #[logfn_inputs(TRACE)]
-    fn check_for_layout_consistency(&mut self, old_layout: &Expression, new_layout: &Expression) {
-        precondition!(self.bv.check_for_errors);
-        if let (
-            Expression::HeapBlockLayout {
-                length: old_length,
-                alignment: old_alignment,
-                source: old_source,
-            },
-            Expression::HeapBlockLayout {
-                length: new_length,
-                alignment: new_alignment,
-                source: new_source,
-            },
-        ) = (old_layout, new_layout)
-        {
-            if *old_source == LayoutSource::DeAlloc {
-                let error = self.bv.cv.session.struct_span_err(
-                    self.bv.current_span,
-                    "the pointer points to memory that has already been deallocated",
-                );
-                self.bv.emit_diagnostic(error);
-            }
-            let layouts_match = old_length
-                .equals(new_length.clone())
-                .and(old_alignment.equals(new_alignment.clone()));
-            let (layouts_match_as_bool, entry_cond_as_bool) =
-                self.check_condition_value_and_reachability(&layouts_match);
-            if entry_cond_as_bool.unwrap_or(true) && !layouts_match_as_bool.unwrap_or(false) {
-                // The condition may be reachable and it may be false
-                let message = format!(
-                    "{}{} the pointer with layout information inconsistent with the allocation",
-                    if entry_cond_as_bool.is_none() || layouts_match_as_bool.is_none() {
-                        "possibly "
-                    } else {
-                        ""
-                    },
-                    if *new_source == LayoutSource::ReAlloc {
-                        "reallocates"
-                    } else {
-                        "deallocates"
-                    }
-                );
-                let error = self
-                    .bv
-                    .cv
-                    .session
-                    .struct_span_err(self.bv.current_span, &message);
-                self.bv.emit_diagnostic(error);
-            }
-        }
     }
 
     /// Jump to the target if the condition has the expected value,
@@ -2601,7 +915,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Only call this when doing actual error checking, since this is expensive.
     #[logfn_inputs(TRACE)]
     #[logfn(TRACE)]
-    fn check_condition_value_and_reachability(
+    pub fn check_condition_value_and_reachability(
         &mut self,
         cond_val: &Rc<AbstractValue>,
     ) -> (Option<bool>, Option<bool>) {
@@ -2779,14 +1093,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
     /// Copies/moves all paths rooted in rpath to corresponding paths rooted in target_path.
     #[logfn_inputs(TRACE)]
-    fn copy_or_move_elements(
+    pub fn copy_or_move_elements(
         &mut self,
         target_path: Rc<Path>,
         source_path: Rc<Path>,
         target_rustc_type: Ty<'tcx>,
         move_elements: bool,
     ) {
-        check_for_early_return!(self);
+        check_for_early_return!(self.bv);
         // Some qualified source_paths are patterns that represent collections of values.
         // We need to expand the patterns before doing the actual moves.
         if let PathEnum::QualifiedPath {
@@ -2902,7 +1216,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .iter()
                 .filter(|(p, _)| p.is_rooted_by(&source_path))
             {
-                check_for_early_return!(self);
+                check_for_early_return!(self.bv);
                 let qualified_path = path.replace_root(&source_path, target_path.clone());
                 if move_elements {
                     trace!("moving child {:?} to {:?}", value, qualified_path);
@@ -2992,7 +1306,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             if self.bv.assume_function_is_angelic {
                 break;
             }
-            check_for_early_return!(self);
+            check_for_early_return!(self.bv);
         }
     }
 
@@ -3304,7 +1618,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate
     #[logfn_inputs(TRACE)]
-    fn do_checked_binary_op(
+    pub fn do_checked_binary_op(
         bin_op: mir::BinOp,
         target_type: ExpressionType,
         left: Rc<AbstractValue>,
@@ -4172,7 +2486,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Returns a Path instance that is the essentially the same as the Place instance, but which
     /// can be serialized and used as a cache key. Also caches the place type with the path as key.
     #[logfn_inputs(TRACE)]
-    fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
+    pub fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let path = self.get_path_for_place(place);
         let ty = self
             .bv
