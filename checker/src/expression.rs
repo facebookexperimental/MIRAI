@@ -328,6 +328,16 @@ pub enum Expression {
         result_type: ExpressionType,
     },
 
+    /// An expression that selects a value based on the value of a discriminator expression. match
+    Switch {
+        // The value that is switched on.
+        discriminator: Rc<AbstractValue>,
+        // (switch_case_val, result_in_this_case)
+        cases: Vec<(Rc<AbstractValue>, Rc<AbstractValue>)>,
+        // The result value when the discriminator value does not match any switch case value.
+        default: Rc<AbstractValue>,
+    },
+
     /// An expression that represents the result of calling an unknown function.
     /// Typically this will be a trait method, function parameter, or an intrinsic/foreign function.
     /// In the case of a trait method or a function parameter, the caller might be able to refine
@@ -515,6 +525,18 @@ impl Debug for Expression {
             Expression::SubOverflows { left, right, .. } => {
                 f.write_fmt(format_args!("overflows(({:?}) - ({:?}))", left, right))
             }
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                f.write_fmt(format_args!("switch {:?} {{", discriminator))?;
+                for (switch_case, value) in cases {
+                    f.write_fmt(format_args!(" {:?} => {:?},", switch_case, value))?;
+                }
+                f.write_fmt(format_args!(" _ => {:?}", default))?;
+                f.write_str(" }")
+            }
             Expression::UninterpretedCall {
                 callee,
                 arguments,
@@ -673,6 +695,7 @@ impl Expression {
             Expression::ShrOverflows { .. } => Bool,
             Expression::Sub { left, .. } => left.expression.infer_type(),
             Expression::SubOverflows { .. } => Bool,
+            Expression::Switch { default, .. } => default.expression.infer_type(),
             Expression::UninterpretedCall { result_type, .. } => result_type.clone(),
             Expression::UnknownModelField { default, .. } => default.expression.infer_type(),
             Expression::Variable { var_type, .. } => var_type.clone(),
@@ -759,6 +782,18 @@ impl Expression {
                 operand.expression.record_heap_blocks(result);
             }
             Expression::Reference(path) => path.record_heap_blocks(result),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                discriminator.record_heap_blocks(result);
+                for (case_val, case_result) in cases {
+                    case_val.record_heap_blocks(result);
+                    case_result.record_heap_blocks(result);
+                }
+                default.record_heap_blocks(result);
+            }
             Expression::Variable { path, .. } => path.record_heap_blocks(result),
             _ => (),
         }

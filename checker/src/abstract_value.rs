@@ -281,6 +281,7 @@ pub trait AbstractValueTrait: Sized {
     fn inverse_implies(&self, other: &Rc<AbstractValue>) -> bool;
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool;
     fn is_bottom(&self) -> bool;
+    fn is_compile_time_constant(&self) -> bool;
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
     fn is_path_alias(&self) -> bool;
     fn is_top(&self) -> bool;
@@ -303,6 +304,11 @@ pub trait AbstractValueTrait: Sized {
     fn subtract(&self, other: Self) -> Self;
     fn sub_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn subset(&self, other: &Self) -> bool;
+    fn switch(
+        &self,
+        cases: Vec<(Rc<AbstractValue>, Rc<AbstractValue>)>,
+        default: Rc<AbstractValue>,
+    ) -> Rc<AbstractValue>;
     fn try_to_retype_as(&self, target_type: &ExpressionType) -> Self;
     fn try_to_simplify_binary_op(
         &self,
@@ -883,6 +889,37 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     .or(c2.clone())
                     .conditional_expression(consequent, b.clone());
             }
+
+            // [if x == y { consequent } else { if x == z  { a } else { b } } ] -> switch x { y => consequent, z => a, _ => b }
+            if let (
+                Expression::Equals { left: x, right: y },
+                Expression::Equals { left: x1, right: z },
+            ) = (&self.expression, &c2.expression)
+            {
+                if x.eq(x1) {
+                    return x.switch(
+                        vec![(y.clone(), consequent), (z.clone(), a.clone())],
+                        b.clone(),
+                    );
+                }
+            }
+        }
+
+        // [if x == y { consequent } else { switch x { z  => a, _ => b } ] -> switch x { y => consequent, z => a, _ => b }
+        if let (
+            Expression::Equals { left: x, right: y },
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            },
+        ) = (&self.expression, &alternate.expression)
+        {
+            if x.eq(discriminator) {
+                let mut cases = cases.clone();
+                cases.push((y.clone(), consequent));
+                return discriminator.switch(cases, default.clone());
+            }
         }
 
         let expression_size = self
@@ -971,6 +1008,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .try_to_retype_as(target_type)
                 .subtract(right.try_to_retype_as(target_type)),
             Expression::Neg { operand } => operand.try_to_retype_as(target_type).negate(),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator.switch(
+                cases
+                    .iter()
+                    .map(|(case_val, result_val)| {
+                        (case_val.clone(), result_val.try_to_retype_as(target_type))
+                    })
+                    .collect(),
+                default.try_to_retype_as(target_type),
+            ),
             Expression::Variable { path, .. } => AbstractValue::make_from(
                 Expression::Variable {
                     path: path.clone(),
@@ -1022,6 +1072,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     )
                 }
             }
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator.switch(
+                cases
+                    .iter()
+                    .map(|(case_val, result_val)| {
+                        (
+                            case_val.clone(),
+                            result_val.dereference(target_type.clone()),
+                        )
+                    })
+                    .collect(),
+                default.dereference(target_type),
+            ),
             Expression::UninterpretedCall { path, .. } | Expression::Variable { path, .. } => {
                 AbstractValue::make_from(
                     Expression::Variable {
@@ -1386,6 +1452,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn is_bottom(&self) -> bool {
         match &self.expression {
             Expression::Bottom => true,
+            _ => false,
+        }
+    }
+
+    /// True if this value is a compile time constant.
+    #[logfn_inputs(TRACE)]
+    fn is_compile_time_constant(&self) -> bool {
+        match &self.expression {
+            Expression::CompileTimeConstant(..) => true,
             _ => false,
         }
     }
@@ -2125,6 +2200,58 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
+    /// Constructs a switch value.
+    #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
+    fn switch(
+        &self,
+        mut cases: Vec<(Rc<AbstractValue>, Rc<AbstractValue>)>,
+        default: Rc<AbstractValue>,
+    ) -> Rc<AbstractValue> {
+        if self.is_compile_time_constant()
+            && cases
+                .iter()
+                .all(|(case_val, _)| case_val.is_compile_time_constant())
+        {
+            return if let Some((_, case_result)) = cases.iter().find(|(case_val, _)| {
+                self.equals(case_val.clone())
+                    .as_bool_if_known()
+                    .unwrap_or(false)
+            }) {
+                case_result.clone()
+            } else {
+                default
+            };
+        }
+
+        if let Expression::Switch {
+            discriminator,
+            cases: default_cases,
+            default: default_default,
+        } = &default.expression
+        {
+            if self.eq(discriminator) {
+                cases.append(&mut default_cases.clone());
+                return self.switch(cases, default_default.clone());
+            }
+        }
+        let expression_size = self
+            .expression_size
+            .wrapping_add(default.expression_size)
+            .wrapping_add(cases.iter().fold(0u64, |acc, (x, y)| {
+                acc.wrapping_add(x.expression_size)
+                    .wrapping_add(y.expression_size)
+            }));
+        AbstractValue::make_from(
+            Expression::Switch {
+                discriminator: self.clone(),
+                cases,
+                default,
+            },
+            expression_size,
+        )
+    }
+
     /// Tries to simplify operation(self, other) by constant folding or by distribution
     /// the operation over self and/or other.
     /// Returns operation(self, other) if no simplification is possible.
@@ -2230,6 +2357,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Mul { left, right } => left.get_as_interval().mul(&right.get_as_interval()),
             Expression::Neg { operand } => operand.get_as_interval().neg(),
             Expression::Sub { left, right } => left.get_as_interval().sub(&right.get_as_interval()),
+            Expression::Switch { cases, default, .. } => cases
+                .iter()
+                .fold(default.get_as_interval(), |acc, (_, result)| {
+                    acc.widen(&result.get_as_interval())
+                }),
             Expression::Variable { .. } => interval_domain::BOTTOM,
             Expression::Widen { operand, .. } => {
                 let interval = operand.get_as_interval();
@@ -2420,6 +2552,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => left
                 .refine_paths(environment)
                 .sub_overflows(right.refine_paths(environment), result_type.clone()),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator.refine_paths(environment).switch(
+                cases
+                    .iter()
+                    .map(|(case_val, result_val)| {
+                        (
+                            case_val.refine_paths(environment),
+                            result_val.refine_paths(environment),
+                        )
+                    })
+                    .collect(),
+                default.refine_paths(environment),
+            ),
             Expression::UninterpretedCall { .. } => self.clone(),
             Expression::UnknownModelField { path, default } => {
                 if let Some(val) = environment.value_at(&path) {
@@ -2647,6 +2795,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => left.refine_parameters(arguments, fresh).sub_overflows(
                 right.refine_parameters(arguments, fresh),
                 result_type.clone(),
+            ),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator.refine_parameters(arguments, fresh).switch(
+                cases
+                    .iter()
+                    .map(|(case_val, result_val)| {
+                        (
+                            case_val.refine_parameters(arguments, fresh),
+                            result_val.refine_parameters(arguments, fresh),
+                        )
+                    })
+                    .collect(),
+                default.refine_parameters(arguments, fresh),
             ),
             Expression::UninterpretedCall {
                 result_type, path, ..
@@ -2940,6 +3104,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => left.refine_with(path_condition, depth + 1).sub_overflows(
                 right.refine_with(path_condition, depth + 1),
                 result_type.clone(),
+            ),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator.refine_with(path_condition, depth + 1).switch(
+                cases
+                    .iter()
+                    .map(|(case_val, result_val)| {
+                        (
+                            case_val.refine_with(path_condition, depth + 1),
+                            result_val.refine_with(path_condition, depth + 1),
+                        )
+                    })
+                    .collect(),
+                default.refine_with(path_condition, depth + 1),
             ),
             Expression::UninterpretedCall { .. } => self.clone(),
             Expression::UnknownModelField { .. } => self.clone(),
