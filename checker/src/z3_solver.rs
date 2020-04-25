@@ -284,6 +284,11 @@ impl Z3Solver {
             | Expression::ShrOverflows {
                 right, result_type, ..
             } => self.general_shift_overflows(right, result_type),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => self.general_switch(discriminator, cases, default),
             Expression::Top | Expression::Bottom => self.general_fresh_const(),
             Expression::UninterpretedCall {
                 result_type: var_type,
@@ -518,6 +523,25 @@ impl Z3Solver {
             let num_bits_val = z3_sys::Z3_mk_int(self.z3_context, num_bits, self.int_sort);
             z3_sys::Z3_mk_ge(self.z3_context, right_ast, num_bits_val)
         }
+    }
+
+    #[logfn_inputs(TRACE)]
+    fn general_switch(
+        &self,
+        discriminator: &Rc<AbstractValue>,
+        cases: &[(Rc<AbstractValue>, Rc<AbstractValue>)],
+        default: &Rc<AbstractValue>,
+    ) -> z3_sys::Z3_ast {
+        let discriminator_ast = self.get_as_z3_ast(&(**discriminator).expression);
+        let default_ast = self.get_as_z3_ast(&(**default).expression);
+        cases
+            .iter()
+            .fold(default_ast, |acc_ast, (case_val, case_result)| unsafe {
+                let case_val_ast = self.get_as_z3_ast(&(**case_val).expression);
+                let cond_ast = z3_sys::Z3_mk_eq(self.z3_context, discriminator_ast, case_val_ast);
+                let case_result_ast = self.get_as_z3_ast(&(**case_result).expression);
+                z3_sys::Z3_mk_ite(self.z3_context, cond_ast, case_result_ast, acc_ast)
+            })
     }
 
     #[logfn_inputs(TRACE)]

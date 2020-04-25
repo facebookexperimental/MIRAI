@@ -153,7 +153,6 @@ impl MiraiCallbacks {
             || file_name.contains("language/stdlib/src") // false positives
             || file_name.contains("language/move-lang/src") // takes too long
             || file_name.contains("language/move-vm/state/src") // false positives
-            || file_name.contains("language/vm/src") // takes too long
             || file_name.contains("network/src") // false positives
             || file_name.contains("client/cli/src") // takes too long
             || file_name.contains("client/libra_wallet/src") // false positive: self.execute(offset, len, |buffer| dst[..len].copy_from_slice(buffer));
