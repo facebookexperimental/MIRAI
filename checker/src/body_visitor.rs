@@ -21,10 +21,10 @@ use crate::{abstract_value, type_visitor};
 use crate::block_visitor::BlockVisitor;
 use crate::call_visitor::CallVisitor;
 use crate::crate_visitor::CrateVisitor;
+use crate::fixed_point_visitor::FixedPointVisitor;
 use log_derive::*;
 use mirai_annotations::*;
 use rpds::HashTrieMap;
-use rustc_data_structures::graph::dominators::Dominators;
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
@@ -124,6 +124,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     }
 
     /// Restores the method only state to its initial state.
+    /// Used to analyze the mir bodies of promoted constants in the context of the defining function.
     #[logfn_inputs(TRACE)]
     fn reset_visitor_state(&mut self) {
         self.already_reported_errors_for_call_to = HashSet::new();
@@ -161,17 +162,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             info!("{:?}", stdout.flush());
         }
         self.active_calls.push(self.def_id);
-        let (mut block_indices, contains_loop) = self.get_sorted_block_indices();
-
-        let (mut in_state, mut out_state, mut terminator_state) =
-            <BodyVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
 
         // The entry block has no predecessors and its initial state is the function parameters
         // (which we omit here so that we can lazily provision them with additional context)
         // as well any promoted constants.
         let mut first_state = self.promote_constants();
 
-        // Add function constants.
+        // Add parameter values that are function constants.
         for (path, val) in function_constant_args.iter() {
             TypeVisitor::add_function_constants_reachable_from(
                 &mut self.current_environment,
@@ -182,25 +179,26 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             first_state.value_map = first_state.value_map.insert(path.clone(), val.clone());
         }
 
-        let elapsed_time_in_seconds = self.compute_fixed_point(
-            &mut block_indices,
-            contains_loop,
-            &mut in_state,
-            &mut out_state,
-            &mut terminator_state,
-            &first_state,
-        );
+        // Update the current environment
+        let mut fixed_point_visitor = FixedPointVisitor::new(self, first_state);
+        fixed_point_visitor.visit_blocks();
 
+        let elapsed_time_in_seconds = fixed_point_visitor.bv.start_instant.elapsed().as_secs();
         if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
-            self.report_timeout(elapsed_time_in_seconds);
+            fixed_point_visitor
+                .bv
+                .report_timeout(elapsed_time_in_seconds);
         }
 
-        if !self.assume_function_is_angelic {
+        if !fixed_point_visitor.bv.assume_function_is_angelic {
             // Now traverse the blocks again, doing checks and emitting diagnostics.
             // terminator_state[bb] is now complete for every basic block bb in the body.
-            let elapsed_time_in_seconds =
-                self.check_for_errors(&block_indices, &mut terminator_state);
+            fixed_point_visitor.bv.check_for_errors(
+                &fixed_point_visitor.block_indices,
+                &mut fixed_point_visitor.terminator_state,
+            );
             self.active_calls.pop();
+            let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
             if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
                 self.report_timeout(elapsed_time_in_seconds);
             } else {
@@ -368,7 +366,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                                 qualifier.clone(),
                                 ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
                             );
-                            debug!("qualifier_val {:?}", qualifier_val);
                             if qualifier_val.is_contained_in_zeroed_heap_block() {
                                 result = Some(if result_type.is_signed_integer() {
                                     self.get_i128_const_val(0)
@@ -534,61 +531,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             })
     }
 
-    /// Do a topological sort, breaking loops by preferring lower block indices, using dominance
-    /// to determine if there is a loop (if a is predecessor of b and b dominates a then they
-    /// form a loop and we'll emit the one with the lower index first).
-    #[logfn_inputs(TRACE)]
-    fn add_predecessors_then_root_block(
-        &self,
-        root_block: mir::BasicBlock,
-        dominators: &Dominators<mir::BasicBlock>,
-        contains_loop: &mut bool,
-        block_indices: &mut Vec<mir::BasicBlock>,
-        already_added: &mut HashSet<mir::BasicBlock>,
-    ) {
-        if !already_added.insert(root_block) {
-            return;
-        }
-        for pred_bb in self.mir.predecessors_for(root_block).iter() {
-            if already_added.contains(pred_bb) {
-                continue;
-            };
-            if dominators.is_dominated_by(*pred_bb, root_block) {
-                *contains_loop = true;
-                continue;
-            }
-            self.add_predecessors_then_root_block(
-                *pred_bb,
-                dominators,
-                contains_loop,
-                block_indices,
-                already_added,
-            );
-        }
-        assume!(block_indices.len() < std::usize::MAX); // We'll run out of memory long  before this overflows
-        block_indices.push(root_block);
-    }
-
-    // Perform a topological sort on the basic blocks so that blocks are analyzed after their
-    // predecessors (except in the case of loop anchors).
-    #[logfn_inputs(TRACE)]
-    fn get_sorted_block_indices(&mut self) -> (Vec<mir::BasicBlock>, bool) {
-        let dominators = self.mir.dominators();
-        let mut block_indices = Vec::new();
-        let mut already_added = HashSet::new();
-        let mut contains_loop = false;
-        for bb in self.mir.basic_blocks().indices() {
-            self.add_predecessors_then_root_block(
-                bb,
-                &dominators,
-                &mut contains_loop,
-                &mut block_indices,
-                &mut already_added,
-            );
-        }
-        (block_indices, contains_loop)
-    }
-
     /// self.async_fn_summary is a summary of the closure that results from rewriting
     /// the current function body into a generator. The preconditions found in this
     /// summary are expressed in terms of the closure fields that capture the parameters
@@ -667,59 +609,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .collect()
     }
 
-    /// Compute a fixed point, which is a value of out_state that will not grow with more iterations.
-    #[logfn_inputs(TRACE)]
-    fn compute_fixed_point(
-        &mut self,
-        mut block_indices: &mut Vec<mir::BasicBlock>,
-        contains_loop: bool,
-        mut in_state: &mut HashMap<mir::BasicBlock, Environment>,
-        mut out_state: &mut HashMap<mir::BasicBlock, Environment>,
-        mut terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
-        first_state: &Environment,
-    ) -> u64 {
-        let mut iteration_count = 0;
-        let mut changed = true;
-        while changed {
-            self.fresh_variable_offset = 0;
-            changed = self.visit_blocks(
-                &mut block_indices,
-                &mut in_state,
-                &mut out_state,
-                &mut terminator_state,
-                &first_state,
-                iteration_count,
-            );
-            if !contains_loop {
-                break;
-            }
-            check_for_early_break!(self);
-            if iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
-                break;
-            }
-            iteration_count += 1;
-        }
-        if iteration_count > 10 {
-            warn!(
-                "Fixed point loop took {} iterations for {}.",
-                iteration_count, self.function_name
-            );
-        } else {
-            trace!(
-                "Fixed point loop took {} iterations for {}.",
-                iteration_count,
-                self.function_name
-            );
-        }
-        self.start_instant.elapsed().as_secs()
-    }
-
     #[logfn_inputs(TRACE)]
     fn check_for_errors(
         &mut self,
         block_indices: &[mir::BasicBlock],
         terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
-    ) -> u64 {
+    ) {
         self.check_for_errors = true;
         for bb in block_indices.iter() {
             let t_state = (&terminator_state[bb]).clone();
@@ -731,165 +626,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             // which only happens if there is no way for the function to return to its
             // caller. We model this as a false post condition.
             self.post_condition = Some(Rc::new(abstract_value::FALSE));
-        }
-        self.start_instant.elapsed().as_secs()
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn initialize_state_maps(
-        block_indices: &[mir::BasicBlock],
-    ) -> (
-        HashMap<mir::BasicBlock, Environment>,
-        HashMap<mir::BasicBlock, Environment>,
-        HashMap<mir::BasicBlock, Environment>,
-    ) {
-        // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
-        let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
-        // out_state[bb] is the environment that results from analyzing block bb, given in_state[bb]
-        let mut out_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
-        // terminator_state[bb] is the environment that should be used to error check the terminator of bb
-        let mut terminator_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
-        for bb in block_indices.iter() {
-            in_state.insert(*bb, Environment::default());
-            out_state.insert(*bb, Environment::default());
-            terminator_state.insert(*bb, Environment::default());
-        }
-        (in_state, out_state, terminator_state)
-    }
-
-    /// Visits each block in block_indices, after computing a precondition and initial state for
-    /// each block by joining together the exit conditions and exit states of its predecessors.
-    /// Returns true if one or more of the blocks changed their output states.
-    #[logfn_inputs(TRACE)]
-    fn visit_blocks(
-        &mut self,
-        block_indices: &mut Vec<mir::BasicBlock>,
-        in_state: &mut HashMap<mir::BasicBlock, Environment>,
-        out_state: &mut HashMap<mir::BasicBlock, Environment>,
-        terminator_state: &mut HashMap<mir::BasicBlock, Environment>,
-        first_state: &Environment,
-        iteration_count: usize,
-    ) -> bool {
-        let mut changed = false;
-        for bb in block_indices.iter() {
-            check_for_early_break!(self);
-
-            // Merge output states of predecessors of bb
-            let i_state = if bb.index() == 0 {
-                first_state.clone()
-            } else {
-                self.get_initial_state_from_predecessors(*bb, in_state, out_state, iteration_count)
-            };
-            // Analyze the basic block
-            in_state.insert(*bb, i_state.clone());
-            self.current_environment = i_state;
-            self.visit_basic_block(*bb, terminator_state);
-
-            // Check for a fixed point.
-            if !self.current_environment.subset(&out_state[bb]) {
-                // There is some path for which self.current_environment.value_at(path) includes
-                // a value this is not present in out_state[bb].value_at(path), so any block
-                // that used out_state[bb] as part of its input state now needs to get reanalyzed.
-                out_state.insert(*bb, self.current_environment.clone());
-                changed = true;
-            } else {
-                // If the environment at the end of this block does not have any new values,
-                // we have reached a fixed point for this block.
-                // We update out_state anyway, since exit conditions may have changed.
-                // This is particularly a problem when the current entry is the dummy entry
-                // and the current state is empty except for the exit condition.
-                out_state
-                    .get_mut(bb)
-                    .expect("incorrectly initialized out_state")
-                    .exit_conditions = self.current_environment.exit_conditions.clone();
-            }
-        }
-        changed
-    }
-
-    /// Join the exit states from all predecessors blocks to get the entry state fo this block.
-    /// If a predecessor has not yet been analyzed, its state does not form part of the join.
-    /// If no predecessors have been analyzed, the entry state is a default entry state with an
-    /// entry condition of TOP.
-    #[logfn_inputs(TRACE)]
-    fn get_initial_state_from_predecessors(
-        &mut self,
-        bb: mir::BasicBlock,
-        in_state: &HashMap<mir::BasicBlock, Environment>,
-        out_state: &HashMap<mir::BasicBlock, Environment>,
-        iteration_count: usize,
-    ) -> Environment {
-        let mut predecessor_states_and_conditions: Vec<(&Environment, Option<&Rc<AbstractValue>>)> =
-            self.mir
-                .predecessors_for(bb)
-                .iter()
-                .map(|pred_bb| {
-                    let pred_state = &out_state[pred_bb];
-                    let pred_exit_condition = pred_state.exit_conditions.get(&bb);
-                    (pred_state, pred_exit_condition)
-                })
-                .filter(|(_, pred_exit_condition)| pred_exit_condition.is_some())
-                .collect();
-        if predecessor_states_and_conditions.is_empty() {
-            // nothing is currently known about the predecessors
-            let mut i_state = in_state[&bb].clone();
-            i_state.entry_condition = Rc::new(abstract_value::TOP);
-            i_state
-        } else {
-            // Remove predecessors that cannot reach this block
-            predecessor_states_and_conditions = predecessor_states_and_conditions
-                .into_iter()
-                .filter(|(_, pred_exit_condition)| {
-                    if let Some(cond) = pred_exit_condition {
-                        cond.as_bool_if_known().unwrap_or(true)
-                    } else {
-                        false
-                    }
-                })
-                .collect();
-            if predecessor_states_and_conditions.is_empty() {
-                let mut i_state = in_state[&bb].clone();
-                i_state.entry_condition = Rc::new(abstract_value::FALSE);
-                return i_state;
-            }
-            // We want to do right associative operations and that is easier if we reverse.
-            predecessor_states_and_conditions.reverse();
-            let (p_state, pred_exit_condition) = predecessor_states_and_conditions[0];
-            let mut i_state = p_state.clone();
-            i_state.entry_condition = pred_exit_condition
-                .expect("something went wrong with filter")
-                .clone();
-            for (p_state, pred_exit_condition) in predecessor_states_and_conditions.iter().skip(1) {
-                let mut path_condition = pred_exit_condition
-                    .expect("something went wrong with filter")
-                    .clone();
-                if path_condition.as_bool_if_known().unwrap_or(false) {
-                    // A true path condition tells us nothing. If we are already widening,
-                    // then replace the true condition with equalities from the corresponding
-                    // environment.
-                    path_condition =
-                        path_condition.add_equalities_for_widened_vars(p_state, &i_state);
-                }
-                // Once all paths have already been analyzed for a second time (iteration_count == 2)
-                // all blocks not involved in loops will have their final values.
-                // If there are no loops, the next iteration will be a no-op, but since we
-                // don't know if there are loops or not, we do iteration_count == 3 while still
-                // joining. Once we get to iteration_count == 4, we start widening in
-                // order to converge on a fixed point.
-                let mut j_state = if iteration_count < 4 {
-                    p_state.join(&i_state, &path_condition)
-                } else {
-                    p_state.widen(&i_state, &path_condition)
-                };
-                let joined_condition = path_condition.or(i_state.entry_condition.clone());
-                if joined_condition.expression_size > k_limits::MAX_EXPRESSION_SIZE {
-                    j_state.entry_condition = Rc::new(abstract_value::TRUE);
-                } else {
-                    j_state.entry_condition = joined_condition;
-                }
-                i_state = j_state;
-            }
-            i_state
         }
     }
 
@@ -984,25 +720,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// Computes a fixed point over the blocks of the MIR for a promoted constant block
     #[logfn_inputs(TRACE)]
     fn visit_promoted_constants_block(&mut self) {
-        let (mut block_indices, contains_loop) = self.get_sorted_block_indices();
+        let mut fixed_point_visitor = FixedPointVisitor::new(self, Environment::default());
+        fixed_point_visitor.visit_blocks();
 
-        let (mut in_state, mut out_state, mut terminator_state) =
-            <BodyVisitor<'analysis, 'compilation, 'tcx, E>>::initialize_state_maps(&block_indices);
-
-        // The entry block has no predecessors and its initial state is the function parameters
-        // (which we omit here so that we can lazily provision them with additional context).
-        let first_state = Environment::default();
-
-        self.compute_fixed_point(
-            &mut block_indices,
-            contains_loop,
-            &mut in_state,
-            &mut out_state,
-            &mut terminator_state,
-            &first_state,
+        fixed_point_visitor.bv.check_for_errors(
+            &fixed_point_visitor.block_indices,
+            &mut fixed_point_visitor.terminator_state,
         );
-
-        self.check_for_errors(&block_indices, &mut terminator_state);
     }
 
     /// Visits each statement in order and then visits the terminator.

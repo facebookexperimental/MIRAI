@@ -147,15 +147,18 @@ impl MiraiCallbacks {
             || file_name.contains("common/debug-interface/src") // false positives
             || file_name.contains("common/futures-semaphore/src") // false positive: possible assertion failed: ptr.as_ptr() as usize & NUM_FLAG == 0
             || file_name.contains("common/metrics/src") // false positives
+            || file_name.contains("execution/executor/src") // takes too long
             || file_name.contains("language/bytecode-verifier/src") // takes too long
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // false positives
             || file_name.contains("language/stdlib/src") // false positives
             || file_name.contains("language/move-lang/src") // takes too long
             || file_name.contains("language/move-vm/state/src") // false positives
+            || file_name.contains("language/transaction-builder/src") // takes too long
             || file_name.contains("network/src") // false positives
-            || file_name.contains("client/cli/src") // takes too long
+            || file_name.contains("client/cli/src") // takes too long   
             || file_name.contains("client/libra_wallet/src") // false positive: self.execute(offset, len, |buffer| dst[..len].copy_from_slice(buffer));
+            || file_name.contains("secure/storage/vault/src") // z3 encoding
             || file_name.contains("state-synchronizer/src") // false positives
             || file_name.contains("storage/jellyfish-merkle/src") // false positives due to complex loops beyond what we can handle right now
             || file_name.contains("storage/libradb/src") // takes too long
