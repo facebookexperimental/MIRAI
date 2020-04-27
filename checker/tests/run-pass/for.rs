@@ -8,7 +8,6 @@
 
 pub fn to_be(dst: &mut [u16]) {
     for v in dst.iter_mut() {
-        //~ The analysis of this function timed out
         *v = v.to_be();
     }
 }

@@ -7,7 +7,7 @@
 // take too long or use too much memory.
 
 /// The maximum number of seconds that MIRAI is willing to analyze a function body for.
-pub const MAX_ANALYSIS_TIME_FOR_BODY: u64 = 20;
+pub const MAX_ANALYSIS_TIME_FOR_BODY: u64 = 3;
 
 /// The maximum number of elements in a byte array that will be individually tracked.
 pub const MAX_BYTE_ARRAY_LENGTH: usize = 10;
@@ -16,7 +16,7 @@ pub const MAX_BYTE_ARRAY_LENGTH: usize = 10;
 pub const MAX_INFERRED_PRECONDITIONS: usize = 50;
 
 /// If Expressions get too large they become too costly to refine.
-pub const MAX_EXPRESSION_SIZE: u64 = 1_200;
+pub const MAX_EXPRESSION_SIZE: u64 = 1_000;
 
 /// Double the observed maximum used in practice.
 pub const MAX_FIXPOINT_ITERATIONS: usize = 50;

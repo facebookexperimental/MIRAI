@@ -78,6 +78,7 @@ pub mod crate_visitor;
 pub mod environment;
 pub mod expected_errors;
 pub mod expression;
+pub mod fixed_point_visitor;
 pub mod interval_domain;
 pub mod k_limits;
 pub mod known_names;

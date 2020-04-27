@@ -553,6 +553,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         }
                     }
                 }
+
+                // [(x || (y && z)) && y] -> [(x && y) || (y && z && y)] -> (x && y) || (y && z)
+                (Expression::Or { left: x, right: yz }, y) => {
+                    if let Expression::And { left: y1, right: z } = &yz.expression {
+                        if y1.expression == *y {
+                            return x.and(y1.clone()).or(y1.and(z.clone()));
+                        }
+                    }
+                }
                 _ => (),
             }
 
@@ -2308,11 +2317,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             );
         };
         if let Join { left, right, path } = &self.expression {
-            return operation(left.clone(), other.clone()).join(recursive_op(right, other), &path);
+            return recursive_op(left, other.clone()).join(recursive_op(right, other), &path);
         }
         if let Join { left, right, path } = &other.expression {
-            return operation(self.clone(), left.clone())
-                .join(recursive_op(self, right.clone()), &path);
+            return recursive_op(self, left.clone()).join(recursive_op(self, right.clone()), &path);
         }
         match (&self.expression, &other.expression) {
             (Widen { .. }, _) => self.clone(),
