@@ -5,17 +5,17 @@ It is intended to become a widely used static analysis tool for Rust.
 
 ## Using MIRAI
 
-You'll need to install MIRAI as described here for [MacOx and Windows](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md)
+You'll need to install MIRAI as described here for [MacOS and Windows](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md)
 and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Linux.md).
 
-To run mirai, use cargo with `RUSTC_WRAPPER` set to `mirai`.
+To run MIRAI, use cargo with `RUSTC_WRAPPER` set to `mirai`.
 Use `rustup override set nightly-YYYY-MM-DD` to make Cargo use the same version of Rust as MIRAI. See the above installation
 instruction to determine which version to use. If you forget to do that or use the wrong version,
 you'll see an error message complaining about a dynamic load library not being found.
 
 The easiest way to get started is to first build your project in the normal way (with one exception:
  set `RUSTFLAGS="-Z always_encode_mir"` to force the rust compiler to include MIR into its compiled output).
-Refer [this link](https://doc.rust-lang.org/1.30.0/book/2018-edition/ch01-00-getting-started.html) for details
+Refer to [this link](https://doc.rust-lang.org/1.30.0/book/2018-edition/ch01-00-getting-started.html) for details
 on compiling a cargo project.
 When there are no compile errors,
 no lint errors and no test failures, you can proceed to the next step and run MIRAI. For example:
@@ -25,7 +25,7 @@ RUSTC_WRAPPER=mirai cargo build
 ```
 
 The touch command (which needs to reference a real file in your project) forces Cargo to re-run rustc and to not assume
-that it's cached error messages are still correct.
+that its cached error messages are still correct.
 
 This will likely produce a lot of warnings, which you can then fix by adding annotations declared in this
 [crate](https://crates.io/crates/mirai-annotations). Keep re-touching and running cargo build as above until
@@ -44,7 +44,7 @@ which can contain any of the following flags:
 - `--single_func <name>`: the name of a specific function you want to analyze.
 - `--`: any arguments after this marker are passed on to rustc.
 
-You can get some insight into the inner workings of MIRAI by setting the verbosity level of log output  to one of 
+You can get some insight into the inner workings of MIRAI by setting the verbosity level of log output to one of 
 `warn`, `info`, `debug`, or `trace`, via the environment variable `MIRAI_LOG`.
 
 ## Using MIRAI together with the Rust design by contracts crate
