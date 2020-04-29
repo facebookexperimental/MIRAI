@@ -8,6 +8,7 @@ use crate::block_visitor::BlockVisitor;
 use crate::body_visitor::BodyVisitor;
 use crate::environment::Environment;
 use crate::{abstract_value, k_limits};
+use itertools::Itertools;
 use log_derive::*;
 use mirai_annotations::*;
 use rpds::HashTrieSet;
@@ -159,10 +160,12 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
                 && self.dominators.is_dominated_by(bb, loop_anchor)
             {
                 // Visit the next block, or the entire nested loop anchored by it.
-                if bb == loop_anchor || !self.loop_anchors.contains(&bb) {
-                    self.visit_basic_block(bb, iteration_count);
-                } else {
+                if bb == loop_anchor {
+                    self.visit_basic_block(bb, iteration_count); // join or widen
+                } else if self.loop_anchors.contains(&bb) {
                     self.compute_fixed_point(bb);
+                } else {
+                    self.visit_basic_block(bb, 0); // conditional expressions
                 }
 
                 // Check for a fixed point.
@@ -187,71 +190,101 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
         bb: mir::BasicBlock,
         iteration_count: usize,
     ) -> Environment {
-        let mut predecessor_states_and_conditions: Vec<(&Environment, Option<&Rc<AbstractValue>>)> =
-            self.bv
-                .mir
-                .predecessors_for(bb)
-                .iter()
-                .map(|pred_bb| {
-                    let pred_state = &self.out_state[pred_bb];
-                    let pred_exit_condition = pred_state.exit_conditions.get(&bb);
-                    (pred_state, pred_exit_condition)
-                })
-                .filter(|(_, pred_exit_condition)| pred_exit_condition.is_some())
-                .collect();
-        if predecessor_states_and_conditions.is_empty() {
-            // nothing is currently known about the predecessors
-            let mut i_state = self.in_state[&bb].clone();
-            i_state.entry_condition = Rc::new(abstract_value::TOP);
-            i_state
-        } else {
-            // Remove predecessors that cannot reach this block
-            predecessor_states_and_conditions = predecessor_states_and_conditions
-                .into_iter()
-                .filter(|(_, pred_exit_condition)| {
-                    if let Some(cond) = pred_exit_condition {
-                        cond.as_bool_if_known().unwrap_or(true)
+        // First compute a joint state from the out states of eligible predecessors.
+        // We use the exit conditions for precise joins.
+        let mut predecessor_states_and_conditions: Vec<(Environment, Rc<AbstractValue>)> = self
+            .bv
+            .mir
+            .predecessors_for(bb)
+            .iter()
+            .filter_map(|pred_bb| {
+                let pred_state = &self.out_state[pred_bb];
+                if let Some(pred_exit_condition) = pred_state.exit_conditions.get(&bb) {
+                    if pred_exit_condition.as_bool_if_known().unwrap_or(true) {
+                        Some((pred_state.clone(), pred_exit_condition.clone()))
                     } else {
-                        false
+                        // If pred_bb is known to have a false exit condition for bb it can be ignored.
+                        None
                     }
-                })
-                .collect();
-            if predecessor_states_and_conditions.is_empty() {
-                let mut i_state = self.in_state[&bb].clone();
-                i_state.entry_condition = Rc::new(abstract_value::FALSE);
-                return i_state;
-            }
-            // We want to do right associative operations and that is easier if we reverse.
-            predecessor_states_and_conditions.reverse();
-            let (p_state, pred_exit_condition) = predecessor_states_and_conditions[0];
-            let mut i_state = p_state.clone();
-            i_state.entry_condition = pred_exit_condition
-                .expect("something went wrong with filter")
-                .clone();
-            for (p_state, pred_exit_condition) in predecessor_states_and_conditions.iter().skip(1) {
-                let mut path_condition = pred_exit_condition
-                    .expect("something went wrong with filter")
-                    .clone();
-                if path_condition.as_bool_if_known().unwrap_or(false) {
-                    // A true path condition tells us nothing. If we are already widening,
-                    // then replace the true condition with equalities from the corresponding
-                    // environment.
-                    path_condition =
-                        path_condition.add_equalities_for_widened_vars(p_state, &i_state);
-                }
-                // Once all paths have already been analyzed for a second time (iteration_count == 2)
-                // all blocks not involved in loops will have their final values.
-                let mut j_state = if iteration_count <= 2 {
-                    p_state.join(&i_state, &path_condition)
                 } else {
-                    p_state.widen(&i_state, &path_condition)
-                };
-                let joined_condition = path_condition.or(i_state.entry_condition.clone());
-                j_state.entry_condition = joined_condition;
-                i_state = j_state;
-            }
-            i_state
+                    // If pred_state does not have an exit condition map, it is in its default state
+                    // which means it has not yet been visited, or it is code that is known to always
+                    // panic at runtime. Either way, we don't want to include its out state here.
+                    None
+                }
+            })
+            .collect();
+        if predecessor_states_and_conditions.is_empty() {
+            // bb is unreachable, at least in this iteration.
+            // We therefore give it a false entry condition so that the block analyses knows
+            // the block is unreachable.
+            let mut initial_state = self.in_state[&bb].clone();
+            initial_state.entry_condition = Rc::new(abstract_value::FALSE);
+            return initial_state;
         }
+
+        // we want to do right associative operations (for simplification purposes) and that is easier if we reverse.
+        predecessor_states_and_conditions.reverse();
+        let mut joined_state = predecessor_states_and_conditions
+            .into_iter()
+            .fold1(|(state1, cond1), (state2, cond2)| {
+                if iteration_count == 0 {
+                    (state2.conditional_join(state1, &cond2), cond1)
+                } else if iteration_count <= 2 {
+                    (state2.join(state1), cond1)
+                } else {
+                    // Once all paths have already been analyzed for a second time (iteration_count == 2)
+                    // all blocks not involved in loops will have their final environments.
+                    // The remainder will end up here from iteration 3 onwards and we need to
+                    // widen in order to reach a fixed point.
+                    (state2.widen(state1), cond1)
+                }
+            })
+            .expect("one or more states to fold into something")
+            .0;
+
+        let at_loop_anchor = self.loop_anchors.contains(&bb);
+        // Now we compute an entry condition from the exit conditions of the eligible predecessors
+        let entry_condition = self
+            .bv
+            .mir
+            .predecessors_for(bb)
+            .iter()
+            .filter_map(|pred_bb| {
+                let pred_out_state = &self.out_state[pred_bb];
+                let pred_exit_condition = pred_out_state.exit_conditions.get(&bb);
+                if at_loop_anchor && self.dominators.is_dominated_by(*pred_bb, bb) {
+                    // A block that is part of the loop body (dominated by bb, which is an anchor,
+                    // as well as preceding bb) does not contribute a useful path condition
+                    // since the state that may be guarded by it cannot safely be distinguished from
+                    // state that was provided by non loop body predecessors.
+                    // Furthermore, since loop back path conditions incorporate the initial path
+                    // conditions of a loop, every fixed point iteration of the loop will expand
+                    // the initial path condition, which is bad in many ways.
+                    return None;
+                }
+                if let Some(pred_exit_condition) = pred_exit_condition {
+                    if pred_exit_condition.as_bool_if_known().unwrap_or(false) {
+                        // A true exit condition tells us nothing. If we are already widening,
+                        // then replace the true condition with equalities from the corresponding
+                        // environment.
+                        Some(
+                            pred_exit_condition
+                                .add_equalities_for_widened_vars(pred_out_state, &joined_state),
+                        )
+                    } else {
+                        Some(pred_exit_condition.clone())
+                    }
+                } else {
+                    // Can happen in iteration 1 when pred_bb is a loop body block (and thus still
+                    // in its default state.
+                    None
+                }
+            })
+            .fold1(|acc, cond| acc.or(cond))
+            .unwrap_or_else(|| Rc::new(abstract_value::TRUE));
+        joined_state.entry_condition = entry_condition;
+        joined_state
     }
 }
 
