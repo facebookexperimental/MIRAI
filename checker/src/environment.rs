@@ -46,9 +46,6 @@ impl Debug for Environment {
     }
 }
 
-type JoinOrWiden =
-    fn(&Rc<AbstractValue>, &Rc<AbstractValue>, &Rc<AbstractValue>, &Rc<Path>) -> Rc<AbstractValue>;
-
 /// Methods
 impl Environment {
     /// Returns a reference to the value associated with the given path, if there is one.
@@ -151,70 +148,44 @@ impl Environment {
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
+    /// value that is condition.conditional_expression(self.value_at(path), other.value_at(path))
+    #[logfn_inputs(TRACE)]
+    pub fn conditional_join(
+        &self,
+        other: Environment,
+        condition: &Rc<AbstractValue>,
+    ) -> Environment {
+        self.join_or_widen(other, |x, y, _| {
+            condition.conditional_expression(x.clone(), y.clone())
+        })
+    }
+
+    /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the join of self.value_at(path) and other.value_at(path)
     #[logfn_inputs(TRACE)]
-    pub fn join(&self, other: &Environment, join_condition: &Rc<AbstractValue>) -> Environment {
-        self.join_or_widen(other, join_condition, |x, y, c, p| {
-            if Some(true) == c.as_bool_if_known() || c.is_top() {
-                // If the join condition is known to be true (or top), we have two unconditional branches joining
-                // up here and no way to tell which one brought us here. This can happen for an infinite
-                // loop, where the dominator of the loop anchor unconditionally branches to the anchor
-                // and the backward branch also unconditionally branches to the anchor.
-                // While such loops can be expected to be rare in source form, they do show up during
-                // abstract interpretation because the loop exit condition may evaluate to false
-                // for the first few iterations of the loop and thus the backwards branch only becomes
-                // conditional once widening kicks in.
-                x.join(y.clone(), p)
-            } else {
-                let cond_expr = {
-                    match (&x.expression, &y.expression) {
-                        (Expression::ConditionalExpression { condition, .. }, _)
-                            if *condition == *c =>
-                        {
-                            // In a loop, so keeping the condition around is not useful and
-                            // it leads to information loss because of refinement.
-                            x.join(y.clone(), p)
-                        }
-                        (_, Expression::ConditionalExpression { condition, .. })
-                            if *condition == *c =>
-                        {
-                            x.join(y.clone(), p)
-                        }
-                        _ => c.conditional_expression(x.clone(), y.clone()),
-                    }
-                };
-                if cond_expr.is_top() {
-                    x.join(y.clone(), p).widen(p)
-                } else {
-                    cond_expr
-                }
-            }
-        })
+    pub fn join(&self, other: Environment) -> Environment {
+        self.join_or_widen(other, |x, y, p| x.join(y.clone(), p))
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the widen of self.value_at(path) and other.value_at(path)
     #[logfn_inputs(TRACE)]
-    pub fn widen(&self, other: &Environment, join_condition: &Rc<AbstractValue>) -> Environment {
+    pub fn widen(&self, other: Environment) -> Environment {
         self.clone()
-            .join_or_widen(other, join_condition, |x, y, _c, p| {
-                match (&x.expression, &y.expression) {
-                    (Expression::Widen { .. }, _) => x.clone(),
-                    (_, Expression::Widen { .. }) => y.clone(),
-                    _ => x.clone().join(y.clone(), p).widen(p),
-                }
+            .join_or_widen(other, |x, y, p| match (&x.expression, &y.expression) {
+                (Expression::Widen { .. }, _) => x.clone(),
+                (_, Expression::Widen { .. }) => y.clone(),
+                _ => x.clone().join(y.clone(), p).widen(p),
             })
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the join or widen of self.value_at(path) and other.value_at(path).
     #[logfn(TRACE)]
-    fn join_or_widen(
-        &self,
-        other: &Environment,
-        join_condition: &Rc<AbstractValue>,
-        join_or_widen: JoinOrWiden,
-    ) -> Environment {
+    fn join_or_widen<F>(&self, other: Environment, join_or_widen: F) -> Environment
+    where
+        F: Fn(&Rc<AbstractValue>, &Rc<AbstractValue>, &Rc<Path>) -> Rc<AbstractValue>,
+    {
         let value_map1 = &self.value_map;
         let value_map2 = &other.value_map;
         let mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>> = HashTrieMap::default();
@@ -222,8 +193,7 @@ impl Environment {
             let p = path.clone();
             match value_map2.get(path) {
                 Some(val2) => {
-                    value_map =
-                        value_map.insert(p, join_or_widen(val1, &val2, &join_condition, &path));
+                    value_map = value_map.insert(p, join_or_widen(val1, val2, path));
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
@@ -238,8 +208,7 @@ impl Environment {
                             1,
                         )
                     };
-                    value_map =
-                        value_map.insert(p, join_or_widen(val1, &val2, &join_condition, &path));
+                    value_map = value_map.insert(p, join_or_widen(val1, &val2, path));
                 }
             }
         }
@@ -257,10 +226,7 @@ impl Environment {
                         1,
                     )
                 };
-                value_map = value_map.insert(
-                    path.clone(),
-                    join_or_widen(&val1, val2, &join_condition, &path),
-                );
+                value_map = value_map.insert(path.clone(), join_or_widen(&val1, val2, &path));
             }
         }
         Environment {
