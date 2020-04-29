@@ -659,9 +659,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         for pc_span in precondition.spans.iter() {
             let span_str = self.bv.tcx.sess.source_map().span_to_string(*pc_span);
             if span_str.starts_with("/rustc/") {
-                err.span_note(pc_span.clone(), &format!("related location {}", span_str));
+                err.span_note(*pc_span, &format!("related location {}", span_str));
             } else {
-                err.span_note(pc_span.clone(), "related location");
+                err.span_note(*pc_span, "related location");
             };
         }
         self.bv.emit_diagnostic(err);

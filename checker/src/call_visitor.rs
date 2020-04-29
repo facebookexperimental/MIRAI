@@ -157,7 +157,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             );
             trace!("devirtualize resolving func_ref {:?}", self.callee_func_ref,);
             trace!("gen_args {:?}", gen_args);
-            if let Some(instance) = rustc_middle::ty::Instance::resolve(
+            if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
                 self.block_visitor.bv.tcx,
                 param_env,
                 self.callee_def_id,

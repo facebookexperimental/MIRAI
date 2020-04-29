@@ -556,7 +556,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                         .tcx
                         .param_env(self.tcx.associated_item(item_def_id).container.id());
                     let specialized_substs = self.specialize_substs(projection.substs, map);
-                    if let Some(instance) = rustc_middle::ty::Instance::resolve(
+                    if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
                         self.tcx,
                         param_env,
                         item_def_id,

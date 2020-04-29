@@ -10,7 +10,7 @@
 
 #![allow(const_err)]
 #![allow(unused)]
-#![feature(asm)]
+#![feature(llvm_asm)]
 #![feature(box_syntax)]
 #![feature(generators)]
 
@@ -79,7 +79,7 @@ fn test4() {
 
 pub fn test5() {
     unsafe {
-        asm!("NOP") //~ Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.
+        llvm_asm!("NOP") //~ Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.
     }
 }
 
