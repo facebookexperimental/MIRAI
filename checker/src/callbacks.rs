@@ -140,6 +140,7 @@ impl MiraiCallbacks {
 
     fn is_black_listed(file_name: &str) -> bool {
         file_name.contains("admission-control/admission-control-proto/src") // resolve error
+            || file_name.contains("consensus/src") // resolve error
             || file_name.contains("crypto/crypto/src") // false positives
             || file_name.contains("crypto/crypto-derive/src") // false positives
             || file_name.contains("common/bitvec/src") // false positives
@@ -153,6 +154,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/stdlib/src") // false positives
             || file_name.contains("language/move-lang/src") // resolve error
             || file_name.contains("language/move-vm/state/src") // false positives
+            || file_name.contains("language/vm/src") // takes too long
             || file_name.contains("network/src") // false positives
             || file_name.contains("network/onchain-discovery/src") // false positives
             || file_name.contains("client/cli/src") // false positives   
