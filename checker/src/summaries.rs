@@ -47,7 +47,7 @@ use std::rc::Rc;
 ///    This makes the summary a conservative over approximation of the actual behavior. It is not
 ///    sound, however, if there are side effects on static state since it is neither practical nor
 ///    desirable to havoc all static variables every time such a function is called. Consequently
-///    sound analysis is only possible one can assume that all such functions have been provided
+///    sound analysis is only possible if one can assume that all such functions have been provided
 ///    with explicit contract functions.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Summary {
@@ -192,60 +192,10 @@ impl Summary {
         Self::is_subset_of_side_effects(&e1[1..], &e2[1..])
     }
 
-    #[logfn_inputs(TRACE)]
-    pub fn widen_with(&self, other: &Summary) -> Summary {
-        let side_effects =
-            Self::widen_side_effects(&self.side_effects[0..], &other.side_effects[0..], vec![]);
-        let unwind_side_effects = Self::widen_side_effects(
-            &self.unwind_side_effects[0..],
-            &other.unwind_side_effects[0..],
-            vec![],
-        );
-
-        Summary {
-            is_computed: true,
-            is_angelic: self.is_angelic || other.is_angelic,
-            preconditions: other.preconditions.clone(),
-            side_effects,
-            post_condition: other.post_condition.clone(),
-            unwind_condition: None,
-            unwind_side_effects,
+    pub fn widen_side_effects(&mut self) {
+        for (path, value) in self.side_effects.iter_mut() {
+            *value = value.widen(path);
         }
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn widen_side_effects(
-        e1: &[(Rc<Path>, Rc<AbstractValue>)],
-        e2: &[(Rc<Path>, Rc<AbstractValue>)],
-        mut acc: Vec<(Rc<Path>, Rc<AbstractValue>)>,
-    ) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {
-        if e1.is_empty() {
-            if e2.is_empty() {
-                return acc;
-            }
-            let (p, v) = &e2[0];
-            acc.push((p.clone(), v.widen(p)));
-            return Self::widen_side_effects(e1, &e2[1..], acc);
-        }
-        if e2.is_empty() {
-            let (p, v) = &e1[0];
-            acc.push((p.clone(), v.widen(p)));
-            return Self::widen_side_effects(&e1[1..], e2, acc);
-        }
-        let (p1, v1) = &e1[0];
-        let (p2, v2) = &e2[0];
-        if p1 < p2 {
-            let (p, v) = &e1[0];
-            acc.push((p.clone(), v.widen(p)));
-            return Self::widen_side_effects(&e1[1..], e2, acc);
-        }
-        if p1 > p2 {
-            let (p, v) = &e2[0];
-            acc.push((p.clone(), v.widen(p)));
-            return Self::widen_side_effects(e1, &e2[1..], acc);
-        }
-        acc.push((p1.clone(), v1.join(v2.clone(), p1).widen(p1)));
-        Self::widen_side_effects(&e1[1..], &e2[1..], acc)
     }
 }
 

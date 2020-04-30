@@ -315,8 +315,32 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             if result.is_computed || func_ref.def_id.is_none() {
                 return Some(result);
             }
-            if call_depth == 0 {
-                return Some(self.create_and_cache_function_summary());
+            if call_depth < 3 {
+                let mut summary = self.create_and_cache_function_summary();
+                // Widen summary at call level 1 so that the level 0 call sees the widened values.
+                if call_depth == 1 {
+                    summary.widen_side_effects();
+                    let signature =
+                        self.get_function_constant_signature(self.function_constant_args);
+                    self.block_visitor
+                        .bv
+                        .cv
+                        .summary_cache
+                        .set_summary_for_call_site(&func_ref, signature, summary.clone());
+                }
+                return Some(summary);
+            } else {
+                // Probably a statically unbounded self recursive call. Use an empty summary and let
+                // earlier calls do the joining and widening required.
+                let mut summary = Summary::default();
+                summary.is_computed = true;
+                let signature = self.get_function_constant_signature(self.function_constant_args);
+                self.block_visitor
+                    .bv
+                    .cv
+                    .summary_cache
+                    .set_summary_for_call_site(&func_ref, signature, summary.clone());
+                return Some(summary);
             }
         }
         None
