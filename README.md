@@ -1,4 +1,4 @@
-# MIRAI  [![Build Status](https://travis-ci.com/facebookexperimental/MIRAI.svg?token=uaX9rExVwSVz5FfMFphz&branch=master)](https://travis-ci.com/facebookexperimental/MIRAI) [![deps.rs](https://deps.rs/repo/github/facebookexperimental/MIRAI/status.svg)](https://deps.rs/repo/github/facebookexperimental/MIRAI)
+# MIRAI  [![Build Status](https://travis-ci.com/facebookexperimental/MIRAI.svg?token=uaX9rExVwSVz5FfMFphz&branch=master)](https://travis-ci.com/facebookexperimental/MIRAI) [![codecov](https://codecov.io/gh/facebookexperimental/MIRAI/branch/master/graph/badge.svg?token=q4jzL09Ahl)](https://codecov.io/gh/facebookexperimental/MIRAI) [![deps.rs](https://deps.rs/repo/github/facebookexperimental/MIRAI/status.svg)](https://deps.rs/repo/github/facebookexperimental/MIRAI)
 MIRAI is an abstract interpreter for the [Rust](https://www.rust-lang.org/) compiler's [mid-level intermediate
 representation](https://github.com/rust-lang/rfcs/blob/master/text/1211-mir.md) (MIR).
 It is intended to become a widely used static analysis tool for Rust.
