@@ -23,7 +23,7 @@ use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
 use crate::known_names::KnownNames;
 use crate::options::DiagLevel;
-use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
+use crate::path::{Path, PathEnum, PathRefinement};
 use crate::smt_solver::SmtResult;
 use crate::summaries::{Precondition, Summary};
 use crate::{abstract_value, type_visitor, utils};
@@ -1845,7 +1845,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 }
 
                 // Effects on the call result
-                self.transfer_and_refine(
+                self.block_visitor.bv.transfer_and_refine(
                     &function_summary.side_effects,
                     target_path.clone(),
                     &return_value_path,
@@ -1855,7 +1855,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // Effects on the call arguments
                 for (i, (target_path, _)) in self.actual_args.iter().enumerate() {
                     let parameter_path = Path::new_parameter(i + 1);
-                    self.transfer_and_refine(
+                    self.block_visitor.bv.transfer_and_refine(
                         &function_summary.side_effects,
                         target_path.clone(),
                         &parameter_path,
@@ -1949,7 +1949,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some(cleanup_target) = self.cleanup {
             for (i, (target_path, _)) in self.actual_args.iter().enumerate() {
                 let parameter_path = Path::new_parameter(i + 1);
-                self.transfer_and_refine(
+                self.block_visitor.bv.transfer_and_refine(
                     &function_summary.unwind_side_effects,
                     target_path.clone(),
                     &parameter_path,
@@ -1971,324 +1971,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .current_environment
                 .exit_conditions
                 .insert(cleanup_target, exit_condition);
-        }
-    }
-
-    /// Adds a (rpath, rvalue) pair to the current environment for every pair in effects
-    /// for which the path is rooted by source_path and where rpath is path re-rooted with
-    /// target_path and rvalue is value refined by replacing all occurrences of parameter values
-    /// with the corresponding actual values.
-    #[logfn_inputs(TRACE)]
-    fn transfer_and_refine(
-        &mut self,
-        effects: &[(Rc<Path>, Rc<AbstractValue>)],
-        target_path: Rc<Path>,
-        source_path: &Rc<Path>,
-        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
-    ) {
-        for (path, value) in effects
-            .iter()
-            .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
-        {
-            trace!("effect {:?} {:?}", path, value);
-            let dummy_root = Path::new_local(999);
-            let refined_dummy_root =
-                Path::new_local(self.block_visitor.bv.fresh_variable_offset + 999);
-            let tpath = path
-                .replace_root(source_path, dummy_root)
-                .refine_parameters(arguments, self.block_visitor.bv.fresh_variable_offset)
-                .replace_root(&refined_dummy_root, target_path.clone())
-                .refine_paths(&self.block_visitor.bv.current_environment);
-            let rvalue = value
-                .refine_parameters(arguments, self.block_visitor.bv.fresh_variable_offset)
-                .refine_paths(&self.block_visitor.bv.current_environment);
-            trace!("refined effect {:?} {:?}", tpath, rvalue);
-            let rtype = rvalue.expression.infer_type();
-            match &rvalue.expression {
-                Expression::HeapBlock { .. } => {
-                    if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
-                        if let PathSelector::Slice(..) = selector.as_ref() {
-                            let source_path = Path::get_as_path(rvalue.clone());
-                            let target_type = type_visitor::get_element_type(
-                                self.block_visitor.bv.type_visitor.get_path_rustc_type(
-                                    &target_path,
-                                    self.block_visitor.bv.current_span,
-                                ),
-                            );
-                            self.block_visitor.copy_or_move_elements(
-                                tpath.clone(),
-                                source_path,
-                                target_type,
-                                false,
-                            );
-                            continue;
-                        }
-                    }
-                    self.block_visitor
-                        .bv
-                        .current_environment
-                        .update_value_at(tpath, rvalue);
-                    continue;
-                }
-                Expression::HeapBlockLayout { source, .. } => {
-                    match source {
-                        LayoutSource::DeAlloc => {
-                            self.purge_abstract_heap_address_from_environment(
-                                &tpath,
-                                &rvalue.expression,
-                            );
-                        }
-                        LayoutSource::ReAlloc => {
-                            let layout_argument_path = Path::new_layout(path.clone());
-                            if let Some((_, val)) =
-                                &effects.iter().find(|(p, _)| p.eq(&layout_argument_path))
-                            {
-                                let realloc_layout_val = val
-                                    .clone()
-                                    .refine_parameters(
-                                        arguments,
-                                        self.block_visitor.bv.fresh_variable_offset,
-                                    )
-                                    .refine_paths(&self.block_visitor.bv.current_environment);
-                                self.update_zeroed_flag_for_heap_block_from_environment(
-                                    &tpath,
-                                    &realloc_layout_val.expression,
-                                );
-                            }
-                        }
-                        _ => {}
-                    }
-
-                    self.block_visitor
-                        .bv
-                        .current_environment
-                        .update_value_at(tpath, rvalue);
-                    continue;
-                }
-                Expression::Offset { .. } => {
-                    if self.block_visitor.bv.check_for_errors
-                        && self.function_being_analyzed_is_root()
-                    {
-                        self.check_offset(&rvalue);
-                    }
-                }
-                Expression::Variable { path, .. } => {
-                    let target_type = self
-                        .block_visitor
-                        .bv
-                        .type_visitor
-                        .get_path_rustc_type(&tpath, self.block_visitor.bv.current_span);
-                    if let PathEnum::LocalVariable { ordinal } = &path.value {
-                        if *ordinal >= self.block_visitor.bv.fresh_variable_offset {
-                            // A fresh variable from the callee adds no information that is not
-                            // already inherent in the target location.
-                            self.block_visitor.bv.current_environment.value_map = self
-                                .block_visitor
-                                .bv
-                                .current_environment
-                                .value_map
-                                .remove(&tpath);
-                            continue;
-                        }
-                        if rtype == ExpressionType::NonPrimitive {
-                            self.block_visitor.copy_or_move_elements(
-                                tpath.clone(),
-                                path.clone(),
-                                target_type,
-                                false,
-                            );
-                        }
-                    } else if path.is_rooted_by_parameter() {
-                        self.block_visitor
-                            .bv
-                            .current_environment
-                            .update_value_at(tpath, rvalue);
-                        continue;
-                    } else if rtype == ExpressionType::NonPrimitive {
-                        self.block_visitor.copy_or_move_elements(
-                            tpath.clone(),
-                            path.clone(),
-                            target_type,
-                            false,
-                        );
-                    }
-                }
-                _ => {}
-            }
-            if rtype != ExpressionType::NonPrimitive {
-                self.block_visitor
-                    .bv
-                    .current_environment
-                    .update_value_at(tpath, rvalue);
-            }
-            check_for_early_return!(self.block_visitor.bv);
-        }
-    }
-
-    /// The heap block rooting layout_path has been deallocated in the function whose
-    /// summary is being transferred to the current environment. If we know the identity of the
-    /// heap block in the current environment, we need to check the validity of the deallocation
-    /// and also have to delete any paths rooted in the heap block.
-    #[logfn_inputs(TRACE)]
-    fn purge_abstract_heap_address_from_environment(
-        &mut self,
-        layout_path: &Rc<Path>,
-        new_layout_expression: &Expression,
-    ) {
-        if let PathEnum::QualifiedPath {
-            qualifier,
-            selector,
-            ..
-        } = &layout_path.value
-        {
-            if *selector.as_ref() == PathSelector::Layout {
-                let old_layout = self.block_visitor.bv.lookup_path_and_refine_result(
-                    layout_path.clone(),
-                    ExpressionType::NonPrimitive.as_rustc_type(self.block_visitor.bv.tcx),
-                );
-                if let Expression::HeapBlockLayout { .. } = &old_layout.expression {
-                    if self.block_visitor.bv.check_for_errors {
-                        self.check_for_layout_consistency(
-                            &old_layout.expression,
-                            new_layout_expression,
-                        );
-                    }
-                    let mut purged_map =
-                        self.block_visitor.bv.current_environment.value_map.clone();
-                    for (path, _) in self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .value_map
-                        .iter()
-                        .filter(|(p, _)| p.is_rooted_by(&qualifier))
-                    {
-                        purged_map = purged_map.remove(path);
-                    }
-                    self.block_visitor.bv.current_environment.value_map = purged_map;
-                }
-            }
-        } else {
-            assume_unreachable!("Layout values should only be associated with layout paths");
-        }
-    }
-
-    /// Following a reallocation we are no longer guaranteed that the resulting heap
-    /// memory block has been zeroed out by the allocator. Search the environment for equivalent
-    /// heap block values and update them to clear the zeroed flag (if set).
-    #[logfn_inputs(DEBUG)]
-    fn update_zeroed_flag_for_heap_block_from_environment(
-        &mut self,
-        layout_path: &Rc<Path>,
-        new_layout_expression: &Expression,
-    ) {
-        if let PathEnum::QualifiedPath { qualifier, .. } = &layout_path.value {
-            if self.block_visitor.bv.check_for_errors {
-                let old_layout = self.block_visitor.bv.lookup_path_and_refine_result(
-                    layout_path.clone(),
-                    ExpressionType::NonPrimitive.as_rustc_type(self.block_visitor.bv.tcx),
-                );
-                self.check_for_layout_consistency(&old_layout.expression, new_layout_expression);
-            }
-            if let PathEnum::HeapBlock { value } = &qualifier.value {
-                if let Expression::HeapBlock {
-                    abstract_address,
-                    is_zeroed,
-                } = &value.expression
-                {
-                    if *is_zeroed {
-                        let mut updated_value_map =
-                            self.block_visitor.bv.current_environment.value_map.clone();
-                        for (path, value) in
-                            self.block_visitor.bv.current_environment.value_map.iter()
-                        {
-                            if let Expression::Reference(p) = &value.expression {
-                                if let PathEnum::HeapBlock { value } = &p.value {
-                                    if let Expression::HeapBlock {
-                                        abstract_address: a,
-                                        is_zeroed: z,
-                                    } = &value.expression
-                                    {
-                                        if *abstract_address == *a && *z {
-                                            let new_block = AbstractValue::make_from(
-                                                Expression::HeapBlock {
-                                                    abstract_address: *a,
-                                                    is_zeroed: false,
-                                                },
-                                                1,
-                                            );
-                                            let new_block_path = Path::get_as_path(new_block);
-                                            let new_reference =
-                                                AbstractValue::make_reference(new_block_path);
-                                            updated_value_map = updated_value_map
-                                                .insert(path.clone(), new_reference);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        self.block_visitor.bv.current_environment.value_map = updated_value_map;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Checks that the layout used to allocate a pointer has an equivalent runtime value to the
-    /// layout used to deallocate the pointer.
-    /// Also checks that a pointer is deallocated at most once.
-    #[logfn_inputs(TRACE)]
-    fn check_for_layout_consistency(&mut self, old_layout: &Expression, new_layout: &Expression) {
-        precondition!(self.block_visitor.bv.check_for_errors);
-        if let (
-            Expression::HeapBlockLayout {
-                length: old_length,
-                alignment: old_alignment,
-                source: old_source,
-            },
-            Expression::HeapBlockLayout {
-                length: new_length,
-                alignment: new_alignment,
-                source: new_source,
-            },
-        ) = (old_layout, new_layout)
-        {
-            if *old_source == LayoutSource::DeAlloc {
-                let error = self.block_visitor.bv.cv.session.struct_span_err(
-                    self.block_visitor.bv.current_span,
-                    "the pointer points to memory that has already been deallocated",
-                );
-                self.block_visitor.bv.emit_diagnostic(error);
-            }
-            let layouts_match = old_length
-                .equals(new_length.clone())
-                .and(old_alignment.equals(new_alignment.clone()));
-            let (layouts_match_as_bool, entry_cond_as_bool) = self
-                .block_visitor
-                .check_condition_value_and_reachability(&layouts_match);
-            if entry_cond_as_bool.unwrap_or(true) && !layouts_match_as_bool.unwrap_or(false) {
-                // The condition may be reachable and it may be false
-                let message = format!(
-                    "{}{} the pointer with layout information inconsistent with the allocation",
-                    if entry_cond_as_bool.is_none() || layouts_match_as_bool.is_none() {
-                        "possibly "
-                    } else {
-                        ""
-                    },
-                    if *new_source == LayoutSource::ReAlloc {
-                        "reallocates"
-                    } else {
-                        "deallocates"
-                    }
-                );
-                let error = self
-                    .block_visitor
-                    .bv
-                    .cv
-                    .session
-                    .struct_span_err(self.block_visitor.bv.current_span, &message);
-                self.block_visitor.bv.emit_diagnostic(error);
-            }
         }
     }
 

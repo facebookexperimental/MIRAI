@@ -2617,9 +2617,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
-            Expression::Widen { path, operand, .. } => {
-                operand.refine_paths(environment).widen(&path)
-            }
+            Expression::Widen { path, operand, .. } => operand
+                .refine_paths(environment)
+                .widen(&path.refine_paths(environment)),
         }
     }
 
@@ -2860,9 +2860,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     )
                 }
             }
-            Expression::Widen { path, operand, .. } => {
-                operand.refine_parameters(arguments, fresh).widen(&path)
-            }
+            Expression::Widen { path, operand, .. } => operand
+                .refine_parameters(arguments, fresh)
+                .widen(&path.refine_parameters(arguments, fresh)),
         }
     }
 
