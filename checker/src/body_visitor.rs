@@ -786,7 +786,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// target_path and rvalue is value refined by replacing all occurrences of parameter values
     /// with the corresponding actual values.
     #[logfn_inputs(TRACE)]
-    fn transfer_and_refine(
+    pub fn transfer_and_refine(
         &mut self,
         effects: &[(Rc<Path>, Rc<AbstractValue>)],
         target_path: Rc<Path>,
@@ -891,6 +891,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     } else if rtype == ExpressionType::NonPrimitive {
                         self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
                     }
+                }
+                Expression::Widen { operand, .. } => {
+                    let rvalue = operand.widen(&tpath);
+                    self.current_environment.update_value_at(tpath, rvalue);
+                    continue;
                 }
                 _ => {}
             }
