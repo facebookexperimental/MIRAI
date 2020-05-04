@@ -6,7 +6,7 @@
 #![allow(clippy::declare_interior_mutable_const)]
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
-use crate::expression::Expression::{ConditionalExpression, Join, Widen};
+use crate::expression::Expression::{ConditionalExpression, Join};
 use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::interval_domain::{self, IntervalDomain};
 use crate::k_limits;
@@ -170,6 +170,12 @@ impl AbstractValue {
         result_type: ExpressionType,
         operation: fn(Rc<AbstractValue>, Rc<AbstractValue>, ExpressionType) -> Expression,
     ) -> Rc<AbstractValue> {
+        if left.is_top() || left.is_bottom() {
+            return left;
+        }
+        if right.is_top() || right.is_bottom() {
+            return right;
+        }
         let expression_size = left.expression_size.saturating_add(right.expression_size);
         Self::make_from(operation(left, right, result_type), expression_size)
     }
@@ -181,6 +187,9 @@ impl AbstractValue {
         result_type: ExpressionType,
         operation: fn(Rc<AbstractValue>, ExpressionType) -> Expression,
     ) -> Rc<AbstractValue> {
+        if operand.is_top() || operand.is_bottom() {
+            return operand;
+        }
         let expression_size = operand.expression_size.saturating_add(1);
         Self::make_from(operation(operand, result_type), expression_size)
     }
@@ -191,6 +200,9 @@ impl AbstractValue {
         operand: Rc<AbstractValue>,
         operation: fn(Rc<AbstractValue>) -> Expression,
     ) -> Rc<AbstractValue> {
+        if operand.is_top() || operand.is_bottom() {
+            return operand;
+        }
         let expression_size = operand.expression_size.saturating_add(1);
         Self::make_from(operation(operand), expression_size)
     }
@@ -458,6 +470,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self && other".
     #[logfn_inputs(TRACE)]
     fn and(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        // Do these tests here lest BOTTOM get simplified away.
+        if self.is_bottom() {
+            return self.clone();
+        }
+        if other.is_bottom() {
+            return other;
+        }
         let self_bool = self.as_bool_if_known();
         if let Some(false) = self_bool {
             // [false && other] -> false
@@ -476,13 +495,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // [true && other] -> other
                 other
             }
-        } else if other_bool.unwrap_or(false) || self.is_bottom() {
+        } else if other_bool.unwrap_or(false) {
             // [self && true] -> self
-            // [BOTTOM && other] -> BOTTOM
             self.clone()
-        } else if other.is_bottom() {
-            // [self && BOTTOM] -> BOTTOM
-            other
         } else {
             match &self.expression {
                 Expression::And { left: x, right: y } => {
@@ -2326,11 +2341,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let Join { left, right, path } = &other.expression {
             return recursive_op(self, left.clone()).join(recursive_op(self, right.clone()), &path);
         }
-        match (&self.expression, &other.expression) {
-            (Widen { .. }, _) => self.clone(),
-            (_, Widen { .. }) => other,
-            _ => operation(self.clone(), other),
-        }
+        operation(self.clone(), other)
     }
 
     /// Gets or constructs an interval that is cached.
@@ -2894,6 +2905,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// of refine_paths, which ensures that paths stay unique (dealing with aliasing is expensive).
     #[logfn_inputs(TRACE)]
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Rc<AbstractValue> {
+        if self.is_bottom() || self.is_top() {
+            return self.clone();
+        };
         //do not use false path conditions to refine things
         checked_precondition!(path_condition.as_bool_if_known().is_none());
         if depth >= k_limits::MAX_REFINE_DEPTH {

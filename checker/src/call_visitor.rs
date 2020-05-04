@@ -305,7 +305,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .active_calls_map
                 .get(&func_ref.def_id.unwrap())
                 .unwrap_or(&0u64);
-            info!("call depth {:?}", call_depth);
             let result = self
                 .block_visitor
                 .bv

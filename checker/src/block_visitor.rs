@@ -709,6 +709,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         is_post_condition: bool,
     ) -> Option<String> {
         precondition!(self.bv.check_for_errors);
+        if cond.is_bottom() {
+            return None;
+        }
         let (cond_as_bool, entry_cond_as_bool) = self.check_condition_value_and_reachability(cond);
 
         // If we never get here, rather call unreachable!()
@@ -797,11 +800,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     } else {
                         cond_val.clone()
                     });
-            self.bv.current_environment.exit_conditions = self
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(cleanup_target, panic_exit_condition);
+            if !panic_exit_condition.is_bottom() {
+                self.bv.current_environment.exit_conditions = self
+                    .bv
+                    .current_environment
+                    .exit_conditions
+                    .insert(cleanup_target, panic_exit_condition);
+            }
         };
         let normal_exit_condition = self
             .bv
@@ -812,88 +817,90 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             } else {
                 not_cond_val
             });
-        self.bv.current_environment.exit_conditions = self
-            .bv
-            .current_environment
-            .exit_conditions
-            .insert(target, normal_exit_condition);
+        if !normal_exit_condition.is_bottom() {
+            self.bv.current_environment.exit_conditions = self
+                .bv
+                .current_environment
+                .exit_conditions
+                .insert(target, normal_exit_condition);
 
-        // Check the condition and issue a warning or infer a precondition.
-        if self.bv.check_for_errors {
-            if let mir::Operand::Constant(..) = cond {
-                // Do not complain about compile time constants known to the compiler.
-                // Leave that to the compiler.
-            } else {
-                let (cond_as_bool_opt, entry_cond_as_bool) =
-                    self.check_condition_value_and_reachability(&cond_val);
+            // Check the condition and issue a warning or infer a precondition.
+            if self.bv.check_for_errors {
+                if let mir::Operand::Constant(..) = cond {
+                    // Do not complain about compile time constants known to the compiler.
+                    // Leave that to the compiler.
+                } else {
+                    let (cond_as_bool_opt, entry_cond_as_bool) =
+                        self.check_condition_value_and_reachability(&cond_val);
 
-                // Quick exit if things are known.
-                if let Some(false) = entry_cond_as_bool {
-                    // We can't reach this assertion, so just return.
-                    return;
-                }
-                if let Some(cond_as_bool) = cond_as_bool_opt {
-                    if expected == cond_as_bool {
-                        // If the condition is always as expected when we get here, so there is nothing to report.
+                    // Quick exit if things are known.
+                    if let Some(false) = entry_cond_as_bool {
+                        // We can't reach this assertion, so just return.
                         return;
                     }
-                    // The condition is known to differ from expected so if we always get here if called,
-                    // emit a diagnostic.
-                    if entry_cond_as_bool.unwrap_or(false) {
-                        let error = get_assert_msg_description(msg);
+                    if let Some(cond_as_bool) = cond_as_bool_opt {
+                        if expected == cond_as_bool {
+                            // If the condition is always as expected when we get here, so there is nothing to report.
+                            return;
+                        }
+                        // The condition is known to differ from expected so if we always get here if called,
+                        // emit a diagnostic.
+                        if entry_cond_as_bool.unwrap_or(false) {
+                            let error = get_assert_msg_description(msg);
+                            let span = self.bv.current_span;
+                            let error = self.bv.cv.session.struct_span_warn(span, error);
+                            self.bv.emit_diagnostic(error);
+                            // No need to push a precondition, the caller can never satisfy it.
+                            return;
+                        }
+                    }
+
+                    // At this point, we don't know that this assert is unreachable and we don't know
+                    // that the condition is as expected, so we need to warn about it somewhere.
+                    if self.bv.function_being_analyzed_is_root()
+                        || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+                    {
+                        // Can't make this the caller's problem.
+                        let warning = format!("possible {}", get_assert_msg_description(msg));
                         let span = self.bv.current_span;
-                        let error = self.bv.cv.session.struct_span_warn(span, error);
-                        self.bv.emit_diagnostic(error);
-                        // No need to push a precondition, the caller can never satisfy it.
+                        let warning = self.bv.cv.session.struct_span_warn(span, warning.as_str());
+                        self.bv.emit_diagnostic(warning);
                         return;
                     }
-                }
 
-                // At this point, we don't know that this assert is unreachable and we don't know
-                // that the condition is as expected, so we need to warn about it somewhere.
-                if self.bv.function_being_analyzed_is_root()
-                    || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
-                {
-                    // Can't make this the caller's problem.
-                    let warning = format!("possible {}", get_assert_msg_description(msg));
-                    let span = self.bv.current_span;
-                    let warning = self.bv.cv.session.struct_span_warn(span, warning.as_str());
-                    self.bv.emit_diagnostic(warning);
-                    return;
-                }
-
-                // Make it the caller's problem by pushing a precondition.
-                // After, of course, removing any promoted preconditions that match the current
-                // source span.
-                let sp = self.bv.current_span;
-                self.bv
-                    .preconditions
-                    .retain(|pc| pc.spans.last() != Some(&sp));
-                if self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
-                    let expected_cond = if expected {
-                        cond_val
-                    } else {
-                        cond_val.logical_not()
-                    };
-                    // To make sure that this assertion never fails, we should either never
-                    // get here (!entry_condition) or expected_cond should be true.
-                    let condition = self
-                        .bv
-                        .current_environment
-                        .entry_condition
-                        .logical_not()
-                        .or(expected_cond);
-                    let message = Rc::new(String::from(get_assert_msg_description(msg)));
-                    let precondition = Precondition {
-                        condition,
-                        message,
-                        provenance: None,
-                        spans: vec![self.bv.current_span],
-                    };
-                    self.bv.preconditions.push(precondition);
+                    // Make it the caller's problem by pushing a precondition.
+                    // After, of course, removing any promoted preconditions that match the current
+                    // source span.
+                    let sp = self.bv.current_span;
+                    self.bv
+                        .preconditions
+                        .retain(|pc| pc.spans.last() != Some(&sp));
+                    if self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                        let expected_cond = if expected {
+                            cond_val
+                        } else {
+                            cond_val.logical_not()
+                        };
+                        // To make sure that this assertion never fails, we should either never
+                        // get here (!entry_condition) or expected_cond should be true.
+                        let condition = self
+                            .bv
+                            .current_environment
+                            .entry_condition
+                            .logical_not()
+                            .or(expected_cond);
+                        let message = Rc::new(String::from(get_assert_msg_description(msg)));
+                        let precondition = Precondition {
+                            condition,
+                            message,
+                            provenance: None,
+                            spans: vec![self.bv.current_span],
+                        };
+                        self.bv.preconditions.push(precondition);
+                    }
                 }
             }
-        };
+        }
 
         fn get_assert_msg_description<'tcx>(msg: &mir::AssertMessage<'tcx>) -> &'tcx str {
             match msg {
