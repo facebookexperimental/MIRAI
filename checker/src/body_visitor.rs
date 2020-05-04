@@ -383,8 +383,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     }
                 }
                 result.unwrap_or_else(|| {
-                    let result =
-                        AbstractValue::make_typed_unknown(result_type.clone(), path.clone());
+                    let result = if let PathEnum::LocalVariable { .. } = path.value {
+                        refined_val
+                    } else {
+                        AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
+                    };
                     if result_type != ExpressionType::NonPrimitive {
                         self.current_environment
                             .update_value_at(path, result.clone());
@@ -392,7 +395,16 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     result
                 })
             } else {
-                AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
+                let result = if let PathEnum::LocalVariable { .. } = path.value {
+                    refined_val
+                } else {
+                    AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
+                };
+                if result_type != ExpressionType::NonPrimitive {
+                    self.current_environment
+                        .update_value_at(path, result.clone());
+                }
+                result
             }
         } else {
             refined_val

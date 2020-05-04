@@ -206,36 +206,34 @@ impl Environment {
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
-                    let val2 = if !path.is_rooted_by_parameter() {
-                        val1.clone()
+                    if !path.is_rooted_by_parameter() {
+                        // joining val1 and bottom
+                        // The bottom value corresponds to dead (impossible) code, so the join collapses.
+                        value_map = value_map.insert(p, val1.clone());
                     } else {
-                        AbstractValue::make_from(
-                            Expression::Variable {
-                                path: path.clone(),
-                                var_type: val1.expression.infer_type(),
-                            },
-                            1,
-                        )
+                        let val2 = AbstractValue::make_typed_unknown(
+                            val1.expression.infer_type(),
+                            path.clone(),
+                        );
+                        value_map = value_map.insert(p, join_or_widen(val1, &val2, path));
                     };
-                    value_map = value_map.insert(p, join_or_widen(val1, &val2, path));
                 }
             }
         }
         for (path, val2) in value_map2.iter() {
             if !value_map1.contains_key(path) {
                 checked_assume!(!val2.is_bottom());
-                let val1 = if !path.is_rooted_by_parameter() {
-                    val2.clone()
+                if !path.is_rooted_by_parameter() {
+                    // joining bottom and val2
+                    // The bottom value corresponds to dead (impossible) code, so the join collapses.
+                    value_map = value_map.insert(path.clone(), val2.clone());
                 } else {
-                    AbstractValue::make_from(
-                        Expression::Variable {
-                            path: path.clone(),
-                            var_type: val2.expression.infer_type(),
-                        },
-                        1,
-                    )
+                    let val1 = AbstractValue::make_typed_unknown(
+                        val2.expression.infer_type(),
+                        path.clone(),
+                    );
+                    value_map = value_map.insert(path.clone(), join_or_widen(&val1, val2, path));
                 };
-                value_map = value_map.insert(path.clone(), join_or_widen(&val1, val2, &path));
             }
         }
         Environment {
