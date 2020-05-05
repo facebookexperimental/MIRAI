@@ -5,7 +5,7 @@
 
 use crate::abstract_value::AbstractValue;
 use crate::environment::Environment;
-use crate::expression::{Expression, ExpressionType};
+use crate::expression::ExpressionType;
 use crate::path::{Path, PathEnum};
 use crate::path::{PathRefinement, PathSelector};
 use crate::utils;
@@ -85,12 +85,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                                 (&substs.get(j).unwrap().expect_ty().kind).into();
                             let closure_field_path = Path::new_field(path.clone(), j - (i + 1))
                                 .refine_paths(environment);
-                            let closure_field_val = AbstractValue::make_from(
-                                Expression::Variable {
-                                    path: closure_field_path.clone(),
-                                    var_type,
-                                },
-                                1,
+                            let closure_field_val = AbstractValue::make_typed_unknown(
+                                var_type,
+                                closure_field_path.clone(),
                             );
                             first_state.value_map = first_state
                                 .value_map

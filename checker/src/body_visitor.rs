@@ -383,13 +383,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     }
                 }
                 result.unwrap_or_else(|| {
-                    let result = AbstractValue::make_from(
-                        Expression::Variable {
-                            path: path.clone(),
-                            var_type: result_type.clone(),
-                        },
-                        1,
-                    );
+                    let result =
+                        AbstractValue::make_typed_unknown(result_type.clone(), path.clone());
                     if result_type != ExpressionType::NonPrimitive {
                         self.current_environment
                             .update_value_at(path, result.clone());
@@ -397,7 +392,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     result
                 })
             } else {
-                AbstractValue::make_typed_unknown(result_type.clone())
+                AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
             }
         } else {
             refined_val
@@ -527,13 +522,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .value_at(&path)
             .cloned()
             .unwrap_or_else(|| {
-                AbstractValue::make_from(
-                    Expression::Variable {
-                        path: path.clone(),
-                        var_type: expression_type.clone(),
-                    },
-                    1,
-                )
+                AbstractValue::make_typed_unknown(expression_type.clone(), path.clone())
             })
     }
 

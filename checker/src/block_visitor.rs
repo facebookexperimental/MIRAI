@@ -1656,7 +1656,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let len = if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
             Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
         } else {
-            AbstractValue::make_typed_unknown(ExpressionType::U128)
+            AbstractValue::make_typed_unknown(ExpressionType::U128, path.clone())
         };
         let alignment = Rc::new(1u128.into());
         let value = match null_op {
