@@ -64,13 +64,22 @@ impl Environment {
         }
         if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
             // If path is an abstraction that can match more than one path, we need to do weak updates.
-            let default = AbstractValue::make_typed_unknown(value.expression.infer_type());
             let true_val = join_condition.conditional_expression(
                 value.clone(),
-                self.value_at(&true_path).unwrap_or(&default).clone(),
+                self.value_at(&true_path)
+                    .unwrap_or(&AbstractValue::make_typed_unknown(
+                        value.expression.infer_type(),
+                        true_path.clone(),
+                    ))
+                    .clone(),
             );
             let false_val = join_condition.conditional_expression(
-                self.value_at(&false_path).unwrap_or(&default).clone(),
+                self.value_at(&false_path)
+                    .unwrap_or(&AbstractValue::make_typed_unknown(
+                        value.expression.infer_type(),
+                        false_path.clone(),
+                    ))
+                    .clone(),
                 value.clone(),
             );
             self.update_value_at(true_path, true_val);

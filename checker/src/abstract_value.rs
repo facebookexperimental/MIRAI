@@ -238,16 +238,10 @@ impl AbstractValue {
         AbstractValue::make_from(Expression::Reference(path), path_length)
     }
 
-    /// Creates an abstract value about which nothing is known other than its type.
+    /// Creates an abstract value about which nothing is known other than its type and address.
     #[logfn_inputs(TRACE)]
-    pub fn make_typed_unknown(var_type: ExpressionType) -> Rc<AbstractValue> {
-        AbstractValue::make_from(
-            Expression::Variable {
-                path: Path::new_alias(TOP.into()), //todo: maybe something unique here?
-                var_type,
-            },
-            1,
-        )
+    pub fn make_typed_unknown(var_type: ExpressionType, path: Rc<Path>) -> Rc<AbstractValue> {
+        AbstractValue::make_from(Expression::Variable { path, var_type }, 1)
     }
 }
 
@@ -389,13 +383,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     if !var_type.is_primitive() {
                         continue;
                     }
-                    let variable = AbstractValue::make_from(
-                        Expression::Variable {
-                            path: key.clone(),
-                            var_type,
-                        },
-                        1,
-                    );
+                    let variable = AbstractValue::make_typed_unknown(var_type, key.clone());
                     let equality =
                         AbstractValue::make_binary(variable, self_val.clone(), |left, right| {
                             Expression::Equals { left, right }
@@ -1030,13 +1018,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     .collect(),
                 default.try_to_retype_as(target_type),
             ),
-            Expression::Variable { path, .. } => AbstractValue::make_from(
-                Expression::Variable {
-                    path: path.clone(),
-                    var_type: target_type.clone(),
-                },
-                1,
-            ),
+            Expression::Variable { path, .. } => {
+                AbstractValue::make_typed_unknown(target_type.clone(), path.clone())
+            }
             Expression::Widen { .. } => self.clone(),
 
             _ => self.clone(),
@@ -1072,13 +1056,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let PathEnum::HeapBlock { value } = &path.value {
                     value.clone()
                 } else {
-                    AbstractValue::make_from(
-                        Expression::Variable {
-                            path: path.clone(),
-                            var_type: target_type,
-                        },
-                        1,
-                    )
+                    AbstractValue::make_typed_unknown(target_type, path.clone())
                 }
             }
             Expression::Switch {
@@ -1098,12 +1076,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 default.dereference(target_type),
             ),
             Expression::UninterpretedCall { path, .. } | Expression::Variable { path, .. } => {
-                AbstractValue::make_from(
-                    Expression::Variable {
-                        path: Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
-                        var_type: target_type,
-                    },
-                    1,
+                AbstractValue::make_typed_unknown(
+                    target_type,
+                    Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
                 )
             }
             Expression::Widen { path, operand } => operand.dereference(target_type).widen(path),
@@ -1112,7 +1087,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     "found unhandled expression that is of type reference: {:?}",
                     self.expression
                 );
-                AbstractValue::make_typed_unknown(target_type)
+                AbstractValue::make_typed_unknown(target_type, Path::new_alias(Rc::new(TOP)))
             }
         }
     }
@@ -2607,13 +2582,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     } else if refined_path == *path {
                         self.clone()
                     } else {
-                        AbstractValue::make_from(
-                            Expression::Variable {
-                                path: refined_path,
-                                var_type: var_type.clone(),
-                            },
-                            1,
-                        )
+                        AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
                     }
                 }
             }
@@ -2827,13 +2796,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let PathEnum::Alias { value } = &refined_path.value {
                     value.clone()
                 } else {
-                    AbstractValue::make_from(
-                        Expression::Variable {
-                            path: refined_path,
-                            var_type: result_type.clone(),
-                        },
-                        1,
-                    )
+                    AbstractValue::make_typed_unknown(result_type.clone(), refined_path)
                 }
             }
             Expression::UnknownModelField { path, default } => {
@@ -2851,13 +2814,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let PathEnum::Alias { value } = &refined_path.value {
                     value.clone()
                 } else {
-                    AbstractValue::make_from(
-                        Expression::Variable {
-                            path: refined_path,
-                            var_type: var_type.clone(),
-                        },
-                        1,
-                    )
+                    AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
                 }
             }
             Expression::Widen { path, operand, .. } => operand
@@ -3173,13 +3130,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ),
             _ => {
                 if self.expression_size > 1000 {
-                    AbstractValue::make_from(
-                        Expression::Variable {
-                            path: path.clone(),
-                            var_type: self.expression.infer_type(),
-                        },
-                        1,
-                    )
+                    AbstractValue::make_typed_unknown(self.expression.infer_type(), path.clone())
                 } else {
                     AbstractValue::make_from(
                         Expression::Widen {

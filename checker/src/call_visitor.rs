@@ -1049,13 +1049,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .type_visitor
                 .get_place_type(place, self.block_visitor.bv.current_span);
-            let abstract_value = AbstractValue::make_from(
-                Expression::Variable {
-                    path: path.clone(),
-                    var_type: expression_type,
-                },
-                1,
-            );
+            let abstract_value = AbstractValue::make_typed_unknown(expression_type, path.clone());
             self.block_visitor
                 .bv
                 .current_environment
@@ -1487,13 +1481,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 );
                 // todo: figure out an expression that represents the truncated overflow of a
                 // signed operation.
-                let unknown_typed_value = AbstractValue::make_from(
-                    Expression::Variable {
-                        path: path0.clone(),
-                        var_type: target_type.clone(),
-                    },
-                    (path0.path_length() as u64) + 1,
-                );
+                let unknown_typed_value =
+                    AbstractValue::make_typed_unknown(target_type.clone(), path0.clone());
                 (
                     overflow_flag.conditional_expression(unknown_typed_value, result),
                     overflow_flag,
@@ -1507,13 +1496,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .current_environment
                 .update_value_at(path1, overflow_flag);
-            AbstractValue::make_from(
-                Expression::Variable {
-                    path: target_path.clone(),
-                    var_type: target_type,
-                },
-                (target_path.path_length() as u64) + 1,
-            )
+            AbstractValue::make_typed_unknown(target_type, target_path)
         } else {
             assume_unreachable!();
         }
@@ -1593,7 +1576,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(*t)) {
             Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
         } else {
-            AbstractValue::make_typed_unknown(ExpressionType::U128)
+            let path = self.block_visitor.visit_place(
+                &self
+                    .destination
+                    .expect("size_of should have a destination")
+                    .0,
+            );
+            AbstractValue::make_typed_unknown(ExpressionType::U128, path)
         }
     }
 
@@ -1846,7 +1835,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 }
             } else {
                 // We don't know anything other than the return value type.
-                // We'll assume there were no side effects and no preconditions (but check this later if possible).
+                // We'll assume there were no side effects and no preconditions.
                 let result_type = self
                     .block_visitor
                     .bv
@@ -1861,14 +1850,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             .map(|(_, arg)| arg.clone())
                             .collect(),
                         result_type,
-                        path: return_value_path.clone(),
+                        path: return_value_path,
                     },
                     1,
                 );
                 self.block_visitor
                     .bv
                     .current_environment
-                    .update_value_at(return_value_path, result);
+                    .update_value_at(target_path.clone(), result);
             }
 
             // Add post conditions to entry condition
@@ -1888,13 +1877,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .type_visitor
                     .get_place_type(place, self.block_visitor.bv.current_span);
-                let result_val = AbstractValue::make_from(
-                    Expression::Variable {
-                        path: target_path,
-                        var_type,
-                    },
-                    1,
-                );
+                let result_val = AbstractValue::make_typed_unknown(var_type, target_path);
                 let return_value_path =
                     Path::new_local(self.block_visitor.bv.fresh_variable_offset);
 
