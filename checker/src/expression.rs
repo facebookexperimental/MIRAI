@@ -345,8 +345,7 @@ pub enum Expression {
     UninterpretedCall {
         // The unknown function to call. This can be just a reference to a location rooted in a parameter
         // (in which case it can be specialized) or it can be a constant, in which case it may be
-        // possible to map it implementation method defined on the value of the self parameter,
-        // during call site refinement.
+        // possible to map it to a known function during call site refinement.
         callee: Rc<AbstractValue>,
         // The argument values used for the call. These will be refined if the callee can be resolved
         // at the call site.

@@ -195,6 +195,29 @@ impl AbstractValue {
         Self::make_from(operation(operand), expression_size)
     }
 
+    /// Creates an abstract value that represents a call to a function whose summary is not
+    /// known at the time of the call. This is usually because the function has no MIR body,
+    /// but can also be because the function is self recursive and thus gets called before it
+    /// has been summarized.
+    #[logfn_inputs(TRACE)]
+    fn make_uninterpreted_call(
+        callee: Rc<AbstractValue>,
+        arguments: Vec<Rc<AbstractValue>>,
+        result_type: ExpressionType,
+        path: Rc<Path>,
+    ) -> Rc<AbstractValue> {
+        //todo: compute the expression size
+        AbstractValue::make_from(
+            Expression::UninterpretedCall {
+                callee,
+                arguments,
+                result_type,
+                path,
+            },
+            1,
+        )
+    }
+
     /// Creates an abstract value from the given expression and size.
     /// Initializes the optional domains to None.
     #[logfn_inputs(TRACE)]
@@ -322,6 +345,12 @@ pub trait AbstractValueTrait: Sized {
     fn refine_paths(&self, environment: &Environment) -> Self;
     fn refine_parameters(&self, arguments: &[(Rc<Path>, Rc<AbstractValue>)], fresh: usize) -> Self;
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Self;
+    fn uninterpreted_call(
+        &self,
+        arguments: Vec<Rc<AbstractValue>>,
+        result_type: ExpressionType,
+        path: Rc<Path>,
+    ) -> Self;
     fn widen(&self, path: &Rc<Path>) -> Self;
 }
 
@@ -2551,7 +2580,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     .collect(),
                 default.refine_paths(environment),
             ),
-            Expression::UninterpretedCall { .. } => self.clone(),
+            Expression::UninterpretedCall {
+                callee,
+                arguments: args,
+                result_type,
+                path,
+            } => {
+                let refined_callee = callee.refine_paths(environment);
+                let refined_arguments = args
+                    .iter()
+                    .map(|arg| arg.refine_paths(environment))
+                    .collect();
+                let refined_path = path.refine_paths(environment);
+                refined_callee.uninterpreted_call(
+                    refined_arguments,
+                    result_type.clone(),
+                    refined_path,
+                )
+            }
             Expression::UnknownModelField { path, default } => {
                 if let Some(val) = environment.value_at(&path) {
                     // This environment has a value for the model field.
@@ -2790,14 +2836,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 default.refine_parameters(arguments, fresh),
             ),
             Expression::UninterpretedCall {
-                result_type, path, ..
+                callee,
+                arguments: args,
+                result_type,
+                path,
             } => {
+                let refined_callee = callee.refine_parameters(arguments, fresh);
+                let refined_arguments = args
+                    .iter()
+                    .map(|arg| arg.refine_parameters(arguments, fresh))
+                    .collect();
                 let refined_path = path.refine_parameters(arguments, fresh);
-                if let PathEnum::Alias { value } = &refined_path.value {
-                    value.clone()
-                } else {
-                    AbstractValue::make_typed_unknown(result_type.clone(), refined_path)
-                }
+                refined_callee.uninterpreted_call(
+                    refined_arguments,
+                    result_type.clone(),
+                    refined_path,
+                )
             }
             Expression::UnknownModelField { path, default } => {
                 let refined_path = path.refine_parameters(arguments, fresh);
@@ -3086,7 +3140,21 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     .collect(),
                 default.refine_with(path_condition, depth + 1),
             ),
-            Expression::UninterpretedCall { .. } => self.clone(),
+            Expression::UninterpretedCall {
+                callee,
+                arguments,
+                result_type,
+                path,
+            } => callee
+                .refine_with(path_condition, depth + 1)
+                .uninterpreted_call(
+                    arguments
+                        .iter()
+                        .map(|v| v.refine_with(path_condition, depth + 1))
+                        .collect(),
+                    result_type.clone(),
+                    path.clone(),
+                ),
             Expression::UnknownModelField { .. } => self.clone(),
             Expression::Variable { var_type, .. } => {
                 if *var_type == ExpressionType::Bool {
@@ -3102,6 +3170,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 operand.refine_with(path_condition, depth + 1).widen(&path)
             }
         }
+    }
+
+    /// Returns a domain whose corresponding set of concrete values include all of the values
+    /// that the call expression might return at runtime. The function to be called will not
+    /// have been summarized for some reason or another (for example, it might be a foreign function).
+    #[logfn_inputs(TRACE)]
+    fn uninterpreted_call(
+        &self,
+        arguments: Vec<Rc<AbstractValue>>,
+        result_type: ExpressionType,
+        path: Rc<Path>,
+    ) -> Rc<AbstractValue> {
+        AbstractValue::make_uninterpreted_call(self.clone(), arguments, result_type, path)
     }
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
