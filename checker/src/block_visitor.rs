@@ -388,7 +388,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         self.bv.fresh_variable_offset += 1_000_000;
 
         trace!("source location {:?}", self.bv.current_span);
-        trace!("call stack {:?}", self.bv.active_calls);
+        trace!("call stack {:?}", self.bv.active_calls_map);
         trace!("visit_call {:?} {:?}", func, args);
         trace!(
             "self.generic_argument_map {:?}",
@@ -542,7 +542,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
     /// Give diagnostic, depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
-    fn report_missing_summary(&mut self) {
+    pub fn report_missing_summary(&mut self) {
         match self.bv.cv.options.diag_level {
             DiagLevel::RELAXED => {
                 // Assume the callee is perfect and assume the caller and all of its callers are perfect
@@ -760,7 +760,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
-        if self.function_being_analyzed_is_root()
+        if self.bv.function_being_analyzed_is_root()
             || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
             // We expect public functions to have programmer supplied preconditions
@@ -772,12 +772,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }
 
         Some(warning)
-    }
-
-    /// Returns true if the function being analyzed is an analysis root.
-    #[logfn_inputs(TRACE)]
-    pub fn function_being_analyzed_is_root(&mut self) -> bool {
-        self.bv.active_calls.len() <= 1
     }
 
     /// Jump to the target if the condition has the expected value,
@@ -858,7 +852,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
                 // At this point, we don't know that this assert is unreachable and we don't know
                 // that the condition is as expected, so we need to warn about it somewhere.
-                if self.function_being_analyzed_is_root()
+                if self.bv.function_being_analyzed_is_root()
                     || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
                 {
                     // Can't make this the caller's problem.
