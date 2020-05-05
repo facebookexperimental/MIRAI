@@ -139,7 +139,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     #[logfn(TRACE)]
     fn analyze_body(&mut self, def_id: DefId) {
         let mut diagnostics: Vec<DiagnosticBuilder<'compilation>> = Vec::new();
-        let mut active_calls: Vec<DefId> = Vec::new();
+        let mut active_calls_map: HashMap<DefId, u64> = HashMap::new();
         let mut z3_solver = Z3Solver::default();
         self.constant_value_cache.reset_heap_counter();
         let mut body_visitor = BodyVisitor::new(
@@ -147,7 +147,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
             def_id,
             &mut z3_solver,
             &mut diagnostics,
-            &mut active_calls,
+            &mut active_calls_map,
         );
         // Analysis local foreign contracts are not summarized and cached on demand, so we need to do it here.
         let summary = body_visitor.visit_body(&[], &[]);

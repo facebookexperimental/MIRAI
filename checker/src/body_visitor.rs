@@ -44,7 +44,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
     pub smt_solver: &'analysis mut dyn SmtSolver<E>,
     pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
-    pub active_calls: &'analysis mut Vec<DefId>,
+    pub active_calls_map: &'analysis mut HashMap<DefId, u64>,
 
     pub already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     // True if the current function cannot be analyzed and hence is just assumed to be correct.
@@ -83,7 +83,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         def_id: DefId,
         smt_solver: &'analysis mut dyn SmtSolver<E>,
         buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
-        active_calls: &'analysis mut Vec<DefId>,
+        active_calls_map: &'analysis mut HashMap<DefId, u64>,
     ) -> BodyVisitor<'analysis, 'compilation, 'tcx, E> {
         let function_name = crate_visitor
             .summary_cache
@@ -98,7 +98,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             mir,
             smt_solver,
             buffered_diagnostics,
-            active_calls,
+            active_calls_map,
 
             already_reported_errors_for_call_to: HashSet::new(),
             assume_function_is_angelic: false,
@@ -161,7 +161,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             rustc_mir::util::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
             info!("{:?}", stdout.flush());
         }
-        self.active_calls.push(self.def_id);
+        *self.active_calls_map.entry(self.def_id).or_insert(0) += 1;
 
         // The entry block has no predecessors and its initial state is the function parameters
         // (which we omit here so that we can lazily provision them with additional context)
@@ -197,7 +197,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 &fixed_point_visitor.block_indices,
                 &mut fixed_point_visitor.terminator_state,
             );
-            self.active_calls.pop();
+            *self
+                .active_calls_map
+                .entry(self.def_id)
+                .or_insert_with(|| unreachable!()) -= 1;
             let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
             if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
                 self.report_timeout(elapsed_time_in_seconds);
@@ -238,7 +241,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             "analysis of {} timed out after {} seconds",
             self.function_name, elapsed_time_in_seconds,
         );
-        self.active_calls.pop();
+        *self
+            .active_calls_map
+            .entry(self.def_id)
+            .or_insert_with(|| unreachable!()) -= 1;
         self.assume_function_is_angelic = true;
     }
 
@@ -777,8 +783,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
     /// Returns true if the function being analyzed is an analysis root.
     #[logfn_inputs(TRACE)]
-    fn function_being_analyzed_is_root(&mut self) -> bool {
-        self.active_calls.len() <= 1
+    pub fn function_being_analyzed_is_root(&mut self) -> bool {
+        self.active_calls_map.get(&self.def_id).unwrap_or(&0).eq(&1)
+            && self.active_calls_map.values().sum::<u64>() == 1u64
     }
 
     /// Adds a (rpath, rvalue) pair to the current environment for every pair in effects

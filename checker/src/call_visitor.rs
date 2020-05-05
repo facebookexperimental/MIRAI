@@ -22,7 +22,6 @@ use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
 use crate::known_names::KnownNames;
-use crate::options::DiagLevel;
 use crate::path::{Path, PathEnum, PathRefinement};
 use crate::smt_solver::SmtResult;
 use crate::summaries::{Precondition, Summary};
@@ -102,7 +101,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.callee_def_id,
                 self.block_visitor.bv.smt_solver,
                 self.block_visitor.bv.buffered_diagnostics,
-                self.block_visitor.bv.active_calls,
+                self.block_visitor.bv.active_calls_map,
             );
             body_visitor.type_visitor.actual_argument_types = self.actual_argument_types.into();
             body_visitor.type_visitor.generic_arguments = self.callee_generic_arguments;
@@ -170,11 +169,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     resolved_def_id,
                     resolved_ty
                 );
-                if !self
+                if self
                     .block_visitor
                     .bv
-                    .active_calls
-                    .contains(&resolved_def_id)
+                    .active_calls_map
+                    .get(&resolved_def_id)
+                    .unwrap_or(&0u64)
+                    .eq(&0u64)
                     && self.block_visitor.bv.tcx.is_mir_available(resolved_def_id)
                 {
                     let func_const = self
@@ -357,6 +358,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     // common case
                     None
                 };
+
+            let call_depth = *self
+                .block_visitor
+                .bv
+                .active_calls_map
+                .get(&func_ref.def_id.unwrap())
+                .unwrap_or(&0u64);
+            info!("call depth {:?}", call_depth);
             let result = self
                 .block_visitor
                 .bv
@@ -367,12 +376,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             if result.is_computed || func_ref.def_id.is_none() {
                 return Some(result);
             }
-            if !self
-                .block_visitor
-                .bv
-                .active_calls
-                .contains(&func_ref.def_id.unwrap())
-            {
+            if call_depth == 0 {
                 return Some(self.create_and_cache_function_summary());
             }
         }
@@ -763,7 +767,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 };
                 let span = self.block_visitor.bv.current_span;
 
-                if path_cond.unwrap_or(false) && self.function_being_analyzed_is_root() {
+                if path_cond.unwrap_or(false)
+                    && self.block_visitor.bv.function_being_analyzed_is_root()
+                {
                     // We always get to this call and we have to assume that the function will
                     // get called, so keep the message certain.
                     // Don't, however, complain about panics in the standard contract summaries
@@ -1522,7 +1528,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let base_val = &self.actual_args[0].1;
         let offset_val = &self.actual_args[1].1;
         let result = base_val.offset(offset_val.clone());
-        if self.block_visitor.bv.check_for_errors && self.function_being_analyzed_is_root() {
+        if self.block_visitor.bv.check_for_errors
+            && self.block_visitor.bv.function_being_analyzed_is_root()
+        {
             self.check_offset(&result)
         }
         result
@@ -1639,7 +1647,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// Give diagnostic or mark the call chain as angelic, depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     pub fn deal_with_missing_summary(&mut self) {
-        self.report_missing_summary();
+        self.block_visitor.report_missing_summary();
         let argument_type_hint = if let Some(func) = &self.callee_func_ref {
             format!(" (foreign fn argument key: {})", func.argument_type_key)
         } else {
@@ -1652,33 +1660,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             argument_type_hint,
         );
         debug!("def_id {:?}", self.callee_def_id);
-    }
-
-    /// Give diagnostic, depending on self.bv.options.diag_level
-    #[logfn_inputs(TRACE)]
-    fn report_missing_summary(&mut self) {
-        match self.block_visitor.bv.cv.options.diag_level {
-            DiagLevel::RELAXED => {
-                // Assume the callee is perfect and assume the caller and all of its callers are perfect
-                // little angels as well. This cuts down on false positives caused by missing post
-                // conditions.
-                self.block_visitor.bv.assume_function_is_angelic = true;
-            }
-            DiagLevel::STRICT => {
-                // Assume the callee is perfect and that the caller does not need to prove any
-                // preconditions and that the callee guarantees no post conditions.
-            }
-            DiagLevel::PARANOID => {
-                if self.block_visitor.bv.check_for_errors {
-                    // Give a diagnostic about this call, and make it the programmer's problem.
-                    let error = self.block_visitor.bv.cv.session.struct_span_err(
-                        self.block_visitor.bv.current_span,
-                        "the called function could not be summarized, all bets are off",
-                    );
-                    self.block_visitor.bv.emit_diagnostic(error);
-                }
-            }
-        }
     }
 
     /// If we are checking for errors and have not assumed the preconditions of the called function
@@ -1755,7 +1736,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
 
             // If the current function is not an analysis root, promote the precondition, subject to a k-limit.
-            if !self.function_being_analyzed_is_root()
+            if !self.block_visitor.bv.function_being_analyzed_is_root()
                 && self.block_visitor.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
             {
                 // Promote the callee precondition to a precondition of the current function.
@@ -1993,11 +1974,5 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 Rc::new("dummy argument".to_string())
             }
         }
-    }
-
-    /// Returns true if the function being analyzed is an analysis root.
-    #[logfn_inputs(TRACE)]
-    pub fn function_being_analyzed_is_root(&mut self) -> bool {
-        self.block_visitor.bv.active_calls.len() <= 1
     }
 }
