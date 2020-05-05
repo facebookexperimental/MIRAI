@@ -861,6 +861,20 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         self.check_offset(&rvalue);
                     }
                 }
+                Expression::UninterpretedCall {
+                    callee,
+                    arguments,
+                    result_type,
+                    ..
+                } => {
+                    let rvalue = callee.uninterpreted_call(
+                        arguments.clone(),
+                        result_type.clone(),
+                        tpath.clone(),
+                    );
+                    self.current_environment.update_value_at(tpath, rvalue);
+                    continue;
+                }
                 Expression::Variable { path, .. } => {
                     let target_type = self
                         .type_visitor

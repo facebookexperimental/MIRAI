@@ -1836,24 +1836,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             } else {
                 // We don't know anything other than the return value type.
                 // We'll assume there were no side effects and no preconditions.
+                let args = self.actual_args.iter().map(|(_, a)| a.clone()).collect();
                 let result_type = self
                     .block_visitor
                     .bv
                     .type_visitor
                     .get_place_type(place, self.block_visitor.bv.current_span);
-                let result = AbstractValue::make_from(
-                    Expression::UninterpretedCall {
-                        callee: self.callee_fun_val.clone(),
-                        arguments: self
-                            .actual_args
-                            .iter()
-                            .map(|(_, arg)| arg.clone())
-                            .collect(),
-                        result_type,
-                        path: return_value_path,
-                    },
-                    1,
-                );
+                let result =
+                    self.callee_fun_val
+                        .uninterpreted_call(args, result_type, return_value_path);
                 self.block_visitor
                     .bv
                     .current_environment
