@@ -147,6 +147,7 @@ impl MiraiCallbacks {
             || file_name.contains("common/bounded-executor/src") // false positive: possible assertion failed: ptr.as_ptr() as usize & NUM_FLAG == 0
             || file_name.contains("common/debug-interface/src") // false positives
             || file_name.contains("common/futures-semaphore/src") // false positive: possible assertion failed: ptr.as_ptr() as usize & NUM_FLAG == 0
+            || file_name.contains("common/logger/src") // z3 encoding
             || file_name.contains("common/metrics/src") // false positives
             || file_name.contains("language/bytecode-verifier/src") // false positives
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
@@ -164,6 +165,7 @@ impl MiraiCallbacks {
             || file_name.contains("storage/jellyfish-merkle/src") // false positives due to complex loops beyond what we can handle right now
             || file_name.contains("storage/libradb/src") // 'already borrowed: BorrowMutError'
             || file_name.contains("storage/scratchpad/src") // false positives
+            || file_name.contains("testsuite/cli/src") // false positives
             || file_name.contains("types/src") // resolve error
     }
 
