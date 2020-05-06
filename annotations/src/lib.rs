@@ -23,6 +23,35 @@ macro_rules! abstract_value {
 }
 
 /// Equivalent to a no op when used with an unmodified Rust compiler.
+/// When compiled with MIRAI, this causes MIRAI to associate (tag) the value with the given type.
+/// Typically the type will be private to a scope so that only privileged code can add the tag.
+/// Once added, a tag cannot be removed and the tagged value may not be modified.
+/// To determine if a value has been tagged, use the has_tag! macro.
+#[macro_export]
+macro_rules! add_tag {
+    ($value:expr, $tag:ty) => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_add_tag($value, $tag::default())
+        }
+    };
+}
+
+/// Provides a way to check if a value has been tagged with a type, using the add_tag! macro.
+/// When compiled with an unmodified Rust compiler, this results in true.
+/// When compiled with MIRAI, this will be true if all data flows into the argument of this
+/// call has gone via a call to add_tag!.
+#[macro_export]
+macro_rules! has_tag {
+    ($value:expr, $tag:ty) => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_has_tag::<$tag>($value)
+        } else {
+            true
+        }
+    };
+}
+
+/// Equivalent to a no op when used with an unmodified Rust compiler.
 /// When compiled with MIRAI, this causes MIRAI to assume the condition unless it can
 /// prove it to be false.
 #[macro_export]
@@ -928,6 +957,16 @@ macro_rules! verify_unreachable {
 #[doc(hidden)]
 pub fn mirai_abstract_value<T>(x: T) -> T {
     x
+}
+
+// Helper function for MIRAI. Should only be called via the add_tag! macro.
+#[doc(hidden)]
+pub fn mirai_add_tag<V, T>(_v: V, _t: T) {}
+
+// Helper function for MIRAI. Should only be called via the has_tag! macro.
+#[doc(hidden)]
+pub fn mirai_has_tag<V, T>(_v: V) -> bool {
+    false
 }
 
 // Helper function for MIRAI. Should only be called via the assume macros.
