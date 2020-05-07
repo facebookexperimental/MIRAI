@@ -104,6 +104,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "contracts"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "proc-macro2 1.0.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quote 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syn 1.0.16 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -345,6 +355,11 @@ dependencies = [
 [[package]]
 name = "mirai-annotations"
 version = "1.8.0"
+
+[[package]]
+name = "mirai-annotations"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "mirai-standard-contracts"
@@ -590,8 +605,8 @@ dependencies = [
 name = "shopping_cart"
 version = "0.1.0"
 dependencies = [
- "contracts 0.3.0 (git+https://gitlab.com/karroffel/contracts.git)",
- "mirai-annotations 1.8.0",
+ "contracts 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mirai-annotations 1.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -796,6 +811,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)" = "5067f5bb2d80ef5d68b4c87db81601f0b75bca627bc2ef76b141d7b846a3c6d9"
 "checksum cloudabi 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)" = "ddfc5b9aa5d4507acaf872de71051dfd0e309860e88966e1051e462a077aac4f"
 "checksum contracts 0.3.0 (git+https://gitlab.com/karroffel/contracts.git)" = "<none>"
+"checksum contracts 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "c9424f2ca1e42776615720e5746eed6efa19866fdbaac2923ab51c294ac4d1f2"
 "checksum crc32fast 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ba125de2af0df55319f41944744ad91c71113bf74a4646efff39afe1f6842db1"
 "checksum crossbeam-epoch 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)" = "058ed274caafc1f60c4997b5fc07bf7dc7cca454af7c6e81edffe5f33f70dace"
 "checksum crossbeam-utils 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)" = "c3c7c73a2d1e9fc0886a08b93e98eb643461230d5f1925e4036204d5f2e261a8"
@@ -822,6 +838,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum maybe-uninit 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 "checksum memchr 2.3.3 (registry+https://github.com/rust-lang/crates.io-index)" = "3728d817d99e5ac407411fa471ff9800a778d88a24685968b36824eaf4bee400"
 "checksum memoffset 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)" = "75189eb85871ea5c2e2c15abbdd541185f63b408415e5051f5cac122d8c774b9"
+"checksum mirai-annotations 1.8.0 (registry+https://github.com/rust-lang/crates.io-index)" = "258c143ddb5105becc4834f66d0b0ad3d3205d07cb3efc3236f33f623dd07b16"
 "checksum parking_lot 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)" = "92e98c49ab0b7ce5b222f2cc9193fc4efe11c6d0bd4f648e374684a6857b1cfc"
 "checksum parking_lot_core 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "7582838484df45743c8434fbff785e8edf260c28748353d44bc0da32e0ceabf1"
 "checksum ppv-lite86 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)" = "74490b50b9fbe561ac330df47c08f3f33073d2d00c150f719147d7c54522fa1b"
