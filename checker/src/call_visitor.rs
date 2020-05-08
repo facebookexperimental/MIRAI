@@ -623,7 +623,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let (_, assumption) = &self.actual_args[1];
                 let (_, cond) = &self.actual_args[0];
                 if !assumption.as_bool_if_known().unwrap_or(false) {
-                    let message = self.coerce_to_string(&self.actual_args[2].1);
+                    let message = self.coerce_to_string(&self.actual_args[2].0);
                     if self
                         .block_visitor
                         .check_condition(cond, message, true)
@@ -638,7 +638,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             KnownNames::MiraiVerify => {
                 assume!(self.actual_args.len() == 2); // The type checker ensures this.
                 let (_, cond) = &self.actual_args[0];
-                let message = self.coerce_to_string(&self.actual_args[1].1);
+                let message = self.coerce_to_string(&self.actual_args[1].0);
                 if let Some(warning) = self.block_visitor.check_condition(cond, message, false) {
                     // Push a precondition so that any known or unknown caller of this function
                     // is warned that this function will fail if the precondition is not met.
@@ -706,7 +706,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         .refine_paths(&self.block_visitor.bv.current_environment);
                         self.block_visitor.bv.lookup_path_and_refine_result(
                             args_pieces_0,
-                            ExpressionType::Reference.as_rustc_type(self.block_visitor.bv.tcx),
+                            ExpressionType::NonPrimitive.as_rustc_type(self.block_visitor.bv.tcx),
                         )
                     };
                 let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(msg)) =
@@ -1085,7 +1085,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             // The current value, if any, of the model field are a set of (path, value) pairs
             // where each path is rooted by qualifier.model_field(..)
             let qualifier = self.actual_args[0].0.clone();
-            let field_name = self.coerce_to_string(&self.actual_args[1].1);
+            let field_name = self.coerce_to_string(&self.actual_args[1].0);
             let source_path = Path::new_model_field(qualifier, field_name)
                 .refine_paths(&self.block_visitor.bv.current_environment);
 
@@ -1226,7 +1226,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         precondition!(self.actual_args.len() == 2);
         if self.block_visitor.bv.check_for_errors {
             let condition = self.actual_args[0].1.clone();
-            let message = self.coerce_to_string(&self.actual_args[1].1);
+            let message = self.coerce_to_string(&self.actual_args[1].0);
             let precondition = Precondition {
                 condition,
                 message,
@@ -1244,7 +1244,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let destination = self.destination;
         if let Some((_, target)) = &destination {
             let qualifier = self.actual_args[0].0.clone();
-            let field_name = self.coerce_to_string(&self.actual_args[1].1);
+            let field_name = self.coerce_to_string(&self.actual_args[1].0);
             let target_path = Path::new_model_field(qualifier, field_name)
                 .refine_paths(&self.block_visitor.bv.current_environment);
             let source_path = self.actual_args[2].0.clone();
@@ -1908,19 +1908,30 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// and that are required to be invoked via macros that ensure that the argument providing
     /// this value is always a string literal.
     #[logfn_inputs(TRACE)]
-    fn coerce_to_string(&mut self, value: &AbstractValue) -> Rc<String> {
-        match &value.expression {
-            Expression::CompileTimeConstant(ConstantDomain::Str(s)) => s.clone(),
-            _ => {
-                if self.block_visitor.bv.check_for_errors {
-                    let error = self.block_visitor.bv.cv.session.struct_span_err(
-                        self.block_visitor.bv.current_span,
-                        "this argument should be a string literal, do not call this function directly",
-                    );
-                    self.block_visitor.bv.emit_diagnostic(error);
-                }
-                Rc::new("dummy argument".to_string())
-            }
+    fn coerce_to_string(&mut self, path: &Rc<Path>) -> Rc<String> {
+        let tcx = self.block_visitor.bv.cv.tcx;
+        let str_ty = tcx.mk_str();
+        let ref_str_ty = tcx.mk_ref(
+            tcx.lifetimes.re_erased,
+            rustc_middle::ty::TypeAndMut {
+                ty: str_ty,
+                mutbl: rustc_hir::Mutability::Not,
+            },
+        );
+        let value = self
+            .block_visitor
+            .bv
+            .lookup_path_and_refine_result(path.clone(), ref_str_ty);
+        if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
+            return s.clone();
         }
+        if self.block_visitor.bv.check_for_errors {
+            let error = self.block_visitor.bv.cv.session.struct_span_err(
+                self.block_visitor.bv.current_span,
+                "this argument should be a string literal, do not call this function directly",
+            );
+            self.block_visitor.bv.emit_diagnostic(error);
+        }
+        Rc::new("dummy argument".to_string())
     }
 }

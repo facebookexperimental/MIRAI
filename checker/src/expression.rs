@@ -11,7 +11,7 @@ use crate::path::Path;
 use log_derive::logfn_inputs;
 use mirai_annotations::*;
 use rustc_ast::ast;
-use rustc_middle::ty::{Ty, TyCtxt, TyKind};
+use rustc_middle::ty::{Ty, TyCtxt, TyKind, TypeAndMut};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
@@ -580,7 +580,7 @@ impl Expression {
             Expression::BitAnd { left, .. } => left.expression.infer_type(),
             Expression::BitNot { result_type, .. } => result_type.clone(),
             Expression::BitOr { left, .. } => left.expression.infer_type(),
-            Expression::HeapBlock { .. } => NonPrimitive,
+            Expression::HeapBlock { .. } => ThinPointer,
             Expression::HeapBlockLayout { .. } => NonPrimitive,
             Expression::IntrinsicBinary { left, name, .. } => match name {
                 KnownNames::StdIntrinsicsCopysignf32
@@ -685,8 +685,8 @@ impl Expression {
             Expression::Ne { .. } => Bool,
             Expression::Neg { operand } => operand.expression.infer_type(),
             Expression::Or { .. } => Bool,
-            Expression::Offset { .. } => Reference,
-            Expression::Reference(_) => Reference,
+            Expression::Offset { .. } => ThinPointer,
+            Expression::Reference(_) => ThinPointer,
             Expression::Rem { left, .. } => left.expression.infer_type(),
             Expression::Shl { left, .. } => left.expression.infer_type(),
             Expression::ShlOverflows { .. } => Bool,
@@ -816,7 +816,7 @@ pub enum ExpressionType {
     I128,
     Isize,
     NonPrimitive,
-    Reference,
+    ThinPointer,
     U8,
     U16,
     U32,
@@ -833,14 +833,14 @@ impl From<&ConstantDomain> for ExpressionType {
             ConstantDomain::Bottom => NonPrimitive,
             ConstantDomain::Char(..) => Char,
             ConstantDomain::False => Bool,
-            ConstantDomain::Function { .. } => Reference,
+            ConstantDomain::Function { .. } => NonPrimitive,
             ConstantDomain::I128(..) => I128,
             ConstantDomain::F64(..) => F64,
             ConstantDomain::F32(..) => F32,
-            ConstantDomain::Str(..) => Reference,
+            ConstantDomain::Str(..) => ThinPointer,
             ConstantDomain::True => Bool,
             ConstantDomain::U128(..) => U128,
-            ConstantDomain::Unimplemented => Reference,
+            ConstantDomain::Unimplemented => NonPrimitive,
         }
     }
 }
@@ -872,10 +872,17 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
             | TyKind::FnPtr(..)
             | TyKind::Generator(..)
             | TyKind::GeneratorWitness(..)
-            | TyKind::RawPtr(..)
-            | TyKind::Ref(..)
-            | TyKind::Slice(..)
-            | TyKind::Str => ExpressionType::Reference,
+            | TyKind::Str => ExpressionType::ThinPointer,
+            TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
+                if matches!(&target.kind, TyKind::Slice(..) | TyKind::Str) {
+                    // such pointers are fat (non primitive) because they carry a length
+                    // with them that is not part of the value they point to.
+                    // When they get copied/moved, both the pointer and the length must get copied/moved.
+                    ExpressionType::NonPrimitive
+                } else {
+                    ExpressionType::ThinPointer
+                }
+            }
             _ => ExpressionType::NonPrimitive,
         }
     }
@@ -901,7 +908,7 @@ impl ExpressionType {
             U64 => tcx.types.u64,
             U128 => tcx.types.u128,
             Usize => tcx.types.usize,
-            Reference => tcx.mk_ty(TyKind::Str),
+            ThinPointer => tcx.mk_nil_ptr(),
             NonPrimitive => tcx.types.trait_object_dummy_self,
         }
     }
@@ -932,7 +939,7 @@ impl ExpressionType {
     pub fn is_primitive(&self) -> bool {
         use self::ExpressionType::*;
         match self {
-            NonPrimitive | Reference => false,
+            NonPrimitive | ThinPointer => false, //todo: raw pointer should be primitive
             _ => true,
         }
     }
@@ -979,7 +986,7 @@ impl ExpressionType {
             U64 => 64,
             U128 => 128,
             Usize => 64,
-            Reference => 128,
+            ThinPointer => 64,
             NonPrimitive => 128,
         }
     }

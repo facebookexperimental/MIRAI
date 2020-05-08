@@ -160,6 +160,7 @@ impl MiraiCallbacks {
             || file_name.contains("network/onchain-discovery/src") // false positives
             || file_name.contains("client/cli/src") // false positives   
             || file_name.contains("client/libra_wallet/src") // false positive: self.execute(offset, len, |buffer| dst[..len].copy_from_slice(buffer));
+            || file_name.contains("secure/net/src") // false positives
             || file_name.contains("secure/storage/vault/src") // z3 encoding
             || file_name.contains("state-synchronizer/src") // false positives
             || file_name.contains("storage/jellyfish-merkle/src") // false positives due to complex loops beyond what we can handle right now

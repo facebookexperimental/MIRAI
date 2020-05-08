@@ -478,6 +478,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         call_visitor.check_preconditions_if_necessary(&function_summary);
         call_visitor.transfer_and_refine_normal_return_state(&function_summary);
         call_visitor.transfer_and_refine_cleanup_state(&function_summary);
+        debug!("target {:?} arguments {:?}", destination, actual_args);
         debug!(
             "post env {:?}",
             call_visitor.block_visitor.bv.current_environment
@@ -584,7 +585,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             | Expression::Variable {
                 path,
-                var_type: ExpressionType::Reference,
+                var_type: ExpressionType::ThinPointer,
             } => {
                 let closure_ty = self
                     .bv
@@ -1058,7 +1059,32 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     user_ty, literal, ..
                 } = constant.borrow();
                 let target_type = literal.ty;
-                let const_value = self.visit_constant(*user_ty, &literal);
+                let const_value = self.visit_constant(*user_ty, &literal); //todo: perhaps return a length value as well?
+                if let TyKind::Ref(_, ty, _) = &target_type.kind {
+                    // The constant value we get back from this is a "thin" pointer to the
+                    // underlying storage, which exists as a collection of (path, value) pairs
+                    // where the root of each path is an alias of the constant value.
+                    // If the value is a string or an array, the thin pointer needs to become
+                    // a fat pointer, since pointers to strings and arrays/slices need to
+                    // independently track the length of their view of the underlying storage.
+                    if let TyKind::Slice(..) | TyKind::Str = &ty.kind {
+                        // The given path is the storage for the fat pointer, so we need to
+                        // store the thin pointer in path.0, rather than directly in path.
+                        let thin_pointer_path = Path::new_field(path.clone(), 0);
+                        self.bv
+                            .current_environment
+                            .update_value_at(thin_pointer_path, const_value.clone());
+                        // Since this is a compile time constant, the length of the constant is
+                        // also the length tracked in the fat pointer.
+                        let length_path = Path::new_length(path);
+                        let length_val = self.get_len(Path::new_alias(const_value));
+                        self.bv
+                            .current_environment
+                            .update_value_at(length_path, length_val);
+                        return;
+                    }
+                }
+
                 match &const_value.expression {
                     Expression::HeapBlock { .. } => {
                         let rpath = Rc::new(
@@ -1594,40 +1620,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         },
                         _,
                     ) => {
-                        result = if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice {
+                        if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice {
                             data,
                             start,
                             end,
                         }) = &literal.val
                         {
-                            // The rust compiler should ensure this.
-                            assume!(*end >= *start);
-                            let slice_len = *end - *start;
-                            let bytes = data
-                                .get_bytes(
-                                    &self.bv.tcx,
-                                    // invent a pointer, only the offset is relevant anyway
-                                    mir::interpret::Pointer::new(
-                                        mir::interpret::AllocId(0),
-                                        rustc_target::abi::Size::from_bytes(*start as u64),
-                                    ),
-                                    rustc_target::abi::Size::from_bytes(slice_len as u64),
-                                )
-                                .unwrap();
-
-                            let slice = &bytes[*start..*end];
-                            let s = std::str::from_utf8(slice).expect("non utf8 str");
-                            let len_val: Rc<AbstractValue> =
-                                Rc::new(ConstantDomain::U128(s.len() as u128).into());
-                            let res = &mut self.bv.cv.constant_value_cache.get_string_for(s);
-
-                            let path = Path::new_alias(Rc::new(res.clone().into()));
-                            let len_path = Path::new_length(path);
-                            self.bv
-                                .current_environment
-                                .update_value_at(len_path, len_val);
-
-                            res
+                            return self.get_value_from_slice(&ty.kind, data, *start, *end);
                         } else {
                             debug!("unsupported val of type Ref: {:?}", literal);
                             unimplemented!();
@@ -1673,7 +1672,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
                             let slice = &bytes[*start..*end];
                             let e_type = ExpressionType::from(&elem_type.kind);
-                            return self.deconstruct_constant_array(slice, e_type, None);
+                            return self
+                                .deconstruct_reference_to_constant_array(slice, e_type, None);
                         }
                         rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                             let e_type = ExpressionType::from(&elem_type.kind);
@@ -1695,7 +1695,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                     rustc_target::abi::Size::from_bytes(num_bytes),
                                 )
                                 .unwrap();
-                            return self.deconstruct_constant_array(&bytes, e_type, None);
+                            return self
+                                .deconstruct_reference_to_constant_array(&bytes, e_type, None);
                         }
                         _ => {
                             debug!("unsupported val of type Ref: {:?}", literal);
@@ -1897,28 +1898,25 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let slice = &bytes[start..end];
         match ty {
             TyKind::Ref(_, ty, _) => match ty.kind {
-                TyKind::Array(elem_type, ..) | TyKind::Slice(elem_type) => {
-                    self.deconstruct_constant_array(slice, (&elem_type.kind).into(), None)
-                }
+                TyKind::Array(elem_type, ..) | TyKind::Slice(elem_type) => self
+                    .deconstruct_reference_to_constant_array(slice, (&elem_type.kind).into(), None),
                 TyKind::Str => {
                     let s = std::str::from_utf8(slice).expect("non utf8 str");
+                    let string_const = &mut self.bv.cv.constant_value_cache.get_string_for(s);
+                    let string_val: Rc<AbstractValue> = Rc::new(string_const.clone().into());
                     let len_val: Rc<AbstractValue> =
                         Rc::new(ConstantDomain::U128(s.len() as u128).into());
-                    let res: Rc<AbstractValue> = Rc::new(
-                        self.bv
-                            .cv
-                            .constant_value_cache
-                            .get_string_for(s)
-                            .clone()
-                            .into(),
-                    );
 
-                    let path = Path::new_alias(res.clone());
-                    let len_path = Path::new_length(path);
+                    let fat_pointer_path = Path::new_alias(string_val.clone());
+                    let pointer_path = Path::new_field(fat_pointer_path.clone(), 0);
+                    self.bv
+                        .current_environment
+                        .update_value_at(pointer_path, string_val.clone());
+                    let len_path = Path::new_length(fat_pointer_path);
                     self.bv
                         .current_environment
                         .update_value_at(len_path, len_val);
-                    res
+                    string_val
                 }
                 _ => assume_unreachable!(),
             },
@@ -1960,7 +1958,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         )
                         .unwrap();
                     let slice = &bytes[*start..*end];
-                    self.deconstruct_constant_array(slice, e_type, Some(len))
+                    self.deconstruct_reference_to_constant_array(slice, e_type, Some(len))
                 }
                 rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                     //todo: there is no test coverage for this case
@@ -1985,7 +1983,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             rustc_target::abi::Size::from_bytes(num_bytes),
                         )
                         .unwrap();
-                    self.deconstruct_constant_array(&bytes, e_type, Some(len))
+                    self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len))
                 }
                 rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
                     mir::interpret::Scalar::Ptr(ptr),
@@ -2018,7 +2016,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             rustc_target::abi::Size::from_bytes(num_bytes),
                         )
                         .unwrap();
-                    self.deconstruct_constant_array(&bytes, e_type, Some(len))
+                    self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len))
                 }
                 _ => {
                     debug!("unsupported val of type Ref: {:?}", literal);
@@ -2041,7 +2039,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// The optional length is available as a separate compile time constant in the case of byte string
     /// constants. It is passed in here to check against the length of the bytes array as a safety check.
     #[logfn_inputs(TRACE)]
-    fn deconstruct_constant_array(
+    fn deconstruct_reference_to_constant_array(
         &mut self,
         bytes: &[u8],
         elem_type: ExpressionType,
@@ -2051,10 +2049,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let alignment = self.get_u128_const_val((elem_type.bit_length() / 8) as u128);
         let byte_len_value = self.get_u128_const_val(byte_len as u128);
         let array_value = self.bv.get_new_heap_block(byte_len_value, alignment, false);
-        if byte_len > k_limits::MAX_BYTE_ARRAY_LENGTH {
-            return array_value;
-        }
-        let array_path = Path::get_as_path(array_value);
+        let array_path = Path::get_as_path(array_value.clone());
+        let thin_pointer_path = Path::new_field(array_path.clone(), 0);
+        self.bv
+            .current_environment
+            .update_value_at(thin_pointer_path, array_value);
         let mut last_index: u128 = 0;
         for (i, operand) in self
             .get_element_values(bytes, elem_type, len)
@@ -2062,12 +2061,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .enumerate()
         {
             last_index = i as u128;
-            let index_value = self.get_u128_const_val(last_index);
-            let index_path = Path::new_index(array_path.clone(), index_value)
-                .refine_paths(&self.bv.current_environment); //todo: maybe not needed?
-            self.bv
-                .current_environment
-                .update_value_at(index_path, operand);
+            if i < k_limits::MAX_BYTE_ARRAY_LENGTH {
+                let index_value = self.get_u128_const_val(last_index);
+                let index_path = Path::new_index(array_path.clone(), index_value)
+                    .refine_paths(&self.bv.current_environment); //todo: maybe not needed?
+                self.bv
+                    .current_environment
+                    .update_value_at(index_path, operand);
+            }
         }
         let length_path = Path::new_length(array_path.clone());
         let length_value = self.get_u128_const_val(last_index + 1);

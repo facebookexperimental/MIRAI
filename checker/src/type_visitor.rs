@@ -616,7 +616,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                 // is the same as looking up field 0.
                 for (leaf_path, val) in environment.value_map.iter() {
                     if leaf_path.is_first_leaf_rooted_in(&path)
-                        && val.expression.infer_type() == ExpressionType::Reference
+                        && val.expression.infer_type() == ExpressionType::ThinPointer
                     {
                         return Some(val.clone());
                     }
