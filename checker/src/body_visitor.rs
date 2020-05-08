@@ -1157,7 +1157,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
     /// Copies/moves all paths rooted in rpath to corresponding paths rooted in target_path.
     #[logfn_inputs(TRACE)]
-    fn copy_or_move_elements(
+    pub fn copy_or_move_elements(
         &mut self,
         target_path: Rc<Path>,
         source_path: Rc<Path>,
@@ -1440,7 +1440,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     }
 
     // Check for assignment of a string literal to a byte array reference
-    fn expand_aliased_string_literals(
+    pub fn expand_aliased_string_literals(
         &mut self,
         target_path: &Rc<Path>,
         rtype: ExpressionType,

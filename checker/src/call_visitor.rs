@@ -269,7 +269,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         }
         let vec: Vec<Rc<FunctionReference>> = func_args
             .iter()
-            .filter_map(|(_, v)| self.get_func_ref(v))
+            .filter_map(|(_, v)| self.block_visitor.get_func_ref(v))
             .collect();
         if vec.is_empty() {
             return None;
@@ -277,71 +277,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         Some(vec)
     }
 
-    /// Returns the function reference part of the value, if there is one.
-    #[logfn_inputs(TRACE)]
-    fn get_func_ref(&mut self, val: &Rc<AbstractValue>) -> Option<Rc<FunctionReference>> {
-        let extract_func_ref = |c: &ConstantDomain| match c {
-            ConstantDomain::Function(func_ref) => Some(func_ref.clone()),
-            _ => None,
-        };
-        match &val.expression {
-            Expression::CompileTimeConstant(c) => {
-                return extract_func_ref(c);
-            }
-            Expression::Reference(path)
-            | Expression::Variable {
-                path,
-                var_type: ExpressionType::NonPrimitive,
-            }
-            | Expression::Variable {
-                path,
-                var_type: ExpressionType::Reference,
-            } => {
-                let closure_ty = self
-                    .block_visitor
-                    .bv
-                    .type_visitor
-                    .get_path_rustc_type(path, self.block_visitor.bv.current_span);
-                match closure_ty.kind {
-                    TyKind::Closure(def_id, substs) => {
-                        let specialized_substs =
-                            self.block_visitor.bv.type_visitor.specialize_substs(
-                                substs,
-                                &self.block_visitor.bv.type_visitor.generic_argument_map,
-                            );
-                        return extract_func_ref(self.visit_function_reference(
-                            def_id,
-                            closure_ty,
-                            specialized_substs,
-                        ));
-                    }
-                    TyKind::Ref(_, ty, _) => {
-                        if let TyKind::Closure(def_id, substs) = ty.kind {
-                            let specialized_substs =
-                                self.block_visitor.bv.type_visitor.specialize_substs(
-                                    substs,
-                                    &self.block_visitor.bv.type_visitor.generic_argument_map,
-                                );
-                            return extract_func_ref(self.visit_function_reference(
-                                def_id,
-                                ty,
-                                specialized_substs,
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-        None
-    }
-
     /// Returns a summary of the function to call, obtained from the summary cache.
     #[logfn_inputs(TRACE)]
     pub fn get_function_summary(&mut self) -> Option<Summary> {
         let fun_val = self.callee_fun_val.clone();
-        if let Some(func_ref) = self.get_func_ref(&fun_val) {
+        if let Some(func_ref) = self.block_visitor.get_func_ref(&fun_val) {
             // If the actual arguments include any function constants, collect them together
             // and pass them to get_summary_for_function_constant so that their signatures
             // can be included in the type specific key that is used to look up non generic
@@ -351,7 +291,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     Some(
                         self.function_constant_args
                             .iter()
-                            .filter_map(|(_, v)| self.get_func_ref(v))
+                            .filter_map(|(_, v)| self.block_visitor.get_func_ref(v))
                             .collect(),
                     )
                 } else {
@@ -449,7 +389,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         .type_visitor
                         .get_rustc_place_type(place, self.block_visitor.bv.current_span);
                     let target_path = self.block_visitor.visit_place(place);
-                    self.block_visitor.copy_or_move_elements(
+                    self.block_visitor.bv.copy_or_move_elements(
                         target_path,
                         source_path,
                         target_type,
@@ -538,7 +478,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             KnownNames::StdFutureFromGenerator => {
                 checked_assume!(self.actual_args.len() == 1);
                 let generator_fun_val = self.actual_args[0].1.clone();
-                let generator_fun_ref = self.get_func_ref(&generator_fun_val).expect("a fun ref");
+                let generator_fun_ref = self
+                    .block_visitor
+                    .get_func_ref(&generator_fun_val)
+                    .expect("a fun ref");
                 let generator_def_id = generator_fun_ref.def_id.expect("a def id");
                 let mut block_visitor = BlockVisitor::<E>::new(self.block_visitor.bv);
                 let mut generator_call_visitor = CallVisitor::new(
@@ -998,7 +941,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         }
 
         let function_constant_args = self.get_function_constant_args(&actual_args);
-        let callee_func_ref = self.get_func_ref(&callee);
+        let callee_func_ref = self.block_visitor.get_func_ref(&callee);
 
         let function_summary = if let Some(func_ref) = &callee_func_ref {
             let func_const = ConstantDomain::Function(func_ref.clone());
@@ -1134,7 +1077,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // Move the model field (path, val) pairs to the target (i.e. the place where
                 // the return value of call to the mirai_get_model_field function would go if
                 // it were a normal call.
-                self.block_visitor.copy_or_move_elements(
+                self.block_visitor.bv.copy_or_move_elements(
                     target_path,
                     source_path,
                     target_type,
@@ -1164,7 +1107,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     _ => {
                         let source_path = self.actual_args[2].0.clone();
-                        self.block_visitor.copy_or_move_elements(
+                        self.block_visitor.bv.copy_or_move_elements(
                             target_path,
                             source_path,
                             target_type,
@@ -1283,8 +1226,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .refine_paths(&self.block_visitor.bv.current_environment);
             let source_path = self.actual_args[2].0.clone();
             let target_type = self.actual_argument_types[2];
-            self.block_visitor
-                .copy_or_move_elements(target_path, source_path, target_type, true);
+            self.block_visitor.bv.copy_or_move_elements(
+                target_path,
+                source_path,
+                target_type,
+                true,
+            );
             let exit_condition = self
                 .block_visitor
                 .bv
@@ -1350,8 +1297,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let target_path = Path::new_slice(target_root, count)
             .refine_paths(&self.block_visitor.bv.current_environment);
         let collection_type = self.actual_argument_types[0];
-        self.block_visitor
-            .copy_or_move_elements(target_path, source_path, collection_type, false);
+        self.block_visitor.bv.copy_or_move_elements(
+            target_path,
+            source_path,
+            collection_type,
+            false,
+        );
     }
 
     /// Returns a new heap memory block with the given byte length.
