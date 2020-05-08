@@ -335,7 +335,8 @@ impl Z3Solver {
         operand: &Rc<AbstractValue>,
         target_type: &ExpressionType,
     ) -> z3_sys::Z3_ast {
-        if *target_type == ExpressionType::NonPrimitive || *target_type == ExpressionType::Reference
+        if *target_type == ExpressionType::NonPrimitive
+            || *target_type == ExpressionType::ThinPointer
         {
             self.get_as_z3_ast(&operand.expression)
         } else if *target_type == ExpressionType::Bool {
@@ -597,7 +598,7 @@ impl Z3Solver {
             }
             F32 => self.f32_sort,
             F64 => self.f64_sort,
-            NonPrimitive | Reference => self.any_sort,
+            NonPrimitive | ThinPointer => self.any_sort,
         }
     }
 
@@ -789,7 +790,7 @@ impl Z3Solver {
                 use self::ExpressionType::*;
                 let expr_type = expression.infer_type();
                 let expr_type = match expr_type {
-                    Bool | Reference | NonPrimitive => ExpressionType::I128,
+                    Bool | ThinPointer | NonPrimitive => ExpressionType::I128,
                     _ => expr_type,
                 };
                 let is_float = expr_type.is_floating_point_number();
@@ -1159,7 +1160,7 @@ impl Z3Solver {
     ) -> (bool, z3_sys::Z3_ast) {
         use self::ExpressionType::*;
         match var_type {
-            Bool | Reference | NonPrimitive => unsafe {
+            Bool | ThinPointer | NonPrimitive => unsafe {
                 let path_symbol = self.get_symbol_for(path);
                 (
                     false,
@@ -1180,7 +1181,7 @@ impl Z3Solver {
         use self::ExpressionType::*;
         let expr_type = operand.expression.infer_type();
         let expr_type = match expr_type {
-            Bool | Reference | NonPrimitive => ExpressionType::I128,
+            Bool | ThinPointer | NonPrimitive => ExpressionType::I128,
             _ => expr_type,
         };
         let is_float = expr_type.is_floating_point_number();
@@ -1605,7 +1606,7 @@ impl Z3Solver {
             let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
             match var_type {
                 Bool | Char | I8 | I16 | I32 | I64 | I128 | Isize | U8 | U16 | U32 | U64 | U128
-                | Usize | Reference => {
+                | Usize | ThinPointer => {
                     let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
                     z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
                 }

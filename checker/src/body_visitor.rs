@@ -414,8 +414,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         {
             return Rc::new(abstract_value::TRUE);
         }
-        if result_type != ExpressionType::Reference
-            && result.expression.infer_type() == ExpressionType::Reference
+        if (result_type != ExpressionType::ThinPointer
+            && result_type != ExpressionType::NonPrimitive)
+            && (result.expression.infer_type() == ExpressionType::ThinPointer
+                || result.expression.infer_type() == ExpressionType::NonPrimitive)
         {
             result.dereference(result_type)
         } else {
@@ -1303,9 +1305,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
         let target_type: ExpressionType = (&target_rustc_type.kind).into();
         if target_type != ExpressionType::NonPrimitive || no_children {
-            let value = self.lookup_path_and_refine_result(source_path.clone(), target_rustc_type);
-            value_map =
-                self.expand_aliased_string_literals(&target_path, target_type, value_map, &value);
+            value_map = self.expand_aliased_string_literals_if_appropriate(
+                &target_path,
+                target_rustc_type,
+                value_map,
+                &value,
+            );
             // Just copy/move (rpath, value) itself.
             if move_elements {
                 trace!("moving {:?} to {:?}", value, target_path);
@@ -1451,31 +1456,42 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         None
     }
 
-    // Check for assignment of a string literal to a byte array reference
-    pub fn expand_aliased_string_literals(
+    // Most of the time, references to string values are just moved around from one memory location
+    // to another and sometimes their lengths are taken. For such things there is no need to track
+    // the value of each character as a separate (path, char) tuple in the environment. That just
+    // slows things down and makes debugging more of chore.
+    // As soon as a string value manages to flow into a variable of type &[u8], however, we can
+    // expect expressions that look up individual characters and so we must enhance the current
+    // environment with (path, char) tuples. The root of the path part of such a tuple is the
+    // string literal itself, not the variable, which holds a pointer to the string.
+    #[logfn_inputs(DEBUG)]
+    pub fn expand_aliased_string_literals_if_appropriate(
         &mut self,
         target_path: &Rc<Path>,
-        rtype: ExpressionType,
+        target_path_rustc_ty: Ty<'tcx>,
         mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>>,
         value: &Rc<AbstractValue>,
     ) -> HashTrieMap<Rc<Path>, Rc<AbstractValue>> {
-        if rtype == ExpressionType::Reference {
-            if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
-                if let PathEnum::LocalVariable { .. } = &target_path.value {
-                    let lh_type = self
-                        .type_visitor
-                        .get_path_rustc_type(&target_path, self.current_span);
-                    if let TyKind::Ref(_, ty, _) = lh_type.kind {
-                        if let TyKind::Slice(elem_ty) = ty.kind {
-                            if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
-                                let collection_path = Path::new_alias(value.clone());
-                                for (i, ch) in s.as_bytes().iter().enumerate() {
-                                    let index = Rc::new((i as u128).into());
-                                    let ch_const = Rc::new((*ch as u128).into());
-                                    let path = Path::new_index(collection_path.clone(), index)
-                                        .refine_paths(&self.current_environment);
-                                    value_map = value_map.insert(path, ch_const);
-                                }
+        if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
+            // The value is a string literal
+            if let PathEnum::LocalVariable { .. } = &target_path.value {
+                // It is being copied into a local variable.
+                if let TyKind::Ref(_, ty, _) = target_path_rustc_ty.kind {
+                    if let TyKind::Slice(elem_ty) = ty.kind {
+                        if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
+                            // The type of the local variable is &[u8], so the local variable now
+                            // provides a way to look at individual characters. The value of the
+                            // local variable will be a fat pointer that points to the string literal,
+                            // so we need to augment the environment with character information for
+                            // the string literal. We could have done this at the time we created
+                            // the string literal, but doing it on demand works out better for us.
+                            let collection_path = Path::new_alias(value.clone());
+                            for (i, ch) in s.as_bytes().iter().enumerate() {
+                                let index = Rc::new((i as u128).into());
+                                let ch_const = Rc::new((*ch as u128).into());
+                                let path = Path::new_index(collection_path.clone(), index)
+                                    .refine_paths(&self.current_environment);
+                                value_map = value_map.insert(path, ch_const);
                             }
                         }
                     }

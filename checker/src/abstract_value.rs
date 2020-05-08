@@ -1020,7 +1020,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Cast {
                 operand,
                 target_type: tt,
-            } if *tt == ExpressionType::Reference => operand.try_to_retype_as(target_type),
+            } if *tt == ExpressionType::NonPrimitive || *tt == ExpressionType::ThinPointer => {
+                operand.try_to_retype_as(target_type)
+            }
             Expression::ConditionalExpression {
                 condition,
                 consequent,
@@ -1080,7 +1082,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 operand,
                 target_type: cast_type,
             } => {
-                checked_assume!(*cast_type == ExpressionType::Reference);
+                checked_assume!(
+                    *cast_type == ExpressionType::NonPrimitive
+                        || *cast_type == ExpressionType::ThinPointer
+                );
                 operand.dereference(target_type)
             }
             Expression::CompileTimeConstant(..) => self.clone(),
