@@ -22,7 +22,6 @@ use crate::body_visitor::BodyVisitor;
 use crate::call_visitor::CallVisitor;
 use log_derive::*;
 use mirai_annotations::*;
-use rpds::HashTrieMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{ConstValue, Scalar};
@@ -569,7 +568,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
     /// Returns the function reference part of the value, if there is one.
     #[logfn_inputs(TRACE)]
-    fn get_func_ref(&mut self, val: &Rc<AbstractValue>) -> Option<Rc<FunctionReference>> {
+    pub fn get_func_ref(&mut self, val: &Rc<AbstractValue>) -> Option<Rc<FunctionReference>> {
         let extract_func_ref = |c: &ConstantDomain| match c {
             ConstantDomain::Function(func_ref) => Some(func_ref.clone()),
             _ => None,
@@ -1061,11 +1060,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             }
                             .into(),
                         );
-                        self.copy_or_move_elements(path, rpath, target_type, false);
+                        self.bv
+                            .copy_or_move_elements(path, rpath, target_type, false);
                     }
                     _ => {
                         let rpath = Path::new_alias(const_value.clone());
-                        self.copy_or_move_elements(path, rpath, target_type, false);
+                        self.bv
+                            .copy_or_move_elements(path, rpath, target_type, false);
                     }
                 }
             }
@@ -1082,336 +1083,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .type_visitor
             .get_rustc_place_type(place, self.bv.current_span);
-        self.copy_or_move_elements(target_path, rpath, rtype, false);
-    }
-
-    /// Copies/moves all paths rooted in rpath to corresponding paths rooted in target_path.
-    #[logfn_inputs(TRACE)]
-    pub fn copy_or_move_elements(
-        &mut self,
-        target_path: Rc<Path>,
-        source_path: Rc<Path>,
-        target_rustc_type: Ty<'tcx>,
-        move_elements: bool,
-    ) {
-        check_for_early_return!(self.bv);
-        // Some qualified source_paths are patterns that represent collections of values.
-        // We need to expand the patterns before doing the actual moves.
-        if let PathEnum::QualifiedPath {
-            ref qualifier,
-            ref selector,
-            ..
-        } = &source_path.value
-        {
-            match **selector {
-                PathSelector::ConstantIndex {
-                    offset, from_end, ..
-                } => {
-                    let index = if from_end {
-                        let len_value = self.get_len(qualifier.clone());
-                        if let AbstractValue {
-                            expression: Expression::CompileTimeConstant(ConstantDomain::U128(len)),
-                            ..
-                        } = len_value.as_ref()
-                        {
-                            (*len) - u128::from(offset)
-                        } else {
-                            debug!("PathSelector::ConstantIndex implies the length of the value is known");
-                            assume_unreachable!();
-                        }
-                    } else {
-                        u128::from(offset)
-                    };
-                    let index_val = self.get_u128_const_val(index);
-                    let index_path = Path::new_index(qualifier.clone(), index_val)
-                        .refine_paths(&self.bv.current_environment);
-                    self.copy_or_move_elements(
-                        target_path,
-                        index_path,
-                        target_rustc_type,
-                        move_elements,
-                    );
-                    return;
-                }
-                PathSelector::ConstantSlice { from, to, from_end } => {
-                    self.copy_or_move_subslice(
-                        target_path,
-                        target_rustc_type,
-                        move_elements,
-                        qualifier,
-                        from,
-                        to,
-                        from_end,
-                    );
-                    return;
-                }
-                _ => (),
-            }
-        };
-
-        // Some target paths are wild card patterns and need to be dealt with via weak updates
-        if let PathEnum::QualifiedPath {
-            ref qualifier,
-            ref selector,
-            ..
-        } = &target_path.value
-        {
-            match &**selector {
-                PathSelector::Index(value) => {
-                    if let Expression::CompileTimeConstant(..) = &value.expression {
-                        // fall through, the target path is unique
-                    } else {
-                        self.weak_updates(qualifier, &source_path, |v| value.equals(v));
-                        // and now fall through for a strong update of target_path
-                    }
-                }
-                PathSelector::Slice(count) => {
-                    // if the count is known at this point, expand it like a pattern.
-                    if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
-                        &count.expression
-                    {
-                        self.copy_or_move_subslice(
-                            qualifier.clone(),
-                            target_rustc_type,
-                            move_elements,
-                            &source_path,
-                            0,
-                            *val as u32,
-                            false,
-                        );
-                    } else {
-                        //todo: just add target_path[0..count], lookup(source_path[0..count]) to the environment
-                        //When that gets refined into a constant slice, then get back here.
-                        // We do, however, have to havoc all of the existing bindings, conditionally,
-                        // using index < count as the condition.
-                    }
-                    // fall through
-                }
-                _ => {
-                    // fall through
-                }
-            }
-        }
-
-        // Get here for paths that are not patterns.
-        let mut value_map = self.bv.current_environment.value_map.clone();
-        let is_closure = matches!(&target_rustc_type.kind, TyKind::Closure(..));
-        let value = self
-            .bv
-            .lookup_path_and_refine_result(source_path.clone(), target_rustc_type);
-        let val_type = value.expression.infer_type();
-        let mut no_children = true;
-        if val_type == ExpressionType::NonPrimitive || is_closure {
-            // First look at paths that are rooted in rpath.
-            for (path, value) in self
-                .bv
-                .current_environment
-                .value_map
-                .iter()
-                .filter(|(p, _)| p.is_rooted_by(&source_path))
-            {
-                check_for_early_return!(self.bv);
-                let qualified_path = path.replace_root(&source_path, target_path.clone());
-                if move_elements {
-                    trace!("moving child {:?} to {:?}", value, qualified_path);
-                    value_map = value_map.remove(path);
-                } else {
-                    trace!("copying child {:?} to {:?}", value, qualified_path);
-                };
-                value_map = value_map.insert(qualified_path, value.clone());
-                no_children = false;
-            }
-        }
-        let target_type: ExpressionType = (&target_rustc_type.kind).into();
-        if target_type != ExpressionType::NonPrimitive || no_children {
-            let value = self
-                .bv
-                .lookup_path_and_refine_result(source_path.clone(), target_rustc_type);
-            value_map =
-                self.expand_aliased_string_literals(&target_path, target_type, value_map, &value);
-            // Just copy/move (rpath, value) itself.
-            if move_elements {
-                trace!("moving {:?} to {:?}", value, target_path);
-                value_map = value_map.remove(&source_path);
-            } else {
-                trace!("copying {:?} to {:?}", value, target_path);
-            }
-            self.bv.current_environment.value_map = value_map;
-            self.bv
-                .current_environment
-                .update_value_at(target_path, value);
-            return;
-        }
-        self.bv.current_environment.value_map = value_map;
-    }
-
-    //from_end slice[from:-to] in Python terms.
-    //otherwise slice[from:to]
-    #[logfn_inputs(TRACE)]
-    #[allow(clippy::too_many_arguments)]
-    fn copy_or_move_subslice(
-        &mut self,
-        target_path: Rc<Path>,
-        target_type: Ty<'tcx>,
-        move_elements: bool,
-        qualifier: &Rc<Path>,
-        from: u32,
-        to: u32,
-        from_end: bool,
-    ) {
-        let to = {
-            if from_end {
-                let len_value = self.get_len(qualifier.clone());
-                if let AbstractValue {
-                    expression: Expression::CompileTimeConstant(ConstantDomain::U128(len)),
-                    ..
-                } = len_value.as_ref()
-                {
-                    u32::try_from(*len).unwrap() - to
-                } else {
-                    debug!("PathSelector::Subslice implies the length of the value is known");
-                    assume_unreachable!();
-                }
-            } else {
-                to
-            }
-        };
-        let elem_size = self.bv.type_visitor.get_elem_type_size(target_type);
-        let length = self.get_u128_const_val(u128::from((to - from) as u64 * elem_size));
-        let alignment = Rc::new(1u128.into());
-        let slice_value = self.bv.get_new_heap_block(length, alignment, false);
         self.bv
-            .current_environment
-            .update_value_at(target_path.clone(), slice_value.clone());
-        let slice_path = Rc::new(PathEnum::HeapBlock { value: slice_value }.into());
-        let slice_len_path = Path::new_length(slice_path);
-        let len_value = self.get_u128_const_val(u128::from(to - from));
-        self.bv
-            .current_environment
-            .update_value_at(slice_len_path, len_value);
-        for i in from..to {
-            let index_val = self.get_u128_const_val(u128::from(i));
-            let index_path = Path::new_index(qualifier.clone(), index_val)
-                .refine_paths(&self.bv.current_environment);
-            let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
-            let indexed_target = Path::new_index(target_path.clone(), target_index_val)
-                .refine_paths(&self.bv.current_environment);
-            self.copy_or_move_elements(indexed_target, index_path, target_type, move_elements);
-            if self.bv.assume_function_is_angelic {
-                break;
-            }
-            check_for_early_return!(self.bv);
-        }
-    }
-
-    /// Update all index entries rooted at target_path_root to reflect the possibility
-    /// that an assignment via an unknown index value might change their current value.
-    fn weak_updates<F>(
-        &mut self,
-        target_path_root: &Rc<Path>,
-        source_path: &Rc<Path>,
-        make_condition: F,
-    ) where
-        F: Fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
-    {
-        let old_value_map = self.bv.current_environment.value_map.clone();
-        let mut new_value_map = old_value_map.clone();
-        for (path, value) in old_value_map
-            .iter()
-            .filter(|(path, _)| path.is_rooted_by(target_path_root))
-        {
-            // See if path is of the form target_root_path[index_value].some_or_no_selectors
-            let mut subsequent_selectors: Vec<Rc<PathSelector>> = Vec::new();
-            if let Some(index_value) = self.extract_index_and_subsequent_selectors(
-                path,
-                target_path_root,
-                &mut subsequent_selectors,
-            ) {
-                // If the join condition is true, the value at path needs updating.
-                let join_condition = make_condition(index_value.clone());
-
-                // Look up value at source_path_with_selectors.
-                // source_path_with_selectors is of the form source_path.some_or_no_selectors.
-                // This is the value to bind to path if the join condition is true.
-                let source_path_with_selectors =
-                    Path::add_selectors(source_path, &subsequent_selectors);
-                let result_type = value.expression.infer_type();
-                let result_rustc_type = result_type.as_rustc_type(self.bv.tcx);
-                let additional_value = self
-                    .bv
-                    .lookup_path_and_refine_result(source_path_with_selectors, result_rustc_type);
-                let updated_value =
-                    join_condition.conditional_expression(additional_value, value.clone());
-
-                new_value_map = new_value_map.insert(path.clone(), updated_value);
-            }
-        }
-        self.bv.current_environment.value_map = new_value_map;
-    }
-
-    /// If the given path is of the form root[index_value].selector1.selector2... then
-    /// return the index_value and appends [selector1, selector2, ..] to selectors.
-    /// Returns None otherwise. Does not append anything if [index_value] is the last selector.
-    #[logfn_inputs(TRACE)]
-    fn extract_index_and_subsequent_selectors(
-        &self,
-        path: &Rc<Path>,
-        root: &Rc<Path>,
-        selectors: &mut Vec<Rc<PathSelector>>,
-    ) -> Option<Rc<AbstractValue>> {
-        if let PathEnum::QualifiedPath {
-            qualifier,
-            selector,
-            ..
-        } = &path.value
-        {
-            if qualifier.eq(&root) {
-                if let PathSelector::Index(index_value) = &**selector {
-                    return Some(index_value.clone());
-                }
-            } else {
-                let index_value =
-                    self.extract_index_and_subsequent_selectors(qualifier, root, selectors);
-                selectors.push(selector.clone());
-                return index_value;
-            }
-        }
-        None
-    }
-
-    // Check for assignment of a string literal to a byte array reference
-    fn expand_aliased_string_literals(
-        &mut self,
-        target_path: &Rc<Path>,
-        rtype: ExpressionType,
-        mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>>,
-        value: &Rc<AbstractValue>,
-    ) -> HashTrieMap<Rc<Path>, Rc<AbstractValue>> {
-        if rtype == ExpressionType::Reference {
-            if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
-                if let PathEnum::LocalVariable { .. } = &target_path.value {
-                    let lh_type = self
-                        .bv
-                        .type_visitor
-                        .get_path_rustc_type(&target_path, self.bv.current_span);
-                    if let TyKind::Ref(_, ty, _) = lh_type.kind {
-                        if let TyKind::Slice(elem_ty) = ty.kind {
-                            if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
-                                let collection_path = Path::new_alias(value.clone());
-                                for (i, ch) in s.as_bytes().iter().enumerate() {
-                                    let index = Rc::new((i as u128).into());
-                                    let ch_const = Rc::new((*ch as u128).into());
-                                    let path = Path::new_index(collection_path.clone(), index)
-                                        .refine_paths(&self.bv.current_environment);
-                                    value_map = value_map.insert(path, ch_const);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        value_map
+            .copy_or_move_elements(target_path, rpath, rtype, false);
     }
 
     /// For each (path', value) pair in the environment where path' is rooted in place,
@@ -1424,7 +1097,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .type_visitor
             .get_rustc_place_type(place, self.bv.current_span);
-        self.copy_or_move_elements(target_path, rpath, rtype, true);
+        self.bv
+            .copy_or_move_elements(target_path, rpath, rtype, true);
     }
 
     /// path = [x; 32]
@@ -1463,7 +1137,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // The deref essentially does a copy of the value denoted by the qualifier.
                 // If this value is structured and not heap allocated, the copy must be done
                 // with copy_or_move_elements.
-                self.copy_or_move_elements(path, qualifier.clone(), target_type, false);
+                self.bv
+                    .copy_or_move_elements(path, qualifier.clone(), target_type, false);
                 return;
             }
             PathEnum::QualifiedPath {
