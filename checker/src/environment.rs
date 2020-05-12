@@ -7,7 +7,7 @@ use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::expression::Expression;
-use crate::path::{Path, PathEnum, PathRefinement};
+use crate::path::{Path, PathEnum};
 
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::checked_assume;
@@ -56,7 +56,7 @@ impl Environment {
     }
 
     /// Updates the path to value map so that the given path now points to the given value.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
         if value.is_bottom() || value.is_top() {
             self.value_map = self.value_map.remove(&path);
@@ -100,6 +100,23 @@ impl Environment {
     #[logfn_inputs(TRACE)]
     fn try_to_split(&mut self, path: &Rc<Path>) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
         match &path.value {
+            PathEnum::Alias { value } => {
+                if let Expression::ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                } = &value.expression
+                {
+                    if consequent.is_path_alias() && alternate.is_path_alias() {
+                        return Some((
+                            condition.clone(),
+                            Path::new_alias(consequent.refine_with(condition, 0)),
+                            Path::new_alias(alternate.refine_with(&condition.logical_not(), 0)),
+                        ));
+                    }
+                }
+                None
+            }
             PathEnum::LocalVariable { .. } | PathEnum::Parameter { .. } | PathEnum::Result => {
                 self.try_to_split_local(path)
             }
@@ -110,8 +127,14 @@ impl Environment {
             } => {
                 if let Some((join_condition, true_path, false_path)) = self.try_to_split(qualifier)
                 {
-                    let true_path = Path::new_qualified(true_path, selector.clone());
-                    let false_path = Path::new_qualified(false_path, selector.clone());
+                    let true_path = Path::new_qualified(
+                        Path::implicit_dereference(true_path, &self),
+                        selector.clone(),
+                    );
+                    let false_path = Path::new_qualified(
+                        Path::implicit_dereference(false_path, &self),
+                        selector.clone(),
+                    );
                     return Some((join_condition, true_path, false_path));
                 }
                 None
@@ -126,33 +149,30 @@ impl Environment {
         &mut self,
         path: &Rc<Path>,
     ) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
-        match self.value_at(path).map(Rc::as_ref) {
-            Some(AbstractValue {
-                expression:
-                    Expression::ConditionalExpression {
-                        condition,
-                        consequent,
-                        alternate,
-                    },
-                ..
-            }) => match (&consequent.expression, &alternate.expression) {
-                (Expression::HeapBlock { .. }, Expression::HeapBlock { .. }) => Some((
+        if let Some(AbstractValue {
+            expression:
+                Expression::ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                },
+            ..
+        }) = self.value_at(path).map(Rc::as_ref)
+        {
+            if let (Expression::HeapBlock { .. }, Expression::HeapBlock { .. })
+            | (Expression::Reference(..), Expression::Reference(..)) =
+                (&consequent.expression, &alternate.expression)
+            {
+                Some((
                     condition.clone(),
                     Path::get_as_path(consequent.clone()),
                     Path::get_as_path(alternate.clone()),
-                )),
-                (Expression::Reference(path1), Expression::Reference(path2))
-                    if path1 != path && path2 != path =>
-                {
-                    Some((
-                        condition.clone(),
-                        path1.refine_paths(&self),
-                        path2.refine_paths(&self),
-                    ))
-                }
-                _ => None,
-            },
-            _ => None,
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 

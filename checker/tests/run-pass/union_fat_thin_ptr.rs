@@ -40,5 +40,5 @@ pub fn main() {
     verify!(unsafe { &*fat_is_thin }[0] == 1);
     verify!(unsafe { &*fat_is_thin }[1] == 2);
     verify!(unsafe { &*fat_is_thin }[2] == 3);
-    verify!(unsafe { &*fat_is_thin }.len() == 3);
+    verify!(unsafe { &*fat_is_thin }.len() == 3000);
 }

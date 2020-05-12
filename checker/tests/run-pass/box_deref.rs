@@ -4,17 +4,15 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test for VecDeque::push_back
-
 #[macro_use]
 extern crate mirai_annotations;
 
-use std::collections::VecDeque;
+fn len(b: Box<[i32]>) -> usize {
+    b.len()
+}
 
 pub fn main() {
-    let mut v: VecDeque<i32> = VecDeque::new();
-    let old_len = v.len();
-    verify!(old_len == 0);
-    v.push_back(0);
-    //verify!(v.len() == old_len + 1);
+    let boxed_array = Box::new([10]);
+    verify!(boxed_array[0] == 10);
+    verify!(len(boxed_array) == 1);
 }

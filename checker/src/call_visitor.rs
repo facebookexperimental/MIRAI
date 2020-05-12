@@ -556,7 +556,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
                 if self.block_visitor.bv.check_for_errors {
-                    self.report_calls_to_special_functions(); //known_name, actual_args);
+                    self.report_calls_to_special_functions();
                 }
                 if let Some((_, target)) = &self.destination {
                     self.block_visitor.bv.current_environment.exit_conditions = self
@@ -712,43 +712,35 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     return;
                 }
 
-                let fmt_string =
-                    if matches!(self.callee_known_name, KnownNames::StdPanickingBeginPanic) {
-                        self.actual_args[0].1.clone()
-                    } else {
-                        let index = Rc::new(0u128.into());
-                        let args_pieces_0 = Path::new_index(
-                            Path::new_field(self.actual_args[0].0.clone(), 0),
-                            index,
-                        )
-                        .refine_paths(&self.block_visitor.bv.current_environment);
-                        self.block_visitor.bv.lookup_path_and_refine_result(
-                            args_pieces_0,
-                            ExpressionType::NonPrimitive.as_rustc_type(self.block_visitor.bv.tcx),
-                        )
-                    };
-                let msg = if let Expression::CompileTimeConstant(ConstantDomain::Str(msg)) =
-                    &fmt_string.expression
-                {
-                    if msg.contains("entered unreachable code")
-                        || msg.contains("not yet implemented")
-                        || msg.starts_with("unrecoverable: ")
-                    {
-                        // We treat unreachable!() as an assumption rather than an assertion to prove.
-                        // unimplemented!() is unlikely to be a programmer mistake, so need to fixate on that either.
-                        // unrecoverable! is way for the programmer to indicate that termination is not a mistake.
-                        return;
-                    } else {
-                        if path_cond.is_none() && msg.as_str() == "statement is reachable" {
-                            // verify_unreachable should always complain if possibly reachable
-                            // and the current function is public or root.
-                            path_cond = Some(true);
-                        }
-                        msg.clone()
-                    }
+                let msg = if matches!(self.callee_known_name, KnownNames::StdPanickingBeginPanic) {
+                    self.coerce_to_string(&self.actual_args[0].0)
                 } else {
-                    Rc::new(String::from("execution panic"))
+                    let arguments_struct_path = self.actual_args[0]
+                        .0
+                        .refine_paths(&self.block_visitor.bv.current_environment);
+                    let pieces_path_fat = Path::new_field(arguments_struct_path, 0)
+                        .refine_paths(&self.block_visitor.bv.current_environment);
+                    let pieces_path_thin = Path::new_field(pieces_path_fat, 0)
+                        .refine_paths(&self.block_visitor.bv.current_environment);
+                    let index = Rc::new(0u128.into());
+                    let piece0_path_fat = Path::new_index(pieces_path_thin, index)
+                        .refine_paths(&self.block_visitor.bv.current_environment);
+                    self.coerce_to_string(&piece0_path_fat)
                 };
+                if msg.contains("entered unreachable code")
+                    || msg.contains("not yet implemented")
+                    || msg.starts_with("unrecoverable: ")
+                {
+                    // We treat unreachable!() as an assumption rather than an assertion to prove.
+                    // unimplemented!() is unlikely to be a programmer mistake, so need to fixate on that either.
+                    // unrecoverable! is way for the programmer to indicate that termination is not a mistake.
+                    return;
+                } else if path_cond.is_none() && msg.as_str() == "statement is reachable" {
+                    // verify_unreachable should always complain if possibly reachable
+                    // and the current function is public or root.
+                    path_cond = Some(true);
+                };
+
                 let span = self.block_visitor.bv.current_span;
 
                 if path_cond.unwrap_or(false)
@@ -1542,7 +1534,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Expression::Offset { left, right, .. } = &offset.expression {
             let ge_zero = right.greater_or_equal(Rc::new(ConstantDomain::I128(0).into()));
             let mut len = left.clone();
-            if let Expression::Reference(path) = &left.expression {
+            if let Expression::Reference(path) | Expression::Variable { path, .. } =
+                &left.expression
+            {
                 if matches!(&path.value, PathEnum::HeapBlock{..}) {
                     let layout_path = Path::new_layout(path.clone());
                     if let Expression::HeapBlockLayout { length, .. } = &self
@@ -1907,26 +1901,20 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn coerce_to_string(&mut self, path: &Rc<Path>) -> Rc<String> {
         let tcx = self.block_visitor.bv.cv.tcx;
         let str_ty = tcx.mk_str();
-        let ref_str_ty = tcx.mk_ref(
-            tcx.lifetimes.re_erased,
-            rustc_middle::ty::TypeAndMut {
-                ty: str_ty,
-                mutbl: rustc_hir::Mutability::Not,
-            },
-        );
+        let thin_ptr_path = Path::new_field(path.clone(), 0);
         let value = self
             .block_visitor
             .bv
-            .lookup_path_and_refine_result(path.clone(), ref_str_ty);
+            .lookup_path_and_refine_result(thin_ptr_path, str_ty);
         if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
             return s.clone();
         }
         if self.block_visitor.bv.check_for_errors {
-            let error = self.block_visitor.bv.cv.session.struct_span_err(
+            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
                 self.block_visitor.bv.current_span,
                 "this argument should be a string literal, do not call this function directly",
             );
-            self.block_visitor.bv.emit_diagnostic(error);
+            self.block_visitor.bv.emit_diagnostic(warning);
         }
         Rc::new("dummy argument".to_string())
     }

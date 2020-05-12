@@ -566,6 +566,9 @@ impl Z3Solver {
                 // Side-effecting the solver smells bad, but it hard to come up with an expression
                 // of type var_type that only take values that satisfies the range constraint.
                 // Since this is kind of a lazy variable declaration, it is probably OK.
+
+                // It turns out that if there were previous calls to the smt solver that produced strings
+                // this call will crash
                 z3_sys::Z3_solver_assert(self.z3_context, self.z3_solver, range_check);
             }
             ast

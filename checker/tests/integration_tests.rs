@@ -114,10 +114,11 @@ fn run_directory(directory_path: PathBuf, extern_deps: Vec<(&str, String)>) -> u
             output_dir_path_buf.into_os_string().into_string().unwrap(),
         ));
     }
-    if cfg!(target_os = "linux") {
+    if option_env!("MIRAI_SINGLE").is_some() {
         files_and_temp_dirs
             .into_iter()
             .fold(0, |acc, (file_name, temp_dir_path)| {
+                //println!("{}", file_name);
                 acc + self::invoke_driver(
                     file_name,
                     temp_dir_path,

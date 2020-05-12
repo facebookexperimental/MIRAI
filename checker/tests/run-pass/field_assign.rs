@@ -10,10 +10,12 @@
 extern crate mirai_annotations;
 
 pub struct Test {
-    pub field: usize
+    pub field: usize,
 }
 
 pub fn foo(t: &mut Test) {
     t.field = 123;
     verify!(t.field == 123);
 }
+
+pub fn main() {}

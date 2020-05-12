@@ -7,11 +7,12 @@ use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::constant_domain::ConstantDomain;
 use crate::known_names::KnownNames;
 use crate::path::Path;
+use crate::type_visitor;
 
 use log_derive::logfn_inputs;
 use mirai_annotations::*;
 use rustc_ast::ast;
-use rustc_middle::ty::{Ty, TyCtxt, TyKind, TypeAndMut};
+use rustc_middle::ty::{Ty, TyCtxt, TyKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
@@ -837,7 +838,7 @@ impl From<&ConstantDomain> for ExpressionType {
             ConstantDomain::I128(..) => I128,
             ConstantDomain::F64(..) => F64,
             ConstantDomain::F32(..) => F32,
-            ConstantDomain::Str(..) => ThinPointer,
+            ConstantDomain::Str(..) => NonPrimitive,
             ConstantDomain::True => Bool,
             ConstantDomain::U128(..) => U128,
             ConstantDomain::Unimplemented => NonPrimitive,
@@ -871,13 +872,10 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
             | TyKind::FnDef(..)
             | TyKind::FnPtr(..)
             | TyKind::Generator(..)
-            | TyKind::GeneratorWitness(..)
-            | TyKind::Str => ExpressionType::ThinPointer,
-            TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
-                if matches!(&target.kind, TyKind::Slice(..) | TyKind::Str) {
-                    // such pointers are fat (non primitive) because they carry a length
-                    // with them that is not part of the value they point to.
-                    // When they get copied/moved, both the pointer and the length must get copied/moved.
+            | TyKind::GeneratorWitness(..) => ExpressionType::ThinPointer,
+            TyKind::RawPtr(..) | TyKind::Ref(..) => {
+                if type_visitor::is_slice_pointer(ty_kind) {
+                    // Such pointer types are non primitive because they are (pointer, length) tuples.
                     ExpressionType::NonPrimitive
                 } else {
                     ExpressionType::ThinPointer

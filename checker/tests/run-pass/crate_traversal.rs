@@ -168,14 +168,8 @@ pub fn test12() {
     let x = 200u8 * 4; //~ attempt to multiply with overflow
 }
 
-pub fn test13(i: i64) {
-    let x = box -i; //~ possible attempt to negate with overflow
-}
-
-fn test14(a: i32, b: i32) -> Option<i32> {
+fn test13(a: i32, b: i32) -> Option<i32> {
     Some(a.checked_add(1)?.checked_mul(3_i32.checked_add(b)?)?)
 }
 
-fn main() {
-    test13(1);
-}
+fn main() {}
