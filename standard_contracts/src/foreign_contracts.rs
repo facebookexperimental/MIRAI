@@ -1175,6 +1175,7 @@ pub mod core {
                 result!()
             }
             pub fn size_of_val<T: ?Sized>(_: &T) -> usize {
+                //todo: provide a built in implementation for this
                 result!()
             }
             pub fn min_align_of_val<T: ?Sized>(_: &T) -> usize {

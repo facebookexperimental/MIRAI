@@ -5,6 +5,8 @@
 
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
+use crate::body_visitor::BodyVisitor;
+use crate::call_visitor::CallVisitor;
 use crate::constant_domain::{ConstantDomain, FunctionReference};
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
@@ -18,15 +20,14 @@ use crate::summaries::{Precondition, Summary};
 use crate::utils;
 use crate::{abstract_value, type_visitor};
 
-use crate::body_visitor::BodyVisitor;
-use crate::call_visitor::CallVisitor;
 use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{ConstValue, Scalar};
+use rustc_middle::ty::adjustment::PointerCast;
 use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{Const, Ty, TyKind, UserTypeAnnotationIndex};
+use rustc_middle::ty::{Const, ParamConst, Ty, TyKind, UserTypeAnnotationIndex};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -475,10 +476,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             "pre env {:?}",
             call_visitor.block_visitor.bv.current_environment
         );
+        debug!("target {:?} arguments {:?}", destination, actual_args);
         call_visitor.check_preconditions_if_necessary(&function_summary);
         call_visitor.transfer_and_refine_normal_return_state(&function_summary);
         call_visitor.transfer_and_refine_cleanup_state(&function_summary);
-        debug!("target {:?} arguments {:?}", destination, actual_args);
         debug!(
             "post env {:?}",
             call_visitor.block_visitor.bv.current_environment
@@ -1066,29 +1067,19 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 let mir::Constant {
                     user_ty, literal, ..
                 } = constant.borrow();
-                let target_type = literal.ty;
-                let const_value = self.visit_constant(*user_ty, &literal); //todo: perhaps return a length value as well?
-                if let TyKind::Ref(_, ty, _) = &target_type.kind {
-                    // The constant value we get back from this is a "thin" pointer to the
-                    // underlying storage, which exists as a collection of (path, value) pairs
-                    // where the root of each path is an alias of the constant value.
-                    // If the value is a string or an array, the thin pointer needs to become
-                    // a fat pointer, since pointers to strings and arrays/slices need to
-                    // independently track the length of their view of the underlying storage.
-                    if let TyKind::Slice(..) | TyKind::Str = &ty.kind {
-                        // The given path is the storage for the fat pointer, so we need to
-                        // store the thin pointer in path.0, rather than directly in path.
-                        let thin_pointer_path = Path::new_field(path.clone(), 0);
+                let rh_type = literal.ty;
+                let const_value = self.visit_constant(*user_ty, &literal);
+                if self
+                    .bv
+                    .type_visitor
+                    .starts_with_slice_pointer(&rh_type.kind)
+                {
+                    // todo: visit_constant should probably always return a reference
+                    if let Expression::Reference(rpath) | Expression::Variable { path: rpath, .. } =
+                        &const_value.expression
+                    {
                         self.bv
-                            .current_environment
-                            .update_value_at(thin_pointer_path, const_value.clone());
-                        // Since this is a compile time constant, the length of the constant is
-                        // also the length tracked in the fat pointer.
-                        let length_path = Path::new_length(path);
-                        let length_val = self.get_len(Path::new_alias(const_value));
-                        self.bv
-                            .current_environment
-                            .update_value_at(length_path, length_val);
+                            .copy_or_move_elements(path, rpath.clone(), rh_type, false);
                         return;
                     }
                 }
@@ -1101,13 +1092,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             }
                             .into(),
                         );
-                        self.bv
-                            .copy_or_move_elements(path, rpath, target_type, false);
+                        self.bv.copy_or_move_elements(path, rpath, rh_type, false);
                     }
                     _ => {
                         let rpath = Path::new_alias(const_value.clone());
-                        self.bv
-                            .copy_or_move_elements(path, rpath, target_type, false);
+                        self.bv.copy_or_move_elements(path, rpath, rh_type, false);
                     }
                 }
             }
@@ -1164,11 +1153,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let target_type = self
             .bv
             .type_visitor
-            .get_rustc_place_type(place, self.bv.current_span);
-        let value_path = self
-            .visit_place(place)
-            .refine_paths(&self.bv.current_environment);
-        let value = match &value_path.value {
+            .get_path_rustc_type(&path, self.bv.current_span);
+        let value_path = self.visit_place(place);
+        let value = match &self.visit_place_defer_refinement(place).value {
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
@@ -1178,9 +1165,39 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // The deref essentially does a copy of the value denoted by the qualifier.
                 // If this value is structured and not heap allocated, the copy must be done
                 // with copy_or_move_elements.
-                self.bv
-                    .copy_or_move_elements(path, qualifier.clone(), target_type, false);
-                return;
+                if self
+                    .bv
+                    .type_visitor
+                    .starts_with_slice_pointer(&target_type.kind)
+                {
+                    // Copying to a fat pointer without a cast, so the source pointer is fat too.
+                    // qualifier, however, has been modified into a thin pointer because of the deref.
+                    // Undo the damage by stripping off the field 0.
+                    if let PathEnum::QualifiedPath {
+                        qualifier,
+                        selector,
+                        ..
+                    } = &qualifier.value
+                    {
+                        if matches!(selector.as_ref(), PathSelector::Field(0)) {
+                            self.bv.copy_or_move_elements(
+                                path,
+                                qualifier.refine_paths(&self.bv.current_environment),
+                                target_type,
+                                false,
+                            );
+                            return;
+                        }
+                    }
+                    assume_unreachable!(
+                        "apparently assigning a thin pointer to a fat pointer without a cast {:?}",
+                        self.bv.current_span
+                    );
+                } else {
+                    self.bv
+                        .copy_or_move_elements(path, qualifier.clone(), target_type, false);
+                    return;
+                }
             }
             PathEnum::QualifiedPath {
                 qualifier,
@@ -1204,10 +1221,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         let heap_path = Rc::new(PathEnum::HeapBlock { value: val.clone() }.into());
                         AbstractValue::make_reference(heap_path)
                     } else {
-                        AbstractValue::make_reference(value_path)
+                        AbstractValue::make_reference(value_path.clone())
                     }
                 } else {
-                    AbstractValue::make_reference(value_path)
+                    AbstractValue::make_reference(value_path.clone())
                 }
             }
             PathEnum::HeapBlock { value } => value.clone(),
@@ -1228,18 +1245,35 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             // With more optimization the len instruction becomes a constant.
             self.visit_constant(None, &len)
         } else {
-            let value_path = self.visit_place(place);
-            self.get_len(value_path)
+            let mut value_path = self.visit_place(place);
+            if let PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } = &value_path.value
+            {
+                if let PathSelector::Deref = selector.as_ref() {
+                    if let PathEnum::QualifiedPath {
+                        qualifier,
+                        selector,
+                        ..
+                    } = &qualifier.value
+                    {
+                        checked_assume!(matches!(selector.as_ref(), PathSelector::Field(0)));
+                        value_path = qualifier.clone();
+                    } else {
+                        value_path = qualifier.clone();
+                    }
+                } else {
+                    assume_unreachable!("{:?}", selector);
+                }
+            }
+            let length_path =
+                Path::new_length(value_path).refine_paths(&self.bv.current_environment);
+            self.bv
+                .lookup_path_and_refine_result(length_path, self.bv.tcx.types.usize)
         };
         self.bv.current_environment.update_value_at(path, len_value);
-    }
-
-    /// Get the length of an array. Will be a compile time constant if the array length is known.
-    #[logfn_inputs(TRACE)]
-    fn get_len(&mut self, path: Rc<Path>) -> Rc<AbstractValue> {
-        let length_path = Path::new_length(path).refine_paths(&self.bv.current_environment);
-        self.bv
-            .lookup_path_and_refine_result(length_path, self.bv.tcx.types.usize)
     }
 
     /// path = operand as ty.
@@ -1251,13 +1285,99 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         operand: &mir::Operand<'tcx>,
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
-        let operand = self.visit_operand(operand);
-        let result = if cast_kind == mir::CastKind::Misc {
-            operand.cast(ExpressionType::from(&ty.kind))
-        } else {
-            operand
-        };
-        self.bv.current_environment.update_value_at(path, result);
+        match cast_kind {
+            mir::CastKind::Pointer(pointer_cast) => {
+                // The value remains unchanged, but pointers may be fat, so use copy_or_move_elements
+                let (is_move, place) = match operand {
+                    mir::Operand::Copy(place) => (false, place),
+                    mir::Operand::Move(place) => (true, place),
+                    mir::Operand::Constant(..) => {
+                        // Compile time constant pointers can arise from first class function values.
+                        // Such pointers are thin.
+                        let result = self.visit_operand(operand);
+                        self.bv.current_environment.update_value_at(path, result);
+                        return;
+                    }
+                };
+                let source_path = self.visit_place(place);
+                let source_type = self.get_operand_rustc_type(operand);
+                if let PointerCast::Unsize = pointer_cast {
+                    // Unsize a pointer/reference value, e.g., `&[T; n]` to`&[T]`.
+                    // If the resulting type is a fat pointer, we might have to upgrade the pointer.
+                    if self.bv.type_visitor.starts_with_slice_pointer(&ty.kind) {
+                        // Note that the source could be a thin or fat pointer.
+                        if !self
+                            .bv
+                            .type_visitor
+                            .starts_with_slice_pointer(&source_type.kind)
+                        {
+                            // Need to upgrade the thin pointer to a fat pointer
+                            let target_thin_pointer_path =
+                                Path::get_path_to_thin_pointer_at_offset_0(
+                                    self.bv.tcx,
+                                    &self.bv.current_environment,
+                                    &path,
+                                    ty,
+                                )
+                                .expect("there to be such path because ty starts with it");
+                            let source_thin_pointer_path =
+                                Path::get_path_to_thin_pointer_at_offset_0(
+                                    self.bv.tcx,
+                                    &self.bv.current_environment,
+                                    &source_path,
+                                    source_type,
+                                )
+                                .expect(
+                                    "there to be such a path because source_type can cast to target type",
+                                );
+                            let thin_ptr_type = self.bv.type_visitor.get_path_rustc_type(
+                                &source_thin_pointer_path,
+                                self.bv.current_span,
+                            );
+                            let target_type = type_visitor::get_target_type(thin_ptr_type);
+                            self.bv.copy_or_move_elements(
+                                target_thin_pointer_path.clone(),
+                                source_thin_pointer_path.clone(),
+                                thin_ptr_type,
+                                is_move,
+                            );
+                            let len_selector = Rc::new(PathSelector::Field(1));
+                            let len_value = if let TyKind::Array(_, len) = &target_type.kind {
+                                // We only get here if "-Z mir-opt-level=0" was specified.
+                                // With more optimization the len instruction becomes a constant.
+                                self.visit_constant(None, &len)
+                            } else {
+                                let len_source_path =
+                                    source_thin_pointer_path.replace_selector(len_selector.clone());
+                                self.bv.lookup_path_and_refine_result(
+                                    len_source_path,
+                                    self.bv.tcx.types.usize,
+                                )
+                            };
+                            let len_target_path =
+                                target_thin_pointer_path.replace_selector(len_selector);
+                            self.bv
+                                .current_environment
+                                .update_value_at(len_target_path, len_value);
+                            return;
+                        }
+                    }
+                }
+                self.bv
+                    .copy_or_move_elements(path, source_path, ty, is_move);
+            }
+            mir::CastKind::Misc => {
+                let result = self
+                    .visit_operand(operand)
+                    .cast(ExpressionType::from(&ty.kind));
+                if let mir::Operand::Move(place) = operand {
+                    let source_path = self.visit_place(place);
+                    self.bv.current_environment.value_map =
+                        self.bv.current_environment.value_map.remove(&source_path);
+                }
+                self.bv.current_environment.update_value_at(path, result);
+            }
+        }
     }
 
     /// Apply the given binary operator to the two operands and assign result to path.
@@ -1364,7 +1484,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_nullary_op(
         &mut self,
-        path: Rc<Path>,
+        mut path: Rc<Path>,
         null_op: mir::NullOp,
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
@@ -1372,11 +1492,18 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let len = if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
             Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
         } else {
-            AbstractValue::make_typed_unknown(ExpressionType::U128, path.clone())
+            //todo: need an expression that eventually refines into the actual layout size
+            AbstractValue::make_typed_unknown(ExpressionType::U128, Path::new_local(998))
         };
         let alignment = Rc::new(1u128.into());
         let value = match null_op {
-            mir::NullOp::Box => self.bv.get_new_heap_block(len, alignment, false),
+            mir::NullOp::Box => {
+                // The box is a struct that is located at path.
+                // It contains a pointer at field 0, which is a struct of type Unique,
+                // which contains the pointer that points to the new heap block.
+                path = Path::new_field(Path::new_field(path, 0), 0);
+                self.bv.get_new_heap_block(len, alignment, false)
+            }
             mir::NullOp::SizeOf => len,
         };
         self.bv.current_environment.update_value_at(path, value);
@@ -1417,6 +1544,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
     /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.
     /// See https://github.com/rust-lang/rust/issues/48193.
+    /// Copies the values from the operands to the target path and sets the length field.
+    /// The target path identifies stack storage for the array and is not a fat pointer to the heap.
     #[logfn_inputs(TRACE)]
     fn visit_aggregate(
         &mut self,
@@ -1425,46 +1554,17 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         operands: &[mir::Operand<'tcx>],
     ) {
         precondition!(matches!(aggregate_kinds, mir::AggregateKind::Array(..)));
-        let length_path = Path::new_length(path.clone()).refine_paths(&self.bv.current_environment);
+        let length_path = Path::new_length(path.clone());
         let length_value = self.get_u128_const_val(operands.len() as u128);
-
-        let elem_size = match *aggregate_kinds {
-            mir::AggregateKind::Array(ty) => self.bv.type_visitor.get_type_size(ty),
-            _ => verify_unreachable!(),
-        };
-        let byte_size = (operands.len() as u64) * elem_size.max(1);
-        let byte_size_value = self.get_u128_const_val(byte_size as u128);
-        let alignment: Rc<AbstractValue> = Rc::new(
-            (match elem_size {
-                0 => 1,
-                1 | 2 | 4 | 8 => elem_size,
-                _ => 8,
-            } as u128)
-                .into(),
-        );
-        let aggregate_value = self
-            .bv
-            .get_new_heap_block(byte_size_value, alignment, false);
         self.bv
             .current_environment
-            .update_value_at(path.clone(), aggregate_value);
-
-        // remove the length path from current environment if present (it is no longer canonical).
-        self.bv.current_environment.value_map =
-            self.bv.current_environment.value_map.remove(&length_path);
-
-        // Re-canonicalize length_path
-        let length_path = length_path.refine_paths(&self.bv.current_environment);
-
+            .update_value_at(length_path, length_value);
         for (i, operand) in operands.iter().enumerate() {
             let index_value = self.get_u128_const_val(i as u128);
             let index_path = Path::new_index(path.clone(), index_value)
                 .refine_paths(&self.bv.current_environment);
             self.visit_used_operand(index_path, operand);
         }
-        self.bv
-            .current_environment
-            .update_value_at(length_path, length_value);
     }
 
     /// Operand defines the values that can appear inside an rvalue. They are intentionally
@@ -1602,16 +1702,33 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     | TyKind::Char
                     | TyKind::Float(..)
                     | TyKind::Int(..)
-                    | TyKind::Uint(..) => {
-                        if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
-                            Scalar::Raw { data, size },
-                        )) = &literal.val
-                        {
-                            result = self.get_constant_from_scalar(&ty.kind, *data, *size);
-                        } else {
-                            assume_unreachable!()
+                    | TyKind::Uint(..) => match &literal.val {
+                        rustc_middle::ty::ConstKind::Param(ParamConst { index, .. }) => {
+                            if let Some(gen_args) = self.bv.type_visitor.generic_arguments {
+                                if let Some(arg_val) = gen_args.as_ref().get(*index as usize) {
+                                    return self.visit_constant(None, arg_val.expect_const());
+                                }
+                            }
+                            assume_unreachable!(
+                                "reference to unmatched generic constant argument {:?} {:?}",
+                                literal,
+                                self.bv.current_span
+                            );
                         }
-                    }
+                        rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
+                            data,
+                            size,
+                        })) => {
+                            result = self.get_constant_from_scalar(&ty.kind, *data, *size);
+                        }
+                        _ => {
+                            assume_unreachable!(
+                                "unexpected kind of literal {:?} {:?}",
+                                literal,
+                                self.bv.current_span
+                            );
+                        }
+                    },
                     TyKind::FnDef(def_id, substs)
                     | TyKind::Closure(def_id, substs)
                     | TyKind::Generator(def_id, substs, ..) => {
@@ -2071,8 +2188,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             last_index = i as u128;
             if i < k_limits::MAX_BYTE_ARRAY_LENGTH {
                 let index_value = self.get_u128_const_val(last_index);
-                let index_path = Path::new_index(array_path.clone(), index_value)
-                    .refine_paths(&self.bv.current_environment); //todo: maybe not needed?
+                let index_path = Path::new_index(array_path.clone(), index_value);
                 self.bv
                     .current_environment
                     .update_value_at(index_path, operand);
@@ -2168,10 +2284,28 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         )
     }
 
-    /// Returns a Path instance that is the essentially the same as the Place instance, but which
+    /// Returns a normalized Path instance that is the essentially the same as the Place instance, but which
     /// can be serialized and used as a cache key. Also caches the place type with the path as key.
     #[logfn_inputs(TRACE)]
     pub fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
+        let path = self
+            .get_path_for_place(place)
+            .refine_paths(&self.bv.current_environment);
+        let ty = self
+            .bv
+            .type_visitor
+            .get_rustc_place_type(place, self.bv.current_span);
+        self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
+        path
+    }
+
+    /// Returns a Path instance that is the essentially the same as the Place instance, but which
+    /// can be serialized and used as a cache key. Also caches the place type with the path as key.
+    /// The path is not normalized so deref selectors are left in place until it is determined if
+    /// the fat pointer is being dereferenced to get at its target value, or dereferenced to make
+    /// a copy of it.
+    #[logfn_inputs(TRACE)]
+    pub fn visit_place_defer_refinement(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let path = self.get_path_for_place(place);
         let ty = self
             .bv
@@ -2185,9 +2319,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// can be serialized and used as a cache key.
     #[logfn(TRACE)]
     fn get_path_for_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
-        let mut is_union = false;
         let base_path: Rc<Path> =
-            Path::new_local_parameter_or_result(place.local.as_usize(), self.bv.mir.arg_count);
+            Path::new_local_parameter_or_result(place.local.as_usize(), self.bv.mir.arg_count)
+                .refine_paths(&self.bv.current_environment);
         if place.projection.is_empty() {
             let ty = self
                 .bv
@@ -2243,15 +2377,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 _ => (),
             }
+            base_path
         } else {
-            let ty = self.bv.mir.local_decls[place.local].ty;
-            let specialized_ty = self
-                .bv
-                .type_visitor
-                .specialize_generic_argument_type(ty, &self.bv.type_visitor.generic_argument_map);
-            is_union = type_visitor::is_union(specialized_ty);
+            let ty = self.bv.type_visitor.specialize_generic_argument_type(
+                self.bv.mir.local_decls[place.local].ty,
+                &self.bv.type_visitor.generic_argument_map,
+            );
+            self.visit_projection(base_path, ty, &place.projection)
         }
-        self.visit_projection(base_path, is_union, &place.projection)
     }
 
     /// Returns a path that is qualified by the selector corresponding to projection.elem.
@@ -2260,14 +2393,52 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn visit_projection(
         &mut self,
         base_path: Rc<Path>,
-        mut base_is_union: bool,
+        base_ty: Ty<'tcx>,
         projection: &[mir::PlaceElem<'tcx>],
     ) -> Rc<Path> {
-        projection.iter().fold(base_path, |base_path, elem| {
-            let selector = self.visit_projection_elem(&mut base_is_union, &elem);
-            Path::new_qualified(base_path, Rc::new(selector))
-                .refine_paths(&self.bv.current_environment)
-        })
+        let mut result = base_path;
+        let mut ty: Ty<'_> = base_ty;
+        for elem in projection.iter() {
+            let selector = self.visit_projection_elem(ty, elem);
+            match elem {
+                mir::ProjectionElem::Deref => {
+                    if let Some(thin_pointer_path) = Path::get_path_to_thin_pointer_at_offset_0(
+                        self.bv.tcx,
+                        &self.bv.current_environment,
+                        &result,
+                        ty,
+                    ) {
+                        let thin_ptr_type = self
+                            .bv
+                            .type_visitor
+                            .get_path_rustc_type(&thin_pointer_path, self.bv.current_span);
+                        ty = type_visitor::get_target_type(thin_ptr_type);
+                        // defer refinement of thin_pointer_path until it is clear that it does not
+                        // become the operand location for an address_of operation.
+                        let deref_path = Path::new_qualified(thin_pointer_path, Rc::new(selector));
+                        self.bv
+                            .type_visitor
+                            .path_ty_cache
+                            .insert(deref_path.clone(), ty);
+                        result = deref_path;
+                        continue;
+                    }
+                    ty = type_visitor::get_target_type(ty);
+                }
+                mir::ProjectionElem::Field(_, field_ty) => ty = field_ty,
+                mir::ProjectionElem::Index(..) | mir::ProjectionElem::ConstantIndex { .. } => {
+                    ty = type_visitor::get_element_type(ty);
+                }
+                mir::ProjectionElem::Downcast(..) | mir::ProjectionElem::Subslice { .. } => {}
+            }
+            result = Path::new_qualified(result, Rc::new(selector))
+                .refine_paths(&self.bv.current_environment);
+            self.bv
+                .type_visitor
+                .path_ty_cache
+                .insert(result.clone(), ty);
+        }
+        result
     }
 
     /// Returns a PathSelector instance that is essentially the same as the ProjectionElem instance
@@ -2275,15 +2446,17 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_projection_elem(
         &mut self,
-        base_is_union: &mut bool,
+        base_ty: Ty<'_>,
         projection_elem: &mir::ProjectionElem<mir::Local, &rustc_middle::ty::TyS<'tcx>>,
     ) -> PathSelector {
         match projection_elem {
             mir::ProjectionElem::Deref => PathSelector::Deref,
-            mir::ProjectionElem::Field(field, field_ty) => {
-                let r = PathSelector::Field(if *base_is_union { 0 } else { field.index() });
-                *base_is_union = type_visitor::is_union(*field_ty);
-                r
+            mir::ProjectionElem::Field(field, ..) => {
+                PathSelector::Field(if type_visitor::is_union(base_ty) {
+                    0
+                } else {
+                    field.index()
+                })
             }
             mir::ProjectionElem::Index(local) => {
                 let local_path =

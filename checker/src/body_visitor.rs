@@ -231,11 +231,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     fn report_timeout(&mut self, elapsed_time_in_seconds: u64) {
         // This body is beyond MIRAI for now
         if self.cv.options.diag_level != DiagLevel::RELAXED {
-            let error = self
+            let warning = self
                 .cv
                 .session
-                .struct_span_err(self.current_span, "The analysis of this function timed out");
-            self.emit_diagnostic(error);
+                .struct_span_warn(self.current_span, "The analysis of this function timed out");
+            self.emit_diagnostic(warning);
         }
         warn!(
             "analysis of {} timed out after {} seconds",
@@ -340,20 +340,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
         };
         let result = if refined_val.is_bottom() {
-            // Not found locally, so try statics.
-            if let PathEnum::StaticVariable {
-                def_id,
-                ref summary_cache_key,
-                ref expression_type,
-            } = &path.value
-            {
-                self.lookup_static(&path, *def_id, summary_cache_key, expression_type)
-            } else if path.path_length() < k_limits::MAX_PATH_LENGTH {
-                let mut result = TypeVisitor::try_lookup_fat_pointer_ptr(
-                    &self.current_environment,
-                    &path,
-                    &result_rustc_type,
-                );
+            if self.imported_root_static(&path) {
+                return self.lookup_path_and_refine_result(path, result_rustc_type);
+            }
+            if path.path_length() < k_limits::MAX_PATH_LENGTH {
+                let mut result = None;
                 if let PathEnum::QualifiedPath {
                     qualifier,
                     selector,
@@ -459,15 +450,43 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         None
     }
 
+    /// Returns true if the given path is rooted in a static that has not yet been imported.
+    /// Also imports the static in that case, so looking up the path again when this returns
+    /// true is the thing to do.
+    #[logfn_inputs(TRACE)]
+    fn imported_root_static(&mut self, path: &Rc<Path>) -> bool {
+        if let PathEnum::StaticVariable {
+            def_id,
+            summary_cache_key,
+            expression_type,
+        } = &path.value
+        {
+            if self.current_environment.value_map.contains_key(path) {
+                return false;
+            }
+            self.current_environment.update_value_at(
+                path.clone(),
+                AbstractValue::make_typed_unknown(expression_type.clone(), path.clone()),
+            );
+            if self.imported_static(&path, *def_id, summary_cache_key) {
+                return true;
+            }
+        }
+        if let PathEnum::QualifiedPath { qualifier, .. } = &path.value {
+            self.imported_root_static(qualifier)
+        } else {
+            false
+        }
+    }
+
     /// Gets the value of the given static variable by obtaining a summary for the corresponding def_id.
     #[logfn_inputs(TRACE)]
-    fn lookup_static(
+    fn imported_static(
         &mut self,
         path: &Rc<Path>,
         def_id: Option<DefId>,
         summary_cache_key: &Rc<String>,
-        expression_type: &ExpressionType,
-    ) -> Rc<AbstractValue> {
+    ) -> bool {
         let mut block_visitor;
         let summary;
         let summary = if let Some(def_id) = def_id {
@@ -522,22 +541,21 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .get_persistent_summary_for(summary_cache_key);
             &summary
         };
-        let side_effects = summary.side_effects.clone();
-        // Effects on the path
-        self.transfer_and_refine(&side_effects, path.clone(), &Path::new_result(), &[]);
-        // Effects on the heap
-        for (path, value) in side_effects.iter() {
-            if path.is_rooted_by_abstract_heap_block() {
-                self.current_environment
-                    .update_value_at(path.clone(), value.clone());
+        if summary.is_computed && !summary.side_effects.is_empty() {
+            let side_effects = summary.side_effects.clone();
+            // Effects on the path
+            self.transfer_and_refine(&side_effects, path.clone(), &Path::new_result(), &[]);
+            // Effects on the heap
+            for (path, value) in side_effects.iter() {
+                if path.is_rooted_by_abstract_heap_block() {
+                    self.current_environment
+                        .update_value_at(path.clone(), value.clone());
+                }
             }
+            true
+        } else {
+            false
         }
-        self.current_environment
-            .value_at(&path)
-            .cloned()
-            .unwrap_or_else(|| {
-                AbstractValue::make_typed_unknown(expression_type.clone(), path.clone())
-            })
     }
 
     /// self.async_fn_summary is a summary of the closure that results from rewriting
@@ -646,15 +664,33 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     fn promote_constants(&mut self) -> Environment {
         let mut environment = Environment::default();
         let saved_mir = self.mir;
-        let result_root: Rc<Path> = Path::new_result();
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
             self.mir = constant_mir.unwrap_read_only();
             self.type_visitor.mir = self.mir;
             let result_rustc_type = self.mir.local_decls[mir::Local::from(0usize)].ty;
             self.visit_promoted_constants_block();
             if self.exit_environment.is_some() {
-                let promoted_root: Rc<Path> =
+                let mut result_root: Rc<Path> = Path::new_result();
+                let mut promoted_root: Rc<Path> =
                     Rc::new(PathEnum::PromotedConstant { ordinal }.into());
+                if self
+                    .type_visitor
+                    .starts_with_slice_pointer(&result_rustc_type.kind)
+                {
+                    let source_length_path = Path::new_length(result_root.clone());
+                    let length_val = self
+                        .exit_environment
+                        .as_ref()
+                        .unwrap()
+                        .value_map
+                        .get(&source_length_path)
+                        .expect("collection to have a length");
+                    let target_length_path = Path::new_length(promoted_root.clone());
+                    environment.update_value_at(target_length_path, length_val.clone());
+                    promoted_root = Path::new_field(promoted_root, 0);
+                    result_root = Path::new_field(result_root, 0);
+                }
+                //todo: probably should use exit environment and probably should expect a value
                 let value =
                     self.lookup_path_and_refine_result(result_root.clone(), result_rustc_type);
                 match &value.expression {
@@ -678,28 +714,73 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         environment.update_value_at(promoted_root.clone(), value.clone());
                     }
                     Expression::Reference(local_path) => {
-                        // local_path is reference to a local of the promoted constant function so we
-                        // need to rename the local so that it does not clash with the parent function's
-                        // locals.
-                        let new_local: Rc<Path> = Rc::new(
-                            PathEnum::PromotedConstant {
-                                ordinal: ordinal + 1000,
+                        // local_path is reference to a local of the promoted constant function.
+                        // Unlike other locals, it appears that the life time of promoted constant
+                        // function local can exceed the life time of the of promoted constant function
+                        // and the function that hosts it.
+                        let target_type = type_visitor::get_target_type(result_rustc_type);
+                        if ExpressionType::from(&target_type.kind).is_primitive() {
+                            // kind of weird, but seems to be generated for debugging support.
+                            // Move the value into an alias path, so that we can drop the reference to the soon to be dead local.
+                            let target_value = self
+                                .exit_environment
+                                .as_ref()
+                                .unwrap()
+                                .value_map
+                                .get(local_path)
+                                .expect("expect reference target to have a value");
+                            let value_path = Path::get_as_path(target_value.clone());
+                            let promoted_value =
+                                AbstractValue::make_from(Expression::Reference(value_path), 1);
+                            environment.update_value_at(promoted_root.clone(), promoted_value);
+                        } else {
+                            // A composite value needs to get to get promoted to the heap
+                            // in order to propagate it via function summaries.
+                            let byte_size = self.type_visitor.get_type_size(target_type);
+                            let byte_size_value = self.get_u128_const_val(byte_size as u128);
+                            let elem_size = self
+                                .type_visitor
+                                .get_type_size(type_visitor::get_element_type(target_type));
+                            let alignment: Rc<AbstractValue> = Rc::new(
+                                (match elem_size {
+                                    0 => 1,
+                                    1 | 2 | 4 | 8 => elem_size,
+                                    _ => 8,
+                                } as u128)
+                                    .into(),
+                            );
+                            let heap_value =
+                                self.get_new_heap_block(byte_size_value, alignment, false);
+                            let heap_root = Path::get_as_path(heap_value.clone());
+                            for (path, value) in self
+                                .exit_environment
+                                .as_ref()
+                                .unwrap()
+                                .value_map
+                                .iter()
+                                .filter(|(p, _)| (*p) == local_path || p.is_rooted_by(local_path))
+                            {
+                                let renamed_path = path.replace_root(local_path, heap_root.clone());
+                                environment.update_value_at(renamed_path, value.clone());
                             }
-                            .into(),
-                        );
-                        for (path, value) in self
-                            .exit_environment
-                            .as_ref()
-                            .unwrap()
-                            .value_map
-                            .iter()
-                            .filter(|(p, _)| (*p) == local_path || p.is_rooted_by(local_path))
-                        {
-                            let renamed_path = path.replace_root(local_path, new_local.clone());
-                            environment.update_value_at(renamed_path, value.clone());
+                            if type_visitor::is_slice_pointer(&target_type.kind) {
+                                let promoted_thin_pointer_path =
+                                    Path::new_field(promoted_root.clone(), 0);
+                                environment.update_value_at(promoted_thin_pointer_path, heap_value);
+                                let length_value = self
+                                    .exit_environment
+                                    .as_ref()
+                                    .unwrap()
+                                    .value_map
+                                    .get(&Path::new_length(local_path.clone()))
+                                    .unwrap_or_else(|| assume_unreachable!("promoted constant slice source is expected to have a length value, see source at {:?}", self.current_span))
+                                    .clone();
+                                let length_path = Path::new_length(promoted_root);
+                                environment.update_value_at(length_path, length_value);
+                            } else {
+                                environment.update_value_at(promoted_root.clone(), heap_value);
+                            }
                         }
-                        let new_value = AbstractValue::make_reference(new_local);
-                        environment.update_value_at(promoted_root.clone(), new_value);
                     }
                     _ => {
                         for (path, value) in self
@@ -878,6 +959,19 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         self.check_offset(&rvalue);
                     }
                 }
+                Expression::Reference(path) => {
+                    let target_type = self
+                        .type_visitor
+                        .get_path_rustc_type(&tpath, self.current_span);
+                    if self
+                        .type_visitor
+                        .starts_with_slice_pointer(&target_type.kind)
+                    {
+                        // transferring a (pointer, length) tuple.
+                        self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
+                        continue;
+                    }
+                }
                 Expression::UninterpretedCall {
                     callee,
                     arguments,
@@ -893,6 +987,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     continue;
                 }
                 Expression::Variable { path, .. } => {
+                    if matches!(&path.value, PathEnum::PhantomData) {
+                        continue;
+                    }
                     let target_type = self
                         .type_visitor
                         .get_path_rustc_type(&tpath, self.current_span);
@@ -1002,31 +1099,40 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 } = &value.expression
                 {
                     if *is_zeroed {
+                        let new_block = AbstractValue::make_from(
+                            Expression::HeapBlock {
+                                abstract_address: *abstract_address,
+                                is_zeroed: false,
+                            },
+                            1,
+                        );
+                        let new_block_path = Path::get_as_path(new_block);
                         let mut updated_value_map = self.current_environment.value_map.clone();
                         for (path, value) in self.current_environment.value_map.iter() {
-                            if let Expression::Reference(p) = &value.expression {
-                                if let PathEnum::HeapBlock { value } = &p.value {
-                                    if let Expression::HeapBlock {
-                                        abstract_address: a,
-                                        is_zeroed: z,
-                                    } = &value.expression
-                                    {
-                                        if *abstract_address == *a && *z {
-                                            let new_block = AbstractValue::make_from(
-                                                Expression::HeapBlock {
-                                                    abstract_address: *a,
-                                                    is_zeroed: false,
-                                                },
-                                                1,
-                                            );
-                                            let new_block_path = Path::get_as_path(new_block);
-                                            let new_reference =
-                                                AbstractValue::make_reference(new_block_path);
-                                            updated_value_map = updated_value_map
-                                                .insert(path.clone(), new_reference);
-                                        }
+                            match &value.expression {
+                                Expression::Reference(p) => {
+                                    if *p == *qualifier || p.is_rooted_by(qualifier) {
+                                        let new_block_path =
+                                            p.replace_root(qualifier, new_block_path.clone());
+                                        let new_reference =
+                                            AbstractValue::make_reference(new_block_path);
+                                        updated_value_map =
+                                            updated_value_map.insert(path.clone(), new_reference);
                                     }
                                 }
+                                Expression::Variable { path: p, var_type } => {
+                                    if *p == *qualifier || p.is_rooted_by(qualifier) {
+                                        let new_block_path =
+                                            p.replace_root(qualifier, new_block_path.clone());
+                                        let new_variable = AbstractValue::make_typed_unknown(
+                                            var_type.clone(),
+                                            new_block_path,
+                                        );
+                                        updated_value_map =
+                                            updated_value_map.insert(path.clone(), new_variable);
+                                    }
+                                }
+                                _ => (),
                             }
                         }
                         self.current_environment.value_map = updated_value_map;
@@ -1056,11 +1162,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         ) = (old_layout, new_layout)
         {
             if *old_source == LayoutSource::DeAlloc {
-                let error = self.cv.session.struct_span_err(
+                let warning = self.cv.session.struct_span_warn(
                     self.current_span,
                     "the pointer points to memory that has already been deallocated",
                 );
-                self.emit_diagnostic(error);
+                self.emit_diagnostic(warning);
             }
             let layouts_match = old_length
                 .equals(new_length.clone())
@@ -1082,8 +1188,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         "deallocates"
                     }
                 );
-                let error = self.cv.session.struct_span_err(self.current_span, &message);
-                self.emit_diagnostic(error);
+                let warning = self
+                    .cv
+                    .session
+                    .struct_span_warn(self.current_span, &message);
+                self.emit_diagnostic(warning);
             }
         }
     }
@@ -1178,7 +1287,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         &mut self,
         target_path: Rc<Path>,
         source_path: Rc<Path>,
-        target_rustc_type: Ty<'tcx>,
+        root_rustc_type: Ty<'tcx>,
         move_elements: bool,
     ) {
         check_for_early_return!(self);
@@ -1215,22 +1324,33 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     self.copy_or_move_elements(
                         target_path,
                         index_path,
-                        target_rustc_type,
+                        root_rustc_type,
                         move_elements,
                     );
                     return;
                 }
                 PathSelector::ConstantSlice { from, to, from_end } => {
-                    self.copy_or_move_subslice(
-                        target_path,
-                        target_rustc_type,
-                        move_elements,
-                        qualifier,
-                        from,
-                        to,
-                        from_end,
-                    );
-                    return;
+                    let len_value = self.get_len(qualifier.clone());
+                    if let AbstractValue {
+                        expression: Expression::CompileTimeConstant(ConstantDomain::U128(len)),
+                        ..
+                    } = len_value.as_ref()
+                    {
+                        let to = if from_end {
+                            u32::try_from(*len).unwrap() - to
+                        } else {
+                            to
+                        };
+                        self.copy_or_move_subslice(
+                            target_path,
+                            root_rustc_type,
+                            move_elements,
+                            qualifier,
+                            from,
+                            to,
+                        );
+                        return;
+                    }
                 }
                 _ => (),
             }
@@ -1259,18 +1379,16 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     {
                         self.copy_or_move_subslice(
                             qualifier.clone(),
-                            target_rustc_type,
+                            root_rustc_type,
                             move_elements,
                             &source_path,
                             0,
                             *val as u32,
-                            false,
                         );
                     } else {
-                        //todo: just add target_path[0..count], lookup(source_path[0..count]) to the environment
-                        //When that gets refined into a constant slice, then get back here.
-                        // We do, however, have to havoc all of the existing bindings, conditionally,
-                        // using index < count as the condition.
+                        // Any that that might get assigned to by this slice need to get weakened.
+                        // That is, the value has to become a condition based on index < count.
+                        self.weaken_paths_that_index(qualifier, count);
                     }
                     // fall through
                 }
@@ -1280,10 +1398,20 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
         }
 
+        // Assigning to a fixed length array is like a pattern
+        if let TyKind::Array(ty, len) = &root_rustc_type.kind {
+            let param_env = self.type_visitor.get_param_env();
+            let len = len
+                .try_eval_usize(self.tcx, param_env)
+                .expect("Array to have constant len");
+            self.copy_or_move_subslice(target_path, ty, move_elements, &source_path, 0, len as u32);
+            return;
+        }
+
         // Get here for paths that are not patterns.
         let mut value_map = self.current_environment.value_map.clone();
-        let is_closure = matches!(&target_rustc_type.kind, TyKind::Closure(..));
-        let value = self.lookup_path_and_refine_result(source_path.clone(), target_rustc_type);
+        let is_closure = matches!(&root_rustc_type.kind, TyKind::Closure(..));
+        let value = self.lookup_path_and_refine_result(source_path.clone(), root_rustc_type);
         let val_type = value.expression.infer_type();
         let mut no_children = true;
         if val_type == ExpressionType::NonPrimitive || is_closure {
@@ -1302,18 +1430,18 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 } else {
                     trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
-                value_map = value_map.insert(qualified_path, value.clone());
+                value_map = value_map.insert(qualified_path.clone(), value.clone());
+                value_map = Self::expand_aliased_string_literals_if_appropriate(
+                    &qualified_path,
+                    root_rustc_type,
+                    value_map,
+                    &value,
+                );
                 no_children = false;
             }
         }
-        let target_type: ExpressionType = (&target_rustc_type.kind).into();
+        let target_type: ExpressionType = (&root_rustc_type.kind).into();
         if target_type != ExpressionType::NonPrimitive || no_children {
-            value_map = self.expand_aliased_string_literals_if_appropriate(
-                &target_path,
-                target_rustc_type,
-                value_map,
-                &value,
-            );
             // Just copy/move (rpath, value) itself.
             if move_elements {
                 trace!("moving {:?} to {:?}", value, target_path);
@@ -1328,8 +1456,25 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         self.current_environment.value_map = value_map;
     }
 
-    //from_end slice[from:-to] in Python terms.
-    //otherwise slice[from:to]
+    /// Weaken (path, value) pairs from the environment if path is rooted by root_path[index].
+    /// Do so by replacing value with: if index < count { unknown_var } else { value }
+    #[logfn_inputs(TRACE)]
+    fn weaken_paths_that_index(&mut self, root_path: &Rc<Path>, count: &Rc<AbstractValue>) {
+        let mut value_map = self.current_environment.value_map.clone();
+        for (path, value) in self.current_environment.value_map.iter() {
+            if let Some(index) = path.get_index_value_qualified_by(root_path) {
+                let unknown_value =
+                    AbstractValue::make_typed_unknown(value.expression.infer_type(), path.clone());
+                let weakened_value = index
+                    .less_than(count.clone())
+                    .conditional_expression(unknown_value.clone(), value.clone());
+                value_map = value_map.insert(path.clone(), weakened_value);
+            }
+        }
+        self.current_environment.value_map = value_map;
+    }
+
+    //Moves or copies the elements qualifier[from..to] to target_path[0..(to - from)]
     #[logfn_inputs(TRACE)]
     #[allow(clippy::too_many_arguments)]
     fn copy_or_move_subslice(
@@ -1340,36 +1485,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         qualifier: &Rc<Path>,
         from: u32,
         to: u32,
-        from_end: bool,
     ) {
-        let to = {
-            if from_end {
-                let len_value = self.get_len(qualifier.clone());
-                if let AbstractValue {
-                    expression: Expression::CompileTimeConstant(ConstantDomain::U128(len)),
-                    ..
-                } = len_value.as_ref()
-                {
-                    u32::try_from(*len).unwrap() - to
-                } else {
-                    debug!("PathSelector::Subslice implies the length of the value is known");
-                    assume_unreachable!();
-                }
-            } else {
-                to
-            }
-        };
-        let elem_size = self.type_visitor.get_elem_type_size(target_type);
-        let length = self.get_u128_const_val(u128::from((to - from) as u64 * elem_size));
-        let alignment = Rc::new(1u128.into());
-        let slice_value = self.get_new_heap_block(length, alignment, false);
-        self.current_environment
-            .update_value_at(target_path.clone(), slice_value.clone());
-        let slice_path = Rc::new(PathEnum::HeapBlock { value: slice_value }.into());
-        let slice_len_path = Path::new_length(slice_path);
-        let len_value = self.get_u128_const_val(u128::from(to - from));
-        self.current_environment
-            .update_value_at(slice_len_path, len_value);
         for i in from..to {
             let index_val = self.get_u128_const_val(u128::from(i));
             let index_path = Path::new_index(qualifier.clone(), index_val)
@@ -1467,9 +1583,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     // expect expressions that look up individual characters and so we must enhance the current
     // environment with (path, char) tuples. The root of the path part of such a tuple is the
     // string literal itself, not the variable, which holds a pointer to the string.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     pub fn expand_aliased_string_literals_if_appropriate(
-        &mut self,
         target_path: &Rc<Path>,
         target_path_rustc_ty: Ty<'tcx>,
         mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>>,
@@ -1477,24 +1592,27 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) -> HashTrieMap<Rc<Path>, Rc<AbstractValue>> {
         if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
             // The value is a string literal
-            if let PathEnum::LocalVariable { .. } = &target_path.value {
-                // It is being copied into a local variable.
-                if let TyKind::Ref(_, ty, _) = target_path_rustc_ty.kind {
-                    if let TyKind::Slice(elem_ty) = ty.kind {
-                        if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
-                            // The type of the local variable is &[u8], so the local variable now
-                            // provides a way to look at individual characters. The value of the
-                            // local variable will be a fat pointer that points to the string literal,
-                            // so we need to augment the environment with character information for
-                            // the string literal. We could have done this at the time we created
-                            // the string literal, but doing it on demand works out better for us.
-                            let collection_path = Path::new_alias(value.clone());
-                            for (i, ch) in s.as_bytes().iter().enumerate() {
-                                let index = Rc::new((i as u128).into());
-                                let ch_const = Rc::new((*ch as u128).into());
-                                let path = Path::new_index(collection_path.clone(), index)
-                                    .refine_paths(&self.current_environment);
-                                value_map = value_map.insert(path, ch_const);
+            if let PathEnum::QualifiedPath { selector, .. } = &target_path.value {
+                if let PathSelector::Field(i) = selector.as_ref() {
+                    if *i == 0 {
+                        // It is being copied to field 0 of a struct
+                        if let TyKind::Ref(_, ty, _) = target_path_rustc_ty.kind {
+                            if let TyKind::Slice(elem_ty) = ty.kind {
+                                if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
+                                    // The type of the struct is &[u8], so the struct now
+                                    // provides a way to look at individual characters. The value of the
+                                    // struct will be a fat pointer that points to the string literal,
+                                    // so we need to augment the environment with character information for
+                                    // the string literal. We could have done this at the time we created
+                                    // the string literal, but doing it on demand works out better for us.
+                                    let collection_path = Path::new_alias(value.clone());
+                                    for (i, ch) in s.as_bytes().iter().enumerate() {
+                                        let index = Rc::new((i as u128).into());
+                                        let ch_const = Rc::new((*ch as u128).into());
+                                        let path = Path::new_index(collection_path.clone(), index);
+                                        value_map = value_map.insert(path, ch_const);
+                                    }
+                                }
                             }
                         }
                     }

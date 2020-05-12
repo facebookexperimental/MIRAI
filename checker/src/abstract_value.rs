@@ -774,15 +774,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                     _ => (),
                 }
-                if self.expression.infer_type() != target_type {
-                    AbstractValue::make_typed_unary(
-                        self.clone(),
-                        target_type,
-                        |operand, target_type| Expression::Cast {
-                            operand,
+                let source_type = self.expression.infer_type();
+                if source_type != target_type {
+                    if source_type == ExpressionType::NonPrimitive
+                        && target_type == ExpressionType::ThinPointer
+                    {
+                        let field0 = Path::new_field(Path::get_as_path(self.clone()), 0);
+                        AbstractValue::make_typed_unknown(target_type, field0)
+                    } else {
+                        AbstractValue::make_typed_unary(
+                            self.clone(),
                             target_type,
-                        },
-                    )
+                            |operand, target_type| Expression::Cast {
+                                operand,
+                                target_type,
+                            },
+                        )
+                    }
                 } else {
                     self.clone()
                 }
@@ -822,12 +830,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [y ? x : y] -> y && x
             return self.and(consequent);
         }
-        let join_condition_as_bool = self.as_bool_if_known();
-        if join_condition_as_bool == Some(true) {
+        let self_as_bool = self.as_bool_if_known();
+        if self_as_bool == Some(true) {
             // [true ? x : y] -> x
             return consequent;
-        } else if join_condition_as_bool == Some(false) {
+        } else if self_as_bool == Some(false) {
             // [false ? x : y] -> y
+            return alternate;
+        }
+        // simplification rules are heuristic and can be non symmetric.
+        let not_self = self.logical_not();
+        let not_self_as_bool = not_self.as_bool_if_known();
+        if not_self_as_bool == Some(false) {
+            // [true ? x : y] -> x
+            let _not_self = self.logical_not();
+            return consequent;
+        } else if not_self_as_bool == Some(true) {
+            // [false ? x : y] -> y
+            let _not_self = self.logical_not();
             return alternate;
         }
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
@@ -886,7 +906,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
         consequent = consequent.refine_with(self, 5);
-        alternate = alternate.refine_with(&self.logical_not(), 5);
+        alternate = alternate.refine_with(&not_self, 5);
 
         if let Expression::ConditionalExpression {
             condition: c2,
@@ -1199,29 +1219,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return Rc::new(v1.equals(v2).into());
         };
         match (&self.expression, &other.expression) {
-            // If self and other are the same location in memory, return true unless the value might be NaN.
-            (
-                Expression::Variable {
-                    path: p1,
-                    var_type: t1,
-                },
-                Expression::Variable {
-                    path: p2,
-                    var_type: t2,
-                },
-            ) => {
-                if p1 == p2 {
-                    match (t1, t2) {
-                        (ExpressionType::F32, _)
-                        | (ExpressionType::F64, _)
-                        | (_, ExpressionType::F32)
-                        | (_, ExpressionType::F64) => (),
-                        _ => {
-                            return Rc::new(TRUE);
-                        }
-                    }
-                }
-            }
             // [(c ? c1 : c2) == c1] -> c
             // [(c ? c1 : c2) == c2] -> !c
             (
@@ -1299,16 +1296,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ) if *z == other => {
                 return x.logical_not().or(y.equals(z.clone()));
             }
-
             (x, y) => {
-                // If self and other are the same expression and the expression could not result in NaN
-                // and the expression represents exactly one value, we can simplify this to true.
+                // If self and other are the same expression and the expression could not result in
+                // NaN we can simplify this to true.
                 if x == y && !x.infer_type().is_floating_point_number() {
                     return Rc::new(TRUE);
                 }
             }
         }
-        // Return an equals expression rather than a constant expression.
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Equals {
             left,
             right,
@@ -1516,11 +1511,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn is_path_alias(&self) -> bool {
         match &self.expression {
-            Expression::Reference(..)
+            Expression::HeapBlock { .. }
+            | Expression::Reference(..)
             | Expression::UninterpretedCall { .. }
-            | Expression::UnknownModelField { .. }
             | Expression::Variable { .. }
             | Expression::Widen { .. } => true,
+            Expression::Cast { operand, .. } => operand.is_path_alias(),
             Expression::ConditionalExpression {
                 consequent,
                 alternate,
@@ -1772,6 +1768,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(v1.not_equals(v2).into());
         };
+        match (&self.expression, &other.expression) {
+            // [!x != 0] -> !x when x is Boolean. Canonicalize it to the latter.
+            (
+                Expression::LogicalNot { operand },
+                Expression::CompileTimeConstant(ConstantDomain::U128(val)),
+            ) => {
+                if *val == 0 && operand.expression.infer_type() == ExpressionType::Bool {
+                    return self.clone();
+                }
+            }
+            // [x != 0] -> x when x is a Boolean. Canonicalize it to the latter.
+            (x, Expression::CompileTimeConstant(ConstantDomain::U128(val))) => {
+                if x.infer_type() == ExpressionType::Bool && *val == 0 {
+                    return self.clone();
+                }
+            }
+            (x, y) => {
+                // If self and other are the same expression and the expression could not result in
+                // NaN we can simplify this to false.
+                if x == y && !x.infer_type().is_floating_point_number() {
+                    return Rc::new(FALSE);
+                }
+            }
+        }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Ne {
             left,
             right,

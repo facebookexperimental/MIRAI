@@ -7,11 +7,12 @@ use crate::abstract_value::{self, AbstractValue, AbstractValueTrait};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
-use crate::k_limits;
+use crate::{k_limits, type_visitor};
 
 use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
+use rustc_middle::ty::{Ty, TyCtxt, TyKind};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
@@ -75,13 +76,39 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn get_as_path(value: Rc<AbstractValue>) -> Rc<Path> {
         Rc::new(match &value.expression {
+            Expression::Cast { operand, .. } => {
+                return Path::get_as_path(operand.clone());
+            }
             Expression::HeapBlock { .. } => PathEnum::HeapBlock { value }.into(),
             Expression::Offset { .. } => PathEnum::Offset { value }.into(),
-            Expression::Reference(path)
+            Expression::UninterpretedCall { path, .. }
             | Expression::Variable { path, .. }
             | Expression::Widen { path, .. } => path.as_ref().clone(),
             _ => PathEnum::Alias { value }.into(),
         })
+    }
+
+    /// When splitting paths while doing weak updates, it is important to not refine paths because
+    /// they are already canonical and because doing so can lead to recursive loops as refined paths
+    /// re-introduce joined paths that have been split earlier.
+    /// A split path, however, can be serve as the qualifier of a newly constructed qualified path
+    /// and this path might not be canonical. This routine removes the two sources of
+    /// de-canonicalization that are currently know. Essentially: when a path that binds to a value
+    /// that is a reference is implicitly dereferenced by the qualifier, the canonical path will
+    /// be the one without the reference, or the the actual heap block, if the path binds to a heap
+    /// location.
+    #[logfn_inputs(DEBUG)]
+    pub fn implicit_dereference(path: Rc<Path>, environment: &Environment) -> Rc<Path> {
+        if let PathEnum::Alias { value } = &path.value {
+            if let Expression::Reference(path) = &value.expression {
+                return path.clone();
+            }
+        } else if let Some(value) = environment.value_map.get(&path) {
+            if let Expression::HeapBlock { .. } = &value.expression {
+                return Path::get_as_path(value.clone());
+            }
+        }
+        path
     }
 }
 
@@ -134,7 +161,6 @@ pub enum PathEnum {
     PhantomData,
 
     /// The ordinal is an index into a method level table of MIR bodies.
-    /// This should not be serialized into a summary since it is function private local state.
     PromotedConstant { ordinal: usize },
 
     /// The qualifier denotes some reference, struct, or collection.
@@ -172,23 +198,82 @@ impl Debug for PathEnum {
 }
 
 impl Path {
-    /// True if path qualifies root, or another qualified path rooted by root,
-    /// by selecting field 0.
+    /// Returns the index value of the index path qualifed by qualifier.
     #[logfn_inputs(TRACE)]
-    pub fn is_first_leaf_rooted_in(&self, root: &Rc<Path>) -> bool {
+    pub fn get_index_value_qualified_by(&self, root: &Rc<Path>) -> Option<Rc<AbstractValue>> {
         match &self.value {
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
                 ..
             } => {
-                if let PathSelector::Field(0) = *selector.as_ref() {
-                    *qualifier == *root || qualifier.is_first_leaf_rooted_in(root)
+                if let PathSelector::Index(value) = selector.as_ref() {
+                    if *qualifier == *root {
+                        Some(value.clone())
+                    } else {
+                        qualifier.get_index_value_qualified_by(root)
+                    }
                 } else {
-                    false
+                    qualifier.get_index_value_qualified_by(root)
                 }
             }
-            _ => false,
+            _ => None,
+        }
+    }
+
+    /// Returns the path to the first leaf field of the structure described by result_rustc_type.
+    /// A field that is of type struct, is not a leaf field.
+    #[logfn(TRACE)]
+    pub fn get_path_to_thin_pointer_at_offset_0<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        environment: &Environment,
+        path: &Rc<Path>,
+        result_rustc_type: Ty<'tcx>,
+    ) -> Option<Rc<Path>> {
+        trace!(
+            "get_path_to_thin_pointer_at_offset_0 {:?} {:?}",
+            path,
+            result_rustc_type
+        );
+        match &result_rustc_type.kind {
+            TyKind::Ref(..) | TyKind::RawPtr(..) => {
+                if type_visitor::is_slice_pointer(&result_rustc_type.kind) {
+                    Some(Path::new_field(path.clone(), 0))
+                } else {
+                    Some(path.clone())
+                }
+            }
+            TyKind::Adt(def, substs) => {
+                let path0 = Path::new_field(path.clone(), 0);
+                for v in def.variants.iter() {
+                    if let Some(field0) = v.fields.get(0) {
+                        let field0_ty = field0.ty(tcx, substs);
+                        let result = Self::get_path_to_thin_pointer_at_offset_0(
+                            tcx,
+                            environment,
+                            &path0,
+                            field0_ty,
+                        );
+                        if result.is_some() {
+                            return result;
+                        }
+                    }
+                }
+                None
+            }
+            TyKind::Tuple(substs) => {
+                if let Some(field0_ty) = substs.iter().map(|s| s.expect_ty()).next() {
+                    let path0 = Path::new_field(path.clone(), 0);
+                    return Self::get_path_to_thin_pointer_at_offset_0(
+                        tcx,
+                        environment,
+                        &path0,
+                        field0_ty,
+                    );
+                }
+                None
+            }
+            _ => None,
         }
     }
 
@@ -444,8 +529,12 @@ pub trait PathRefinement: Sized {
     /// and not have more than one path for the same location.
     fn refine_paths(&self, environment: &Environment) -> Rc<Path>;
 
-    /// Returns a copy path with the root replaced by new_root.
+    /// Returns a copy of self with the root replaced by new_root.
     fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path>;
+
+    /// Returns a copy of self with the selector replace by a new selector.
+    /// It is only legal to call this on a qualfied path.
+    fn replace_selector(&self, new_selector: Rc<PathSelector>) -> Rc<Path>;
 }
 
 impl PathRefinement for Rc<Path> {
@@ -496,36 +585,28 @@ impl PathRefinement for Rc<Path> {
     /// and not have more than one path for the same location.
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<Path> {
-        if let Some(mut val) = environment.value_at(&self) {
+        if let Some(val) = environment.value_at(&self) {
             // If the environment has self as a key, then self is canonical, since we should only
             // use canonical paths as keys. The value at the canonical key, however, could just
             // be a reference to another path, which is something that happens during refinement.
-            if let Expression::Cast { operand, .. } = &val.expression {
-                val = operand;
+            if val.is_path_alias() {
+                return Path::get_as_path(val.clone());
             }
-            return match &val.expression {
-                Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
-                    Path::new_alias(val.clone())
-                }
-                Expression::HeapBlock { .. } | Expression::Offset { .. } => {
-                    Path::get_as_path(val.refine_paths(environment))
-                }
-                Expression::Variable { path, .. } | Expression::Widen { path, .. } => {
-                    if let PathEnum::QualifiedPath { selector, .. } = &path.value {
-                        if *selector.as_ref() == PathSelector::Deref {
-                            // If the path is a deref, it is not just an alias for self, so keep self
-                            return self.clone();
-                        }
-                    }
-                    path.clone()
-                }
-                _ => self.clone(), // self is canonical
-            };
         };
         // self is a path that is not a key in the environment. This could be because it is not
-        // canonical, which can only be the case if self is a qualified path.
+        // canonical.
         match &self.value {
-            PathEnum::Offset { value } => Path::get_as_path(value.refine_paths(environment)),
+            PathEnum::Alias { value } => {
+                if value.is_path_alias() {
+                    Path::get_as_path(value.clone())
+                } else {
+                    self.clone()
+                }
+            }
+            PathEnum::Offset { value } => {
+                checked_assume!(matches!(&value.expression, Expression::Offset{..}));
+                Path::get_as_path(value.refine_paths(environment))
+            }
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
@@ -547,6 +628,25 @@ impl PathRefinement for Rc<Path> {
                         return Path::new_qualified(base_qualifier.clone(), selector.clone());
                     }
                 }
+                if let PathEnum::Alias { value } = &refined_qualifier.value {
+                    if *refined_selector.as_ref() == PathSelector::Deref {
+                        if let Expression::Reference(path) = &value.expression {
+                            // We have a *&path sequence. If path is a is heap block, we
+                            // turn self into path[0]. If not, we drop the sequence and return path.
+                            return if matches!(&path.value, PathEnum::HeapBlock {..}) {
+                                Path::new_index(path.clone(), Rc::new(0u128.into()))
+                                    .refine_paths(environment)
+                            } else {
+                                path.clone()
+                            };
+                        }
+                    }
+                    if let Expression::Reference(path) = &value.expression {
+                        // since self is a qualified path we have to drop the reference operator
+                        // since selectors implicitly dereference pointers.
+                        return Path::new_qualified(path.clone(), refined_selector);
+                    }
+                }
                 if let PathSelector::Downcast(_, variant) = refined_selector.as_ref() {
                     let discriminator = Path::new_discriminant(refined_qualifier.clone());
                     if let Some(val) = environment.value_at(&discriminator) {
@@ -562,6 +662,15 @@ impl PathRefinement for Rc<Path> {
                 }
                 if let Some(val) = environment.value_at(&refined_qualifier) {
                     match &val.expression {
+                        Expression::CompileTimeConstant(ConstantDomain::Str(..))
+                        | Expression::HeapBlock { .. } => {
+                            if *refined_selector.as_ref() == PathSelector::Deref {
+                                return Path::new_qualified(
+                                    Path::get_as_path(val.clone()),
+                                    refined_selector,
+                                );
+                            }
+                        }
                         Expression::Variable { path, .. } => {
                             // if path is a deref we just drop it because it becomes implicit
                             if let PathEnum::QualifiedPath {
@@ -604,7 +713,7 @@ impl PathRefinement for Rc<Path> {
                         _ => {
                             if val.is_path_alias() {
                                 return Path::new_qualified(
-                                    Path::new_alias(val.clone()),
+                                    Path::get_as_path(val.clone()),
                                     refined_selector,
                                 );
                             }
@@ -648,6 +757,17 @@ impl PathRefinement for Rc<Path> {
                 Path::new_qualified(new_qualifier, selector.clone())
             }
             _ => new_root,
+        }
+    }
+
+    /// Returns a copy path with the root replaced by new_root.
+    #[logfn_inputs(TRACE)]
+    fn replace_selector(&self, new_selector: Rc<PathSelector>) -> Rc<Path> {
+        match &self.value {
+            PathEnum::QualifiedPath { qualifier, .. } => {
+                Path::new_qualified(qualifier.clone(), new_selector)
+            }
+            _ => assume_unreachable!("don't call this on an unqualified path"),
         }
     }
 }

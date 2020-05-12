@@ -184,7 +184,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
     /// If a predecessor has not yet been analyzed, its state does not form part of the join.
     /// If no predecessors have been analyzed, the entry state is a default entry state with an
     /// entry condition of TOP.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn get_initial_state_from_predecessors(
         &mut self,
         bb: mir::BasicBlock,
