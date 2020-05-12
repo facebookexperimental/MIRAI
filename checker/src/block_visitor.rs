@@ -494,7 +494,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     #[logfn_inputs(TRACE)]
-    fn get_function_constant_args(
+    pub fn get_function_constant_args(
         &self,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
     ) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {

@@ -963,7 +963,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
 
-        let function_constant_args = self.get_function_constant_args(&actual_args);
+        let function_constant_args = self.block_visitor.get_function_constant_args(&actual_args);
         let callee_func_ref = self.block_visitor.get_func_ref(&callee);
 
         let function_summary = if let Some(func_ref) = &callee_func_ref {
@@ -1558,53 +1558,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             );
             AbstractValue::make_typed_unknown(ExpressionType::U128, path)
         }
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn get_function_constant_args(
-        &self,
-        actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
-    ) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {
-        let mut result = vec![];
-        for (path, value) in self.block_visitor.bv.current_environment.value_map.iter() {
-            if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &value.expression
-            {
-                for (i, (arg_path, arg_val)) in actual_args.iter().enumerate() {
-                    if (*path) == *arg_path || path.is_rooted_by(arg_path) {
-                        let param_path_root = Path::new_parameter(i + 1);
-                        let param_path = path.replace_root(arg_path, param_path_root);
-                        result.push((param_path, value.clone()));
-                        break;
-                    } else {
-                        match &arg_val.expression {
-                            Expression::Reference(ipath)
-                            | Expression::Variable { path: ipath, .. } => {
-                                if (*path) == *ipath || path.is_rooted_by(ipath) {
-                                    let param_path_root = Path::new_parameter(i + 1);
-                                    let param_path = path.replace_root(arg_path, param_path_root);
-                                    result.push((param_path, value.clone()));
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        for (i, (path, value)) in actual_args.iter().enumerate() {
-            if let PathEnum::Alias { value: val } = &path.value {
-                if *val == *value {
-                    if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) =
-                        &value.expression
-                    {
-                        let param_path = Path::new_parameter(i + 1);
-                        result.push((param_path, value.clone()));
-                    }
-                }
-            }
-        }
-        result
     }
 
     /// Give diagnostic or mark the call chain as angelic, depending on self.bv.options.diag_level
