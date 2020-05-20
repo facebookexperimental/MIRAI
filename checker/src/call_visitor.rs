@@ -536,6 +536,24 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 return true;
             }
+            KnownNames::StdPtrSwapNonOverlapping => {
+                self.handle_swap_non_overlapping();
+                if let Some((_, target)) = &self.destination {
+                    let exit_condition = self
+                        .block_visitor
+                        .bv
+                        .current_environment
+                        .entry_condition
+                        .clone();
+                    self.block_visitor.bv.current_environment.exit_conditions = self
+                        .block_visitor
+                        .bv
+                        .current_environment
+                        .exit_conditions
+                        .insert(*target, exit_condition);
+                }
+                return true;
+            }
             KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
                 if self.block_visitor.bv.check_for_errors {
                     self.report_calls_to_special_functions(); //known_name, actual_args);
@@ -1326,6 +1344,31 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             collection_type,
             false,
         );
+    }
+
+    /// Swaps a slice of elements from the source to the destination.
+    #[logfn_inputs(TRACE)]
+    fn handle_swap_non_overlapping(&mut self) {
+        checked_assume!(self.actual_args.len() == 3);
+        let ty = self.actual_argument_types[0];
+        let target_root = self.actual_args[0].0.clone();
+        let source_root = self.actual_args[1].0.clone();
+        let count = self.actual_args[2].1.clone();
+        let source_slice = Path::new_slice(source_root.clone(), count.clone())
+            .refine_paths(&self.block_visitor.bv.current_environment);
+        let target_slice = Path::new_slice(target_root.clone(), count.clone())
+            .refine_paths(&self.block_visitor.bv.current_environment);
+        let temp_root = Path::new_local(999);
+        let temp_slice = Path::new_slice(temp_root.clone(), count);
+        self.block_visitor
+            .bv
+            .copy_or_move_elements(temp_slice, target_root, ty, true);
+        self.block_visitor
+            .bv
+            .copy_or_move_elements(target_slice, source_root, ty, true);
+        self.block_visitor
+            .bv
+            .copy_or_move_elements(source_slice, temp_root, ty, true);
     }
 
     /// Returns a new heap memory block with the given byte length.

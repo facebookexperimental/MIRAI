@@ -94,6 +94,7 @@ pub enum KnownNames {
     StdOpsFunctionFnOnceCallOnce,
     StdPanickingBeginPanic,
     StdPanickingBeginPanicFmt,
+    StdPtrSwapNonOverlapping,
 }
 
 /// An analysis lifetime cache that contains a map from def ids to known names.
@@ -303,6 +304,15 @@ impl KnownNamesCache {
                 .unwrap_or(KnownNames::None)
         };
 
+        let get_known_name_for_ptr_namespace = |mut def_path_data_iter: Iter<'_>| {
+            get_path_data_elem_name(def_path_data_iter.next())
+                .map(|n| match n.as_str().deref() {
+                    "swap_nonoverlapping" => KnownNames::StdPtrSwapNonOverlapping,
+                    _ => KnownNames::None,
+                })
+                .unwrap_or(KnownNames::None)
+        };
+
         let get_known_name_for_known_crate = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
@@ -313,6 +323,7 @@ impl KnownNamesCache {
                     "mem" => get_known_name_for_mem_namespace(def_path_data_iter),
                     "ops" => get_known_name_for_ops_namespace(def_path_data_iter),
                     "panicking" => get_known_name_for_panicking_namespace(def_path_data_iter),
+                    "ptr" => get_known_name_for_ptr_namespace(def_path_data_iter),
                     "mirai_abstract_value" => KnownNames::MiraiAbstractValue,
                     "mirai_assume" => KnownNames::MiraiAssume,
                     "mirai_assume_preconditions" => KnownNames::MiraiAssumePreconditions,
