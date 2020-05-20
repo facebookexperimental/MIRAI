@@ -1132,7 +1132,6 @@ pub mod core {
         pub fn prefetch_write_data<T>(data: *const T, locality: i32) {}
         pub fn prefetch_read_instruction<T>(data: *const T, locality: i32) {}
         pub fn prefetch_write_instruction<T>(data: *const T, locality: i32) {}
-        pub fn write_bytes<T>(_dst: *mut T, _val: u8, _count: usize) {}
 
         pub mod _1 {
             pub fn assert_inhabited() {}
@@ -1163,7 +1162,12 @@ pub mod core {
                 result!()
             }
             pub fn breakpoint() {}
-            pub fn move_val_init<T>(dst: *mut T, src: T) {}
+            pub unsafe fn move_val_init<T>(dst: *mut T, src: T)
+            where
+                T: Copy,
+            {
+                *dst = src;
+            }
             pub fn min_align_of<T>() -> usize {
                 4
             }
@@ -1201,11 +1205,12 @@ pub mod core {
             pub fn needs_drop<T>() -> bool {
                 result!()
             }
-            pub fn volatile_copy_nonoverlapping_memory<T>(
+            pub unsafe fn volatile_copy_nonoverlapping_memory<T>(
                 dst: *mut T,
                 src: *const T,
                 count: usize,
             ) {
+                std::intrinsics::copy_nonoverlapping(src, dst, count);
             }
             pub fn volatile_copy_memory<T>(dst: *mut T, src: *const T, count: usize) {}
             pub fn volatile_set_memory<T>(dst: *mut T, val: u8, count: usize) {}
@@ -1399,6 +1404,16 @@ pub mod core {
             }
             pub fn miri_start_panic<T>(data: T) {}
         }
+
+        pub fn is_aligned_and_not_null<T>(ptr: *const T) -> bool {
+            result!()
+        }
+
+        pub fn is_nonoverlapping<T>(src: *const T, dst: *const T, count: usize) -> bool {
+            result!()
+        }
+
+        pub fn write_bytes<T>(_dst: *mut T, _val: u8, _count: usize) {}
     }
 
     pub mod isize {
@@ -1823,6 +1838,70 @@ pub mod core {
 
     pub mod ptr {
         pub fn drop_in_place() {}
+
+        pub unsafe fn swap<T>(x: *mut T, y: *mut T)
+        where
+            T: Copy,
+        {
+            let t = *x;
+            *x = *y;
+            *y = t;
+        }
+
+        pub unsafe fn swap_nonoverlapping_one<T>(x: *mut T, y: *mut T) {
+            core::ptr::swap_nonoverlapping(x, y, 1);
+        }
+
+        pub unsafe fn swap_nonoverlapping_bytes(x: *mut u8, y: *mut u8, len: usize) {
+            core::ptr::swap_nonoverlapping(x, y, len);
+        }
+
+        pub unsafe fn read<T>(src: *const T) -> T
+        where
+            T: Copy,
+        {
+            *src
+        }
+
+        pub unsafe fn read_unaligned<T>(src: *const T) -> T
+        where
+            T: Copy,
+        {
+            *src
+        }
+
+        pub unsafe fn read_volatile<T>(src: *const T) -> T
+        where
+            T: Copy,
+        {
+            *src
+        }
+
+        pub unsafe fn write<T>(dst: *mut T, src: T)
+        where
+            T: Copy,
+        {
+            *dst = src;
+        }
+
+        pub unsafe fn write_unaligned<T>(dst: *mut T, src: T)
+        where
+            T: Copy,
+        {
+            *dst = src;
+        }
+
+        pub unsafe fn write_volatile<T>(dst: *mut T, src: T)
+        where
+            T: Copy,
+        {
+            *dst = src;
+        }
+
+        pub unsafe fn align_offset<T: Sized>(p: *const T, a: usize) -> usize {
+            // todo: implement inside MIRAI
+            0
+        }
     }
 
     pub mod result {
