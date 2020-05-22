@@ -158,7 +158,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
         match &path.value {
             PathEnum::LocalVariable { ordinal } => {
                 if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
-                    self.mir.local_decls[mir::Local::from(*ordinal)].ty
+                    self.specialize_generic_argument_type(
+                        self.mir.local_decls[mir::Local::from(*ordinal)].ty,
+                        &self.generic_argument_map,
+                    )
                 } else {
                     info!("path.value is {:?}", path.value);
                     self.tcx.types.err
@@ -168,7 +171,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                 if self.actual_argument_types.len() >= *ordinal {
                     self.actual_argument_types[*ordinal - 1]
                 } else if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
-                    self.mir.local_decls[mir::Local::from(*ordinal)].ty
+                    self.specialize_generic_argument_type(
+                        self.mir.local_decls[mir::Local::from(*ordinal)].ty,
+                        &self.generic_argument_map,
+                    )
                 } else {
                     info!("path.value is {:?}", path.value);
                     self.tcx.types.err
@@ -179,7 +185,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                     info!("result type wanted from function without result local");
                     self.tcx.types.err
                 } else {
-                    self.mir.local_decls[mir::Local::from(0usize)].ty
+                    self.specialize_generic_argument_type(
+                        self.mir.local_decls[mir::Local::from(0usize)].ty,
+                        &self.generic_argument_map,
+                    )
                 }
             }
             PathEnum::QualifiedPath {
@@ -338,7 +347,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
         current_span: rustc_span::Span,
     ) -> Ty<'tcx> {
         let result = {
-            let base_type = self.mir.local_decls[place.local].ty;
+            let base_type = self.specialize_generic_argument_type(
+                self.mir.local_decls[place.local].ty,
+                &self.generic_argument_map,
+            );
             self.get_type_for_projection_element(current_span, base_type, &place.projection)
         };
         match result.kind {

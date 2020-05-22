@@ -18,7 +18,7 @@ use rustc_middle::ty::TyCtxt;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::path::PathBuf;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 /// Private state used to implement the callbacks.
 pub struct MiraiCallbacks {
@@ -156,6 +156,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/stdlib/src") // false positives
             || file_name.contains("language/move-lang/src") // resolve error
             || file_name.contains("language/move-vm/state/src") // false positives
+            || file_name.contains("language/tools/vm-genesis/src") // resolve error
             || file_name.contains("language/vm/src") // takes too long
             || file_name.contains("network/src") // false positives
             || file_name.contains("network/onchain-discovery/src") // false positives
@@ -164,6 +165,7 @@ impl MiraiCallbacks {
             || file_name.contains("secure/net/src") // false positives
             || file_name.contains("secure/storage/vault/src") // z3 encoding
             || file_name.contains("state-synchronizer/src") // false positives
+            || file_name.contains("storage/backup/backup-service/src") // resolve error
             || file_name.contains("storage/jellyfish-merkle/src") // false positives due to complex loops beyond what we can handle right now
             || file_name.contains("storage/libradb/src") // 'already borrowed: BorrowMutError'
             || file_name.contains("storage/scratchpad/src") // false positives
@@ -186,7 +188,7 @@ impl MiraiCallbacks {
         let summary_store_path = if std::env::var("MIRAI_SHARE_PERSISTENT_STORE").is_ok() {
             output_dir
         } else {
-            let temp_dir = TempDir::new("mirai_temp_dir").expect("failed to create a temp dir");
+            let temp_dir = TempDir::new().expect("failed to create a temp dir");
             String::from(temp_dir.into_path().to_str().expect("valid string"))
         };
         info!(

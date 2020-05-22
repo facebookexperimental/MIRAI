@@ -586,7 +586,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             } else {
                 Path::new_local(i + 1)
             };
-            let value = self.lookup_path_and_refine_result(path, loc.ty);
+            let specialized_type = self
+                .type_visitor
+                .specialize_generic_argument_type(loc.ty, &self.type_visitor.generic_argument_map);
+            let value = self.lookup_path_and_refine_result(path, specialized_type);
             self.current_environment
                 .update_value_at(closure_path, value);
         }

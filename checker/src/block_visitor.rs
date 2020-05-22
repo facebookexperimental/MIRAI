@@ -1021,7 +1021,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 self.visit_len(path, place);
             }
             mir::Rvalue::Cast(cast_kind, operand, ty) => {
-                self.visit_cast(path, *cast_kind, operand, ty);
+                let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                    ty,
+                    &self.bv.type_visitor.generic_argument_map,
+                );
+                self.visit_cast(path, *cast_kind, operand, specialized_ty);
             }
             mir::Rvalue::BinaryOp(bin_op, left_operand, right_operand) => {
                 self.visit_binary_op(path, *bin_op, left_operand, right_operand);
@@ -1030,7 +1034,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 self.visit_checked_binary_op(path, *bin_op, left_operand, right_operand);
             }
             mir::Rvalue::NullaryOp(null_op, ty) => {
-                self.visit_nullary_op(path, *null_op, ty);
+                let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                    ty,
+                    &self.bv.type_visitor.generic_argument_map,
+                );
+                self.visit_nullary_op(path, *null_op, specialized_ty);
             }
             mir::Rvalue::UnaryOp(unary_op, operand) => {
                 self.visit_unary_op(path, *unary_op, operand);
@@ -2237,7 +2245,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         } else {
             let ty = self.bv.mir.local_decls[place.local].ty;
-            is_union = type_visitor::is_union(ty);
+            let specialized_ty = self
+                .bv
+                .type_visitor
+                .specialize_generic_argument_type(ty, &self.bv.type_visitor.generic_argument_map);
+            is_union = type_visitor::is_union(specialized_ty);
         }
         self.visit_projection(base_path, is_union, &place.projection)
     }
