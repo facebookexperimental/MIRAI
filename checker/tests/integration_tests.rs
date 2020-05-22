@@ -20,7 +20,7 @@ extern crate rustc_ast;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_rayon;
-extern crate tempdir;
+extern crate tempfile;
 
 use mirai::callbacks;
 use mirai::options::{DiagLevel, Options};
@@ -32,7 +32,7 @@ use std::fs;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use walkdir::WalkDir;
 
 // Run the tests in the tests/run-pass directory.
@@ -105,7 +105,7 @@ fn run_directory(directory_path: PathBuf, extern_deps: Vec<(&str, String)>) -> u
         };
         let file_path = entry.path();
         let file_name = entry.file_name();
-        let temp_dir = TempDir::new("miraiTest").expect("failed to create a temp dir");
+        let temp_dir = TempDir::new().expect("failed to create a temp dir");
         let temp_dir_path_buf = temp_dir.into_path();
         let output_dir_path_buf = temp_dir_path_buf.join(file_name.into_string().unwrap());
         fs::create_dir(output_dir_path_buf.as_path()).expect("failed to create test output dir");
