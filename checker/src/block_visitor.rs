@@ -748,14 +748,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // promote the path as a precondition. I.e. the program is only correct,
                 // albeit badly written, if we never get here.
                 let condition = self.bv.current_environment.entry_condition.logical_not();
-                let message = Rc::new(format!("possible {}", message));
-                let precondition = Precondition {
-                    condition,
-                    message,
-                    provenance: None,
-                    spans: vec![span],
-                };
-                self.bv.preconditions.push(precondition);
+                if !condition.expression.contains_local_variable() {
+                    let message = Rc::new(format!("possible {}", message));
+                    let precondition = Precondition {
+                        condition,
+                        message,
+                        provenance: None,
+                        spans: vec![span],
+                    };
+                    self.bv.preconditions.push(precondition);
+                }
             }
             return None;
         }
@@ -861,6 +863,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // that the condition is as expected, so we need to warn about it somewhere.
                     if self.bv.function_being_analyzed_is_root()
                         || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+                        || cond_val.expression.contains_local_variable()
                     {
                         // Can't make this the caller's problem.
                         let warning = format!("possible {}", get_assert_msg_description(msg));
@@ -877,7 +880,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     self.bv
                         .preconditions
                         .retain(|pc| pc.spans.last() != Some(&sp));
-                    if self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS {
+                    if !cond_val.expression.contains_local_variable()
+                        && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
+                    {
                         let expected_cond = if expected {
                             cond_val
                         } else {

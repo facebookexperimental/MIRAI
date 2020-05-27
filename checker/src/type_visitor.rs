@@ -264,6 +264,14 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                     PathSelector::Downcast(_, ordinal) => {
                         if let TyKind::Adt(def, substs) = &t.kind {
                             use rustc_index::vec::Idx;
+                            if *ordinal >= def.variants.len() {
+                                assume_unreachable!(
+                                    "illegally down casting to index {} of {:?} at {:?}",
+                                    *ordinal,
+                                    t,
+                                    current_span
+                                );
+                            }
                             let variant = &def.variants[VariantIdx::new(*ordinal)];
                             let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
                             return self.tcx.mk_tup(field_tys);

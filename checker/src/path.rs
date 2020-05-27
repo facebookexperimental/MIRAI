@@ -198,6 +198,35 @@ impl Debug for PathEnum {
 }
 
 impl Path {
+    /// Returns true if the path contains a value whose expression contains a local variable.
+    #[logfn_inputs(TRACE)]
+    pub fn contains_local_variable(&self) -> bool {
+        match &self.value {
+            PathEnum::Alias { value } => value.expression.contains_local_variable(),
+            PathEnum::HeapBlock { .. } => true,
+            PathEnum::LocalVariable { .. } => true,
+            PathEnum::Offset { value } => value.expression.contains_local_variable(),
+            PathEnum::Parameter { .. } => false,
+            PathEnum::Result => true,
+            PathEnum::StaticVariable { .. } => false,
+            PathEnum::PhantomData => false,
+            PathEnum::PromotedConstant { .. } => true,
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } => {
+                qualifier.contains_local_variable() || {
+                    if let PathSelector::Index(value) = selector.as_ref() {
+                        value.expression.contains_local_variable()
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
+    }
+
     /// Returns the index value of the index path qualifed by qualifier.
     #[logfn_inputs(TRACE)]
     pub fn get_index_value_qualified_by(&self, root: &Rc<Path>) -> Option<Rc<AbstractValue>> {

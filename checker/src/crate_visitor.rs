@@ -90,6 +90,9 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                 {
                     debug!("skipping function {} as it is generic", name);
                     continue;
+                } else if self.tcx.is_const_fn_raw(def_id) {
+                    debug!("skipping function {} as it is a constant function", name);
+                    continue;
                 } else {
                     info!("analyzing function {}", name);
                 }
