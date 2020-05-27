@@ -1373,10 +1373,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 2);
         let length = self.actual_args[0].1.clone();
         let alignment = self.actual_args[1].1.clone();
+        let tcx = self.block_visitor.bv.tcx;
+        let byte_slice = tcx.mk_slice(tcx.types.u8);
         let heap_path = Path::get_as_path(
             self.block_visitor
                 .bv
-                .get_new_heap_block(length, alignment, false),
+                .get_new_heap_block(length, alignment, false, byte_slice),
         );
         AbstractValue::make_reference(heap_path)
     }
@@ -1387,10 +1389,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 2);
         let length = self.actual_args[0].1.clone();
         let alignment = self.actual_args[1].1.clone();
+        let tcx = self.block_visitor.bv.tcx;
+        let byte_slice = tcx.mk_slice(tcx.types.u8);
         let heap_path = Path::get_as_path(
             self.block_visitor
                 .bv
-                .get_new_heap_block(length, alignment, true),
+                .get_new_heap_block(length, alignment, true, byte_slice),
         );
         AbstractValue::make_reference(heap_path)
     }

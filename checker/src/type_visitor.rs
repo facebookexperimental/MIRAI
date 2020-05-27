@@ -178,10 +178,14 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                         &self.generic_argument_map,
                     )
                 } else {
-                    info!("path.value is {:?}", path.value);
+                    info!(
+                        "local var path.value is {:?} at {:?}",
+                        path.value, current_span
+                    );
                     self.tcx.types.err
                 }
             }
+            PathEnum::HeapBlock { value } => value.expression.infer_type().as_rustc_type(self.tcx),
             PathEnum::Parameter { ordinal } => {
                 if self.actual_argument_types.len() >= *ordinal {
                     self.actual_argument_types[*ordinal - 1]
@@ -191,7 +195,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                         &self.generic_argument_map,
                     )
                 } else {
-                    info!("path.value is {:?}", path.value);
+                    info!(
+                        "parameter path.value is {:?} at {:?}",
+                        path.value, current_span
+                    );
                     self.tcx.types.err
                 }
             }
@@ -300,11 +307,14 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                 if let Some(def_id) = def_id {
                     return self.tcx.type_of(*def_id);
                 }
-                info!("path.value is {:?}", path.value);
+                info!(
+                    "static variable path.value is {:?} at {:?}",
+                    path.value, current_span
+                );
                 self.tcx.types.err
             }
             _ => {
-                info!("path.value is {:?}", path.value);
+                info!("path.value is {:?} at {:?}", path.value, current_span);
                 self.tcx.types.err
             }
         }

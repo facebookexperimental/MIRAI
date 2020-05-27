@@ -1507,7 +1507,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // It contains a pointer at field 0, which is a struct of type Unique,
                 // which contains the pointer that points to the new heap block.
                 path = Path::new_field(Path::new_field(path, 0), 0);
-                self.bv.get_new_heap_block(len, alignment, false)
+                self.bv.get_new_heap_block(len, alignment, false, ty)
             }
             mir::NullOp::SizeOf => len,
         };
@@ -1802,8 +1802,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
                             let slice = &bytes[*start..*end];
                             let e_type = ExpressionType::from(&elem_type.kind);
-                            return self
-                                .deconstruct_reference_to_constant_array(slice, e_type, None);
+                            return self.deconstruct_reference_to_constant_array(
+                                slice,
+                                e_type,
+                                None,
+                                type_visitor::get_target_type(ty),
+                            );
                         }
                         rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                             let e_type = ExpressionType::from(&elem_type.kind);
@@ -1825,8 +1829,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                     rustc_target::abi::Size::from_bytes(num_bytes),
                                 )
                                 .unwrap();
-                            return self
-                                .deconstruct_reference_to_constant_array(&bytes, e_type, None);
+                            return self.deconstruct_reference_to_constant_array(
+                                &bytes,
+                                e_type,
+                                None,
+                                type_visitor::get_target_type(ty),
+                            );
                         }
                         _ => {
                             debug!("unsupported val of type Ref: {:?}", literal);
@@ -1868,6 +1876,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                     Rc::new(0u128.into()),
                                     Rc::new(1u128.into()),
                                     false,
+                                    ty,
                                 );
                             }
                             _ => {
@@ -1942,9 +1951,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw { data, size }))
                 if *size == 1 =>
             {
-                let e =
-                    self.bv
-                        .get_new_heap_block(Rc::new(1u128.into()), Rc::new(1u128.into()), false);
+                let e = self.bv.get_new_heap_block(
+                    Rc::new(1u128.into()),
+                    Rc::new(1u128.into()),
+                    false,
+                    ty,
+                );
                 if let Expression::HeapBlock { .. } = &e.expression {
                     let p = Path::new_discriminant(Path::get_as_path(e.clone()));
                     let d = self.get_u128_const_val(*data);
@@ -2029,7 +2041,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         match ty {
             TyKind::Ref(_, ty, _) => match ty.kind {
                 TyKind::Array(elem_type, ..) | TyKind::Slice(elem_type) => self
-                    .deconstruct_reference_to_constant_array(slice, (&elem_type.kind).into(), None),
+                    .deconstruct_reference_to_constant_array(
+                        slice,
+                        (&elem_type.kind).into(),
+                        None,
+                        ty,
+                    ),
                 TyKind::Str => {
                     let s = std::str::from_utf8(slice).expect("non utf8 str");
                     let string_const = &mut self.bv.cv.constant_value_cache.get_string_for(s);
@@ -2088,7 +2105,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         )
                         .unwrap();
                     let slice = &bytes[*start..*end];
-                    self.deconstruct_reference_to_constant_array(slice, e_type, Some(len))
+                    self.deconstruct_reference_to_constant_array(
+                        slice,
+                        e_type,
+                        Some(len),
+                        literal.ty,
+                    )
                 }
                 rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                     //todo: there is no test coverage for this case
@@ -2113,7 +2135,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             rustc_target::abi::Size::from_bytes(num_bytes),
                         )
                         .unwrap();
-                    self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len))
+                    self.deconstruct_reference_to_constant_array(
+                        &bytes,
+                        e_type,
+                        Some(len),
+                        literal.ty,
+                    )
                 }
                 rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
                     mir::interpret::Scalar::Ptr(ptr),
@@ -2146,7 +2173,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             rustc_target::abi::Size::from_bytes(num_bytes),
                         )
                         .unwrap();
-                    self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len))
+                    self.deconstruct_reference_to_constant_array(
+                        &bytes,
+                        e_type,
+                        Some(len),
+                        literal.ty,
+                    )
                 }
                 _ => {
                     debug!("unsupported val of type Ref: {:?}", literal);
@@ -2174,11 +2206,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         bytes: &[u8],
         elem_type: ExpressionType,
         len: Option<u128>,
+        array_ty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
         let byte_len = bytes.len();
         let alignment = self.get_u128_const_val((elem_type.bit_length() / 8) as u128);
         let byte_len_value = self.get_u128_const_val(byte_len as u128);
-        let array_value = self.bv.get_new_heap_block(byte_len_value, alignment, false);
+        let array_value = self
+            .bv
+            .get_new_heap_block(byte_len_value, alignment, false, array_ty);
         let array_path = Path::get_as_path(array_value.clone());
         let thin_pointer_path = Path::new_field(array_path.clone(), 0);
         self.bv
