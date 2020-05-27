@@ -577,7 +577,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
         // The byte size of the closure object is not used, so we just fake it.
         let zero: Rc<AbstractValue> = Rc::new(0u128.into());
-        let closure_object = self.get_new_heap_block(zero.clone(), zero, false);
+        let closure_object = self.get_new_heap_block(
+            zero.clone(),
+            zero,
+            false,
+            self.tcx.types.trait_object_dummy_self,
+        );
         let closure_path: Rc<Path> = match &closure_object.expression {
             Expression::HeapBlock { .. } => Rc::new(
                 PathEnum::HeapBlock {
@@ -754,8 +759,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                                 } as u128)
                                     .into(),
                             );
-                            let heap_value =
-                                self.get_new_heap_block(byte_size_value, alignment, false);
+                            let heap_value = self.get_new_heap_block(
+                                byte_size_value,
+                                alignment,
+                                false,
+                                target_type,
+                            );
                             let heap_root = Path::get_as_path(heap_value.clone());
                             for (path, value) in self
                                 .exit_environment
@@ -1645,6 +1654,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         length: Rc<AbstractValue>,
         alignment: Rc<AbstractValue>,
         is_zeroed: bool,
+        ty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
         let addresses = &mut self.heap_addresses;
         let constants = &mut self.cv.constant_value_cache;
@@ -1653,6 +1663,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_block(is_zeroed), 1))
             .clone();
         let block_path = Path::get_as_path(block.clone());
+        self.type_visitor
+            .path_ty_cache
+            .insert(block_path.clone(), ty);
         let layout_path = Path::new_layout(block_path);
         let layout = AbstractValue::make_from(
             Expression::HeapBlockLayout {
