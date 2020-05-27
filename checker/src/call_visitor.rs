@@ -660,8 +660,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 if let Some(warning) = self.block_visitor.check_condition(cond, message, false) {
                     // Push a precondition so that any known or unknown caller of this function
                     // is warned that this function will fail if the precondition is not met.
-                    if self.block_visitor.bv.preconditions.len()
-                        < k_limits::MAX_INFERRED_PRECONDITIONS
+                    if !cond.expression.contains_local_variable()
+                        && self.block_visitor.bv.preconditions.len()
+                            < k_limits::MAX_INFERRED_PRECONDITIONS
                     {
                         let condition = self
                             .block_visitor
@@ -779,17 +780,19 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         .current_environment
                         .entry_condition
                         .logical_not();
-                    let precondition = Precondition {
-                        condition,
-                        message: msg,
-                        provenance: None,
-                        spans: if self.block_visitor.bv.def_id.is_local() {
-                            vec![span]
-                        } else {
-                            vec![] // The span is likely inside a standard macro, i.e. panic! etc.
-                        },
-                    };
-                    self.block_visitor.bv.preconditions.push(precondition);
+                    if !condition.expression.contains_local_variable() {
+                        let precondition = Precondition {
+                            condition,
+                            message: msg,
+                            provenance: None,
+                            spans: if self.block_visitor.bv.def_id.is_local() {
+                                vec![span]
+                            } else {
+                                vec![] // The span is likely inside a standard macro, i.e. panic! etc.
+                            },
+                        };
+                        self.block_visitor.bv.preconditions.push(precondition);
+                    }
                 }
             }
             _ => assume_unreachable!(),
@@ -1236,6 +1239,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         precondition!(self.actual_args.len() == 2);
         if self.block_visitor.bv.check_for_errors {
             let condition = self.actual_args[0].1.clone();
+            //todo: give diagnostic if the condition contains a local variable.
             let message = self.coerce_to_string(&self.actual_args[1].0);
             let precondition = Precondition {
                 condition,
@@ -1709,18 +1713,20 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .entry_condition
                     .logical_not()
                     .or(refined_condition);
-                let mut stacked_spans = vec![self.block_visitor.bv.current_span];
-                stacked_spans.append(&mut precondition.spans.clone());
-                let promoted_precondition = Precondition {
-                    condition: promoted_condition,
-                    message: precondition.message.clone(),
-                    provenance: precondition.provenance.clone(),
-                    spans: stacked_spans,
-                };
-                self.block_visitor
-                    .bv
-                    .preconditions
-                    .push(promoted_precondition);
+                if !promoted_condition.expression.contains_local_variable() {
+                    let mut stacked_spans = vec![self.block_visitor.bv.current_span];
+                    stacked_spans.append(&mut precondition.spans.clone());
+                    let promoted_precondition = Precondition {
+                        condition: promoted_condition,
+                        message: precondition.message.clone(),
+                        provenance: precondition.provenance.clone(),
+                        spans: stacked_spans,
+                    };
+                    self.block_visitor
+                        .bv
+                        .preconditions
+                        .push(promoted_precondition);
+                }
                 return;
             }
 

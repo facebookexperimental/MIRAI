@@ -567,6 +567,94 @@ impl Debug for Expression {
 }
 
 impl Expression {
+    /// Returns true if any part of the expression is a local variable.
+    /// Use this to weed out inferred preconditions that cannot be satisfied by the caller.
+    #[logfn_inputs(TRACE)]
+    pub fn contains_local_variable(&self) -> bool {
+        match &self {
+            Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
+            | Expression::Ne { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Or { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
+            | Expression::Shr { left, right, .. }
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => {
+                left.expression.contains_local_variable()
+                    || right.expression.contains_local_variable()
+            }
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. } => {
+                operand.expression.contains_local_variable()
+            }
+            Expression::Bottom => true,
+
+            Expression::CompileTimeConstant(..) => false,
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                condition.expression.contains_local_variable()
+                    || consequent.expression.contains_local_variable()
+                    || alternate.expression.contains_local_variable()
+            }
+            Expression::HeapBlock { .. } => true,
+            Expression::HeapBlockLayout {
+                length, alignment, ..
+            } => {
+                length.expression.contains_local_variable()
+                    || alignment.expression.contains_local_variable()
+            }
+            Expression::Join { left, right, .. } => {
+                left.expression.contains_local_variable()
+                    || right.expression.contains_local_variable()
+            }
+            Expression::Neg { operand } | Expression::LogicalNot { operand } => {
+                operand.expression.contains_local_variable()
+            }
+            Expression::Reference(path) => path.contains_local_variable(),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                let mut result = discriminator.expression.contains_local_variable();
+                for (case_val, case_result) in cases {
+                    result |= case_val.expression.contains_local_variable();
+                    result |= case_result.expression.contains_local_variable();
+                }
+                result | default.expression.contains_local_variable()
+            }
+            Expression::Top => true,
+            Expression::UninterpretedCall { .. } => true,
+            Expression::UnknownModelField { path, default } => {
+                path.contains_local_variable() || default.expression.contains_local_variable()
+            }
+            Expression::Variable { path, .. } => path.contains_local_variable(),
+            Expression::Widen { .. } => true,
+        }
+    }
+
     /// Returns the type of value the expression should result in, if well formed.
     /// (both operands are of the same type for binary operators, conditional branches match).
     #[logfn_inputs(TRACE)]
