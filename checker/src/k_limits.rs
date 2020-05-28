@@ -7,7 +7,7 @@
 // take too long or use too much memory.
 
 /// The maximum number of seconds that MIRAI is willing to analyze a function body for.
-pub const MAX_ANALYSIS_TIME_FOR_BODY: u64 = 3;
+pub const MAX_ANALYSIS_TIME_FOR_BODY: u64 = 5;
 
 /// The maximum number of elements in a byte array that will be individually tracked.
 pub const MAX_BYTE_ARRAY_LENGTH: usize = 10;

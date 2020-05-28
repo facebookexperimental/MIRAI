@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #![allow(clippy::declare_interior_mutable_const)]
+use crate::bool_domain::BoolDomain;
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::Expression::{ConditionalExpression, Join};
@@ -12,6 +13,7 @@ use crate::interval_domain::{self, IntervalDomain};
 use crate::k_limits;
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
+use crate::tag_domain::{Tag, TagDomain};
 
 use crate::known_names::KnownNames;
 use log_derive::{logfn, logfn_inputs};
@@ -46,6 +48,9 @@ pub struct AbstractValue {
     /// Cached interval domain element computed on demand by get_as_interval.
     #[serde(skip)]
     interval: RefCell<Option<Rc<IntervalDomain>>>,
+    /// Cached tag domain element computed on demand by get_tags.
+    #[serde(skip)]
+    tags: RefCell<Option<Rc<TagDomain>>>,
 }
 
 impl Debug for AbstractValue {
@@ -76,6 +81,7 @@ pub const BOTTOM: AbstractValue = AbstractValue {
     expression: Expression::Bottom,
     expression_size: 1,
     interval: RefCell::new(None),
+    tags: RefCell::new(None),
 };
 
 /// An abstract domain element that all represent the single concrete value, false.
@@ -83,6 +89,7 @@ pub const FALSE: AbstractValue = AbstractValue {
     expression: Expression::CompileTimeConstant(ConstantDomain::False),
     expression_size: 1,
     interval: RefCell::new(None),
+    tags: RefCell::new(None),
 };
 
 /// An abstract domain element that all represents all possible concrete values.
@@ -90,6 +97,7 @@ pub const TOP: AbstractValue = AbstractValue {
     expression: Expression::Top,
     expression_size: 1,
     interval: RefCell::new(None),
+    tags: RefCell::new(None),
 };
 
 /// An abstract domain element that all represent the single concrete value, true.
@@ -97,6 +105,7 @@ pub const TRUE: AbstractValue = AbstractValue {
     expression: Expression::CompileTimeConstant(ConstantDomain::True),
     expression_size: 1,
     interval: RefCell::new(None),
+    tags: RefCell::new(None),
 };
 
 impl From<bool> for AbstractValue {
@@ -107,12 +116,14 @@ impl From<bool> for AbstractValue {
                 expression: Expression::CompileTimeConstant(ConstantDomain::True),
                 expression_size: 1,
                 interval: RefCell::new(None),
+                tags: RefCell::new(None),
             }
         } else {
             AbstractValue {
                 expression: Expression::CompileTimeConstant(ConstantDomain::False),
                 expression_size: 1,
                 interval: RefCell::new(None),
+                tags: RefCell::new(None),
             }
         }
     }
@@ -128,7 +139,20 @@ impl From<ConstantDomain> for AbstractValue {
                 expression: Expression::CompileTimeConstant(cv),
                 expression_size: 1,
                 interval: RefCell::new(None),
+                tags: RefCell::new(None),
             }
+        }
+    }
+}
+
+impl From<BoolDomain> for AbstractValue {
+    #[logfn_inputs(TRACE)]
+    fn from(b: BoolDomain) -> AbstractValue {
+        match b {
+            BoolDomain::Bottom => BOTTOM,
+            BoolDomain::True => TRUE,
+            BoolDomain::False => FALSE,
+            BoolDomain::Top => TOP,
         }
     }
 }
@@ -140,6 +164,7 @@ impl From<u128> for AbstractValue {
             expression: Expression::CompileTimeConstant(ConstantDomain::U128(cv)),
             expression_size: 1,
             interval: RefCell::new(None),
+            tags: RefCell::new(None),
         }
     }
 }
@@ -244,8 +269,10 @@ impl AbstractValue {
                 expression,
                 expression_size,
                 interval: RefCell::new(None),
+                tags: RefCell::new(None),
             });
             let interval = val.get_as_interval();
+            let tags = val.get_tags();
             Rc::new(AbstractValue {
                 expression: Expression::Variable {
                     path: Path::new_alias(TOP.into()), //todo: maybe something unique here?
@@ -253,12 +280,14 @@ impl AbstractValue {
                 },
                 expression_size: 1,
                 interval: RefCell::new(Some(Rc::new(interval))),
+                tags: RefCell::new(Some(Rc::new(tags))),
             })
         } else {
             Rc::new(AbstractValue {
                 expression,
                 expression_size,
                 interval: RefCell::new(None),
+                tags: RefCell::new(None),
             })
         }
     }
@@ -288,6 +317,7 @@ pub trait AbstractValueTrait: Sized {
         widened_env: &Environment,
     ) -> Self;
     fn add_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
+    fn add_tag(&self, tag: Tag, val: BoolDomain) -> Self;
     fn and(&self, other: Self) -> Self;
     fn as_bool_if_known(&self) -> Option<bool>;
     fn as_int_if_known(&self) -> Option<Rc<AbstractValue>>;
@@ -354,6 +384,8 @@ pub trait AbstractValueTrait: Sized {
     ) -> Self;
     fn get_cached_interval(&self) -> Rc<IntervalDomain>;
     fn get_as_interval(&self) -> IntervalDomain;
+    fn get_cached_tags(&self) -> Rc<TagDomain>;
+    fn get_tags(&self) -> TagDomain;
     fn refine_paths(&self, environment: &Environment) -> Self;
     fn refine_parameters(&self, arguments: &[(Rc<Path>, Rc<AbstractValue>)], fresh: usize) -> Self;
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Self;
@@ -465,6 +497,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 result_type,
             },
         )
+    }
+
+    /// Returns an element which marks `tag` whose presence is indicated by `val`.
+    #[logfn_inputs(TRACE)]
+    fn add_tag(&self, tag: Tag, val: BoolDomain) -> Rc<AbstractValue> {
+        let old_tags = self.get_tags();
+        let new_tags = old_tags.add_tag(tag, val);
+        Rc::new(AbstractValue {
+            expression: self.expression.clone(),
+            expression_size: self.expression_size,
+            interval: RefCell::new(self.interval.borrow().clone()),
+            tags: RefCell::new(Some(Rc::new(new_tags))),
+        })
     }
 
     /// Returns an element that is "self && other".
@@ -2472,6 +2517,29 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             _ => interval_domain::BOTTOM,
         }
+    }
+
+    /// Gets or constructs a tag domain element that is cached.
+    #[logfn_inputs(TRACE)]
+    fn get_cached_tags(&self) -> Rc<TagDomain> {
+        {
+            let mut cached_tags = self.tags.borrow_mut();
+            let tags_opt = cached_tags.as_ref();
+            if let Some(tags) = tags_opt {
+                return tags.clone();
+            }
+            let tags = self.get_tags();
+            *cached_tags = Some(Rc::new(tags));
+        }
+        self.get_cached_tags()
+    }
+
+    /// Constructs an element of the tag domain for simple expressions.
+    #[logfn_inputs(TRACE)]
+    fn get_tags(&self) -> TagDomain {
+        // todo: take into consideration the control masks for different tags.
+        // todo: for now simply return an empty set (unsound).
+        TagDomain::for_empty_set()
     }
 
     /// Replaces occurrences of Expression::Variable(path) with the value at that path
