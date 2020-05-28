@@ -3,6 +3,9 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+#![feature(const_generics)]
+#![allow(incomplete_features)]
+
 // A set of macros and functions to use for annotating source files that are being checked with MIRAI
 
 /// Provides a way to specify a value that should be treated abstractly by the verifier.
@@ -22,6 +25,27 @@ macro_rules! abstract_value {
     };
 }
 
+/// A type for transfer  of MIRAI tag types. The type is an alias of `u128`.
+/// Each bit of the bit vector controls the transfer function for an operation.
+/// If a bit is set to one, the corresponding operation will propagate the tag.
+/// If a bit is set to zero, the corresponding operation will block the tag.
+pub type TagPropagationSet = u128;
+
+/// An enum type of controllable operations for MIRAI tag types.
+/// todo: add all other controllable operations.
+pub enum TagPropagation {
+    Add = 1 << 0,
+    Xor = 1 << 1,
+}
+
+/// Provide a way to create tag transfer masks. It is equivalent to bitwise-or of all its arguments.
+#[macro_export]
+macro_rules! tag_propagation_set {
+    ($($x:expr),*) => {
+        0 $(| ($x as mirai_annotations::TagPropagationSet))*
+    };
+}
+
 /// Equivalent to a no op when used with an unmodified Rust compiler.
 /// When compiled with MIRAI, this causes MIRAI to associate (tag) the value with the given type.
 /// Typically the type will be private to a scope so that only privileged code can add the tag.
@@ -31,7 +55,7 @@ macro_rules! abstract_value {
 macro_rules! add_tag {
     ($value:expr, $tag:ty) => {
         if cfg!(mirai) {
-            mirai_annotations::mirai_add_tag($value, $tag::default())
+            mirai_annotations::mirai_add_tag::<_, $tag>($value)
         }
     };
 }
@@ -44,7 +68,22 @@ macro_rules! add_tag {
 macro_rules! has_tag {
     ($value:expr, $tag:ty) => {
         if cfg!(mirai) {
-            mirai_annotations::mirai_has_tag::<$tag>($value)
+            mirai_annotations::mirai_has_tag::<_, $tag>($value)
+        } else {
+            true
+        }
+    };
+}
+
+/// Provides a way to check if a value has *not* been tagged with a type using add_tag!.
+/// When compiled with an unmodified Rust compiler, this results in true.
+/// When compiled with MIRAI, this will be true if none data flows into the argument of this
+/// call has gone via a call to add_tag!.
+#[macro_export]
+macro_rules! does_not_have_tag {
+    ($value:expr, $tag:ty) => {
+        if cfg!(mirai) {
+            mirai_annotations::mirai_does_not_have_tag::<_, $tag>($value)
         } else {
             true
         }
@@ -961,11 +1000,17 @@ pub fn mirai_abstract_value<T>(x: T) -> T {
 
 // Helper function for MIRAI. Should only be called via the add_tag! macro.
 #[doc(hidden)]
-pub fn mirai_add_tag<V, T>(_v: V, _t: T) {}
+pub fn mirai_add_tag<V, T>(_v: &V) {}
 
 // Helper function for MIRAI. Should only be called via the has_tag! macro.
 #[doc(hidden)]
-pub fn mirai_has_tag<V, T>(_v: V) -> bool {
+pub fn mirai_has_tag<V, T>(_v: &V) -> bool {
+    false
+}
+
+// Helper function for MIRAI. Should only be called via the does_not_have_tag! macro.
+#[doc(hidden)]
+pub fn mirai_does_not_have_tag<V, T>(_v: &V) -> bool {
     false
 }
 

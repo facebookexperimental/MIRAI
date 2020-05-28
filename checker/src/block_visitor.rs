@@ -1717,7 +1717,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
     /// Synthesizes a constant value. Also used for static variable values.
     #[logfn_inputs(TRACE)]
-    fn visit_constant(
+    pub fn visit_constant(
         &mut self,
         user_ty: Option<UserTypeAnnotationIndex>,
         literal: &Const<'tcx>,
@@ -1763,6 +1763,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 if let Some(arg_val) = gen_args.as_ref().get(*index as usize) {
                                     return self.visit_constant(None, arg_val.expect_const());
                                 }
+                            } else {
+                                // todo: figure out why gen_args is None for generic types when
+                                // the flag MIRAI_START_FRESH is on.
+                                return abstract_value::BOTTOM.into();
                             }
                             assume_unreachable!(
                                 "reference to unmatched generic constant argument {:?} {:?}",

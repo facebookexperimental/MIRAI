@@ -71,6 +71,7 @@ macro_rules! check_for_early_return {
 pub mod abstract_value;
 pub mod block_visitor;
 pub mod body_visitor;
+pub mod bool_domain;
 pub mod call_visitor;
 pub mod callbacks;
 pub mod constant_domain;
@@ -86,6 +87,7 @@ pub mod options;
 pub mod path;
 pub mod smt_solver;
 pub mod summaries;
+pub mod tag_domain;
 pub mod type_visitor;
 pub mod utils;
 pub mod z3_solver;

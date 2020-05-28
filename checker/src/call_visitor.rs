@@ -5,9 +5,10 @@
 
 use log_derive::*;
 use mirai_annotations::*;
+use rustc_ast::ast;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::ty::subst::SubstsRef;
+use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
 use rustc_middle::ty::{Ty, TyKind};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
@@ -17,6 +18,7 @@ use std::time::Instant;
 use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::block_visitor::BlockVisitor;
 use crate::body_visitor::BodyVisitor;
+use crate::bool_domain::BoolDomain;
 use crate::constant_domain::{ConstantDomain, FunctionReference};
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
@@ -25,6 +27,7 @@ use crate::known_names::KnownNames;
 use crate::path::{Path, PathEnum, PathRefinement};
 use crate::smt_solver::SmtResult;
 use crate::summaries::{Precondition, Summary};
+use crate::tag_domain::Tag;
 use crate::{abstract_value, type_visitor, utils};
 
 pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
@@ -359,6 +362,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.handle_abstract_value();
                 return true;
             }
+            KnownNames::MiraiAddTag => {
+                checked_assume!(self.actual_args.len() == 1);
+                self.handle_add_tag();
+                return true;
+            }
             KnownNames::MiraiAssume => {
                 checked_assume!(self.actual_args.len() == 1);
                 if self.block_visitor.bv.check_for_errors {
@@ -372,8 +380,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.block_visitor.bv.assume_preconditions_of_next_call = true;
                 return true;
             }
+            KnownNames::MiraiDoesNotHaveTag => {
+                checked_assume!(self.actual_args.len() == 1);
+                self.handle_has_tag(false);
+                return true;
+            }
             KnownNames::MiraiGetModelField => {
                 self.handle_get_model_field();
+                return true;
+            }
+            KnownNames::MiraiHasTag => {
+                checked_assume!(self.actual_args.len() == 1);
+                self.handle_has_tag(true);
                 return true;
             }
             KnownNames::MiraiPostcondition => {
@@ -1007,6 +1025,42 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         }
     }
 
+    /// Attach a tag to the first and only value in actual_args.
+    /// The tag type is indicated by a generic argument.
+    #[logfn_inputs(TRACE)]
+    fn handle_add_tag(&mut self) {
+        precondition!(self.actual_args.len() == 1);
+        if let Some(tag) = self.extract_tag_kind_and_mask() {
+            let source_path = Path::new_deref(self.actual_args[0].0.clone())
+                .refine_paths(&self.block_visitor.bv.current_environment);
+            debug!(
+                "MiraiAddTag: attaching <{:?},{:?}> to {:?}",
+                tag.0, tag.1, source_path
+            );
+
+            // Augment the tags associated at the source with a new tag.
+            // todo: If source_path can point to multiple locations, we should mark the new tag
+            // as *may*-presence.
+            let source_rustc_type = self
+                .block_visitor
+                .bv
+                .type_visitor
+                .get_path_rustc_type(&source_path, self.block_visitor.bv.current_span);
+            let source_abs = self
+                .block_visitor
+                .bv
+                .lookup_path_and_refine_result(source_path.clone(), source_rustc_type);
+            let target_abs = source_abs.add_tag(tag, BoolDomain::True);
+            self.block_visitor
+                .bv
+                .current_environment
+                .update_value_at(source_path, target_abs);
+        }
+
+        // Update exit conditions.
+        self.use_entry_condition_as_exit_condition();
+    }
+
     /// Adds the first and only value in actual_args to the path condition of the destination.
     /// No check is performed, since we get to assume this condition without proof.
     #[logfn_inputs(TRACE)]
@@ -1124,6 +1178,60 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         } else {
             assume_unreachable!();
         }
+    }
+
+    /// Check if a tag has been attached to the first and only value in actual_args.
+    /// The tag type is indicated by a generic argument.
+    #[logfn_inputs(TRACE)]
+    fn handle_has_tag(&mut self, checking_presence: bool) {
+        precondition!(self.actual_args.len() == 1);
+        let result: Rc<AbstractValue>;
+        if let Some(tag) = self.extract_tag_kind_and_mask() {
+            let source_path = Path::new_deref(self.actual_args[0].0.clone())
+                .refine_paths(&self.block_visitor.bv.current_environment);
+            debug!(
+                "MiraiHasTag: checking if {:?} has {}been attached with <{:?},{:?}>",
+                source_path,
+                (if checking_presence { "" } else { "never " }),
+                tag.0,
+                tag.1
+            );
+
+            // Obtain the possible tags associated at the source.
+            let source_rustc_type = self
+                .block_visitor
+                .bv
+                .type_visitor
+                .get_path_rustc_type(&source_path, self.block_visitor.bv.current_span);
+            let source_abs = self
+                .block_visitor
+                .bv
+                .lookup_path_and_refine_result(source_path, source_rustc_type);
+            let source_tags = source_abs.get_cached_tags();
+
+            // Decide the result of has_tag! or does_not_have_tag!.
+            let tag_presence: Rc<AbstractValue> = Rc::new(source_tags.has_tag(&tag).into());
+            result = if checking_presence {
+                tag_presence
+            } else {
+                tag_presence.logical_not()
+            };
+        } else {
+            result = abstract_value::BOTTOM.into();
+        }
+
+        // Return the abstract result and update exit conditions.
+        let destination = &self.destination;
+        if let Some((place, _)) = destination {
+            let target_path = self.block_visitor.visit_place(place);
+            self.block_visitor
+                .bv
+                .current_environment
+                .update_value_at(target_path, result);
+        } else {
+            assume_unreachable!();
+        }
+        self.use_entry_condition_as_exit_condition();
     }
 
     fn handle_post_condition(&mut self) {
@@ -1973,5 +2081,92 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             self.block_visitor.bv.emit_diagnostic(warning);
         }
         Rc::new("dummy argument".to_string())
+    }
+
+    /// Extract the tag kind and the control mask from the generic arg of the function call
+    /// underlying `add_tag!` or `has_tag!`. The tag type should be the second generic argument
+    /// of the current function call. The tag type itself should also be parameterized, and its
+    /// first type parameter should be a constant of type `TagPropagationSet`, which represents
+    /// the control mask. Return a pair of the name of the tag type, as well as the control mask.
+    fn extract_tag_kind_and_mask(&mut self) -> Option<Tag> {
+        precondition!(
+            self.callee_known_name == KnownNames::MiraiAddTag
+                || self.callee_known_name == KnownNames::MiraiHasTag
+                || self.callee_known_name == KnownNames::MiraiDoesNotHaveTag
+        );
+
+        match self.callee_generic_arguments {
+            None => assume_unreachable!(
+                "expected tag-related function calls to have two generic arguments"
+            ),
+            Some(rustc_gen_args) => {
+                checked_assume!(rustc_gen_args.len() == 2);
+
+                // The second generic argument of the function call is the tag type.
+                let tag_rustc_type;
+                match rustc_gen_args[1].unpack() {
+                    GenericArgKind::Type(rustc_type) => tag_rustc_type = rustc_type,
+                    _ => {
+                        assume_unreachable!("expected the second generic argument of tag-related function calls to be a type");
+                    }
+                }
+
+                // The tag type should be a generic ADT whose first parameter is a constant.
+                let tag_adt_def;
+                let tag_substs_ref;
+                match tag_rustc_type.kind {
+                    TyKind::Adt(adt_def, substs_ref) if substs_ref.len() > 0 => {
+                        tag_adt_def = adt_def;
+                        tag_substs_ref = substs_ref;
+                    }
+                    _ => {
+                        if self.block_visitor.bv.check_for_errors {
+                            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                                self.block_visitor.bv.current_span,
+                                "the tag type should be a generic type whose first parameter is a constant of type TagPropagationSet",
+                            );
+                            self.block_visitor.bv.emit_diagnostic(warning);
+                        }
+                        return None;
+                    }
+                }
+
+                // Extract the tag type's first parameter.
+                let tag_mask_rustc_const;
+                match tag_substs_ref[0].unpack() {
+                    GenericArgKind::Const(rustc_const)
+                        if rustc_const.ty.kind == TyKind::Uint(ast::UintTy::U128) =>
+                    {
+                        tag_mask_rustc_const = rustc_const
+                    }
+                    _ => {
+                        if self.block_visitor.bv.check_for_errors {
+                            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                            self.block_visitor.bv.current_span,
+                            "the first parameter of the tag type should have type TagPropagationSet",
+                        );
+                            self.block_visitor.bv.emit_diagnostic(warning);
+                        }
+                        return None;
+                    }
+                }
+
+                // Analyze the tag type's first parameter to obtain a compile-time constant.
+                let tag_mask_abs = self
+                    .block_visitor
+                    .visit_constant(None, tag_mask_rustc_const);
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(data)) =
+                    &tag_mask_abs.expression
+                {
+                    let tag_kind = tag_adt_def.did;
+                    let tag_mask = *data;
+                    Some((tag_kind, tag_mask))
+                } else {
+                    assume_unreachable!(
+                        "expected the constant generic arg to be a compile-time constant"
+                    );
+                }
+            }
+        }
     }
 }
