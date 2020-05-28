@@ -39,7 +39,9 @@ Alternatively there is also
 ## Running
 
 Running `cargo build` will produce a binary at `target/debug/mirai`.
- 
+
+### On a single file
+
 Unfortunately cargo build sets the dynamic library load path (rpath) that is linked into the binary to a path that is
 invalid when the binary is run. If you run the binary via cargo `cargo run -- <args>` then cargo overrides the bad
 rpath by providing the correct path in the environment variable `DYLD_LIBRARY_PATH`.
@@ -50,11 +52,12 @@ with
 `alias mirai="DYLD_LIBRARY_PATH=$(rustc --print sysroot)/lib ~/mirai/target/debug/mirai"`
 
 You can then run mirai as if it were rustc, because it is in fact rustc, just with an added plug in.
- 
-To run mirai via cargo, as if it were rustc, first do `cargo install --force --path  ~/mirai` then set the
-`RUSTC_WRAPPER` environment variable to `mirai`.
 
-When running `RUSTC_WRAPPER=mirai cargo build` on a crate make sure to either:
+### On a crate
+ 
+To run mirai on a crate, as if it were rustc, just set the `RUSTC_WRAPPER` environment variable to the path of `mirai`.
+
+When running `RUSTC_WRAPPER=~/mirai/target/debug/mirai cargo build` on a crate make sure to either:
 1. Set Rust to use the same nightly as MIRAI in the crate's directory (via `rustup override`, or by linking to 
     MIRAI's [rust-toolchain](https://github.com/facebookexperimental/MIRAI/blob/master/rust-toolchain) file).
 2. Or set `DYLD_LIBRARY_PATH=/Users/$USER/.rustup/toolchains/nightly-YYYY-MM-DD-x86_64-apple-darwin/lib/` before running 
@@ -100,7 +103,8 @@ Finally, set the working directory to the checker directory, i.e. something like
 
 To use VSCode you'll need to add the following to the
 configurations property of the content of the launch.json file in the .vscode directory of your project directory:
-```    {
+```
+    {
         "type": "lldb",
         "request": "launch",
         "name": "Debug executable 'mirai'",
@@ -144,19 +148,19 @@ test --package mirai --test integration_tests ""
 There does not seem to be a way to do this with a cargo configuration, so I first use cargo test to get the name of
 the generated binary and then debug that using a launch configuration along these lines:
 ```
-{
-            "type": "lldb",
-            "request": "launch",
-            "name": "Launch",
-            "program": "${workspaceFolder}/target/debug/deps/integration_tests-0ca00d8d322a6adc",
-            "sourceLanguages": ["rust"],
-            "args": [],
-            "cwd": "${workspaceFolder}/checker",
-            "env": {
-                "DYLD_LIBRARY_PATH": "${env:HOME}/.rustup/toolchains/nightly-x86_64-apple-darwin/lib",
-                "MIRAI_LOG": "debug",
-            }
-        },        
+    {
+        "type": "lldb",
+        "request": "launch",
+        "name": "Launch",
+        "program": "${workspaceFolder}/target/debug/deps/integration_tests-0ca00d8d322a6adc",
+        "sourceLanguages": ["rust"],
+        "args": [],
+        "cwd": "${workspaceFolder}/checker",
+        "env": {
+            "DYLD_LIBRARY_PATH": "${env:HOME}/.rustup/toolchains/nightly-x86_64-apple-darwin/lib",
+            "MIRAI_LOG": "debug",
+        }
+    },
 ```
 
 ## Debugging MIRAI analyzing MIRAI
