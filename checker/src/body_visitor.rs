@@ -241,10 +241,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             "analysis of {} timed out after {} seconds",
             self.function_name, elapsed_time_in_seconds,
         );
-        *self
+        let call_entry = self
             .active_calls_map
             .entry(self.def_id)
-            .or_insert_with(|| unreachable!()) -= 1;
+            .or_insert_with(|| unreachable!());
+        if *call_entry > 0 {
+            *call_entry -= 1;
+        }
         self.assume_function_is_angelic = true;
     }
 
