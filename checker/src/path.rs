@@ -494,8 +494,19 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn new_qualified(qualifier: Rc<Path>, selector: Rc<PathSelector>) -> Rc<Path> {
         if let PathEnum::Alias { value } = &qualifier.value {
+            // A path that is an alias for bottom must stay that way even if qualified by a selector.
             if value.is_bottom() {
                 return qualifier;
+            }
+
+            // A path that is an alias for a & operation must simplify when dereferenced
+            // in order to stay canonical.
+            // Note that the tricky semantics of constructing a copy of struct when doing *&x
+            // is taken care of when handling the MIR operation and paths need not be concerned with it.
+            if let Expression::Reference(path) = &value.expression {
+                if matches!(selector.as_ref(), PathSelector::Deref) {
+                    return path.clone();
+                }
             }
         }
         let qualifier_length = qualifier.path_length();
@@ -610,15 +621,13 @@ impl PathRefinement for Rc<Path> {
     /// Refine paths that reference other paths and canonicalize the refinements.
     /// I.e. when a reference is passed to a function that then returns
     /// or leaks it back to the caller in the qualifier of a path then
-    /// we want to dereference the qualifier in order to normalize the path
+    /// we want to remove the reference from the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<Path> {
         if let Some(val) = environment.value_at(&self) {
-            // If the environment has self as a key, then self is canonical, since we should only
-            // use canonical paths as keys. The value at the canonical key, however, could just
-            // be a reference to another path, which is something that happens during refinement.
-            if val.is_path_alias() {
+            if val.refers_to_unknown_location() {
+                // self is an alias for val
                 return Path::get_as_path(val.clone());
             }
         };
@@ -626,7 +635,7 @@ impl PathRefinement for Rc<Path> {
         // canonical.
         match &self.value {
             PathEnum::Alias { value } => {
-                if value.is_path_alias() {
+                if value.refers_to_unknown_location() {
                     Path::get_as_path(value.clone())
                 } else {
                     self.clone()
@@ -660,14 +669,8 @@ impl PathRefinement for Rc<Path> {
                 if let PathEnum::Alias { value } = &refined_qualifier.value {
                     if *refined_selector.as_ref() == PathSelector::Deref {
                         if let Expression::Reference(path) = &value.expression {
-                            // We have a *&path sequence. If path is a is heap block, we
-                            // turn self into path[0]. If not, we drop the sequence and return path.
-                            return if matches!(&path.value, PathEnum::HeapBlock {..}) {
-                                Path::new_index(path.clone(), Rc::new(0u128.into()))
-                                    .refine_paths(environment)
-                            } else {
-                                path.clone()
-                            };
+                            // *&path during refinement just becomes path
+                            return path.clone();
                         }
                     }
                     if let Expression::Reference(path) = &value.expression {
@@ -701,62 +704,14 @@ impl PathRefinement for Rc<Path> {
                             }
                         }
                         Expression::Variable { path, .. } => {
-                            // if path is a deref we just drop it because it becomes implicit
-                            if let PathEnum::QualifiedPath {
-                                qualifier,
-                                selector: var_path_selector,
-                                ..
-                            } = &path.value
-                            {
-                                if let PathSelector::Deref = var_path_selector.as_ref() {
-                                    // drop the explicit deref
-                                    return Path::new_qualified(
-                                        qualifier.clone(),
-                                        refined_selector,
-                                    );
-                                }
-                            }
                             return Path::new_qualified(path.clone(), refined_selector);
                         }
-                        Expression::Reference(path) => {
-                            match refined_selector.as_ref() {
-                                PathSelector::Deref => {
-                                    // We have a *&path sequence. If path is a is heap block, we
-                                    // turn self into path[0]. If not, we drop the sequence and return path.
-                                    return if matches!(&path.value, PathEnum::HeapBlock {..}) {
-                                        Path::new_index(path.clone(), Rc::new(0u128.into()))
-                                            .refine_paths(environment)
-                                    } else {
-                                        path.clone()
-                                    };
-                                }
-                                _ => {
-                                    // drop the explicit reference
-                                    return Path::new_qualified(
-                                        path.clone(),
-                                        refined_selector.clone(),
-                                    );
-                                }
-                            }
-                        }
                         _ => {
-                            if val.is_path_alias() {
+                            if val.refers_to_unknown_location() {
                                 return Path::new_qualified(
                                     Path::get_as_path(val.clone()),
                                     refined_selector,
                                 );
-                            }
-                        }
-                    }
-                    if let Expression::Reference(path) = &val.expression {
-                        match refined_selector.as_ref() {
-                            PathSelector::Deref => {
-                                // if selector is a deref we can just drop the &* sequence
-                                return path.clone();
-                            }
-                            _ => {
-                                // drop the explicit reference
-                                return Path::new_qualified(path.clone(), refined_selector.clone());
                             }
                         }
                     }

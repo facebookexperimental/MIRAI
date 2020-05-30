@@ -999,14 +999,19 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // So lets see if !cond_val is provably false.
                 let not_cond_expr = &cond_val.logical_not().expression;
                 let smt_expr = self.bv.smt_solver.get_as_smt_predicate(not_cond_expr);
-                if self.bv.smt_solver.solve_expression(&smt_expr) == SmtResult::Unsatisfiable {
+                let result = self.bv.smt_solver.solve_expression(&smt_expr);
+                if result == SmtResult::Unsatisfiable {
                     // The solver can prove that !cond_val is always false.
                     Some(true)
                 } else {
+                    trace!("result {:?}", result);
                     None
                 }
             }
-            _ => None,
+            _ => {
+                trace!("time out");
+                None
+            }
         }
     }
 
@@ -1258,16 +1263,26 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             } = &value_path.value
             {
                 if let PathSelector::Deref = selector.as_ref() {
-                    if let PathEnum::QualifiedPath {
-                        qualifier,
-                        selector,
-                        ..
-                    } = &qualifier.value
-                    {
-                        checked_assume!(matches!(selector.as_ref(), PathSelector::Field(0)));
-                        value_path = qualifier.clone();
-                    } else {
-                        value_path = qualifier.clone();
+                    let qualifier_type = self
+                        .bv
+                        .type_visitor
+                        .get_path_rustc_type(qualifier, self.bv.current_span);
+                    if type_visitor::is_slice_pointer(&qualifier_type.kind) {
+                        // de-referencing a slice pointer is normally the same as de-referencing its
+                        // thin pointer, so self.visit_place above assumed that much.
+                        // In this context, however, we want the length of the slice pointer,
+                        // so we need to drop the thin pointer field selector.
+                        if let PathEnum::QualifiedPath {
+                            qualifier,
+                            selector,
+                            ..
+                        } = &qualifier.value
+                        {
+                            checked_assume!(matches!(selector.as_ref(), PathSelector::Field(0)));
+                            value_path = qualifier.clone();
+                        } else {
+                            assume_unreachable!("deref of a slice pointer did not produce ptr.0");
+                        }
                     }
                 } else {
                     assume_unreachable!("{:?}", selector);
@@ -1756,7 +1771,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             end,
                         }) = &literal.val
                         {
-                            return self.get_value_from_slice(&ty.kind, data, *start, *end);
+                            return self.get_reference_to_slice(&ty.kind, data, *start, *end);
                         } else {
                             debug!("unsupported val of type Ref: {:?}", literal);
                             unimplemented!();
@@ -1929,7 +1944,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 assume_unreachable!();
             }
             rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
-                self.get_value_from_slice(&ty.kind, *data, *start, *end)
+                self.get_reference_to_slice(&ty.kind, *data, *start, *end)
             }
             _ => {
                 debug!("span: {:?}", self.bv.current_span);
@@ -2016,7 +2031,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     /// Used only for `&[u8]` and `&str`
-    fn get_value_from_slice(
+    #[logfn_inputs(TRACE)]
+    fn get_reference_to_slice(
         &mut self,
         ty: &TyKind<'tcx>,
         data: &'tcx mir::interpret::Allocation,
@@ -2054,16 +2070,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     let len_val: Rc<AbstractValue> =
                         Rc::new(ConstantDomain::U128(s.len() as u128).into());
 
-                    let fat_pointer_path = Path::new_alias(string_val.clone());
-                    let pointer_path = Path::new_field(fat_pointer_path.clone(), 0);
+                    let str_path = Path::new_alias(string_val.clone());
                     self.bv
                         .current_environment
-                        .update_value_at(pointer_path, string_val.clone());
-                    let len_path = Path::new_length(fat_pointer_path);
+                        .update_value_at(str_path.clone(), string_val);
+
+                    let len_path = Path::new_length(str_path.clone());
                     self.bv
                         .current_environment
                         .update_value_at(len_path, len_val);
-                    string_val
+                    AbstractValue::make_reference(str_path)
                 }
                 _ => assume_unreachable!(),
             },
@@ -2157,8 +2173,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             }
                             .into(),
                         );
-                        let rustc_ty = self.bv.tcx.type_of(def_id);
-                        return self.bv.lookup_path_and_refine_result(path, rustc_ty);
+                        return AbstractValue::make_reference(path);
                     }
                     let alloc = self.bv.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
                     let alloc_len = alloc.len() as u64;
@@ -2214,11 +2229,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let array_value = self
             .bv
             .get_new_heap_block(byte_len_value, alignment, false, array_ty);
-        let array_path = Path::get_as_path(array_value.clone());
-        let thin_pointer_path = Path::new_field(array_path.clone(), 0);
-        self.bv
-            .current_environment
-            .update_value_at(thin_pointer_path, array_value);
+        let array_path = Path::get_as_path(array_value);
         let mut last_index: u128 = 0;
         for (i, operand) in self
             .get_element_values(bytes, elem_type, len)
@@ -2448,13 +2459,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         &result,
                         ty,
                     ) {
+                        let thin_pointer_path =
+                            thin_pointer_path.refine_paths(&self.bv.current_environment);
                         let thin_ptr_type = self
                             .bv
                             .type_visitor
                             .get_path_rustc_type(&thin_pointer_path, self.bv.current_span);
                         ty = type_visitor::get_target_type(thin_ptr_type);
-                        // defer refinement of thin_pointer_path until it is clear that it does not
-                        // become the operand location for an address_of operation.
                         let deref_path = Path::new_qualified(thin_pointer_path, Rc::new(selector));
                         self.bv
                             .type_visitor

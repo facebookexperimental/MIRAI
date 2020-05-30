@@ -638,12 +638,11 @@ impl Expression {
                 cases,
                 default,
             } => {
-                let mut result = discriminator.expression.contains_local_variable();
-                for (case_val, case_result) in cases {
-                    result |= case_val.expression.contains_local_variable();
-                    result |= case_result.expression.contains_local_variable();
-                }
-                result | default.expression.contains_local_variable()
+                discriminator.expression.contains_local_variable()
+                    || default.expression.contains_local_variable()
+                    || cases
+                        .iter()
+                        .any(|(_, v)| v.expression.contains_local_variable())
             }
             Expression::Top => true,
             Expression::UninterpretedCall { .. } => true,
@@ -926,7 +925,7 @@ impl From<&ConstantDomain> for ExpressionType {
             ConstantDomain::I128(..) => I128,
             ConstantDomain::F64(..) => F64,
             ConstantDomain::F32(..) => F32,
-            ConstantDomain::Str(..) => NonPrimitive,
+            ConstantDomain::Str(..) => ThinPointer,
             ConstantDomain::True => Bool,
             ConstantDomain::U128(..) => U128,
             ConstantDomain::Unimplemented => NonPrimitive,

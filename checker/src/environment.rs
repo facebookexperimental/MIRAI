@@ -56,7 +56,7 @@ impl Environment {
     }
 
     /// Updates the path to value map so that the given path now points to the given value.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
         if value.is_bottom() || value.is_top() {
             self.value_map = self.value_map.remove(&path);
@@ -107,7 +107,9 @@ impl Environment {
                     alternate,
                 } = &value.expression
                 {
-                    if consequent.is_path_alias() && alternate.is_path_alias() {
+                    if consequent.refers_to_unknown_location()
+                        && alternate.refers_to_unknown_location()
+                    {
                         return Some((
                             condition.clone(),
                             Path::new_alias(consequent.refine_with(condition, 0)),

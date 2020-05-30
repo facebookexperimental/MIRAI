@@ -17,7 +17,8 @@ fn fact(n: u8) -> u128 {
     } else {
         let n1fac = fact(n - 1);
         verify!(n1fac <= std::u128::MAX / (n as u128));
-        (n as u128) * n1fac
+        // todo: figure out why Z3 times out on this query
+        (n as u128) * n1fac //~ possible attempt to multiply with overflow
     }
 }
 

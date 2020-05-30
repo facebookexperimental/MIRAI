@@ -916,6 +916,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn inline_indirectly_called_function(&mut self) {
         checked_assume!(self.actual_args.len() == 2);
+        trace!("self.actual_args {:?}", self.actual_args);
+        trace!(
+            "self.actual_argument_types {:?}",
+            self.actual_argument_types
+        );
         // Get the function to call (it is either a function pointer or a closure)
         let callee = self.actual_args[0].1.clone();
 
@@ -959,13 +964,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         // Prepend the closure (if there is one) to the unpacked arguments vector.
         // Also update the Self parameter in the arguments map.
         let mut closure_ty = self.actual_argument_types[0];
+        let closure_ref_ty;
         if let TyKind::Ref(_, ty, _) = closure_ty.kind {
+            closure_ref_ty = closure_ty;
             closure_ty = ty;
+        } else {
+            let tcx = self.block_visitor.bv.tcx;
+            closure_ref_ty = tcx.mk_mut_ref(tcx.lifetimes.re_static, closure_ty);
         }
         let mut argument_map = self.callee_generic_argument_map.clone();
         if type_visitor::get_def_id_from_closure(closure_ty).is_some() {
             actual_args.insert(0, self.actual_args[0].clone());
-            actual_argument_types.insert(0, closure_ty);
+            actual_argument_types.insert(0, closure_ref_ty);
             if let TyKind::Closure(_, substs) = closure_ty.kind {
                 let mut map = argument_map.unwrap_or_else(HashMap::new);
                 if let Some(ty) = substs.types().next() {
@@ -999,9 +1009,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             indirect_call_visitor.destination = self.destination;
             let summary = indirect_call_visitor.get_function_summary();
             if let Some(summary) = summary {
+                trace!("summary {:?}", summary);
+                trace!("target {:?} arguments {:?}", self.destination, actual_args);
                 indirect_call_visitor.check_preconditions_if_necessary(&summary);
                 indirect_call_visitor.transfer_and_refine_normal_return_state(&summary);
                 indirect_call_visitor.transfer_and_refine_cleanup_state(&summary);
+                trace!("post env {:?}", self.block_visitor.bv.current_environment);
                 return;
             } else {
                 self.deal_with_missing_summary();
@@ -1903,21 +1916,32 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         }
     }
 
-    /// Extracts the string from an AbstractDomain that is required to be a string literal.
+    /// Extracts the string from an AbstractDomain that is required to be a reference to a string literal.
     /// This is the case for helper MIRAI helper functions that are hidden in the documentation
     /// and that are required to be invoked via macros that ensure that the argument providing
     /// this value is always a string literal.
     #[logfn_inputs(TRACE)]
     fn coerce_to_string(&mut self, path: &Rc<Path>) -> Rc<String> {
-        let tcx = self.block_visitor.bv.cv.tcx;
-        let str_ty = tcx.mk_str();
-        let thin_ptr_path = Path::new_field(path.clone(), 0);
-        let value = self
-            .block_visitor
-            .bv
-            .lookup_path_and_refine_result(thin_ptr_path, str_ty);
-        if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
-            return s.clone();
+        if let PathEnum::Alias { value } = &path.value {
+            if let Expression::Reference(path) = &value.expression {
+                if let PathEnum::Alias { value } = &path.value {
+                    if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) =
+                        &value.expression
+                    {
+                        return s.clone();
+                    }
+                }
+            }
+        } else if let Some(value) = self.block_visitor.bv.current_environment.value_at(path) {
+            if let Expression::Reference(path) = &value.expression {
+                if let PathEnum::Alias { value } = &path.value {
+                    if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) =
+                        &value.expression
+                    {
+                        return s.clone();
+                    }
+                }
+            }
         }
         if self.block_visitor.bv.check_for_errors {
             let warning = self.block_visitor.bv.cv.session.struct_span_warn(
