@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that uses built-in contracts for the Vec struct.
+// A test that checks that closure fields are tracked accurately.
 
 #[macro_use]
 extern crate mirai_annotations;

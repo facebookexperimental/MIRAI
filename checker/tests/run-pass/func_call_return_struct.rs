@@ -7,7 +7,7 @@
 // A test that uses a function summary where the return value is a structure.
 
 // MIRAI_FLAGS -- -Z mir-opt-level=0
-//todo: figure out why this fails with more optimization
+//todo: implement deserialization of constant structs
 
 #[macro_use]
 extern crate mirai_annotations;

@@ -382,10 +382,21 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     }
                 }
                 result.unwrap_or_else(|| {
-                    let result = if let PathEnum::LocalVariable { .. } = path.value {
-                        refined_val
-                    } else {
-                        AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
+                    let result = match &path.value {
+                        PathEnum::HeapBlock { value } => {
+                            if let Expression::HeapBlock { is_zeroed, .. } = value.expression {
+                                if is_zeroed {
+                                    if result_type.is_signed_integer() {
+                                        return self.get_i128_const_val(0);
+                                    } else if result_type.is_unsigned_integer() {
+                                        return self.get_u128_const_val(0);
+                                    }
+                                }
+                            }
+                            AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
+                        }
+                        PathEnum::LocalVariable { .. } => refined_val,
+                        _ => AbstractValue::make_typed_unknown(result_type.clone(), path.clone()),
                     };
                     if result_type != ExpressionType::NonPrimitive {
                         self.current_environment
@@ -413,10 +424,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         {
             return Rc::new(abstract_value::TRUE);
         }
+        let expression_type = result.expression.infer_type();
         if (result_type != ExpressionType::ThinPointer
             && result_type != ExpressionType::NonPrimitive)
-            && (result.expression.infer_type() == ExpressionType::ThinPointer
-                || result.expression.infer_type() == ExpressionType::NonPrimitive)
+            && (expression_type == ExpressionType::ThinPointer
+                || expression_type == ExpressionType::NonPrimitive)
         {
             result.dereference(result_type)
         } else {
@@ -462,7 +474,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// Also imports the static in that case, so looking up the path again when this returns
     /// true is the thing to do.
     #[logfn_inputs(TRACE)]
-    fn imported_root_static(&mut self, path: &Rc<Path>) -> bool {
+    pub fn imported_root_static(&mut self, path: &Rc<Path>) -> bool {
         if let PathEnum::StaticVariable {
             def_id,
             summary_cache_key,
@@ -727,77 +739,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         environment.update_value_at(promoted_root.clone(), value.clone());
                     }
                     Expression::Reference(local_path) => {
-                        // local_path is reference to a local of the promoted constant function.
-                        // Unlike other locals, it appears that the life time of promoted constant
-                        // function local can exceed the life time of the of promoted constant function
-                        // and the function that hosts it.
-                        let target_type = type_visitor::get_target_type(result_rustc_type);
-                        if ExpressionType::from(&target_type.kind).is_primitive() {
-                            // kind of weird, but seems to be generated for debugging support.
-                            // Move the value into an alias path, so that we can drop the reference to the soon to be dead local.
-                            let target_value = self
-                                .exit_environment
-                                .as_ref()
-                                .unwrap()
-                                .value_map
-                                .get(local_path)
-                                .expect("expect reference target to have a value");
-                            let value_path = Path::get_as_path(target_value.clone());
-                            let promoted_value =
-                                AbstractValue::make_from(Expression::Reference(value_path), 1);
-                            environment.update_value_at(promoted_root.clone(), promoted_value);
-                        } else {
-                            // A composite value needs to get to get promoted to the heap
-                            // in order to propagate it via function summaries.
-                            let byte_size = self.type_visitor.get_type_size(target_type);
-                            let byte_size_value = self.get_u128_const_val(byte_size as u128);
-                            let elem_size = self
-                                .type_visitor
-                                .get_type_size(type_visitor::get_element_type(target_type));
-                            let alignment: Rc<AbstractValue> = Rc::new(
-                                (match elem_size {
-                                    0 => 1,
-                                    1 | 2 | 4 | 8 => elem_size,
-                                    _ => 8,
-                                } as u128)
-                                    .into(),
-                            );
-                            let heap_value = self.get_new_heap_block(
-                                byte_size_value,
-                                alignment,
-                                false,
-                                target_type,
-                            );
-                            let heap_root = Path::get_as_path(heap_value.clone());
-                            for (path, value) in self
-                                .exit_environment
-                                .as_ref()
-                                .unwrap()
-                                .value_map
-                                .iter()
-                                .filter(|(p, _)| (*p) == local_path || p.is_rooted_by(local_path))
-                            {
-                                let renamed_path = path.replace_root(local_path, heap_root.clone());
-                                environment.update_value_at(renamed_path, value.clone());
-                            }
-                            if type_visitor::is_slice_pointer(&target_type.kind) {
-                                let promoted_thin_pointer_path =
-                                    Path::new_field(promoted_root.clone(), 0);
-                                environment.update_value_at(promoted_thin_pointer_path, heap_value);
-                                let length_value = self
-                                    .exit_environment
-                                    .as_ref()
-                                    .unwrap()
-                                    .value_map
-                                    .get(&Path::new_length(local_path.clone()))
-                                    .unwrap_or_else(|| assume_unreachable!("promoted constant slice source is expected to have a length value, see source at {:?}", self.current_span))
-                                    .clone();
-                                let length_path = Path::new_length(promoted_root);
-                                environment.update_value_at(length_path, length_value);
-                            } else {
-                                environment.update_value_at(promoted_root.clone(), heap_value);
-                            }
-                        }
+                        self.promote_reference(
+                            &mut environment,
+                            result_rustc_type,
+                            &promoted_root,
+                            local_path,
+                            ordinal,
+                        );
                     }
                     _ => {
                         for (path, value) in self
@@ -825,6 +773,90 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         self.mir = saved_mir;
         self.type_visitor.mir = saved_mir;
         environment
+    }
+
+    /// local_path is reference to a local of the promoted constant function.
+    /// Unlike other locals, it appears that the life time of promoted constant
+    /// function local can exceed the life time of the of promoted constant function
+    /// and even the function that hosts it.
+    fn promote_reference(
+        &mut self,
+        environment: &mut Environment,
+        result_rustc_type: Ty<'tcx>,
+        promoted_root: &Rc<Path>,
+        local_path: &Rc<Path>,
+        mut ordinal: usize,
+    ) {
+        let target_type = type_visitor::get_target_type(result_rustc_type);
+        if ExpressionType::from(&target_type.kind).is_primitive() {
+            // Kind of weird, but seems to be generated for debugging support.
+            // Move the value into an alias path, so that we can drop the reference to the soon to be dead local.
+            let target_value = self
+                .exit_environment
+                .as_ref()
+                .unwrap()
+                .value_map
+                .get(local_path)
+                .expect("expect reference target to have a value");
+            let value_path = Path::get_as_path(target_value.clone());
+            let promoted_value = AbstractValue::make_from(Expression::Reference(value_path), 1);
+            environment.update_value_at(promoted_root.clone(), promoted_value);
+        } else if let TyKind::Ref(_, ty, _) = &target_type.kind {
+            // Really weird. Promoting a reference to a reference. Seems to be there for debugging.
+            // We see it for constant strings, so kind of like primitive values.
+            ordinal += 99;
+            let value_path: Rc<Path> = Rc::new(PathEnum::PromotedConstant { ordinal }.into());
+            self.promote_reference(environment, ty, &value_path, local_path, ordinal);
+            let promoted_value = AbstractValue::make_from(Expression::Reference(value_path), 1);
+            environment.update_value_at(promoted_root.clone(), promoted_value);
+        } else {
+            // A composite value needs to get to get promoted to the heap
+            // in order to propagate it via function summaries.
+            let byte_size = self.type_visitor.get_type_size(target_type);
+            let byte_size_value = self.get_u128_const_val(byte_size as u128);
+            let elem_size = self
+                .type_visitor
+                .get_type_size(type_visitor::get_element_type(target_type));
+            let alignment: Rc<AbstractValue> = Rc::new(
+                (match elem_size {
+                    0 => 1,
+                    1 | 2 | 4 | 8 => elem_size,
+                    _ => 8,
+                } as u128)
+                    .into(),
+            );
+            let heap_value =
+                self.get_new_heap_block(byte_size_value, alignment, false, target_type);
+            let heap_root = Path::get_as_path(heap_value);
+            for (path, value) in self
+                .exit_environment
+                .as_ref()
+                .unwrap()
+                .value_map
+                .iter()
+                .filter(|(p, _)| (*p) == local_path || p.is_rooted_by(local_path))
+            {
+                let renamed_path = path.replace_root(local_path, heap_root.clone());
+                environment.update_value_at(renamed_path, value.clone());
+            }
+            let thin_pointer_to_heap = AbstractValue::make_reference(heap_root);
+            if type_visitor::is_slice_pointer(&target_type.kind) {
+                let promoted_thin_pointer_path = Path::new_field(promoted_root.clone(), 0);
+                environment.update_value_at(promoted_thin_pointer_path, thin_pointer_to_heap);
+                let length_value = self
+                    .exit_environment
+                    .as_ref()
+                    .unwrap()
+                    .value_map
+                    .get(&Path::new_length(local_path.clone()))
+                    .unwrap_or_else(|| assume_unreachable!("promoted constant slice source is expected to have a length value, see source at {:?}", self.current_span))
+                    .clone();
+                let length_path = Path::new_length(promoted_root.clone());
+                environment.update_value_at(length_path, length_value);
+            } else {
+                environment.update_value_at(promoted_root.clone(), thin_pointer_to_heap);
+            }
+        }
     }
 
     /// Computes a fixed point over the blocks of the MIR for a promoted constant block
@@ -916,9 +948,14 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .refine_parameters(arguments, self.fresh_variable_offset)
                 .replace_root(&refined_dummy_root, target_path.clone())
                 .refine_paths(&self.current_environment);
-            let rvalue = value
-                .refine_parameters(arguments, self.fresh_variable_offset)
-                .refine_paths(&self.current_environment);
+            let uncanonicalized_rvalue =
+                value.refine_parameters(arguments, self.fresh_variable_offset);
+            if let Expression::Variable { path, .. } = &uncanonicalized_rvalue.expression {
+                // If the path contains a root that is a static, this will import the static into
+                // the calling scope.
+                self.imported_root_static(path);
+            }
+            let rvalue = uncanonicalized_rvalue.refine_paths(&self.current_environment);
             trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
@@ -1080,7 +1117,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         .current_environment
                         .value_map
                         .iter()
-                        .filter(|(p, _)| p.is_rooted_by(&qualifier))
+                        .filter(|(p, _)| (**p) == *qualifier || p.is_rooted_by(&qualifier))
                     {
                         purged_map = purged_map.remove(path);
                     }
@@ -1448,12 +1485,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
                 value_map = value_map.insert(qualified_path.clone(), value.clone());
-                value_map = Self::expand_aliased_string_literals_if_appropriate(
-                    &qualified_path,
-                    root_rustc_type,
-                    value_map,
-                    &value,
-                );
                 no_children = false;
             }
         }
@@ -1465,6 +1496,24 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 value_map = value_map.remove(&source_path);
             } else {
                 trace!("copying {:?} to {:?}", value, target_path);
+            }
+            if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
+                // The value is a string literal. See if the target will treat it as &[u8].
+                if let TyKind::Ref(_, ty, _) = root_rustc_type.kind {
+                    if let TyKind::Slice(elem_ty) = ty.kind {
+                        if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
+                            self.current_environment.value_map =
+                                Self::expand_aliased_string_literals_if_appropriate(
+                                    &target_path,
+                                    root_rustc_type,
+                                    value_map,
+                                    &value,
+                                    s,
+                                );
+                            return;
+                        }
+                    }
+                }
             }
             self.current_environment.value_map = value_map;
             self.current_environment.update_value_at(target_path, value);
@@ -1606,37 +1655,26 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         target_path_rustc_ty: Ty<'tcx>,
         mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>>,
         value: &Rc<AbstractValue>,
+        str_val: &str,
     ) -> HashTrieMap<Rc<Path>, Rc<AbstractValue>> {
-        if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
-            // The value is a string literal
-            if let PathEnum::QualifiedPath { selector, .. } = &target_path.value {
-                if let PathSelector::Field(i) = selector.as_ref() {
-                    if *i == 0 {
-                        // It is being copied to field 0 of a struct
-                        if let TyKind::Ref(_, ty, _) = target_path_rustc_ty.kind {
-                            if let TyKind::Slice(elem_ty) = ty.kind {
-                                if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
-                                    // The type of the struct is &[u8], so the struct now
-                                    // provides a way to look at individual characters. The value of the
-                                    // struct will be a fat pointer that points to the string literal,
-                                    // so we need to augment the environment with character information for
-                                    // the string literal. We could have done this at the time we created
-                                    // the string literal, but doing it on demand works out better for us.
-                                    let collection_path = Path::new_alias(value.clone());
-                                    for (i, ch) in s.as_bytes().iter().enumerate() {
-                                        let index = Rc::new((i as u128).into());
-                                        let ch_const = Rc::new((*ch as u128).into());
-                                        let path = Path::new_index(collection_path.clone(), index);
-                                        value_map = value_map.insert(path, ch_const);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        let collection_path = Path::new_alias(value.clone());
+        // Create index elements
+        for (i, ch) in str_val.as_bytes().iter().enumerate() {
+            let index = Rc::new((i as u128).into());
+            let ch_const = Rc::new((*ch as u128).into());
+            let path = Path::new_index(collection_path.clone(), index);
+            value_map = value_map.insert(path, ch_const);
         }
-        value_map
+        // Arrays have a length field
+        let length_val: Rc<AbstractValue> = Rc::new((str_val.len() as u128).into());
+        let str_length_path = Path::new_length(collection_path);
+        value_map = value_map.insert(str_length_path, length_val.clone());
+        // The target path is a fat pointer, initialize it.
+        let thin_pointer_path = Path::new_field(target_path.clone(), 0);
+        let thin_pointer_to_str = AbstractValue::make_reference(Path::get_as_path(value.clone()));
+        value_map = value_map.insert(thin_pointer_path, thin_pointer_to_str);
+        let slice_length_path = Path::new_length(target_path.clone());
+        value_map.insert(slice_length_path, length_val)
     }
 
     /// Get the length of an array. Will be a compile time constant if the array length is known.

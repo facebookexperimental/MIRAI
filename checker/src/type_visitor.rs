@@ -435,11 +435,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
     /// Returns true if the given type is a reference (or raw pointer) to a collection type, in which
     /// case the reference/pointer independently tracks the length of the collection, thus effectively
     /// tracking a slice of the underlying collection.
+    #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
     pub fn starts_with_slice_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
         match ty_kind {
             TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
                 // Pointers to sized arrays are thin pointers.
-                matches!(&target.kind, TyKind::Slice(..) | TyKind::Str)
+                matches!(&target.kind, TyKind::Slice(..))
             }
             TyKind::Adt(def, substs) => {
                 for v in def.variants.iter() {
@@ -744,7 +746,7 @@ pub fn get_target_type(ty: Ty<'_>) -> Ty<'_> {
 pub fn is_slice_pointer(ty_kind: &TyKind<'_>) -> bool {
     if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
         // Pointers to sized arrays are thin pointers.
-        matches!(&target.kind, TyKind::Slice(..) | TyKind::Str)
+        matches!(&target.kind, TyKind::Slice(..))
     } else {
         false
     }

@@ -312,7 +312,6 @@ pub trait AbstractValueTrait: Sized {
     fn is_bottom(&self) -> bool;
     fn is_compile_time_constant(&self) -> bool;
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
-    fn is_path_alias(&self) -> bool;
     fn is_top(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
@@ -325,6 +324,7 @@ pub trait AbstractValueTrait: Sized {
     fn offset(&self, other: Self) -> Self;
     fn or(&self, other: Self) -> Self;
     fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>);
+    fn refers_to_unknown_location(&self) -> bool;
     fn remainder(&self, other: Self) -> Self;
     fn shift_left(&self, other: Self) -> Self;
     fn shl_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
@@ -744,6 +744,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Join { left, right, path } => left
                 .cast(target_type.clone())
                 .join(right.cast(target_type), &path),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator.switch(
+                cases
+                    .iter()
+                    .map(|(case_val, result_val)| {
+                        (case_val.clone(), result_val.cast(target_type.clone()))
+                    })
+                    .collect(),
+                default.cast(target_type),
+            ),
             _ => {
                 match &self.expression {
                     // [(x as t1) as target_type] -> x as target_type if t1.max_value() >= target_type.max_value()
@@ -1506,26 +1519,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
-    /// True if the value is derived from one or more memory locations whose values were not known
-    /// when the value was constructed.
-    #[logfn_inputs(TRACE)]
-    fn is_path_alias(&self) -> bool {
-        match &self.expression {
-            Expression::HeapBlock { .. }
-            | Expression::Reference(..)
-            | Expression::UninterpretedCall { .. }
-            | Expression::Variable { .. }
-            | Expression::Widen { .. } => true,
-            Expression::Cast { operand, .. } => operand.is_path_alias(),
-            Expression::ConditionalExpression {
-                consequent,
-                alternate,
-                ..
-            } => consequent.is_path_alias() || alternate.is_path_alias(),
-            _ => false,
-        }
-    }
-
     /// True if all possible concrete values are elements of the set corresponding to this domain.
     #[logfn_inputs(TRACE)]
     fn is_top(&self) -> bool {
@@ -2015,6 +2008,43 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         self.expression.record_heap_blocks(result);
+    }
+
+    /// True if the value is derived from one or more memory locations whose addresses were not known
+    /// when the value was constructed. Refining such values in the current environment could
+    /// resolve them to particular locations and those locations may have more useful associated values.
+    #[logfn_inputs(TRACE)]
+    fn refers_to_unknown_location(&self) -> bool {
+        match &self.expression {
+            Expression::Cast { operand, .. } => operand.refers_to_unknown_location(),
+            Expression::ConditionalExpression {
+                consequent,
+                alternate,
+                ..
+            } => consequent.refers_to_unknown_location() || alternate.refers_to_unknown_location(),
+            Expression::Join { left, right, .. } => {
+                left.refers_to_unknown_location() || right.refers_to_unknown_location()
+            }
+            Expression::Reference(..) => true,
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                discriminator.refers_to_unknown_location()
+                    || default.refers_to_unknown_location()
+                    || cases.iter().any(|(_, v)| v.refers_to_unknown_location())
+            }
+            Expression::UninterpretedCall { path, .. }
+            | Expression::Variable { path, .. }
+            | Expression::Widen { path, .. } => {
+                if let PathEnum::Alias { value } = &path.value {
+                    return value.refers_to_unknown_location();
+                }
+                false
+            }
+            _ => false,
+        }
     }
 
     /// Returns an element that is "self % other".
