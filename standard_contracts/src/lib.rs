@@ -5,6 +5,7 @@
 //
 
 #![feature(allocator_api)]
+#![feature(backtrace)]
 
 #[macro_use]
 extern crate mirai_annotations;
