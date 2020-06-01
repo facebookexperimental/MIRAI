@@ -1984,6 +1984,14 @@ pub mod core {
 pub mod libc {
     pub mod unix {
         pub mod _1 {
+            pub fn dlsym() -> u64 {
+                0
+            }
+
+            pub fn open() -> u64 {
+                0
+            }
+
             pub fn pthread_mutex_lock() -> u64 {
                 0
             }
@@ -1994,6 +2002,18 @@ pub mod libc {
 
             pub fn pthread_mutex_unlock() -> u64 {
                 0
+            }
+
+            pub fn read() -> u64 {
+                0
+            }
+        }
+
+        pub mod bsd {
+            pub mod apple {
+                pub fn __error() -> i32 {
+                    -1
+                }
             }
         }
     }
@@ -2101,6 +2121,14 @@ pub mod rand {
 }
 
 pub mod std {
+    pub mod backtrace {
+        pub mod implement_backtrace {
+            pub fn capture() -> (std::backtrace::BacktraceStatus) {
+                (std::backtrace::BacktraceStatus::Unsupported)
+            }
+        }
+    }
+
     pub mod collections {
         pub mod hash {
             pub mod map {
