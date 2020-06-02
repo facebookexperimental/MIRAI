@@ -233,10 +233,14 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     }
                                 }
                             }
-                            TyKind::Closure(.., subs) => {
-                                if *ordinal + 4 < subs.len() {
-                                    return subs.as_ref()[*ordinal + 4].expect_ty();
-                                }
+                            TyKind::Closure(def_id, subs) => {
+                                let _ = def_id;
+                                return subs.types().nth(*ordinal).unwrap_or_else(|| {
+                                    unrecoverable!(format!(
+                                        "closure field not found {:?} {:?}",
+                                        def_id, ordinal
+                                    ))
+                                });
                             }
                             TyKind::Tuple(types) => {
                                 if let Some(gen_arg) = types.get(*ordinal as usize) {
