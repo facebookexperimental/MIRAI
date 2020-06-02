@@ -1457,6 +1457,28 @@ pub mod core {
     }
 
     pub mod iter {
+        pub mod adapters {
+            pub mod zip {
+                pub mod ZipImpl {
+                    pub struct Zip<A, B> {
+                        a: A,
+                        b: B,
+                        // index and len are only used by the specialized version of zip
+                        index: usize,
+                        len: usize,
+                    }
+                    pub fn new<A, B>(a: A, b: B) -> Zip<A, B> {
+                        Zip {
+                            a,
+                            b,
+                            index: 0,
+                            len: 0,
+                        }
+                    }
+                }
+            }
+        }
+
         pub mod raw_vec {
             pub fn capacity_overflow() {
                 // Not something that can be prevented statically.
