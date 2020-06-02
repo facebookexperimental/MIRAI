@@ -24,28 +24,24 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 
-pub struct TypeVisitor<'analysis, 'tcx> {
+pub struct TypeVisitor<'tcx> {
     pub actual_argument_types: Vec<Ty<'tcx>>,
     pub def_id: DefId,
     pub generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
     pub generic_arguments: Option<SubstsRef<'tcx>>,
-    pub mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
+    pub mir: &'tcx mir::Body<'tcx>,
     pub path_ty_cache: HashMap<Rc<Path>, Ty<'tcx>>,
     tcx: TyCtxt<'tcx>,
 }
 
-impl<'analysis, 'tcx> Debug for TypeVisitor<'analysis, 'tcx> {
+impl<'analysis, 'tcx> Debug for TypeVisitor<'tcx> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "TypeVisitor".fmt(f)
     }
 }
 
-impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
-    pub fn new(
-        def_id: DefId,
-        mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
-        tcx: TyCtxt<'tcx>,
-    ) -> TypeVisitor<'analysis, 'tcx> {
+impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
+    pub fn new(def_id: DefId, mir: &'tcx mir::Body<'tcx>, tcx: TyCtxt<'tcx>) -> TypeVisitor<'tcx> {
         TypeVisitor {
             actual_argument_types: Vec::new(),
             def_id,
@@ -593,10 +589,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                     ExistentialPredicate<'tcx>,
                 >| {
                     self.tcx.mk_existential_predicates(predicates.iter().map(
-                        |pred: &ExistentialPredicate<'tcx>| match pred {
+                        |pred: ExistentialPredicate<'tcx>| match pred {
                             ExistentialPredicate::Trait(ExistentialTraitRef { def_id, substs }) => {
                                 ExistentialPredicate::Trait(ExistentialTraitRef {
-                                    def_id: *def_id,
+                                    def_id,
                                     substs: self.specialize_substs(substs, map),
                                 })
                             }
@@ -605,11 +601,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
                                 substs,
                                 ty,
                             }) => ExistentialPredicate::Projection(ExistentialProjection {
-                                item_def_id: *item_def_id,
+                                item_def_id,
                                 substs: self.specialize_substs(substs, map),
                                 ty: self.specialize_generic_argument_type(ty, map),
                             }),
-                            ExistentialPredicate::AutoTrait(_) => *pred,
+                            ExistentialPredicate::AutoTrait(_) => pred,
                         },
                     ))
                 };
@@ -693,7 +689,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'analysis, 'tcx> {
     ) -> SubstsRef<'tcx> {
         let specialized_generic_args: Vec<GenericArg<'_>> = substs
             .iter()
-            .map(|gen_arg| self.specialize_generic_argument(*gen_arg, &map))
+            .map(|gen_arg| self.specialize_generic_argument(gen_arg, &map))
             .collect();
         self.tcx.intern_substs(&specialized_generic_args)
     }

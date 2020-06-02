@@ -5,6 +5,8 @@
 //
 
 // Tests constant folding of arithmetic binary operations that overflow
+#![allow(arithmetic_overflow)]
+#![allow(unconditional_panic)]
 
 #[macro_use]
 extern crate mirai_annotations;

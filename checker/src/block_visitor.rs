@@ -110,7 +110,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             } => self.visit_set_discriminant(place, *variant_index),
             mir::StatementKind::StorageLive(local) => self.visit_storage_live(*local),
             mir::StatementKind::StorageDead(local) => self.visit_storage_dead(*local),
-            mir::StatementKind::LlvmInlineAsm(inline_asm) => self.visit_inline_asm(inline_asm),
+            mir::StatementKind::LlvmInlineAsm(inline_asm) => self.visit_llvm_inline_asm(inline_asm),
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
             mir::StatementKind::AscribeUserType(..) => assume_unreachable!(),
             mir::StatementKind::Nop => (),
@@ -157,7 +157,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
     /// Execute a piece of inline Assembly.
     #[logfn_inputs(TRACE)]
-    fn visit_inline_asm(&mut self, inline_asm: &mir::LlvmInlineAsm<'tcx>) {
+    fn visit_llvm_inline_asm(&mut self, inline_asm: &mir::LlvmInlineAsm<'tcx>) {
         let span = self.bv.current_span;
         let err = self.bv.cv.session.struct_span_warn(
             span,
@@ -228,6 +228,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::TerminatorKind::GeneratorDrop => assume_unreachable!(),
             mir::TerminatorKind::FalseEdges { .. } => assume_unreachable!(),
             mir::TerminatorKind::FalseUnwind { .. } => assume_unreachable!(),
+            mir::TerminatorKind::InlineAsm { destination, .. } => {
+                self.visit_inline_asm(destination);
+            }
         }
     }
 
@@ -1012,6 +1015,26 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 trace!("time out");
                 None
             }
+        }
+    }
+
+    /// Execute a piece of inline Assembly.
+    #[logfn_inputs(TRACE)]
+    fn visit_inline_asm(&mut self, target: &Option<mir::BasicBlock>) {
+        let span = self.bv.current_span;
+        let diagnostic = self.bv.cv.session.struct_span_warn(
+            span,
+            "Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
+        );
+        self.bv.emit_diagnostic(diagnostic);
+        self.bv.assume_function_is_angelic = true;
+        if let Some(target) = target {
+            // Propagate the entry condition to the successor block.
+            self.bv.current_environment.exit_conditions = self
+                .bv
+                .current_environment
+                .exit_conditions
+                .insert(*target, self.bv.current_environment.entry_condition.clone());
         }
     }
 
@@ -1824,33 +1847,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 type_visitor::get_target_type(ty),
                             );
                         }
-                        rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
-                            let e_type = ExpressionType::from(&elem_type.kind);
-                            let id = self.bv.tcx.alloc_map.lock().create_memory_alloc(alloc);
-                            let len = alloc.len() as u64;
-                            let offset_in_bytes: u64 = offset.bytes();
-                            // The rust compiler should ensure this.
-                            assume!(len > offset_in_bytes);
-                            let num_bytes = len - offset_in_bytes;
-                            let ptr = mir::interpret::Pointer::new(id, *offset);
-                            //todo: this is all wrong. It gets the bytes that contains the reference,
-                            // not the bytes that the reference points to.
-                            // Right now it is not clear how to implement this.
-                            // Keeping this wrong behavior maintains the currently incorrect status quo.
-                            let bytes = alloc
-                                .get_bytes_with_undef_and_ptr(
-                                    &self.bv.tcx,
-                                    ptr,
-                                    rustc_target::abi::Size::from_bytes(num_bytes),
-                                )
-                                .unwrap();
-                            return self.deconstruct_reference_to_constant_array(
-                                &bytes,
-                                e_type,
-                                None,
-                                type_visitor::get_target_type(ty),
-                            );
-                        }
                         _ => {
                             debug!("unsupported val of type Ref: {:?}", literal);
                             unimplemented!();
@@ -1894,6 +1890,41 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                     ty,
                                 );
                             }
+                            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
+                                Scalar::Raw { data, size },
+                            )) => {
+                                let heap_val = self.bv.get_new_heap_block(
+                                    Rc::new((*size as u128).into()),
+                                    Rc::new(1u128.into()),
+                                    false,
+                                    ty,
+                                );
+                                let path_to_scalar = Path::get_path_to_field_at_offset_0(
+                                    self.bv.tcx,
+                                    &self.bv.current_environment,
+                                    &Path::get_as_path(heap_val.clone()),
+                                    ty,
+                                )
+                                .unwrap_or_else(|| {
+                                    unrecoverable!(
+                                        "expected serialized constant to be correct at {:?}",
+                                        self.bv.current_span
+                                    )
+                                });
+                                let scalar_ty = self
+                                    .bv
+                                    .type_visitor
+                                    .get_path_rustc_type(&path_to_scalar, self.bv.current_span);
+                                let scalar_val: Rc<AbstractValue> = Rc::new(
+                                    self.get_constant_from_scalar(&scalar_ty.kind, *data, *size)
+                                        .clone()
+                                        .into(),
+                                );
+                                self.bv
+                                    .current_environment
+                                    .update_value_at(path_to_scalar, scalar_val);
+                                return heap_val;
+                            }
                             _ => {
                                 debug!("span: {:?}", self.bv.current_span);
                                 debug!("type kind {:?}", ty.kind);
@@ -1915,7 +1946,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     /// Use for constants that are accessed via references
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn get_reference_to_constant(
         &mut self,
         literal: &rustc_middle::ty::Const<'tcx>,
@@ -1924,7 +1955,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         match &literal.val {
             rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
                 if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
-                    self.bv.tcx.alloc_map.lock().get(p.alloc_id)
+                    self.bv.tcx.get_global_alloc(p.alloc_id)
                 {
                     let name = utils::summary_key_str(self.bv.tcx, def_id);
                     let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
@@ -2128,41 +2159,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         literal.ty,
                     )
                 }
-                rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
-                    //todo: there is no test coverage for this case
-                    let id = self.bv.tcx.alloc_map.lock().create_memory_alloc(alloc);
-                    let alloc_len = alloc.len() as u64;
-                    let offset_bytes = offset.bytes();
-                    // The Rust compiler should ensure this.
-                    assume!(alloc_len > offset_bytes);
-                    let num_bytes = alloc_len - offset_bytes;
-                    let ptr = mir::interpret::Pointer::new(
-                        id,
-                        rustc_target::abi::Size::from_bytes(offset.bytes()),
-                    );
-                    //todo: this is all wrong. It gets the bytes that contains the reference,
-                    // not the bytes that the reference points to.
-                    // Right now it is not clear how to implement this.
-                    // Keeping this wrong behavior maintains the currently incorrect status quo.
-                    let bytes = alloc
-                        .get_bytes_with_undef_and_ptr(
-                            &self.bv.tcx,
-                            ptr,
-                            rustc_target::abi::Size::from_bytes(num_bytes),
-                        )
-                        .unwrap();
-                    self.deconstruct_reference_to_constant_array(
-                        &bytes,
-                        e_type,
-                        Some(len),
-                        literal.ty,
-                    )
-                }
                 rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
                     mir::interpret::Scalar::Ptr(ptr),
                 )) => {
                     if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
-                        self.bv.tcx.alloc_map.lock().get(ptr.alloc_id)
+                        self.bv.tcx.get_global_alloc(ptr.alloc_id)
                     {
                         let name = utils::summary_key_str(self.bv.tcx, def_id);
                         let path = Rc::new(
@@ -2175,7 +2176,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         );
                         return AbstractValue::make_reference(path);
                     }
-                    let alloc = self.bv.tcx.alloc_map.lock().unwrap_memory(ptr.alloc_id);
+                    let alloc = self.bv.tcx.global_alloc(ptr.alloc_id).unwrap_memory();
                     let alloc_len = alloc.len() as u64;
                     let offset_bytes = ptr.offset.bytes();
                     // The Rust compiler should ensure this.

@@ -53,42 +53,50 @@ pub mod alloc {
 pub mod core {
     pub mod alloc {
         pub mod AllocRef {
-            pub fn alloc(
-                _self: &mut dyn std::alloc::AllocRef,
+            pub fn alloc<T>(
+                _self: T,
                 layout: std::alloc::Layout,
-            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr> {
+            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr>
+            where
+                T: std::alloc::AllocRef,
+            {
                 unsafe {
                     let buf = std::alloc::alloc(layout);
                     Ok((std::ptr::NonNull::<u8>::new_unchecked(buf), layout.size()))
                 }
             }
 
-            pub fn alloc_zeroed(
-                _self: &mut dyn std::alloc::AllocRef,
+            pub fn alloc_zeroed<T>(
+                _self: T,
                 layout: std::alloc::Layout,
-            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr> {
+            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr>
+            where
+                T: std::alloc::AllocRef,
+            {
                 unsafe {
                     let buf = std::alloc::alloc_zeroed(layout);
                     Ok((std::ptr::NonNull::<u8>::new_unchecked(buf), layout.size()))
                 }
             }
 
-            pub fn dealloc(
-                _self: &mut dyn std::alloc::AllocRef,
-                ptr: std::ptr::NonNull<u8>,
-                layout: std::alloc::Layout,
-            ) {
+            pub fn dealloc<T>(_self: T, ptr: std::ptr::NonNull<u8>, layout: std::alloc::Layout)
+            where
+                T: std::alloc::AllocRef,
+            {
                 unsafe {
                     std::alloc::dealloc(ptr.as_ptr(), layout);
                 }
             }
 
-            pub fn realloc(
-                _self: &mut dyn std::alloc::AllocRef,
+            pub fn realloc<T>(
+                _self: T,
                 ptr: std::ptr::NonNull<u8>,
                 layout: std::alloc::Layout,
                 new_size: usize,
-            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr> {
+            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr>
+            where
+                T: std::alloc::AllocRef,
+            {
                 unsafe {
                     let buf = std::alloc::realloc(ptr.as_ptr(), layout, new_size);
                     Ok((std::ptr::NonNull::<u8>::new_unchecked(buf), layout.size()))

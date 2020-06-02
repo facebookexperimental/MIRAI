@@ -41,7 +41,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub cv: &'analysis mut CrateVisitor<'compilation, 'tcx>,
     pub tcx: TyCtxt<'tcx>,
     pub def_id: DefId,
-    pub mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
+    pub mir: &'tcx mir::Body<'tcx>,
     pub smt_solver: &'analysis mut dyn SmtSolver<E>,
     pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
     pub active_calls_map: &'analysis mut HashMap<DefId, u64>,
@@ -66,7 +66,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub unwind_condition: Option<Rc<AbstractValue>>,
     pub unwind_environment: Environment,
     pub fresh_variable_offset: usize,
-    pub type_visitor: TypeVisitor<'analysis, 'tcx>,
+    pub type_visitor: TypeVisitor<'tcx>,
 }
 
 impl<'analysis, 'compilation, 'tcx, E> Debug for BodyVisitor<'analysis, 'compilation, 'tcx, E> {
@@ -89,7 +89,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .summary_cache
             .get_summary_key_for(def_id)
             .clone();
-        let mir = crate_visitor.tcx.optimized_mir(def_id).unwrap_read_only();
+        let mir = crate_visitor.tcx.optimized_mir(def_id);
         let tcx = crate_visitor.tcx;
         BodyVisitor {
             cv: crate_visitor,
@@ -690,7 +690,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         let mut environment = Environment::default();
         let saved_mir = self.mir;
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
-            self.mir = constant_mir.unwrap_read_only();
+            self.mir = constant_mir;
             self.type_visitor.mir = self.mir;
             let result_rustc_type = self.mir.local_decls[mir::Local::from(0usize)].ty;
             self.visit_promoted_constants_block();

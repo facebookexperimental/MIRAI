@@ -253,6 +253,59 @@ impl Path {
     /// Returns the path to the first leaf field of the structure described by result_rustc_type.
     /// A field that is of type struct, is not a leaf field.
     #[logfn(TRACE)]
+    pub fn get_path_to_field_at_offset_0<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        environment: &Environment,
+        path: &Rc<Path>,
+        result_rustc_type: Ty<'tcx>,
+    ) -> Option<Rc<Path>> {
+        debug!(
+            "get_path_to_field_at_offset_0 {:?} {:?}",
+            path, result_rustc_type
+        );
+        match &result_rustc_type.kind {
+            TyKind::Adt(def, substs) => {
+                let path0 = Path::new_field(path.clone(), 0);
+                for v in def.variants.iter() {
+                    if let Some(field0) = v.fields.get(0) {
+                        let field0_ty = field0.ty(tcx, substs);
+                        let result = Self::get_path_to_field_at_offset_0(
+                            tcx,
+                            environment,
+                            &path0,
+                            field0_ty,
+                        );
+                        if result.is_some() {
+                            return result;
+                        }
+                    }
+                }
+                if def.is_enum() {
+                    let path0 = Path::new_discriminant(path.clone());
+                    return Some(path0);
+                }
+                None
+            }
+            TyKind::Tuple(substs) => {
+                if let Some(field0_ty) = substs.iter().map(|s| s.expect_ty()).next() {
+                    let path0 = Path::new_field(path.clone(), 0);
+                    return Self::get_path_to_field_at_offset_0(
+                        tcx,
+                        environment,
+                        &path0,
+                        field0_ty,
+                    );
+                }
+                None
+            }
+            _ => Some(path.clone()),
+        }
+    }
+
+    /// Returns the path to the first leaf field of the structure described by result_rustc_type.
+    /// A field that is of type struct, is not a leaf field.
+    /// The field at offset 0 must be a thin pointer.
+    #[logfn(TRACE)]
     pub fn get_path_to_thin_pointer_at_offset_0<'tcx>(
         tcx: TyCtxt<'tcx>,
         environment: &Environment,

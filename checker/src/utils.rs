@@ -400,9 +400,6 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
         | TyKind::Projection(ProjectionTy {
             substs: gen_args, ..
         })
-        | TyKind::UnnormalizedProjection(ProjectionTy {
-            substs: gen_args, ..
-        })
         | TyKind::Tuple(gen_args) => are_concrete(gen_args),
         TyKind::Ref(_, ty, _) => is_concrete(&ty.kind),
         _ => true,
