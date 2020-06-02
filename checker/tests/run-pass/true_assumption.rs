@@ -5,6 +5,7 @@
 //
 
 // A test that uses a true assumption
+// MIRAI_FLAGS -- -Z mir-opt-level=0
 
 #[macro_use]
 extern crate mirai_annotations;

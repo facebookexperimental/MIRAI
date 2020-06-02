@@ -192,28 +192,26 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
     ) -> Environment {
         // First compute a joint state from the out states of eligible predecessors.
         // We use the exit conditions for precise joins.
-        let mut predecessor_states_and_conditions: Vec<(Environment, Rc<AbstractValue>)> = self
-            .bv
-            .mir
-            .predecessors_for(bb)
-            .iter()
-            .filter_map(|pred_bb| {
-                let pred_state = &self.out_state[pred_bb];
-                if let Some(pred_exit_condition) = pred_state.exit_conditions.get(&bb) {
-                    if pred_exit_condition.as_bool_if_known().unwrap_or(true) {
-                        Some((pred_state.clone(), pred_exit_condition.clone()))
+        let mut predecessor_states_and_conditions: Vec<(Environment, Rc<AbstractValue>)> =
+            self.bv.mir.predecessors()[bb]
+                .iter()
+                .filter_map(|pred_bb| {
+                    let pred_state = &self.out_state[pred_bb];
+                    if let Some(pred_exit_condition) = pred_state.exit_conditions.get(&bb) {
+                        if pred_exit_condition.as_bool_if_known().unwrap_or(true) {
+                            Some((pred_state.clone(), pred_exit_condition.clone()))
+                        } else {
+                            // If pred_bb is known to have a false exit condition for bb it can be ignored.
+                            None
+                        }
                     } else {
-                        // If pred_bb is known to have a false exit condition for bb it can be ignored.
+                        // If pred_state does not have an exit condition map, it is in its default state
+                        // which means it has not yet been visited, or it is code that is known to always
+                        // panic at runtime. Either way, we don't want to include its out state here.
                         None
                     }
-                } else {
-                    // If pred_state does not have an exit condition map, it is in its default state
-                    // which means it has not yet been visited, or it is code that is known to always
-                    // panic at runtime. Either way, we don't want to include its out state here.
-                    None
-                }
-            })
-            .collect();
+                })
+                .collect();
         if predecessor_states_and_conditions.is_empty() {
             // bb is unreachable, at least in this iteration.
             // We therefore give it a false entry condition so that the block analyses knows
@@ -245,10 +243,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
 
         let at_loop_anchor = self.loop_anchors.contains(&bb);
         // Now we compute an entry condition from the exit conditions of the eligible predecessors
-        let entry_condition = self
-            .bv
-            .mir
-            .predecessors_for(bb)
+        let entry_condition = self.bv.mir.predecessors()[bb]
             .iter()
             .filter_map(|pred_bb| {
                 let pred_out_state = &self.out_state[pred_bb];
@@ -292,8 +287,8 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
 /// to determine if there is a loop (if a is predecessor of b and b dominates a then they
 /// form a loop and we'll emit the one with the lower index first).
 #[logfn_inputs(TRACE)]
-fn add_predecessors_then_root_block<'analysis, 'tcx>(
-    mir: mir::ReadOnlyBodyAndCache<'analysis, 'tcx>,
+fn add_predecessors_then_root_block<'tcx>(
+    mir: &'tcx mir::Body<'tcx>,
     root_block: mir::BasicBlock,
     dominators: &Dominators<mir::BasicBlock>,
     loop_anchors: &mut HashSet<mir::BasicBlock>,
@@ -303,7 +298,7 @@ fn add_predecessors_then_root_block<'analysis, 'tcx>(
     if !already_added.insert(root_block) {
         return;
     }
-    for pred_bb in mir.predecessors_for(root_block).iter() {
+    for pred_bb in mir.predecessors()[root_block].iter() {
         if already_added.contains(pred_bb) {
             continue;
         };
@@ -332,7 +327,7 @@ fn add_predecessors_then_root_block<'analysis, 'tcx>(
 #[logfn_inputs(TRACE)]
 #[logfn(TRACE)]
 fn get_sorted_block_indices(
-    mir: mir::ReadOnlyBodyAndCache<'_, '_>,
+    mir: &'_ mir::Body<'_>,
     dominators: &Dominators<mir::BasicBlock>,
 ) -> (Vec<mir::BasicBlock>, HashSet<mir::BasicBlock>) {
     let mut block_indices = Vec::new();

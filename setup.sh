@@ -10,5 +10,7 @@ rustup component add rustfmt-preview
 rustup component add clippy-preview
 # install rustc-dev
 rustup component add rustc-dev
+# install llvm-tools
+rustup component add llvm-tools-preview
 # install audit
 cargo install cargo-audit
