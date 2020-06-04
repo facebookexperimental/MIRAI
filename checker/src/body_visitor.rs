@@ -936,6 +936,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         source_path: &Rc<Path>,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
     ) {
+        let target_type = self
+            .type_visitor
+            .get_path_rustc_type(&target_path, self.current_span);
+        let target_is_thin_pointer = type_visitor::is_thin_pointer(&target_type.kind);
         for (path, value) in effects
             .iter()
             .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
@@ -943,7 +947,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             trace!("effect {:?} {:?}", path, value);
             let dummy_root = Path::new_local(999);
             let refined_dummy_root = Path::new_local(self.fresh_variable_offset + 999);
-            let tpath = path
+            let mut tpath = path
                 .replace_root(source_path, dummy_root)
                 .refine_parameters(arguments, self.fresh_variable_offset)
                 .replace_root(&refined_dummy_root, target_path.clone())
@@ -1024,6 +1028,29 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         // transferring a (pointer, length) tuple.
                         self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
                         continue;
+                    }
+                    if target_is_thin_pointer && target_type == self.tcx.types.err {
+                        // This can happen if the result of the called function is actually a slice pointer
+                        // that is being implicitly cast to a thin pointer. In that case, tpath needs
+                        // to drop the field 0 bit.
+                        if let PathEnum::QualifiedPath {
+                            qualifier,
+                            selector,
+                            ..
+                        } = &tpath.value
+                        {
+                            match selector.as_ref() {
+                                PathSelector::Field(0) => {
+                                    // assign the pointer field of the slice pointer to the unqualified target
+                                    tpath = qualifier.clone();
+                                }
+                                PathSelector::Field(1) => {
+                                    // drop the assignment of the length field
+                                    continue;
+                                }
+                                _ => assume_unreachable!("something went wrong here"),
+                            }
+                        }
                     }
                 }
                 Expression::UninterpretedCall {
@@ -1132,7 +1159,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// Following a reallocation we are no longer guaranteed that the resulting heap
     /// memory block has been zeroed out by the allocator. Search the environment for equivalent
     /// heap block values and update them to clear the zeroed flag (if set).
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn update_zeroed_flag_for_heap_block_from_environment(
         &mut self,
         layout_path: &Rc<Path>,

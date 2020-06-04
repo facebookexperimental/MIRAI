@@ -459,7 +459,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         call_visitor.destination = *destination;
         call_visitor.callee_fun_val = func_to_call;
         call_visitor.function_constant_args = func_const_args;
-        debug!("calling func {:?}", call_visitor.callee_func_ref);
+        trace!("calling func {:?}", call_visitor.callee_func_ref);
         if call_visitor.handled_as_special_function_call() {
             return;
         }
@@ -471,25 +471,23 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         {
             call_visitor.deal_with_missing_summary();
         }
-        debug!(
-            "summary {:?} {:?}",
-            func_ref_to_call.summary_cache_key, function_summary
-        );
-        debug!(
+        trace!("def_id {:?}", call_visitor.callee_def_id);
+        trace!("summary {:?} {:?}", func_ref_to_call, function_summary);
+        trace!(
             "pre env {:?}",
             call_visitor.block_visitor.bv.current_environment
         );
-        debug!("target {:?} arguments {:?}", destination, actual_args);
+        trace!("target {:?} arguments {:?}", destination, actual_args);
         call_visitor.check_preconditions_if_necessary(&function_summary);
         call_visitor.transfer_and_refine_normal_return_state(&function_summary);
         call_visitor.transfer_and_refine_cleanup_state(&function_summary);
-        debug!(
+        trace!(
             "post env {:?}",
             call_visitor.block_visitor.bv.current_environment
         );
         if function_summary.post_condition.is_some() {
             if let Some((_, b)) = &call_visitor.destination {
-                debug!(
+                trace!(
                     "post exit conditions {:?}",
                     self.bv.current_environment.exit_conditions.get(b)
                 );
@@ -1946,7 +1944,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     /// Use for constants that are accessed via references
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn get_reference_to_constant(
         &mut self,
         literal: &rustc_middle::ty::Const<'tcx>,

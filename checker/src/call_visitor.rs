@@ -111,11 +111,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let summary =
                 body_visitor.visit_body(self.function_constant_args, self.actual_argument_types);
             let call_was_angelic = body_visitor.assume_function_is_angelic;
-            trace!(
-                "summary {:?} {:?}",
-                self.block_visitor.bv.function_name,
-                summary
-            );
+            trace!("summary {:?} {:?}", self.callee_def_id, summary);
             let signature = self.get_function_constant_signature(self.function_constant_args);
             if let Some(func_ref) = &self.callee_func_ref {
                 // We cache the summary with call site details included so that
@@ -1866,13 +1862,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         self.block_visitor.bv.fresh_variable_offset,
                     )
                     .refine_paths(&return_value_env);
-                debug!(
+                trace!(
                     "refined post condition before path refinement {:?}",
                     refined_post_condition
                 );
                 let refined_post_condition =
                     refined_post_condition.refine_paths(&self.block_visitor.bv.current_environment);
-                debug!("refined post condition {:?}", refined_post_condition);
+                trace!("refined post condition {:?}", refined_post_condition);
                 exit_condition = exit_condition.and(refined_post_condition);
             }
 

@@ -251,13 +251,24 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 if is_slice_pointer(&t.kind) {
                                     match *ordinal {
                                         0 => {
-                                            return t;
+                                            return t; // Could be a slice of slice, so close enough, hopefully.
                                         }
                                         1 => {
                                             return self.tcx.types.usize;
                                         }
                                         _ => {}
                                     }
+                                }
+                                if *ordinal == 0 && matches!(&t.kind, TyKind::Ref(..)) {
+                                    // If the qualifier is a thin pointer to something that
+                                    // does not have a field 0, it could be that qualifier.0
+                                    // is a bogus path that got constructed when transferring
+                                    // a returned fat pointer into a thing pointer target
+                                    // variable without an explicit cast.
+                                    // It is hard to detect this case before calling this
+                                    // routine, so we'll allow it to happen tell the caller
+                                    // to look out for it by returning this:
+                                    return self.tcx.types.err;
                                 }
                             }
                         }
@@ -298,6 +309,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     _ => {}
                 }
                 info!("current span is {:?}", current_span);
+                info!("path is {:?}", path);
                 info!("t is {:?}", t);
                 info!("qualifier is {:?}", qualifier);
                 info!("selector is {:?}", selector);
@@ -737,6 +749,15 @@ pub fn get_target_type(ty: Ty<'_>) -> Ty<'_> {
     match &ty.kind {
         TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => t,
         _ => ty,
+    }
+}
+
+/// Returns true if the given type is a reference (or raw pointer) that is not a slice pointer
+pub fn is_thin_pointer(ty_kind: &TyKind<'_>) -> bool {
+    if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
+        !matches!(&target.kind, TyKind::Slice(..))
+    } else {
+        false
     }
 }
 
