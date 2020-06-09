@@ -2012,6 +2012,14 @@ pub mod core {
 }
 
 pub mod libc {
+    pub mod bsd {
+        pub mod apple {
+            pub fn dlsym() -> u64 {
+                0
+            }
+        }
+    }
+
     pub mod unix {
         pub mod _1 {
             pub fn dlsym() -> u64 {
@@ -2041,8 +2049,8 @@ pub mod libc {
 
         pub mod bsd {
             pub mod apple {
-                pub fn __error() -> i32 {
-                    -1
+                pub fn __error() -> &'static i32 {
+                    &-1
                 }
             }
         }

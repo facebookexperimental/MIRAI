@@ -315,7 +315,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .current_environment
                     .entry_condition
                     .as_bool_if_known();
-                if return_guard.is_none() {
+                if return_guard.is_none()
+                    && !self
+                        .bv
+                        .current_environment
+                        .entry_condition
+                        .expression
+                        .contains_local_variable()
+                {
                     // If no post condition has been explicitly supplied and if the entry condition is interesting
                     // then make the entry condition a post condition, because the function only returns
                     // if this condition is true and thus the caller can assume the condition in its
@@ -406,8 +413,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         } else {
             self.report_missing_summary();
             info!(
-                "function {} can't be reliably analyzed because it calls an unknown function.",
+                "function {} can't be reliably analyzed because it calls an unknown function. {:?}",
                 utils::summary_key_str(self.bv.tcx, self.bv.def_id),
+                self.bv.current_span
             );
             return;
         }
@@ -676,6 +684,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn try_extend_post_condition(&mut self, cond: &Rc<AbstractValue>) {
         precondition!(self.bv.check_for_errors);
+        if cond.expression.contains_local_variable() {
+            // The caller won't have a use for this
+            return;
+        }
         let this_block = self.bv.current_location.block;
         match (self.bv.post_condition.clone(), self.bv.post_condition_block) {
             (Some(last_cond), Some(last_block)) => {

@@ -207,7 +207,7 @@ impl Path {
             PathEnum::LocalVariable { .. } => true,
             PathEnum::Offset { value } => value.expression.contains_local_variable(),
             PathEnum::Parameter { .. } => false,
-            PathEnum::Result => true,
+            PathEnum::Result => false,
             PathEnum::StaticVariable { .. } => false,
             PathEnum::PhantomData => false,
             PathEnum::PromotedConstant { .. } => true,
