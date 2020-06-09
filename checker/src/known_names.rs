@@ -88,6 +88,7 @@ pub enum KnownNames {
     StdIntrinsicsTruncf32,
     StdIntrinsicsTruncf64,
     StdMarkerPhantomData,
+    StdMemReplace,
     StdMemSizeOf,
     StdOpsFunctionFnCall,
     StdOpsFunctionFnMutCallMut,
@@ -263,6 +264,7 @@ impl KnownNamesCache {
         let get_known_name_for_mem_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
+                    "replace" => KnownNames::StdMemReplace,
                     "size_of" => KnownNames::StdMemSizeOf,
                     _ => KnownNames::None,
                 })

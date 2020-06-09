@@ -532,6 +532,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 return true;
             }
+            KnownNames::StdMemReplace => {
+                self.handle_mem_replace();
+                return true;
+            }
             KnownNames::StdPtrSwapNonOverlapping => {
                 self.handle_swap_non_overlapping();
                 if let Some((_, target)) = &self.destination {
@@ -1587,6 +1591,48 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .struct_span_warn(span, message);
                 self.block_visitor.bv.emit_diagnostic(warning);
             }
+        }
+    }
+
+    /// Moves `source` into the referenced `dest`, returning the previous `dest` value.
+    #[logfn_inputs(TRACE)]
+    fn handle_mem_replace(&mut self) {
+        checked_assume!(self.actual_args.len() == 2);
+        let dest_path = &self.actual_args[0].0;
+        let source_path = &self.actual_args[1].0;
+        if let Some((place, target)) = &self.destination {
+            let target_path = self.block_visitor.visit_place(place);
+            let root_rustc_type = self
+                .block_visitor
+                .bv
+                .type_visitor
+                .get_rustc_place_type(place, self.block_visitor.bv.current_span);
+            // Return the old value of dest_path
+            self.block_visitor.bv.copy_or_move_elements(
+                target_path,
+                dest_path.clone(),
+                root_rustc_type,
+                true,
+            );
+            // Move value at source path into dest path
+            self.block_visitor.bv.copy_or_move_elements(
+                dest_path.clone(),
+                source_path.clone(),
+                root_rustc_type,
+                true,
+            );
+            let exit_condition = self
+                .block_visitor
+                .bv
+                .current_environment
+                .entry_condition
+                .clone();
+            self.block_visitor.bv.current_environment.exit_conditions = self
+                .block_visitor
+                .bv
+                .current_environment
+                .exit_conditions
+                .insert(*target, exit_condition);
         }
     }
 
