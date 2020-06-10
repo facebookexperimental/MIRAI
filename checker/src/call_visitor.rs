@@ -399,7 +399,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 return true;
             }
             KnownNames::MiraiShallowClone => {
-                if let Some((place, target)) = &self.destination {
+                if let Some((place, _)) = &self.destination {
                     checked_assume!(self.actual_args.len() == 1);
                     let source_path = self.actual_args[0].0.clone();
                     let target_type = self
@@ -414,25 +414,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         target_type,
                         false,
                     );
-                    let exit_condition = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .entry_condition
-                        .clone();
-                    self.block_visitor.bv.current_environment.exit_conditions = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
                 } else {
                     assume_unreachable!();
                 }
+                self.use_entry_condition_as_exit_condition();
                 return true;
             }
             KnownNames::MiraiResult => {
-                if let Some((place, target)) = &self.destination {
+                if let Some((place, _)) = &self.destination {
                     let target_path = self.block_visitor.visit_place(place);
                     let target_rustc_type = self
                         .block_visitor
@@ -448,21 +437,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         .bv
                         .current_environment
                         .update_value_at(target_path, return_value);
-                    let exit_condition = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .entry_condition
-                        .clone();
-                    self.block_visitor.bv.current_environment.exit_conditions = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
                 } else {
                     assume_unreachable!();
                 }
+                self.use_entry_condition_as_exit_condition();
                 return true;
             }
             KnownNames::MiraiVerify => {
@@ -476,22 +454,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             KnownNames::RustDealloc => {
                 self.handle_rust_dealloc();
-                if let Some((_, target)) = &self.destination {
-                    let exit_condition = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .entry_condition
-                        .clone();
-                    self.block_visitor.bv.current_environment.exit_conditions = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
-                } else {
-                    assume_unreachable!("a call to __rust_dealloc should have a target block");
-                }
+                self.use_entry_condition_as_exit_condition();
                 return true;
             }
             KnownNames::StdFutureFromGenerator => {
@@ -516,20 +479,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             KnownNames::StdIntrinsicsCopyNonOverlapping => {
                 self.handle_copy_non_overlapping();
-                if let Some((_, target)) = &self.destination {
-                    let exit_condition = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .entry_condition
-                        .clone();
-                    self.block_visitor.bv.current_environment.exit_conditions = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
-                }
+                return true;
+            }
+            KnownNames::StdIntrinsicsTransmute => {
+                self.handle_transmute();
                 return true;
             }
             KnownNames::StdMemReplace => {
@@ -538,20 +491,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             KnownNames::StdPtrSwapNonOverlapping => {
                 self.handle_swap_non_overlapping();
-                if let Some((_, target)) = &self.destination {
-                    let exit_condition = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .entry_condition
-                        .clone();
-                    self.block_visitor.bv.current_environment.exit_conditions = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .exit_conditions
-                        .insert(*target, exit_condition);
-                }
                 return true;
             }
             KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
@@ -571,30 +510,39 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             _ => {
                 let result = self.try_to_inline_special_function();
                 if !result.is_bottom() {
-                    if let Some((place, target)) = &self.destination {
+                    if let Some((place, _)) = &self.destination {
                         let target_path = self.block_visitor.visit_place(place);
                         self.block_visitor
                             .bv
                             .current_environment
                             .update_value_at(target_path, result);
-                        let exit_condition = self
-                            .block_visitor
-                            .bv
-                            .current_environment
-                            .entry_condition
-                            .clone();
-                        self.block_visitor.bv.current_environment.exit_conditions = self
-                            .block_visitor
-                            .bv
-                            .current_environment
-                            .exit_conditions
-                            .insert(*target, exit_condition);
+                        self.use_entry_condition_as_exit_condition();
                         return true;
                     }
                 }
             }
         }
         false
+    }
+
+    /// Use this for terminators that deterministically transfer control to a single successor block.
+    /// Such blocks, obviously, do not alter their entry path condition.
+    #[logfn_inputs(TRACE)]
+    fn use_entry_condition_as_exit_condition(&mut self) {
+        if let Some((_, target)) = &self.destination {
+            let exit_condition = self
+                .block_visitor
+                .bv
+                .current_environment
+                .entry_condition
+                .clone();
+            self.block_visitor.bv.current_environment.exit_conditions = self
+                .block_visitor
+                .bv
+                .current_environment
+                .exit_conditions
+                .insert(*target, exit_condition);
+        }
     }
 
     /// If the function being called is a special function like mirai_annotations.mirai_verify or
@@ -897,10 +845,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             KnownNames::StdIntrinsicsMulWithOverflow => self.handle_checked_binary_operation(),
             KnownNames::StdIntrinsicsOffset => self.handle_offset(),
-            KnownNames::StdIntrinsicsTransmute => {
-                checked_assume!(self.actual_args.len() == 1);
-                self.actual_args[0].1.clone()
-            }
             KnownNames::StdMemSizeOf => self.handle_size_of(),
             _ => abstract_value::BOTTOM.into(),
         }
@@ -1353,6 +1297,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             collection_type,
             false,
         );
+        self.use_entry_condition_as_exit_condition();
     }
 
     /// Swaps a slice of elements from the source to the destination.
@@ -1378,6 +1323,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         self.block_visitor
             .bv
             .copy_or_move_elements(source_slice, temp_root, ty, true);
+        self.use_entry_condition_as_exit_condition();
     }
 
     /// Returns a new heap memory block with the given byte length.
@@ -1600,7 +1546,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 2);
         let dest_path = &self.actual_args[0].0;
         let source_path = &self.actual_args[1].0;
-        if let Some((place, target)) = &self.destination {
+        if let Some((place, _)) = &self.destination {
             let target_path = self.block_visitor.visit_place(place);
             let root_rustc_type = self
                 .block_visitor
@@ -1621,19 +1567,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 root_rustc_type,
                 true,
             );
-            let exit_condition = self
-                .block_visitor
-                .bv
-                .current_environment
-                .entry_condition
-                .clone();
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert(*target, exit_condition);
         }
+        self.use_entry_condition_as_exit_condition();
     }
 
     /// Gets the size in bytes of the type parameter T of the std::mem::size_of<T> function.
@@ -1658,6 +1593,51 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             );
             AbstractValue::make_typed_unknown(ExpressionType::U128, path)
         }
+    }
+
+    /// Reinterprets the bits of a value of one type as another type.
+    #[logfn_inputs(TRACE)]
+    fn handle_transmute(&mut self) {
+        checked_assume!(self.actual_args.len() == 1);
+        let mut source_path = self.actual_args[0].0.clone();
+        let source_rustc_type = self
+            .callee_generic_arguments
+            .expect("rustc type error")
+            .get(0)
+            .expect("rustc type error")
+            .expect_ty();
+        if let Some((place, _)) = &self.destination {
+            let mut target_path = self.block_visitor.visit_place(place);
+            let target_rustc_type = self
+                .block_visitor
+                .bv
+                .type_visitor
+                .get_rustc_place_type(place, self.block_visitor.bv.current_span);
+            if type_visitor::is_thin_pointer(&target_rustc_type.kind) {
+                source_path = Path::get_path_to_thin_pointer_at_offset_0(
+                    self.block_visitor.bv.tcx,
+                    &self.block_visitor.bv.current_environment,
+                    &source_path,
+                    source_rustc_type,
+                )
+                .unwrap_or(source_path);
+            } else if type_visitor::is_thin_pointer(&source_rustc_type.kind) {
+                target_path = Path::get_path_to_thin_pointer_at_offset_0(
+                    self.block_visitor.bv.tcx,
+                    &self.block_visitor.bv.current_environment,
+                    &target_path,
+                    target_rustc_type,
+                )
+                .unwrap_or(target_path);
+            }
+            self.block_visitor.bv.copy_or_move_elements(
+                target_path,
+                source_path,
+                target_rustc_type,
+                true,
+            );
+        }
+        self.use_entry_condition_as_exit_condition();
     }
 
     /// Give diagnostic or mark the call chain as angelic, depending on self.bv.options.diag_level
