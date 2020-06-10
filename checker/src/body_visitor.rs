@@ -308,7 +308,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) -> Rc<AbstractValue> {
         let result_type: ExpressionType = (&result_rustc_type.kind).into();
         match &path.value {
-            PathEnum::Alias { value } => {
+            PathEnum::Alias { value } | PathEnum::Offset { value } => {
                 return value.clone();
             }
             PathEnum::QualifiedPath {

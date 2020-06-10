@@ -302,7 +302,7 @@ impl Path {
         }
     }
 
-    /// Returns the path to the first leaf field of the structure described by result_rustc_type.
+    /// Returns the path to the first leaf field of the structure described by path_rustc_type.
     /// A field that is of type struct, is not a leaf field.
     /// The field at offset 0 must be a thin pointer.
     #[logfn(TRACE)]
@@ -310,16 +310,16 @@ impl Path {
         tcx: TyCtxt<'tcx>,
         environment: &Environment,
         path: &Rc<Path>,
-        result_rustc_type: Ty<'tcx>,
+        path_rustc_type: Ty<'tcx>,
     ) -> Option<Rc<Path>> {
         trace!(
             "get_path_to_thin_pointer_at_offset_0 {:?} {:?}",
             path,
-            result_rustc_type
+            path_rustc_type
         );
-        match &result_rustc_type.kind {
+        match &path_rustc_type.kind {
             TyKind::Ref(..) | TyKind::RawPtr(..) => {
-                if type_visitor::is_slice_pointer(&result_rustc_type.kind) {
+                if type_visitor::is_slice_pointer(&path_rustc_type.kind) {
                     Some(Path::new_field(path.clone(), 0))
                 } else {
                     Some(path.clone())

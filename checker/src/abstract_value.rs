@@ -2022,7 +2022,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 alternate,
                 ..
             } => consequent.refers_to_unknown_location() || alternate.refers_to_unknown_location(),
-            Expression::Join { left, right, .. } => {
+            Expression::Join { left, right, .. } | Expression::Offset { left, right } => {
                 left.refers_to_unknown_location() || right.refers_to_unknown_location()
             }
             Expression::Reference(..) => true,

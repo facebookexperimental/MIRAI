@@ -93,9 +93,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     /// Calls a specialized visitor for each kind of statement.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn visit_statement(&mut self, location: mir::Location, statement: &mir::Statement<'tcx>) {
-        trace!("env {:?}", self.bv.current_environment);
+        debug!("env {:?}", self.bv.current_environment);
         self.bv.current_location = location;
         let mir::Statement { kind, source_info } = statement;
         self.bv.current_span = source_info.span;
@@ -182,14 +182,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     /// Calls a specialized visitor for each kind of terminator.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn visit_terminator(
         &mut self,
         location: mir::Location,
         source_info: mir::SourceInfo,
         kind: &mir::TerminatorKind<'tcx>,
     ) {
-        trace!("env {:?}", self.bv.current_environment);
+        debug!("env {:?}", self.bv.current_environment);
         self.bv.current_location = location;
         self.bv.current_span = source_info.span;
         match kind {
@@ -412,11 +412,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             func_ref_to_call = fr;
         } else {
             self.report_missing_summary();
-            info!(
-                "function {} can't be reliably analyzed because it calls an unknown function. {:?}",
-                utils::summary_key_str(self.bv.tcx, self.bv.def_id),
-                self.bv.current_span
-            );
+            if self.bv.check_for_errors {
+                info!(
+                    "function {} can't be reliably analyzed because it calls an unknown function. {:?}",
+                    utils::summary_key_str(self.bv.tcx, self.bv.def_id),
+                    self.bv.current_span
+                );
+            }
             return;
         }
         let callee_def_id = func_ref_to_call
