@@ -1210,10 +1210,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // The deref essentially does a copy of the value denoted by the qualifier.
                 // If this value is structured and not heap allocated, the copy must be done
                 // with copy_or_move_elements.
-                if self
-                    .bv
-                    .type_visitor
-                    .starts_with_slice_pointer(&target_type.kind)
+                if type_visitor::is_slice_pointer(&target_type.kind)
+                    || self
+                        .bv
+                        .type_visitor
+                        .starts_with_slice_pointer(&target_type.kind)
                 {
                     // Copying to a fat pointer without a cast, so the source pointer is fat too.
                     // qualifier, however, has been modified into a thin pointer because of the deref.
