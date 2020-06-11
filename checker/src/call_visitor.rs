@@ -18,7 +18,6 @@ use std::time::Instant;
 use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::block_visitor::BlockVisitor;
 use crate::body_visitor::BodyVisitor;
-use crate::bool_domain::BoolDomain;
 use crate::constant_domain::{ConstantDomain, FunctionReference};
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
@@ -1052,12 +1051,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .type_visitor
                 .get_path_rustc_type(&source_path, self.block_visitor.bv.current_span);
-            self.block_visitor.bv.attach_tag_to_elements(
-                tag,
-                BoolDomain::True,
-                source_path,
-                source_rustc_type,
-            );
+            self.block_visitor
+                .bv
+                .attach_tag_to_elements(tag, source_path, source_rustc_type);
         }
 
         // Update exit conditions.
@@ -2183,7 +2179,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &tag_propagation_set_abs.expression
                 {
                     Some(Tag {
-                        def_id: tag_adt_def.did,
+                        def_id: tag_adt_def.did.into(),
                         prop_set: *data,
                     })
                 } else {

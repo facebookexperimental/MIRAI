@@ -4,13 +4,14 @@
 // LICENSE file in the root directory of this source tree.
 
 use log_derive::logfn_inputs;
+use serde::{Deserialize, Serialize};
 
 /// A standard set-based abstraction for Booleans. `Bottom` represents the empty set,
 /// `False` and `True` represent singleton sets {true} and {false}, respectively, and
 /// `Top` represents {false, true}. This domain can be embedded into other domains,
 /// such as the tag domain, which maps each tag to a Boolean domain element to record
 /// whether the tag is present or not.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Hash)]
 pub enum BoolDomain {
     Bottom,
     False,

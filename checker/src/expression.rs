@@ -7,6 +7,7 @@ use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::constant_domain::ConstantDomain;
 use crate::known_names::KnownNames;
 use crate::path::Path;
+use crate::tag_domain::Tag;
 use crate::type_visitor;
 
 use log_derive::logfn_inputs;
@@ -339,6 +340,12 @@ pub enum Expression {
         default: Rc<AbstractValue>,
     },
 
+    /// An expression that is the operand attached with the tag.
+    TaggedExpression {
+        operand: Rc<AbstractValue>,
+        tag: Tag,
+    },
+
     /// An expression that represents the result of calling an unknown function.
     /// Typically this will be a trait method, function parameter, or an intrinsic/foreign function.
     /// In the case of a trait method or a function parameter, the caller might be able to refine
@@ -537,6 +544,9 @@ impl Debug for Expression {
                 f.write_fmt(format_args!(" _ => {:?}", default))?;
                 f.write_str(" }")
             }
+            Expression::TaggedExpression { operand, tag } => {
+                f.write_fmt(format_args!("{:?} tagged with {:?}", operand, tag))
+            }
             Expression::UninterpretedCall {
                 callee,
                 arguments,
@@ -603,7 +613,8 @@ impl Expression {
             Expression::BitNot { operand, .. }
             | Expression::Cast { operand, .. }
             | Expression::IntrinsicBitVectorUnary { operand, .. }
-            | Expression::IntrinsicFloatingPointUnary { operand, .. } => {
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::TaggedExpression { operand, .. } => {
                 operand.expression.contains_local_variable()
             }
             Expression::Bottom => true,
@@ -704,6 +715,7 @@ impl Expression {
             Expression::Sub { .. } => Some(TagPropagation::Sub),
             Expression::SubOverflows { .. } => Some(TagPropagation::SubOverflows),
             Expression::Switch { .. } => None,
+            Expression::TaggedExpression { .. } => None,
             Expression::UninterpretedCall { .. } => Some(TagPropagation::UninterpretedCall),
             Expression::UnknownModelField { .. } => None,
             Expression::Variable { .. } => None,
@@ -840,6 +852,7 @@ impl Expression {
             Expression::Sub { left, .. } => left.expression.infer_type(),
             Expression::SubOverflows { .. } => Bool,
             Expression::Switch { default, .. } => default.expression.infer_type(),
+            Expression::TaggedExpression { operand, .. } => operand.expression.infer_type(),
             Expression::UninterpretedCall { result_type, .. } => result_type.clone(),
             Expression::UnknownModelField { default, .. } => default.expression.infer_type(),
             Expression::Variable { var_type, .. } => var_type.clone(),
@@ -922,7 +935,9 @@ impl Expression {
                 left.expression.record_heap_blocks(result);
                 right.expression.record_heap_blocks(result);
             }
-            Expression::Neg { operand } | Expression::LogicalNot { operand } => {
+            Expression::Neg { operand }
+            | Expression::LogicalNot { operand }
+            | Expression::TaggedExpression { operand, .. } => {
                 operand.expression.record_heap_blocks(result);
             }
             Expression::Reference(path) => path.record_heap_blocks(result),

@@ -8,7 +8,8 @@ use crate::bool_domain::BoolDomain;
 use log_derive::logfn_inputs;
 use mirai_annotations::*;
 use rpds::{rbt_map, RedBlackTreeMap};
-use rustc_hir::def_id::DefId;
+use rustc_hir::def_id::{CrateNum, DefId, DefIndex};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Check if a value of enum type `TagPropagation` is included in a tag propagation set.
 macro_rules! does_propagate_tag {
@@ -17,12 +18,80 @@ macro_rules! does_propagate_tag {
     };
 }
 
+/// A replication of the `DefId` type from rustc. The type is used to implement serialization.
+#[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash)]
+pub struct SerializableDefId {
+    pub krate: CrateNum,
+    pub index: DefIndex,
+}
+
+impl From<DefId> for SerializableDefId {
+    fn from(did: DefId) -> SerializableDefId {
+        SerializableDefId {
+            krate: did.krate,
+            index: did.index,
+        }
+    }
+}
+
+impl std::fmt::Debug for SerializableDefId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{:?}",
+            DefId {
+                krate: self.krate,
+                index: self.index
+            }
+        ))
+    }
+}
+
+impl Serialize for SerializableDefId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let krate = u64::from(self.krate.as_u32());
+        let index = u64::from(self.index.as_u32());
+        serializer.serialize_u64((krate << 32) | index)
+    }
+}
+
+impl<'de> Deserialize<'de> for SerializableDefId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct U64Visitor;
+
+        impl<'de> de::Visitor<'de> for U64Visitor {
+            type Value = u64;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("u64")
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(value)
+            }
+        }
+
+        let def_id = deserializer.deserialize_u64(U64Visitor)?;
+        let krate = CrateNum::from_u32((def_id >> 32) as u32);
+        let index = DefIndex::from_u32((def_id & 0xffffffff) as u32);
+        Ok(SerializableDefId { krate, index })
+    }
+}
+
 /// A tag is represented as a pair of its tag kind and its propagation set.
 /// The tag kind is the name of the declared tag type, and the propagation set is associated to the
 /// tag type as a const generic parameter.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Hash)]
 pub struct Tag {
-    pub def_id: DefId,
+    pub def_id: SerializableDefId,
     pub prop_set: TagPropagationSet,
 }
 
@@ -31,7 +100,7 @@ pub struct Tag {
 /// If a tag is mapped to `True`, then it must be present.
 /// If a tag is mapped to `False', then it must be absent.
 /// If a tag is mapped to `Top`, then it may or may not be present.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Clone)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct TagDomain {
     map: RedBlackTreeMap<Tag, BoolDomain>,
 }
