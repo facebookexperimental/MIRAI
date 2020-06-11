@@ -7,7 +7,7 @@ use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::expression::Expression;
-use crate::path::{Path, PathEnum};
+use crate::path::{Path, PathEnum, PathSelector};
 
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::checked_assume;
@@ -129,14 +129,30 @@ impl Environment {
             } => {
                 if let Some((join_condition, true_path, false_path)) = self.try_to_split(qualifier)
                 {
-                    let true_path = Path::new_qualified(
-                        Path::implicit_dereference(true_path, &self),
-                        selector.clone(),
-                    );
-                    let false_path = Path::new_qualified(
-                        Path::implicit_dereference(false_path, &self),
-                        selector.clone(),
-                    );
+                    let true_path = if let Some(deref_true_path) =
+                        Path::try_implicit_dereference(&true_path, &self)
+                    {
+                        if *selector.as_ref() == PathSelector::Deref {
+                            deref_true_path
+                        } else {
+                            Path::new_qualified(deref_true_path, selector.clone())
+                        }
+                    } else {
+                        Path::new_qualified(true_path, selector.clone())
+                    };
+
+                    let false_path = if let Some(deref_false_path) =
+                        Path::try_implicit_dereference(&false_path, &self)
+                    {
+                        if *selector.as_ref() == PathSelector::Deref {
+                            deref_false_path
+                        } else {
+                            Path::new_qualified(deref_false_path, selector.clone())
+                        }
+                    } else {
+                        Path::new_qualified(false_path, selector.clone())
+                    };
+
                     return Some((join_condition, true_path, false_path));
                 }
                 None
