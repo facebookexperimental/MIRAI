@@ -205,109 +205,109 @@ pub mod core {
         }
 
         pub trait Ord {
-            fn cmp__i8(a: i8, b: i8) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__i8(a: &i8, b: &i8) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__i16(a: i16, b: i16) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__i16(a: &i16, b: &i16) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__i32(a: i32, b: i32) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__i32(a: &i32, b: &i32) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__i64(a: i64, b: i64) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__i64(a: &i64, b: &i64) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__i128(a: i128, b: i128) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__i128(a: &i128, b: &i128) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__isize(a: isize, b: isize) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__isize(a: &isize, b: &isize) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__u8(a: u8, b: u8) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__u8(a: &u8, b: &u8) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__u16(a: u16, b: u16) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__u16(a: &u16, b: &u16) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__u32(a: u32, b: u32) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__u32(a: &u32, b: &u32) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__u64(a: u64, b: u64) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__u64(a: &u64, b: &u64) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__u128(a: u128, b: u128) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__u128(a: &u128, b: &u128) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
                 }
             }
-            fn cmp__usize(a: usize, b: usize) -> std::cmp::Ordering {
-                if a < b {
+            fn cmp__usize(a: &usize, b: &usize) -> std::cmp::Ordering {
+                if *a < *b {
                     std::cmp::Ordering::Less
-                } else if a == b {
+                } else if *a == *b {
                     std::cmp::Ordering::Equal
                 } else {
                     std::cmp::Ordering::Greater
