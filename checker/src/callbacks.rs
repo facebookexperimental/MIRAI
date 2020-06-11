@@ -143,14 +143,18 @@ impl MiraiCallbacks {
             || file_name.contains("consensus/safety-rules/src") // false positives
             || file_name.contains("crypto/crypto-derive/src") //  `(left == right)`  left: `Type`, right: `Fn`
             || file_name.contains("common/bitvec/src") // false positives
+            || file_name.contains("common/debug-interface") // resolve error
             || file_name.contains("common/logger/src") // resolve error
             || file_name.contains("common/metrics/src") // stack overflow
+            || file_name.contains("config/config-builder/src") // false positives
             || file_name.contains("language/bytecode-verifier/src") // resolve error
+            || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // false positives
             || file_name.contains("language/move-lang/src") // resolve error
             || file_name.contains("language/move-vm/runtime/src") // resolve error
             || file_name.contains("language/move-prover/src") // false positives
             || file_name.contains("language/move-prover/spec-lang/src") // false positives
+            || file_name.contains("language/resource-viewer/src") // illegal down cast
             || file_name.contains("language/move-prover/stackless-bytecode-generator/src") // resolve error
             || file_name.contains("language/tools/vm-genesis/src") // resolve error
             || file_name.contains("language/vm/src") // false positives
@@ -160,6 +164,7 @@ impl MiraiCallbacks {
             || file_name.contains("secure/storage/vault/src") // resolve error
             || file_name.contains("storage/backup/backup-service/src") // resolve error
             || file_name.contains("storage/jellyfish-merkle/src") // unreachable code
+            || file_name.contains("storage/backup/backup-cli/src") // panics
             || file_name.contains("storage/libradb/src") // resolve error
             || file_name.contains("testsuite/cli/src") // false positives
             || file_name.contains("types/src") // resolve error

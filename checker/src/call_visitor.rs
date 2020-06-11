@@ -147,7 +147,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 return None;
             }
             // The parameter environment of the caller provides a resolution context for the callee.
-            let param_env = self.block_visitor.bv.type_visitor.get_param_env();
+            let param_env = self
+                .block_visitor
+                .bv
+                .type_visitor
+                .get_param_env()
+                .with_reveal_all();
             trace!(
                 "devirtualize resolving def_id {:?}: {:?}",
                 self.callee_def_id,

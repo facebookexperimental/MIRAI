@@ -169,8 +169,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         let mut first_state = self.promote_constants();
 
         // Add parameter values that are function constants.
+        // Also add entries for closure fields.
         for (path, val) in function_constant_args.iter() {
-            TypeVisitor::add_function_constants_reachable_from(
+            TypeVisitor::add_any_closure_fields_for(
                 &mut self.current_environment,
                 parameter_types,
                 &mut first_state,
