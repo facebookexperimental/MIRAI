@@ -7,7 +7,7 @@ use crate::abstract_value::{self, AbstractValue, AbstractValueTrait};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
-use crate::{k_limits, type_visitor};
+use crate::{k_limits, type_visitor, utils};
 
 use log_derive::*;
 use mirai_annotations::*;
@@ -498,6 +498,20 @@ impl Path {
     pub fn new_slice(collection_path: Rc<Path>, count_value: Rc<AbstractValue>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Slice(count_value));
         Self::new_qualified(collection_path, selector)
+    }
+
+    /// Creates a path to the static defined by def_id.
+    pub fn new_static(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<Path> {
+        let ty = tcx.type_of(def_id);
+        let name = utils::summary_key_str(tcx, def_id);
+        Rc::new(
+            PathEnum::StaticVariable {
+                def_id: Some(def_id),
+                summary_cache_key: name,
+                expression_type: ExpressionType::from(&ty.kind),
+            }
+            .into(),
+        )
     }
 
     /// Creates a path to the layout of a heap allocated memory block.

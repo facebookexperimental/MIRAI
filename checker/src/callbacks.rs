@@ -147,6 +147,7 @@ impl MiraiCallbacks {
             || file_name.contains("common/logger/src") // resolve error
             || file_name.contains("common/metrics/src") // stack overflow
             || file_name.contains("config/config-builder/src") // false positives
+            || file_name.contains("execution/executor/src") // apparently assigning a thin pointer to a fat pointer without a cast
             || file_name.contains("language/bytecode-verifier/src") // resolve error
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // false positives
@@ -156,9 +157,13 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-prover/spec-lang/src") // false positives
             || file_name.contains("language/resource-viewer/src") // illegal down cast
             || file_name.contains("language/move-prover/stackless-bytecode-generator/src") // resolve error
+            || file_name.contains("language/stdlib/src") // fat thin
+            || file_name.contains("language/stdlib/compiled/src") // fat thin
             || file_name.contains("language/tools/vm-genesis/src") // resolve error
+            || file_name.contains("language/transaction-builder/src") // fat thin
             || file_name.contains("language/vm/src") // false positives
             || file_name.contains("network/src") // resolve error
+            || file_name.contains("secure/json-rpc/src") // apparently assigning a thin pointer to a fat pointer without a cast
             || file_name.contains("secure/net/src") // false positives
             || file_name.contains("secure/storage/src") // false positives
             || file_name.contains("secure/storage/vault/src") // resolve error
@@ -166,6 +171,7 @@ impl MiraiCallbacks {
             || file_name.contains("storage/jellyfish-merkle/src") // unreachable code
             || file_name.contains("storage/backup/backup-cli/src") // panics
             || file_name.contains("storage/libradb/src") // resolve error
+            || file_name.contains("storage/scratchpad/src") // apparently assigning a thin pointer to a fat pointer without a cast
             || file_name.contains("testsuite/cli/src") // false positives
             || file_name.contains("types/src") // resolve error
     }

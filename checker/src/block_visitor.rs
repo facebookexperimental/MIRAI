@@ -226,7 +226,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             } => self.visit_assert(cond, *expected, msg, *target, *cleanup),
             mir::TerminatorKind::Yield { .. } => assume_unreachable!(),
             mir::TerminatorKind::GeneratorDrop => assume_unreachable!(),
-            mir::TerminatorKind::FalseEdges { .. } => assume_unreachable!(),
+            mir::TerminatorKind::FalseEdge { .. } => assume_unreachable!(),
             mir::TerminatorKind::FalseUnwind { .. } => assume_unreachable!(),
             mir::TerminatorKind::InlineAsm { destination, .. } => {
                 self.visit_inline_asm(destination);
@@ -1063,6 +1063,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::Rvalue::Ref(_, _, place) | mir::Rvalue::AddressOf(_, place) => {
                 self.visit_address_of(path, place);
             }
+            mir::Rvalue::ThreadLocalRef(def_id) => {
+                self.visit_thread_local_ref(*def_id);
+            }
             mir::Rvalue::Len(place) => {
                 self.visit_len(path, place);
             }
@@ -1277,6 +1280,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             _ => AbstractValue::make_reference(value_path),
         };
         self.bv.current_environment.update_value_at(path, value);
+    }
+
+    /// Accessing a thread local static. This is inherently a runtime operation, even if llvm
+    /// treats it as an access to a static. This `Rvalue` yields a reference to the thread local
+    /// static.
+    fn visit_thread_local_ref(&mut self, def_id: DefId) -> Rc<AbstractValue> {
+        let static_var = Path::new_static(self.bv.tcx, def_id);
+        AbstractValue::make_reference(static_var)
     }
 
     /// path = length of a [X] or [X;n] value.
@@ -1732,21 +1743,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .type_visitor
                     .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
                 self.bv.cv.substs_cache.insert(*def_id, substs);
-                let name = utils::summary_key_str(self.bv.tcx, *def_id);
-                let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
                 let path = match promoted {
                     Some(promoted) => {
                         let index = promoted.index();
                         Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
                     }
-                    None => Rc::new(
-                        PathEnum::StaticVariable {
-                            def_id: Some(*def_id),
-                            summary_cache_key: name,
-                            expression_type,
-                        }
-                        .into(),
-                    ),
+                    None => Path::new_static(self.bv.tcx, *def_id),
                 };
                 self.bv.lookup_path_and_refine_result(path, ty)
             }
@@ -1974,17 +1976,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
                     self.bv.tcx.get_global_alloc(p.alloc_id)
                 {
-                    let name = utils::summary_key_str(self.bv.tcx, def_id);
-                    let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
-                    let path = Rc::new(
-                        PathEnum::StaticVariable {
-                            def_id: Some(def_id),
-                            summary_cache_key: name,
-                            expression_type,
-                        }
-                        .into(),
-                    );
-                    return AbstractValue::make_reference(path);
+                    return AbstractValue::make_reference(Path::new_static(self.bv.tcx, def_id));
                 }
                 debug!("span: {:?}", self.bv.current_span);
                 debug!("type kind {:?}", ty.kind);
@@ -2182,16 +2174,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
                         self.bv.tcx.get_global_alloc(ptr.alloc_id)
                     {
-                        let name = utils::summary_key_str(self.bv.tcx, def_id);
-                        let path = Rc::new(
-                            PathEnum::StaticVariable {
-                                def_id: Some(def_id),
-                                summary_cache_key: name,
-                                expression_type: ExpressionType::NonPrimitive,
-                            }
-                            .into(),
-                        );
-                        return AbstractValue::make_reference(path);
+                        return AbstractValue::make_reference(Path::new_static(
+                            self.bv.tcx,
+                            def_id,
+                        ));
                     }
                     let alloc = self.bv.tcx.global_alloc(ptr.alloc_id).unwrap_memory();
                     let alloc_len = alloc.len() as u64;
