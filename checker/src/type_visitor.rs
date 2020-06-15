@@ -64,7 +64,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// additional parameters. We pre-populate the environment with entries for these because
     /// there is no convenient way to look up their types later on. I.e. unlike ordinary parameters
     /// whose types can be looked up in mir.local_decls, these extra parameters need their
-    /// types extracted from the from the closure type definitions via the tricky logic below.
+    /// types extracted from the closure type definitions via the tricky logic below.
     #[logfn_inputs(TRACE)]
     pub fn add_any_closure_fields_for(
         environment: &mut Environment,
