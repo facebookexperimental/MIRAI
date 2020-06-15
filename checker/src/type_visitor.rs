@@ -60,8 +60,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         self.path_ty_cache = HashMap::default();
     }
 
+    /// Parameters that are closures bring enclosed variables with them that are effectively
+    /// additional parameters. We pre-populate the environment with entries for these because
+    /// there is no convenient way to look up their types later on. I.e. unlike ordinary parameters
+    /// whose types can be looked up in mir.local_decls, these extra parameters need their
+    /// types extracted from the closure type definitions via the tricky logic below.
     #[logfn_inputs(TRACE)]
-    pub fn add_function_constants_reachable_from(
+    pub fn add_any_closure_fields_for(
         environment: &mut Environment,
         parameter_types: &[Ty<'tcx>],
         first_state: &mut Environment,
@@ -241,6 +246,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                         def_id, ordinal
                                     ))
                                 });
+                            }
+                            TyKind::Opaque(def_id, subs) => {
+                                let closure_ty = self.tcx.type_of(*def_id);
+                                let map = self.get_generic_arguments_map(*def_id, subs, &[]);
+                                return self.specialize_generic_argument_type(closure_ty, &map);
                             }
                             TyKind::Tuple(types) => {
                                 if let Some(gen_arg) = types.get(*ordinal as usize) {
@@ -673,7 +683,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             // Can happen if the projection just adds a life time
                             item_type
                         } else {
-                            self.specialize_generic_argument_type(item_type, map)
+                            let map =
+                                self.get_generic_arguments_map(item_def_id, instance.substs, &[]);
+                            self.specialize_generic_argument_type(item_type, &map)
                         }
                     } else {
                         debug!("could not resolve an associated type with concrete type arguments");

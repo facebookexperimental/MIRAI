@@ -2375,13 +2375,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// a copy of it.
     #[logfn_inputs(TRACE)]
     pub fn visit_place_defer_refinement(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
-        let path = self.get_path_for_place(place);
-        let ty = self
-            .bv
-            .type_visitor
-            .get_rustc_place_type(place, self.bv.current_span);
-        self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
-        path
+        self.get_path_for_place(place)
     }
 
     /// Returns a Path instance that is the essentially the same as the Place instance, but which
