@@ -164,6 +164,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/vm/src") // false positives
             || file_name.contains("network/src") // resolve error
             || file_name.contains("secure/json-rpc/src") // apparently assigning a thin pointer to a fat pointer without a cast
+            || file_name.contains("secure/key-manager/src") // apparently assigning a thin pointer to a fat pointer without a cast
             || file_name.contains("secure/net/src") // false positives
             || file_name.contains("secure/storage/src") // false positives
             || file_name.contains("secure/storage/vault/src") // resolve error

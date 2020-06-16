@@ -92,10 +92,10 @@ impl Path {
     /// they are already canonical and because doing so can lead to recursive loops as refined paths
     /// re-introduce joined paths that have been split earlier.
     /// A split path, however, can be serve as the qualifier of a newly constructed qualified path
-    /// and this path might not be canonical. This routine tries to remove the two sources of
+    /// and the qualified path might not be canonical. This routine tries to remove the two sources of
     /// de-canonicalization that are currently know. Essentially: when a path that binds to a value
-    /// that is a reference is implicitly dereferenced by the qualifier, the canonical path will
-    /// be the one without the reference, or the the actual heap block, if the path binds to a heap
+    /// that is a reference is implicitly dereferenced by the selector, the canonical path will
+    /// be the one without the reference, or the actual heap block, if the path binds to a heap
     /// location. This routine returns a re-canonicalized path in the two scenarios above,
     /// otherwise returns `None`.
     ///
@@ -103,10 +103,7 @@ impl Path {
     /// constructed qualified path, the caller of this function should check if the selector of the
     /// qualified path is `PathSelector::Deref`. If so, the deref selector should also be removed.
     #[logfn_inputs(DEBUG)]
-    pub fn try_implicit_dereference(
-        path: &Rc<Path>,
-        environment: &Environment,
-    ) -> Option<Rc<Path>> {
+    pub fn try_to_dereference(path: &Rc<Path>, environment: &Environment) -> Option<Rc<Path>> {
         if let PathEnum::Alias { value } = &path.value {
             if let Expression::Reference(path) = &value.expression {
                 return Some(path.clone());
