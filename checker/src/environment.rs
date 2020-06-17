@@ -130,11 +130,14 @@ impl Environment {
                 if let Some((join_condition, true_path, false_path)) = self.try_to_split(qualifier)
                 {
                     let true_path = if let Some(deref_true_path) =
-                        Path::try_implicit_dereference(&true_path, &self)
+                        Path::try_to_dereference(&true_path, &self)
                     {
                         if *selector.as_ref() == PathSelector::Deref {
+                            // deref_true_path is now the canonical version of true_path
                             deref_true_path
                         } else {
+                            // The selector implicit dereferences true_path, so deref_true_path.selector
+                            // is thus a shorter version, which should be canonical.
                             Path::new_qualified(deref_true_path, selector.clone())
                         }
                     } else {
@@ -142,11 +145,14 @@ impl Environment {
                     };
 
                     let false_path = if let Some(deref_false_path) =
-                        Path::try_implicit_dereference(&false_path, &self)
+                        Path::try_to_dereference(&false_path, &self)
                     {
                         if *selector.as_ref() == PathSelector::Deref {
+                            // deref_false_path is now the canonical version of false_path
                             deref_false_path
                         } else {
+                            // The selector implicit dereferences true_path, so deref_false_path.selector
+                            // is thus a shorter version, which should be canonical.
                             Path::new_qualified(deref_false_path, selector.clone())
                         }
                     } else {

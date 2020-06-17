@@ -1491,16 +1491,14 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
 
         // Get here for paths that are not patterns.
-        let mut value_map = self.current_environment.value_map.clone();
+        let value_map = self.current_environment.value_map.clone();
         let is_closure = matches!(&root_rustc_type.kind, TyKind::Closure(..));
         let value = self.lookup_path_and_refine_result(source_path.clone(), root_rustc_type);
         let val_type = value.expression.infer_type();
         let mut no_children = true;
         if val_type == ExpressionType::NonPrimitive || is_closure {
             // First look at paths that are rooted in rpath.
-            for (path, value) in self
-                .current_environment
-                .value_map
+            for (path, value) in value_map
                 .iter()
                 .filter(|(p, _)| p.is_rooted_by(&source_path))
             {
@@ -1508,11 +1506,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let qualified_path = path.replace_root(&source_path, target_path.clone());
                 if move_elements {
                     trace!("moving child {:?} to {:?}", value, qualified_path);
-                    value_map = value_map.remove(path);
+                    self.current_environment.value_map =
+                        self.current_environment.value_map.remove(path);
                 } else {
                     trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
-                value_map = value_map.insert(qualified_path.clone(), value.clone());
+                self.current_environment
+                    .update_value_at(qualified_path, value.clone());
                 no_children = false;
             }
         }
@@ -1521,7 +1521,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             // Just copy/move (rpath, value) itself.
             if move_elements {
                 trace!("moving {:?} to {:?}", value, target_path);
-                value_map = value_map.remove(&source_path);
+                self.current_environment.value_map =
+                    self.current_environment.value_map.remove(&source_path);
             } else {
                 trace!("copying {:?} to {:?}", value, target_path);
             }
@@ -1530,6 +1531,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 if let TyKind::Ref(_, ty, _) = root_rustc_type.kind {
                     if let TyKind::Slice(elem_ty) = ty.kind {
                         if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
+                            let value_map = self.current_environment.value_map.clone();
                             self.current_environment.value_map =
                                 Self::expand_aliased_string_literals_if_appropriate(
                                     &target_path,
@@ -1543,11 +1545,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     }
                 }
             }
-            self.current_environment.value_map = value_map;
             self.current_environment.update_value_at(target_path, value);
             return;
         }
-        self.current_environment.value_map = value_map;
     }
 
     /// Weaken (path, value) pairs from the environment if path is rooted by root_path[index].
