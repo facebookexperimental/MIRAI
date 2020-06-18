@@ -6,8 +6,10 @@
 use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
-use crate::expression::Expression;
+use crate::bool_domain::BoolDomain;
+use crate::expression::{Expression, ExpressionType};
 use crate::path::{Path, PathEnum, PathSelector};
+use crate::tag_domain::Tag;
 
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::checked_assume;
@@ -312,5 +314,27 @@ impl Environment {
             }
         }
         true
+    }
+
+    /// Updates `path` in the value map so that the given path is now attached with `tag` (whose
+    /// presence is indicated by `val`).
+    #[logfn_inputs(TRACE)]
+    pub fn update_value_with_tag(
+        &mut self,
+        tag: Tag,
+        val: BoolDomain,
+        path: Rc<Path>,
+        exp_type: ExpressionType,
+    ) {
+        if let Some((_, true_path, false_path)) = self.try_to_split(&path) {
+            self.update_value_with_tag(tag, BoolDomain::Top, true_path, exp_type.clone());
+            self.update_value_with_tag(tag, BoolDomain::Top, false_path, exp_type.clone());
+        }
+        let old_abs = self
+            .value_at(&path)
+            .unwrap_or(&AbstractValue::make_typed_unknown(exp_type, path.clone()))
+            .clone();
+        let new_abs = old_abs.add_tag(tag, val);
+        self.value_map.insert_mut(path, new_abs);
     }
 }

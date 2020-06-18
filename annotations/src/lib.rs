@@ -32,17 +32,47 @@ macro_rules! abstract_value {
 pub type TagPropagationSet = u128;
 
 /// An enum type of controllable operations for MIRAI tag types.
-/// todo: add all other controllable operations.
+#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum TagPropagation {
-    Add = 1 << 0,
-    Xor = 1 << 1,
+    Add,
+    AddOverflows,
+    And,
+    BitAnd,
+    BitNot,
+    BitOr,
+    BitXor,
+    Cast,
+    Div,
+    Equals,
+    GreaterOrEqual,
+    GreaterThan,
+    IntrinsicBinary,
+    IntrinsicBitVectorUnary,
+    IntrinsicFloatingPointUnary,
+    LessOrEqual,
+    LessThan,
+    LogicalNot,
+    Mul,
+    MulOverflows,
+    Ne,
+    Neg,
+    Or,
+    Offset,
+    Rem,
+    Shl,
+    ShlOverflows,
+    Shr,
+    ShrOverflows,
+    Sub,
+    SubOverflows,
+    UninterpretedCall,
 }
 
 /// Provide a way to create tag transfer masks. It is equivalent to bitwise-or of all its arguments.
 #[macro_export]
 macro_rules! tag_propagation_set {
     ($($x:expr),*) => {
-        0 $(| ($x as mirai_annotations::TagPropagationSet))*
+        0 $(| (1 << ($x as u8)))*
     };
 }
 

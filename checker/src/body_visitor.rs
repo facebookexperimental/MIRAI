@@ -5,6 +5,7 @@
 
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
+use crate::bool_domain::BoolDomain;
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
@@ -15,6 +16,7 @@ use crate::path::{Path, PathEnum, PathSelector};
 use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries;
 use crate::summaries::{Precondition, Summary};
+use crate::tag_domain::Tag;
 use crate::type_visitor::TypeVisitor;
 use crate::{abstract_value, type_visitor};
 
@@ -1747,5 +1749,20 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         self.current_environment
             .update_value_at(layout_path, layout);
         block
+    }
+
+    /// Attach `tag` (whose presence is indicated by `val`) to the value located at `source_path`.
+    /// todo: implement weak updates.
+    #[logfn_inputs(TRACE)]
+    pub fn attach_tag_to_elements(
+        &mut self,
+        tag: Tag,
+        val: BoolDomain,
+        source_path: Rc<Path>,
+        source_rustc_type: Ty<'tcx>,
+    ) {
+        let source_exp_type: ExpressionType = (&source_rustc_type.kind).into();
+        self.current_environment
+            .update_value_with_tag(tag, val, source_path, source_exp_type);
     }
 }

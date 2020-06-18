@@ -654,6 +654,63 @@ impl Expression {
         }
     }
 
+    /// Returns a value from the enum `TagPropagation` which reflects the expression kind.
+    /// If the tag propagation behavior for the expression is not controllable, e.g., for
+    /// control-flow expressions such as Conditional or Switch, returns None.
+    #[logfn_inputs(TRACE)]
+    pub fn get_tag_propagation(&self) -> Option<TagPropagation> {
+        match self {
+            Expression::Top => None,
+            Expression::Bottom => None,
+            Expression::Add { .. } => Some(TagPropagation::Add),
+            Expression::AddOverflows { .. } => Some(TagPropagation::AddOverflows),
+            Expression::And { .. } => Some(TagPropagation::And),
+            Expression::BitAnd { .. } => Some(TagPropagation::BitAnd),
+            Expression::BitNot { .. } => Some(TagPropagation::BitNot),
+            Expression::BitOr { .. } => Some(TagPropagation::BitOr),
+            Expression::BitXor { .. } => Some(TagPropagation::BitXor),
+            Expression::Cast { .. } => Some(TagPropagation::Cast),
+            Expression::CompileTimeConstant { .. } => None,
+            Expression::ConditionalExpression { .. } => None,
+            Expression::Div { .. } => Some(TagPropagation::Div),
+            Expression::Equals { .. } => Some(TagPropagation::Equals),
+            Expression::GreaterOrEqual { .. } => Some(TagPropagation::GreaterOrEqual),
+            Expression::GreaterThan { .. } => Some(TagPropagation::GreaterThan),
+            Expression::HeapBlock { .. } => None,
+            Expression::HeapBlockLayout { .. } => None,
+            Expression::IntrinsicBinary { .. } => Some(TagPropagation::IntrinsicBinary),
+            Expression::IntrinsicBitVectorUnary { .. } => {
+                Some(TagPropagation::IntrinsicBitVectorUnary)
+            }
+            Expression::IntrinsicFloatingPointUnary { .. } => {
+                Some(TagPropagation::IntrinsicFloatingPointUnary)
+            }
+            Expression::Join { .. } => None,
+            Expression::LessOrEqual { .. } => Some(TagPropagation::LessOrEqual),
+            Expression::LessThan { .. } => Some(TagPropagation::LessThan),
+            Expression::LogicalNot { .. } => Some(TagPropagation::LogicalNot),
+            Expression::Mul { .. } => Some(TagPropagation::Mul),
+            Expression::MulOverflows { .. } => Some(TagPropagation::MulOverflows),
+            Expression::Ne { .. } => Some(TagPropagation::Ne),
+            Expression::Neg { .. } => Some(TagPropagation::Neg),
+            Expression::Or { .. } => Some(TagPropagation::Or),
+            Expression::Offset { .. } => Some(TagPropagation::Offset),
+            Expression::Reference { .. } => None,
+            Expression::Rem { .. } => Some(TagPropagation::Rem),
+            Expression::Shl { .. } => Some(TagPropagation::Shl),
+            Expression::ShlOverflows { .. } => Some(TagPropagation::ShlOverflows),
+            Expression::Shr { .. } => Some(TagPropagation::Shr),
+            Expression::ShrOverflows { .. } => Some(TagPropagation::ShrOverflows),
+            Expression::Sub { .. } => Some(TagPropagation::Sub),
+            Expression::SubOverflows { .. } => Some(TagPropagation::SubOverflows),
+            Expression::Switch { .. } => None,
+            Expression::UninterpretedCall { .. } => Some(TagPropagation::UninterpretedCall),
+            Expression::UnknownModelField { .. } => None,
+            Expression::Variable { .. } => None,
+            Expression::Widen { .. } => None,
+        }
+    }
+
     /// Returns the type of value the expression should result in, if well formed.
     /// (both operands are of the same type for binary operators, conditional branches match).
     #[logfn_inputs(TRACE)]

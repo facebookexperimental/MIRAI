@@ -28,3 +28,51 @@ impl From<bool> for BoolDomain {
         }
     }
 }
+
+/// Transfer functions
+impl BoolDomain {
+    /// Return the join of two Boolean domain elements, which is essentially the set union.
+    #[logfn_inputs(TRACE)]
+    pub fn join(&self, other: &Self) -> Self {
+        match (self, other) {
+            // [Top join _] -> Top
+            // [False join True] -> Top
+            (BoolDomain::Top, _)
+            | (_, BoolDomain::Top)
+            | (BoolDomain::False, BoolDomain::True)
+            | (BoolDomain::True, BoolDomain::False) => BoolDomain::Top,
+
+            // [False join False] -> False
+            // [False join Bottom] -> False
+            (BoolDomain::False, _) | (_, BoolDomain::False) => BoolDomain::False,
+
+            // [True join True] -> True
+            // [True join Bottom] -> True
+            (BoolDomain::True, _) | (_, BoolDomain::True) => BoolDomain::True,
+
+            // [Bottom join Bottom] -> Bottom
+            (BoolDomain::Bottom, BoolDomain::Bottom) => BoolDomain::Bottom,
+        }
+    }
+
+    /// Return the logical-or of two Boolean domain elements.
+    #[logfn_inputs(TRACE)]
+    pub fn or(&self, other: &Self) -> Self {
+        match (self, other) {
+            // [Bottom || _] -> Bottom
+            (BoolDomain::Bottom, _) | (_, BoolDomain::Bottom) => BoolDomain::Bottom,
+
+            // [True || True] -> True
+            // [True || False] -> True
+            // [True || Top] -> True
+            (BoolDomain::True, _) | (_, BoolDomain::True) => BoolDomain::True,
+
+            // [Top || Top] -> Top
+            // [Top || False] -> Top
+            (BoolDomain::Top, _) | (_, BoolDomain::Top) => BoolDomain::Top,
+
+            // [False || False] -> False
+            (BoolDomain::False, BoolDomain::False) => BoolDomain::False,
+        }
+    }
+}

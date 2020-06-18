@@ -307,6 +307,26 @@ impl AbstractValue {
     pub fn make_typed_unknown(var_type: ExpressionType, path: Rc<Path>) -> Rc<AbstractValue> {
         AbstractValue::make_from(Expression::Variable { path, var_type }, 1)
     }
+
+    /// Creates an abstract value that is basically the same as the given value, except that
+    /// a tag domain element is attached to it. This routine is useful when a value is being
+    /// refined and we don't want to drop the existing tags associated with that value.
+    /// todo: this will change to a new tagged expression.
+    #[logfn_inputs(TRACE)]
+    pub fn make_with_tags(
+        value: &Rc<AbstractValue>,
+        tags_opt: Option<&Rc<TagDomain>>,
+    ) -> Rc<AbstractValue> {
+        match tags_opt {
+            None => value.clone(),
+            Some(tags) => Rc::new(AbstractValue {
+                expression: value.expression.clone(),
+                expression_size: value.expression_size,
+                interval: RefCell::new(value.interval.borrow().clone()),
+                tags: RefCell::new(Some(tags.clone())),
+            }),
+        }
+    }
 }
 
 pub trait AbstractValueTrait: Sized {
@@ -332,6 +352,7 @@ pub trait AbstractValueTrait: Sized {
     fn equals(&self, other: Self) -> Self;
     fn greater_or_equal(&self, other: Self) -> Self;
     fn greater_than(&self, other: Self) -> Self;
+    fn has_tag(&self, tag: &Tag) -> Rc<AbstractValue>;
     fn implies(&self, other: &Self) -> bool;
     fn implies_not(&self, other: &Self) -> bool;
     fn intrinsic_binary(&self, other: Self, name: KnownNames) -> Self;
@@ -502,7 +523,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element which marks `tag` whose presence is indicated by `val`.
     #[logfn_inputs(TRACE)]
     fn add_tag(&self, tag: Tag, val: BoolDomain) -> Rc<AbstractValue> {
-        let old_tags = self.get_tags();
+        let old_tags = self.get_cached_tags();
         let new_tags = old_tags.add_tag(tag, val);
         Rc::new(AbstractValue {
             expression: self.expression.clone(),
@@ -1082,7 +1103,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     // generic types when constructed, but then leak out to caller contexts via summaries.
     #[logfn_inputs(TRACE)]
     fn try_to_retype_as(&self, target_type: &ExpressionType) -> Rc<AbstractValue> {
-        match &self.expression {
+        let result = match &self.expression {
             Expression::Add { left, right } => left
                 .try_to_retype_as(target_type)
                 .addition(right.try_to_retype_as(target_type)),
@@ -1148,7 +1169,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Widen { .. } => self.clone(),
 
             _ => self.clone(),
-        }
+        };
+        // todo: unnecessary with tagged expressions
+        AbstractValue::make_with_tags(&result, self.tags.borrow().as_ref())
     }
 
     /// Returns an element that is "*self".
@@ -1405,6 +1428,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             left,
             right,
         })
+    }
+
+    /// Returns an abstract value that describes whether `tag` is attached to `self` or not.
+    #[logfn_inputs(TRACE)]
+    fn has_tag(&self, tag: &Tag) -> Rc<AbstractValue> {
+        Rc::new(self.get_cached_tags().has_tag(tag).into())
     }
 
     /// Returns true if "self => other" is known at compile time to be true.
@@ -2537,16 +2566,126 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Constructs an element of the tag domain for simple expressions.
     #[logfn_inputs(TRACE)]
     fn get_tags(&self) -> TagDomain {
-        // todo: take into consideration the control masks for different tags.
-        // todo: for now simply return an empty set (unsound).
-        TagDomain::for_empty_set()
+        let exp_tag_prop_opt = self.expression.get_tag_propagation();
+
+        // First deal with expressions that do not propagate tags or have special propagation behavior.
+        match &self.expression {
+            Expression::Top
+            | Expression::Bottom
+            | Expression::CompileTimeConstant { .. }
+            | Expression::HeapBlock { .. }
+            | Expression::HeapBlockLayout { .. }
+            | Expression::Reference { .. }
+            | Expression::UnknownModelField { .. }
+            | Expression::Variable { .. } => {
+                return TagDomain::for_empty_set();
+            }
+
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                // tags(condition) | (tags(consequent) join tags(alternate))
+                return condition.get_cached_tags().union(
+                    &consequent
+                        .get_cached_tags()
+                        .join(&alternate.get_cached_tags()),
+                );
+            }
+
+            Expression::Join { left, right, .. } => {
+                // tags(left) join tags(right)
+                return left
+                    .get_cached_tags()
+                    .join(right.get_cached_tags().as_ref());
+            }
+
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                // tags(discriminator) | (tags(cases) join tags(default))
+                let mut tags_from_cases = (*default.get_cached_tags()).clone();
+                for case in cases {
+                    tags_from_cases = tags_from_cases.join(case.1.get_cached_tags().as_ref())
+                }
+                return discriminator.get_cached_tags().union(&tags_from_cases);
+            }
+
+            Expression::Widen { operand, .. } => {
+                let tags = operand.get_cached_tags();
+                return (*tags).clone();
+            }
+
+            _ => {
+                verify!(exp_tag_prop_opt.is_some());
+            }
+        }
+
+        let exp_tag_prop = exp_tag_prop_opt.unwrap();
+
+        // Then deal with expressions that have standard propagation behavior, i.e., taking tags
+        // from children nodes.
+        match &self.expression {
+            Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
+            | Expression::Ne { left, right }
+            | Expression::Or { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
+            | Expression::Shr { left, right, .. }
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => left
+                .get_cached_tags()
+                .filter(exp_tag_prop)
+                .union(&right.get_cached_tags().filter(exp_tag_prop)),
+
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::LogicalNot { operand, .. }
+            | Expression::Neg { operand, .. } => operand.get_cached_tags().filter(exp_tag_prop),
+
+            Expression::UninterpretedCall {
+                callee, arguments, ..
+            } => {
+                let mut tags = callee.get_cached_tags().filter(exp_tag_prop);
+                for argument in arguments {
+                    tags = tags.union(&argument.get_cached_tags().filter(exp_tag_prop))
+                }
+                tags
+            }
+
+            _ => {
+                verify_unreachable!();
+            }
+        }
     }
 
     /// Replaces occurrences of Expression::Variable(path) with the value at that path
     /// in the given environment (if there is such a value).
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
-        match &self.expression {
+        let result = match &self.expression {
             Expression::Bottom | Expression::Top => self.clone(),
             Expression::Add { left, right } => left
                 .refine_paths(environment)
@@ -2769,7 +2908,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Widen { path, operand, .. } => operand
                 .refine_paths(environment)
                 .widen(&path.refine_paths(environment)),
-        }
+        };
+        // todo: unnecessary with tagged expressions
+        AbstractValue::make_with_tags(&result, self.tags.borrow().as_ref())
     }
 
     /// Returns a value that is simplified (refined) by replacing parameter values
@@ -2782,7 +2923,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         // An offset to add to locals from the called function so that they do not clash with caller locals.
         fresh: usize,
     ) -> Rc<AbstractValue> {
-        match &self.expression {
+        let result = match &self.expression {
             Expression::Bottom | Expression::Top => self.clone(),
             Expression::Add { left, right } => left
                 .refine_parameters(arguments, fresh)
@@ -3008,7 +3149,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Widen { path, operand, .. } => operand
                 .refine_parameters(arguments, fresh)
                 .widen(&path.refine_parameters(arguments, fresh)),
-        }
+        };
+        // todo: unnecessary with tagged expressions
+        AbstractValue::make_with_tags(&result, self.tags.borrow().as_ref())
     }
 
     /// Returns a domain that is simplified (refined) by using the current path conditions
@@ -3041,7 +3184,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
         // In this context path_condition is true
         if path_condition.eq(self) {
-            return Rc::new(TRUE);
+            // todo: unnecessary with tagged expressions
+            return AbstractValue::make_with_tags(&Rc::new(TRUE), self.tags.borrow().as_ref());
         }
 
         // If the path context constrains the self expression to be equal to a constant, just
@@ -3049,12 +3193,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let Expression::Equals { left, right } = &path_condition.expression {
             if let Expression::CompileTimeConstant(..) = &left.expression {
                 if self.eq(right) {
-                    return left.clone();
+                    // todo: unnecessary with tagged expressions
+                    return AbstractValue::make_with_tags(left, self.tags.borrow().as_ref());
                 }
             }
             if let Expression::CompileTimeConstant(..) = &right.expression {
                 if self.eq(left) {
-                    return right.clone();
+                    // todo: unnecessary with tagged expressions
+                    return AbstractValue::make_with_tags(right, self.tags.borrow().as_ref());
                 }
             }
         }
@@ -3063,7 +3209,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         // the transfer functions. Also, keep the transfer functions constant in cost as
         // much as possible. Any time they are not, this function becomes quadratic and
         // performance becomes terrible.
-        match &self.expression {
+        let result = match &self.expression {
             Expression::Bottom | Expression::Top => self.clone(),
             Expression::Add { left, right } => left
                 .refine_with(path_condition, depth + 1)
@@ -3306,7 +3452,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Widen { path, operand } => {
                 operand.refine_with(path_condition, depth + 1).widen(&path)
             }
-        }
+        };
+        // todo: unnecessary with tagged expressions
+        AbstractValue::make_with_tags(&result, self.tags.borrow().as_ref())
     }
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
