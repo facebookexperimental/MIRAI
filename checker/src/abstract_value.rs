@@ -329,6 +329,7 @@ pub trait AbstractValueTrait: Sized {
     fn conditional_expression(&self, consequent: Self, alternate: Self) -> Self;
     fn dereference(&self, target_type: ExpressionType) -> Self;
     fn divide(&self, other: Self) -> Self;
+    fn does_not_have_tag(&self, tag: &Tag) -> Rc<AbstractValue>;
     fn equals(&self, other: Self) -> Self;
     fn greater_or_equal(&self, other: Self) -> Self;
     fn greater_than(&self, other: Self) -> Self;
@@ -1275,6 +1276,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         })
     }
 
+    /// Returns an abstract value that describes if `tag` is *not* attached to `self`.
+    #[logfn_inputs(TRACE)]
+    fn does_not_have_tag(&self, tag: &Tag) -> Rc<AbstractValue> {
+        self.has_tag(tag).logical_not()
+    }
+
     /// Returns an element that is "self == other".
     #[logfn_inputs(TRACE)]
     fn equals(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
@@ -1574,9 +1581,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match &self.expression {
             Expression::HeapBlock { is_zeroed, .. } => *is_zeroed,
             Expression::Offset { left, .. } => left.is_contained_in_zeroed_heap_block(),
-            Expression::Reference(path) | Expression::Variable { path, .. } => {
-                path.is_rooted_by_zeroed_heap_block()
-            }
+            Expression::Reference(path)
+            | Expression::UnknownTagCheck { path, .. }
+            | Expression::Variable { path, .. } => path.is_rooted_by_zeroed_heap_block(),
             _ => false,
         }
     }
@@ -2078,7 +2085,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn refers_to_unknown_location(&self) -> bool {
         match &self.expression {
-            Expression::Cast { operand, .. } => operand.refers_to_unknown_location(),
+            Expression::Cast { operand, .. } | Expression::TaggedExpression { operand, .. } => {
+                operand.refers_to_unknown_location()
+            }
             Expression::ConditionalExpression {
                 consequent,
                 alternate,
@@ -2098,6 +2107,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     || cases.iter().any(|(_, v)| v.refers_to_unknown_location())
             }
             Expression::UninterpretedCall { path, .. }
+            | Expression::UnknownTagCheck { path, .. }
             | Expression::Variable { path, .. }
             | Expression::Widen { path, .. } => {
                 if let PathEnum::Alias { value } = &path.value {
@@ -2502,6 +2512,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .fold(default.get_as_interval(), |acc, (_, result)| {
                     acc.widen(&result.get_as_interval())
                 }),
+            Expression::TaggedExpression { operand, .. } => operand.get_as_interval(),
             Expression::Variable { .. } => interval_domain::BOTTOM,
             Expression::Widen { operand, .. } => {
                 let interval = operand.get_as_interval();
@@ -2565,8 +2576,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::HeapBlockLayout { .. }
             | Expression::Reference { .. }
             | Expression::UnknownModelField { .. }
-            | Expression::Variable { .. } => {
-                return TagDomain::for_empty_set();
+            | Expression::UnknownTagCheck { .. } => return TagDomain::empty_set(),
+
+            Expression::Variable { .. } => {
+                // A variable is an unknown value of a place in memory.
+                // Therefore, the associated tags are also unknown.
+                return TagDomain::top();
             }
 
             Expression::ConditionalExpression {
@@ -2574,16 +2589,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent,
                 alternate,
             } => {
-                // tags(condition) | (tags(consequent) join tags(alternate))
-                return condition.get_cached_tags().union(
-                    &consequent
-                        .get_cached_tags()
-                        .join(&alternate.get_cached_tags()),
-                );
+                // For each tag A, whether the conditional expression has tag A or not is
+                // (condition has tag A) or ((consequent has tag A) join (alternate has tag A)).
+                return condition.get_cached_tags().or(&consequent
+                    .get_cached_tags()
+                    .join(&alternate.get_cached_tags()));
             }
 
             Expression::Join { left, right, .. } => {
-                // tags(left) join tags(right)
+                // For each tag A, whether the join expression has tag A or not is
+                // ((left has tag A) join (right has tag A)).
                 return left
                     .get_cached_tags()
                     .join(right.get_cached_tags().as_ref());
@@ -2595,15 +2610,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 default,
             } => {
                 // tags(discriminator) | (tags(cases) join tags(default))
+                // For each tag A, whether the switch expression has tag A or not is
+                // (discriminator has tag A) or ((case_0 has tag A) join .. join (case_n has tag A) join (default has tag A)).
                 let mut tags_from_cases = (*default.get_cached_tags()).clone();
                 for case in cases {
                     tags_from_cases = tags_from_cases.join(case.1.get_cached_tags().as_ref())
                 }
-                return discriminator.get_cached_tags().union(&tags_from_cases);
+                return discriminator.get_cached_tags().or(&tags_from_cases);
             }
 
             Expression::TaggedExpression { operand, tag } => {
-                return operand.get_cached_tags().add_tag(*tag, BoolDomain::True);
+                return operand.get_cached_tags().add_tag(*tag);
             }
 
             Expression::Widen { operand, .. } => {
@@ -2647,22 +2664,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Sub { left, right }
             | Expression::SubOverflows { left, right, .. } => left
                 .get_cached_tags()
-                .filter(exp_tag_prop)
-                .union(&right.get_cached_tags().filter(exp_tag_prop)),
+                .propagate_through(exp_tag_prop)
+                .or(&right.get_cached_tags().propagate_through(exp_tag_prop)),
 
             Expression::BitNot { operand, .. }
             | Expression::Cast { operand, .. }
             | Expression::IntrinsicBitVectorUnary { operand, .. }
             | Expression::IntrinsicFloatingPointUnary { operand, .. }
             | Expression::LogicalNot { operand, .. }
-            | Expression::Neg { operand, .. } => operand.get_cached_tags().filter(exp_tag_prop),
+            | Expression::Neg { operand, .. } => {
+                operand.get_cached_tags().propagate_through(exp_tag_prop)
+            }
 
             Expression::UninterpretedCall {
                 callee, arguments, ..
             } => {
-                let mut tags = callee.get_cached_tags().filter(exp_tag_prop);
+                let mut tags = callee.get_cached_tags().propagate_through(exp_tag_prop);
                 for argument in arguments {
-                    tags = tags.union(&argument.get_cached_tags().filter(exp_tag_prop))
+                    tags = tags.or(&argument.get_cached_tags().propagate_through(exp_tag_prop))
                 }
                 tags
             }
@@ -2883,6 +2902,34 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     // The buck stops here and the environment does not have a value for model field.
                     default.clone()
                 }
+            }
+            Expression::UnknownTagCheck {
+                path,
+                tag,
+                checking_presence,
+            } => {
+                if let Some(val) = environment.value_at(&path) {
+                    let check_value = if *checking_presence {
+                        val.has_tag(tag)
+                    } else {
+                        val.does_not_have_tag(tag)
+                    };
+                    if check_value.is_top() {
+                        // Still unknown, fall through.
+                    } else {
+                        return check_value;
+                    }
+                }
+
+                // Cannot refine this tag check. Return again an unknown tag check.
+                AbstractValue::make_from(
+                    Expression::UnknownTagCheck {
+                        path: path.refine_paths(environment),
+                        tag: *tag,
+                        checking_presence: *checking_presence,
+                    },
+                    1,
+                )
             }
             Expression::Variable { path, var_type } => {
                 if let Some(val) = environment.value_at(&path) {
@@ -3134,6 +3181,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     1,
                 )
             }
+            Expression::UnknownTagCheck {
+                path,
+                tag,
+                checking_presence,
+            } => AbstractValue::make_from(
+                Expression::UnknownTagCheck {
+                    path: path.refine_parameters(arguments, fresh),
+                    tag: *tag,
+                    checking_presence: *checking_presence,
+                },
+                1,
+            ),
             Expression::Variable { path, var_type } => {
                 let refined_path = path.refine_parameters(arguments, fresh);
                 if let PathEnum::Alias { value } = &refined_path.value {
@@ -3433,6 +3492,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     path.clone(),
                 ),
             Expression::UnknownModelField { .. } => self.clone(),
+            Expression::UnknownTagCheck { .. } => self.clone(),
             Expression::Variable { var_type, .. } => {
                 if *var_type == ExpressionType::Bool {
                     if path_condition.implies(&self) {

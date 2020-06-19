@@ -326,10 +326,15 @@ impl Environment {
         exp_type: ExpressionType,
     ) {
         if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
-            self.update_value_with_tag(tag, join_condition.clone(), true_path, exp_type.clone());
             self.update_value_with_tag(
                 tag,
-                join_condition.logical_not(),
+                cond.and(join_condition.clone()),
+                true_path,
+                exp_type.clone(),
+            );
+            self.update_value_with_tag(
+                tag,
+                cond.and(join_condition.logical_not()),
                 false_path,
                 exp_type.clone(),
             );
@@ -338,12 +343,12 @@ impl Environment {
             let value_map = self.value_map.clone();
             for (qualified_path, old_abs) in value_map.iter().filter(|(p, _)| p.is_rooted_by(&path))
             {
-                debug!("adding tag {:?} to {:?}", tag, qualified_path);
+                debug!("attaching {:?} to {:?}", tag, qualified_path);
                 let new_abs = cond.conditional_expression(old_abs.add_tag(tag), old_abs.clone());
                 self.value_map.insert_mut(qualified_path.clone(), new_abs);
             }
         }
-        debug!("adding {:?} to {:?}", tag, path);
+        debug!("attaching {:?} to {:?}", tag, path);
         let old_abs = self
             .value_at(&path)
             .unwrap_or(&AbstractValue::make_typed_unknown(exp_type, path.clone()))

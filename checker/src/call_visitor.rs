@@ -364,7 +364,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             KnownNames::MiraiDoesNotHaveTag => {
                 checked_assume!(self.actual_args.len() == 1);
-                self.handle_has_tag(false);
+                self.handle_check_tag(false);
                 return true;
             }
             KnownNames::MiraiGetModelField => {
@@ -373,7 +373,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             KnownNames::MiraiHasTag => {
                 checked_assume!(self.actual_args.len() == 1);
-                self.handle_has_tag(true);
+                self.handle_check_tag(true);
                 return true;
             }
             KnownNames::MiraiPostcondition => {
@@ -1019,19 +1019,24 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
             let source_path = Path::new_deref(self.actual_args[0].0.clone())
                 .refine_paths(&self.block_visitor.bv.current_environment);
-            trace!(
-                "MiraiAddTag: attaching <{:?},{:?}> to {:?}",
-                tag.def_id,
-                tag.prop_set,
-                source_path
-            );
+            trace!("MiraiAddTag: tagging {:?} with {:?}", tag, source_path);
 
-            // Augment the tags associated at the source with a new tag.
+            // Check if the tagged value has a pointer type (e.g., a reference).
+            // Emit an error message if so.
             let source_rustc_type = self
                 .block_visitor
                 .bv
                 .type_visitor
                 .get_path_rustc_type(&source_path, self.block_visitor.bv.current_span);
+            if self.block_visitor.bv.check_for_errors && source_rustc_type.is_any_ptr() {
+                let err = self.block_visitor.bv.cv.session.struct_span_err(
+                    self.block_visitor.bv.current_span,
+                    "the macro add_tag! expects its argument to be a reference to a non-reference value",
+                );
+                self.block_visitor.bv.emit_diagnostic(err);
+            }
+
+            // Augment the tags associated at the source with a new tag.
             self.block_visitor
                 .bv
                 .attach_tag_to_elements(tag, source_path, source_rustc_type);
@@ -1071,6 +1076,86 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .exit_conditions
                 .insert(cleanup_target, abstract_value::FALSE.into());
         }
+    }
+
+    /// Check if a tag has been attached to the first and only value in actual_args.
+    /// The tag type is indicated by a generic argument.
+    #[logfn_inputs(TRACE)]
+    fn handle_check_tag(&mut self, checking_presence: bool) {
+        precondition!(self.actual_args.len() == 1);
+
+        let result: Option<Rc<AbstractValue>>;
+        if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
+            let source_path = Path::new_deref(self.actual_args[0].0.clone())
+                .refine_paths(&self.block_visitor.bv.current_environment);
+            trace!(
+                "MiraiHasTag: checking if {:?} has {}been tagged with {:?}",
+                source_path,
+                (if checking_presence { "" } else { "never " }),
+                tag,
+            );
+
+            // Check if the tagged value has a pointer type (e.g., a reference).
+            // Emit an error message if so.
+            let source_rustc_type = self
+                .block_visitor
+                .bv
+                .type_visitor
+                .get_path_rustc_type(&source_path, self.block_visitor.bv.current_span);
+            if self.block_visitor.bv.check_for_errors && source_rustc_type.is_any_ptr() {
+                let err = self.block_visitor.bv.cv.session.struct_span_err(
+                    self.block_visitor.bv.current_span,
+                    format!(
+                        "the macro {} expects its first argument to be a reference to a non-reference value",
+                        if checking_presence { "has_tag! "} else { "does_not_have_tag!" },
+                    ).as_str(),
+                );
+                self.block_visitor.bv.emit_diagnostic(err);
+            }
+
+            // Obtain the value located at source path.
+            let source_value = self
+                .block_visitor
+                .bv
+                .lookup_path_and_refine_result(source_path.clone(), source_rustc_type);
+
+            // Decide the result of has_tag! or does_not_have_tag!.
+            let check_value = if checking_presence {
+                source_value.has_tag(&tag)
+            } else {
+                source_value.does_not_have_tag(&tag)
+            };
+            if check_value.is_top() {
+                // Cannot decide tag presence/absence. Return an unknown tag check.
+                result = Some(AbstractValue::make_from(
+                    Expression::UnknownTagCheck {
+                        path: source_path,
+                        tag,
+                        checking_presence,
+                    },
+                    1,
+                ));
+            } else {
+                result = Some(check_value);
+            }
+        } else {
+            result = None;
+        }
+
+        // Return the abstract result and update exit conditions.
+        let destination = &self.destination;
+        if let Some((place, _)) = destination {
+            let target_path = self.block_visitor.visit_place(place);
+            self.block_visitor.bv.current_environment.update_value_at(
+                target_path.clone(),
+                result.unwrap_or_else(|| {
+                    AbstractValue::make_typed_unknown(ExpressionType::Bool, target_path)
+                }),
+            );
+        } else {
+            assume_unreachable!("expected the function call has a destination");
+        }
+        self.use_entry_condition_as_exit_condition();
     }
 
     /// Update the state so that the call result is the value of the model field (or the default
@@ -1158,80 +1243,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         } else {
             assume_unreachable!();
         }
-    }
-
-    /// Check if a tag has been attached to the first and only value in actual_args.
-    /// The tag type is indicated by a generic argument.
-    #[logfn_inputs(TRACE)]
-    fn handle_has_tag(&mut self, checking_presence: bool) {
-        precondition!(self.actual_args.len() == 1);
-
-        let result: Option<Rc<AbstractValue>>;
-        if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
-            let source_path = Path::new_deref(self.actual_args[0].0.clone())
-                .refine_paths(&self.block_visitor.bv.current_environment);
-            trace!(
-                "MiraiHasTag: checking if {:?} has {}been attached with <{:?},{:?}>",
-                source_path,
-                (if checking_presence { "" } else { "never " }),
-                tag.def_id,
-                tag.prop_set
-            );
-
-            // Lookup the value located at the source path and check its associated tags.
-            // Also lookup the ancestors of the source path to find possible tags.
-            let mut cur_path = source_path;
-            let mut cur_result = Rc::new(abstract_value::FALSE);
-            loop {
-                // Obtain the abstract value.
-                let cur_rustc_type = self
-                    .block_visitor
-                    .bv
-                    .type_visitor
-                    .get_path_rustc_type(&cur_path, self.block_visitor.bv.current_span);
-                let cur_abs = self
-                    .block_visitor
-                    .bv
-                    .lookup_path_and_refine_result(cur_path.clone(), cur_rustc_type);
-
-                // Decide the result of has_tag! or does_not_have_tag!.
-                let tag_presence = cur_abs.has_tag(&tag);
-                cur_result = cur_result.or(if checking_presence {
-                    tag_presence
-                } else {
-                    tag_presence.logical_not()
-                });
-
-                // Loop if the current path is qualified.
-                if let PathEnum::QualifiedPath { qualifier, .. } = &cur_path.value {
-                    cur_path = qualifier.clone();
-                } else {
-                    if cur_result.is_top() {
-                        result = None;
-                    } else {
-                        result = Some(cur_result);
-                    }
-                    break;
-                }
-            }
-        } else {
-            result = None;
-        }
-
-        // Return the abstract result and update exit conditions.
-        let destination = &self.destination;
-        if let Some((place, _)) = destination {
-            let target_path = self.block_visitor.visit_place(place);
-            self.block_visitor.bv.current_environment.update_value_at(
-                target_path.clone(),
-                result.unwrap_or_else(|| {
-                    AbstractValue::make_typed_unknown(ExpressionType::Bool, target_path)
-                }),
-            );
-        } else {
-            assume_unreachable!("expected the function call has a destination");
-        }
-        self.use_entry_condition_as_exit_condition();
     }
 
     fn handle_post_condition(&mut self) {
@@ -2108,7 +2119,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 match rustc_gen_args[1].unpack() {
                     GenericArgKind::Type(rustc_type) => tag_rustc_type = rustc_type,
                     _ => {
-                        assume_unreachable!("expected the second generic argument of tag-related function calls to be a type");
+                        // The rust type checker should ensure that the second generic argument is a type.
+                        assume_unreachable!(
+                            "expected the second generic argument of tag-related function calls to be a type"
+                        );
                     }
                 }
 
@@ -2122,11 +2136,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     _ => {
                         if self.block_visitor.bv.check_for_errors {
-                            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                            let err = self.block_visitor.bv.cv.session.struct_span_err(
                                 self.block_visitor.bv.current_span,
                                 "the tag type should be a generic type whose first parameter is a constant of type TagPropagationSet",
                             );
-                            self.block_visitor.bv.emit_diagnostic(warning);
+                            self.block_visitor.bv.emit_diagnostic(err);
                         }
                         return None;
                     }
@@ -2142,22 +2156,22 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     _ => {
                         if self.block_visitor.bv.check_for_errors {
-                            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
-                            self.block_visitor.bv.current_span,
-                            "the first parameter of the tag type should have type TagPropagationSet",
-                        );
-                            self.block_visitor.bv.emit_diagnostic(warning);
+                            let err = self.block_visitor.bv.cv.session.struct_span_err(
+                                self.block_visitor.bv.current_span,
+                                "the first parameter of the tag type should have type TagPropagationSet"
+                            );
+                            self.block_visitor.bv.emit_diagnostic(err);
                         }
                         return None;
                     }
                 }
 
                 // Analyze the tag type's first parameter to obtain a compile-time constant.
-                let tag_propagation_set_abs = self
+                let tag_propagation_set_value = self
                     .block_visitor
                     .visit_constant(None, tag_propagation_set_rustc_const);
                 if let Expression::CompileTimeConstant(ConstantDomain::U128(data)) =
-                    &tag_propagation_set_abs.expression
+                    &tag_propagation_set_value.expression
                 {
                     Some(Tag {
                         def_id: tag_adt_def.did.into(),

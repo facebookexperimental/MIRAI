@@ -19,12 +19,12 @@ const SECRET_TAINT: TagPropagationSet = tag_propagation_set!(TagPropagation::Bit
 
 type SecretTaint = SecretTaintKind<SECRET_TAINT>;
 
-fn check_if_argument_is_tainted(value: &i32) {
-    verify!(does_not_have_tag!(value, SecretTaint)); // todo: implement unresolved tags
+fn argument_must_be_tainted(value: &i32) {
+    precondition!(has_tag!(value, SecretTaint));
 }
 
 pub fn main() {
     let secret = 99991;
     add_tag!(&secret, SecretTaint);
-    check_if_argument_is_tainted(&secret);
+    argument_must_be_tainted(&secret);
 }
