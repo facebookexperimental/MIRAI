@@ -603,28 +603,29 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .type_visitor
                     .get_path_rustc_type(path, self.bv.current_span);
-                match closure_ty.kind {
+                let specialized_closure_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                    closure_ty,
+                    &self.bv.type_visitor.generic_argument_map,
+                );
+                match specialized_closure_ty.kind {
                     TyKind::Closure(def_id, substs) => {
-                        let specialized_substs = self
-                            .bv
-                            .type_visitor
-                            .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
                         return extract_func_ref(self.visit_function_reference(
                             def_id,
-                            closure_ty,
-                            specialized_substs,
+                            specialized_closure_ty,
+                            substs,
                         ));
                     }
                     TyKind::Ref(_, ty, _) => {
-                        if let TyKind::Closure(def_id, substs) = ty.kind {
-                            let specialized_substs = self.bv.type_visitor.specialize_substs(
-                                substs,
+                        let specialized_closure_ty =
+                            self.bv.type_visitor.specialize_generic_argument_type(
+                                ty,
                                 &self.bv.type_visitor.generic_argument_map,
                             );
+                        if let TyKind::Closure(def_id, substs) = specialized_closure_ty.kind {
                             return extract_func_ref(self.visit_function_reference(
                                 def_id,
-                                ty,
-                                specialized_substs,
+                                specialized_closure_ty,
+                                substs,
                             ));
                         }
                     }
@@ -1238,10 +1239,17 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             return;
                         }
                     }
-                    assume_unreachable!(
-                        "apparently assigning a thin pointer to a fat pointer without a cast {:?}",
+                    warn!(
+                        "deref failed to turn a fat pointer into a thin pointer {:?}",
                         self.bv.current_span
                     );
+                    self.bv.copy_or_move_elements(
+                        path,
+                        qualifier.refine_paths(&self.bv.current_environment),
+                        target_type,
+                        false,
+                    );
+                    return;
                 } else {
                     self.bv
                         .copy_or_move_elements(path, qualifier.clone(), target_type, false);
@@ -1794,11 +1802,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     TyKind::FnDef(def_id, substs)
                     | TyKind::Closure(def_id, substs)
                     | TyKind::Generator(def_id, substs, ..) => {
+                        let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                            ty,
+                            &self.bv.type_visitor.generic_argument_map,
+                        );
                         let substs = self
                             .bv
                             .type_visitor
                             .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
-                        result = self.visit_function_reference(def_id, ty, substs);
+                        result = self.visit_function_reference(def_id, specialized_ty, substs);
                     }
                     TyKind::Ref(
                         _,
@@ -2322,12 +2334,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// let bar = foo; // bar: fn() -> i32 {foo}
     /// ```
     #[logfn_inputs(TRACE)]
-    fn visit_function_reference(
+    pub fn visit_function_reference(
         &mut self,
         def_id: DefId,
         ty: Ty<'tcx>,
         generic_args: SubstsRef<'tcx>,
     ) -> &ConstantDomain {
+        //todo: is def_id unique enough? Perhaps add ty?
         self.bv.cv.substs_cache.insert(def_id, generic_args);
         &mut self.bv.cv.constant_value_cache.get_function_constant_for(
             def_id,
@@ -2474,7 +2487,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     ty = type_visitor::get_target_type(ty);
                 }
-                mir::ProjectionElem::Field(_, field_ty) => ty = field_ty,
+                mir::ProjectionElem::Field(_, field_ty) => {
+                    ty = self.bv.type_visitor.specialize_generic_argument_type(
+                        field_ty,
+                        &self.bv.type_visitor.generic_argument_map,
+                    )
+                }
                 mir::ProjectionElem::Index(..) | mir::ProjectionElem::ConstantIndex { .. } => {
                     ty = type_visitor::get_element_type(ty);
                 }

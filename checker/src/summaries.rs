@@ -211,13 +211,9 @@ pub fn summarize(
     unwind_environment: &Environment,
     tcx: TyCtxt<'_>,
 ) -> Summary {
-    trace!(
+    debug!(
         "summarize env {:?} pre {:?} post {:?} unwind cond {:?} unwind env {:?}",
-        exit_environment,
-        preconditions,
-        post_condition,
-        unwind_condition,
-        unwind_environment
+        exit_environment, preconditions, post_condition, unwind_condition, unwind_environment
     );
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
     let mut side_effects = if let Some(exit_environment) = exit_environment {

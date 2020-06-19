@@ -168,10 +168,20 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             ) {
                 let resolved_def_id = instance.def.def_id();
                 let resolved_ty = self.block_visitor.bv.tcx.type_of(resolved_def_id);
+                let resolved_map = self
+                    .block_visitor
+                    .bv
+                    .type_visitor
+                    .get_generic_arguments_map(resolved_def_id, instance.substs, &[]);
+                let specialized_resolved_ty = self
+                    .block_visitor
+                    .bv
+                    .type_visitor
+                    .specialize_generic_argument_type(resolved_ty, &resolved_map);
                 trace!(
                     "devirtualize resolved def_id {:?}: {:?}",
                     resolved_def_id,
-                    resolved_ty
+                    specialized_resolved_ty
                 );
                 if self
                     .block_visitor
@@ -183,7 +193,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     && self.block_visitor.bv.tcx.is_mir_available(resolved_def_id)
                 {
                     let func_const = self
-                        .visit_function_reference(resolved_def_id, resolved_ty, instance.substs)
+                        .block_visitor
+                        .visit_function_reference(
+                            resolved_def_id,
+                            specialized_resolved_ty,
+                            instance.substs,
+                        )
                         .clone();
                     let func_ref = if let ConstantDomain::Function(fr) = &func_const {
                         fr.clone()
@@ -223,43 +238,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
         None
-    }
-
-    /// The anonymous type of a function declaration/definition. Each
-    /// function has a unique type, which is output (for a function
-    /// named `foo` returning an `i32`) as `fn() -> i32 {foo}`.
-    ///
-    /// For example the type of `bar` here:
-    ///
-    /// ```rust
-    /// fn foo() -> i32 { 1 }
-    /// let bar = foo; // bar: fn() -> i32 {foo}
-    /// ```
-    #[logfn_inputs(TRACE)]
-    fn visit_function_reference(
-        &mut self,
-        def_id: DefId,
-        ty: Ty<'tcx>,
-        generic_args: SubstsRef<'tcx>,
-    ) -> &ConstantDomain {
-        self.block_visitor
-            .bv
-            .cv
-            .substs_cache
-            .insert(def_id, generic_args);
-        &mut self
-            .block_visitor
-            .bv
-            .cv
-            .constant_value_cache
-            .get_function_constant_for(
-                def_id,
-                ty,
-                generic_args,
-                self.block_visitor.bv.tcx,
-                &mut self.block_visitor.bv.cv.known_names_cache,
-                &mut self.block_visitor.bv.cv.summary_cache,
-            )
     }
 
     /// Extract a list of function references from an environment of function constant arguments
@@ -888,6 +866,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             "self.actual_argument_types {:?}",
             self.actual_argument_types
         );
+        trace!(
+            "self.function_constant_args {:?}",
+            self.function_constant_args
+        );
         // Get the function to call (it is either a function pointer or a closure)
         let callee = self.actual_args[0].1.clone();
 
@@ -943,13 +925,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if type_visitor::get_def_id_from_closure(closure_ty).is_some() {
             actual_args.insert(0, self.actual_args[0].clone());
             actual_argument_types.insert(0, closure_ref_ty);
-            if let TyKind::Closure(_, substs) = closure_ty.kind {
-                let mut map = argument_map.unwrap_or_else(HashMap::new);
-                if let Some(ty) = substs.types().next() {
-                    let self_sym = rustc_span::Symbol::intern("Self");
-                    map.insert(self_sym, ty);
-                }
-                argument_map = Some(map);
+            if let TyKind::Closure(def_id, substs) = closure_ty.kind {
+                argument_map = self
+                    .block_visitor
+                    .bv
+                    .type_visitor
+                    .get_generic_arguments_map(def_id, substs, &[]);
             }
         }
 
