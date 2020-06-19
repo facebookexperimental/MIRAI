@@ -1859,21 +1859,153 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         block
     }
 
-    /// Attach `tag` to the value located at `source_path`.
-    /// todo: implement weak updates.
+    /// Attach `tag` to the value located at `value_path`. The tag presence is indicated by a
+    /// path condition `cond`. The `value_path` may be pattern paths and need be expanded.
     #[logfn_inputs(TRACE)]
     pub fn attach_tag_to_elements(
         &mut self,
         tag: Tag,
-        source_path: Rc<Path>,
-        source_rustc_type: Ty<'tcx>,
+        cond: Rc<AbstractValue>,
+        value_path: Rc<Path>,
+        root_rustc_type: Ty<'tcx>,
     ) {
-        let source_exp_type: ExpressionType = (&source_rustc_type.kind).into();
-        self.current_environment.update_value_with_tag(
-            tag,
-            abstract_value::TRUE.into(),
-            source_path,
-            source_exp_type,
-        );
+        if let Some((join_condition, true_path, false_path)) =
+            self.current_environment.try_to_split(&value_path)
+        {
+            // The value path contains an abstract value that was constructed with a join.
+            // In this case, we split the path into two and perform weak updates on them.
+            // We also fall through to perform a strong update on the given value path.
+            self.attach_tag_to_elements(
+                tag,
+                cond.and(join_condition.clone()),
+                true_path,
+                root_rustc_type,
+            );
+            self.attach_tag_to_elements(
+                tag,
+                cond.and(join_condition.logical_not()),
+                false_path,
+                root_rustc_type,
+            );
+        } else {
+            // The value path contains an index/slice selector, e.g., arr[i]. If the index pattern is
+            // concrete, e.g. the index i is a constant, we need to expand it and then use a helper
+            // function to call attach_tag_to_elements recursively on each expansion.
+            let expanded_source_pattern = self.try_expand_source_pattern(
+                &value_path,
+                &value_path,
+                root_rustc_type,
+                |_self, _target_path, expanded_path, root_rustc_type| {
+                    _self.attach_tag_to_elements(tag, cond.clone(), expanded_path, root_rustc_type);
+                },
+            );
+            if expanded_source_pattern {
+                return;
+            }
+
+            // Get here if value path is not a pattern, or it contains an abstract index/slice selector.
+            // Consider the case where the value path contains an abstract index/slice selector.
+            // If the index/slice selector is a compile-time constant, then we use a helper function
+            // to call attach_tag_to_elements recursively on each expansion.
+            // If not, all the paths that can match the pattern are weakly attached with the tag.
+            let expanded_target_pattern = self.try_expand_target_pattern(
+                &value_path,
+                &value_path,
+                root_rustc_type,
+                |_self, _target_path, expanded_path, root_rustc_type| {
+                    _self.attach_tag_to_elements(tag, cond.clone(), expanded_path, root_rustc_type);
+                },
+                |_self, target_path, _source_path, index_value| {
+                    _self.attach_tag_weakly(tag, cond.clone(), &target_path, |v| {
+                        index_value.equals(v)
+                    });
+                },
+                |_self, target_path, _source_path, count| {
+                    _self.attach_tag_weakly(tag, cond.clone(), &target_path, |v| {
+                        count.greater_than(v)
+                    });
+                },
+            );
+            if expanded_target_pattern {
+                return;
+            }
+        }
+
+        // We have already handled paths with join or pattern.
+        // Now perform the actual tagging on value path, where the path condition `cond` indicates
+        // whether we should tag the value at value path or not.
+        self.non_patterned_attach_tag_to_elements(tag, cond, value_path, root_rustc_type);
+    }
+
+    /// Attach `tag` to all paths rooted in `value_path`. The tag presence is indicated by a
+    /// path condition `cond`.
+    #[logfn_inputs(TRACE)]
+    fn non_patterned_attach_tag_to_elements(
+        &mut self,
+        tag: Tag,
+        cond: Rc<AbstractValue>,
+        value_path: Rc<Path>,
+        value_rustc_type: Ty<'tcx>,
+    ) {
+        // First, we look at possible paths rooted at value path.
+        let exp_type: ExpressionType = (&value_rustc_type.kind).into();
+        let is_closure = matches!(&value_rustc_type.kind, TyKind::Closure(..));
+        let mut no_children = true;
+        if exp_type == ExpressionType::NonPrimitive || is_closure {
+            let value_map = self.current_environment.value_map.clone();
+            for (qualified_path, old_value) in value_map
+                .iter()
+                .filter(|(p, _)| p.is_rooted_by(&value_path))
+            {
+                debug!("attaching {:?} to {:?}", tag, qualified_path);
+                let new_value =
+                    cond.conditional_expression(old_value.add_tag(tag), old_value.clone());
+                self.current_environment
+                    .value_map
+                    .insert_mut(qualified_path.clone(), new_value);
+                no_children = false;
+            }
+        }
+
+        // Then, we tag the value path itself if it is primitive or does not have any children.
+        if exp_type != ExpressionType::NonPrimitive || no_children {
+            debug!("attaching {:?} to {:?}", tag, value_path);
+            let old_value =
+                self.lookup_path_and_refine_result(value_path.clone(), value_rustc_type);
+            let new_value = cond.conditional_expression(old_value.add_tag(tag), old_value);
+            self.current_environment
+                .value_map
+                .insert_mut(value_path, new_value);
+        }
+    }
+
+    /// Attach `tag` to all index entries rooted at qualifier to reflect the possibility
+    /// that tagging an entry at an unknown index might also tag them. The tag presence is
+    /// indicated by a path condition `cond`.
+    fn attach_tag_weakly<F>(
+        &mut self,
+        tag: Tag,
+        cond: Rc<AbstractValue>,
+        qualifier: &Rc<Path>,
+        make_condition: F,
+    ) where
+        F: Fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
+    {
+        let value_map = self.current_environment.value_map.clone();
+        for (path, old_value) in value_map.iter().filter(|(p, _)| p.is_rooted_by(qualifier)) {
+            let mut subsequent_selectors = Vec::new();
+            if let Some(index_value) = self.extract_index_and_subsequent_selectors(
+                path,
+                qualifier,
+                &mut subsequent_selectors,
+            ) {
+                let join_condition = cond.and(make_condition(index_value.clone()));
+                let new_value = join_condition
+                    .conditional_expression(old_value.add_tag(tag), old_value.clone());
+                self.current_environment
+                    .value_map
+                    .insert_mut(path.clone(), new_value);
+            }
+        }
     }
 }

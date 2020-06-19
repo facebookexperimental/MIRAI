@@ -6,9 +6,8 @@
 use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
-use crate::expression::{Expression, ExpressionType};
+use crate::expression::Expression;
 use crate::path::{Path, PathEnum, PathSelector};
-use crate::tag_domain::Tag;
 
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::checked_assume;
@@ -99,7 +98,10 @@ impl Environment {
     /// and alternate, respectively. These paths can then be weakly updated to reflect the
     /// lack of precise knowledge at compile time.
     #[logfn_inputs(TRACE)]
-    fn try_to_split(&mut self, path: &Rc<Path>) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
+    pub fn try_to_split(
+        &mut self,
+        path: &Rc<Path>,
+    ) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
         match &path.value {
             PathEnum::Alias { value } => {
                 if let Expression::ConditionalExpression {
@@ -313,47 +315,5 @@ impl Environment {
             }
         }
         true
-    }
-
-    /// Updates `path` in the value map so that the given path is now attached with `tag`,
-    /// whose presence is indicated by a path condition `cond`.
-    #[logfn_inputs(DEBUG)]
-    pub fn update_value_with_tag(
-        &mut self,
-        tag: Tag,
-        cond: Rc<AbstractValue>,
-        path: Rc<Path>,
-        exp_type: ExpressionType,
-    ) {
-        if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
-            self.update_value_with_tag(
-                tag,
-                cond.and(join_condition.clone()),
-                true_path,
-                exp_type.clone(),
-            );
-            self.update_value_with_tag(
-                tag,
-                cond.and(join_condition.logical_not()),
-                false_path,
-                exp_type.clone(),
-            );
-        }
-        if exp_type == ExpressionType::NonPrimitive {
-            let value_map = self.value_map.clone();
-            for (qualified_path, old_abs) in value_map.iter().filter(|(p, _)| p.is_rooted_by(&path))
-            {
-                debug!("attaching {:?} to {:?}", tag, qualified_path);
-                let new_abs = cond.conditional_expression(old_abs.add_tag(tag), old_abs.clone());
-                self.value_map.insert_mut(qualified_path.clone(), new_abs);
-            }
-        }
-        debug!("attaching {:?} to {:?}", tag, path);
-        let old_abs = self
-            .value_at(&path)
-            .unwrap_or(&AbstractValue::make_typed_unknown(exp_type, path.clone()))
-            .clone();
-        let new_abs = cond.conditional_expression(old_abs.add_tag(tag), old_abs);
-        self.value_map.insert_mut(path, new_abs);
     }
 }
