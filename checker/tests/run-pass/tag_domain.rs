@@ -25,7 +25,9 @@ const SECRET_SANITIZER: TagPropagationSet = tag_propagation_set!(TagPropagation:
 
 type SecretSanitizer = SecretSanitizerKind<SECRET_SANITIZER>;
 
-pub fn test(secret: i32) {
+pub fn test() {
+    let secret = 23333;
+
     add_tag!(&secret, SecretTaint);
     verify!(has_tag!(&secret, SecretTaint));
     verify!(does_not_have_tag!(&secret, SecretSanitizer));

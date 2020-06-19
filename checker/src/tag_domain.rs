@@ -97,20 +97,35 @@ pub struct Tag {
 
 /// An element of the tag domain is essentially an over-approximation for present and absent tags.
 /// The approximation is denoted as a map from tags to lifted Boolean values (`BoolDomain`).
+/// Unrecorded tags are mapped to the `default` field of the tag domain element.
 /// If a tag is mapped to `True`, then it must be present.
 /// If a tag is mapped to `False', then it must be absent.
 /// If a tag is mapped to `Top`, then it may or may not be present.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct TagDomain {
     map: RedBlackTreeMap<Tag, BoolDomain>,
+    default: BoolDomain,
 }
 
 /// Constructors
 impl TagDomain {
     /// Construct a tag domain element representing an empty set.
     #[logfn_inputs(TRACE)]
-    pub fn for_empty_set() -> TagDomain {
-        TagDomain { map: rbt_map![] }
+    pub fn empty_set() -> TagDomain {
+        TagDomain {
+            map: rbt_map![],
+            default: BoolDomain::False,
+        }
+    }
+
+    /// Construct the most coarse tag domain element. In other words, all tags can be either
+    /// present or absent.
+    #[logfn_inputs(TRACE)]
+    pub fn top() -> TagDomain {
+        TagDomain {
+            map: rbt_map![],
+            default: BoolDomain::Top,
+        }
     }
 }
 
@@ -121,13 +136,14 @@ impl TagDomain {
     pub fn add_tag(&self, tag: Tag, val: BoolDomain) -> Self {
         TagDomain {
             map: self.map.insert(tag, val),
+            default: self.default,
         }
     }
 
     /// Return a lifted Boolean that indicates the presence of `tag` in the tag domain element.
     #[logfn_inputs(TRACE)]
     pub fn has_tag(&self, tag: &Tag) -> BoolDomain {
-        *self.map.get(tag).unwrap_or(&BoolDomain::False)
+        *self.map.get(tag).unwrap_or(&self.default)
     }
 
     /// Return the union of two tag domain elements, which is pointwise logical-or on lifted Booleans.
@@ -139,7 +155,10 @@ impl TagDomain {
             let new_val = cur_val.or(val);
             new_map.insert_mut(*tag, new_val);
         }
-        TagDomain { map: new_map }
+        TagDomain {
+            map: new_map,
+            default: self.default.or(&other.default),
+        }
     }
 
     /// Return the join of two tag domain elements, which is pointwise join on lifted Booleans.
@@ -151,7 +170,10 @@ impl TagDomain {
             let new_val = cur_val.join(val);
             new_map.insert_mut(*tag, new_val);
         }
-        TagDomain { map: new_map }
+        TagDomain {
+            map: new_map,
+            default: self.default.join(&other.default),
+        }
     }
 
     /// Return a tag domain element that filters out tags which are not propagated by an expression.
@@ -170,6 +192,9 @@ impl TagDomain {
                 }
             })
             .collect();
-        TagDomain { map: new_map }
+        TagDomain {
+            map: new_map,
+            default: BoolDomain::False,
+        }
     }
 }

@@ -1038,12 +1038,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
             let source_path = Path::new_deref(self.actual_args[0].0.clone())
                 .refine_paths(&self.block_visitor.bv.current_environment);
-            trace!(
-                "MiraiAddTag: attaching <{:?},{:?}> to {:?}",
-                tag.def_id,
-                tag.prop_set,
-                source_path
-            );
+            trace!("MiraiAddTag: attaching {:?} to {:?}", tag, source_path);
 
             // Augment the tags associated at the source with a new tag.
             let source_rustc_type = self
@@ -1190,48 +1185,41 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let source_path = Path::new_deref(self.actual_args[0].0.clone())
                 .refine_paths(&self.block_visitor.bv.current_environment);
             trace!(
-                "MiraiHasTag: checking if {:?} has {}been attached with <{:?},{:?}>",
+                "MiraiHasTag: checking if {:?} has {}been attached with {:?}",
                 source_path,
                 (if checking_presence { "" } else { "never " }),
-                tag.def_id,
-                tag.prop_set
+                tag,
             );
 
-            // Lookup the value located at the source path and check its associated tags.
-            // Also lookup the ancestors of the source path to find possible tags.
-            let mut cur_path = source_path;
-            let mut cur_result = Rc::new(abstract_value::FALSE);
-            loop {
-                // Obtain the abstract value.
-                let cur_rustc_type = self
-                    .block_visitor
-                    .bv
-                    .type_visitor
-                    .get_path_rustc_type(&cur_path, self.block_visitor.bv.current_span);
-                let cur_abs = self
-                    .block_visitor
-                    .bv
-                    .lookup_path_and_refine_result(cur_path.clone(), cur_rustc_type);
+            // Obtain the value located at source path.
+            let source_rustc_type = self
+                .block_visitor
+                .bv
+                .type_visitor
+                .get_path_rustc_type(&source_path, self.block_visitor.bv.current_span);
+            let source_value = self
+                .block_visitor
+                .bv
+                .lookup_path_and_refine_result(source_path.clone(), source_rustc_type);
 
-                // Decide the result of has_tag! or does_not_have_tag!.
-                let tag_presence = cur_abs.has_tag(&tag);
-                cur_result = cur_result.or(if checking_presence {
-                    tag_presence
+            // Decide the result of has_tag! or does_not_have_tag!.
+            let tag_presence = source_value.has_tag(&tag);
+            if tag_presence.is_top() {
+                // Cannot decide tag presence/absence. Return an unknown tag check.
+                result = Some(AbstractValue::make_from(
+                    Expression::UnknownTagCheck {
+                        path: source_path,
+                        tag,
+                        checking_presence,
+                    },
+                    1,
+                ));
+            } else {
+                result = if checking_presence {
+                    Some(tag_presence)
                 } else {
-                    tag_presence.logical_not()
-                });
-
-                // Loop if the current path is qualified.
-                if let PathEnum::QualifiedPath { qualifier, .. } = &cur_path.value {
-                    cur_path = qualifier.clone();
-                } else {
-                    if cur_result.is_top() {
-                        result = None;
-                    } else {
-                        result = Some(cur_result);
-                    }
-                    break;
-                }
+                    Some(tag_presence.logical_not())
+                };
             }
         } else {
             result = None;
@@ -2172,11 +2160,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 }
 
                 // Analyze the tag type's first parameter to obtain a compile-time constant.
-                let tag_propagation_set_abs = self
+                let tag_propagation_set_value = self
                     .block_visitor
                     .visit_constant(None, tag_propagation_set_rustc_const);
                 if let Expression::CompileTimeConstant(ConstantDomain::U128(data)) =
-                    &tag_propagation_set_abs.expression
+                    &tag_propagation_set_value.expression
                 {
                     Some(Tag {
                         def_id: tag_adt_def.did.into(),

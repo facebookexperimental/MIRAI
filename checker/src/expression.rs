@@ -372,6 +372,14 @@ pub enum Expression {
         default: Rc<AbstractValue>,
     },
 
+    /// Like unknown model fields, this variant records an unkown result of `has_tag!` or
+    /// `does_not_have_tag!`.
+    UnknownTagCheck {
+        path: Rc<Path>,
+        tag: Tag,
+        checking_presence: bool,
+    },
+
     /// The unknown value of a place in memory.
     /// This is distinct from Top in that we known something: the place and the type.
     /// This is a useful distinction because it allows us to simplify some expressions
@@ -562,6 +570,14 @@ impl Debug for Expression {
             Expression::UnknownModelField { path, default } => {
                 f.write_fmt(format_args!("({:?}).default(({:?})", path, default))
             }
+            Expression::UnknownTagCheck {
+                path,
+                tag,
+                checking_presence,
+            } => f.write_fmt(format_args!(
+                "({:?}).tag({:?}, {})",
+                path, tag, checking_presence
+            )),
             Expression::Variable { path, var_type } => {
                 f.write_fmt(format_args!("{:?}: {:?}", path, var_type))
             }
@@ -660,6 +676,7 @@ impl Expression {
             Expression::UnknownModelField { path, default } => {
                 path.contains_local_variable() || default.expression.contains_local_variable()
             }
+            Expression::UnknownTagCheck { path, .. } => path.contains_local_variable(),
             Expression::Variable { path, .. } => path.contains_local_variable(),
             Expression::Widen { .. } => true,
         }
@@ -718,6 +735,7 @@ impl Expression {
             Expression::TaggedExpression { .. } => None,
             Expression::UninterpretedCall { .. } => Some(TagPropagation::UninterpretedCall),
             Expression::UnknownModelField { .. } => None,
+            Expression::UnknownTagCheck { .. } => None,
             Expression::Variable { .. } => None,
             Expression::Widen { .. } => None,
         }
@@ -855,6 +873,7 @@ impl Expression {
             Expression::TaggedExpression { operand, .. } => operand.expression.infer_type(),
             Expression::UninterpretedCall { result_type, .. } => result_type.clone(),
             Expression::UnknownModelField { default, .. } => default.expression.infer_type(),
+            Expression::UnknownTagCheck { .. } => Bool,
             Expression::Variable { var_type, .. } => var_type.clone(),
             Expression::Widen { operand, .. } => operand.expression.infer_type(),
         }
@@ -953,7 +972,9 @@ impl Expression {
                 }
                 default.record_heap_blocks(result);
             }
-            Expression::Variable { path, .. } => path.record_heap_blocks(result),
+            Expression::UnknownTagCheck { path, .. } | Expression::Variable { path, .. } => {
+                path.record_heap_blocks(result)
+            }
             _ => (),
         }
     }

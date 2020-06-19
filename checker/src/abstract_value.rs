@@ -2565,8 +2565,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::HeapBlockLayout { .. }
             | Expression::Reference { .. }
             | Expression::UnknownModelField { .. }
-            | Expression::Variable { .. } => {
-                return TagDomain::for_empty_set();
+            | Expression::UnknownTagCheck { .. } => return TagDomain::empty_set(),
+
+            Expression::Variable { .. } => {
+                // A variable is an unknown value of a place in memory.
+                // Therefore, the associated tags are also unknown.
+                // todo: replace BoolDomain with more general AbstractValue to allow something
+                // like "tag |-> UnknownTagCheck { path, tag }"?
+                return TagDomain::top();
             }
 
             Expression::ConditionalExpression {
@@ -2884,6 +2890,35 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     default.clone()
                 }
             }
+            Expression::UnknownTagCheck {
+                path,
+                tag,
+                checking_presence,
+            } => {
+                if let Some(val) = environment.value_at(&path) {
+                    let tag_presence = val.has_tag(tag);
+                    if tag_presence.is_top() {
+                        // Still unknown, fall through.
+                    } else {
+                        let result = if *checking_presence {
+                            tag_presence
+                        } else {
+                            tag_presence.logical_not()
+                        };
+                        return result;
+                    }
+                }
+
+                // Cannot refine this tag check. Return again an unknown tag check.
+                AbstractValue::make_from(
+                    Expression::UnknownTagCheck {
+                        path: path.refine_paths(environment),
+                        tag: *tag,
+                        checking_presence: *checking_presence,
+                    },
+                    1,
+                )
+            }
             Expression::Variable { path, var_type } => {
                 if let Some(val) = environment.value_at(&path) {
                     val.clone()
@@ -3130,6 +3165,21 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     Expression::UnknownModelField {
                         path: refined_path,
                         default: default.clone(),
+                    },
+                    1,
+                )
+            }
+            Expression::UnknownTagCheck {
+                path,
+                tag,
+                checking_presence,
+            } => {
+                let refined_path = path.refine_parameters(arguments, fresh);
+                AbstractValue::make_from(
+                    Expression::UnknownTagCheck {
+                        path: refined_path,
+                        tag: *tag,
+                        checking_presence: *checking_presence,
                     },
                     1,
                 )
@@ -3433,6 +3483,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     path.clone(),
                 ),
             Expression::UnknownModelField { .. } => self.clone(),
+            Expression::UnknownTagCheck { .. } => self.clone(),
             Expression::Variable { var_type, .. } => {
                 if *var_type == ExpressionType::Bool {
                     if path_condition.implies(&self) {
