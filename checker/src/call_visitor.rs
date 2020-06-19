@@ -1037,9 +1037,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
 
             // Augment the tags associated at the source with a new tag.
-            self.block_visitor
-                .bv
-                .attach_tag_to_elements(tag, source_path, source_rustc_type);
+            self.block_visitor.bv.attach_tag_to_elements(
+                tag,
+                abstract_value::TRUE.into(),
+                source_path,
+                source_rustc_type,
+            );
         }
 
         // Update exit conditions.
