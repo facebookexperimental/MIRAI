@@ -608,7 +608,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     &self.bv.type_visitor.generic_argument_map,
                 );
                 match specialized_closure_ty.kind {
-                    TyKind::Closure(def_id, substs) => {
+                    TyKind::Closure(def_id, substs) | TyKind::FnDef(def_id, substs) => {
                         return extract_func_ref(self.visit_function_reference(
                             def_id,
                             specialized_closure_ty,
@@ -621,7 +621,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 ty,
                                 &self.bv.type_visitor.generic_argument_map,
                             );
-                        if let TyKind::Closure(def_id, substs) = specialized_closure_ty.kind {
+                        if let TyKind::Closure(def_id, substs) | TyKind::FnDef(def_id, substs) =
+                            specialized_closure_ty.kind
+                        {
                             return extract_func_ref(self.visit_function_reference(
                                 def_id,
                                 specialized_closure_ty,
