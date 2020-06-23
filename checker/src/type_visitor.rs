@@ -510,7 +510,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         assume_unreachable!();
                     }
                 },
-                mir::ProjectionElem::Field(_, ty) => ty,
+                mir::ProjectionElem::Field(_, ty) => {
+                    self.specialize_generic_argument_type(ty, &self.generic_argument_map)
+                }
                 //todo: a subslice should probably have the base type, not the element type
                 mir::ProjectionElem::Index(_)
                 | mir::ProjectionElem::ConstantIndex { .. }
@@ -527,7 +529,22 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         assume_unreachable!();
                     }
                 },
-                mir::ProjectionElem::Downcast(..) => base_ty,
+                mir::ProjectionElem::Downcast(_, ordinal) => {
+                    if let TyKind::Adt(def, substs) = &base_ty.kind {
+                        if ordinal.index() >= def.variants.len() {
+                            assume_unreachable!(
+                                "illegally down casting to index {} of {:?} at {:?}",
+                                ordinal.index(),
+                                base_ty,
+                                current_span
+                            );
+                        }
+                        let variant = &def.variants[*ordinal];
+                        let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
+                        return self.tcx.mk_tup(field_tys);
+                    }
+                    base_ty
+                }
             })
     }
 
@@ -557,6 +574,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     pub fn specialize_generic_argument_type(
         &self,
         gen_arg_type: Ty<'tcx>,
+        //todo: why not just use self.generic_argument_map?
         map: &Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
     ) -> Ty<'tcx> {
         if map.is_none() {
