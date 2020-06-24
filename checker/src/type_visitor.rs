@@ -186,7 +186,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     self.tcx.types.err
                 }
             }
-            PathEnum::HeapBlock { value } => value.expression.infer_type().as_rustc_type(self.tcx),
+            PathEnum::HeapBlock { value } | PathEnum::Offset { value } => {
+                value.expression.infer_type().as_rustc_type(self.tcx)
+            }
             PathEnum::Parameter { ordinal } => {
                 if self.actual_argument_types.len() >= *ordinal {
                     self.actual_argument_types[*ordinal - 1]
@@ -574,7 +576,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     pub fn specialize_generic_argument_type(
         &self,
         gen_arg_type: Ty<'tcx>,
-        //todo: why not just use self.generic_argument_map?
         map: &Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
     ) -> Ty<'tcx> {
         if map.is_none() {

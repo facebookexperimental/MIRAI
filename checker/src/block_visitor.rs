@@ -2472,8 +2472,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         &result,
                         ty,
                     ) {
-                        let thin_pointer_path =
-                            thin_pointer_path.refine_paths(&self.bv.current_environment);
                         let thin_ptr_type = self
                             .bv
                             .type_visitor
