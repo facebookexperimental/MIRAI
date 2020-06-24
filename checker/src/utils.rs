@@ -317,10 +317,11 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
                             continue;
                         }
                     }
-                }
-                if let Some(type_ns) = &type_ns {
-                    name.push_str(&type_ns);
-                    continue;
+                    if type_ns.is_some() {
+                        let def_path_str = tcx.def_path_str(parent_def_id).replace("::", "_");
+                        name.push_str(&def_path_str);
+                        continue;
+                    }
                 }
             }
             let da = component.disambiguator.to_string();
