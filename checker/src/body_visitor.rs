@@ -1020,18 +1020,25 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     }
                 }
                 Expression::Reference(path) => {
-                    let target_type = self
+                    let deref_type = self
                         .type_visitor
                         .get_path_rustc_type(&tpath, self.current_span);
                     if self
                         .type_visitor
-                        .starts_with_slice_pointer(&target_type.kind)
+                        .starts_with_slice_pointer(&deref_type.kind)
                     {
+                        if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
+                            if matches!(selector.as_ref(), PathSelector::Field(0)) {
+                                // rpath = qualifier.0 and rvalue = &path, so thin pointer copy
+                                self.current_environment.update_value_at(tpath, rvalue);
+                                continue;
+                            }
+                        }
                         // transferring a (pointer, length) tuple.
-                        self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
+                        self.copy_or_move_elements(tpath.clone(), path.clone(), deref_type, false);
                         continue;
                     }
-                    if target_is_thin_pointer && target_type == self.tcx.types.err {
+                    if target_is_thin_pointer && deref_type == self.tcx.types.err {
                         // This can happen if the result of the called function is actually a slice pointer
                         // that is being implicitly cast to a thin pointer. In that case, tpath needs
                         // to drop the field 0 bit.

@@ -1404,8 +1404,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_copy_non_overlapping(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
-        let target_root = self.actual_args[0].0.clone();
-        let source_path = self.actual_args[1].0.clone();
+        let source_path = self.actual_args[0].0.clone();
+        let target_root = self.actual_args[1].0.clone();
         let count = self.actual_args[2].1.clone();
         let target_path = Path::new_slice(target_root, count)
             .refine_paths(&self.block_visitor.bv.current_environment);
