@@ -1186,7 +1186,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Join { path, left, right } => left
                 .dereference(target_type.clone())
                 .join(right.dereference(target_type), path),
-            Expression::Offset { .. } => self.clone(), //todo: this seems wrong
+            Expression::Offset { .. } => {
+                let path = Path::get_as_path(self.clone());
+                let deref_path = Path::new_deref(path);
+                AbstractValue::make_typed_unknown(target_type, deref_path)
+            }
             Expression::Reference(path) => {
                 if let PathEnum::HeapBlock { value } = &path.value {
                     value.clone()
