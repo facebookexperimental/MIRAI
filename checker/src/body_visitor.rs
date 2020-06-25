@@ -1029,7 +1029,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     {
                         if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                             if matches!(selector.as_ref(), PathSelector::Field(0)) {
-                                // rpath = qualifier.0 and rvalue = &path, so thin pointer copy
+                                // tpath = qualifier.0 and rvalue = &path, so thin pointer copy
                                 self.current_environment.update_value_at(tpath, rvalue);
                                 continue;
                             }
