@@ -1386,16 +1386,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         // a collection of values obtained from the qualifier. We need to copy/move those
         // individually, hence we use a helper to call copy_or_move_elements recursively on
         // each source_path expansion.
-        let expanded_source_pattern = self.expanded_source_pattern(
+        let expanded_source_pattern = self.try_expand_source_pattern(
             &target_path,
             &source_path,
-            |_self, target_path, expanded_path| {
-                _self.copy_or_move_elements(
-                    target_path,
-                    expanded_path,
-                    root_rustc_type,
-                    move_elements,
-                )
+            root_rustc_type,
+            |_self, target_path, expanded_path, ty| {
+                _self.copy_or_move_elements(target_path, expanded_path, ty, move_elements)
             },
         );
         if expanded_source_pattern {
@@ -1403,71 +1399,31 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
 
         // Get here if source_path is not a pattern. Now see if target_path is a pattern.
-
-        // Some target paths are wild card patterns and need to be dealt with via weak updates
-        if let PathEnum::QualifiedPath {
-            ref qualifier,
-            ref selector,
-            ..
-        } = &target_path.value
-        {
-            match &**selector {
-                PathSelector::Index(value) => {
-                    if let Expression::CompileTimeConstant(..) = &value.expression {
-                        // fall through, the target path is unique
-                    } else {
-                        self.weak_updates(qualifier, &source_path, |v| value.equals(v));
-                        // and now fall through for a strong update of target_path
-                    }
-                }
-                PathSelector::Slice(count) => {
-                    // if the count is known at this point, expand it like a pattern.
-                    if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
-                        &count.expression
-                    {
-                        self.expand_slice(
-                            &qualifier,
-                            &source_path,
-                            0,
-                            *val as u32,
-                            |_self, target_path, source_path| {
-                                _self.copy_or_move_elements(
-                                    target_path,
-                                    source_path,
-                                    root_rustc_type,
-                                    move_elements,
-                                )
-                            },
-                        );
-                    } else {
-                        // Any that that might get assigned to by this slice need to get weakened.
-                        // That is, the value has to become a condition based on index < count.
-                        self.weaken_paths_that_index(qualifier, count);
-                    }
-                    // fall through
-                }
-                _ => {
-                    // fall through
-                }
-            }
-        }
-
-        // Assigning to a fixed length array is like a pattern
-        if let TyKind::Array(ty, len) = &root_rustc_type.kind {
-            let param_env = self.type_visitor.get_param_env();
-            let len = len
-                .try_eval_usize(self.tcx, param_env)
-                .expect("Array to have constant len");
-
-            self.expand_slice(
-                &target_path,
-                &source_path,
-                0,
-                len as u32,
-                |_self, target_path, source_path| {
-                    _self.copy_or_move_elements(target_path, source_path, ty, move_elements)
-                },
-            );
+        // If the pattern is a known size, copy_of_move_elements is called recursively
+        // on each expansion of the target pattern and try_expand_target_pattern returns true.
+        // If not, all of the paths that might match the pattern are weakly updated to account
+        // for the possibility that this assignment might update them (or not).
+        let expanded_target_pattern = self.try_expand_target_pattern(
+            &target_path,
+            &source_path,
+            root_rustc_type,
+            |_self, target_path, source_path, root_rustc_type| {
+                _self.copy_or_move_elements(
+                    target_path,
+                    source_path,
+                    root_rustc_type,
+                    move_elements,
+                );
+            },
+            |_self, target_path, source_path, index_value: Rc<AbstractValue>| {
+                _self.weak_updates(&target_path, &source_path, |v| index_value.equals(v));
+            },
+            |_self, target_path, _source_path, count: Rc<AbstractValue>| {
+                _self.weaken_paths_that_index(&target_path, &count);
+            },
+        );
+        if expanded_target_pattern {
+            // The assignment became a deterministic slice assignment and we are now done with it.
             return;
         }
 
@@ -1482,14 +1438,15 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// If source_path is a qualified path with a path selector that is a pattern of some sort
     /// then expand the pattern into one more simpler paths and call F(target_path, simpler_path)
     /// on each simpler path.
-    fn expanded_source_pattern<F>(
+    pub fn try_expand_source_pattern<F>(
         &mut self,
         target_path: &Rc<Path>,
         source_path: &Rc<Path>,
-        action: F,
+        root_rustc_ty: Ty<'tcx>,
+        update: F,
     ) -> bool
     where
-        F: Fn(&mut Self, Rc<Path>, Rc<Path>),
+        F: Fn(&mut Self, Rc<Path>, Rc<Path>, Ty<'tcx>),
     {
         if let PathEnum::QualifiedPath {
             ref qualifier,
@@ -1519,7 +1476,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     let index_val = self.get_u128_const_val(index);
                     let index_path = Path::new_index(qualifier.clone(), index_val)
                         .refine_paths(&self.current_environment);
-                    action(self, target_path.clone(), index_path);
+                    let elem_ty = type_visitor::get_element_type(root_rustc_ty);
+                    update(self, target_path.clone(), index_path, elem_ty);
                     return true;
                 }
                 PathSelector::ConstantSlice { from, to, from_end } => {
@@ -1534,7 +1492,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         } else {
                             to
                         };
-                        self.expand_slice(target_path, qualifier, from, to, action);
+                        self.expand_slice(target_path, qualifier, root_rustc_ty, from, to, update);
                         return true;
                     }
                 }
@@ -1546,16 +1504,18 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
     /// Call F(target_path[i - from]), source_path[i]) for i in from..to
     /// For example, if F is a copy operation, this performs a slice copy.
-    fn expand_slice<F>(
+    pub fn expand_slice<F>(
         &mut self,
         target_path: &Rc<Path>,
         source_path: &Rc<Path>,
+        root_rustc_type: Ty<'tcx>,
         from: u32,
         to: u32,
-        action: F,
+        update: F,
     ) where
-        F: Fn(&mut Self, Rc<Path>, Rc<Path>),
+        F: Fn(&mut Self, Rc<Path>, Rc<Path>, Ty<'tcx>),
     {
+        let elem_ty = type_visitor::get_element_type(root_rustc_type);
         for i in from..to {
             let index_val = self.get_u128_const_val(u128::from(i));
             let indexed_source = Path::new_index(source_path.clone(), index_val)
@@ -1563,12 +1523,100 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
             let indexed_target = Path::new_index(target_path.clone(), target_index_val)
                 .refine_paths(&self.current_environment);
-            action(self, indexed_target, indexed_source);
+            update(self, indexed_target, indexed_source, elem_ty);
             if self.assume_function_is_angelic {
                 break;
             }
             check_for_early_return!(self);
         }
+    }
+
+    /// If target_path is a slice of known size, this amounts to a series of assignments
+    /// to each, known, slice element. In this case the function returns true.
+    /// If target_path is a "pattern" that may match one or more other paths in the environment,
+    /// depending on some unknown value, then these other paths are "weakly" updated to reflect
+    /// the possibility that this assignment might modify the values that are currently associated
+    /// with them. In this case the function returns false so that the caller can proceed to
+    /// also, strongly, update the target_path without treating it as a pattern.
+    pub fn try_expand_target_pattern<F, G, H>(
+        &mut self,
+        target_path: &Rc<Path>,
+        source_path: &Rc<Path>,
+        root_rustc_type: Ty<'tcx>,
+        strong_update: F,
+        weak_update: G,
+        weak_update_slice: H,
+    ) -> bool
+    where
+        F: Fn(&mut Self, Rc<Path>, Rc<Path>, Ty<'tcx>),
+        G: Fn(&mut Self, Rc<Path>, Rc<Path>, Rc<AbstractValue>),
+        H: Fn(&mut Self, Rc<Path>, Rc<Path>, Rc<AbstractValue>),
+    {
+        if let PathEnum::QualifiedPath {
+            ref qualifier,
+            ref selector,
+            ..
+        } = &target_path.value
+        {
+            match &**selector {
+                PathSelector::Index(value) => {
+                    if let Expression::CompileTimeConstant(..) = &value.expression {
+                        // fall through, the target path is unique
+                    } else {
+                        weak_update(self, qualifier.clone(), source_path.clone(), value.clone());
+                        // fall through
+                    }
+                }
+                PathSelector::Slice(count) => {
+                    // if the count is known at this point, expand it like a pattern.
+                    if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
+                        &count.expression
+                    {
+                        self.expand_slice(
+                            qualifier,
+                            source_path,
+                            root_rustc_type,
+                            0,
+                            *val as u32,
+                            strong_update,
+                        );
+                        return true;
+                    } else {
+                        // Any element that that might get assigned to via this slice need to get weakened.
+                        // That is, the value has to become a condition based on index < count.
+                        weak_update_slice(
+                            self,
+                            qualifier.clone(),
+                            source_path.clone(),
+                            count.clone(),
+                        )
+                        // fall through
+                    }
+                }
+                _ => {
+                    // fall through
+                }
+            }
+        }
+
+        // Assigning to a fixed length array is like a pattern
+        if let TyKind::Array(_, len) = &root_rustc_type.kind {
+            let param_env = self.type_visitor.get_param_env();
+            let len = len
+                .try_eval_usize(self.tcx, param_env)
+                .expect("Array to have constant len");
+
+            self.expand_slice(
+                target_path,
+                source_path,
+                root_rustc_type,
+                0,
+                len as u32,
+                strong_update,
+            );
+            return true;
+        }
+        false
     }
 
     /// Copies/moves all paths rooted in source_path to corresponding paths rooted in target_path.
@@ -1645,6 +1693,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         let mut value_map = self.current_environment.value_map.clone();
         for (path, value) in self.current_environment.value_map.iter() {
             if let Some(index) = path.get_index_value_qualified_by(root_path) {
+                //todo: can we do better than this?
                 let unknown_value =
                     AbstractValue::make_typed_unknown(value.expression.infer_type(), path.clone());
                 let weakened_value = index
