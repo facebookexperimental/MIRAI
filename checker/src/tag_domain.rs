@@ -164,11 +164,11 @@ impl TagDomain {
 
 /// Transfer functions
 impl TagDomain {
-    /// Return a new tag domain element by setting `tag` to True in `self`.
+    /// Return a new tag domain element by setting `tag` to `val` in `self`.
     #[logfn_inputs(TRACE)]
-    pub fn add_tag(&self, tag: Tag) -> Self {
+    pub fn set_tag(&self, tag: Tag, val: BoolDomain) -> Self {
         TagDomain {
-            map: self.map.insert(tag, BoolDomain::True),
+            map: self.map.insert(tag, val),
             value_for_untracked_tags: self.value_for_untracked_tags,
         }
     }

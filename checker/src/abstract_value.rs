@@ -390,7 +390,9 @@ pub trait AbstractValueTrait: Sized {
     fn get_tags(&self) -> TagDomain;
     fn refine_paths(&self, environment: &Environment) -> Self;
     fn refine_parameters(&self, arguments: &[(Rc<Path>, Rc<AbstractValue>)], fresh: usize) -> Self;
+    fn refine_tags_with(&self, path_condition: &Self) -> Self;
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Self;
+    fn replace_tags(&self, tags: Rc<TagDomain>) -> Self;
     fn uninterpreted_call(
         &self,
         arguments: Vec<Rc<AbstractValue>>,
@@ -2624,7 +2626,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
 
             Expression::TaggedExpression { operand, tag } => {
-                return operand.get_cached_tags().add_tag(*tag);
+                return operand.get_cached_tags().set_tag(*tag, BoolDomain::True);
             }
 
             Expression::Widen { operand, .. } => {
@@ -3211,6 +3213,39 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
+    /// Refine the tag abstraction of `self` by inspecting the path condition.
+    /// If the path condition implies `UnknownTagCheck { path, tag, checking_presence }`, we want to
+    /// update the tag abstraction of the expressions `Variable { path, .. }` such that the presence
+    /// of `tag` is set to `checking_presence`.
+    #[logfn_inputs(TRACE)]
+    fn refine_tags_with(&self, path_condition: &Self) -> Rc<AbstractValue> {
+        match &self.expression {
+            Expression::Variable { path, .. } => match &path_condition.expression {
+                Expression::UnknownTagCheck {
+                    path: checked_path,
+                    tag,
+                    checking_presence,
+                } if path.eq(checked_path) => {
+                    let cached_tags = self.get_cached_tags();
+                    let refined_tags = cached_tags.set_tag(
+                        *tag,
+                        if *checking_presence {
+                            BoolDomain::True
+                        } else {
+                            BoolDomain::False
+                        },
+                    );
+                    self.replace_tags(Rc::new(refined_tags))
+                }
+                Expression::And { left, right } => {
+                    self.refine_tags_with(left).refine_tags_with(right)
+                }
+                _ => self.clone(),
+            },
+            _ => self.clone(),
+        }
+    }
+
     /// Returns a domain that is simplified (refined) by using the current path conditions
     /// (conditions known to be true in the current context). If no refinement is possible
     /// the result is simply a clone of this domain.
@@ -3505,12 +3540,26 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         return Rc::new(FALSE);
                     }
                 }
-                self.clone()
+                // Even if the expression represents an unknown value, the path condition might
+                // have information about tag checks on it, via assume! or precondition!.
+                self.refine_tags_with(path_condition)
             }
             Expression::Widen { path, operand } => {
                 operand.refine_with(path_condition, depth + 1).widen(&path)
             }
         }
+    }
+
+    /// Replace the tag abstraction of `self` with the given one.
+    /// This routine can only be used for recording tag information from assume!/precondition!.
+    #[logfn_inputs(TRACE)]
+    fn replace_tags(&self, tags: Rc<TagDomain>) -> Rc<AbstractValue> {
+        Rc::new(AbstractValue {
+            expression: self.expression.clone(),
+            expression_size: self.expression_size,
+            interval: RefCell::new(self.interval.borrow().clone()),
+            tags: RefCell::new(Some(tags)),
+        })
     }
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
