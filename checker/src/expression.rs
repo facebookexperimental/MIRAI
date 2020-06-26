@@ -1046,8 +1046,7 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
             TyKind::Uint(ast::UintTy::U128) => ExpressionType::U128,
             TyKind::Float(ast::FloatTy::F32) => ExpressionType::F32,
             TyKind::Float(ast::FloatTy::F64) => ExpressionType::F64,
-            TyKind::Closure(..)
-            | TyKind::Dynamic(..)
+            TyKind::Dynamic(..)
             | TyKind::Foreign(..)
             | TyKind::FnDef(..)
             | TyKind::FnPtr(..)

@@ -25,7 +25,6 @@ use crate::crate_visitor::CrateVisitor;
 use crate::fixed_point_visitor::FixedPointVisitor;
 use log_derive::*;
 use mirai_annotations::*;
-use rpds::HashTrieMap;
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
@@ -1432,6 +1431,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             source_path,
             root_rustc_type,
             move_elements,
+            |_self, path, value| _self.current_environment.update_value_at(path, value),
         );
     }
 
@@ -1620,21 +1620,28 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     }
 
     /// Copies/moves all paths rooted in source_path to corresponding paths rooted in target_path.
-    #[logfn_inputs(TRACE)]
-    fn non_patterned_copy_or_move_elements(
+    pub fn non_patterned_copy_or_move_elements<F>(
         &mut self,
         target_path: Rc<Path>,
         source_path: Rc<Path>,
         root_rustc_type: Ty<'tcx>,
         move_elements: bool,
-    ) {
-        let value_map = self.current_environment.value_map.clone();
-        let is_closure = matches!(&root_rustc_type.kind, TyKind::Closure(..));
+        update: F,
+    ) where
+        F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>),
+    {
         let value = self.lookup_path_and_refine_result(source_path.clone(), root_rustc_type);
         let val_type = value.expression.infer_type();
         let mut no_children = true;
-        if val_type == ExpressionType::NonPrimitive || is_closure {
+        // If a non primitive parameter is just returned from a function, for example,
+        // there will be no entries rooted with target_path in the final environment.
+        // This will lead to an incorrect summary of the function, since only the paths
+        // in the final environment are used construct the summary. We work around this
+        // by creating an entry for the non primitive (unknown) value. The caller will
+        // be saddled with removing it. This case corresponds to no_children being true.
+        if val_type == ExpressionType::NonPrimitive {
             // First look at paths that are rooted in rpath.
+            let value_map = self.current_environment.value_map.clone();
             for (path, value) in value_map
                 .iter()
                 .filter(|(p, _)| p.is_rooted_by(&source_path))
@@ -1648,8 +1655,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 } else {
                     trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
-                self.current_environment
-                    .update_value_at(qualified_path, value.clone());
+                update(self, qualified_path, value.clone());
                 no_children = false;
             }
         }
@@ -1668,21 +1674,18 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 if let TyKind::Ref(_, ty, _) = root_rustc_type.kind {
                     if let TyKind::Slice(elem_ty) = ty.kind {
                         if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
-                            let value_map = self.current_environment.value_map.clone();
-                            self.current_environment.value_map =
-                                Self::expand_aliased_string_literals_if_appropriate(
-                                    &target_path,
-                                    root_rustc_type,
-                                    value_map,
-                                    &value,
-                                    s,
-                                );
+                            self.expand_aliased_string_literals_if_appropriate(
+                                &target_path,
+                                &value,
+                                s,
+                                update,
+                            );
                             return;
                         }
                     }
                 }
             }
-            self.current_environment.update_value_at(target_path, value);
+            update(self, target_path, value);
         }
     }
 
@@ -1787,32 +1790,33 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     // expect expressions that look up individual characters and so we must enhance the current
     // environment with (path, char) tuples. The root of the path part of such a tuple is the
     // string literal itself, not the variable, which holds a pointer to the string.
-    #[logfn_inputs(TRACE)]
-    pub fn expand_aliased_string_literals_if_appropriate(
+    pub fn expand_aliased_string_literals_if_appropriate<F>(
+        &mut self,
         target_path: &Rc<Path>,
-        target_path_rustc_ty: Ty<'tcx>,
-        mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>>,
         value: &Rc<AbstractValue>,
         str_val: &str,
-    ) -> HashTrieMap<Rc<Path>, Rc<AbstractValue>> {
+        update: F,
+    ) where
+        F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>),
+    {
         let collection_path = Path::new_alias(value.clone());
         // Create index elements
         for (i, ch) in str_val.as_bytes().iter().enumerate() {
             let index = Rc::new((i as u128).into());
             let ch_const = Rc::new((*ch as u128).into());
             let path = Path::new_index(collection_path.clone(), index);
-            value_map = value_map.insert(path, ch_const);
+            update(self, path, ch_const);
         }
         // Arrays have a length field
         let length_val: Rc<AbstractValue> = Rc::new((str_val.len() as u128).into());
         let str_length_path = Path::new_length(collection_path);
-        value_map = value_map.insert(str_length_path, length_val.clone());
+        update(self, str_length_path, length_val.clone());
         // The target path is a fat pointer, initialize it.
         let thin_pointer_path = Path::new_field(target_path.clone(), 0);
         let thin_pointer_to_str = AbstractValue::make_reference(Path::get_as_path(value.clone()));
-        value_map = value_map.insert(thin_pointer_path, thin_pointer_to_str);
+        update(self, thin_pointer_path, thin_pointer_to_str);
         let slice_length_path = Path::new_length(target_path.clone());
-        value_map.insert(slice_length_path, length_val)
+        update(self, slice_length_path, length_val);
     }
 
     /// Get the length of an array. Will be a compile time constant if the array length is known.
@@ -1934,49 +1938,20 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         // We have already handled paths with join or pattern.
         // Now perform the actual tagging on value path, where the path condition `cond` indicates
         // whether we should tag the value at value path or not.
-        self.non_patterned_attach_tag_to_elements(tag, cond, value_path, root_rustc_type);
-    }
-
-    /// Attach `tag` to all paths rooted in `value_path`. The tag presence is indicated by a
-    /// path condition `cond`.
-    #[logfn_inputs(TRACE)]
-    fn non_patterned_attach_tag_to_elements(
-        &mut self,
-        tag: Tag,
-        cond: Rc<AbstractValue>,
-        value_path: Rc<Path>,
-        value_rustc_type: Ty<'tcx>,
-    ) {
-        // First, we look at possible paths rooted at value path.
-        let exp_type: ExpressionType = (&value_rustc_type.kind).into();
-        let is_closure = matches!(&value_rustc_type.kind, TyKind::Closure(..));
-        let mut no_children = true;
-        if exp_type == ExpressionType::NonPrimitive || is_closure {
-            let value_map = self.current_environment.value_map.clone();
-            for (qualified_path, old_value) in value_map
-                .iter()
-                .filter(|(p, _)| p.is_rooted_by(&value_path))
-            {
-                debug!("attaching {:?} to {:?}", tag, qualified_path);
-                let new_value =
-                    cond.conditional_expression(old_value.add_tag(tag), old_value.clone());
-                self.current_environment
+        self.non_patterned_copy_or_move_elements(
+            value_path.clone(),
+            value_path,
+            root_rustc_type,
+            false,
+            |_self, path, value| {
+                debug!("attaching {:?} to {:?} at {:?}", tag, value, path);
+                let tagged_value = cond.conditional_expression(value.add_tag(tag), value);
+                _self.current_environment.value_map = _self
+                    .current_environment
                     .value_map
-                    .insert_mut(qualified_path.clone(), new_value);
-                no_children = false;
-            }
-        }
-
-        // Then, we tag the value path itself if it is primitive or does not have any children.
-        if exp_type != ExpressionType::NonPrimitive || no_children {
-            debug!("attaching {:?} to {:?}", tag, value_path);
-            let old_value =
-                self.lookup_path_and_refine_result(value_path.clone(), value_rustc_type);
-            let new_value = cond.conditional_expression(old_value.add_tag(tag), old_value);
-            self.current_environment
-                .value_map
-                .insert_mut(value_path, new_value);
-        }
+                    .insert(path, tagged_value);
+            },
+        )
     }
 
     /// Attach `tag` to all index entries rooted at qualifier to reflect the possibility
