@@ -29,7 +29,22 @@ pub fn test1() {
     verify!(has_tag!(&foo.content, SecretTaint));
 }
 
-pub fn test2(left: Foo, right: Foo, cond: bool) {
+pub fn test2(cond: bool) {
+    let left = Foo { content: 12345 };
+    let right = Foo { content: 54321 };
+    let join;
+    if cond {
+        join = &left;
+    } else {
+        join = &right;
+    }
+    add_tag!(&join.content, SecretTaint);
+    verify!(has_tag!(&left.content, SecretTaint) || has_tag!(&right.content, SecretTaint));
+}
+
+pub fn test3(cond: bool) {
+    let left = Foo { content: 12345 };
+    let right = Foo { content: 54321 };
     let join;
     if cond {
         join = &left;
@@ -37,7 +52,34 @@ pub fn test2(left: Foo, right: Foo, cond: bool) {
         join = &right;
     }
     add_tag!(join, SecretTaint);
+    // todo: try to split path first when attaching tags
     verify!(has_tag!(&left.content, SecretTaint) || has_tag!(&right.content, SecretTaint));
+    //~ provably false verification condition
+}
+
+pub fn test4(foo: Foo, cond: bool) {
+    let bar = Foo { content: 99991 };
+    let join;
+    if cond {
+        join = &foo;
+    } else {
+        join = &bar;
+    }
+    add_tag!(&join.content, SecretTaint);
+    verify!(has_tag!(&foo.content, SecretTaint) || has_tag!(&bar.content, SecretTaint));
+}
+
+pub fn test5(foo: Foo, cond: bool) {
+    let bar = Foo { content: 99991 };
+    let join;
+    if cond {
+        join = &foo;
+    } else {
+        join = &bar;
+    }
+    add_tag!(join, SecretTaint);
+    // todo: deal with unknown paths rooted at parameters
+    verify!(has_tag!(&foo.content, SecretTaint) || has_tag!(&bar.content, SecretTaint));
     //~ possible false verification condition
 }
 

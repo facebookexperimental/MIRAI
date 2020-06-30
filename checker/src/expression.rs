@@ -373,9 +373,9 @@ pub enum Expression {
     },
 
     /// Like unknown model fields, this variant records an unkown result of `has_tag!` or
-    /// `does_not_have_tag!`.
+    /// `does_not_have_tag!` on `operand`.
     UnknownTagCheck {
-        path: Rc<Path>,
+        operand: Rc<AbstractValue>,
         tag: Tag,
         checking_presence: bool,
     },
@@ -571,12 +571,12 @@ impl Debug for Expression {
                 f.write_fmt(format_args!("({:?}).default(({:?})", path, default))
             }
             Expression::UnknownTagCheck {
-                path,
+                operand,
                 tag,
                 checking_presence,
             } => f.write_fmt(format_args!(
-                "({:?}).tag({:?}, {})",
-                path, tag, checking_presence
+                "({:?}).check_tag({:?}, {})",
+                operand, tag.def_id, checking_presence
             )),
             Expression::Variable { path, var_type } => {
                 f.write_fmt(format_args!("{:?}: {:?}", path, var_type))
@@ -656,7 +656,9 @@ impl Expression {
                 left.expression.contains_local_variable()
                     || right.expression.contains_local_variable()
             }
-            Expression::Neg { operand } | Expression::LogicalNot { operand } => {
+            Expression::Neg { operand }
+            | Expression::LogicalNot { operand }
+            | Expression::UnknownTagCheck { operand, .. } => {
                 operand.expression.contains_local_variable()
             }
             Expression::Reference(path) => path.contains_local_variable(),
@@ -676,7 +678,6 @@ impl Expression {
             Expression::UnknownModelField { path, default } => {
                 path.contains_local_variable() || default.expression.contains_local_variable()
             }
-            Expression::UnknownTagCheck { path, .. } => path.contains_local_variable(),
             Expression::Variable { path, .. } => path.contains_local_variable(),
             Expression::Widen { .. } => true,
         }
@@ -956,7 +957,8 @@ impl Expression {
             }
             Expression::Neg { operand }
             | Expression::LogicalNot { operand }
-            | Expression::TaggedExpression { operand, .. } => {
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::UnknownTagCheck { operand, .. } => {
                 operand.expression.record_heap_blocks(result);
             }
             Expression::Reference(path) => path.record_heap_blocks(result),
@@ -972,9 +974,7 @@ impl Expression {
                 }
                 default.record_heap_blocks(result);
             }
-            Expression::UnknownTagCheck { path, .. } | Expression::Variable { path, .. } => {
-                path.record_heap_blocks(result)
-            }
+            Expression::Variable { path, .. } => path.record_heap_blocks(result),
             _ => (),
         }
     }

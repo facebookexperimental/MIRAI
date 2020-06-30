@@ -27,20 +27,20 @@ pub fn test1(i: usize) {
     verify!(has_tag!(&v[0], SecretTaint)); //~ possible false verification condition
 }
 
-pub fn test2(v: &[i32], i: usize) {
-    precondition!(i < v.len() && v.len() == 3);
-    add_tag!(&v[i], SecretTaint);
-    verify!(has_tag!(&v[i], SecretTaint));
-    verify!(has_tag!(&v[0], SecretTaint)); //~ possible false verification condition
-}
-
-pub fn test3(i: usize) {
+pub fn test2(i: usize) {
     precondition!(i < 3usize);
     let v = [1, 2, 3];
     add_tag!(&v[0], SecretTaint);
     verify!(has_tag!(&v[0], SecretTaint));
     verify!(does_not_have_tag!(&v[1], SecretTaint));
     verify!(has_tag!(&v[i], SecretTaint)); //~ possible false verification condition
+}
+
+pub fn test3(v: &[i32], i: usize) {
+    precondition!(i < v.len() && v.len() == 3);
+    add_tag!(&v[i], SecretTaint);
+    verify!(has_tag!(&v[i], SecretTaint));
+    verify!(has_tag!(&v[0], SecretTaint)); //~ possible false verification condition
 }
 
 pub fn main() {}

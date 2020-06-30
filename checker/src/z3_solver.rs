@@ -12,11 +12,12 @@ use crate::known_names::KnownNames;
 use crate::path::Path;
 use crate::smt_solver::SmtResult;
 use crate::smt_solver::SmtSolver;
+use crate::tag_domain::Tag;
 
 use lazy_static::lazy_static;
 use log::debug;
 use log_derive::logfn_inputs;
-use mirai_annotations::{checked_assume, checked_assume_eq};
+use mirai_annotations::{checked_assume, checked_assume_eq, verify, verify_unreachable};
 use std::convert::TryFrom;
 use std::ffi::{CStr, CString};
 use std::fmt::{Debug, Formatter, Result};
@@ -42,6 +43,8 @@ pub struct Z3Solver {
     one: z3_sys::Z3_ast,
     two: z3_sys::Z3_ast,
     empty_str: z3_sys::Z3_string,
+    /// A logical predicate has_tag(path, tag) that indicates path is attached with tag.
+    has_tag_func: z3_sys::Z3_func_decl,
 }
 
 impl Debug for Z3Solver {
@@ -75,6 +78,17 @@ impl Z3Solver {
             let one = z3_sys::Z3_mk_int(z3_context, 1, int_sort);
             let two = z3_sys::Z3_mk_int(z3_context, 2, int_sort);
 
+            let has_tag_func = z3_sys::Z3_mk_func_decl(
+                z3_context,
+                z3_sys::Z3_mk_string_symbol(
+                    z3_context,
+                    CString::new("has_tag").unwrap().into_raw(),
+                ),
+                2,
+                [any_sort, any_sort].as_ptr(),
+                bool_sort,
+            );
+
             Z3Solver {
                 z3_context,
                 z3_solver,
@@ -88,6 +102,7 @@ impl Z3Solver {
                 one,
                 two,
                 empty_str,
+                has_tag_func,
             }
         }
     }
@@ -296,6 +311,18 @@ impl Z3Solver {
                 ..
             }
             | Expression::Variable { path, var_type } => self.general_variable(path, &var_type),
+            Expression::UnknownTagCheck {
+                operand,
+                tag,
+                checking_presence,
+            } => {
+                let check_ast = self.general_has_tag(&operand.expression, tag);
+                if *checking_presence {
+                    check_ast
+                } else {
+                    unsafe { z3_sys::Z3_mk_not(self.z3_context, check_ast) }
+                }
+            }
             Expression::Widen { path, operand } => {
                 self.get_ast_for_widened(path, operand, operand.expression.infer_type())
             }
@@ -582,6 +609,217 @@ impl Z3Solver {
             let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
             let sort = self.get_sort_for(&expression.infer_type());
             z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
+        }
+    }
+
+    #[logfn_inputs(TRACE)]
+    fn general_has_tag(&self, expression: &Expression, tag: &Tag) -> z3_sys::Z3_ast {
+        let exp_tag_prop_opt = expression.get_tag_propagation();
+
+        // First deal with expressions that do not propagate tags or have special propagation behavior.
+        match expression {
+            Expression::Top
+            | Expression::Bottom
+            | Expression::CompileTimeConstant { .. }
+            | Expression::HeapBlock { .. }
+            | Expression::HeapBlockLayout { .. }
+            | Expression::Reference { .. }
+            | Expression::UnknownModelField { .. }
+            | Expression::UnknownTagCheck { .. } => unsafe {
+                return z3_sys::Z3_mk_false(self.z3_context);
+            },
+
+            Expression::Variable { path, .. } => {
+                // A variable is an unknown value of a place in memory.
+                // Therefore, returns an unknown tag check via the logical predicate has_tag(path, tag).
+                let path_str = CString::new(format!("{:?} for tagging", path)).unwrap();
+                let tag_str = CString::new(format!("{:?}", tag)).unwrap();
+                unsafe {
+                    let path_symbol =
+                        z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
+                    let path_arg = z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.any_sort);
+                    let tag_symbol =
+                        z3_sys::Z3_mk_string_symbol(self.z3_context, tag_str.into_raw());
+                    let tag_arg = z3_sys::Z3_mk_const(self.z3_context, tag_symbol, self.any_sort);
+                    return z3_sys::Z3_mk_app(
+                        self.z3_context,
+                        self.has_tag_func,
+                        2,
+                        [path_arg, tag_arg].as_ptr(),
+                    );
+                }
+            }
+
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                // Whether the conditional expression has tag or not is computed by
+                // (condition has tag) or ite(condition, (consequent has tag), (alternate has tag)).
+                let condition_ast = self.get_as_bool_z3_ast(&condition.expression);
+                let condition_check = self.general_has_tag(&condition.expression, tag);
+                let consequent_check = self.general_has_tag(&consequent.expression, tag);
+                let alternate_check = self.general_has_tag(&alternate.expression, tag);
+                unsafe {
+                    let join_check = z3_sys::Z3_mk_ite(
+                        self.z3_context,
+                        condition_ast,
+                        consequent_check,
+                        alternate_check,
+                    );
+                    return z3_sys::Z3_mk_or(
+                        self.z3_context,
+                        2,
+                        [condition_check, join_check].as_ptr(),
+                    );
+                }
+            }
+
+            Expression::Join { left, right, .. } => {
+                // Whether the join expression has tag or not is computed by
+                // ite(unknown condition, (left has tag), (right has tag)).
+                let left_check = self.general_has_tag(&left.expression, tag);
+                let right_check = self.general_has_tag(&right.expression, tag);
+                unsafe {
+                    let condition_ast =
+                        z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.bool_sort);
+                    return z3_sys::Z3_mk_ite(
+                        self.z3_context,
+                        condition_ast,
+                        left_check,
+                        right_check,
+                    );
+                }
+            }
+
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                // Whether the switch expression has tag or not is computed by
+                // (discriminator has tag) or (switch (discriminator) { case0 => (case0 has tag) | ... | _ => (default has tag) }).
+                let discriminator_ast = self.get_as_z3_ast(&discriminator.expression);
+                let discriminator_check = self.general_has_tag(&discriminator.expression, tag);
+                let default_check = self.general_has_tag(&default.expression, tag);
+                let join_check =
+                    cases
+                        .iter()
+                        .fold(default_check, |acc_check, (case_val, case_result)| unsafe {
+                            let case_val_ast = self.get_as_z3_ast(&case_val.expression);
+                            let cond_ast =
+                                z3_sys::Z3_mk_eq(self.z3_context, discriminator_ast, case_val_ast);
+                            let case_result_check =
+                                self.general_has_tag(&case_result.expression, tag);
+                            z3_sys::Z3_mk_ite(
+                                self.z3_context,
+                                cond_ast,
+                                case_result_check,
+                                acc_check,
+                            )
+                        });
+                unsafe {
+                    return z3_sys::Z3_mk_or(
+                        self.z3_context,
+                        2,
+                        [discriminator_check, join_check].as_ptr(),
+                    );
+                }
+            }
+
+            Expression::TaggedExpression {
+                operand,
+                tag: annotated_tag,
+            } => {
+                if tag.eq(annotated_tag) {
+                    unsafe {
+                        return z3_sys::Z3_mk_true(self.z3_context);
+                    }
+                } else {
+                    return self.general_has_tag(&operand.expression, tag);
+                }
+            }
+
+            Expression::Widen { operand, .. } => {
+                return self.general_has_tag(&operand.expression, tag);
+            }
+
+            _ => {
+                verify!(exp_tag_prop_opt.is_some());
+            }
+        }
+
+        let exp_tag_prop = exp_tag_prop_opt.unwrap();
+
+        // Then deal with expressions that have standard propagation behavior, i.e., taking tags
+        // from children nodes.
+        if tag.is_propagated_by(exp_tag_prop) {
+            // The operand will propagate the tag.
+            match expression {
+                Expression::Add { left, right }
+                | Expression::AddOverflows { left, right, .. }
+                | Expression::And { left, right }
+                | Expression::BitAnd { left, right }
+                | Expression::BitOr { left, right }
+                | Expression::BitXor { left, right }
+                | Expression::Div { left, right }
+                | Expression::Equals { left, right }
+                | Expression::GreaterOrEqual { left, right }
+                | Expression::GreaterThan { left, right }
+                | Expression::IntrinsicBinary { left, right, .. }
+                | Expression::LessOrEqual { left, right }
+                | Expression::LessThan { left, right }
+                | Expression::Mul { left, right }
+                | Expression::MulOverflows { left, right, .. }
+                | Expression::Ne { left, right }
+                | Expression::Or { left, right }
+                | Expression::Offset { left, right }
+                | Expression::Rem { left, right }
+                | Expression::Shl { left, right }
+                | Expression::ShlOverflows { left, right, .. }
+                | Expression::Shr { left, right, .. }
+                | Expression::ShrOverflows { left, right, .. }
+                | Expression::Sub { left, right }
+                | Expression::SubOverflows { left, right, .. } => {
+                    let left_check = self.general_has_tag(&left.expression, tag);
+                    let right_check = self.general_has_tag(&right.expression, tag);
+                    unsafe {
+                        z3_sys::Z3_mk_or(self.z3_context, 2, [left_check, right_check].as_ptr())
+                    }
+                }
+
+                Expression::BitNot { operand, .. }
+                | Expression::Cast { operand, .. }
+                | Expression::IntrinsicBitVectorUnary { operand, .. }
+                | Expression::IntrinsicFloatingPointUnary { operand, .. }
+                | Expression::LogicalNot { operand, .. }
+                | Expression::Neg { operand, .. } => self.general_has_tag(&operand.expression, tag),
+
+                Expression::UninterpretedCall {
+                    callee, arguments, ..
+                } => {
+                    let mut checks = Vec::new();
+                    checks.push(self.general_has_tag(&callee.expression, tag));
+                    for argument in arguments {
+                        checks.push(self.general_has_tag(&argument.expression, tag));
+                    }
+                    unsafe {
+                        z3_sys::Z3_mk_or(
+                            self.z3_context,
+                            u32::try_from(checks.len()).unwrap(),
+                            checks.as_ptr(),
+                        )
+                    }
+                }
+
+                _ => {
+                    verify_unreachable!();
+                }
+            }
+        } else {
+            // Otherwise, the operand does not propagate the tag, so the result is false.
+            unsafe { z3_sys::Z3_mk_false(self.z3_context) }
         }
     }
 

@@ -98,10 +98,7 @@ impl Environment {
     /// and alternate, respectively. These paths can then be weakly updated to reflect the
     /// lack of precise knowledge at compile time.
     #[logfn_inputs(TRACE)]
-    pub fn try_to_split(
-        &mut self,
-        path: &Rc<Path>,
-    ) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
+    fn try_to_split(&mut self, path: &Rc<Path>) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
         match &path.value {
             PathEnum::Alias { value } => {
                 if let Expression::ConditionalExpression {
