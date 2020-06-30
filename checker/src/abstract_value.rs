@@ -255,6 +255,35 @@ impl AbstractValue {
         )
     }
 
+    /// Returns a tag check on `operand`. If we can decide the presence/absence of tag, return
+    /// TRUE/FALSE. Otherwise, returns an unknown tag check.
+    #[logfn_inputs(TRACE)]
+    pub fn make_tag_check(
+        operand: Rc<AbstractValue>,
+        tag: Tag,
+        checking_presence: bool,
+    ) -> Rc<AbstractValue> {
+        let check_value = if checking_presence {
+            operand.has_tag(&tag)
+        } else {
+            operand.does_not_have_tag(&tag)
+        };
+        if check_value.is_top() {
+            // Cannot refine this tag check. Return again an unknown tag check.
+            let expression_size = operand.expression_size.saturating_add(1);
+            AbstractValue::make_from(
+                Expression::UnknownTagCheck {
+                    operand,
+                    tag,
+                    checking_presence,
+                },
+                expression_size,
+            )
+        } else {
+            check_value
+        }
+    }
+
     /// Creates an abstract value from the given expression and size.
     /// Initializes the optional domains to None.
     #[logfn_inputs(TRACE)]
@@ -1585,9 +1614,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match &self.expression {
             Expression::HeapBlock { is_zeroed, .. } => *is_zeroed,
             Expression::Offset { left, .. } => left.is_contained_in_zeroed_heap_block(),
-            Expression::Reference(path)
-            | Expression::UnknownTagCheck { path, .. }
-            | Expression::Variable { path, .. } => path.is_rooted_by_zeroed_heap_block(),
+            Expression::Reference(path) | Expression::Variable { path, .. } => {
+                path.is_rooted_by_zeroed_heap_block()
+            }
+            Expression::UnknownTagCheck { operand, .. } => {
+                operand.is_contained_in_zeroed_heap_block()
+            }
             _ => false,
         }
     }
@@ -2089,9 +2121,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn refers_to_unknown_location(&self) -> bool {
         match &self.expression {
-            Expression::Cast { operand, .. } | Expression::TaggedExpression { operand, .. } => {
-                operand.refers_to_unknown_location()
-            }
+            Expression::Cast { operand, .. }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::UnknownTagCheck { operand, .. } => operand.refers_to_unknown_location(),
             Expression::ConditionalExpression {
                 consequent,
                 alternate,
@@ -2111,7 +2143,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     || cases.iter().any(|(_, v)| v.refers_to_unknown_location())
             }
             Expression::UninterpretedCall { path, .. }
-            | Expression::UnknownTagCheck { path, .. }
             | Expression::Variable { path, .. }
             | Expression::Widen { path, .. } => {
                 if let PathEnum::Alias { value } = &path.value {
@@ -2613,7 +2644,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 cases,
                 default,
             } => {
-                // tags(discriminator) | (tags(cases) join tags(default))
                 // For each tag A, whether the switch expression has tag A or not is
                 // (discriminator has tag A) or ((case_0 has tag A) join .. join (case_n has tag A) join (default has tag A)).
                 let mut tags_from_cases = (*default.get_cached_tags()).clone();
@@ -2908,33 +2938,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
             Expression::UnknownTagCheck {
-                path,
+                operand,
                 tag,
                 checking_presence,
-            } => {
-                if let Some(val) = environment.value_at(&path) {
-                    let check_value = if *checking_presence {
-                        val.has_tag(tag)
-                    } else {
-                        val.does_not_have_tag(tag)
-                    };
-                    if check_value.is_top() {
-                        // Still unknown, fall through.
-                    } else {
-                        return check_value;
-                    }
-                }
-
-                // Cannot refine this tag check. Return again an unknown tag check.
-                AbstractValue::make_from(
-                    Expression::UnknownTagCheck {
-                        path: path.refine_paths(environment),
-                        tag: *tag,
-                        checking_presence: *checking_presence,
-                    },
-                    1,
-                )
-            }
+            } => AbstractValue::make_tag_check(
+                operand.refine_paths(environment),
+                *tag,
+                *checking_presence,
+            ),
             Expression::Variable { path, var_type } => {
                 if let Some(val) = environment.value_at(&path) {
                     val.clone()
@@ -3186,16 +3197,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 )
             }
             Expression::UnknownTagCheck {
-                path,
+                operand,
                 tag,
                 checking_presence,
-            } => AbstractValue::make_from(
-                Expression::UnknownTagCheck {
-                    path: path.refine_parameters(arguments, fresh),
-                    tag: *tag,
-                    checking_presence: *checking_presence,
-                },
-                1,
+            } => AbstractValue::make_tag_check(
+                operand.refine_parameters(arguments, fresh),
+                *tag,
+                *checking_presence,
             ),
             Expression::Variable { path, var_type } => {
                 let refined_path = path.refine_parameters(arguments, fresh);
@@ -3496,7 +3504,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     path.clone(),
                 ),
             Expression::UnknownModelField { .. } => self.clone(),
-            Expression::UnknownTagCheck { .. } => self.clone(),
+            Expression::UnknownTagCheck {
+                operand,
+                tag,
+                checking_presence,
+            } => AbstractValue::make_tag_check(
+                operand.refine_with(path_condition, depth + 1),
+                *tag,
+                *checking_presence,
+            ),
             Expression::Variable { var_type, .. } => {
                 if *var_type == ExpressionType::Bool {
                     if path_condition.implies(&self) {

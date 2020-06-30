@@ -11,13 +11,6 @@ use rpds::{rbt_map, RedBlackTreeMap};
 use rustc_hir::def_id::{CrateNum, DefId, DefIndex};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-/// Check if a value of enum type `TagPropagation` is included in a tag propagation set.
-macro_rules! does_propagate_tag {
-    ($set:expr, $x:expr) => {
-        ($set & (1 << ($x as u8))) != 0
-    };
-}
-
 /// A replication of the `DefId` type from rustc. The type is used to implement serialization.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash)]
 pub struct SerializableDefId {
@@ -93,6 +86,15 @@ impl<'de> Deserialize<'de> for SerializableDefId {
 pub struct Tag {
     pub def_id: SerializableDefId,
     pub prop_set: TagPropagationSet,
+}
+
+impl Tag {
+    /// Check if a value of enum type `TagPropagation` is included in `self`'s propagation set.
+    #[logfn_inputs(TRACE)]
+    pub fn is_propagated_by(&self, exp_tag_prop: TagPropagation) -> bool {
+        precondition!((exp_tag_prop as u8) < 128);
+        self.prop_set & (1 << (exp_tag_prop as u8)) != 0
+    }
 }
 
 /// The Tag domain implements an abstraction for the Expression domain. A tag is attached to an
@@ -225,13 +227,11 @@ impl TagDomain {
     /// The expression kind is identified by `exp_tag_prop`.
     #[logfn_inputs(TRACE)]
     pub fn propagate_through(&self, exp_tag_prop: TagPropagation) -> Self {
-        precondition!((exp_tag_prop as u8) < 128);
         let new_map: RedBlackTreeMap<Tag, BoolDomain> = self
             .map
             .iter()
             .map(|(tag, val)| {
-                let tag_propagation_set = tag.prop_set;
-                if does_propagate_tag!(tag_propagation_set, exp_tag_prop) {
+                if tag.is_propagated_by(exp_tag_prop) {
                     (*tag, *val)
                 } else {
                     // If this expression blocks the tag, the tag will be mapped to False after

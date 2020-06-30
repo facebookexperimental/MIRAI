@@ -1037,12 +1037,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
 
             // Augment the tags associated at the source with a new tag.
-            self.block_visitor.bv.attach_tag_to_elements(
-                tag,
-                abstract_value::TRUE.into(),
-                source_path,
-                source_rustc_type,
-            );
+            self.block_visitor
+                .bv
+                .attach_tag_to_elements(tag, source_path, source_rustc_type);
         }
 
         // Update exit conditions.
@@ -1123,24 +1120,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .lookup_path_and_refine_result(source_path.clone(), source_rustc_type);
 
             // Decide the result of has_tag! or does_not_have_tag!.
-            let check_value = if checking_presence {
-                source_value.has_tag(&tag)
-            } else {
-                source_value.does_not_have_tag(&tag)
-            };
-            if check_value.is_top() {
-                // Cannot decide tag presence/absence. Return an unknown tag check.
-                result = Some(AbstractValue::make_from(
-                    Expression::UnknownTagCheck {
-                        path: source_path,
-                        tag,
-                        checking_presence,
-                    },
-                    1,
-                ));
-            } else {
-                result = Some(check_value);
-            }
+            result = Some(AbstractValue::make_tag_check(
+                source_value,
+                tag,
+                checking_presence,
+            ));
         } else {
             result = None;
         }
