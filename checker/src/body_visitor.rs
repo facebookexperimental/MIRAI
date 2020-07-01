@@ -1037,7 +1037,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         self.copy_or_move_elements(tpath.clone(), path.clone(), deref_type, false);
                         continue;
                     }
-                    if target_is_thin_pointer && deref_type == self.tcx.types.err {
+                    if target_is_thin_pointer && deref_type == self.tcx.types.never {
                         // This can happen if the result of the called function is actually a slice pointer
                         // that is being implicitly cast to a thin pointer. In that case, tpath needs
                         // to drop the field 0 bit.

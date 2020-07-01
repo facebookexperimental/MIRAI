@@ -16,7 +16,7 @@ use std::str::FromStr;
 /// A collection of error strings that are expected for a test case.
 #[derive(Debug)]
 pub struct ExpectedErrors {
-    messages: Vec<String>,
+    expected_messages: Vec<String>,
 }
 
 impl ExpectedErrors {
@@ -25,7 +25,9 @@ impl ExpectedErrors {
     #[logfn_inputs(TRACE)]
     pub fn new(path: &str) -> ExpectedErrors {
         let exp = load_errors(&PathBuf::from_str(&path).unwrap());
-        ExpectedErrors { messages: exp }
+        ExpectedErrors {
+            expected_messages: exp,
+        }
     }
 
     /// Checks if the given set of diagnostics matches the expected diagnostics.
@@ -41,8 +43,8 @@ impl ExpectedErrors {
                 }
             }
         }
-        if !self.messages.is_empty() {
-            println!("Expected errors not reported: {:?}", self.messages);
+        if !self.expected_messages.is_empty() {
+            println!("Expected errors not reported: {:?}", self.expected_messages);
             return false;
         }
         true
@@ -51,22 +53,25 @@ impl ExpectedErrors {
     /// Removes the first element of self.messages and checks if it matches msg.
     #[logfn_inputs(TRACE)]
     fn remove_message(&mut self, span: &MultiSpan, msg: &str) -> bool {
-        let mut cand: Option<String> = None;
-        for expected in self.messages.to_owned() {
+        let mut longest_match: Option<&String> = None;
+        let mut pos: usize = usize::MAX;
+        for (i, expected) in self.expected_messages.iter().enumerate() {
             if msg.contains(expected.as_str()) {
                 // Take care of finding the longest match
-                if cand.is_none() || cand.as_ref().unwrap().len() < expected.len() {
-                    cand = Some(expected);
+                if longest_match.is_none() || longest_match.as_ref().unwrap().len() < expected.len()
+                {
+                    longest_match = Some(expected);
+                    pos = i;
                 }
             }
         }
-        if let Some(expected) = cand {
-            self.messages.remove_item(&expected);
+        if pos != usize::MAX {
+            self.expected_messages.remove(pos);
             true
         } else {
             println!(
                 "Unexpected error: \"{}\". Expected: {:?} (at {:?})",
-                msg, self.messages, span,
+                msg, self.expected_messages, span,
             );
             false
         }
