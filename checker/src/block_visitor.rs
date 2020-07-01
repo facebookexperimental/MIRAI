@@ -205,10 +205,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::TerminatorKind::Return => self.visit_return(),
             mir::TerminatorKind::Unreachable => self.visit_unreachable(),
             mir::TerminatorKind::Drop {
-                location,
+                place,
                 target,
                 unwind,
-            } => self.visit_drop(location, *target, *unwind),
+            } => self.visit_drop(place, *target, *unwind),
             mir::TerminatorKind::DropAndReplace { .. } => assume_unreachable!(),
             mir::TerminatorKind::Call {
                 func,
@@ -216,7 +216,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 destination,
                 cleanup,
                 from_hir_call,
-            } => self.visit_call(func, args, destination, *cleanup, *from_hir_call),
+                fn_span,
+            } => self.visit_call(func, args, destination, *cleanup, *from_hir_call, fn_span),
             mir::TerminatorKind::Assert {
                 cond,
                 expected,
@@ -349,10 +350,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_drop(
         &mut self,
-        location: &mir::Place<'tcx>,
+        place: &mir::Place<'tcx>,
         target: mir::BasicBlock,
         unwind: Option<mir::BasicBlock>,
     ) {
+        //todo: probably should remove all paths that are rooted in place.
+
         // Propagate the entry condition to the successor blocks.
         self.bv.current_environment.exit_conditions = self
             .bv
@@ -388,6 +391,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
         from_hir_call: bool,
+        fn_span: &rustc_span::Span,
     ) {
         // This offset is used to distinguish any local variables that leak out from the called function
         // from local variables of the callee function.
@@ -397,7 +401,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         // a million local variables.
         self.bv.fresh_variable_offset += 1_000_000;
 
-        trace!("source location {:?}", self.bv.current_span);
+        trace!("source location {:?}", fn_span);
         trace!("call stack {:?}", self.bv.active_calls_map);
         trace!("visit_call {:?} {:?}", func, args);
         trace!(

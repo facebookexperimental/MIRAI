@@ -392,7 +392,7 @@ pub fn are_concrete(gen_args: SubstsRef<'_>) -> bool {
 /// Determines if the given type is fully concrete.
 pub fn is_concrete(ty: &TyKind<'_>) -> bool {
     match ty {
-        TyKind::Bound(..) | TyKind::Param(..) | TyKind::Infer(..) | TyKind::Error => false,
+        TyKind::Bound(..) | TyKind::Param(..) | TyKind::Infer(..) | TyKind::Error(..) => false,
         TyKind::Adt(_, gen_args)
         | TyKind::Closure(_, gen_args)
         | TyKind::FnDef(_, gen_args)

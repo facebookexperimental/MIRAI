@@ -183,7 +183,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         "local var path.value is {:?} at {:?}",
                         path.value, current_span
                     );
-                    self.tcx.types.err
+                    self.tcx.types.never
                 }
             }
             PathEnum::HeapBlock { value } | PathEnum::Offset { value } => {
@@ -202,13 +202,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         "parameter path.value is {:?} at {:?}",
                         path.value, current_span
                     );
-                    self.tcx.types.err
+                    self.tcx.types.never
                 }
             }
             PathEnum::Result => {
                 if self.mir.local_decls.is_empty() {
                     info!("result type wanted from function without result local");
-                    self.tcx.types.err
+                    self.tcx.types.never
                 } else {
                     self.specialize_generic_argument_type(
                         self.mir.local_decls[mir::Local::from(0usize)].ty,
@@ -280,7 +280,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     // It is hard to detect this case before calling this
                                     // routine, so we'll allow it to happen tell the caller
                                     // to look out for it by returning this:
-                                    return self.tcx.types.err;
+                                    return self.tcx.types.never;
                                 }
                             }
                         }
@@ -325,7 +325,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 info!("t is {:?}", t);
                 info!("qualifier is {:?}", qualifier);
                 info!("selector is {:?}", selector);
-                self.tcx.types.err
+                self.tcx.types.never
             }
             PathEnum::StaticVariable { def_id, .. } => {
                 if let Some(def_id) = def_id {
@@ -335,11 +335,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     "static variable path.value is {:?} at {:?}",
                     path.value, current_span
                 );
-                self.tcx.types.err
+                self.tcx.types.never
             }
             _ => {
                 info!("path.value is {:?} at {:?}", path.value, current_span);
-                self.tcx.types.err
+                self.tcx.types.never
             }
         }
     }
