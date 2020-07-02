@@ -52,9 +52,7 @@ pub fn test3(cond: bool) {
         join = &right;
     }
     add_tag!(join, SecretTaint);
-    // todo: try to split path first when attaching tags
     verify!(has_tag!(&left.content, SecretTaint) || has_tag!(&right.content, SecretTaint));
-    //~ provably false verification condition
 }
 
 pub fn test4(foo: Foo, cond: bool) {

@@ -2014,12 +2014,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
 
         self.distribute_over_target_joins(
-            value_path.clone(),
+            value_path,
             Rc::new(abstract_value::TRUE),
             &|_self, sub_path| {
                 _self.non_patterned_copy_or_move_elements(
+                    sub_path.clone(),
                     sub_path,
-                    value_path.clone(),
                     root_rustc_type,
                     false,
                     |_self, path, _, new_value| {
@@ -2032,8 +2032,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             },
             &|_self, sub_path, condition| {
                 _self.non_patterned_copy_or_move_elements(
+                    sub_path.clone(),
                     sub_path,
-                    value_path.clone(),
                     root_rustc_type,
                     false,
                     |_self, path, old_value, new_value| {
