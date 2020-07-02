@@ -310,6 +310,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     PathSelector::Index(_) => {
                         return get_element_type(t);
                     }
+                    PathSelector::Layout => {
+                        return self.tcx.types.trait_object_dummy_self;
+                    }
                     PathSelector::Slice(_) => {
                         return if type_visitor::is_slice_pointer(&t.kind) {
                             t

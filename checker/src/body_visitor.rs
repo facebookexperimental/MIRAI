@@ -1426,12 +1426,39 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             return;
         }
 
-        self.non_patterned_copy_or_move_elements(
+        self.distribute_over_target_joins(
             target_path,
-            source_path,
-            root_rustc_type,
-            move_elements,
-            |_self, path, value| _self.current_environment.update_value_at(path, value),
+            Rc::new(abstract_value::TRUE),
+            &|_self, sub_path| {
+                _self.non_patterned_copy_or_move_elements(
+                    sub_path,
+                    source_path.clone(),
+                    root_rustc_type,
+                    move_elements,
+                    |_self, path, _, new_value| {
+                        if new_value.is_bottom() || new_value.is_top() {
+                            _self.current_environment.value_map =
+                                _self.current_environment.value_map.remove(&path);
+                            return;
+                        }
+                        _self.current_environment.value_map =
+                            _self.current_environment.value_map.insert(path, new_value);
+                    },
+                );
+            },
+            &|_self, sub_path, condition| {
+                _self.non_patterned_copy_or_move_elements(
+                    sub_path,
+                    source_path.clone(),
+                    root_rustc_type,
+                    move_elements,
+                    |_self, path, old_value, new_value| {
+                        let weak_value = condition.conditional_expression(new_value, old_value);
+                        _self.current_environment.value_map =
+                            _self.current_environment.value_map.insert(path, weak_value);
+                    },
+                )
+            },
         );
     }
 
@@ -1619,6 +1646,62 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         false
     }
 
+    /// If the target path if of the form if c { p1 } else { p2 } then it is an alias for either
+    /// p1 or p2, so updating the target path must weakly update p1 and p2 as well.
+    pub fn distribute_over_target_joins<F, G>(
+        &mut self,
+        target_path: Rc<Path>,
+        join_prefix: Rc<AbstractValue>,
+        strong_update: &F,
+        weak_update: &G,
+    ) where
+        F: Fn(&mut Self, Rc<Path>),
+        G: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>),
+    {
+        trace!(
+            "target_path {:?} join_prefix {:?}",
+            target_path,
+            join_prefix
+        );
+        if let Some((join_condition, true_path, false_path)) =
+            self.current_environment.try_to_split(&target_path)
+        {
+            if join_prefix.as_bool_if_known().unwrap_or(false) {
+                //todo: if the strong update is a move, the weak updates below do not see the values
+                //rooted at the source path because they have moved. On the other hand, if the strong
+                //update is done after the weak updates, then the strong update can't help to refine
+                //the weak values.
+                // For now we work around this problem by always copying.
+                strong_update(self, target_path);
+            }
+            // The value path contains an abstract value that was constructed with a join.
+            // In this case, we split the path into two and perform weak updates on them.
+            // Rather than do it here, we recurse until there are no more joins.
+            self.distribute_over_target_joins(
+                true_path,
+                join_prefix.and(join_condition.clone()),
+                strong_update,
+                weak_update,
+            );
+            self.distribute_over_target_joins(
+                false_path,
+                join_prefix.and(join_condition.logical_not()),
+                strong_update,
+                weak_update,
+            );
+        } else {
+            // Get here for a path with no joins.
+            if join_prefix.as_bool_if_known().unwrap_or(false) {
+                // This is the root call, so just do a strong update and return to the caller.
+                strong_update(self, target_path)
+            } else {
+                // This is a recursive call, do the weak update and return to the caller.
+                // The caller will do the strong update if it is the root call.
+                weak_update(self, target_path, join_prefix);
+            }
+        }
+    }
+
     /// Copies/moves all paths rooted in source_path to corresponding paths rooted in target_path.
     pub fn non_patterned_copy_or_move_elements<F>(
         &mut self,
@@ -1628,8 +1711,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         move_elements: bool,
         update: F,
     ) where
-        F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>),
+        F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>, Rc<AbstractValue>),
     {
+        trace!("non_patterned_copy_or_move_elements(target_path {:?}, source_path {:?}, root_rustc_type {:?})", target_path, source_path, root_rustc_type);
         let value = self.lookup_path_and_refine_result(source_path.clone(), root_rustc_type);
         let val_type = value.expression.infer_type();
         let mut no_children = true;
@@ -1648,19 +1732,28 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             {
                 check_for_early_return!(self);
                 let qualified_path = path.replace_root(&source_path, target_path.clone());
+                let rustc_type = self
+                    .type_visitor
+                    .get_path_rustc_type(&qualified_path, self.current_span);
+                let old_value =
+                    self.lookup_path_and_refine_result(qualified_path.clone(), rustc_type);
                 if move_elements {
                     trace!("moving child {:?} to {:?}", value, qualified_path);
-                    self.current_environment.value_map =
-                        self.current_environment.value_map.remove(path);
+                // todo: doing the remove part of the move here makes it difficult to combine
+                // strong updates with weak updates. See comments in distribute_over_target_joins.
+                // self.current_environment.value_map =
+                //     self.current_environment.value_map.remove(path);
                 } else {
                     trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
-                update(self, qualified_path, value.clone());
+                update(self, qualified_path, old_value, value.clone());
                 no_children = false;
             }
         }
         let target_type: ExpressionType = (&root_rustc_type.kind).into();
         if target_type != ExpressionType::NonPrimitive || no_children {
+            let old_value =
+                self.lookup_path_and_refine_result(target_path.clone(), root_rustc_type);
             // Just copy/move (rpath, value) itself.
             if move_elements {
                 trace!("moving {:?} to {:?}", value, target_path);
@@ -1685,7 +1778,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     }
                 }
             }
-            update(self, target_path, value);
+            update(self, target_path, old_value, value);
         }
     }
 
@@ -1797,26 +1890,36 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         str_val: &str,
         update: F,
     ) where
-        F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>),
+        F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>, Rc<AbstractValue>),
     {
         let collection_path = Path::new_alias(value.clone());
         // Create index elements
         for (i, ch) in str_val.as_bytes().iter().enumerate() {
             let index = Rc::new((i as u128).into());
-            let ch_const = Rc::new((*ch as u128).into());
+            let ch_const: Rc<AbstractValue> = Rc::new((*ch as u128).into());
             let path = Path::new_index(collection_path.clone(), index);
-            update(self, path, ch_const);
+            update(self, path, ch_const.clone(), ch_const);
         }
         // Arrays have a length field
         let length_val: Rc<AbstractValue> = Rc::new((str_val.len() as u128).into());
         let str_length_path = Path::new_length(collection_path);
-        update(self, str_length_path, length_val.clone());
+        update(
+            self,
+            str_length_path,
+            length_val.clone(),
+            length_val.clone(),
+        );
         // The target path is a fat pointer, initialize it.
         let thin_pointer_path = Path::new_field(target_path.clone(), 0);
         let thin_pointer_to_str = AbstractValue::make_reference(Path::get_as_path(value.clone()));
-        update(self, thin_pointer_path, thin_pointer_to_str);
+        update(
+            self,
+            thin_pointer_path,
+            thin_pointer_to_str.clone(),
+            thin_pointer_to_str,
+        );
         let slice_length_path = Path::new_length(target_path.clone());
-        update(self, slice_length_path, length_val);
+        update(self, slice_length_path, length_val.clone(), length_val);
     }
 
     /// Get the length of an array. Will be a compile time constant if the array length is known.
@@ -1910,19 +2013,38 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             return;
         }
 
-        // We have already handled paths with patterns. Now perform the actual tagging on value path.
-        self.non_patterned_copy_or_move_elements(
+        self.distribute_over_target_joins(
             value_path.clone(),
-            value_path,
-            root_rustc_type,
-            false,
-            |_self, path, value| {
-                debug!("attaching {:?} to {:?} at {:?}", tag, value, path);
-                _self
-                    .current_environment
-                    .update_value_at(path, value.add_tag(tag));
+            Rc::new(abstract_value::TRUE),
+            &|_self, sub_path| {
+                _self.non_patterned_copy_or_move_elements(
+                    sub_path,
+                    value_path.clone(),
+                    root_rustc_type,
+                    false,
+                    |_self, path, _, new_value| {
+                        _self.current_environment.value_map = _self
+                            .current_environment
+                            .value_map
+                            .insert(path, new_value.add_tag(tag));
+                    },
+                );
             },
-        )
+            &|_self, sub_path, condition| {
+                _self.non_patterned_copy_or_move_elements(
+                    sub_path,
+                    value_path.clone(),
+                    root_rustc_type,
+                    false,
+                    |_self, path, old_value, new_value| {
+                        let weak_value =
+                            condition.conditional_expression(new_value.add_tag(tag), old_value);
+                        _self.current_environment.value_map =
+                            _self.current_environment.value_map.insert(path, weak_value);
+                    },
+                )
+            },
+        );
     }
 
     /// Attach `tag` to all index entries rooted at qualifier to reflect the possibility
