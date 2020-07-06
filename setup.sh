@@ -4,13 +4,18 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+# Directory for this source file
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+TOOLCHAIN=$(cat "$DIR/rust-toolchain")
+
 # install formatter
-rustup component add rustfmt-preview
+rustup "+$TOOLCHAIN" component add rustfmt-preview
 # install linter
-rustup component add clippy-preview
+rustup "+$TOOLCHAIN" component add clippy-preview
 # install rustc-dev
-rustup component add rustc-dev
+rustup "+$TOOLCHAIN" component add rustc-dev
 # install llvm-tools
-rustup component add llvm-tools-preview
+rustup "+$TOOLCHAIN" component add llvm-tools-preview
 # install audit
-cargo install cargo-audit
+cargo "+$TOOLCHAIN" install cargo-audit
