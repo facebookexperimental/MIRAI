@@ -2160,7 +2160,7 @@ pub mod rand {
 
 pub mod std {
     pub mod backtrace {
-        pub mod implement_backtrace {
+        pub mod implement_std_backtrace_Backtrace {
             pub fn capture() -> (std::backtrace::BacktraceStatus) {
                 (std::backtrace::BacktraceStatus::Unsupported)
             }

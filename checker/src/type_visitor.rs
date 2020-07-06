@@ -271,11 +271,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                         _ => {}
                                     }
                                 }
-                                if *ordinal == 0 && matches!(&t.kind, TyKind::Ref(..)) {
+                                if *ordinal == 0
+                                    && matches!(&t.kind, TyKind::FnPtr(..) | TyKind::Ref(..))
+                                {
                                     // If the qualifier is a thin pointer to something that
                                     // does not have a field 0, it could be that qualifier.0
                                     // is a bogus path that got constructed when transferring
-                                    // a returned fat pointer into a thing pointer target
+                                    // a returned fat pointer into a thin pointer target
                                     // variable without an explicit cast.
                                     // It is hard to detect this case before calling this
                                     // routine, so we'll allow it to happen tell the caller

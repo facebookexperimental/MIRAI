@@ -1257,6 +1257,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     );
                     return;
                 } else {
+                    //todo: if qualifier is a heap block, create a new heap block and copy all of
+                    //the elements from qualifier to the new heap block. Then set path to
+                    //be a reference to the new heap block.
                     self.bv
                         .copy_or_move_elements(path, qualifier.clone(), target_type, false);
                     return;

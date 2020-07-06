@@ -645,7 +645,7 @@ pub trait PathRefinement: Sized {
     fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path>;
 
     /// Returns a copy of self with the selector replace by a new selector.
-    /// It is only legal to call this on a qualfied path.
+    /// It is only legal to call this on a qualified path.
     fn replace_selector(&self, new_selector: Rc<PathSelector>) -> Rc<Path>;
 }
 
