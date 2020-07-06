@@ -2020,31 +2020,26 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         ty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
         let result;
-        match &literal.val {
-            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw { data, size }))
-                if *size == 1 =>
-            {
-                let e = self.bv.get_new_heap_block(
-                    Rc::new(1u128.into()),
-                    Rc::new(1u128.into()),
-                    false,
-                    ty,
-                );
-                if let Expression::HeapBlock { .. } = &e.expression {
-                    let p = Path::new_discriminant(Path::get_as_path(e.clone()));
-                    let d = self.get_u128_const_val(*data);
-                    self.bv.current_environment.update_value_at(p, d);
-                    return e;
-                }
-                verify_unreachable!();
+        if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
+            data, ..
+        })) = &literal.val
+        {
+            let e =
+                self.bv
+                    .get_new_heap_block(Rc::new(1u128.into()), Rc::new(1u128.into()), false, ty);
+            if let Expression::HeapBlock { .. } = &e.expression {
+                let p = Path::new_discriminant(Path::get_as_path(e.clone()));
+                let d = self.get_u128_const_val(*data);
+                self.bv.current_environment.update_value_at(p, d);
+                return e;
             }
-            _ => {
-                debug!("span: {:?}", self.bv.current_span);
-                debug!("type kind {:?}", ty.kind);
-                debug!("unimplemented constant {:?}", literal);
-                result = &ConstantDomain::Unimplemented;
-            }
-        };
+            verify_unreachable!();
+        } else {
+            debug!("span: {:?}", self.bv.current_span);
+            debug!("type kind {:?}", ty.kind);
+            debug!("unimplemented constant {:?}", literal);
+            result = &ConstantDomain::Unimplemented;
+        }
         Rc::new(result.clone().into())
     }
 

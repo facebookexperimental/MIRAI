@@ -964,6 +964,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
+                Expression::CompileTimeConstant(..) => {
+                    self.current_environment.update_value_at(tpath, rvalue);
+                    continue;
+                }
                 Expression::HeapBlock { .. } => {
                     if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                         if let PathSelector::Slice(..) = selector.as_ref() {
@@ -1757,8 +1761,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             // Just copy/move (rpath, value) itself.
             if move_elements {
                 trace!("moving {:?} to {:?}", value, target_path);
-                self.current_environment.value_map =
-                    self.current_environment.value_map.remove(&source_path);
+            // todo: doing the remove part of the move here makes it difficult to combine
+            // strong updates with weak updates. See comments in distribute_over_target_joins.
+            // self.current_environment.value_map =
+            //     self.current_environment.value_map.remove(&source_path);
             } else {
                 trace!("copying {:?} to {:?}", value, target_path);
             }
