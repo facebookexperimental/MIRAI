@@ -350,6 +350,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// Returns the target type of a reference type.
     fn get_dereferenced_type(ty: Ty<'tcx>) -> Ty<'tcx> {
         match &ty.kind {
+            TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
             TyKind::Ref(_, t, _) => *t,
             _ => ty,
         }
