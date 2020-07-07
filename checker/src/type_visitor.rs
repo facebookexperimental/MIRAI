@@ -804,7 +804,7 @@ pub fn is_thin_pointer(ty_kind: &TyKind<'_>) -> bool {
 pub fn is_slice_pointer(ty_kind: &TyKind<'_>) -> bool {
     if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
         // Pointers to sized arrays are thin pointers.
-        matches!(&target.kind, TyKind::Slice(..))
+        matches!(&target.kind, TyKind::Slice(..)) || is_slice_pointer(&target.kind)
     } else {
         false
     }

@@ -1217,18 +1217,32 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 ..
             } if *selector.as_ref() == PathSelector::Deref => {
                 // We are taking a reference to the result of a deref. This is a bit awkward.
-                // The deref essentially does a copy of the value denoted by the qualifier.
-                // If this value is structured and not heap allocated, the copy must be done
-                // with copy_or_move_elements.
+                // The deref, by itself, essentially does a copy of the value denoted by the qualifier.
+                // When combined with an address_of operation, however, things are more complicated.
+                // If the contents at offset 0 from the target of the pointer being dereferenced is
+                // a fat (slice) pointer then the address_of operation results in a copy of the fat pointer.
+                // We check for this by looking at the type of the operation result target.
                 if type_visitor::is_slice_pointer(&target_type.kind)
                     || self
                         .bv
                         .type_visitor
                         .starts_with_slice_pointer(&target_type.kind)
                 {
-                    // Copying to a fat pointer without a cast, so the source pointer is fat too.
-                    // qualifier, however, has been modified into a thin pointer because of the deref.
-                    // Undo the damage by stripping off the field 0.
+                    // If we get here we are effectively copying to a fat pointer without a cast,
+                    // so there is no type information to use to come up with the length part of
+                    // the fat pointer. This implies that the source value must itself be a fat
+                    // pointer. This is, however, not what we'll see if we get the type of the
+                    // qualifier path. The reason for that is the ambiguous semantics of the
+                    // deref operator: Mostly, doing a deref of a fat pointer means doing a
+                    // deref of the thin pointer since that is what we expect when de-referencing
+                    // a pointer, whether it is fat or thin.
+                    //
+                    // When combined with an address_of operator, however, deref just means to
+                    // copy the pointer, fat or thin. (In this case, it must be fat.)
+                    // When the qualifier was constructed, however, this contextual bit information
+                    // was not known, so qualifier would have been modified to select the thin
+                    // pointer. Undo the damage by stripping off the field 0, since we now know
+                    // that we want to copy the fat pointer.
                     if let PathEnum::QualifiedPath {
                         qualifier,
                         selector,
@@ -1245,10 +1259,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             return;
                         }
                     }
+                    // Well, this is awkward. Qualifier was not known to be a fat pointer when
+                    // the deref path was constructed. That seems all sorts of wrong.
                     warn!(
                         "deref failed to turn a fat pointer into a thin pointer {:?}",
                         self.bv.current_span
                     );
+                    // Nevertheless, it happens, so until all the cases are identified and
+                    // debugged, assume that qualifier corresponds to a fat pointer and that
+                    // copy_or_move_elements will populate the target path with the necessary information.
+                    // If that information is not actually there, this results in a conservative over approximation.
                     self.bv.copy_or_move_elements(
                         path,
                         qualifier.refine_paths(&self.bv.current_environment),
@@ -1257,9 +1277,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     );
                     return;
                 } else {
-                    //todo: if qualifier is a heap block, create a new heap block and copy all of
-                    //the elements from qualifier to the new heap block. Then set path to
-                    //be a reference to the new heap block.
+                    // If the target is not a fat pointer, it must be a thin pointer since an
+                    // address of operator can hardly result in anything else. So, in this case,
+                    // &*source_thin_ptr should just be a non canonical alias for source_thin_ptr.
                     self.bv
                         .copy_or_move_elements(path, qualifier.clone(), target_type, false);
                     return;

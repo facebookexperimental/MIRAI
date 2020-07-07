@@ -570,16 +570,6 @@ impl Path {
             if value.is_bottom() {
                 return qualifier;
             }
-
-            // A path that is an alias for a & operation must simplify when dereferenced
-            // in order to stay canonical.
-            // Note that the tricky semantics of constructing a copy of struct when doing *&x
-            // is taken care of when handling the MIR operation and paths need not be concerned with it.
-            if let Expression::Reference(path) = &value.expression {
-                if matches!(selector.as_ref(), PathSelector::Deref) {
-                    return path.clone();
-                }
-            }
         }
         let qualifier_length = qualifier.path_length();
         if qualifier_length >= k_limits::MAX_PATH_LENGTH {
@@ -777,6 +767,15 @@ impl PathRefinement for Rc<Path> {
                         }
                         Expression::Variable { path, .. } => {
                             return Path::new_qualified(path.clone(), refined_selector);
+                        }
+                        Expression::Reference(path) => {
+                            if matches!(selector.as_ref(), PathSelector::Deref) {
+                                // A path that is an alias for a & operation must simplify when dereferenced
+                                // in order to stay canonical.
+                                // Note that the tricky semantics of constructing a copy of struct when doing *&x
+                                // is taken care of when handling the MIR operation and paths need not be concerned with it.
+                                return path.clone();
+                            }
                         }
                         _ => {
                             if val.refers_to_unknown_location() {
