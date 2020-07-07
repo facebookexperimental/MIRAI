@@ -3,9 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-#![feature(const_generics)]
-#![allow(incomplete_features)]
-
 // A set of macros and functions to use for annotating source files that are being checked with MIRAI
 
 /// Provides a way to specify a value that should be treated abstractly by the verifier.
@@ -25,7 +22,7 @@ macro_rules! abstract_value {
     };
 }
 
-/// A type for transfer  of MIRAI tag types. The type is an alias of `u128`.
+/// A type used to specify how tag types transfer over operations. The type is an alias of `u128`.
 /// Each bit of the bit vector controls the transfer function for an operation.
 /// If a bit is set to one, the corresponding operation will propagate the tag.
 /// If a bit is set to zero, the corresponding operation will block the tag.
