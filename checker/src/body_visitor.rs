@@ -565,7 +565,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         if summary.is_computed && !summary.side_effects.is_empty() {
             let side_effects = summary.side_effects.clone();
             // Effects on the path
-            self.transfer_and_refine(&side_effects, path.clone(), &Path::new_result(), &[]);
+            self.transfer_and_refine(&side_effects, path.clone(), &Path::new_result(), &None, &[]);
             // Effects on the heap
             for (path, value) in side_effects.iter() {
                 if path.is_rooted_by_abstract_heap_block() {
@@ -653,7 +653,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .map(|precondition| {
                 let refined_condition = precondition
                     .condition
-                    .refine_parameters(&actual_args, self.fresh_variable_offset)
+                    .refine_parameters(&actual_args, &None, self.fresh_variable_offset)
                     .refine_paths(&self.current_environment);
                 Precondition {
                     condition: refined_condition,
@@ -935,6 +935,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         effects: &[(Rc<Path>, Rc<AbstractValue>)],
         target_path: Rc<Path>,
         source_path: &Rc<Path>,
+        result_path: &Option<Rc<Path>>,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
     ) {
         let target_type = self
@@ -946,15 +947,15 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
         {
             trace!("effect {:?} {:?}", path, value);
-            let dummy_root = Path::new_local(999);
-            let refined_dummy_root = Path::new_local(self.fresh_variable_offset + 999);
+            let dummy_root = Path::new_local(999_999);
+            let refined_dummy_root = Path::new_local(self.fresh_variable_offset + 999_999);
             let mut tpath = path
                 .replace_root(source_path, dummy_root)
-                .refine_parameters(arguments, self.fresh_variable_offset)
+                .refine_parameters(arguments, result_path, self.fresh_variable_offset)
                 .replace_root(&refined_dummy_root, target_path.clone())
                 .refine_paths(&self.current_environment);
             let uncanonicalized_rvalue =
-                value.refine_parameters(arguments, self.fresh_variable_offset);
+                value.refine_parameters(arguments, result_path, self.fresh_variable_offset);
             if let Expression::Variable { path, .. } = &uncanonicalized_rvalue.expression {
                 // If the path contains a root that is a static, this will import the static into
                 // the calling scope.
@@ -1003,7 +1004,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             {
                                 let realloc_layout_val = val
                                     .clone()
-                                    .refine_parameters(arguments, self.fresh_variable_offset)
+                                    .refine_parameters(
+                                        arguments,
+                                        result_path,
+                                        self.fresh_variable_offset,
+                                    )
                                     .refine_paths(&self.current_environment);
                                 self.update_zeroed_flag_for_heap_block_from_environment(
                                     &tpath,

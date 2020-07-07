@@ -1418,7 +1418,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             .refine_paths(&self.block_visitor.bv.current_environment);
         let target_slice = Path::new_slice(target_root.clone(), count.clone())
             .refine_paths(&self.block_visitor.bv.current_environment);
-        let temp_root = Path::new_local(999);
+        let temp_root = Path::new_local(999_999);
         let temp_slice = Path::new_slice(temp_root.clone(), count);
         self.block_visitor
             .bv
@@ -1796,6 +1796,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .condition
                 .refine_parameters(
                     self.actual_args,
+                    &None,
                     self.block_visitor.bv.fresh_variable_offset,
                 )
                 .refine_paths(&self.block_visitor.bv.current_environment);
@@ -1907,6 +1908,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some((place, target)) = &destination {
             // Assign function result to place
             let target_path = self.block_visitor.visit_place(place);
+            let result_path = &Some(target_path.clone());
             let return_value_path = Path::new_result();
 
             // Transfer side effects
@@ -1918,6 +1920,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             .clone()
                             .refine_parameters(
                                 self.actual_args,
+                                result_path,
                                 self.block_visitor.bv.fresh_variable_offset,
                             )
                             .refine_paths(&self.block_visitor.bv.current_environment);
@@ -1934,6 +1937,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &function_summary.side_effects,
                     target_path.clone(),
                     &return_value_path,
+                    result_path,
                     self.actual_args,
                 );
 
@@ -1944,6 +1948,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         &function_summary.side_effects,
                         target_path.clone(),
                         &parameter_path,
+                        result_path,
                         self.actual_args,
                     );
                     check_for_early_return!(self.block_visitor.bv);
@@ -1983,14 +1988,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .type_visitor
                     .get_place_type(place, self.block_visitor.bv.current_span);
-                let result_val = AbstractValue::make_typed_unknown(var_type, target_path);
-                let return_value_path =
-                    Path::new_local(self.block_visitor.bv.fresh_variable_offset);
-
-                return_value_env.update_value_at(return_value_path, result_val);
+                let result_val = AbstractValue::make_typed_unknown(var_type, target_path.clone());
+                return_value_env.update_value_at(target_path, result_val);
                 let refined_post_condition = post_condition
                     .refine_parameters(
                         self.actual_args,
+                        result_path,
                         self.block_visitor.bv.fresh_variable_offset,
                     )
                     .refine_paths(&return_value_env);
@@ -2023,6 +2026,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &function_summary.unwind_side_effects,
                     target_path.clone(),
                     &parameter_path,
+                    &None,
                     self.actual_args,
                 );
             }

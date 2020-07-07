@@ -149,6 +149,7 @@ impl MiraiCallbacks {
             || file_name.contains("common/metrics/src") // stack overflow
             || file_name.contains("config/config-builder/src") // false positives
             || file_name.contains("language/bytecode-verifier/src") // resolve error
+            || file_name.contains("language/compiler/src") // takes too long
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // false positives
             || file_name.contains("language/move-lang/src") // resolve error
