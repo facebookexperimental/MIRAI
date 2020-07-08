@@ -1043,13 +1043,14 @@ impl<'tcx> ConstantValueCache<'tcx> {
         })
     }
 
-    /// Resets the heap block counter to 0.
     /// Do this for every function body to ensure that its analysis is not dependent on what
     /// happened elsewhere. Also remember to relocate heap addresses from summaries of other
     /// functions when transferring callee state to the caller's state.
     #[logfn_inputs(TRACE)]
-    pub fn reset_heap_counter(&mut self) {
-        self.heap_address_counter = 0;
+    pub fn swap_heap_counter(&mut self, new_value: usize) -> usize {
+        let old_value = self.heap_address_counter;
+        self.heap_address_counter = new_value;
+        old_value
     }
 }
 

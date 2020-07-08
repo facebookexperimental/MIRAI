@@ -162,6 +162,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             info!("{:?}", stdout.flush());
         }
         *self.active_calls_map.entry(self.def_id).or_insert(0) += 1;
+        let saved_heap_counter = self.cv.constant_value_cache.swap_heap_counter(0);
 
         // The entry block has no predecessors and its initial state is the function parameters
         // (which we omit here so that we can lazily provision them with additional context)
@@ -190,7 +191,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .bv
                 .report_timeout(elapsed_time_in_seconds);
         }
-
+        let mut result = Summary::default();
+        result.is_computed = true; // Otherwise this function keeps getting re-analyzed
+        result.is_angelic = true; // Callers have to make possibly false assumptions.
         if !fixed_point_visitor.bv.assume_function_is_angelic {
             // Now traverse the blocks again, doing checks and emitting diagnostics.
             // terminator_state[bb] is now complete for every basic block bb in the body.
@@ -212,7 +215,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     // todo: also translate side-effects, return result and post-condition
                 };
 
-                return summaries::summarize(
+                result = summaries::summarize(
                     self.mir.arg_count,
                     self.exit_environment.as_ref(),
                     &self.preconditions,
@@ -223,9 +226,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 );
             }
         }
-        let mut result = Summary::default();
-        result.is_computed = true; // Otherwise this function keeps getting re-analyzed
-        result.is_angelic = true; // Callers have to make possibly false assumptions.
+        self.cv
+            .constant_value_cache
+            .swap_heap_counter(saved_heap_counter);
+
         result
     }
 

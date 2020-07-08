@@ -139,7 +139,8 @@ impl MiraiCallbacks {
     }
 
     fn is_black_listed(file_name: &str) -> bool {
-        file_name.contains("config/management/src") // false positives
+        file_name.contains("client/libra-dev/src") // illegal down cast
+            || file_name.contains("config/management/src") // false positives
             || file_name.contains("consensus/src") // resolve error
             || file_name.contains("consensus/safety-rules/src") // false positives
             || file_name.contains("crypto/crypto-derive/src") //  `(left == right)`  left: `Type`, right: `Fn`
