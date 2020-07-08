@@ -144,7 +144,6 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
         let mut diagnostics: Vec<DiagnosticBuilder<'compilation>> = Vec::new();
         let mut active_calls_map: HashMap<DefId, u64> = HashMap::new();
         let mut z3_solver = Z3Solver::default();
-        self.constant_value_cache.reset_heap_counter();
         let mut body_visitor = BodyVisitor::new(
             self,
             def_id,
