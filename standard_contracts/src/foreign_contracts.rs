@@ -1164,10 +1164,10 @@ pub mod core {
                 assumed_postcondition!(b);
             }
             pub fn likely(b: bool) -> bool {
-                result!()
+                b
             }
             pub fn unlikely(b: bool) -> bool {
-                result!()
+                b
             }
             pub fn breakpoint() {}
             pub unsafe fn move_val_init<T>(dst: *mut T, src: T)
