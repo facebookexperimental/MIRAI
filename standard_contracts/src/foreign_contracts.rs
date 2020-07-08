@@ -44,6 +44,37 @@ pub mod alloc {
     }
 
     pub mod vec {
+        pub mod implement {
+            pub mod insert {
+                fn assert_failed(index: usize, len: usize) -> ! {
+                    panic!(
+                        "insertion index (is {}) should be <= len (is {})",
+                        index, len
+                    );
+                }
+            }
+
+            pub mod remove {
+                fn assert_failed(index: usize, len: usize) -> ! {
+                    panic!("removal index (is {}) should be < len (is {})", index, len);
+                }
+            }
+
+            pub mod split_off {
+                fn assert_failed(at: usize, len: usize) -> ! {
+                    panic!("`at` split index (is {}) should be <= len (is {})", at, len);
+                }
+            }
+
+            pub mod swap_remove {
+                fn assert_failed(index: usize, len: usize) {
+                    panic!(
+                        "swap_remove index (is {}) should be < len (is {})",
+                        index, len
+                    );
+                }
+            }
+        }
         pub mod SpecExtend {
             pub fn spec_extend() {}
         }
@@ -2193,6 +2224,13 @@ pub mod std {
     }
 
     pub mod io {
+        pub mod error {
+            pub mod implement_std_io_Error {
+                fn _new<T>() -> T {
+                    result!()
+                }
+            }
+        }
         pub mod stdio {
             use crate::foreign_contracts::core::fmt;
             pub fn _print(_args: fmt::Arguments<'_>) {}
