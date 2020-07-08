@@ -568,13 +568,16 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         };
         if summary.is_computed && !summary.side_effects.is_empty() {
             let side_effects = summary.side_effects.clone();
+            self.fresh_variable_offset += 1_000_000;
             // Effects on the path
             self.transfer_and_refine(&side_effects, path.clone(), &Path::new_result(), &None, &[]);
             // Effects on the heap
             for (path, value) in side_effects.iter() {
                 if path.is_rooted_by_abstract_heap_block() {
-                    self.current_environment
-                        .update_value_at(path.clone(), value.clone());
+                    self.current_environment.update_value_at(
+                        path.refine_parameters(&[], &None, self.fresh_variable_offset),
+                        value.refine_parameters(&[], &None, self.fresh_variable_offset),
+                    );
                 }
             }
             true

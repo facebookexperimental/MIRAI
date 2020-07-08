@@ -650,6 +650,10 @@ impl PathRefinement for Rc<Path> {
         fresh: usize,
     ) -> Rc<Path> {
         match &self.value {
+            PathEnum::HeapBlock { value } => {
+                let refined_value = value.refine_parameters(arguments, result, fresh);
+                Path::get_as_path(refined_value)
+            }
             PathEnum::LocalVariable { ordinal } => {
                 if (*ordinal) != 999_999 {
                     // This is a handy place to put a break point.
