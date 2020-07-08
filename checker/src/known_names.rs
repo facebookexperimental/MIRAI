@@ -38,6 +38,7 @@ pub enum KnownNames {
     StdIntrinsicsBswap,
     StdIntrinsicsCeilf32,
     StdIntrinsicsCeilf64,
+    StdIntrinsicsCopy,
     StdIntrinsicsCopyNonOverlapping,
     StdIntrinsicsCopysignf32,
     StdIntrinsicsCopysignf64,
@@ -186,6 +187,7 @@ impl KnownNamesCache {
             match path_data_elem_as_disambiguator(current_elem) {
                 Some(0) => get_path_data_elem_name(current_elem)
                     .map(|n| match n.as_str().deref() {
+                        "copy" => KnownNames::StdIntrinsicsCopy,
                         "copy_nonoverlapping" => KnownNames::StdIntrinsicsCopyNonOverlapping,
                         _ => KnownNames::None,
                     })

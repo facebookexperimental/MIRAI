@@ -477,7 +477,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     generator_call_visitor.get_function_summary();
                 return true;
             }
-            KnownNames::StdIntrinsicsCopyNonOverlapping => {
+            KnownNames::StdIntrinsicsCopy | KnownNames::StdIntrinsicsCopyNonOverlapping => {
                 self.handle_copy_non_overlapping();
                 return true;
             }
@@ -964,10 +964,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 trace!("post env {:?}", self.block_visitor.bv.current_environment);
                 return;
             } else {
+                let saved_callee_def_id = self.callee_def_id;
+                self.callee_def_id = def_id;
                 self.deal_with_missing_summary();
+                self.callee_def_id = saved_callee_def_id;
                 Summary::default()
             }
         } else {
+            info!("unknown callee {:?}", callee);
             self.deal_with_missing_summary();
             Summary::default()
         };

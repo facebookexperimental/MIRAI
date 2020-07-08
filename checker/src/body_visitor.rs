@@ -1551,6 +1551,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) where
         F: Fn(&mut Self, Rc<Path>, Rc<Path>, Ty<'tcx>),
     {
+        //todo: if the target slice overlaps with the source_slice the logic below will do the wrong
+        //thing. Fix this by introducing some kind of temporary storage.
         let elem_ty = type_visitor::get_element_type(root_rustc_type);
         for i in from..to {
             let index_val = self.get_u128_const_val(u128::from(i));
