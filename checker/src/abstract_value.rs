@@ -1002,8 +1002,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
 
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
-        consequent = consequent.refine_with(self, 5);
-        alternate = alternate.refine_with(&not_self, 5);
+        if consequent.expression_size <= (k_limits::MAX_REFINE_DEPTH as u64) {
+            consequent = consequent.refine_with(self, 5);
+        }
+        if alternate.expression_size < (k_limits::MAX_REFINE_DEPTH as u64) {
+            alternate = alternate.refine_with(&not_self, 5);
+        }
 
         if let Expression::ConditionalExpression {
             condition: c2,

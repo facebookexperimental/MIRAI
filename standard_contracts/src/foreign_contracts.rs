@@ -142,14 +142,6 @@ pub mod core {
         }
     }
 
-    pub mod clone {
-        pub mod Clone {
-            pub fn clone<T>() -> T {
-                result!()
-            }
-        }
-    }
-
     pub mod cmp {
         pub fn max__i8(v1: i8, v2: i8) -> i8 {
             if v1 >= v2 {
