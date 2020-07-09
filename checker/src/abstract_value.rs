@@ -3046,7 +3046,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::GreaterThan { left, right } => left
                 .refine_parameters(arguments, result, fresh)
                 .greater_than(right.refine_parameters(arguments, result, fresh)),
-            Expression::HeapBlock { .. } => self.clone(),
+            Expression::HeapBlock {
+                abstract_address,
+                is_zeroed,
+            } => AbstractValue::make_from(
+                Expression::HeapBlock {
+                    abstract_address: *abstract_address + fresh,
+                    is_zeroed: *is_zeroed,
+                },
+                1,
+            ),
             Expression::HeapBlockLayout {
                 length,
                 alignment,

@@ -1928,10 +1928,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                                 self.block_visitor.bv.fresh_variable_offset,
                             )
                             .refine_paths(&self.block_visitor.bv.current_environment);
-                        self.block_visitor
-                            .bv
-                            .current_environment
-                            .update_value_at(path.clone(), rvalue);
+                        self.block_visitor.bv.current_environment.update_value_at(
+                            path.refine_parameters(
+                                self.actual_args,
+                                result_path,
+                                self.block_visitor.bv.fresh_variable_offset,
+                            ),
+                            rvalue,
+                        );
                     }
                     check_for_early_return!(self.block_visitor.bv);
                 }
