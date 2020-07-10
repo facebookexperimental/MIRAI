@@ -142,6 +142,14 @@ pub mod core {
         }
     }
 
+    pub mod clone {
+        pub mod Clone {
+            pub fn clone__array_u8(_self: &u8) -> u8 {
+                *_self
+            }
+        }
+    }
+
     pub mod cmp {
         pub fn max__i8(v1: i8, v2: i8) -> i8 {
             if v1 >= v2 {
@@ -346,6 +354,16 @@ pub mod core {
     }
 
     pub mod convert {
+        pub mod Into {
+            pub fn into__ref_x25519_dalek_x25519_StaticSecret_x25519_dalek_x25519_PublicKey<T>() -> T
+            {
+                result!()
+            }
+            pub fn into__usize_usize(t: usize) -> usize {
+                t
+            }
+        }
+
         pub mod implement_convert {
             pub fn try_into__ref_slice_u8_array_u8(arg: &[u8]) -> &[u8] {
                 arg
@@ -2218,8 +2236,35 @@ pub mod std {
     pub mod io {
         pub mod error {
             pub mod implement_std_io_Error {
-                fn _new<T>() -> T {
-                    result!()
+                pub struct Error {
+                    repr: Repr,
+                }
+
+                enum Repr {
+                    Os(i32),
+                    Simple(std::io::ErrorKind),
+                    Custom(Box<Custom>),
+                }
+
+                struct Custom {
+                    kind: std::io::ErrorKind,
+                    error: Box<dyn std::error::Error + Send + Sync>,
+                }
+
+                pub fn kind(_self: Error) -> std::io::ErrorKind {
+                    match _self.repr {
+                        Repr::Os(code) => result!(),
+                        Repr::Custom(ref c) => c.kind,
+                        Repr::Simple(kind) => kind,
+                    }
+                }
+                fn _new(
+                    kind: std::io::ErrorKind,
+                    error: Box<dyn std::error::Error + Send + Sync>,
+                ) -> Error {
+                    Error {
+                        repr: Repr::Custom(Box::new(Custom { kind, error })),
+                    }
                 }
             }
         }

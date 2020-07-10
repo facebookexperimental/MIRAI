@@ -280,6 +280,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     None
                 };
 
+            // todo: can't use def_id by itself as the key to active_calls_map because that means
+            // that calls to instantiations with different type arguments will be treated as
+            // recursive, which is wrong because different type arguments can lead to different
+            // summaries.
             let call_depth = *self
                 .block_visitor
                 .bv
