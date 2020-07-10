@@ -369,6 +369,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         PathSelector::Deref | PathSelector::Index(..)
                     ) {
                         if let PathSelector::Index(index_val) = selector.as_ref() {
+                            //todo: this step is O(n) which makes the analysis O(n**2) when there
+                            //are a bunch of statics in the code.
+                            //An example of this is https://doc-internal.dalek.rs/develop/src/curve25519_dalek/backend/serial/u64/constants.rs.html#143
                             result = self.lookup_weak_value(qualifier, index_val);
                         }
                         if result.is_none() && result_type.is_integer() {
