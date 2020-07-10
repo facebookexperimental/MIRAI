@@ -149,6 +149,7 @@ impl MiraiCallbacks {
             || file_name.contains("common/logger/src") // resolve error
             || file_name.contains("common/metrics/src") // stack overflow
             || file_name.contains("config/config-builder/src") // false positives
+            || file_name.contains("execution/executor/src") // false positives
             || file_name.contains("language/bytecode-verifier/src") // resolve error
             || file_name.contains("language/compiler/src") // takes too long
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
@@ -166,12 +167,12 @@ impl MiraiCallbacks {
             || file_name.contains("secure/net/src") // false positives
             || file_name.contains("secure/storage/src") // false positives
             || file_name.contains("secure/storage/vault/src") // resolve error
+            || file_name.contains("state-synchronizer/src") // false positives
             || file_name.contains("storage/backup/backup-service/src") // resolve error
             || file_name.contains("storage/jellyfish-merkle/src") // unreachable code
             || file_name.contains("storage/backup/backup-cli/src") // panics
             || file_name.contains("storage/libradb/src") // resolve error
             || file_name.contains("testsuite/cli/src") // false positives
-            || file_name.contains("testsuite/cli/libra-wallet/src") // takes too long
             || file_name.contains("types/src") // resolve error
     }
 

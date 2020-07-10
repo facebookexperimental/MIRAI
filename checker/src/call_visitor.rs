@@ -1654,7 +1654,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_mem_replace(&mut self) {
         checked_assume!(self.actual_args.len() == 2);
-        let dest_path = &self.actual_args[0].0;
+        let dest_path = Path::new_deref(self.actual_args[0].0.clone())
+            .refine_paths(&self.block_visitor.bv.current_environment);
         let source_path = &self.actual_args[1].0;
         if let Some((place, _)) = &self.destination {
             let target_path = self.block_visitor.visit_place(place);
@@ -1672,7 +1673,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             );
             // Move value at source path into dest path
             self.block_visitor.bv.copy_or_move_elements(
-                dest_path.clone(),
+                dest_path,
                 source_path.clone(),
                 root_rustc_type,
                 true,
