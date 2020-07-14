@@ -16,8 +16,8 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc_middle::ty::{
-    AdtDef, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig, ParamTy, Ty,
-    TyCtxt, TyKind, TypeAndMut,
+    ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig, ParamTy, Ty, TyCtxt,
+    TyKind, TypeAndMut,
 };
 use rustc_target::abi::VariantIdx;
 use std::collections::HashMap;
@@ -226,19 +226,26 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     PathSelector::ConstantSlice { .. } => {
                         return t;
                     }
-                    PathSelector::Field(ordinal) => {
+                    PathSelector::UnionField {
+                        case_index: ordinal,
+                        ..
+                    }
+                    | PathSelector::Field(ordinal) => {
                         let bt = Self::get_dereferenced_type(t);
                         match &bt.kind {
-                            TyKind::Adt(AdtDef { variants, .. }, substs) => {
-                                if !is_union(bt) {
-                                    if let Some(variant_index) = variants.last() {
-                                        let variant = &variants[variant_index];
-                                        if *ordinal < variant.fields.len() {
-                                            let field = &variant.fields[*ordinal];
-                                            return field.ty(self.tcx, substs);
-                                        }
-                                    }
+                            TyKind::Adt(def, substs) => {
+                                //todo: checked_assume!(!def.is_enum());
+                                // enum fields have qualifiers that cast onto the right variant.
+                                // In this case, t ends up as a tuple so we won't get here.
+                                // See the TyKind::Tuple and PathSelector::DownCast cases below.
+                                let variants = &def.variants;
+                                assume!(variants.len() == 1); // only enums have more than one variant
+                                let variant = &variants[variants.last().unwrap()];
+                                if *ordinal < variant.fields.len() {
+                                    let field = &variant.fields[*ordinal];
+                                    return field.ty(self.tcx, substs);
                                 }
+                                //todo: assume_unreachable!("field ordinal should always be valid");
                             }
                             TyKind::Closure(def_id, subs) => {
                                 let _ = def_id;
@@ -805,15 +812,6 @@ pub fn is_slice_pointer(ty_kind: &TyKind<'_>) -> bool {
     if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
         // Pointers to sized arrays are thin pointers.
         matches!(&target.kind, TyKind::Slice(..)) || is_slice_pointer(&target.kind)
-    } else {
-        false
-    }
-}
-
-/// Returns true if the ty is a union.
-pub fn is_union(ty: Ty<'_>) -> bool {
-    if let TyKind::Adt(def, ..) = ty.kind {
-        def.is_union()
     } else {
         false
     }

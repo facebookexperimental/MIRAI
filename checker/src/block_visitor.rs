@@ -2541,11 +2541,18 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         match projection_elem {
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, ..) => {
-                PathSelector::Field(if type_visitor::is_union(base_ty) {
-                    0
-                } else {
-                    field.index()
-                })
+                if let TyKind::Adt(adt_def, _) = base_ty.kind {
+                    if adt_def.is_union() {
+                        let variants = &adt_def.variants;
+                        assume!(variants.len() == 1); // only enums have more than one variant
+                        let variant = &variants[variants.last().unwrap()];
+                        return PathSelector::UnionField {
+                            case_index: field.index(),
+                            num_cases: variant.fields.len(),
+                        };
+                    }
+                }
+                PathSelector::Field(field.index())
             }
             mir::ProjectionElem::Index(local) => {
                 let local_path =

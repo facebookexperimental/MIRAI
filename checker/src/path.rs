@@ -483,6 +483,16 @@ impl Path {
         Self::new_qualified(qualifier, selector)
     }
 
+    /// Creates a path the selects the given field of the union at the given path.
+    #[logfn_inputs(TRACE)]
+    pub fn new_union_field(qualifier: Rc<Path>, case_index: usize, num_cases: usize) -> Rc<Path> {
+        let selector = Rc::new(PathSelector::UnionField {
+            case_index,
+            num_cases,
+        });
+        Self::new_qualified(qualifier, selector)
+    }
+
     /// Creates a path the selects the element at the given index value of the array at the given path.
     #[logfn_inputs(TRACE)]
     pub fn new_index(collection_path: Rc<Path>, index_value: Rc<AbstractValue>) -> Rc<Path> {
@@ -855,6 +865,11 @@ pub enum PathSelector {
     /// Select the struct field with the given index.
     Field(usize),
 
+    /// Selects a particular type case from a type union.
+    /// When updating the environment via such a field, all type cases need to be updated,
+    /// hence the explicit mention of the number of cases.
+    UnionField { case_index: usize, num_cases: usize },
+
     /// Select the collection element with the index specified by the abstract value.
     Index(Rc<AbstractValue>),
 
@@ -902,6 +917,10 @@ impl Debug for PathSelector {
             PathSelector::Deref => f.write_str("deref"),
             PathSelector::Discriminant => f.write_str("discr"),
             PathSelector::Field(index) => index.fmt(f),
+            PathSelector::UnionField {
+                case_index,
+                num_cases,
+            } => f.write_fmt(format_args!("({:?} of {:?})", case_index, num_cases)),
             PathSelector::Index(value) => f.write_fmt(format_args!("[{:?}]", value)),
             PathSelector::Slice(value) => f.write_fmt(format_args!("[0..{:?}]", value)),
             PathSelector::ConstantIndex {
