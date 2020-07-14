@@ -576,7 +576,7 @@ impl Debug for Expression {
                 checking_presence,
             } => f.write_fmt(format_args!(
                 "({:?}).check_tag({:?}, {})",
-                operand, tag.def_id, checking_presence
+                operand, tag, checking_presence
             )),
             Expression::Variable { path, var_type } => {
                 f.write_fmt(format_args!("{:?}: {:?}", path, var_type))

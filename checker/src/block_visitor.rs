@@ -17,6 +17,7 @@ use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
 use crate::smt_solver::SmtResult;
 use crate::summaries::{Precondition, Summary};
+use crate::tag_domain::Tag;
 use crate::utils;
 use crate::{abstract_value, type_visitor};
 
@@ -267,6 +268,39 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         assume!(targets.len() == values.len() + 1);
         let mut default_exit_condition = self.bv.current_environment.entry_condition.clone();
         let discr = self.visit_operand(discr);
+
+        // Check if the discriminant is not attached with the tag for constant-time verification.
+        if self.bv.check_for_errors {
+            if let Some(tag_name) = &self.bv.cv.options.constant_time_tag_name {
+                match self.bv.cv.constant_time_tag_cache {
+                    None => {
+                        // Check if the unknown-constant-time-tag error has been emitted.
+                        if !self.bv.cv.constant_time_tag_not_found {
+                            self.bv.cv.constant_time_tag_not_found = true;
+                            let span = self.bv.current_span;
+                            let error = self.bv.cv.session.struct_span_err(
+                                span,
+                                format!(
+                                    "unknown tag type for constant-time verification: {}",
+                                    tag_name
+                                )
+                                .as_str(),
+                            );
+                            self.bv.emit_diagnostic(error);
+                        }
+                    }
+                    Some(tag) => self.check_tag_existence_on_value(
+                        &discr,
+                        "branch condition",
+                        tag,
+                        tag_name,
+                        false,
+                    ),
+                }
+            }
+        }
+
+        // Continue to deal with the branch targets.
         let discr = discr.as_int_if_known().unwrap_or(discr);
         for i in 0..values.len() {
             let val: Rc<AbstractValue> = Rc::new(ConstantDomain::U128(values[i]).into());
@@ -813,6 +847,94 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }
 
         Some(warning)
+    }
+
+    /// Check if the existence of a tag on the given value matches the expectation.
+    /// If not, issue an error. If we cannot decide, issue a warning if the function is analyzed
+    /// as a root, and promote the tag check as a precondition when possible.
+    #[logfn_inputs(TRACE)]
+    pub fn check_tag_existence_on_value(
+        &mut self,
+        value: &Rc<AbstractValue>,
+        value_name: &str,
+        tag: Tag,
+        tag_name: &str,
+        expecting_presence: bool,
+    ) {
+        precondition!(self.bv.check_for_errors);
+
+        let tag_check = AbstractValue::make_tag_check(value.clone(), tag, expecting_presence);
+        let (tag_check_as_bool, entry_cond_as_bool) =
+            self.check_condition_value_and_reachability(&tag_check);
+
+        // We perform the tag check if the current block is possibly reachable.
+        if entry_cond_as_bool.unwrap_or(true) {
+            match tag_check_as_bool {
+                None => {
+                    // We cannot decide the result of the tag check.
+                    // In this case, report a warning if we don't know all of the callers, we
+                    // reach a k-limit, or the tag check contains a local variable so that we
+                    // cannot promote it later as a precondition.
+                    if self.bv.function_being_analyzed_is_root()
+                        || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+                    {
+                        let span = self.bv.current_span;
+                        let warning = self.bv.cv.session.struct_span_warn(
+                            span,
+                            format!("the {} may have a {} tag", value_name, tag_name).as_str(),
+                        );
+                        self.bv.emit_diagnostic(warning);
+                    } else if tag_check.expression.contains_local_variable() {
+                        let span = self.bv.current_span;
+                        let warning = self.bv.cv.session.struct_span_warn(
+                            span,
+                            format!(
+                                "the {} may have a {} tag, \
+                                and the tag check cannot be promoted as a precondition, \
+                                because it contains local variables",
+                                value_name, tag_name
+                            )
+                            .as_str(),
+                        );
+                        self.bv.emit_diagnostic(warning);
+                    }
+                }
+
+                Some(tag_check_result) if !tag_check_result => {
+                    // The existence of the tag on the value is different from the expectation.
+                    // In this case, report an error.
+                    let span = self.bv.current_span;
+                    let error = self.bv.cv.session.struct_span_err(
+                        span,
+                        format!("the {} has a {} tag", value_name, tag_name).as_str(),
+                    );
+                    self.bv.emit_diagnostic(error);
+                }
+
+                _ => {}
+            }
+
+            // We promote the tag check as a precondition if it is not always true, it does not
+            // contain local variables, and we don't reach a k-limit.
+            if !tag_check_as_bool.unwrap_or(false)
+                && !tag_check.expression.contains_local_variable()
+                && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
+            {
+                let condition = self
+                    .bv
+                    .current_environment
+                    .entry_condition
+                    .logical_not()
+                    .or(tag_check);
+                let precondition = Precondition {
+                    condition,
+                    message: Rc::new(format!("the {} may have a {} tag", value_name, tag_name)),
+                    provenance: None,
+                    spans: vec![self.bv.current_span],
+                };
+                self.bv.preconditions.push(precondition);
+            }
+        }
     }
 
     /// Jump to the target if the condition has the expected value,

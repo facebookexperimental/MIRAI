@@ -304,6 +304,7 @@ impl Z3Solver {
                 cases,
                 default,
             } => self.general_switch(discriminator, cases, default),
+            Expression::TaggedExpression { operand, .. } => self.get_as_z3_ast(&operand.expression),
             Expression::Top | Expression::Bottom => self.general_fresh_const(),
             Expression::UninterpretedCall {
                 result_type: var_type,
@@ -1044,6 +1045,9 @@ impl Z3Solver {
             Expression::Reference(path) => self.numeric_reference(path),
             Expression::Shl { left, right } => self.numeric_shl(left, right),
             Expression::Shr { left, right, .. } => self.numeric_shr(left, right),
+            Expression::TaggedExpression { operand, .. } => {
+                self.get_as_numeric_z3_ast(&operand.expression)
+            }
             Expression::Top | Expression::Bottom => self.numeric_fresh_const(),
             Expression::UninterpretedCall {
                 result_type: var_type,

@@ -13,6 +13,7 @@ use crate::expected_errors;
 use crate::known_names::KnownNamesCache;
 use crate::options::Options;
 use crate::summaries::PersistentSummaryCache;
+use crate::tag_domain::Tag;
 use crate::utils;
 use crate::z3_solver::Z3Solver;
 
@@ -38,6 +39,8 @@ use std::ops::Deref;
 // 'tcx is the lifetime of the closure call that calls analyze_with_mirai, which calls analyze_some_bodies.
 pub struct CrateVisitor<'compilation, 'tcx> {
     pub buffered_diagnostics: Vec<DiagnosticBuilder<'compilation>>,
+    pub constant_time_tag_cache: Option<Tag>,
+    pub constant_time_tag_not_found: bool,
     pub constant_value_cache: ConstantValueCache<'tcx>,
     pub diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'compilation>>>,
     pub file_name: &'compilation str,
