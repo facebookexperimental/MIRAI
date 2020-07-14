@@ -33,6 +33,11 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .default_value("relaxed")
         .help("Level of diagnostics.\n")
         .long_help("With `relaxed`, false positives will be avoided where possible.\nWith 'strict' optimistic assumptions are made about unanalyzable calls.\nWith `paranoid`, all errors will be reported.\n"))
+    .arg(Arg::with_name("constant_time")
+        .long("constant_time")
+        .takes_value(true)
+        .help("Enable verification of constant-time security.")
+        .long_help("Name is a top-level crate type"))
 }
 
 /// Represents options passed to MIRAI.
@@ -41,6 +46,7 @@ pub struct Options {
     pub single_func: Option<String>,
     pub test_only: bool,
     pub diag_level: DiagLevel,
+    pub constant_time_tag_name: Option<String>,
 }
 
 /// Represents diag level.
@@ -137,6 +143,9 @@ impl Options {
                 "paranoid" => DiagLevel::PARANOID,
                 _ => assume_unreachable!(),
             };
+        }
+        if matches.is_present("constant_time") {
+            self.constant_time_tag_name = matches.value_of("constant_time").map(|s| s.to_owned());
         }
         args[rustc_args_start..].to_vec()
     }

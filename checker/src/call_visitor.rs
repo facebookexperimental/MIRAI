@@ -1107,7 +1107,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let source_path = Path::new_deref(self.actual_args[0].0.clone())
                 .refine_paths(&self.block_visitor.bv.current_environment);
             trace!(
-                "MiraiHasTag: checking if {:?} has {}been tagged with {:?}",
+                "MiraiCheckTag: checking if {:?} has {}been tagged with {:?}",
                 source_path,
                 (if checking_presence { "" } else { "never " }),
                 tag,
@@ -2116,6 +2116,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// first type parameter should be a constant of type `TagPropagationSet`, which represents
     /// the propagation set. Return a pair of the name of the tag type, as well as the propagation
     /// set if the tag-related functions are called correctly, otherwise return `None`.
+    #[logfn_inputs(TRACE)]
     fn extract_tag_kind_and_propagation_set(&mut self) -> Option<Tag> {
         precondition!(
             self.callee_known_name == KnownNames::MiraiAddTag
@@ -2189,10 +2190,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 if let Expression::CompileTimeConstant(ConstantDomain::U128(data)) =
                     &tag_propagation_set_value.expression
                 {
-                    Some(Tag {
+                    let tag = Tag {
                         def_id: tag_adt_def.did.into(),
                         prop_set: *data,
-                    })
+                    };
+
+                    // Record the tag if it is the constant-time verification tag.
+                    self.check_and_record_constant_time_verification_tag(tag_adt_def.did, &tag);
+
+                    Some(tag)
                 } else {
                     // We have already checked that `tag_propagation_set_rustc_const.ty.kind` is
                     // `TyKind::Uint(ast::UintTy::U128)`, so the extracted compile-time constant
@@ -2201,6 +2207,27 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         "expected the constant generic arg to be a compile-time constant"
                     );
                 }
+            }
+        }
+    }
+
+    /// Check if `tag` whose def id is `tag_def_id` is the constant-time verification tag specified
+    /// by the user. If so, record the tag in the current crate visitor.
+    #[logfn_inputs(TRACE)]
+    fn check_and_record_constant_time_verification_tag(&mut self, tag_def_id: DefId, tag: &Tag) {
+        if self.block_visitor.bv.cv.constant_time_tag_cache.is_none() {
+            let matched = self
+                .block_visitor
+                .bv
+                .cv
+                .options
+                .constant_time_tag_name
+                .as_ref()
+                .map_or(false, |expected_tag_name| {
+                    expected_tag_name.eq(&self.block_visitor.bv.tcx.def_path_str(tag_def_id))
+                });
+            if matched {
+                self.block_visitor.bv.cv.constant_time_tag_cache = Some(*tag);
             }
         }
     }

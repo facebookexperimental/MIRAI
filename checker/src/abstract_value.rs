@@ -1626,9 +1626,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Reference(path) | Expression::Variable { path, .. } => {
                 path.is_rooted_by_zeroed_heap_block()
             }
-            Expression::UnknownTagCheck { operand, .. } => {
-                operand.is_contained_in_zeroed_heap_block()
-            }
             _ => false,
         }
     }

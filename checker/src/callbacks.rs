@@ -200,6 +200,8 @@ impl MiraiCallbacks {
         );
         let mut crate_visitor = CrateVisitor {
             buffered_diagnostics: Vec::new(),
+            constant_time_tag_cache: None,
+            constant_time_tag_not_found: false,
             constant_value_cache: ConstantValueCache::default(),
             diagnostics_for: HashMap::new(),
             file_name: self.file_name.as_str(),

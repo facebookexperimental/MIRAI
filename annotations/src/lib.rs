@@ -65,13 +65,49 @@ pub enum TagPropagation {
     UninterpretedCall,
 }
 
-/// Provide a way to create tag transfer masks. It is equivalent to bitwise-or of all its arguments.
+/// Provide a way to create tag propagation sets. It is equivalent to bitwise-or of all its arguments.
 #[macro_export]
 macro_rules! tag_propagation_set {
     ($($x:expr),*) => {
         0 $(| (1 << ($x as u8)))*
     };
 }
+
+/// A tag propagation set indicating a tag is propagated by all operations.
+pub const TAG_PROPAGATION_ALL: TagPropagationSet = tag_propagation_set!(
+    TagPropagation::Add,
+    TagPropagation::AddOverflows,
+    TagPropagation::And,
+    TagPropagation::BitAnd,
+    TagPropagation::BitNot,
+    TagPropagation::BitOr,
+    TagPropagation::BitXor,
+    TagPropagation::Cast,
+    TagPropagation::Div,
+    TagPropagation::Equals,
+    TagPropagation::GreaterOrEqual,
+    TagPropagation::GreaterThan,
+    TagPropagation::IntrinsicBinary,
+    TagPropagation::IntrinsicBitVectorUnary,
+    TagPropagation::IntrinsicFloatingPointUnary,
+    TagPropagation::LessOrEqual,
+    TagPropagation::LessThan,
+    TagPropagation::LogicalNot,
+    TagPropagation::Mul,
+    TagPropagation::MulOverflows,
+    TagPropagation::Ne,
+    TagPropagation::Neg,
+    TagPropagation::Or,
+    TagPropagation::Offset,
+    TagPropagation::Rem,
+    TagPropagation::Shl,
+    TagPropagation::ShlOverflows,
+    TagPropagation::Shr,
+    TagPropagation::ShrOverflows,
+    TagPropagation::Sub,
+    TagPropagation::SubOverflows,
+    TagPropagation::UninterpretedCall
+);
 
 /// Equivalent to a no op when used with an unmodified Rust compiler.
 /// When compiled with MIRAI, this causes MIRAI to associate (tag) the value with the given type.
