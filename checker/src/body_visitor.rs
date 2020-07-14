@@ -1067,7 +1067,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         } = &tpath.value
                         {
                             match selector.as_ref() {
-                                PathSelector::Field(0) => {
+                                PathSelector::Field(0) | PathSelector::UnionField { .. } => {
                                     // assign the pointer field of the slice pointer to the unqualified target
                                     tpath = qualifier.clone();
                                 }
@@ -1391,6 +1391,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
     /// Copies/moves all paths rooted in source_path to corresponding paths rooted in target_path.
     /// source_path and/or target_path may be pattern paths and will be expanded as needed.
+    #[allow(clippy::suspicious_else_formatting)]
     #[logfn_inputs(TRACE)]
     pub fn copy_or_move_elements(
         &mut self,
@@ -1417,7 +1418,39 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
 
         // Get here if source_path is not a pattern. Now see if target_path is a pattern.
-        // If the pattern is a known size, copy_of_move_elements is called recursively
+        // First look for assignments to union fields. Those have become (strong) assignments to
+        // every field of the union because union fields all alias the same underlying storage.
+        if let PathEnum::QualifiedPath {
+            qualifier,
+            selector,
+            ..
+        } = &target_path.value
+        {
+            if let PathSelector::UnionField { num_cases, .. } = selector.as_ref() {
+                for i in 0..*num_cases {
+                    let target_path = Path::new_union_field(qualifier.clone(), i, *num_cases);
+                    self.non_patterned_copy_or_move_elements(
+                        target_path,
+                        source_path.clone(),
+                        root_rustc_type,
+                        move_elements,
+                        |_self, path, _, new_value| {
+                            if new_value.is_bottom() || new_value.is_top() {
+                                _self.current_environment.value_map =
+                                    _self.current_environment.value_map.remove(&path);
+                                return;
+                            }
+                            _self.current_environment.value_map =
+                                _self.current_environment.value_map.insert(path, new_value);
+                        },
+                    );
+                }
+                return;
+            }
+        }
+
+        // Now look for slice/index patterns.
+        // If a slice pattern is a known size, copy_of_move_elements is called recursively
         // on each expansion of the target pattern and try_expand_target_pattern returns true.
         // If not, all of the paths that might match the pattern are weakly updated to account
         // for the possibility that this assignment might update them (or not).
@@ -1753,11 +1786,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             {
                 check_for_early_return!(self);
                 let qualified_path = path.replace_root(&source_path, target_path.clone());
-                let rustc_type = self
-                    .type_visitor
-                    .get_path_rustc_type(&qualified_path, self.current_span);
-                let old_value =
-                    self.lookup_path_and_refine_result(qualified_path.clone(), rustc_type);
                 if move_elements {
                     trace!("moving child {:?} to {:?}", value, qualified_path);
                 // todo: doing the remove part of the move here makes it difficult to combine
@@ -1767,6 +1795,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 } else {
                     trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
+                let rustc_type = self
+                    .type_visitor
+                    .get_path_rustc_type(&qualified_path, self.current_span);
+                let old_value =
+                    self.lookup_path_and_refine_result(qualified_path.clone(), rustc_type);
                 update(self, qualified_path, old_value, value.clone());
                 no_children = false;
             }
@@ -1991,6 +2024,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
     /// Attach `tag` to the value located at `value_path`. The `value_path` may be pattern paths
     /// and need be expanded.
+    #[allow(clippy::suspicious_else_formatting)]
     #[logfn_inputs(TRACE)]
     pub fn attach_tag_to_elements(
         &mut self,
@@ -2011,6 +2045,36 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         );
         if expanded_source_pattern {
             return;
+        }
+
+        // Get here if value_path is not a source pattern.
+        // Now see if value_path is a target pattern.
+        // First look for union fields. We have to attach the tag to every field of the union
+        // because union fields all alias the same underlying storage.
+        if let PathEnum::QualifiedPath {
+            qualifier,
+            selector,
+            ..
+        } = &value_path.value
+        {
+            if let PathSelector::UnionField { num_cases, .. } = selector.as_ref() {
+                for i in 0..*num_cases {
+                    let value_path = Path::new_union_field(qualifier.clone(), i, *num_cases);
+                    self.non_patterned_copy_or_move_elements(
+                        value_path.clone(),
+                        value_path,
+                        root_rustc_type,
+                        false,
+                        |_self, path, _, new_value| {
+                            _self.current_environment.value_map = _self
+                                .current_environment
+                                .value_map
+                                .insert(path, new_value.add_tag(tag));
+                        },
+                    );
+                }
+                return;
+            }
         }
 
         // Get here if value path is not a pattern, or it contains an abstract index/slice selector.

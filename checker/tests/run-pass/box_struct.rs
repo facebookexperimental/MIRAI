@@ -11,10 +11,18 @@
 #[macro_use]
 extern crate mirai_annotations;
 
-pub struct Foo { pub x: i32, pub y: i64 }
+pub struct Foo {
+    pub x: i32,
+    pub y: i64,
+}
 pub fn f() -> Box<Foo> {
-    let foo = Foo { x: 1, y: 1111111111111111111 };
+    let foo = Foo {
+        x: 1,
+        y: 1111111111111111111,
+    };
     verify!(foo.x == 1);
     verify!(foo.y == 1111111111111111111);
     box foo
 }
+
+pub fn main() {}
