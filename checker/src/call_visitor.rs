@@ -944,6 +944,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let func_const = ConstantDomain::Function(func_ref.clone());
             let def_id = func_ref.def_id.expect("defined when used here");
             let generic_arguments = self.block_visitor.bv.cv.substs_cache.get(&def_id).cloned();
+            if let Some(substs) = generic_arguments {
+                argument_map = self
+                    .block_visitor
+                    .bv
+                    .type_visitor
+                    .get_generic_arguments_map(def_id, substs, &actual_argument_types)
+            }
             let mut block_visitor = BlockVisitor::<E>::new(self.block_visitor.bv);
             let mut indirect_call_visitor = CallVisitor::new(
                 &mut block_visitor,
@@ -975,7 +982,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 Summary::default()
             }
         } else {
-            info!("unknown callee {:?}", callee);
+            warn!("unknown callee {:?}", callee);
             self.deal_with_missing_summary();
             Summary::default()
         };
