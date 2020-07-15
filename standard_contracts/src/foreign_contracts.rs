@@ -43,6 +43,16 @@ pub mod alloc {
         }
     }
 
+    pub mod slice {
+        pub fn merge_sort<T, F>(v: &mut [T], mut is_less: F)
+        where
+            F: FnMut(&T, &T) -> bool,
+        {
+            //todo: havoc v
+            //todo: provide a post condition once quantifiers are supported
+        }
+    }
+
     pub mod vec {
         pub mod implement {
             pub mod insert {
@@ -146,6 +156,12 @@ pub mod core {
         pub mod Clone {
             pub fn clone__array_u8(_self: &u8) -> u8 {
                 *_self
+            }
+
+            pub fn clone__tuple_2_libra_crypto_ed25519_Ed25519Signature_u8<T: Clone>(
+                _self: &(T, u8),
+            ) -> (T, u8) {
+                (_self.0.clone(), _self.1)
             }
         }
     }
