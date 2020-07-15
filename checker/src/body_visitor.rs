@@ -1805,7 +1805,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
         }
         let target_type: ExpressionType = (&root_rustc_type.kind).into();
-        if target_type != ExpressionType::NonPrimitive || no_children {
+        if target_type != ExpressionType::NonPrimitive
+            || no_children
+            || root_rustc_type.is_closure()
+        {
             let old_value =
                 self.lookup_path_and_refine_result(target_path.clone(), root_rustc_type);
             // Just copy/move (rpath, value) itself.

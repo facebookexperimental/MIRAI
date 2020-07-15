@@ -607,10 +607,23 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .type_visitor
                     .get_path_rustc_type(path, self.bv.current_span);
-                let specialized_closure_ty = self.bv.type_visitor.specialize_generic_argument_type(
-                    closure_ty,
-                    &self.bv.type_visitor.generic_argument_map,
-                );
+                let mut specialized_closure_ty =
+                    self.bv.type_visitor.specialize_generic_argument_type(
+                        closure_ty,
+                        &self.bv.type_visitor.generic_argument_map,
+                    );
+                if let TyKind::Opaque(def_id, substs) = &specialized_closure_ty.kind {
+                    self.bv.cv.substs_cache.insert(*def_id, substs);
+                    let closure_ty = self.bv.tcx.type_of(*def_id);
+                    let map = self
+                        .bv
+                        .type_visitor
+                        .get_generic_arguments_map(*def_id, substs, &[]);
+                    specialized_closure_ty = self
+                        .bv
+                        .type_visitor
+                        .specialize_generic_argument_type(closure_ty, &map);
+                }
                 match specialized_closure_ty.kind {
                     TyKind::Closure(def_id, substs) | TyKind::FnDef(def_id, substs) => {
                         return extract_func_ref(self.visit_function_reference(
