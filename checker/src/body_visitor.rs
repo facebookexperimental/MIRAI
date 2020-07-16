@@ -2116,6 +2116,22 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             value_path,
             Rc::new(abstract_value::TRUE),
             &|_self, sub_path| {
+                if !root_rustc_type.is_scalar() {
+                    let (tag_field_path, tag_field_value) =
+                        _self.extract_tag_field_of_non_scalar_value_at(&sub_path, root_rustc_type);
+                    if !tag.is_propagated_by(TagPropagation::SubComponent) {
+                        _self
+                            .current_environment
+                            .value_map
+                            .insert_mut(tag_field_path, tag_field_value.add_tag(tag));
+                        return;
+                    } else {
+                        // fall through, the tag is propagated to sub-components.
+                        // tag_field_path, as a qualified path rooted at sub_path, will get updated
+                        // by non_patterned_copy_or_move_elements.
+                    }
+                }
+
                 _self.non_patterned_copy_or_move_elements(
                     sub_path.clone(),
                     sub_path,
@@ -2130,6 +2146,24 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 );
             },
             &|_self, sub_path, condition| {
+                if !root_rustc_type.is_scalar() {
+                    let (tag_field_path, tag_field_value) =
+                        _self.extract_tag_field_of_non_scalar_value_at(&sub_path, root_rustc_type);
+                    if !tag.is_propagated_by(TagPropagation::SubComponent) {
+                        let weak_value = condition
+                            .conditional_expression(tag_field_value.add_tag(tag), tag_field_value);
+                        _self
+                            .current_environment
+                            .value_map
+                            .insert_mut(tag_field_path, weak_value);
+                        return;
+                    } else {
+                        // fall through, the tag is propagated to sub-components.
+                        // tag_field_path, as a qualified path rooted at sub_path, will get updated
+                        // by non_patterned_copy_or_move_elements.
+                    }
+                }
+
                 _self.non_patterned_copy_or_move_elements(
                     sub_path.clone(),
                     sub_path,
@@ -2168,5 +2202,49 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     .insert_mut(path.clone(), new_value);
             }
         }
+    }
+
+    /// Extract the path and the value of the tag field of the value located at `qualifier`.
+    /// If the tag field is not tracked in the current environment, then either return an
+    /// unknown value (if `qualifier` is rooted at a parameter), or return a dummy untagged
+    /// value (if `qualifier` is rooted at a local variable).
+    #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
+    pub fn extract_tag_field_of_non_scalar_value_at(
+        &mut self,
+        qualifier: &Rc<Path>,
+        root_rustc_type: Ty<'tcx>,
+    ) -> (Rc<Path>, Rc<AbstractValue>) {
+        precondition!(!root_rustc_type.is_scalar());
+
+        let tag_field_path = Path::new_tag_field(qualifier.clone());
+        let mut tag_field_value = self.lookup_path_and_refine_result(
+            tag_field_path.clone(),
+            self.type_visitor.dummy_untagged_value_type,
+        );
+
+        // Consider the case where there is no value for the tag field in the environment, i.e.,
+        // the result of the lookup is just a variable that reflects tag_field_path.
+        if matches!(&tag_field_value.expression, Expression::Variable { path, .. } if path.eq(&tag_field_path))
+        {
+            if qualifier.is_rooted_by_parameter() {
+                // If qualifier is rooted by a function parameter, return an unknown tag field.
+                tag_field_value = AbstractValue::make_from(
+                    Expression::UnknownTagField {
+                        path: tag_field_path.clone(),
+                    },
+                    1,
+                );
+            } else {
+                // Otherwise, return a dummy untagged value.
+                tag_field_value = Rc::new(abstract_value::DUMMY_UNTAGGED_VALUE);
+            }
+
+            self.current_environment
+                .value_map
+                .insert_mut(tag_field_path.clone(), tag_field_value.clone());
+        }
+
+        (tag_field_path, tag_field_value)
     }
 }

@@ -11,74 +11,179 @@
 #[macro_use]
 extern crate mirai_annotations;
 
-use mirai_annotations::{TagPropagation, TagPropagationSet};
+pub mod with_propagation_to_sub_components {
+    use mirai_annotations::{TagPropagation, TagPropagationSet};
 
-struct SecretTaintKind<const MASK: TagPropagationSet> {}
+    struct SecretTaintKind<const MASK: TagPropagationSet> {}
 
-const SECRET_TAINT: TagPropagationSet = tag_propagation_set!(TagPropagation::BitOr);
+    const SECRET_TAINT: TagPropagationSet = tag_propagation_set!(TagPropagation::SubComponent);
 
-type SecretTaint = SecretTaintKind<SECRET_TAINT>;
+    type SecretTaint = SecretTaintKind<SECRET_TAINT>;
 
-pub struct Foo {
-    content: i32,
-}
-
-pub fn test1() {
-    let foo = Foo { content: 99991 };
-    add_tag!(&foo, SecretTaint);
-    verify!(has_tag!(&foo.content, SecretTaint));
-}
-
-pub fn test2(cond: bool) {
-    let left = Foo { content: 12345 };
-    let right = Foo { content: 54321 };
-    let join;
-    if cond {
-        join = &left;
-    } else {
-        join = &right;
+    pub struct Foo {
+        content: i32,
     }
-    add_tag!(&join.content, SecretTaint);
-    verify!(has_tag!(&left.content, SecretTaint) || has_tag!(&right.content, SecretTaint));
+
+    pub fn test1() {
+        let foo = Foo { content: 99991 };
+        add_tag!(&foo.content, SecretTaint);
+        verify!(does_not_have_tag!(&foo, SecretTaint));
+        verify!(has_tag!(&foo.content, SecretTaint));
+    }
+
+    pub fn test2() {
+        let foo = Foo { content: 99991 };
+        add_tag!(&foo, SecretTaint);
+        verify!(has_tag!(&foo, SecretTaint));
+        verify!(has_tag!(&foo.content, SecretTaint));
+    }
+
+    pub fn test3(cond: bool) {
+        let left = Foo { content: 12345 };
+        let right = Foo { content: 54321 };
+        let join;
+        if cond {
+            join = &left;
+        } else {
+            join = &right;
+        }
+        add_tag!(&join.content, SecretTaint);
+        verify!(does_not_have_tag!(&left, SecretTaint));
+        verify!(does_not_have_tag!(&right, SecretTaint));
+        verify!(has_tag!(&left.content, SecretTaint) || has_tag!(&right.content, SecretTaint));
+    }
+
+    pub fn test4(cond: bool) {
+        let left = Foo { content: 12345 };
+        let right = Foo { content: 54321 };
+        let join;
+        if cond {
+            join = &left;
+        } else {
+            join = &right;
+        }
+        add_tag!(join, SecretTaint);
+        verify!(has_tag!(&left, SecretTaint) || has_tag!(&right, SecretTaint));
+        verify!(has_tag!(&left.content, SecretTaint) || has_tag!(&right.content, SecretTaint));
+    }
+
+    pub fn test5(foo: Foo, cond: bool) {
+        precondition!(does_not_have_tag!(&foo, SecretTaint));
+        let bar = Foo { content: 99991 };
+        let join;
+        if cond {
+            join = &foo;
+        } else {
+            join = &bar;
+        }
+        add_tag!(&join.content, SecretTaint);
+        verify!(does_not_have_tag!(&foo, SecretTaint));
+        verify!(does_not_have_tag!(&bar, SecretTaint));
+        verify!(has_tag!(&foo.content, SecretTaint) || has_tag!(&bar.content, SecretTaint));
+    }
+
+    pub fn test6(foo: Foo, cond: bool) {
+        let bar = Foo { content: 99991 };
+        let join;
+        if cond {
+            join = &foo;
+        } else {
+            join = &bar;
+        }
+        add_tag!(join, SecretTaint);
+        verify!(has_tag!(&foo, SecretTaint) || has_tag!(&bar, SecretTaint));
+        // todo: deal with unknown paths rooted at parameters
+        verify!(has_tag!(&foo.content, SecretTaint) || has_tag!(&bar.content, SecretTaint));
+        //~ possible false verification condition
+    }
 }
 
-pub fn test3(cond: bool) {
-    let left = Foo { content: 12345 };
-    let right = Foo { content: 54321 };
-    let join;
-    if cond {
-        join = &left;
-    } else {
-        join = &right;
-    }
-    add_tag!(join, SecretTaint);
-    verify!(has_tag!(&left.content, SecretTaint) || has_tag!(&right.content, SecretTaint));
-}
+pub mod without_propagation_to_sub_components {
+    use mirai_annotations::TagPropagationSet;
 
-pub fn test4(foo: Foo, cond: bool) {
-    let bar = Foo { content: 99991 };
-    let join;
-    if cond {
-        join = &foo;
-    } else {
-        join = &bar;
-    }
-    add_tag!(&join.content, SecretTaint);
-    verify!(has_tag!(&foo.content, SecretTaint) || has_tag!(&bar.content, SecretTaint));
-}
+    struct SecretTaintKind<const MASK: TagPropagationSet> {}
 
-pub fn test5(foo: Foo, cond: bool) {
-    let bar = Foo { content: 99991 };
-    let join;
-    if cond {
-        join = &foo;
-    } else {
-        join = &bar;
+    const SECRET_TAINT: TagPropagationSet = tag_propagation_set!();
+
+    type SecretTaint = SecretTaintKind<SECRET_TAINT>;
+
+    pub struct Foo {
+        content: i32,
     }
-    add_tag!(join, SecretTaint);
-    // todo: deal with unknown paths rooted at parameters
-    verify!(has_tag!(&foo.content, SecretTaint) || has_tag!(&bar.content, SecretTaint));
-    //~ possible false verification condition
+
+    pub fn test1() {
+        let foo = Foo { content: 99991 };
+        add_tag!(&foo.content, SecretTaint);
+        verify!(does_not_have_tag!(&foo, SecretTaint));
+        verify!(has_tag!(&foo.content, SecretTaint));
+    }
+
+    pub fn test2() {
+        let foo = Foo { content: 99991 };
+        add_tag!(&foo, SecretTaint);
+        verify!(has_tag!(&foo, SecretTaint));
+        verify!(does_not_have_tag!(&foo.content, SecretTaint));
+    }
+
+    pub fn test3(cond: bool) {
+        let left = Foo { content: 12345 };
+        let right = Foo { content: 54321 };
+        let join;
+        if cond {
+            join = &left;
+        } else {
+            join = &right;
+        }
+        add_tag!(&join.content, SecretTaint);
+        verify!(does_not_have_tag!(&left, SecretTaint));
+        verify!(does_not_have_tag!(&right, SecretTaint));
+        verify!(has_tag!(&left.content, SecretTaint) || has_tag!(&right.content, SecretTaint));
+    }
+
+    pub fn test4(cond: bool) {
+        let left = Foo { content: 12345 };
+        let right = Foo { content: 54321 };
+        let join;
+        if cond {
+            join = &left;
+        } else {
+            join = &right;
+        }
+        add_tag!(join, SecretTaint);
+        verify!(has_tag!(&left, SecretTaint) || has_tag!(&right, SecretTaint));
+        verify!(does_not_have_tag!(&left.content, SecretTaint));
+        verify!(does_not_have_tag!(&right.content, SecretTaint));
+    }
+
+    pub fn test5(foo: Foo, cond: bool) {
+        precondition!(does_not_have_tag!(&foo, SecretTaint));
+        let bar = Foo { content: 99991 };
+        let join;
+        if cond {
+            join = &foo;
+        } else {
+            join = &bar;
+        }
+        add_tag!(&join.content, SecretTaint);
+        verify!(does_not_have_tag!(&foo, SecretTaint));
+        verify!(does_not_have_tag!(&bar, SecretTaint));
+        verify!(has_tag!(&foo.content, SecretTaint) || has_tag!(&bar.content, SecretTaint));
+    }
+
+    pub fn test6(foo: Foo, cond: bool) {
+        precondition!(does_not_have_tag!(&foo.content, SecretTaint));
+        let bar = Foo { content: 99991 };
+        let join;
+        if cond {
+            join = &foo;
+        } else {
+            join = &bar;
+        }
+        add_tag!(join, SecretTaint);
+        verify!(has_tag!(&foo, SecretTaint) || has_tag!(&bar, SecretTaint));
+        verify!(does_not_have_tag!(&foo.content, SecretTaint));
+        verify!(does_not_have_tag!(&bar.content, SecretTaint));
+    }
 }
 
 pub fn main() {}

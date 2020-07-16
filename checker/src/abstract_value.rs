@@ -108,6 +108,15 @@ pub const TRUE: AbstractValue = AbstractValue {
     tags: RefCell::new(None),
 };
 
+/// An abstract domain element that represents a dummy untagged value.
+/// It is only used as the default value for the tag field of non-scalar values.
+pub const DUMMY_UNTAGGED_VALUE: AbstractValue = AbstractValue {
+    expression: Expression::CompileTimeConstant(ConstantDomain::I128(0)),
+    expression_size: 1,
+    interval: RefCell::new(None),
+    tags: RefCell::new(None),
+};
+
 impl From<bool> for AbstractValue {
     #[logfn_inputs(TRACE)]
     fn from(b: bool) -> AbstractValue {
@@ -2149,6 +2158,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     || cases.iter().any(|(_, v)| v.refers_to_unknown_location())
             }
             Expression::UninterpretedCall { path, .. }
+            | Expression::UnknownModelField { path, .. }
+            | Expression::UnknownTagField { path, .. }
             | Expression::Variable { path, .. }
             | Expression::Widen { path, .. } => {
                 if let PathEnum::Alias { value } = &path.value {
@@ -2616,10 +2627,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::HeapBlock { .. }
             | Expression::HeapBlockLayout { .. }
             | Expression::Reference { .. }
-            | Expression::UnknownModelField { .. }
             | Expression::UnknownTagCheck { .. } => return TagDomain::empty_set(),
 
-            Expression::Variable { .. } => {
+            Expression::UnknownModelField { .. }
+            | Expression::UnknownTagField { .. }
+            | Expression::Variable { .. } => {
                 // A variable is an unknown value of a place in memory.
                 // Therefore, the associated tags are also unknown.
                 return TagDomain::top();
@@ -2926,14 +2938,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 )
             }
             Expression::UnknownModelField { path, default } => {
-                if let Some(val) = environment.value_at(&path) {
+                let refined_path = path.refine_paths(environment);
+                if let Some(val) = environment.value_at(&refined_path) {
                     // This environment has a value for the model field.
                     val.clone()
-                } else if path.is_rooted_by_parameter() {
+                } else if refined_path.is_rooted_by_parameter() {
                     // Keep passing the buck to the next caller.
                     AbstractValue::make_from(
                         Expression::UnknownModelField {
-                            path: path.clone(),
+                            path: refined_path,
                             default: default.clone(),
                         },
                         default.expression_size.saturating_add(1),
@@ -2952,6 +2965,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 *tag,
                 *checking_presence,
             ),
+            Expression::UnknownTagField { path } => {
+                let refined_path = path.refine_paths(environment);
+                if let Some(val) = environment.value_at(&refined_path) {
+                    // This environment has a value for the tag field.
+                    val.clone()
+                } else if !refined_path.is_rooted_by_parameter() {
+                    // Return the dummy untagged value if refined_path is not rooted by a function parameter.
+                    Rc::new(DUMMY_UNTAGGED_VALUE)
+                } else {
+                    // Otherwise, return again an unknown tag field.
+                    AbstractValue::make_from(Expression::UnknownTagField { path: refined_path }, 1)
+                }
+            }
             Expression::Variable { path, var_type } => {
                 if let Some(val) = environment.value_at(&path) {
                     val.clone()
@@ -3234,6 +3260,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 operand.refine_parameters(arguments, result, fresh),
                 *tag,
                 *checking_presence,
+            ),
+            Expression::UnknownTagField { path } => AbstractValue::make_from(
+                Expression::UnknownTagField {
+                    path: path.refine_parameters(arguments, result, fresh),
+                },
+                1,
             ),
             Expression::Variable { path, var_type } => {
                 let refined_path = path.refine_parameters(arguments, result, fresh);
@@ -3543,6 +3575,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 *tag,
                 *checking_presence,
             ),
+            Expression::UnknownTagField { .. } => self.clone(),
             Expression::Variable { var_type, .. } => {
                 if *var_type == ExpressionType::Bool {
                     if path_condition.implies(&self) {

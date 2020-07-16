@@ -31,6 +31,7 @@ pub struct TypeVisitor<'tcx> {
     pub generic_arguments: Option<SubstsRef<'tcx>>,
     pub mir: &'tcx mir::Body<'tcx>,
     pub path_ty_cache: HashMap<Rc<Path>, Ty<'tcx>>,
+    pub dummy_untagged_value_type: Ty<'tcx>,
     tcx: TyCtxt<'tcx>,
 }
 
@@ -42,6 +43,7 @@ impl<'analysis, 'tcx> Debug for TypeVisitor<'tcx> {
 
 impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     pub fn new(def_id: DefId, mir: &'tcx mir::Body<'tcx>, tcx: TyCtxt<'tcx>) -> TypeVisitor<'tcx> {
+        let dummy_untagged_value_type = tcx.types.i8;
         TypeVisitor {
             actual_argument_types: Vec::new(),
             def_id,
@@ -49,6 +51,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             generic_arguments: None,
             mir,
             path_ty_cache: HashMap::new(),
+            dummy_untagged_value_type,
             tcx,
         }
     }

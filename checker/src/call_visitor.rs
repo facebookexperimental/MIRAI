@@ -1131,15 +1131,23 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.block_visitor.bv.emit_diagnostic(err);
             }
 
-            // Obtain the value located at source path.
-            let source_value = self
-                .block_visitor
-                .bv
-                .lookup_path_and_refine_result(source_path.clone(), source_rustc_type);
+            // If the value located at source_path has sub-components, extract its tag field.
+            // Otherwise, the source value is a scalar, i.e., tags are associated with it directly,
+            // so we use the value itself as the tag field value.
+            let tag_field_value = if !source_rustc_type.is_scalar() {
+                self.block_visitor
+                    .bv
+                    .extract_tag_field_of_non_scalar_value_at(&source_path, source_rustc_type)
+                    .1
+            } else {
+                self.block_visitor
+                    .bv
+                    .lookup_path_and_refine_result(source_path, source_rustc_type)
+            };
 
             // Decide the result of has_tag! or does_not_have_tag!.
             result = Some(AbstractValue::make_tag_check(
-                source_value,
+                tag_field_value,
                 tag,
                 checking_presence,
             ));
