@@ -982,7 +982,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 Summary::default()
             }
         } else {
-            warn!("unknown callee {:?}", callee);
+            if self.block_visitor.bv.check_for_errors {
+                warn!("unknown callee {:?}", callee);
+            }
             self.deal_with_missing_summary();
             Summary::default()
         };
@@ -1766,18 +1768,20 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn deal_with_missing_summary(&mut self) {
         self.block_visitor.report_missing_summary();
-        let argument_type_hint = if let Some(func) = &self.callee_func_ref {
-            format!(" (foreign fn argument key: {})", func.argument_type_key)
-        } else {
-            "".to_string()
-        };
-        info!(
-            "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
-            utils::summary_key_str(self.block_visitor.bv.tcx, self.block_visitor.bv.def_id),
-            utils::summary_key_str(self.block_visitor.bv.tcx, self.callee_def_id),
-            argument_type_hint,
-        );
-        debug!("def_id {:?}", self.callee_def_id);
+        if self.block_visitor.might_be_reachable() {
+            let argument_type_hint = if let Some(func) = &self.callee_func_ref {
+                format!(" (foreign fn argument key: {})", func.argument_type_key)
+            } else {
+                "".to_string()
+            };
+            info!(
+                "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
+                utils::summary_key_str(self.block_visitor.bv.tcx, self.block_visitor.bv.def_id),
+                utils::summary_key_str(self.block_visitor.bv.tcx, self.callee_def_id),
+                argument_type_hint,
+            );
+            debug!("def_id {:?}", self.callee_def_id);
+        }
     }
 
     /// If we are checking for errors and have not assumed the preconditions of the called function

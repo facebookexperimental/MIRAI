@@ -416,8 +416,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             func_ref_to_call = fr;
         } else {
             self.report_missing_summary();
-            if self.bv.check_for_errors {
-                info!(
+            if self.bv.check_for_errors && self.might_be_reachable() {
+                warn!(
                     "function {} can't be reliably analyzed because it calls an unknown function. {:?}",
                     utils::summary_key_str(self.bv.tcx, self.bv.def_id),
                     self.bv.current_span
@@ -571,7 +571,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // preconditions and that the callee guarantees no post conditions.
             }
             DiagLevel::PARANOID => {
-                if self.bv.check_for_errors {
+                if self.bv.check_for_errors && self.might_be_reachable() {
                     // Give a diagnostic about this call, and make it the programmer's problem.
                     let error = self.bv.cv.session.struct_span_err(
                         self.bv.current_span,
@@ -1018,6 +1018,40 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             self.bv.smt_solver.backtrack();
         }
         (cond_as_bool, entry_cond_as_bool)
+    }
+
+    /// Checks if the current entry condition is not known to be false.
+    /// If the abstract domains are undecided, resort to using the SMT solver.
+    /// Only call this when doing actual error checking, since this is expensive.
+    #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
+    pub fn might_be_reachable(&mut self) -> bool {
+        trace!(
+            "entry condition {:?}",
+            self.bv.current_environment.entry_condition
+        );
+        let mut entry_cond_as_bool = self
+            .bv
+            .current_environment
+            .entry_condition
+            .as_bool_if_known();
+        if entry_cond_as_bool.is_none() {
+            // The abstract domains are unable to decide if the entry condition is always true or
+            // always false.
+            // See if the SMT solver can prove that the entry condition is always false.
+            let smt_expr = {
+                let ec = &self.bv.current_environment.entry_condition.expression;
+                self.bv.smt_solver.get_as_smt_predicate(ec)
+            };
+            self.bv.smt_solver.set_backtrack_position();
+            self.bv.smt_solver.assert(&smt_expr);
+            if self.bv.smt_solver.solve() == SmtResult::Unsatisfiable {
+                // The solver can prove that the entry condition is always false.
+                entry_cond_as_bool = Some(false);
+            }
+            self.bv.smt_solver.backtrack();
+        }
+        entry_cond_as_bool.unwrap_or(true)
     }
 
     #[logfn_inputs(TRACE)]
