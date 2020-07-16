@@ -61,6 +61,7 @@ pub enum TagPropagation {
     Shr,
     ShrOverflows,
     Sub,
+    SubComponent,
     SubOverflows,
     UninterpretedCall,
 }
@@ -105,6 +106,7 @@ pub const TAG_PROPAGATION_ALL: TagPropagationSet = tag_propagation_set!(
     TagPropagation::Shr,
     TagPropagation::ShrOverflows,
     TagPropagation::Sub,
+    TagPropagation::SubComponent,
     TagPropagation::SubOverflows,
     TagPropagation::UninterpretedCall
 );

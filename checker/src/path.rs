@@ -572,6 +572,13 @@ impl Path {
         Self::new_qualified(qualifier, selector)
     }
 
+    /// Creates a path that selects the tag field of the (non-scalar) value of the given path.
+    #[logfn_inputs(TRACE)]
+    pub fn new_tag_field(qualifier: Rc<Path>) -> Rc<Path> {
+        let selector = Rc::new(PathSelector::TagField);
+        Self::new_qualified(qualifier, selector)
+    }
+
     /// Creates a path the qualifies the given root path with the given selector.
     #[logfn_inputs(TRACE)]
     pub fn new_qualified(qualifier: Rc<Path>, selector: Rc<PathSelector>) -> Rc<Path> {
@@ -908,6 +915,11 @@ pub enum PathSelector {
     /// A model field is a specification construct used during MIRAI verification
     /// and does not have a runtime location.
     ModelField(Rc<String>),
+
+    /// Select the tag field of a non-scalar value.
+    /// Similar to model fields, the tag field is a verification-specific construct and it
+    /// does not have a runtime location.
+    TagField,
 }
 
 impl Debug for PathSelector {
@@ -938,6 +950,7 @@ impl Debug for PathSelector {
                 f.write_fmt(format_args!("as {}({})", name, *index))
             }
             PathSelector::ModelField(name) => name.fmt(f),
+            PathSelector::TagField => f.write_str("$tag"),
         }
     }
 }

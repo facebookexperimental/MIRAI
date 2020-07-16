@@ -327,9 +327,9 @@ impl Z3Solver {
             Expression::Widen { path, operand } => {
                 self.get_ast_for_widened(path, operand, operand.expression.infer_type())
             }
-            Expression::Join { path, .. } | Expression::UnknownModelField { path, .. } => {
-                self.general_join(expression, path)
-            }
+            Expression::Join { path, .. }
+            | Expression::UnknownModelField { path, .. }
+            | Expression::UnknownTagField { path } => self.general_join(expression, path),
             _ => unsafe {
                 debug!("uninterpreted expression: {:?}", expression);
                 let sort = self.get_sort_for(&expression.infer_type());
@@ -625,12 +625,13 @@ impl Z3Solver {
             | Expression::HeapBlock { .. }
             | Expression::HeapBlockLayout { .. }
             | Expression::Reference { .. }
-            | Expression::UnknownModelField { .. }
             | Expression::UnknownTagCheck { .. } => unsafe {
                 return z3_sys::Z3_mk_false(self.z3_context);
             },
 
-            Expression::Variable { path, .. } => {
+            Expression::UnknownModelField { path, .. }
+            | Expression::UnknownTagField { path }
+            | Expression::Variable { path, .. } => {
                 // A variable is an unknown value of a place in memory.
                 // Therefore, returns an unknown tag check via the logical predicate has_tag(path, tag).
                 let path_str = CString::new(format!("{:?} for tagging", path)).unwrap();
@@ -962,9 +963,9 @@ impl Z3Solver {
             Expression::Div { left, right } => {
                 self.numeric_binary(left, right, z3_sys::Z3_mk_fpa_div, z3_sys::Z3_mk_div)
             }
-            Expression::Join { path, .. } | Expression::UnknownModelField { path, .. } => {
-                self.numeric_join(&expression, path)
-            }
+            Expression::Join { path, .. }
+            | Expression::UnknownModelField { path, .. }
+            | Expression::UnknownTagField { path } => self.numeric_join(&expression, path),
             Expression::Mul { left, right } => {
                 self.numeric_binary_var_arg(left, right, z3_sys::Z3_mk_fpa_mul, z3_sys::Z3_mk_mul)
             }

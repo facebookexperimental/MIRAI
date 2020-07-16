@@ -380,6 +380,12 @@ pub enum Expression {
         checking_presence: bool,
     },
 
+    /// Like unknown model fields, this variant records an unknown tag field of a non-scalar value.
+    UnknownTagField {
+        /// Must be a qualified path with a tag field selector.
+        path: Rc<Path>,
+    },
+
     /// The unknown value of a place in memory.
     /// This is distinct from Top in that we known something: the place and the type.
     /// This is a useful distinction because it allows us to simplify some expressions
@@ -578,6 +584,7 @@ impl Debug for Expression {
                 "({:?}).check_tag({:?}, {})",
                 operand, tag, checking_presence
             )),
+            Expression::UnknownTagField { path } => path.fmt(f),
             Expression::Variable { path, var_type } => {
                 f.write_fmt(format_args!("{:?}: {:?}", path, var_type))
             }
@@ -678,7 +685,9 @@ impl Expression {
             Expression::UnknownModelField { path, default } => {
                 path.contains_local_variable() || default.expression.contains_local_variable()
             }
-            Expression::Variable { path, .. } => path.contains_local_variable(),
+            Expression::UnknownTagField { path } | Expression::Variable { path, .. } => {
+                path.contains_local_variable()
+            }
             Expression::Widen { .. } => true,
         }
     }
@@ -737,6 +746,7 @@ impl Expression {
             Expression::UninterpretedCall { .. } => Some(TagPropagation::UninterpretedCall),
             Expression::UnknownModelField { .. } => None,
             Expression::UnknownTagCheck { .. } => None,
+            Expression::UnknownTagField { .. } => None,
             Expression::Variable { .. } => None,
             Expression::Widen { .. } => None,
         }
@@ -875,6 +885,7 @@ impl Expression {
             Expression::UninterpretedCall { result_type, .. } => result_type.clone(),
             Expression::UnknownModelField { default, .. } => default.expression.infer_type(),
             Expression::UnknownTagCheck { .. } => Bool,
+            Expression::UnknownTagField { .. } => I8,
             Expression::Variable { var_type, .. } => var_type.clone(),
             Expression::Widen { operand, .. } => operand.expression.infer_type(),
         }
