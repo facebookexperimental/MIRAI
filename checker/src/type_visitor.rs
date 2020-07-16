@@ -307,12 +307,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         if let TyKind::Adt(def, substs) = &t.kind {
                             use rustc_index::vec::Idx;
                             if *ordinal >= def.variants.len() {
-                                assume_unreachable!(
+                                info!(
                                     "illegally down casting to index {} of {:?} at {:?}",
-                                    *ordinal,
-                                    t,
-                                    current_span
+                                    *ordinal, t, current_span
                                 );
+                                return self.tcx.types.never;
                             }
                             let variant = &def.variants[VariantIdx::new(*ordinal)];
                             let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));

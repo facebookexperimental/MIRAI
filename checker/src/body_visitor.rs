@@ -1563,8 +1563,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         {
                             (*len) - u128::from(offset)
                         } else {
-                            debug!("PathSelector::ConstantIndex implies the length of the value is known");
-                            assume_unreachable!();
+                            // can't expand the pattern because the length is not known at this point
+                            return false;
                         }
                     } else {
                         u128::from(offset)

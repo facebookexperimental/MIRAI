@@ -12,7 +12,7 @@ use crate::path::Path;
 use crate::utils;
 
 use log_derive::{logfn, logfn_inputs};
-use mirai_annotations::{assume, assume_unreachable};
+use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
 use serde::{Deserialize, Serialize};
@@ -249,7 +249,6 @@ fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precon
             let mut precond = precondition.clone();
             if !precondition.spans.is_empty() {
                 let last_span = precondition.spans.last();
-                assume!(last_span.is_some());
                 let span = last_span.unwrap().source_callsite();
                 precond.provenance = Some(Rc::new(tcx.sess.source_map().span_to_string(span)));
             }
