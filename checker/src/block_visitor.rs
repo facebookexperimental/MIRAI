@@ -1508,7 +1508,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             // With more optimization the len instruction becomes a constant.
             self.visit_constant(None, &len)
         } else {
-            let mut value_path = self.visit_place(place);
+            let mut value_path = self.visit_place_defer_refinement(place);
             if let PathEnum::QualifiedPath {
                 qualifier,
                 selector,
