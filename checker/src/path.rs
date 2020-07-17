@@ -928,7 +928,7 @@ impl Debug for PathSelector {
                 min_length,
                 from_end,
             } => f.write_fmt(format_args!(
-                "[offset: {}, min_length: {}, from_end: {}",
+                "[offset: {}, min_length: {}, from_end: {}]",
                 offset, min_length, from_end
             )),
             PathSelector::ConstantSlice { from, to, from_end } => {

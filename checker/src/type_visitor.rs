@@ -316,7 +316,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             return self.tcx.mk_tup(field_tys);
                         }
                     }
-                    PathSelector::Index(_) => {
+                    PathSelector::Index(_) | PathSelector::ConstantIndex { .. } => {
                         return get_element_type(t);
                     }
                     PathSelector::Layout => {
