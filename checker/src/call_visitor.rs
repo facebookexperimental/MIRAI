@@ -109,6 +109,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             body_visitor.type_visitor.generic_arguments = self.callee_generic_arguments;
             body_visitor.type_visitor.generic_argument_map =
                 self.callee_generic_argument_map.clone();
+            body_visitor.analyzing_static_var = self.block_visitor.bv.analyzing_static_var;
             let elapsed_time = self.block_visitor.bv.start_instant.elapsed();
             let summary =
                 body_visitor.visit_body(self.function_constant_args, self.actual_argument_types);

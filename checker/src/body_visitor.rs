@@ -47,6 +47,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub active_calls_map: &'analysis mut HashMap<DefId, u64>,
 
     pub already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
+    pub analyzing_static_var: bool,
     // True if the current function cannot be analyzed and hence is just assumed to be correct.
     pub assume_function_is_angelic: bool,
     pub assume_preconditions_of_next_call: bool,
@@ -101,6 +102,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             active_calls_map,
 
             already_reported_errors_for_call_to: HashSet::new(),
+            analyzing_static_var: false,
             assume_function_is_angelic: false,
             assume_preconditions_of_next_call: false,
             async_fn_summary: None,
@@ -454,6 +456,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         key_qualifier: &Rc<Path>,
         _key_index: &Rc<AbstractValue>,
     ) -> Option<Rc<AbstractValue>> {
+        if self.analyzing_static_var {
+            return None;
+        }
         for (path, value) in self.current_environment.value_map.iter() {
             if let PathEnum::QualifiedPath {
                 qualifier,
@@ -515,6 +520,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         def_id: Option<DefId>,
         summary_cache_key: &Rc<String>,
     ) -> bool {
+        let saved_analyzing_static_var = self.analyzing_static_var;
+        self.analyzing_static_var = true;
         let mut block_visitor;
         let summary;
         let summary = if let Some(def_id) = def_id {
@@ -583,8 +590,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     );
                 }
             }
+            self.analyzing_static_var = saved_analyzing_static_var;
             true
         } else {
+            self.analyzing_static_var = saved_analyzing_static_var;
             false
         }
     }

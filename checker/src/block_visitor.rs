@@ -2318,6 +2318,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .get_new_heap_block(byte_len_value, alignment, false, array_ty);
         let array_path = Path::get_as_path(array_value);
         let mut last_index: u128 = 0;
+        let mut value_map = self.bv.current_environment.value_map.clone();
         for (i, operand) in self
             .get_element_values(bytes, elem_type, len)
             .into_iter()
@@ -2327,16 +2328,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             if i < k_limits::MAX_BYTE_ARRAY_LENGTH {
                 let index_value = self.get_u128_const_val(last_index);
                 let index_path = Path::new_index(array_path.clone(), index_value);
-                self.bv
-                    .current_environment
-                    .update_value_at(index_path, operand);
+                value_map = value_map.insert(index_path, operand);
             }
         }
         let length_path = Path::new_length(array_path.clone());
         let length_value = self.get_u128_const_val(last_index + 1);
-        self.bv
-            .current_environment
-            .update_value_at(length_path, length_value);
+        self.bv.current_environment.value_map = value_map.insert(length_path, length_value);
         AbstractValue::make_reference(array_path)
     }
 
