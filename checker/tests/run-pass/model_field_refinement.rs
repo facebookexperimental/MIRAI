@@ -4,7 +4,6 @@
 // LICENSE file in the root directory of this source tree.
 
 // A test where function preconditions involve model/tag fields of parameters
-// todo: deal with refinement of unknown model/tag fields (issue #577)
 
 #![feature(const_generics)]
 #![allow(incomplete_features)]
@@ -24,7 +23,7 @@ pub fn test1() {
     let foo = Foo {};
     set_model_field!(&foo, value, 99991);
     func1(&foo);
-    verify!(get_model_field!(&foo, value, 0) == 99991); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
+    verify!(get_model_field!(&foo, value, 0) == 99991);
 }
 
 struct TaintKind<const MASK: TagPropagationSet> {}
@@ -41,7 +40,7 @@ pub fn test2() {
     let foo = Foo {};
     add_tag!(&foo, Taint);
     func2(&foo);
-    verify!(has_tag!(&foo, Taint)); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
+    verify!(has_tag!(&foo, Taint));
 }
 
 pub fn main() {}
