@@ -19,7 +19,6 @@ use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::block_visitor::BlockVisitor;
 use crate::body_visitor::BodyVisitor;
 use crate::constant_domain::{ConstantDomain, FunctionReference};
-use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
 use crate::known_names::KnownNames;
@@ -1959,7 +1958,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // Effects on the call result
                 self.block_visitor.bv.transfer_and_refine(
                     &function_summary.side_effects,
-                    target_path.clone(),
+                    target_path,
                     &return_value_path,
                     result_path,
                     self.actual_args,
@@ -1992,7 +1991,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.block_visitor
                     .bv
                     .current_environment
-                    .update_value_at(target_path.clone(), result);
+                    .update_value_at(target_path, result);
             }
 
             // Add post conditions to entry condition
@@ -2006,21 +2005,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 exit_condition = exit_condition.and(unwind_condition.logical_not());
             }
             if let Some(post_condition) = &function_summary.post_condition {
-                let mut return_value_env = Environment::default();
-                let var_type = self
-                    .block_visitor
-                    .bv
-                    .type_visitor
-                    .get_place_type(place, self.block_visitor.bv.current_span);
-                let result_val = AbstractValue::make_typed_unknown(var_type, target_path.clone());
-                return_value_env.update_value_at(target_path, result_val);
-                let refined_post_condition = post_condition
-                    .refine_parameters(
-                        self.actual_args,
-                        result_path,
-                        self.block_visitor.bv.fresh_variable_offset,
-                    )
-                    .refine_paths(&return_value_env);
+                let refined_post_condition = post_condition.refine_parameters(
+                    self.actual_args,
+                    result_path,
+                    self.block_visitor.bv.fresh_variable_offset,
+                );
                 trace!(
                     "refined post condition before path refinement {:?}",
                     refined_post_condition
