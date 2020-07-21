@@ -1171,7 +1171,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_get_model_field(&mut self) {
         let destination = self.destination;
-        if let Some((place, target)) = &destination {
+        if let Some((place, _)) = &destination {
             let target_type = self
                 .block_visitor
                 .bv
@@ -1181,7 +1181,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
             // The current value, if any, of the model field are a set of (path, value) pairs
             // where each path is rooted by qualifier.model_field(..)
-            let qualifier = self.actual_args[0].0.clone();
+            let mut qualifier = self.actual_args[0].0.clone();
+            if matches!(&self.actual_argument_types[0].kind, TyKind::Ref{..}) {
+                qualifier = Path::new_deref(qualifier);
+            }
             let field_name = self.coerce_to_string(&self.actual_args[1].0);
             let source_path = Path::new_model_field(qualifier, field_name)
                 .refine_paths(&self.block_visitor.bv.current_environment);
@@ -1236,17 +1239,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     }
                 }
             }
-            let exit_condition = self
-                .block_visitor
-                .bv
-                .current_environment
-                .entry_condition
-                .clone();
-            self.block_visitor
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert_mut(*target, exit_condition);
+            self.use_entry_condition_as_exit_condition();
         } else {
             assume_unreachable!();
         }
@@ -1338,7 +1331,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 3);
         let destination = self.destination;
         if let Some((_, target)) = &destination {
-            let qualifier = self.actual_args[0].0.clone();
+            let mut qualifier = self.actual_args[0].0.clone();
+            if matches!(&self.actual_argument_types[0].kind, TyKind::Ref{..}) {
+                qualifier = Path::new_deref(qualifier);
+            }
             let field_name = self.coerce_to_string(&self.actual_args[1].0);
             let target_path = Path::new_model_field(qualifier, field_name)
                 .refine_paths(&self.block_visitor.bv.current_environment);

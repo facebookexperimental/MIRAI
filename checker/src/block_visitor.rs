@@ -780,7 +780,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }
         let (cond_as_bool, entry_cond_as_bool) = self.check_condition_value_and_reachability(cond);
 
-        // If we never get here, rather call unreachable!()
+        // If we never get here, rather call verify_unreachable!()
         if !entry_cond_as_bool.unwrap_or(true) {
             let span = self.bv.current_span;
             let message =
