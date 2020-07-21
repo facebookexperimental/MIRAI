@@ -111,7 +111,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
         block_visitor.visit_basic_block(bb, &mut self.terminator_state);
         self.out_state
             .insert(bb, self.bv.current_environment.clone());
-        self.already_visited = self.already_visited.insert(bb);
+        self.already_visited.insert_mut(bb);
     }
 
     /// Repeatedly evaluate the loop body starting at loop_anchor until widening

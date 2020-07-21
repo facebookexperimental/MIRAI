@@ -180,7 +180,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 &mut first_state,
                 &path,
             );
-            first_state.value_map = first_state.value_map.insert(path.clone(), val.clone());
+            first_state.value_map.insert_mut(path.clone(), val.clone());
         }
 
         // Update the current environment
@@ -1233,8 +1233,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                                             p.replace_root(qualifier, new_block_path.clone());
                                         let new_reference =
                                             AbstractValue::make_reference(new_block_path);
-                                        updated_value_map =
-                                            updated_value_map.insert(path.clone(), new_reference);
+                                        updated_value_map.insert_mut(path.clone(), new_reference);
                                     }
                                 }
                                 Expression::Variable { path: p, var_type } => {
@@ -1245,8 +1244,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                                             var_type.clone(),
                                             new_block_path,
                                         );
-                                        updated_value_map =
-                                            updated_value_map.insert(path.clone(), new_variable);
+                                        updated_value_map.insert_mut(path.clone(), new_variable);
                                     }
                                 }
                                 _ => (),
@@ -1449,8 +1447,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                                     _self.current_environment.value_map.remove(&path);
                                 return;
                             }
-                            _self.current_environment.value_map =
-                                _self.current_environment.value_map.insert(path, new_value);
+                            _self
+                                .current_environment
+                                .value_map
+                                .insert_mut(path, new_value);
                         },
                     );
                 }
@@ -1502,8 +1502,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                                 _self.current_environment.value_map.remove(&path);
                             return;
                         }
-                        _self.current_environment.value_map =
-                            _self.current_environment.value_map.insert(path, new_value);
+                        _self
+                            .current_environment
+                            .value_map
+                            .insert_mut(path, new_value);
                     },
                 );
             },
@@ -1515,8 +1517,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     move_elements,
                     |_self, path, old_value, new_value| {
                         let weak_value = condition.conditional_expression(new_value, old_value);
-                        _self.current_environment.value_map =
-                            _self.current_environment.value_map.insert(path, weak_value);
+                        _self
+                            .current_environment
+                            .value_map
+                            .insert_mut(path, weak_value);
                     },
                 )
             },
@@ -1863,7 +1867,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let weakened_value = index
                     .less_than(count.clone())
                     .conditional_expression(unknown_value.clone(), value.clone());
-                value_map = value_map.insert(path.clone(), weakened_value);
+                value_map.insert_mut(path.clone(), weakened_value);
             }
         }
         self.current_environment.value_map = value_map;
@@ -1907,7 +1911,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let updated_value =
                     join_condition.conditional_expression(additional_value, value.clone());
 
-                new_value_map = new_value_map.insert(path.clone(), updated_value);
+                new_value_map.insert_mut(path.clone(), updated_value);
             }
         }
         self.current_environment.value_map = new_value_map;
@@ -2078,10 +2082,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         root_rustc_type,
                         false,
                         |_self, path, _, new_value| {
-                            _self.current_environment.value_map = _self
+                            _self
                                 .current_environment
                                 .value_map
-                                .insert(path, new_value.add_tag(tag));
+                                .insert_mut(path, new_value.add_tag(tag));
                         },
                     );
                 }
@@ -2138,10 +2142,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     root_rustc_type,
                     false,
                     |_self, path, _, new_value| {
-                        _self.current_environment.value_map = _self
+                        _self
                             .current_environment
                             .value_map
-                            .insert(path, new_value.add_tag(tag));
+                            .insert_mut(path, new_value.add_tag(tag));
                     },
                 );
             },
@@ -2172,8 +2176,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     |_self, path, old_value, new_value| {
                         let weak_value =
                             condition.conditional_expression(new_value.add_tag(tag), old_value);
-                        _self.current_environment.value_map =
-                            _self.current_environment.value_map.insert(path, weak_value);
+                        _self
+                            .current_environment
+                            .value_map
+                            .insert_mut(path, weak_value);
                     },
                 )
             },
