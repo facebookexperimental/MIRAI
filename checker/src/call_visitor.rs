@@ -503,12 +503,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     self.report_calls_to_special_functions();
                 }
                 if let Some((_, target)) = &self.destination {
-                    self.block_visitor.bv.current_environment.exit_conditions = self
-                        .block_visitor
+                    self.block_visitor
                         .bv
                         .current_environment
                         .exit_conditions
-                        .insert(*target, abstract_value::FALSE.into());
+                        .insert_mut(*target, abstract_value::FALSE.into());
                 }
                 return true;
             }
@@ -541,12 +540,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .current_environment
                 .entry_condition
                 .clone();
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
+            self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert(*target, exit_condition);
+                .insert_mut(*target, exit_condition);
         }
     }
 
@@ -1017,12 +1015,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .current_environment
                 .entry_condition
                 .clone();
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
+            self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert(*target, exit_condition);
+                .insert_mut(*target, exit_condition);
         } else {
             assume_unreachable!();
         }
@@ -1077,22 +1074,20 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             .entry_condition
             .and(assumed_condition.clone());
         if let Some((_, target)) = &self.destination {
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
+            self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert(*target, exit_condition);
+                .insert_mut(*target, exit_condition);
         } else {
             assume_unreachable!();
         }
         if let Some(cleanup_target) = self.cleanup {
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
+            self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert(cleanup_target, abstract_value::FALSE.into());
+                .insert_mut(cleanup_target, abstract_value::FALSE.into());
         }
     }
 
@@ -1247,12 +1242,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .current_environment
                 .entry_condition
                 .clone();
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
+            self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert(*target, exit_condition);
+                .insert_mut(*target, exit_condition);
         } else {
             assume_unreachable!();
         }
@@ -1268,12 +1262,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             .entry_condition
             .and(condition);
         if let Some((_, target)) = &self.destination {
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
+            self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert(*target, exit_condition);
+                .insert_mut(*target, exit_condition);
         } else {
             assume_unreachable!();
         }
@@ -1310,12 +1303,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             .entry_condition
             .clone();
         if let Some((_, target)) = &self.destination {
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
+            self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert(*target, exit_condition);
+                .insert_mut(*target, exit_condition);
         } else {
             assume_unreachable!();
         }
@@ -1364,12 +1356,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .current_environment
                 .entry_condition
                 .clone();
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
+            self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert(*target, exit_condition);
+                .insert_mut(*target, exit_condition);
         } else {
             assume_unreachable!();
         }
@@ -2040,12 +2031,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 exit_condition = exit_condition.and(refined_post_condition);
             }
 
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
+            self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert(*target, exit_condition);
+                .insert_mut(*target, exit_condition);
         }
     }
 
@@ -2072,12 +2062,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             if let Some(unwind_condition) = &function_summary.unwind_condition {
                 exit_condition = exit_condition.and(unwind_condition.clone());
             }
-            self.block_visitor.bv.current_environment.exit_conditions = self
-                .block_visitor
+            self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert(cleanup_target, exit_condition);
+                .insert_mut(cleanup_target, exit_condition);
         }
     }
 

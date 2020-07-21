@@ -90,7 +90,7 @@ impl Environment {
         //in the environment.
         //Conversely, if this path is contained in a path that is already in the environment, then
         //that path should be updated weakly.
-        self.value_map = self.value_map.insert(path, value);
+        self.value_map.insert_mut(path, value);
     }
 
     /// If the path contains an abstract value that was constructed with a join, the path is
@@ -249,20 +249,20 @@ impl Environment {
             let p = path.clone();
             match value_map2.get(path) {
                 Some(val2) => {
-                    value_map = value_map.insert(p, join_or_widen(val1, val2, path));
+                    value_map.insert_mut(p, join_or_widen(val1, val2, path));
                 }
                 None => {
                     checked_assume!(!val1.is_bottom());
                     if !path.is_rooted_by_parameter() {
                         // joining val1 and bottom
                         // The bottom value corresponds to dead (impossible) code, so the join collapses.
-                        value_map = value_map.insert(p, val1.clone());
+                        value_map.insert_mut(p, val1.clone());
                     } else {
                         let val2 = AbstractValue::make_typed_unknown(
                             val1.expression.infer_type(),
                             path.clone(),
                         );
-                        value_map = value_map.insert(p, join_or_widen(val1, &val2, path));
+                        value_map.insert_mut(p, join_or_widen(val1, &val2, path));
                     };
                 }
             }
@@ -273,13 +273,13 @@ impl Environment {
                 if !path.is_rooted_by_parameter() {
                     // joining bottom and val2
                     // The bottom value corresponds to dead (impossible) code, so the join collapses.
-                    value_map = value_map.insert(path.clone(), val2.clone());
+                    value_map.insert_mut(path.clone(), val2.clone());
                 } else {
                     let val1 = AbstractValue::make_typed_unknown(
                         val2.expression.infer_type(),
                         path.clone(),
                     );
-                    value_map = value_map.insert(path.clone(), join_or_widen(&val1, val2, path));
+                    value_map.insert_mut(path.clone(), join_or_widen(&val1, val2, path));
                 };
             }
         }

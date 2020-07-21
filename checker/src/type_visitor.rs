@@ -94,9 +94,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 var_type,
                                 closure_field_path.clone(),
                             );
-                            first_state.value_map = first_state
+                            first_state
                                 .value_map
-                                .insert(closure_field_path, closure_field_val);
+                                .insert_mut(closure_field_path, closure_field_val);
                         }
                     }
                 }

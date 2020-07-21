@@ -240,11 +240,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_goto(&mut self, target: mir::BasicBlock) {
         // Propagate the entry condition to the successor block.
-        self.bv.current_environment.exit_conditions = self
-            .bv
+        self.bv
             .current_environment
             .exit_conditions
-            .insert(target, self.bv.current_environment.entry_condition.clone());
+            .insert_mut(target, self.bv.current_environment.entry_condition.clone());
     }
 
     /// `discr` evaluates to an integer; jump depending on its value
@@ -313,17 +312,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             let not_cond = cond.logical_not();
             default_exit_condition = default_exit_condition.and(not_cond);
             let target = targets[i];
-            self.bv.current_environment.exit_conditions = self
-                .bv
+            self.bv
                 .current_environment
                 .exit_conditions
-                .insert(target, exit_condition);
+                .insert_mut(target, exit_condition);
         }
-        self.bv.current_environment.exit_conditions = self
-            .bv
+        self.bv
             .current_environment
             .exit_conditions
-            .insert(targets[values.len()], default_exit_condition);
+            .insert_mut(targets[values.len()], default_exit_condition);
     }
 
     /// Indicates that the landing pad is finished and unwinding should
@@ -391,17 +388,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         //todo: probably should remove all paths that are rooted in place.
 
         // Propagate the entry condition to the successor blocks.
-        self.bv.current_environment.exit_conditions = self
-            .bv
+        self.bv
             .current_environment
             .exit_conditions
-            .insert(target, self.bv.current_environment.entry_condition.clone());
+            .insert_mut(target, self.bv.current_environment.entry_condition.clone());
         if let Some(unwind_target) = unwind {
-            self.bv.current_environment.exit_conditions =
-                self.bv.current_environment.exit_conditions.insert(
-                    unwind_target,
-                    self.bv.current_environment.entry_condition.clone(),
-                );
+            self.bv.current_environment.exit_conditions.insert_mut(
+                unwind_target,
+                self.bv.current_environment.entry_condition.clone(),
+            );
         }
     }
 
@@ -962,11 +957,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         cond_val.clone()
                     });
             if !panic_exit_condition.is_bottom() {
-                self.bv.current_environment.exit_conditions = self
-                    .bv
+                self.bv
                     .current_environment
                     .exit_conditions
-                    .insert(cleanup_target, panic_exit_condition);
+                    .insert_mut(cleanup_target, panic_exit_condition);
             }
         };
         let normal_exit_condition = self
@@ -979,11 +973,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 not_cond_val
             });
         if !normal_exit_condition.is_bottom() {
-            self.bv.current_environment.exit_conditions = self
-                .bv
+            self.bv
                 .current_environment
                 .exit_conditions
-                .insert(target, normal_exit_condition);
+                .insert_mut(target, normal_exit_condition);
 
             // Check the condition and issue a warning or infer a precondition.
             if self.bv.check_for_errors {
@@ -1218,11 +1211,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         self.bv.assume_function_is_angelic = true;
         if let Some(target) = target {
             // Propagate the entry condition to the successor block.
-            self.bv.current_environment.exit_conditions = self
-                .bv
+            self.bv
                 .current_environment
                 .exit_conditions
-                .insert(*target, self.bv.current_environment.entry_condition.clone());
+                .insert_mut(*target, self.bv.current_environment.entry_condition.clone());
         }
     }
 
@@ -2450,7 +2442,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             if i < k_limits::MAX_BYTE_ARRAY_LENGTH {
                 let index_value = self.get_u128_const_val(last_index);
                 let index_path = Path::new_index(array_path.clone(), index_value);
-                value_map = value_map.insert(index_path, operand);
+                value_map.insert_mut(index_path, operand);
             }
         }
         let length_path = Path::new_length(array_path.clone());
