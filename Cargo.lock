@@ -648,6 +648,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "timing_channels"
+version = "0.1.0"
+dependencies = [
+ "mirai-annotations 1.10.0",
+]
+
+[[package]]
 name = "unicode-width"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -658,9 +665,23 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "untrustworthy_inputs"
+version = "0.1.0"
+dependencies = [
+ "mirai-annotations 1.10.0",
+]
+
+[[package]]
 name = "vec_map"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "verification_status"
+version = "0.1.0"
+dependencies = [
+ "mirai-annotations 1.10.0",
+]
 
 [[package]]
 name = "walkdir"
