@@ -8,7 +8,7 @@ use mirai_annotations::*;
 use rustc_ast::ast;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
+use rustc_middle::ty::subst::{GenericArg, GenericArgKind, SubstsRef};
 use rustc_middle::ty::{Ty, TyKind};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
@@ -35,7 +35,7 @@ pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
     pub callee_fun_val: Rc<AbstractValue>,
     pub callee_generic_arguments: Option<SubstsRef<'tcx>>,
     pub callee_known_name: KnownNames,
-    pub callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
+    pub callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     pub actual_args: &'call [(Rc<Path>, Rc<AbstractValue>)],
     pub actual_argument_types: &'call [Ty<'tcx>],
     pub cleanup: Option<mir::BasicBlock>,
@@ -58,7 +58,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         block_visitor: &'call mut BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E>,
         callee_def_id: DefId,
         callee_generic_arguments: Option<SubstsRef<'tcx>>,
-        callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
+        callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
         func_const: ConstantDomain,
     ) -> CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
         if let ConstantDomain::Function(func_ref) = &func_const {
@@ -1699,9 +1699,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let t = (self.callee_generic_argument_map.as_ref())
             .expect("std::mem::size_of must be called with generic arguments")
             .get(&sym)
-            .expect("std::mem::size must have generic argument T");
+            .expect("std::mem::size must have generic argument T")
+            .expect_ty();
         let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
-        if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(*t)) {
+        if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(t)) {
             Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
         } else {
             let path = self.block_visitor.visit_place(

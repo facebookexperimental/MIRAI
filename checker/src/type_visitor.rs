@@ -16,8 +16,8 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc_middle::ty::{
-    ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig, ParamTy, Ty, TyCtxt,
-    TyKind, TypeAndMut,
+    Const, ConstKind, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig,
+    ParamTy, Ty, TyCtxt, TyKind, TypeAndMut,
 };
 use rustc_target::abi::VariantIdx;
 use std::collections::HashMap;
@@ -27,7 +27,7 @@ use std::rc::Rc;
 pub struct TypeVisitor<'tcx> {
     pub actual_argument_types: Vec<Ty<'tcx>>,
     pub def_id: DefId,
-    pub generic_argument_map: Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
+    pub generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     pub generic_arguments: Option<SubstsRef<'tcx>>,
     pub mir: &'tcx mir::Body<'tcx>,
     pub path_ty_cache: HashMap<Rc<Path>, Ty<'tcx>>,
@@ -377,9 +377,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         def_id: DefId,
         generic_args: SubstsRef<'tcx>,
         actual_argument_types: &[Ty<'tcx>],
-    ) -> Option<HashMap<rustc_span::Symbol, Ty<'tcx>>> {
+    ) -> Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>> {
         let mut substitution_map = self.generic_argument_map.clone();
-        let mut map: HashMap<rustc_span::Symbol, Ty<'tcx>> = HashMap::new();
+        let mut map: HashMap<rustc_span::Symbol, GenericArg<'tcx>> = HashMap::new();
 
         // This iterates over the callee's generic parameter definitions.
         // If the parent of the callee is generic, those definitions are iterated
@@ -388,14 +388,12 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         // definition in this iteration will have a unique name.
         InternalSubsts::for_item(self.tcx, def_id, |param_def, _| {
             if let Some(gen_arg) = generic_args.get(param_def.index as usize) {
-                if let GenericArgKind::Type(ty) = gen_arg.unpack() {
-                    let specialized_gen_arg_ty =
-                        self.specialize_generic_argument_type(ty, &substitution_map);
-                    if let Some(substitution_map) = &mut substitution_map {
-                        substitution_map.insert(param_def.name, specialized_gen_arg_ty);
-                    }
-                    map.insert(param_def.name, specialized_gen_arg_ty);
+                let specialized_gen_arg =
+                    self.specialize_generic_argument(*gen_arg, &substitution_map);
+                if let Some(substitution_map) = &mut substitution_map {
+                    substitution_map.insert(param_def.name, specialized_gen_arg);
                 }
+                map.insert(param_def.name, specialized_gen_arg);
             } else {
                 debug!("unmapped generic param def");
             }
@@ -409,7 +407,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 self_ty
             };
             let self_sym = rustc_span::Symbol::intern("Self");
-            map.entry(self_sym).or_insert(self_ty);
+            map.entry(self_sym).or_insert_with(|| self_ty.into());
         }
         if map.is_empty() {
             None
@@ -577,13 +575,28 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     }
 
     #[logfn_inputs(TRACE)]
+    fn specialize_const(
+        &self,
+        constant: &'tcx Const<'tcx>,
+        map: &Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
+    ) -> &'tcx Const<'tcx> {
+        if let ConstKind::Param(param_const) = constant.val {
+            if let Some(gen_arg) = map.as_ref().unwrap().get(&param_const.name) {
+                return gen_arg.expect_const();
+            }
+        }
+        constant
+    }
+
+    #[logfn_inputs(TRACE)]
     fn specialize_generic_argument(
         &self,
         gen_arg: GenericArg<'tcx>,
-        map: &Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
+        map: &Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     ) -> GenericArg<'tcx> {
         match gen_arg.unpack() {
             GenericArgKind::Type(ty) => self.specialize_generic_argument_type(ty, map).into(),
+            GenericArgKind::Const(c) => self.specialize_const(c, map).into(),
             _ => gen_arg,
         }
     }
@@ -592,7 +605,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     pub fn specialize_generic_argument_type(
         &self,
         gen_arg_type: Ty<'tcx>,
-        map: &Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
+        map: &Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     ) -> Ty<'tcx> {
         if map.is_none() {
             return gen_arg_type;
@@ -601,7 +614,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             TyKind::Adt(def, substs) => self.tcx.mk_adt(def, self.specialize_substs(substs, map)),
             TyKind::Array(elem_ty, len) => {
                 let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
-                self.tcx.mk_ty(TyKind::Array(specialized_elem_ty, len))
+                let specialized_len = self.specialize_const(len, map);
+                self.tcx
+                    .mk_ty(TyKind::Array(specialized_elem_ty, specialized_len))
             }
             TyKind::Slice(elem_ty) => {
                 let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
@@ -735,8 +750,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 .tcx
                 .mk_opaque(def_id, self.specialize_substs(substs, map)),
             TyKind::Param(ParamTy { name, .. }) => {
-                if let Some(ty) = map.as_ref().unwrap().get(&name) {
-                    return *ty;
+                if let Some(gen_arg) = map.as_ref().unwrap().get(&name) {
+                    return gen_arg.expect_ty();
                 }
                 gen_arg_type
             }
@@ -748,7 +763,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     pub fn specialize_substs(
         &self,
         substs: SubstsRef<'tcx>,
-        map: &Option<HashMap<rustc_span::Symbol, Ty<'tcx>>>,
+        map: &Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     ) -> SubstsRef<'tcx> {
         let specialized_generic_args: Vec<GenericArg<'_>> = substs
             .iter()
