@@ -203,10 +203,15 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 &fixed_point_visitor.block_indices,
                 &mut fixed_point_visitor.terminator_state,
             );
-            *self
+            let entry = self
                 .active_calls_map
                 .entry(self.def_id)
-                .or_insert_with(|| unreachable!()) -= 1;
+                .or_insert_with(|| unreachable!());
+            if *entry == 1 {
+                self.active_calls_map.remove(&self.def_id);
+            } else {
+                *entry -= 1;
+            }
             let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
             if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
                 self.report_timeout(elapsed_time_in_seconds);
@@ -248,12 +253,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             "analysis of {} timed out after {} seconds",
             self.function_name, elapsed_time_in_seconds,
         );
-        let call_entry = self
-            .active_calls_map
-            .entry(self.def_id)
-            .or_insert_with(|| unreachable!());
-        if *call_entry > 0 {
+        let call_entry = self.active_calls_map.entry(self.def_id).or_insert(0);
+        if *call_entry > 1 {
             *call_entry -= 1;
+        } else {
+            self.active_calls_map.remove(&self.def_id);
         }
         self.assume_function_is_angelic = true;
     }

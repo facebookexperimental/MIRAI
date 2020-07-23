@@ -73,7 +73,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
         info!("Processing input file: {}", self.file_name);
         if self.options.test_only {
             if config.opts.test {
-                if Self::is_test_black_listed(&self.file_name) {
+                if Self::is_test_excluded(&self.file_name) {
                     // This file is known not to compile with the test flag.
                     // This happens in Libra code.
                     std::process::exit(0);
@@ -134,11 +134,11 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
 }
 
 impl MiraiCallbacks {
-    fn is_test_black_listed(file_name: &str) -> bool {
+    fn is_test_excluded(file_name: &str) -> bool {
         file_name.contains("storage/storage-service/src") || file_name.contains("client/cli/src")
     }
 
-    fn is_black_listed(file_name: &str) -> bool {
+    fn is_excluded(file_name: &str) -> bool {
         file_name.contains("client/libra-dev/src") // illegal down cast
             || file_name.contains("config/management/src") // false positives
             || file_name.contains("consensus/src") // resolve error
@@ -180,10 +180,10 @@ impl MiraiCallbacks {
     #[logfn(TRACE)]
     fn analyze_with_mirai<'tcx>(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
         if self.options.test_only {
-            if Self::is_test_black_listed(&self.file_name) {
+            if Self::is_test_excluded(&self.file_name) {
                 return;
             }
-        } else if Self::is_black_listed(&self.file_name) {
+        } else if Self::is_excluded(&self.file_name) {
             return;
         }
 

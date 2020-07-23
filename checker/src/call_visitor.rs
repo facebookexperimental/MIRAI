@@ -973,17 +973,19 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 trace!("post env {:?}", self.block_visitor.bv.current_environment);
                 return;
             } else {
-                let saved_callee_def_id = self.callee_def_id;
-                self.callee_def_id = def_id;
-                self.deal_with_missing_summary();
-                self.callee_def_id = saved_callee_def_id;
+                if self.block_visitor.bv.check_for_errors {
+                    let saved_callee_def_id = self.callee_def_id;
+                    self.callee_def_id = def_id;
+                    self.deal_with_missing_summary();
+                    self.callee_def_id = saved_callee_def_id;
+                }
                 Summary::default()
             }
         } else {
             if self.block_visitor.bv.check_for_errors {
                 warn!("unknown callee {:?}", callee);
+                self.deal_with_missing_summary();
             }
-            self.deal_with_missing_summary();
             Summary::default()
         };
 
@@ -1763,8 +1765,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// Give diagnostic or mark the call chain as angelic, depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     pub fn deal_with_missing_summary(&mut self) {
-        self.block_visitor.report_missing_summary();
         if self.block_visitor.might_be_reachable() {
+            self.block_visitor.report_missing_summary();
             let argument_type_hint = if let Some(func) = &self.callee_func_ref {
                 format!(" (foreign fn argument key: {})", func.argument_type_key)
             } else {
