@@ -303,7 +303,13 @@ impl Z3Solver {
                 discriminator,
                 cases,
                 default,
-            } => self.general_switch(discriminator, cases, default),
+            } => {
+                if discriminator.expression.is_bit_vector() {
+                    self.bv_switch(discriminator, cases, default)
+                } else {
+                    self.general_switch(discriminator, cases, default)
+                }
+            }
             Expression::TaggedExpression { operand, .. } => self.get_as_z3_ast(&operand.expression),
             Expression::Top | Expression::Bottom => self.general_fresh_const(),
             Expression::UninterpretedCall {
@@ -1829,6 +1835,28 @@ impl Z3Solver {
                 z3_sys::Z3_mk_bvlshr(self.z3_context, left_ast, right_ast)
             }
         }
+    }
+
+    #[logfn_inputs(TRACE)]
+    fn bv_switch(
+        &self,
+        discriminator: &Rc<AbstractValue>,
+        cases: &[(Rc<AbstractValue>, Rc<AbstractValue>)],
+        default: &Rc<AbstractValue>,
+    ) -> z3_sys::Z3_ast {
+        let ty = discriminator.expression.infer_type();
+        let num_bits = u32::from(ty.bit_length());
+        let discriminator_ast = self.get_as_bv_z3_ast(&(**discriminator).expression, num_bits);
+
+        let default_ast = self.get_as_z3_ast(&(**default).expression);
+        cases
+            .iter()
+            .fold(default_ast, |acc_ast, (case_val, case_result)| unsafe {
+                let case_val_ast = self.get_as_bv_z3_ast(&(**case_val).expression, num_bits);
+                let cond_ast = z3_sys::Z3_mk_eq(self.z3_context, discriminator_ast, case_val_ast);
+                let case_result_ast = self.get_as_z3_ast(&(**case_result).expression);
+                z3_sys::Z3_mk_ite(self.z3_context, cond_ast, case_result_ast, acc_ast)
+            })
     }
 
     #[logfn_inputs(TRACE)]

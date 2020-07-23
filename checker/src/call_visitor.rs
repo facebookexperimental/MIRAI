@@ -129,8 +129,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             self.block_visitor.bv.assume_function_is_angelic |= call_was_angelic;
             self.block_visitor.bv.start_instant = Instant::now() - elapsed_time;
             return summary;
-        } else if let Some(devirtualized_summary) = self.try_to_devirtualize() {
-            return devirtualized_summary;
         }
         Summary::default()
     }
@@ -139,11 +137,19 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// concrete method that implements the given virtual method and returns the summary of that,
     /// computing it if necessary.
     #[logfn_inputs(TRACE)]
-    fn try_to_devirtualize(&mut self) -> Option<Summary> {
+    fn try_to_devirtualize(&mut self) {
+        if self
+            .block_visitor
+            .bv
+            .tcx
+            .is_mir_available(self.callee_def_id)
+        {
+            return;
+        }
         if let Some(gen_args) = self.callee_generic_arguments {
             if !utils::are_concrete(gen_args) {
                 trace!("non concrete generic args {:?}", gen_args);
-                return None;
+                return;
             }
             // The parameter environment of the caller provides a resolution context for the callee.
             let param_env = self
@@ -166,6 +172,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 gen_args,
             ) {
                 let resolved_def_id = instance.def.def_id();
+                self.callee_def_id = resolved_def_id;
                 let resolved_ty = self.block_visitor.bv.tcx.type_of(resolved_def_id);
                 let resolved_map = self
                     .block_visitor
@@ -182,61 +189,33 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     resolved_def_id,
                     specialized_resolved_ty
                 );
-                if self
+                let func_const = self
+                    .block_visitor
+                    .visit_function_reference(
+                        resolved_def_id,
+                        specialized_resolved_ty,
+                        instance.substs,
+                    )
+                    .clone();
+                self.callee_func_ref = if let ConstantDomain::Function(fr) = &func_const {
+                    self.callee_known_name = fr.known_name;
+                    Some(fr.clone())
+                } else {
+                    None
+                };
+                self.callee_fun_val = Rc::new(func_const.into());
+                self.callee_generic_arguments = Some(instance.substs);
+                self.callee_generic_argument_map = self
                     .block_visitor
                     .bv
-                    .active_calls_map
-                    .get(&resolved_def_id)
-                    .unwrap_or(&0u64)
-                    .eq(&0u64)
-                    && self.block_visitor.bv.tcx.is_mir_available(resolved_def_id)
-                {
-                    let func_const = self
-                        .block_visitor
-                        .visit_function_reference(
-                            resolved_def_id,
-                            specialized_resolved_ty,
-                            instance.substs,
-                        )
-                        .clone();
-                    let func_ref = if let ConstantDomain::Function(fr) = &func_const {
-                        fr.clone()
-                    } else {
-                        unreachable!()
-                    };
-                    let cached_summary = self
-                        .block_visitor
-                        .bv
-                        .cv
-                        .summary_cache
-                        .get_summary_for_call_site(&func_ref, None);
-                    if cached_summary.is_computed {
-                        return Some(cached_summary.clone());
-                    }
-
-                    let generic_argument_map = self
-                        .block_visitor
-                        .bv
-                        .type_visitor
-                        .get_generic_arguments_map(
-                            resolved_def_id,
-                            instance.substs,
-                            self.actual_argument_types,
-                        );
-                    let mut devirtualized_call_visitor = CallVisitor::new(
-                        self.block_visitor,
+                    .type_visitor
+                    .get_generic_arguments_map(
                         resolved_def_id,
-                        Some(instance.substs),
-                        generic_argument_map,
-                        func_const,
+                        instance.substs,
+                        self.actual_argument_types,
                     );
-                    return Some(devirtualized_call_visitor.create_and_cache_function_summary());
-                } else {
-                    return None;
-                }
             }
         }
-        None
     }
 
     /// Extract a list of function references from an environment of function constant arguments
@@ -261,8 +240,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// Returns a summary of the function to call, obtained from the summary cache.
     #[logfn_inputs(TRACE)]
     pub fn get_function_summary(&mut self) -> Option<Summary> {
-        let fun_val = self.callee_fun_val.clone();
-        if let Some(func_ref) = self.block_visitor.get_func_ref(&fun_val) {
+        self.try_to_devirtualize();
+        if let Some(func_ref) = &self.callee_func_ref.clone() {
             // If the actual arguments include any function constants, collect them together
             // and pass them to get_summary_for_function_constant so that their signatures
             // can be included in the type specific key that is used to look up non generic
@@ -279,11 +258,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     // common case
                     None
                 };
-
-            // todo: can't use def_id by itself as the key to active_calls_map because that means
-            // that calls to instantiations with different type arguments will be treated as
-            // recursive, which is wrong because different type arguments can lead to different
-            // summaries.
             let call_depth = *self
                 .block_visitor
                 .bv
