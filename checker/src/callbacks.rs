@@ -139,16 +139,19 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(file_name: &str) -> bool {
-        file_name.contains("config/management/src") // false positives
+        file_name.contains("client/libra-dev/src") // takes too long
+            || file_name.contains("config/management/src") // false positives
             || file_name.contains("consensus/src") // resolve error
             || file_name.contains("consensus/safety-rules/src") // false positives
             || file_name.contains("crypto/crypto-derive/src") //  `(left == right)`  left: `Type`, right: `Fn`
             || file_name.contains("common/bitvec/src") // false positives
+            || file_name.contains("common/datatest-stable/src") // takes too long
             || file_name.contains("common/debug-interface") // resolve error
             || file_name.contains("common/logger/src") // resolve error
             || file_name.contains("common/metrics/src") // stack overflow
             || file_name.contains("config/config-builder/src") // false positives
             || file_name.contains("execution/executor/src") // false positives
+            || file_name.contains("json-rpc/src") // compiler panic
             || file_name.contains("language/bytecode-verifier/src") // resolve error
             || file_name.contains("language/compiler/src") // takes too long
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
