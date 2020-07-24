@@ -62,34 +62,6 @@ impl Environment {
             self.value_map = self.value_map.remove(&path);
             return;
         }
-        if let Some((join_condition, true_path, false_path)) = self.try_to_split(&path) {
-            // If path is an abstraction that can match more than one path, we need to do weak updates.
-            let true_val = join_condition.conditional_expression(
-                value.clone(),
-                self.value_at(&true_path)
-                    .unwrap_or(&AbstractValue::make_typed_unknown(
-                        value.expression.infer_type(),
-                        true_path.clone(),
-                    ))
-                    .clone(),
-            );
-            let false_val = join_condition.conditional_expression(
-                self.value_at(&false_path)
-                    .unwrap_or(&AbstractValue::make_typed_unknown(
-                        value.expression.infer_type(),
-                        false_path.clone(),
-                    ))
-                    .clone(),
-                value.clone(),
-            );
-            self.update_value_at(true_path, true_val);
-            self.update_value_at(false_path, false_val);
-        }
-        //todo: if the path contains an Index selector where the index is abstract, then
-        //this entry should be weakly updated with any paths that are contained by it and already
-        //in the environment.
-        //Conversely, if this path is contained in a path that is already in the environment, then
-        //that path should be updated weakly.
         self.value_map.insert_mut(path, value);
     }
 

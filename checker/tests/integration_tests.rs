@@ -118,7 +118,7 @@ fn run_directory(directory_path: PathBuf, extern_deps: Vec<(&str, String)>) -> u
         files_and_temp_dirs
             .into_iter()
             .fold(0, |acc, (file_name, temp_dir_path)| {
-                //println!("{}", file_name);
+                println!("{}", file_name);
                 acc + self::invoke_driver(
                     file_name,
                     temp_dir_path,
