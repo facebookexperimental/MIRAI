@@ -91,6 +91,7 @@ pub enum KnownNames {
     StdIntrinsicsTransmute,
     StdIntrinsicsTruncf32,
     StdIntrinsicsTruncf64,
+    StdIntrinsicsWriteBytes,
     StdMarkerPhantomData,
     StdMemReplace,
     StdMemSizeOf,
@@ -189,6 +190,7 @@ impl KnownNamesCache {
                     .map(|n| match n.as_str().deref() {
                         "copy" => KnownNames::StdIntrinsicsCopy,
                         "copy_nonoverlapping" => KnownNames::StdIntrinsicsCopyNonOverlapping,
+                        "write_bytes" => KnownNames::StdIntrinsicsWriteBytes,
                         _ => KnownNames::None,
                     })
                     .unwrap_or(KnownNames::None),
