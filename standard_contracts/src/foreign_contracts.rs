@@ -1469,6 +1469,13 @@ pub mod core {
                 result!()
             }
             pub fn miri_start_panic<T>(data: T) {}
+            pub fn count_code_region(_index: u32) {}
+            pub fn ptr_guaranteed_eq<T>(ptr: *const T, other: *const T) -> bool {
+                ptr == other
+            }
+            pub fn ptr_guaranteed_ne<T>(ptr: *const T, other: *const T) -> bool {
+                ptr != other
+            }
         }
 
         pub fn is_aligned_and_not_null<T>(ptr: *const T) -> bool {
@@ -2009,6 +2016,10 @@ pub mod core {
             let result = std::slice::from_raw_parts(data, len);
             assumed_postcondition!(result.len() == len);
             result
+        }
+
+        pub fn memcmp(_s1: *const u8, _s2: *const u8, _n: usize) -> i32 {
+            result!()
         }
 
         pub fn slice_index_len_fail(_index: usize, _len: usize) {
