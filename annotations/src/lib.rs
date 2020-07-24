@@ -1065,17 +1065,17 @@ pub fn mirai_abstract_value<T>(x: T) -> T {
 
 // Helper function for MIRAI. Should only be called via the add_tag! macro.
 #[doc(hidden)]
-pub fn mirai_add_tag<V, T>(_v: &V) {}
+pub fn mirai_add_tag<V: ?Sized, T>(_v: &V) {}
 
 // Helper function for MIRAI. Should only be called via the has_tag! macro.
 #[doc(hidden)]
-pub fn mirai_has_tag<V, T>(_v: &V) -> bool {
+pub fn mirai_has_tag<V: ?Sized, T>(_v: &V) -> bool {
     false
 }
 
 // Helper function for MIRAI. Should only be called via the does_not_have_tag! macro.
 #[doc(hidden)]
-pub fn mirai_does_not_have_tag<V, T>(_v: &V) -> bool {
+pub fn mirai_does_not_have_tag<V: ?Sized, T>(_v: &V) -> bool {
     false
 }
 
