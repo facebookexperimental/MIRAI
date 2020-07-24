@@ -1446,15 +1446,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         root_rustc_type,
                         move_elements,
                         |_self, path, _, new_value| {
-                            if new_value.is_bottom() || new_value.is_top() {
-                                _self.current_environment.value_map =
-                                    _self.current_environment.value_map.remove(&path);
-                                return;
-                            }
-                            _self
-                                .current_environment
-                                .value_map
-                                .insert_mut(path, new_value);
+                            _self.current_environment.update_value_at(path, new_value);
                         },
                     );
                 }
@@ -1501,15 +1493,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     root_rustc_type,
                     move_elements,
                     |_self, path, _, new_value| {
-                        if new_value.is_bottom() || new_value.is_top() {
-                            _self.current_environment.value_map =
-                                _self.current_environment.value_map.remove(&path);
-                            return;
-                        }
-                        _self
-                            .current_environment
-                            .value_map
-                            .insert_mut(path, new_value);
+                        _self.current_environment.update_value_at(path, new_value);
                     },
                 );
             },
@@ -1521,10 +1505,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     move_elements,
                     |_self, path, old_value, new_value| {
                         let weak_value = condition.conditional_expression(new_value, old_value);
-                        _self
-                            .current_environment
-                            .value_map
-                            .insert_mut(path, weak_value);
+                        _self.current_environment.update_value_at(path, weak_value);
                     },
                 )
             },
