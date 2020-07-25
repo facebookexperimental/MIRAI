@@ -988,11 +988,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
-                Expression::CompileTimeConstant(..) => {
-                    self.current_environment.update_value_at(tpath, rvalue);
-                    continue;
-                }
-                Expression::HeapBlock { .. } => {
+                Expression::CompileTimeConstant(..) | Expression::HeapBlock { .. } => {
                     if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                         if let PathSelector::Slice(..) = selector.as_ref() {
                             let source_path = Path::get_as_path(rvalue.clone());
@@ -1592,21 +1588,35 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) where
         F: Fn(&mut Self, Rc<Path>, Rc<Path>, Ty<'tcx>),
     {
-        //todo: if the target slice overlaps with the source_slice the logic below will do the wrong
-        //thing. Fix this by introducing some kind of temporary storage.
-        let elem_ty = type_visitor::get_element_type(root_rustc_type);
-        for i in from..to {
-            let index_val = self.get_u128_const_val(u128::from(i));
-            let indexed_source = Path::new_index(source_path.clone(), index_val)
-                .refine_paths(&self.current_environment);
-            let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
-            let indexed_target = Path::new_index(target_path.clone(), target_index_val)
-                .refine_paths(&self.current_environment);
-            update(self, indexed_target, indexed_source, elem_ty);
-            if self.assume_function_is_angelic {
-                break;
+        let mut elem_ty = type_visitor::get_element_type(root_rustc_type);
+        if elem_ty == root_rustc_type {
+            elem_ty = type_visitor::get_target_type(root_rustc_type);
+        }
+        let source_val = self.lookup_path_and_refine_result(source_path.clone(), elem_ty);
+        if matches!(source_val.expression, Expression::CompileTimeConstant(..)) {
+            let source_path = Path::new_alias(source_val);
+            for i in from..to {
+                let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
+                let indexed_target = Path::new_index(target_path.clone(), target_index_val)
+                    .refine_paths(&self.current_environment);
+                update(self, indexed_target, source_path.clone(), elem_ty);
             }
-            check_for_early_return!(self);
+        } else {
+            //todo: if the target slice overlaps with the source_slice the logic below will do the wrong
+            //thing. Fix this by introducing some kind of temporary storage.
+            for i in from..to {
+                let index_val = self.get_u128_const_val(u128::from(i));
+                let indexed_source = Path::new_index(source_path.clone(), index_val)
+                    .refine_paths(&self.current_environment);
+                let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
+                let indexed_target = Path::new_index(target_path.clone(), target_index_val)
+                    .refine_paths(&self.current_environment);
+                debug!(
+                    "indexed_target {:?} indexed_source {:?} elem_ty {:?}",
+                    indexed_target, indexed_source, elem_ty
+                );
+                update(self, indexed_target, indexed_source, elem_ty);
+            }
         }
     }
 
