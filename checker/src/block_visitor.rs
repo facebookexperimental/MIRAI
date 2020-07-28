@@ -136,7 +136,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         place: &mir::Place<'tcx>,
         variant_index: rustc_target::abi::VariantIdx,
     ) {
-        let target_path = Path::new_discriminant(self.visit_place(place));
+        let target_path = Path::new_discriminant(self.visit_place(place))
+            .refine_paths(&self.bv.current_environment);
         let index_val = self.get_u128_const_val(variant_index.as_usize() as u128);
         self.bv
             .current_environment
@@ -1441,8 +1442,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // If the target is not a fat pointer, it must be a thin pointer since an
                     // address of operator can hardly result in anything else. So, in this case,
                     // &*source_thin_ptr should just be a non canonical alias for source_thin_ptr.
-                    self.bv
-                        .copy_or_move_elements(path, qualifier.clone(), target_type, false);
+                    self.bv.copy_or_move_elements(
+                        path,
+                        qualifier.refine_paths(&self.bv.current_environment),
+                        target_type,
+                        false,
+                    );
                     return;
                 }
             }
