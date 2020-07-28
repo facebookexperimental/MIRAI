@@ -137,7 +137,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         variant_index: rustc_target::abi::VariantIdx,
     ) {
         let target_path = Path::new_discriminant(self.visit_place(place))
-            .refine_paths(&self.bv.current_environment);
+            .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
         let index_val = self.get_u128_const_val(variant_index.as_usize() as u128);
         self.bv
             .current_environment
@@ -495,6 +495,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             callee_def_id,
             Some(callee_generic_arguments),
             callee_generic_argument_map.clone(),
+            self.bv.current_environment.clone(),
             func_const,
         );
         call_visitor.actual_args = &actual_args;
@@ -1356,8 +1357,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         self.bv
             .current_environment
             .update_value_at(length_path, length_value.clone());
-        let slice_path =
-            Path::new_slice(path, length_value).refine_paths(&self.bv.current_environment);
+        let slice_path = Path::new_slice(path, length_value)
+            .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
         let initial_value = self.visit_operand(operand);
         self.bv
             .current_environment
@@ -1414,7 +1415,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         if matches!(selector.as_ref(), PathSelector::Field(0)) {
                             self.bv.copy_or_move_elements(
                                 path,
-                                qualifier.refine_paths(&self.bv.current_environment),
+                                qualifier.refine_paths(
+                                    &self.bv.current_environment,
+                                    &self.bv.current_environment,
+                                ),
                                 target_type,
                                 false,
                             );
@@ -1433,7 +1437,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // If that information is not actually there, this results in a conservative over approximation.
                     self.bv.copy_or_move_elements(
                         path,
-                        qualifier.refine_paths(&self.bv.current_environment),
+                        qualifier.refine_paths(
+                            &self.bv.current_environment,
+                            &self.bv.current_environment,
+                        ),
                         target_type,
                         false,
                     );
@@ -1444,7 +1451,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // &*source_thin_ptr should just be a non canonical alias for source_thin_ptr.
                     self.bv.copy_or_move_elements(
                         path,
-                        qualifier.refine_paths(&self.bv.current_environment),
+                        qualifier.refine_paths(
+                            &self.bv.current_environment,
+                            &self.bv.current_environment,
+                        ),
                         target_type,
                         false,
                     );
@@ -1459,7 +1469,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // We are taking a reference to a path that may be rooted in a local that
                 // itself contains a reference. We'd like to eliminate that local to keep
                 // paths canonical and to avoid leaking locals into summaries.
-                let refined_qualifier = qualifier.refine_paths(&self.bv.current_environment);
+                let refined_qualifier = qualifier
+                    .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
                 if refined_qualifier != *qualifier {
                     let refined_path = Path::new_qualified(refined_qualifier, selector.clone());
                     AbstractValue::make_reference(refined_path)
@@ -1538,8 +1549,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     assume_unreachable!("{:?}", selector);
                 }
             }
-            let length_path =
-                Path::new_length(value_path).refine_paths(&self.bv.current_environment);
+            let length_path = Path::new_length(value_path)
+                .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
             self.bv
                 .lookup_path_and_refine_result(length_path, self.bv.tcx.types.usize)
         };
@@ -1708,9 +1719,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let (result, overflow_flag) = Self::do_checked_binary_op(bin_op, target_type, left, right);
-        let path0 = Path::new_field(path.clone(), 0).refine_paths(&self.bv.current_environment);
+        let path0 = Path::new_field(path.clone(), 0)
+            .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
         self.bv.current_environment.update_value_at(path0, result);
-        let path1 = Path::new_field(path, 1).refine_paths(&self.bv.current_environment);
+        let path1 = Path::new_field(path, 1)
+            .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
         self.bv
             .current_environment
             .update_value_at(path1, overflow_flag);
@@ -1832,7 +1845,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         for (i, operand) in operands.iter().enumerate() {
             let index_value = self.get_u128_const_val(i as u128);
             let index_path = Path::new_index(path.clone(), index_value)
-                .refine_paths(&self.bv.current_environment);
+                .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
             self.visit_used_operand(index_path, operand);
         }
     }
@@ -2545,7 +2558,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     pub fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let path = self
             .get_path_for_place(place)
-            .refine_paths(&self.bv.current_environment);
+            .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
         let ty = self
             .bv
             .type_visitor
@@ -2570,7 +2583,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn get_path_for_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let base_path: Rc<Path> =
             Path::new_local_parameter_or_result(place.local.as_usize(), self.bv.mir.arg_count)
-                .refine_paths(&self.bv.current_environment);
+                .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
         if place.projection.is_empty() {
             let ty = self
                 .bv
@@ -2586,7 +2599,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 TyKind::Array(_, len) => {
                     let len_val = self.visit_constant(None, &len);
                     let len_path = Path::new_length(base_path.clone())
-                        .refine_paths(&self.bv.current_environment);
+                        .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
                     self.bv
                         .current_environment
                         .update_value_at(len_path, len_val);
@@ -2684,7 +2697,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 mir::ProjectionElem::Downcast(..) | mir::ProjectionElem::Subslice { .. } => {}
             }
             result = Path::new_qualified(result, Rc::new(selector))
-                .refine_paths(&self.bv.current_environment);
+                .refine_paths(&self.bv.current_environment, &self.bv.current_environment);
             self.bv
                 .type_visitor
                 .path_ty_cache

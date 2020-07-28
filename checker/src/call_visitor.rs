@@ -19,6 +19,7 @@ use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::block_visitor::BlockVisitor;
 use crate::body_visitor::BodyVisitor;
 use crate::constant_domain::{ConstantDomain, FunctionReference};
+use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
 use crate::known_names::KnownNames;
@@ -40,6 +41,7 @@ pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
     pub actual_argument_types: &'call [Ty<'tcx>],
     pub cleanup: Option<mir::BasicBlock>,
     pub destination: Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+    pub environment_before_call: Environment,
     pub function_constant_args: &'call [(Rc<Path>, Rc<AbstractValue>)],
 }
 
@@ -59,6 +61,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         callee_def_id: DefId,
         callee_generic_arguments: Option<SubstsRef<'tcx>>,
         callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
+        environment_before_call: Environment,
         func_const: ConstantDomain,
     ) -> CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
         if let ConstantDomain::Function(func_ref) = &func_const {
@@ -75,6 +78,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 actual_argument_types: &[],
                 cleanup: None,
                 destination: None,
+                environment_before_call,
                 function_constant_args: &[],
             }
         } else {
@@ -443,12 +447,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .get_func_ref(&generator_fun_val)
                     .expect("a fun ref");
                 let generator_def_id = generator_fun_ref.def_id.expect("a def id");
+                let environment_before_call = self.block_visitor.bv.current_environment.clone();
                 let mut block_visitor = BlockVisitor::<E>::new(self.block_visitor.bv);
                 let mut generator_call_visitor = CallVisitor::new(
                     &mut block_visitor,
                     generator_def_id,
                     None,
                     None,
+                    environment_before_call,
                     ConstantDomain::Function(generator_fun_ref),
                 );
                 self.block_visitor.bv.async_fn_summary =
@@ -644,16 +650,23 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let msg = if matches!(self.callee_known_name, KnownNames::StdPanickingBeginPanic) {
                     self.coerce_to_string(&self.actual_args[0].0)
                 } else {
-                    let arguments_struct_path = self.actual_args[0]
-                        .0
-                        .refine_paths(&self.block_visitor.bv.current_environment);
-                    let pieces_path_fat = Path::new_field(arguments_struct_path, 0)
-                        .refine_paths(&self.block_visitor.bv.current_environment);
-                    let pieces_path_thin = Path::new_field(pieces_path_fat, 0)
-                        .refine_paths(&self.block_visitor.bv.current_environment);
+                    let arguments_struct_path = self.actual_args[0].0.refine_paths(
+                        &self.environment_before_call,
+                        &self.block_visitor.bv.current_environment,
+                    );
+                    let pieces_path_fat = Path::new_field(arguments_struct_path, 0).refine_paths(
+                        &self.environment_before_call,
+                        &self.block_visitor.bv.current_environment,
+                    );
+                    let pieces_path_thin = Path::new_field(pieces_path_fat, 0).refine_paths(
+                        &self.environment_before_call,
+                        &self.block_visitor.bv.current_environment,
+                    );
                     let index = Rc::new(0u128.into());
-                    let piece0_path_fat = Path::new_index(pieces_path_thin, index)
-                        .refine_paths(&self.block_visitor.bv.current_environment);
+                    let piece0_path_fat = Path::new_index(pieces_path_thin, index).refine_paths(
+                        &self.environment_before_call,
+                        &self.block_visitor.bv.current_environment,
+                    );
                     self.coerce_to_string(&piece0_path_fat)
                 };
                 if msg.contains("entered unreachable code")
@@ -879,8 +892,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let arg_path = Path::new_field(callee_arg_array_path.clone(), i)
-                    .refine_paths(&self.block_visitor.bv.current_environment);
+                let arg_path = Path::new_field(callee_arg_array_path.clone(), i).refine_paths(
+                    &self.environment_before_call,
+                    &self.block_visitor.bv.current_environment,
+                );
                 let arg_val = self
                     .block_visitor
                     .bv
@@ -927,12 +942,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .type_visitor
                     .get_generic_arguments_map(def_id, substs, &actual_argument_types)
             }
+            let environment_before_call = self.block_visitor.bv.current_environment.clone();
             let mut block_visitor = BlockVisitor::<E>::new(self.block_visitor.bv);
             let mut indirect_call_visitor = CallVisitor::new(
                 &mut block_visitor,
                 def_id,
                 generic_arguments,
                 argument_map,
+                environment_before_call,
                 func_const,
             );
             indirect_call_visitor.actual_args = &actual_args;
@@ -1020,8 +1037,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 source_pointer_rustc_type,
             )
             .unwrap_or(source_pointer_path);
-            let source_path = Path::new_deref(source_thin_pointer_path)
-                .refine_paths(&self.block_visitor.bv.current_environment);
+            let source_path = Path::new_deref(source_thin_pointer_path).refine_paths(
+                &self.environment_before_call,
+                &self.block_visitor.bv.current_environment,
+            );
             trace!("MiraiAddTag: tagging {:?} with {:?}", tag, source_path);
 
             // Check if the tagged value has a pointer type (e.g., a reference).
@@ -1096,8 +1115,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 source_pointer_rustc_type,
             )
             .unwrap_or(source_pointer_path);
-            let source_path = Path::new_deref(source_thin_pointer_path)
-                .refine_paths(&self.block_visitor.bv.current_environment);
+            let source_path = Path::new_deref(source_thin_pointer_path).refine_paths(
+                &self.environment_before_call,
+                &self.block_visitor.bv.current_environment,
+            );
             trace!(
                 "MiraiCheckTag: checking if {:?} has {}been tagged with {:?}",
                 source_path,
@@ -1183,8 +1204,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 qualifier = Path::new_deref(qualifier);
             }
             let field_name = self.coerce_to_string(&self.actual_args[1].0);
-            let source_path = Path::new_model_field(qualifier, field_name)
-                .refine_paths(&self.block_visitor.bv.current_environment);
+            let source_path = Path::new_model_field(qualifier, field_name).refine_paths(
+                &self.environment_before_call,
+                &self.block_visitor.bv.current_environment,
+            );
 
             let target_path = self.block_visitor.visit_place(place);
             if self
@@ -1333,8 +1356,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 qualifier = Path::new_deref(qualifier);
             }
             let field_name = self.coerce_to_string(&self.actual_args[1].0);
-            let target_path = Path::new_model_field(qualifier, field_name)
-                .refine_paths(&self.block_visitor.bv.current_environment);
+            let target_path = Path::new_model_field(qualifier, field_name).refine_paths(
+                &self.environment_before_call,
+                &self.block_visitor.bv.current_environment,
+            );
             let source_path = self.actual_args[2].0.clone();
             let target_type = self.actual_argument_types[2];
             self.block_visitor.bv.copy_or_move_elements(
@@ -1386,8 +1411,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         );
 
         // Get a layout path and update the environment
-        let layout_path = Path::new_layout(heap_block_path)
-            .refine_paths(&self.block_visitor.bv.current_environment);
+        let layout_path = Path::new_layout(heap_block_path).refine_paths(
+            &self.environment_before_call,
+            &self.block_visitor.bv.current_environment,
+        );
         self.block_visitor
             .bv
             .current_environment
@@ -1404,8 +1431,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let source_path = self.actual_args[0].0.clone();
         let target_root = self.actual_args[1].0.clone();
         let count = self.actual_args[2].1.clone();
-        let target_path = Path::new_slice(target_root, count)
-            .refine_paths(&self.block_visitor.bv.current_environment);
+        let target_path = Path::new_slice(target_root, count).refine_paths(
+            &self.environment_before_call,
+            &self.block_visitor.bv.current_environment,
+        );
         let collection_type = self.actual_argument_types[0];
         self.block_visitor.bv.copy_or_move_elements(
             target_path,
@@ -1424,10 +1453,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let target_root = self.actual_args[0].0.clone();
         let source_root = self.actual_args[1].0.clone();
         let count = self.actual_args[2].1.clone();
-        let source_slice = Path::new_slice(source_root.clone(), count.clone())
-            .refine_paths(&self.block_visitor.bv.current_environment);
-        let target_slice = Path::new_slice(target_root.clone(), count.clone())
-            .refine_paths(&self.block_visitor.bv.current_environment);
+        let source_slice = Path::new_slice(source_root.clone(), count.clone()).refine_paths(
+            &self.environment_before_call,
+            &self.block_visitor.bv.current_environment,
+        );
+        let target_slice = Path::new_slice(target_root.clone(), count.clone()).refine_paths(
+            &self.environment_before_call,
+            &self.block_visitor.bv.current_environment,
+        );
         let temp_root = Path::new_local(999_999);
         let temp_slice = Path::new_slice(temp_root.clone(), count);
         self.block_visitor
@@ -1507,8 +1540,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         );
 
         // Get a layout path and update the environment
-        let layout_path = Path::new_layout(heap_block_path)
-            .refine_paths(&self.block_visitor.bv.current_environment);
+        let layout_path = Path::new_layout(heap_block_path).refine_paths(
+            &self.environment_before_call,
+            &self.block_visitor.bv.current_environment,
+        );
         self.block_visitor
             .bv
             .current_environment
@@ -1544,10 +1579,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 _ => assume_unreachable!(),
             };
             let target_path = self.block_visitor.visit_place(target_place);
-            let path0 = Path::new_field(target_path.clone(), 0)
-                .refine_paths(&self.block_visitor.bv.current_environment);
-            let path1 = Path::new_field(target_path.clone(), 1)
-                .refine_paths(&self.block_visitor.bv.current_environment);
+            let path0 = Path::new_field(target_path.clone(), 0).refine_paths(
+                &self.environment_before_call,
+                &self.block_visitor.bv.current_environment,
+            );
+            let path1 = Path::new_field(target_path.clone(), 1).refine_paths(
+                &self.environment_before_call,
+                &self.block_visitor.bv.current_environment,
+            );
             let target_type = self
                 .block_visitor
                 .bv
@@ -1660,8 +1699,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_mem_replace(&mut self) {
         checked_assume!(self.actual_args.len() == 2);
-        let dest_path = Path::new_deref(self.actual_args[0].0.clone())
-            .refine_paths(&self.block_visitor.bv.current_environment);
+        let dest_path = Path::new_deref(self.actual_args[0].0.clone()).refine_paths(
+            &self.environment_before_call,
+            &self.block_visitor.bv.current_environment,
+        );
         let source_path = &self.actual_args[1].0;
         if let Some((place, _)) = &self.destination {
             let target_path = self.block_visitor.visit_place(place);
@@ -1761,8 +1802,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_write_bytes(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
-        let dest_path = Path::new_deref(self.actual_args[0].0.clone())
-            .refine_paths(&self.block_visitor.bv.current_environment);
+        let dest_path = Path::new_deref(self.actual_args[0].0.clone()).refine_paths(
+            &self.environment_before_call,
+            &self.block_visitor.bv.current_environment,
+        );
         let dest_type = self.actual_argument_types[0];
         let source_path = self.actual_args[1].0.clone();
         let byte_value = &self.actual_args[1].1;
@@ -1899,7 +1942,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &None,
                     self.block_visitor.bv.fresh_variable_offset,
                 )
-                .refine_paths(&self.block_visitor.bv.current_environment);
+                .refine_paths(
+                    &self.environment_before_call,
+                    &self.block_visitor.bv.current_environment,
+                );
             if self
                 .block_visitor
                 .bv
@@ -2023,7 +2069,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                                 result_path,
                                 self.block_visitor.bv.fresh_variable_offset,
                             )
-                            .refine_paths(&self.block_visitor.bv.current_environment);
+                            .refine_paths(
+                                &self.environment_before_call,
+                                &self.block_visitor.bv.current_environment,
+                            );
                         self.block_visitor.bv.current_environment.update_value_at(
                             path.refine_parameters(
                                 self.actual_args,
@@ -2043,6 +2092,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &return_value_path,
                     result_path,
                     self.actual_args,
+                    &self.environment_before_call,
                 );
 
                 // Effects on the call arguments
@@ -2054,6 +2104,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         &parameter_path,
                         result_path,
                         self.actual_args,
+                        &self.environment_before_call,
                     );
                     check_for_early_return!(self.block_visitor.bv);
                 }
@@ -2095,8 +2146,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     "refined post condition before path refinement {:?}",
                     refined_post_condition
                 );
-                let refined_post_condition =
-                    refined_post_condition.refine_paths(&self.block_visitor.bv.current_environment);
+                let refined_post_condition = refined_post_condition.refine_paths(
+                    &self.environment_before_call,
+                    &self.block_visitor.bv.current_environment,
+                );
                 trace!("refined post condition {:?}", refined_post_condition);
                 exit_condition = exit_condition.and(refined_post_condition);
             }
@@ -2121,6 +2174,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &parameter_path,
                     &None,
                     self.actual_args,
+                    &self.environment_before_call,
                 );
             }
             let mut exit_condition = self

@@ -89,7 +89,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             let var_type: ExpressionType =
                                 (&substs.get(j).unwrap().expect_ty().kind).into();
                             let closure_field_path = Path::new_field(path.clone(), j - (i + 1))
-                                .refine_paths(environment);
+                                .refine_paths(environment, environment);
                             let closure_field_val = AbstractValue::make_typed_unknown(
                                 var_type,
                                 closure_field_path.clone(),
