@@ -463,6 +463,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.handle_transmute();
                 return true;
             }
+            KnownNames::StdIntrinsicsWriteBytes => {
+                self.handle_write_bytes();
+                return true;
+            }
             KnownNames::StdMemReplace => {
                 self.handle_mem_replace();
                 return true;
@@ -1749,6 +1753,92 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 source_path,
                 target_rustc_type,
                 true,
+            );
+        }
+        self.use_entry_condition_as_exit_condition();
+    }
+
+    #[logfn_inputs(TRACE)]
+    fn handle_write_bytes(&mut self) {
+        checked_assume!(self.actual_args.len() == 3);
+        let dest_path = Path::new_deref(self.actual_args[0].0.clone())
+            .refine_paths(&self.block_visitor.bv.current_environment);
+        let dest_type = self.actual_argument_types[0];
+        let source_path = self.actual_args[1].0.clone();
+        let byte_value = &self.actual_args[1].1;
+        let count_value = self.actual_args[2].1.clone();
+        let elem_type = self
+            .callee_generic_arguments
+            .expect("write_bytes<T>")
+            .get(0)
+            .expect("write_bytes<T>")
+            .expect_ty();
+        let mut elem_size = self.block_visitor.bv.type_visitor.get_type_size(elem_type);
+        fn repeated_bytes(mut elem_size: u64, byte_value: &Rc<AbstractValue>) -> Rc<AbstractValue> {
+            let const_8: Rc<AbstractValue> = Rc::new(8u128.into());
+            let mut source_value = byte_value.clone();
+            while elem_size > 1 {
+                source_value = source_value
+                    .shift_left(const_8.clone())
+                    .bit_or(byte_value.clone());
+                elem_size -= 1;
+            }
+            source_value
+        }
+        if elem_type.is_primitive() {
+            let dest_pattern = Path::new_slice(dest_path, count_value);
+            let source_value = repeated_bytes(elem_size, byte_value);
+            self.block_visitor
+                .bv
+                .current_environment
+                .update_value_at(dest_pattern, source_value);
+        } else if let Expression::CompileTimeConstant(count) = &count_value.expression {
+            if let ConstantDomain::U128(count) = count {
+                if let TyKind::Adt(..) | TyKind::Tuple(..) = &elem_type.kind {
+                    for i in 0..(*count as usize) {
+                        let dest_field = Path::new_field(dest_path.clone(), i);
+                        let field_type = self
+                            .block_visitor
+                            .bv
+                            .type_visitor
+                            .get_path_rustc_type(&dest_field, self.block_visitor.bv.current_span);
+                        let field_size =
+                            self.block_visitor.bv.type_visitor.get_type_size(field_type);
+                        elem_size -= field_size;
+                        let field_value = repeated_bytes(field_size, byte_value);
+                        self.block_visitor
+                            .bv
+                            .current_environment
+                            .update_value_at(dest_field, field_value);
+                        if elem_size == 0 {
+                            break;
+                        }
+                    }
+                } else {
+                    if *count > 1 {
+                        warn!(
+                            "unhandled call to write_bytes<{:?}>({:?}: {:?}, {:?}, {:?})",
+                            elem_type,
+                            self.actual_args[0],
+                            dest_type,
+                            self.actual_args[1],
+                            self.actual_args[2]
+                        );
+                    }
+                    self.block_visitor.bv.copy_or_move_elements(
+                        dest_path,
+                        source_path,
+                        elem_type,
+                        false,
+                    );
+                }
+            } else {
+                assume_unreachable!("Rust type system should preclude this");
+            }
+        } else {
+            warn!(
+                "unhandled call to write_bytes<{:?}>({:?}: {:?}, {:?}, {:?})",
+                elem_type, self.actual_args[0], dest_type, self.actual_args[1], self.actual_args[2]
             );
         }
         self.use_entry_condition_as_exit_condition();

@@ -1485,8 +1485,6 @@ pub mod core {
         pub fn is_nonoverlapping<T>(src: *const T, dst: *const T, count: usize) -> bool {
             result!()
         }
-
-        pub fn write_bytes<T>(_dst: *mut T, _val: u8, _count: usize) {}
     }
 
     pub mod isize {
