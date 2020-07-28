@@ -691,7 +691,7 @@ impl PathRefinement for Rc<Path> {
             }
             PathEnum::Result => {
                 if result.is_none() {
-                    warn!("A summary that references it result should have a path for the result");
+                    warn!("A summary that references its result should have a path for the result");
                     Path::new_local(fresh)
                 } else {
                     result.as_ref().unwrap().clone()
@@ -768,7 +768,8 @@ impl PathRefinement for Rc<Path> {
                     if let Expression::Reference(path) = &value.expression {
                         // since self is a qualified path we have to drop the reference operator
                         // since selectors implicitly dereference pointers.
-                        return Path::new_qualified(path.clone(), refined_selector);
+                        return Path::new_qualified(path.clone(), refined_selector)
+                            .refine_paths(environment);
                     }
                 }
                 if let PathSelector::Downcast(_, variant) = refined_selector.as_ref() {
