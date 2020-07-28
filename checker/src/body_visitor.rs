@@ -1793,7 +1793,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .filter(|(p, _)| p.is_rooted_by(&source_path))
             {
                 check_for_early_return!(self);
-                let qualified_path = path.replace_root(&source_path, target_path.clone());
+                let qualified_path = path
+                    .replace_root(&source_path, target_path.clone())
+                    .refine_paths(&self.current_environment);
                 if move_elements {
                     trace!("moving child {:?} to {:?}", value, qualified_path);
                 // todo: doing the remove part of the move here makes it difficult to combine
