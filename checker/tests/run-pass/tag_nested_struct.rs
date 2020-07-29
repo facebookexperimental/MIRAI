@@ -19,6 +19,12 @@ const SECRET_TAINT: TagPropagationSet = tag_propagation_set!(TagPropagation::Sub
 
 type SecretTaint = SecretTaintKind<SECRET_TAINT>;
 
+struct SecretSanitizerKind<const MASK: TagPropagationSet> {}
+
+const SECRET_SANITIZER: TagPropagationSet = tag_propagation_set!(TagPropagation::SubComponent);
+
+type SecretSanitizer = SecretSanitizerKind<SECRET_SANITIZER>;
+
 pub struct Foo {
     bar: Bar,
 }
@@ -34,11 +40,22 @@ pub fn test1() {
     add_tag!(&foo, SecretTaint);
     verify!(has_tag!(&foo, SecretTaint));
     verify!(has_tag!(&foo.bar.content, SecretTaint));
-    // todo: deal with unknown implicit paths (e.g., the tag field)
-    verify!(has_tag!(&foo.bar, SecretTaint)); //~ provably false verification condition
+    verify!(has_tag!(&foo.bar, SecretTaint));
 }
 
-pub fn test2(foo: Foo) {
+pub fn test2() {
+    let foo = Foo {
+        bar: Bar { content: 99991 },
+    };
+    add_tag!(&foo.bar, SecretTaint);
+    add_tag!(&foo, SecretSanitizer);
+    verify!(has_tag!(&foo.bar, SecretTaint));
+    verify!(has_tag!(&foo.bar, SecretSanitizer));
+    verify!(does_not_have_tag!(&foo, SecretTaint));
+    verify!(has_tag!(&foo, SecretSanitizer));
+}
+
+pub fn test3(foo: Foo) {
     add_tag!(&foo, SecretTaint);
     verify!(has_tag!(&foo, SecretTaint));
     // todo: deal with unknown paths rooted at parameters

@@ -2135,7 +2135,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
                 _self.non_patterned_copy_or_move_elements(
                     sub_path.clone(),
-                    sub_path,
+                    sub_path.clone(),
                     root_rustc_type,
                     false,
                     |_self, path, _, new_value| {
@@ -2145,6 +2145,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             .insert_mut(path, new_value.add_tag(tag));
                     },
                 );
+
+                // Propagate the tag to implicit tag fields rooted by sub_path.
+                _self.propagate_tag_to_implicit_tag_fields(sub_path, |value| value.add_tag(tag));
             },
             &|_self, sub_path, condition| {
                 if !root_rustc_type.is_scalar() {
@@ -2167,7 +2170,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
                 _self.non_patterned_copy_or_move_elements(
                     sub_path.clone(),
-                    sub_path,
+                    sub_path.clone(),
                     root_rustc_type,
                     false,
                     |_self, path, old_value, new_value| {
@@ -2178,7 +2181,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             .value_map
                             .insert_mut(path, weak_value);
                     },
-                )
+                );
+
+                // Propagate the tag to implicit tag fields rooted by sub_path.
+                _self.propagate_tag_to_implicit_tag_fields(sub_path, |value| {
+                    condition.conditional_expression(value.add_tag(tag), value)
+                });
             },
         );
     }
@@ -2249,5 +2257,55 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
 
         (tag_field_path, tag_field_value)
+    }
+
+    /// Attach a tag to implicit tag field paths that are rooted by root_path.
+    /// If v is the value at a tag field path, then it is updated to attach_tag(v).
+    fn propagate_tag_to_implicit_tag_fields<F>(&mut self, root_path: Rc<Path>, attach_tag: F)
+    where
+        F: Fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
+    {
+        // Record visited prefixes of paths. We need this information to avoid handling the same prefix for multiple times.
+        let mut visited_path_prefixes: HashSet<Rc<Path>> = HashSet::new();
+
+        let old_value_map = self.current_environment.value_map.clone();
+
+        for (path, _) in old_value_map
+            .iter()
+            .filter(|(p, _)| p.is_rooted_by(&root_path))
+        {
+            let mut path_prefix = path;
+            while let PathEnum::QualifiedPath { qualifier, .. } = &path_prefix.value {
+                path_prefix = qualifier;
+                if !path_prefix.is_rooted_by(&root_path)
+                    || !visited_path_prefixes.insert(path_prefix.clone())
+                {
+                    break;
+                } else {
+                    let path_prefix_rustc_type = self
+                        .type_visitor
+                        .get_path_rustc_type(path_prefix, self.current_span);
+
+                    if !path_prefix_rustc_type.is_scalar() {
+                        let (tag_field_path, tag_field_value) = self
+                            .extract_tag_field_of_non_scalar_value_at(
+                                path_prefix,
+                                path_prefix_rustc_type,
+                            );
+
+                        // Perform an update when tag_field_path is not tracked in the old environment.
+                        // In this case, tag_field_path represents an implicit tag field.
+                        // As for other tag field paths that are already tracked in the old environment,
+                        // the attach_tag_to_elements method has invoked non_patterned_copy_or_move_elements
+                        // to attach the tag to those paths.
+                        if !old_value_map.contains_key(&tag_field_path) {
+                            self.current_environment
+                                .value_map
+                                .insert_mut(tag_field_path.clone(), attach_tag(tag_field_value));
+                        }
+                    }
+                }
+            }
+        }
     }
 }
