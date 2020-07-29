@@ -92,9 +92,7 @@ pub mod with_propagation_to_sub_components {
         }
         add_tag!(join, SecretTaint);
         verify!(has_tag!(&foo, SecretTaint) || has_tag!(&bar, SecretTaint));
-        // todo: deal with unknown paths rooted at parameters
         verify!(has_tag!(&foo.content, SecretTaint) || has_tag!(&bar.content, SecretTaint));
-        //~ possible false verification condition
     }
 }
 
