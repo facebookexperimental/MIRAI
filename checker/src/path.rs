@@ -740,7 +740,7 @@ impl PathRefinement for Rc<Path> {
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
-                ..
+                length,
             } => {
                 let refined_selector = selector.refine_paths(environment);
                 let refined_qualifier = qualifier.refine_paths(environment);
@@ -755,7 +755,7 @@ impl PathRefinement for Rc<Path> {
                 {
                     if *base_selector.as_ref() == PathSelector::Deref {
                         // no need for an explicit deref in a qualifier
-                        return Path::new_qualified(base_qualifier.clone(), selector.clone());
+                        return Path::new_qualified(base_qualifier.clone(), refined_selector);
                     }
                 }
                 if let PathEnum::Alias { value } = &refined_qualifier.value {
@@ -797,10 +797,30 @@ impl PathRefinement for Rc<Path> {
                             }
                         }
                         Expression::Variable { path, .. } => {
-                            return Path::new_qualified(path.clone(), refined_selector);
+                            // This is not ideal, but without some kind of check this can overflow the stack.
+                            // Investigate this some more in the future. (It involves joins.)
+                            let mut refined_path = if path.path_length() < *length {
+                                path.refine_paths(environment)
+                            } else {
+                                path.clone()
+                            };
+                            // if the variable's path is a qualified path that has a qualifier
+                            // that is an explicit dereference (because of parameter refinement)
+                            // the dereference has to be dropped in order for the path to be canonical.
+                            if let PathEnum::QualifiedPath {
+                                qualifier,
+                                selector: base_selector,
+                                ..
+                            } = &refined_path.value
+                            {
+                                if matches!(base_selector.as_ref(), PathSelector::Deref) {
+                                    refined_path = qualifier.clone();
+                                }
+                            }
+                            return Path::new_qualified(refined_path, refined_selector);
                         }
                         Expression::Reference(path) => {
-                            if matches!(selector.as_ref(), PathSelector::Deref) {
+                            if matches!(refined_selector.as_ref(), PathSelector::Deref) {
                                 // A path that is an alias for a & operation must simplify when dereferenced
                                 // in order to stay canonical.
                                 // Note that the tricky semantics of constructing a copy of struct when doing *&x
