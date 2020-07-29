@@ -57,7 +57,6 @@ pub mod intra_procedure {
     }
 }
 
-// todo: deal with unknown paths rooted at parameters
 pub mod inter_procedure {
     use crate::SecretTaint;
 
@@ -68,7 +67,7 @@ pub mod inter_procedure {
                 && has_tag!(&tuple.1, SecretTaint)
                 && has_tag!(&tuple.2, SecretTaint)
                 && has_tag!(&tuple.3, SecretTaint)
-        ); //~ possible false verification condition
+        );
     }
 
     pub fn test_array(array: &[i32; 4]) {
@@ -78,7 +77,7 @@ pub mod inter_procedure {
                 && has_tag!(&array[1], SecretTaint)
                 && has_tag!(&array[2], SecretTaint)
                 && has_tag!(&array[3], SecretTaint)
-        ); //~ possible false verification condition
+        );
     }
 
     pub fn test_slice(slice: &[i32]) {
@@ -89,6 +88,6 @@ pub mod inter_procedure {
                 && has_tag!(&slice[1], SecretTaint)
                 && has_tag!(&slice[2], SecretTaint)
                 && has_tag!(&slice[3], SecretTaint)
-        ); //~ possible false verification condition
+        );
     }
 }

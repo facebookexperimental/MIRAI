@@ -1134,15 +1134,73 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             } else {
                 self.block_visitor
                     .bv
-                    .lookup_path_and_refine_result(source_path, source_rustc_type)
+                    .lookup_path_and_refine_result(source_path.clone(), source_rustc_type)
             };
 
             // Decide the result of has_tag! or does_not_have_tag!.
-            result = Some(AbstractValue::make_tag_check(
-                tag_field_value,
-                tag,
-                checking_presence,
-            ));
+            let mut check_result =
+                AbstractValue::make_tag_check(tag_field_value, tag, checking_presence);
+
+            // If the tag can be propagated through sub-components, and source_path is rooted by a function parameter,
+            // we need to check the tag on the values that can contain source_path as a sub-component. Note that if
+            // source_path is rooted by a local variable, MIRAI has already propagated the tag to source_path when the
+            // tag was added to the value that contains source_path as a sub-component.
+            // Operationally, source_path is a qualified path and we check if any of its prefix has the tag (when checking_presence = true),
+            // or if all of its prefixes does not have the tag (when checking_presence = false).
+            if tag.is_propagated_by(TagPropagation::SubComponent)
+                && source_path.is_rooted_by_parameter()
+            {
+                let mut path_prefix = &source_path;
+                while let PathEnum::QualifiedPath { qualifier, .. } = &path_prefix.value {
+                    path_prefix = qualifier;
+
+                    let path_prefix_rustc_type = self
+                        .block_visitor
+                        .bv
+                        .type_visitor
+                        .get_path_rustc_type(&path_prefix, self.block_visitor.bv.current_span);
+                    if !path_prefix_rustc_type.is_scalar() {
+                        let tag_field_value = self
+                            .block_visitor
+                            .bv
+                            .extract_tag_field_of_non_scalar_value_at(
+                                &path_prefix,
+                                path_prefix_rustc_type,
+                            )
+                            .1;
+
+                        if checking_presence {
+                            // We are checking presence of a tag. It is equivalent to *any* prefix having the tag.
+                            // Thus we use a logical or.
+                            check_result = check_result.or(AbstractValue::make_tag_check(
+                                tag_field_value,
+                                tag,
+                                checking_presence,
+                            ));
+
+                            // Exits the loop if check_result is already true.
+                            if check_result.as_bool_if_known().unwrap_or(false) {
+                                break;
+                            }
+                        } else {
+                            // We are checking absence of a tag. It is equivalent to *all* prefixes not having the tag.
+                            // Thus we use a logical and.
+                            check_result = check_result.and(AbstractValue::make_tag_check(
+                                tag_field_value,
+                                tag,
+                                checking_presence,
+                            ));
+
+                            // Exits the loop if check_result is already false.
+                            if !check_result.as_bool_if_known().unwrap_or(true) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            result = Some(check_result);
         } else {
             result = None;
         }

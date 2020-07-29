@@ -2120,25 +2120,38 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 if !root_rustc_type.is_scalar() {
                     let (tag_field_path, tag_field_value) =
                         _self.extract_tag_field_of_non_scalar_value_at(&sub_path, root_rustc_type);
+                    _self
+                        .current_environment
+                        .value_map
+                        .insert_mut(tag_field_path, tag_field_value.add_tag(tag));
                     if !tag.is_propagated_by(TagPropagation::SubComponent) {
-                        _self
-                            .current_environment
-                            .value_map
-                            .insert_mut(tag_field_path, tag_field_value.add_tag(tag));
                         return;
                     } else {
                         // fall through, the tag is propagated to sub-components.
-                        // tag_field_path, as a qualified path rooted at sub_path, will get updated
-                        // by non_patterned_copy_or_move_elements.
                     }
                 }
 
+                // We gets here if root_rustc_type is scalar or the tag can be propagated to sub-components.
                 _self.non_patterned_copy_or_move_elements(
                     sub_path.clone(),
                     sub_path.clone(),
                     root_rustc_type,
                     false,
                     |_self, path, _, new_value| {
+                        // Layout and Discriminant are not accessible to programmers, and they carry internal information
+                        // that should not be wrapped by tags. TagField is also skipped, because they will be handled
+                        // together with implicit tag fields.
+                        if let PathEnum::QualifiedPath { selector, .. } = &path.value {
+                            if matches!(
+                                **selector,
+                                PathSelector::Layout
+                                    | PathSelector::Discriminant
+                                    | PathSelector::TagField
+                            ) {
+                                return;
+                            }
+                        }
+
                         _self
                             .current_environment
                             .value_map
@@ -2146,34 +2159,47 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     },
                 );
 
-                // Propagate the tag to implicit tag fields rooted by sub_path.
-                _self.propagate_tag_to_implicit_tag_fields(sub_path, |value| value.add_tag(tag));
+                // Propagate the tag to all tag fields rooted by sub_path.
+                _self.propagate_tag_to_tag_fields(sub_path, |value| value.add_tag(tag));
             },
             &|_self, sub_path, condition| {
                 if !root_rustc_type.is_scalar() {
                     let (tag_field_path, tag_field_value) =
                         _self.extract_tag_field_of_non_scalar_value_at(&sub_path, root_rustc_type);
+                    let weak_value = condition
+                        .conditional_expression(tag_field_value.add_tag(tag), tag_field_value);
+                    _self
+                        .current_environment
+                        .value_map
+                        .insert_mut(tag_field_path, weak_value);
                     if !tag.is_propagated_by(TagPropagation::SubComponent) {
-                        let weak_value = condition
-                            .conditional_expression(tag_field_value.add_tag(tag), tag_field_value);
-                        _self
-                            .current_environment
-                            .value_map
-                            .insert_mut(tag_field_path, weak_value);
                         return;
                     } else {
                         // fall through, the tag is propagated to sub-components.
-                        // tag_field_path, as a qualified path rooted at sub_path, will get updated
-                        // by non_patterned_copy_or_move_elements.
                     }
                 }
 
+                // We gets here if root_rustc_type is scalar or the tag can be propagated to sub-components.
                 _self.non_patterned_copy_or_move_elements(
                     sub_path.clone(),
                     sub_path.clone(),
                     root_rustc_type,
                     false,
                     |_self, path, old_value, new_value| {
+                        // Layout and Discriminant are not accessible to programmers, and they carry internal information
+                        // that should not be wrapped by tags. TagField is also skipped, because they will be handled
+                        // together with implicit tag fields.
+                        if let PathEnum::QualifiedPath { selector, .. } = &path.value {
+                            if matches!(
+                                **selector,
+                                PathSelector::Layout
+                                    | PathSelector::Discriminant
+                                    | PathSelector::TagField
+                            ) {
+                                return;
+                            }
+                        }
+
                         let weak_value =
                             condition.conditional_expression(new_value.add_tag(tag), old_value);
                         _self
@@ -2183,8 +2209,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     },
                 );
 
-                // Propagate the tag to implicit tag fields rooted by sub_path.
-                _self.propagate_tag_to_implicit_tag_fields(sub_path, |value| {
+                // Propagate the tag to all tag fields rooted by sub_path.
+                _self.propagate_tag_to_tag_fields(sub_path, |value| {
                     condition.conditional_expression(value.add_tag(tag), value)
                 });
             },
@@ -2228,7 +2254,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) -> (Rc<Path>, Rc<AbstractValue>) {
         precondition!(!root_rustc_type.is_scalar());
 
-        let tag_field_path = Path::new_tag_field(qualifier.clone());
+        let tag_field_path =
+            Path::new_tag_field(qualifier.clone()).refine_paths(&self.current_environment);
         let mut tag_field_value = self.lookup_path_and_refine_result(
             tag_field_path.clone(),
             self.type_visitor.dummy_untagged_value_type,
@@ -2259,9 +2286,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         (tag_field_path, tag_field_value)
     }
 
-    /// Attach a tag to implicit tag field paths that are rooted by root_path.
+    /// Attach a tag to all tag field paths that are rooted by root_path.
     /// If v is the value at a tag field path, then it is updated to attach_tag(v).
-    fn propagate_tag_to_implicit_tag_fields<F>(&mut self, root_path: Rc<Path>, attach_tag: F)
+    fn propagate_tag_to_tag_fields<F>(&mut self, root_path: Rc<Path>, attach_tag: F)
     where
         F: Fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
     {
@@ -2275,35 +2302,34 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .filter(|(p, _)| p.is_rooted_by(&root_path))
         {
             let mut path_prefix = path;
+
             while let PathEnum::QualifiedPath { qualifier, .. } = &path_prefix.value {
-                path_prefix = qualifier;
-                if !path_prefix.is_rooted_by(&root_path)
-                    || !visited_path_prefixes.insert(path_prefix.clone())
-                {
+                // If the qualifier is already root_path, i.e., none of the prefixes can be rooted by root_path,
+                // we exit the loop.
+                if *qualifier == root_path {
                     break;
                 } else {
-                    let path_prefix_rustc_type = self
-                        .type_visitor
-                        .get_path_rustc_type(path_prefix, self.current_span);
+                    path_prefix = qualifier;
+                }
 
-                    if !path_prefix_rustc_type.is_scalar() {
-                        let (tag_field_path, tag_field_value) = self
-                            .extract_tag_field_of_non_scalar_value_at(
-                                path_prefix,
-                                path_prefix_rustc_type,
-                            );
+                // If path_prefix has been visited, we exit the loop.
+                if !visited_path_prefixes.insert(path_prefix.clone()) {
+                    break;
+                }
 
-                        // Perform an update when tag_field_path is not tracked in the old environment.
-                        // In this case, tag_field_path represents an implicit tag field.
-                        // As for other tag field paths that are already tracked in the old environment,
-                        // the attach_tag_to_elements method has invoked non_patterned_copy_or_move_elements
-                        // to attach the tag to those paths.
-                        if !old_value_map.contains_key(&tag_field_path) {
-                            self.current_environment
-                                .value_map
-                                .insert_mut(tag_field_path.clone(), attach_tag(tag_field_value));
-                        }
-                    }
+                // We get here if path_prefix is rooted by root_path and is not yet visited.
+                let path_prefix_rustc_type = self
+                    .type_visitor
+                    .get_path_rustc_type(path_prefix, self.current_span);
+                if !path_prefix_rustc_type.is_scalar() {
+                    let (tag_field_path, tag_field_value) = self
+                        .extract_tag_field_of_non_scalar_value_at(
+                            path_prefix,
+                            path_prefix_rustc_type,
+                        );
+                    self.current_environment
+                        .value_map
+                        .insert_mut(tag_field_path.clone(), attach_tag(tag_field_value));
                 }
             }
         }

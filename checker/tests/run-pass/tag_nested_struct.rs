@@ -58,9 +58,65 @@ pub fn test2() {
 pub fn test3(foo: Foo) {
     add_tag!(&foo, SecretTaint);
     verify!(has_tag!(&foo, SecretTaint));
-    // todo: deal with unknown paths rooted at parameters
-    verify!(has_tag!(&foo.bar.content, SecretTaint)); //~ possible false verification condition
-    verify!(has_tag!(&foo.bar, SecretTaint)); //~ possible false verification condition
+    verify!(has_tag!(&foo.bar.content, SecretTaint));
+    verify!(has_tag!(&foo.bar, SecretTaint));
+}
+
+pub fn test4(foo: Foo) {
+    add_tag!(&foo.bar, SecretTaint);
+    add_tag!(&foo, SecretSanitizer);
+    verify!(has_tag!(&foo.bar, SecretTaint));
+    verify!(has_tag!(&foo.bar, SecretSanitizer));
+    verify!(has_tag!(&foo, SecretSanitizer));
+    verify!(does_not_have_tag!(&foo, SecretTaint)); //~ possible false verification condition
+}
+
+pub fn test5(foo: &Foo) {
+    add_tag!(foo, SecretTaint);
+    verify!(has_tag!(foo, SecretTaint));
+    verify!(has_tag!(&foo.bar.content, SecretTaint));
+    verify!(has_tag!(&foo.bar, SecretTaint));
+}
+
+pub fn test6(foo: &Foo) {
+    add_tag!(&foo.bar, SecretTaint);
+    add_tag!(foo, SecretSanitizer);
+    verify!(has_tag!(&foo.bar, SecretTaint));
+    verify!(has_tag!(&foo.bar, SecretSanitizer));
+    verify!(has_tag!(foo, SecretSanitizer));
+    verify!(does_not_have_tag!(foo, SecretTaint)); //~ possible false verification condition
+}
+
+fn taint_argument_for_test7(foo: &Foo) {
+    add_tag!(foo, SecretTaint);
+}
+
+pub fn test7() {
+    let foo = Foo {
+        bar: Bar { content: 99991 },
+    };
+    taint_argument_for_test7(&foo);
+    verify!(has_tag!(&foo, SecretTaint));
+    // todo: propagate tags during refinements
+    verify!(has_tag!(&foo.bar.content, SecretTaint)); //~ provably false verification condition
+    verify!(has_tag!(&foo.bar, SecretTaint)); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
+}
+
+fn taint_argument_for_test8(foo: &Foo) {
+    add_tag!(foo, SecretTaint);
+    add_tag!(&foo.bar, SecretSanitizer);
+}
+
+pub fn test8() {
+    let foo = Foo {
+        bar: Bar { content: 99991 },
+    };
+    taint_argument_for_test8(&foo);
+    // todo: propagate tags during refinements
+    verify!(has_tag!(&foo.bar, SecretTaint)); //~ provably false verification condition
+    verify!(has_tag!(&foo.bar, SecretSanitizer)); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
+    verify!(does_not_have_tag!(&foo, SecretTaint)); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
+    verify!(has_tag!(&foo, SecretSanitizer)); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
 }
 
 pub fn main() {}
