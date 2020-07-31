@@ -332,6 +332,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             self.tcx.mk_mut_ref(self.tcx.lifetimes.re_static, slice_ty)
                         };
                     }
+                    PathSelector::TagField => {
+                        return self.dummy_untagged_value_type;
+                    }
                     _ => {}
                 }
                 info!("current span is {:?}", current_span);
