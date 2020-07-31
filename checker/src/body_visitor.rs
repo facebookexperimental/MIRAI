@@ -1141,9 +1141,43 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 _ => {}
             }
             if rtype != ExpressionType::NonPrimitive {
+                // If tpath is a tag field path, we need to propagate the tags recorded in rvalue
+                // to those paths rooted by the qualifier of tpath properly.
+                if let PathEnum::QualifiedPath {
+                    qualifier,
+                    selector,
+                    ..
+                } = &tpath.value
+                {
+                    if **selector == PathSelector::TagField {
+                        let qualifier_rustc_type = self
+                            .type_visitor
+                            .get_path_rustc_type(qualifier, self.current_span);
+                        self.transfer_and_propagate_tags(&rvalue, qualifier, qualifier_rustc_type);
+                        continue;
+                    }
+                }
+
                 self.current_environment.update_value_at(tpath, rvalue);
             }
             check_for_early_return!(self);
+        }
+    }
+
+    /// When we transfer a side effect of the form (root_path.$tags, tag_field_value), i.e., the callee
+    /// has attached some tags to the value located at root_path, we go through all the tags recorded in
+    /// tag_field_value, and invoke `attach_tag_to_elements` to properly propagate tags to elements rooted
+    /// by root_path.
+    #[logfn_inputs(TRACE)]
+    fn transfer_and_propagate_tags(
+        &mut self,
+        tag_field_value: &Rc<AbstractValue>,
+        root_path: &Rc<Path>,
+        root_rustc_type: Ty<'tcx>,
+    ) {
+        if let Expression::TaggedExpression { tag, operand } = &tag_field_value.expression {
+            self.transfer_and_propagate_tags(operand, root_path, root_rustc_type);
+            self.attach_tag_to_elements(*tag, root_path.clone(), root_rustc_type);
         }
     }
 
@@ -2152,6 +2186,15 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             }
                         }
 
+                        // We should update the tag fields of non-scalar values.
+                        // The logic is implemented in propagate_tag_to_tag_fields.
+                        let path_rustc_type = _self
+                            .type_visitor
+                            .get_path_rustc_type(&path, _self.current_span);
+                        if !path_rustc_type.is_scalar() {
+                            return;
+                        }
+
                         _self
                             .current_environment
                             .value_map
@@ -2198,6 +2241,15 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             ) {
                                 return;
                             }
+                        }
+
+                        // We should update the tag fields of non-scalar values.
+                        // The logic is implemented in propagate_tag_to_tag_fields.
+                        let path_rustc_type = _self
+                            .type_visitor
+                            .get_path_rustc_type(&path, _self.current_span);
+                        if !path_rustc_type.is_scalar() {
+                            return;
                         }
 
                         let weak_value =
@@ -2303,15 +2355,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         {
             let mut path_prefix = path;
 
-            while let PathEnum::QualifiedPath { qualifier, .. } = &path_prefix.value {
-                // If the qualifier is already root_path, i.e., none of the prefixes can be rooted by root_path,
-                // we exit the loop.
-                if *qualifier == root_path {
-                    break;
-                } else {
-                    path_prefix = qualifier;
-                }
-
+            loop {
                 // If path_prefix has been visited, we exit the loop.
                 if !visited_path_prefixes.insert(path_prefix.clone()) {
                     break;
@@ -2330,6 +2374,19 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     self.current_environment
                         .value_map
                         .insert_mut(tag_field_path.clone(), attach_tag(tag_field_value));
+                }
+
+                if let PathEnum::QualifiedPath { qualifier, .. } = &path_prefix.value {
+                    // If the qualifier is already root_path, i.e., none of the prefixes can be rooted by root_path,
+                    // we exit the loop.
+                    if *qualifier == root_path {
+                        break;
+                    } else {
+                        path_prefix = qualifier;
+                    }
+                } else {
+                    // If path_prefix is no longer a qualified path, we exit the loop.
+                    break;
                 }
             }
         }

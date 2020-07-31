@@ -97,14 +97,13 @@ pub fn test7() {
     };
     taint_argument_for_test7(&foo);
     verify!(has_tag!(&foo, SecretTaint));
-    // todo: propagate tags during refinements
-    verify!(has_tag!(&foo.bar.content, SecretTaint)); //~ provably false verification condition
-    verify!(has_tag!(&foo.bar, SecretTaint)); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
+    verify!(has_tag!(&foo.bar.content, SecretTaint));
+    verify!(has_tag!(&foo.bar, SecretTaint));
 }
 
 fn taint_argument_for_test8(foo: &Foo) {
-    add_tag!(foo, SecretTaint);
-    add_tag!(&foo.bar, SecretSanitizer);
+    add_tag!(&foo.bar, SecretTaint);
+    add_tag!(foo, SecretSanitizer);
 }
 
 pub fn test8() {
@@ -112,11 +111,10 @@ pub fn test8() {
         bar: Bar { content: 99991 },
     };
     taint_argument_for_test8(&foo);
-    // todo: propagate tags during refinements
-    verify!(has_tag!(&foo.bar, SecretTaint)); //~ provably false verification condition
-    verify!(has_tag!(&foo.bar, SecretSanitizer)); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
-    verify!(does_not_have_tag!(&foo, SecretTaint)); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
-    verify!(has_tag!(&foo, SecretSanitizer)); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
+    verify!(has_tag!(&foo.bar, SecretTaint));
+    verify!(has_tag!(&foo.bar, SecretSanitizer));
+    verify!(has_tag!(&foo, SecretSanitizer));
+    verify!(does_not_have_tag!(&foo, SecretTaint));
 }
 
 pub fn main() {}
