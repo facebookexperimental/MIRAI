@@ -1821,6 +1821,15 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         // be saddled with removing it. This case corresponds to no_children being true.
         if val_type == ExpressionType::NonPrimitive {
             // First look at paths that are rooted in rpath.
+            // Remove an explicit deref from source_path to make it a valid root.
+            let source_path = match &source_path.value {
+                PathEnum::QualifiedPath {
+                    qualifier,
+                    selector,
+                    ..
+                } if **selector == PathSelector::Deref => qualifier.clone(),
+                _ => source_path,
+            };
             let value_map = self.current_environment.value_map.clone();
             for (path, value) in value_map
                 .iter()
@@ -1846,6 +1855,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     self.lookup_path_and_refine_result(qualified_path.clone(), rustc_type);
                 update(self, qualified_path, old_value, value.clone());
                 no_children = false;
+            }
+            if let Expression::Variable { path, .. } = &value.expression {
+                if path.is_rooted_by_parameter() {
+                    update(self, target_path.clone(), value.clone(), value.clone());
+                    no_children = false;
+                }
             }
         }
         let target_type: ExpressionType = (&root_rustc_type.kind).into();
