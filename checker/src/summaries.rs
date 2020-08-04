@@ -8,15 +8,17 @@ use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::FunctionReference;
 use crate::environment::Environment;
 use crate::expression::Expression;
-use crate::path::Path;
+use crate::path::{Path, PathEnum, PathSelector};
 use crate::utils;
 
+use itertools::Itertools;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
 use serde::{Deserialize, Serialize};
 use sled::{Config, Db};
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
 use std::ops::Deref;
@@ -279,6 +281,19 @@ fn extract_side_effects(
             .value_map
             .iter()
             .filter(|(p, _)| (ordinal == 0 && (**p) == root) || p.is_rooted_by(&root))
+            .sorted_by(|(p1, _), (p2, _)| {
+                let len1 = p1.path_length();
+                let len2 = p2.path_length();
+                if len1 == len2 {
+                    if matches!(&p1.value, PathEnum::QualifiedPath { selector, .. } if **selector == PathSelector::Deref) {
+                        Ordering::Less
+                    } else {
+                        Ordering::Equal
+                    }
+                } else {
+                    len1.cmp(&len2)
+                }
+            })
         {
             path.record_heap_blocks(&mut heap_roots);
             value.record_heap_blocks(&mut heap_roots);
@@ -288,7 +303,6 @@ fn extract_side_effects(
                     continue;
                 }
             }
-            // We are extracting a subset of information out of env, which has not overflowed.
             result.push((path.clone(), value.clone()));
         }
     }
