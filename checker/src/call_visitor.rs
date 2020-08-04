@@ -951,12 +951,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             indirect_call_visitor.destination = self.destination;
             let summary = indirect_call_visitor.get_function_summary();
             if let Some(summary) = summary {
-                trace!("summary {:?}", summary);
-                trace!("target {:?} arguments {:?}", self.destination, actual_args);
-                indirect_call_visitor.check_preconditions_if_necessary(&summary);
-                indirect_call_visitor.transfer_and_refine_normal_return_state(&summary);
-                indirect_call_visitor.transfer_and_refine_cleanup_state(&summary);
-                trace!("post env {:?}", self.block_visitor.bv.current_environment);
+                indirect_call_visitor.transfer_and_refine_into_current_environment(&summary);
                 return;
             } else {
                 if self.block_visitor.bv.check_for_errors {
@@ -975,9 +970,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             Summary::default()
         };
 
-        self.check_preconditions_if_necessary(&function_summary);
-        self.transfer_and_refine_normal_return_state(&function_summary);
-        self.transfer_and_refine_cleanup_state(&function_summary);
+        self.transfer_and_refine_into_current_environment(&function_summary);
     }
 
     /// Replace the call result with an abstract value of the same type as the
@@ -1885,6 +1878,25 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         }
     }
 
+    /// Refines the summary using the call arguments and local environment and transfers
+    /// the side effects of the summary into the current environment, while also checking
+    /// preconditions and add the post conditions to the exit condition guarding the post call target block.
+    #[logfn_inputs(TRACE)]
+    pub fn transfer_and_refine_into_current_environment(&mut self, function_summary: &Summary) {
+        debug!("def_id {:?}", self.callee_def_id);
+        debug!("summary {:?}", function_summary);
+        debug!("pre env {:?}", self.block_visitor.bv.current_environment);
+        debug!(
+            "target {:?} arguments {:?}",
+            self.destination, self.actual_args
+        );
+        self.check_preconditions_if_necessary(&function_summary);
+        self.transfer_and_refine_normal_return_state(&function_summary);
+        self.transfer_and_refine_cleanup_state(&function_summary);
+        self.add_post_condition_to_exit_conditions(&function_summary);
+        trace!("post env {:?}", self.block_visitor.bv.current_environment);
+    }
+
     /// If we are checking for errors and have not assumed the preconditions of the called function
     /// and we are not in angelic mode and have not already reported an error for this call,
     /// then check the preconditions and report any conditions that are not known to hold at this point.
@@ -2029,7 +2041,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn transfer_and_refine_normal_return_state(&mut self, function_summary: &Summary) {
         let destination = self.destination;
-        if let Some((place, target)) = &destination {
+        if let Some((place, _)) = &destination {
             // Assign function result to place
             let target_path = self.block_visitor.visit_place(place);
             let result_path = &Some(target_path.clone());
@@ -2100,8 +2112,19 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .current_environment
                     .update_value_at(target_path, result);
             }
+        }
+    }
 
-            // Add post conditions to entry condition
+    /// If the function summary has a post condition, refine this and add it to the
+    /// exit conditions for the current block.
+    /// Note that this function has to be executed in the pre-state of the call.
+    /// Any variables left in the post condition of the summary refers to its parameters
+    /// and thus to the state of the current function as it was before making the
+    /// call to function that is summarized by function_summary.
+    #[logfn_inputs(TRACE)]
+    pub fn add_post_condition_to_exit_conditions(&mut self, function_summary: &Summary) {
+        let destination = self.destination;
+        if let Some((place, target)) = &destination {
             let mut exit_condition = self
                 .block_visitor
                 .bv
@@ -2109,22 +2132,27 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .entry_condition
                 .clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
+                //todo: refine the unwind condition
                 exit_condition = exit_condition.and(unwind_condition.logical_not());
             }
             if let Some(post_condition) = &function_summary.post_condition {
+                let target_path = self.block_visitor.visit_place(place);
+                let result_path = &Some(target_path);
+                //todo: need to refine old param values with self.environment_before_call
                 let refined_post_condition = post_condition.refine_parameters(
                     self.actual_args,
-                    result_path,
+                    &result_path,
                     self.block_visitor.bv.fresh_variable_offset,
                 );
-                trace!(
+                debug!(
                     "refined post condition before path refinement {:?}",
                     refined_post_condition
                 );
                 let refined_post_condition =
                     refined_post_condition.refine_paths(&self.block_visitor.bv.current_environment);
-                trace!("refined post condition {:?}", refined_post_condition);
+                debug!("refined post condition {:?}", refined_post_condition);
                 exit_condition = exit_condition.and(refined_post_condition);
+                debug!("post exit conditions {:?}", exit_condition);
             }
 
             self.block_visitor

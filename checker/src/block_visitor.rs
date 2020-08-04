@@ -488,7 +488,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             &actual_argument_types,
         );
 
-        let func_const = ConstantDomain::Function(func_ref_to_call.clone());
+        let func_const = ConstantDomain::Function(func_ref_to_call);
         let func_const_args = &self.get_function_constant_args(&actual_args);
         let mut call_visitor = CallVisitor::new(
             self,
@@ -516,28 +516,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         {
             call_visitor.deal_with_missing_summary();
         }
-        trace!("def_id {:?}", call_visitor.callee_def_id);
-        trace!("summary {:?} {:?}", func_ref_to_call, function_summary);
-        trace!(
-            "pre env {:?}",
-            call_visitor.block_visitor.bv.current_environment
-        );
-        trace!("target {:?} arguments {:?}", destination, actual_args);
-        call_visitor.check_preconditions_if_necessary(&function_summary);
-        call_visitor.transfer_and_refine_normal_return_state(&function_summary);
-        call_visitor.transfer_and_refine_cleanup_state(&function_summary);
-        trace!(
-            "post env {:?}",
-            call_visitor.block_visitor.bv.current_environment
-        );
-        if function_summary.post_condition.is_some() {
-            if let Some((_, b)) = &call_visitor.destination {
-                trace!(
-                    "post exit conditions {:?}",
-                    self.bv.current_environment.exit_conditions.get(b)
-                );
-            }
-        }
+        call_visitor.transfer_and_refine_into_current_environment(&function_summary);
     }
 
     #[logfn_inputs(TRACE)]
