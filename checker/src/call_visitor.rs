@@ -1664,54 +1664,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if self.block_visitor.bv.check_for_errors
             && self.block_visitor.bv.function_being_analyzed_is_root()
         {
-            self.check_offset(&result)
+            self.block_visitor.bv.check_offset(&result)
         }
         result
-    }
-
-    /// Checks that the offset is either in bounds or one byte past the end of an allocated object.
-    #[logfn_inputs(TRACE)]
-    fn check_offset(&mut self, offset: &AbstractValue) {
-        if let Expression::Offset { left, right, .. } = &offset.expression {
-            let ge_zero = right.greater_or_equal(Rc::new(ConstantDomain::I128(0).into()));
-            let mut len = left.clone();
-            if let Expression::Reference(path) | Expression::Variable { path, .. } =
-                &left.expression
-            {
-                if matches!(&path.value, PathEnum::HeapBlock{..}) {
-                    let layout_path = Path::new_layout(path.clone());
-                    if let Expression::HeapBlockLayout { length, .. } = &self
-                        .block_visitor
-                        .bv
-                        .lookup_path_and_refine_result(
-                            layout_path,
-                            ExpressionType::NonPrimitive.as_rustc_type(self.block_visitor.bv.tcx),
-                        )
-                        .expression
-                    {
-                        len = length.clone();
-                    }
-                }
-            };
-            let le_one_past =
-                right.less_or_equal(len.addition(Rc::new(ConstantDomain::I128(1).into())));
-            let in_range = ge_zero.and(le_one_past);
-            let (in_range_as_bool, entry_cond_as_bool) = self
-                .block_visitor
-                .check_condition_value_and_reachability(&in_range);
-            //todo: eventually give a warning if in_range_as_bool is unknown. For now, that is too noisy.
-            if entry_cond_as_bool.unwrap_or(true) && !in_range_as_bool.unwrap_or(true) {
-                let span = self.block_visitor.bv.current_span;
-                let message = "effective offset is outside allocated range";
-                let warning = self
-                    .block_visitor
-                    .bv
-                    .cv
-                    .session
-                    .struct_span_warn(span, message);
-                self.block_visitor.bv.emit_diagnostic(warning);
-            }
-        }
     }
 
     /// Moves `source` into the referenced `dest`, returning the previous `dest` value.
