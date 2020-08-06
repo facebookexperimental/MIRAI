@@ -410,7 +410,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
                         }
                         PathEnum::LocalVariable { .. } => refined_val,
-                        _ => AbstractValue::make_typed_unknown(result_type.clone(), path.clone()),
+                        _ => AbstractValue::make_typed_unknown(
+                            result_type.clone(),
+                            path.replace_parameter_root_with_copy(),
+                        ),
                     };
                     if result_type != ExpressionType::NonPrimitive {
                         self.current_environment
@@ -422,7 +425,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let result = if let PathEnum::LocalVariable { .. } = path.value {
                     refined_val
                 } else {
-                    AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
+                    AbstractValue::make_typed_unknown(
+                        result_type.clone(),
+                        path.replace_parameter_root_with_copy(),
+                    )
                 };
                 if result_type != ExpressionType::NonPrimitive {
                     self.current_environment
@@ -908,7 +914,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
     /// Checks that the offset is either in bounds or one byte past the end of an allocated object.
     #[logfn_inputs(TRACE)]
-    fn check_offset(&mut self, offset: &AbstractValue) {
+    pub fn check_offset(&mut self, offset: &AbstractValue) {
         if let Expression::Offset { left, right, .. } = &offset.expression {
             let ge_zero = right.greater_or_equal(Rc::new(ConstantDomain::I128(0).into()));
             let mut len = left.clone();
@@ -1103,7 +1109,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     self.current_environment.update_value_at(tpath, rvalue);
                     continue;
                 }
-                Expression::Variable { path, .. } => {
+                Expression::Variable { path, var_type } => {
                     if matches!(&path.value, PathEnum::PhantomData) {
                         continue;
                     }
@@ -1127,6 +1133,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             );
                         }
                     } else if path.is_rooted_by_parameter() {
+                        let cpath = path.replace_parameter_root_with_copy();
+                        let rvalue = AbstractValue::make_typed_unknown(var_type.clone(), cpath);
                         self.current_environment.update_value_at(tpath, rvalue);
                         continue;
                     } else if rtype == ExpressionType::NonPrimitive {

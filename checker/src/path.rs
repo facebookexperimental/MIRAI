@@ -145,6 +145,12 @@ pub enum PathEnum {
     /// locals [1..=arg_count] are the parameters
     Parameter { ordinal: usize },
 
+    /// The unknown contents of a parameter, copied into a local.
+    /// Paths rooted by a parameter copy will always resolve to unknown values since
+    /// any writes to a path rooted in a parameter or local will not have this as its root.
+    /// When transferred from a summary to a calling context, this is a synonym for Parameter(ordinal).
+    ParameterCopy { ordinal: usize },
+
     /// local 0 is the return value temporary
     Result,
 
@@ -185,6 +191,9 @@ impl Debug for PathEnum {
             PathEnum::LocalVariable { ordinal } => f.write_fmt(format_args!("local_{}", ordinal)),
             PathEnum::Offset { value } => f.write_fmt(format_args!("<{:?}>", value)),
             PathEnum::Parameter { ordinal } => f.write_fmt(format_args!("param_{}", ordinal)),
+            PathEnum::ParameterCopy { ordinal } => {
+                f.write_fmt(format_args!("param_copy_{}", ordinal))
+            }
             PathEnum::Result => f.write_str("result"),
             PathEnum::StaticVariable {
                 summary_cache_key, ..
@@ -212,6 +221,7 @@ impl Path {
             PathEnum::LocalVariable { .. } => true,
             PathEnum::Offset { value } => value.expression.contains_local_variable(),
             PathEnum::Parameter { .. } => false,
+            PathEnum::ParameterCopy { .. } => false,
             PathEnum::Result => false,
             PathEnum::StaticVariable { .. } => false,
             PathEnum::PhantomData => false,
@@ -383,6 +393,13 @@ impl Path {
             PathEnum::QualifiedPath { qualifier, .. } => {
                 *qualifier == *root || qualifier.is_rooted_by(root)
             }
+            PathEnum::ParameterCopy { ordinal } => {
+                if let PathEnum::Parameter { ordinal: ord } = root.value {
+                    *ordinal == ord
+                } else {
+                    false
+                }
+            }
             _ => false,
         }
     }
@@ -442,7 +459,7 @@ impl Path {
     pub fn is_rooted_by_parameter(&self) -> bool {
         match &self.value {
             PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_parameter(),
-            PathEnum::Parameter { .. } => true,
+            PathEnum::Parameter { .. } | PathEnum::ParameterCopy { .. } => true,
             _ => false,
         }
     }
@@ -534,7 +551,7 @@ impl Path {
         Rc::new(PathEnum::LocalVariable { ordinal }.into())
     }
 
-    /// Creates a path to the local variable corresponding to the ordinal.
+    /// Creates a path to the parameter corresponding to the ordinal.
     #[logfn_inputs(TRACE)]
     pub fn new_parameter(ordinal: usize) -> Rc<Path> {
         Rc::new(PathEnum::Parameter { ordinal }.into())
@@ -649,6 +666,10 @@ pub trait PathRefinement: Sized {
     /// and not have more than one path for the same location.
     fn refine_paths(&self, environment: &Environment) -> Rc<Path>;
 
+    /// Returns a copy of self with a Parameter root replaced by a ParameterCopy root.
+    /// See PathEnum::ParamCopy for details on when to use this.
+    fn replace_parameter_root_with_copy(&self) -> Rc<Path>;
+
     /// Returns a copy of self with the root replaced by new_root.
     fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path>;
 
@@ -681,7 +702,7 @@ impl PathRefinement for Rc<Path> {
             PathEnum::Offset { value } => {
                 Path::get_as_path(value.refine_parameters(arguments, result, fresh))
             }
-            PathEnum::Parameter { ordinal } => {
+            PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } => {
                 if *ordinal > arguments.len() {
                     debug!("Summary refers to a parameter that does not have a matching argument");
                     Path::new_alias(Rc::new(abstract_value::BOTTOM))
@@ -844,6 +865,28 @@ impl PathRefinement for Rc<Path> {
                 self.clone() // Non qualified, non offset paths are already canonical
             }
         }
+    }
+
+    /// Returns a copy of self with a Parameter root replaced by a ParameterCopy root.
+    #[logfn_inputs(TRACE)]
+    fn replace_parameter_root_with_copy(&self) -> Rc<Path> {
+        if !self.is_rooted_by_parameter() || matches!(&self.value, PathEnum::Parameter {..}) {
+            return self.clone();
+        }
+        fn replace_root(path: &Rc<Path>) -> Rc<Path> {
+            match &path.value {
+                PathEnum::QualifiedPath {
+                    qualifier,
+                    selector,
+                    ..
+                } => Path::new_qualified(replace_root(qualifier), selector.clone()),
+                PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } => {
+                    Rc::new(PathEnum::ParameterCopy { ordinal: *ordinal }.into())
+                }
+                _ => assume_unreachable!(),
+            }
+        }
+        replace_root(self)
     }
 
     /// Returns a copy path with the root replaced by new_root.

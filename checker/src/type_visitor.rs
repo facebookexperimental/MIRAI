@@ -75,7 +75,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         first_state: &mut Environment,
         path: &Rc<Path>,
     ) {
-        if let PathEnum::Parameter { ordinal } = &path.value {
+        if let PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } = &path.value {
             if *ordinal > 0 && *ordinal <= parameter_types.len() {
                 if let TyKind::Closure(_, substs) = parameter_types[*ordinal - 1].kind {
                     if let Some(i) = substs.iter().position(|gen_arg| {
@@ -192,7 +192,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             PathEnum::HeapBlock { value } | PathEnum::Offset { value } => {
                 value.expression.infer_type().as_rustc_type(self.tcx)
             }
-            PathEnum::Parameter { ordinal } => {
+            PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } => {
                 if self.actual_argument_types.len() >= *ordinal {
                     self.actual_argument_types[*ordinal - 1]
                 } else if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
@@ -304,6 +304,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         return self.tcx.types.i32;
                     }
                     PathSelector::Downcast(_, ordinal) => {
+                        // Undo the implicit deref if t is a ref/pointer
+                        let t = type_visitor::get_target_type(t);
                         if let TyKind::Adt(def, substs) = &t.kind {
                             use rustc_index::vec::Idx;
                             if *ordinal >= def.variants.len() {

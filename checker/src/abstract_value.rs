@@ -3149,7 +3149,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // if the path is a parameter, the reference is an artifact of its type
                 // and needs to be removed in the call context
                 match &path.value {
-                    PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].1.clone(),
+                    PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } => {
+                        arguments[*ordinal - 1].1.clone()
+                    }
                     _ => {
                         let refined_path = path.refine_parameters(arguments, result, fresh);
                         AbstractValue::make_reference(refined_path)
