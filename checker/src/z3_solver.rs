@@ -1265,18 +1265,46 @@ impl Z3Solver {
                 ),
                 _ => {
                     if target_type.is_integer() {
-                        if expression.infer_type() == *target_type {
+                        let exp_type = expression.infer_type();
+                        if exp_type == *target_type {
                             self.get_as_numeric_z3_ast(expression)
                         } else {
                             let bv_cast = self.bv_cast(expression, target_type, 128);
-                            (
-                                false,
-                                z3_sys::Z3_mk_bv2int(
-                                    self.z3_context,
-                                    bv_cast,
-                                    target_type.is_signed_integer(),
-                                ),
-                            )
+                            let bv_cast_to_int = z3_sys::Z3_mk_bv2int(
+                                self.z3_context,
+                                bv_cast,
+                                target_type.is_signed_integer(),
+                            );
+
+                            // If both exp_type and target_type are signed integers, or both are unsigned
+                            // integers, we don't need to cast exp to bit-vectors if the value of exp lies
+                            // in the range of target_type.
+                            if (exp_type.is_signed_integer() && target_type.is_signed_integer())
+                                || (exp_type.is_unsigned_integer()
+                                    && target_type.is_unsigned_integer())
+                            {
+                                let ast = self.get_as_numeric_z3_ast(expression).1;
+                                let target_type_min_ast =
+                                    self.get_constant_as_ast(&target_type.min_value());
+                                let target_type_max_ast =
+                                    self.get_constant_as_ast(&target_type.max_value());
+                                let range_check = self.get_range_check(
+                                    ast,
+                                    target_type_min_ast,
+                                    target_type_max_ast,
+                                );
+                                (
+                                    false,
+                                    z3_sys::Z3_mk_ite(
+                                        self.z3_context,
+                                        range_check,
+                                        ast,
+                                        bv_cast_to_int,
+                                    ),
+                                )
+                            } else {
+                                (false, bv_cast_to_int)
+                            }
                         }
                     } else {
                         (
