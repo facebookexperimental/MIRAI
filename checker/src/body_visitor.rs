@@ -1012,7 +1012,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             match &rvalue.expression {
                 Expression::CompileTimeConstant(..) | Expression::HeapBlock { .. } => {
                     if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
-                        if let PathSelector::Slice(..) = selector.as_ref() {
+                        if let PathSelector::Slice(..)
+                        | PathSelector::ConstantIndex { .. }
+                        | PathSelector::ConstantSlice { .. }
+                        | PathSelector::Index(..) = selector.as_ref()
+                        {
                             let source_path = Path::get_as_path(rvalue.clone());
                             let target_type = type_visitor::get_element_type(
                                 self.type_visitor
