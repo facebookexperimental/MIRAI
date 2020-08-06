@@ -530,6 +530,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         def_id: Option<DefId>,
         summary_cache_key: &Rc<String>,
     ) -> bool {
+        let environment_before_call = self.current_environment.clone();
         let saved_analyzing_static_var = self.analyzing_static_var;
         self.analyzing_static_var = true;
         let mut block_visitor;
@@ -561,6 +562,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 def_id,
                 generic_args,
                 callee_generic_argument_map,
+                environment_before_call,
                 func_const,
             );
             let func_ref = call_visitor
@@ -590,7 +592,15 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let side_effects = summary.side_effects.clone();
             self.fresh_variable_offset += 1_000_000;
             // Effects on the path
-            self.transfer_and_refine(&side_effects, path.clone(), &Path::new_result(), &None, &[]);
+            let environment = self.current_environment.clone();
+            self.transfer_and_refine(
+                &side_effects,
+                path.clone(),
+                &Path::new_result(),
+                &None,
+                &[],
+                &environment,
+            );
             // Effects on the heap
             for (path, value) in side_effects.iter() {
                 if path.is_rooted_by_abstract_heap_block() {
@@ -958,6 +968,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// for which the path is rooted by source_path and where rpath is path re-rooted with
     /// target_path and rvalue is value refined by replacing all occurrences of parameter values
     /// with the corresponding actual values.
+    /// The effects are refined in the context of the pre_environment
+    /// (the environment before the call executed), while the refined effects are applied to the
+    /// current state.
     #[logfn_inputs(TRACE)]
     pub fn transfer_and_refine(
         &mut self,
@@ -966,6 +979,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         source_path: &Rc<Path>,
         result_path: &Option<Rc<Path>>,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        pre_environment: &Environment,
     ) {
         let target_type = self
             .type_visitor
@@ -982,15 +996,17 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .replace_root(source_path, dummy_root)
                 .refine_parameters(arguments, result_path, self.fresh_variable_offset)
                 .replace_root(&refined_dummy_root, target_path.clone())
-                .refine_paths(&self.current_environment);
+                .refine_paths(pre_environment);
             let uncanonicalized_rvalue =
                 value.refine_parameters(arguments, result_path, self.fresh_variable_offset);
+            let mut rvalue = uncanonicalized_rvalue.refine_paths(pre_environment);
             if let Expression::Variable { path, .. } = &uncanonicalized_rvalue.expression {
                 // If the path contains a root that is a static, this will import the static into
                 // the calling scope.
-                self.imported_root_static(path);
+                if self.imported_root_static(path) {
+                    rvalue = uncanonicalized_rvalue.refine_paths(&self.current_environment);
+                }
             }
-            let rvalue = uncanonicalized_rvalue.refine_paths(&self.current_environment);
             trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {

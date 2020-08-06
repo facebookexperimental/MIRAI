@@ -495,6 +495,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             callee_def_id,
             Some(callee_generic_arguments),
             callee_generic_argument_map.clone(),
+            self.bv.current_environment.clone(),
             func_const,
         );
         call_visitor.actual_args = &actual_args;
