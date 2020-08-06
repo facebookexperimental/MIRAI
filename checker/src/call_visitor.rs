@@ -19,6 +19,7 @@ use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::block_visitor::BlockVisitor;
 use crate::body_visitor::BodyVisitor;
 use crate::constant_domain::{ConstantDomain, FunctionReference};
+use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
 use crate::known_names::KnownNames;
@@ -40,6 +41,7 @@ pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
     pub actual_argument_types: &'call [Ty<'tcx>],
     pub cleanup: Option<mir::BasicBlock>,
     pub destination: Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+    pub environment_before_call: Environment,
     pub function_constant_args: &'call [(Rc<Path>, Rc<AbstractValue>)],
 }
 
@@ -59,6 +61,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         callee_def_id: DefId,
         callee_generic_arguments: Option<SubstsRef<'tcx>>,
         callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
+        environment_before_call: Environment,
         func_const: ConstantDomain,
     ) -> CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
         if let ConstantDomain::Function(func_ref) = &func_const {
@@ -75,6 +78,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 actual_argument_types: &[],
                 cleanup: None,
                 destination: None,
+                environment_before_call,
                 function_constant_args: &[],
             }
         } else {
@@ -443,12 +447,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .get_func_ref(&generator_fun_val)
                     .expect("a fun ref");
                 let generator_def_id = generator_fun_ref.def_id.expect("a def id");
+                let environment_before_call = self.block_visitor.bv.current_environment.clone();
                 let mut block_visitor = BlockVisitor::<E>::new(self.block_visitor.bv);
                 let mut generator_call_visitor = CallVisitor::new(
                     &mut block_visitor,
                     generator_def_id,
                     None,
                     None,
+                    environment_before_call,
                     ConstantDomain::Function(generator_fun_ref),
                 );
                 self.block_visitor.bv.async_fn_summary =
@@ -927,12 +933,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .type_visitor
                     .get_generic_arguments_map(def_id, substs, &actual_argument_types)
             }
+            let environment_before_call = self.block_visitor.bv.current_environment.clone();
             let mut block_visitor = BlockVisitor::<E>::new(self.block_visitor.bv);
             let mut indirect_call_visitor = CallVisitor::new(
                 &mut block_visitor,
                 def_id,
                 generic_arguments,
                 argument_map,
+                environment_before_call,
                 func_const,
             );
             indirect_call_visitor.actual_args = &actual_args;
@@ -2015,6 +2023,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     /// Updates the current state to reflect the effects of a normal return from the function call.
+    /// The paths and expressions of the side-effects are refined in the context of the pre-state
+    /// (the environment before the call executed), while the refined effects are applied to the
+    /// current state.
     #[logfn_inputs(TRACE)]
     pub fn transfer_and_refine_normal_return_state(&mut self, function_summary: &Summary) {
         let destination = self.destination;
@@ -2056,6 +2067,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &return_value_path,
                     result_path,
                     self.actual_args,
+                    &self.environment_before_call,
                 );
 
                 // Effects on the call arguments
@@ -2067,6 +2079,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         &parameter_path,
                         result_path,
                         self.actual_args,
+                        &self.environment_before_call,
                     );
                     check_for_early_return!(self.block_visitor.bv);
                 }
@@ -2123,6 +2136,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     /// Handle the case where the called function does not complete normally.
+    /// The paths and expressions of the side-effects are refined in the context of the pre-state
+    /// (the environment before the call executed), while the refined effects are applied to the
+    /// current state.
     #[logfn_inputs(TRACE)]
     pub fn transfer_and_refine_cleanup_state(&mut self, function_summary: &Summary) {
         if let Some(cleanup_target) = self.cleanup {
@@ -2134,6 +2150,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &parameter_path,
                     &None,
                     self.actual_args,
+                    &self.environment_before_call,
                 );
             }
             let mut exit_condition = self

@@ -253,10 +253,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             TyKind::Closure(def_id, subs) => {
                                 let _ = def_id;
                                 return subs.types().nth(*ordinal).unwrap_or_else(|| {
-                                    unrecoverable!(format!(
-                                        "closure field not found {:?} {:?}",
-                                        def_id, ordinal
-                                    ))
+                                    info!("closure field not found {:?} {:?}", def_id, ordinal);
+                                    self.tcx.types.never
                                 });
                             }
                             TyKind::Opaque(def_id, subs) => {
