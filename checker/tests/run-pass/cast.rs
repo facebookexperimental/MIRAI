@@ -15,6 +15,18 @@ fn foo(i: u16) {
     }
 }
 
-pub fn main() {
-    foo(17);
+pub fn test1(i: u16) {
+    foo(i);
 }
+
+fn bar(i: usize) {
+    if i < 16 {
+        verify!((i as u16) < 16);
+    }
+}
+
+pub fn test2(i: usize) {
+    bar(i);
+}
+
+pub fn main() {}
