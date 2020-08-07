@@ -559,16 +559,23 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     return;
                 }
 
-                // If the condition is always true, this assumption is redundant
-                if cond_as_bool.unwrap_or(false) {
-                    let span = self.block_visitor.bv.current_span;
-                    let warning =
-                        self.block_visitor.bv.cv.session.struct_span_warn(
-                            span,
-                            "assumption is provably true and can be deleted",
-                        );
-                    self.block_visitor.bv.emit_diagnostic(warning);
-                }
+                // If the condition is always true, this assumption is redundant. If false, the
+                // assumption is ignored. Otherwise, no diagnostics are emitted.
+                let message = if cond_as_bool == Some(true) {
+                    "assumption is provably true and can be deleted"
+                } else if cond_as_bool == Some(false) {
+                    "assumption is provably false and it will be ignored in the assertion"
+                } else {
+                    return;
+                };
+                let span = self.block_visitor.bv.current_span;
+                let warning = self
+                    .block_visitor
+                    .bv
+                    .cv
+                    .session
+                    .struct_span_warn(span, message);
+                self.block_visitor.bv.emit_diagnostic(warning);
             }
             KnownNames::MiraiPostcondition => {
                 assume!(self.actual_args.len() == 3); // The type checker ensures this.
@@ -1063,12 +1070,21 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_assume(&mut self) {
         precondition!(self.actual_args.len() == 1);
         let assumed_condition = &self.actual_args[0].1;
-        let exit_condition = self
-            .block_visitor
-            .bv
-            .current_environment
-            .entry_condition
-            .and(assumed_condition.clone());
+        // Ignore assertion of the assumed condition, when it is provably false
+        // or add the condition to assertion.
+        let exit_condition = if let Some(false) = assumed_condition.as_bool_if_known() {
+            self.block_visitor
+                .bv
+                .current_environment
+                .entry_condition
+                .and(Rc::new(abstract_value::TRUE))
+        } else {
+            self.block_visitor
+                .bv
+                .current_environment
+                .entry_condition
+                .and(assumed_condition.clone())
+        };
         if let Some((_, target)) = &self.destination {
             self.block_visitor
                 .bv
