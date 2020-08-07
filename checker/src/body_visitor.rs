@@ -1010,30 +1010,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
-                Expression::CompileTimeConstant(..) | Expression::HeapBlock { .. } => {
-                    if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
-                        if let PathSelector::Slice(..)
-                        | PathSelector::ConstantIndex { .. }
-                        | PathSelector::ConstantSlice { .. }
-                        | PathSelector::Index(..) = selector.as_ref()
-                        {
-                            let source_path = Path::get_as_path(rvalue.clone());
-                            let target_type = type_visitor::get_element_type(
-                                self.type_visitor
-                                    .get_path_rustc_type(&target_path, self.current_span),
-                            );
-                            self.copy_or_move_elements(
-                                tpath.clone(),
-                                source_path,
-                                target_type,
-                                false,
-                            );
-                            continue;
-                        }
-                    }
-                    self.current_environment.update_value_at(tpath, rvalue);
-                    continue;
-                }
                 Expression::HeapBlockLayout { source, .. } => {
                     match source {
                         LayoutSource::DeAlloc => {
@@ -1063,9 +1039,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         }
                         _ => {}
                     }
-
                     self.current_environment.update_value_at(tpath, rvalue);
                     continue;
+                }
+                Expression::Join { left, right, .. } => {
+                    // Refinement did not update the path since it is not known to it
+                    rvalue = left.join(right.clone(), &tpath);
                 }
                 Expression::Offset { .. } => {
                     if self.check_for_errors && self.function_being_analyzed_is_root() {
@@ -1121,13 +1100,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     result_type,
                     ..
                 } => {
-                    let rvalue = callee.uninterpreted_call(
+                    rvalue = callee.uninterpreted_call(
                         arguments.clone(),
                         result_type.clone(),
                         tpath.clone(),
                     );
-                    self.current_environment.update_value_at(tpath, rvalue);
-                    continue;
                 }
                 Expression::Variable { path, var_type } => {
                     if matches!(&path.value, PathEnum::PhantomData) {
@@ -1154,7 +1131,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         }
                     } else if path.is_rooted_by_parameter() {
                         let cpath = path.replace_parameter_root_with_copy();
-                        let rvalue = AbstractValue::make_typed_unknown(var_type.clone(), cpath);
+                        rvalue = AbstractValue::make_typed_unknown(var_type.clone(), cpath);
+                        // todo: investigate test failures that happen when removing the next two lines
                         self.current_environment.update_value_at(tpath, rvalue);
                         continue;
                     } else if rtype == ExpressionType::NonPrimitive {
@@ -1162,11 +1140,22 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     }
                 }
                 Expression::Widen { operand, .. } => {
-                    let rvalue = operand.widen(&tpath);
-                    self.current_environment.update_value_at(tpath, rvalue);
-                    continue;
+                    // Refinement did not update the path since it is not known to it
+                    rvalue = operand.widen(&tpath);
                 }
                 _ => {}
+            }
+            // todo: need to call copy_or_move_elements if any selector in tpath is a slice or index
+            if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
+                if let PathSelector::Slice(..) | PathSelector::Index(..) = selector.as_ref() {
+                    let source_path = Path::get_as_path(rvalue.clone());
+                    let target_type = type_visitor::get_element_type(
+                        self.type_visitor
+                            .get_path_rustc_type(&target_path, self.current_span),
+                    );
+                    self.copy_or_move_elements(tpath.clone(), source_path, target_type, false);
+                    continue;
+                }
             }
             if rtype != ExpressionType::NonPrimitive {
                 // If tpath is a tag field path, we need to propagate the tags recorded in rvalue
