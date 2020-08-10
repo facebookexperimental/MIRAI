@@ -151,6 +151,7 @@ impl MiraiCallbacks {
             || file_name.contains("common/metrics/src") // stack overflow
             || file_name.contains("config/config-builder/src") // false positives
             || file_name.contains("execution/executor/src") // false positives
+            || file_name.contains("execution/execution-correctness/src") // takes too long
             || file_name.contains("json-rpc/src") // compiler panic
             || file_name.contains("language/bytecode-verifier/src") // resolve error
             || file_name.contains("language/compiler/src") // takes too long

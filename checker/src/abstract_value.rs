@@ -345,6 +345,17 @@ impl AbstractValue {
     pub fn make_typed_unknown(var_type: ExpressionType, path: Rc<Path>) -> Rc<AbstractValue> {
         AbstractValue::make_from(Expression::Variable { path, var_type }, 1)
     }
+
+    /// Creates an abstract value about which nothing is known other than its type and address.
+    /// This value has been refined in the pre-state of a call and should not be refined again
+    /// during the current function invocation.
+    #[logfn_inputs(TRACE)]
+    pub fn make_refined_parameter_copy(
+        var_type: ExpressionType,
+        path: Rc<Path>,
+    ) -> Rc<AbstractValue> {
+        AbstractValue::make_from(Expression::RefinedParameterCopy { path, var_type }, 1)
+    }
 }
 
 pub trait AbstractValueTrait: Sized {
@@ -431,6 +442,7 @@ pub trait AbstractValueTrait: Sized {
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
+        pre_environment: &Environment,
         fresh: usize,
     ) -> Self;
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Self;
@@ -1181,6 +1193,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .try_to_retype_as(target_type)
                 .subtract(right.try_to_retype_as(target_type)),
             Expression::Neg { operand } => operand.try_to_retype_as(target_type).negate(),
+            Expression::RefinedParameterCopy { path, .. } => {
+                AbstractValue::make_refined_parameter_copy(target_type.clone(), path.clone())
+            }
             Expression::Switch {
                 discriminator,
                 cases,
@@ -1244,6 +1259,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 } else {
                     AbstractValue::make_typed_unknown(target_type, path.clone())
                 }
+            }
+            Expression::RefinedParameterCopy { path, .. } => {
+                AbstractValue::make_refined_parameter_copy(
+                    target_type,
+                    Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
+                )
             }
             Expression::Switch {
                 discriminator,
@@ -1632,9 +1653,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match &self.expression {
             Expression::HeapBlock { is_zeroed, .. } => *is_zeroed,
             Expression::Offset { left, .. } => left.is_contained_in_zeroed_heap_block(),
-            Expression::Reference(path) | Expression::Variable { path, .. } => {
-                path.is_rooted_by_zeroed_heap_block()
-            }
+            Expression::Reference(path)
+            | Expression::RefinedParameterCopy { path, .. }
+            | Expression::Variable { path, .. } => path.is_rooted_by_zeroed_heap_block(),
             _ => false,
         }
     }
@@ -2541,6 +2562,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Constructs an element of the Interval domain for simple expressions.
     #[logfn_inputs(TRACE)]
     fn get_as_interval(&self) -> IntervalDomain {
+        if self.expression_size > k_limits::MAX_EXPRESSION_SIZE / 10 {
+            return interval_domain::BOTTOM;
+        }
         match &self.expression {
             Expression::Top => interval_domain::BOTTOM,
             Expression::Add { left, right } => left.get_as_interval().add(&right.get_as_interval()),
@@ -2565,7 +2589,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     acc.widen(&result.get_as_interval())
                 }),
             Expression::TaggedExpression { operand, .. } => operand.get_as_interval(),
-            Expression::Variable { .. } => interval_domain::BOTTOM,
             Expression::Widen { operand, .. } => {
                 let interval = operand.get_as_interval();
                 if interval.is_bottom() {
@@ -2629,7 +2652,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Reference { .. }
             | Expression::UnknownTagCheck { .. } => return TagDomain::empty_set(),
 
-            Expression::UnknownModelField { .. }
+            Expression::RefinedParameterCopy { .. }
+            | Expression::UnknownModelField { .. }
             | Expression::UnknownTagField { .. }
             | Expression::Variable { .. } => {
                 // A variable is an unknown value of a place in memory.
@@ -2863,6 +2887,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 let refined_path = path.refine_paths(environment);
                 AbstractValue::make_reference(refined_path)
             }
+            Expression::RefinedParameterCopy { path, var_type } => {
+                let refined_path = path.refine_paths(environment);
+                AbstractValue::make_refined_parameter_copy(var_type.clone(), refined_path)
+            }
             Expression::Rem { left, right } => left
                 .refine_paths(environment)
                 .remainder(right.refine_paths(environment)),
@@ -3008,47 +3036,48 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
+        pre_environment: &Environment,
         // An offset to add to locals from the called function so that they do not clash with caller locals.
         fresh: usize,
     ) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Bottom | Expression::Top => self.clone(),
             Expression::Add { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .addition(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .addition(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::AddOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .add_overflows(
-                    right.refine_parameters(arguments, result, fresh),
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
                     result_type.clone(),
                 ),
             Expression::And { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .and(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .and(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::BitAnd { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .bit_and(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .bit_and(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::BitNot {
                 operand,
                 result_type,
             } => operand
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .bit_not(result_type.clone()),
             Expression::BitOr { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .bit_or(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .bit_or(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::BitXor { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .bit_xor(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .bit_xor(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::Cast {
                 operand,
                 target_type,
             } => operand
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .cast(target_type.clone()),
             Expression::CompileTimeConstant(..) => self.clone(),
             Expression::ConditionalExpression {
@@ -3056,23 +3085,28 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent,
                 alternate,
             } => condition
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .conditional_expression(
-                    consequent.refine_parameters(arguments, result, fresh),
-                    alternate.refine_parameters(arguments, result, fresh),
+                    consequent.refine_parameters(arguments, result, pre_environment, fresh),
+                    alternate.refine_parameters(arguments, result, pre_environment, fresh),
                 ),
             Expression::Div { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .divide(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .divide(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::Equals { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .equals(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .equals(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::GreaterOrEqual { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .greater_or_equal(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .greater_or_equal(right.refine_parameters(
+                    arguments,
+                    result,
+                    pre_environment,
+                    fresh,
+                )),
             Expression::GreaterThan { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .greater_than(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .greater_than(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::HeapBlock {
                 abstract_address,
                 is_zeroed,
@@ -3089,62 +3123,73 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 source,
             } => AbstractValue::make_from(
                 Expression::HeapBlockLayout {
-                    length: length.refine_parameters(arguments, result, fresh),
-                    alignment: alignment.refine_parameters(arguments, result, fresh),
+                    length: length.refine_parameters(arguments, result, pre_environment, fresh),
+                    alignment: alignment.refine_parameters(
+                        arguments,
+                        result,
+                        pre_environment,
+                        fresh,
+                    ),
                     source: *source,
                 },
                 1,
             ),
             Expression::IntrinsicBinary { left, right, name } => left
-                .refine_parameters(arguments, result, fresh)
-                .intrinsic_binary(right.refine_parameters(arguments, result, fresh), *name),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .intrinsic_binary(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    *name,
+                ),
             Expression::IntrinsicBitVectorUnary {
                 operand,
                 bit_length,
                 name,
             } => operand
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .intrinsic_bit_vector_unary(*bit_length, *name),
             Expression::IntrinsicFloatingPointUnary { operand, name } => operand
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .intrinsic_floating_point_unary(*name),
             Expression::Join { left, right, path } => left
-                .refine_parameters(arguments, result, fresh)
-                .join(right.refine_parameters(arguments, result, fresh), &path),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .join(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    &path,
+                ),
             Expression::LessOrEqual { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .less_or_equal(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .less_or_equal(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::LessThan { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .less_than(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .less_than(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::LogicalNot { operand } => operand
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .logical_not(),
             Expression::Mul { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .multiply(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .multiply(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::MulOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .mul_overflows(
-                    right.refine_parameters(arguments, result, fresh),
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
                     result_type.clone(),
                 ),
             Expression::Ne { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .not_equals(right.refine_parameters(arguments, result, fresh)),
-            Expression::Neg { operand } => {
-                operand.refine_parameters(arguments, result, fresh).negate()
-            }
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .not_equals(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::Neg { operand } => operand
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .negate(),
             Expression::Offset { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .offset(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .offset(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::Or { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .or(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .or(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::Reference(path) => {
                 // if the path is a parameter, the reference is an artifact of its type
                 // and needs to be removed in the call context
@@ -3153,56 +3198,70 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         arguments[*ordinal - 1].1.clone()
                     }
                     _ => {
-                        let refined_path = path.refine_parameters(arguments, result, fresh);
+                        let refined_path =
+                            path.refine_parameters(arguments, result, pre_environment, fresh);
                         AbstractValue::make_reference(refined_path)
                     }
                 }
             }
+            Expression::RefinedParameterCopy { var_type, path } => {
+                // This copy of the unknown value of a parameter is being transferred into the
+                // calling context, where it should be refined again as needed because the corresponding
+                // argument value may be known in the calling context.
+                AbstractValue::make_typed_unknown(var_type.clone(), path.clone()).refine_parameters(
+                    arguments,
+                    result,
+                    pre_environment,
+                    fresh,
+                )
+            }
             Expression::Rem { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .remainder(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .remainder(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::Shl { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .shift_left(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .shift_left(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::ShlOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .shl_overflows(
-                    right.refine_parameters(arguments, result, fresh),
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
                     result_type.clone(),
                 ),
             Expression::Shr {
                 left,
                 right,
                 result_type,
-            } => left.refine_parameters(arguments, result, fresh).shr(
-                right.refine_parameters(arguments, result, fresh),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .shr(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    result_type.clone(),
+                ),
             Expression::ShrOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .shr_overflows(
-                    right.refine_parameters(arguments, result, fresh),
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
                     result_type.clone(),
                 ),
             Expression::Sub { left, right } => left
-                .refine_parameters(arguments, result, fresh)
-                .subtract(right.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .subtract(right.refine_parameters(arguments, result, pre_environment, fresh)),
             Expression::SubOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .sub_overflows(
-                    right.refine_parameters(arguments, result, fresh),
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
                     result_type.clone(),
                 ),
             Expression::Switch {
@@ -3210,21 +3269,31 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 cases,
                 default,
             } => discriminator
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .switch(
                     cases
                         .iter()
                         .map(|(case_val, result_val)| {
                             (
-                                case_val.refine_parameters(arguments, result, fresh),
-                                result_val.refine_parameters(arguments, result, fresh),
+                                case_val.refine_parameters(
+                                    arguments,
+                                    result,
+                                    pre_environment,
+                                    fresh,
+                                ),
+                                result_val.refine_parameters(
+                                    arguments,
+                                    result,
+                                    pre_environment,
+                                    fresh,
+                                ),
                             )
                         })
                         .collect(),
-                    default.refine_parameters(arguments, result, fresh),
+                    default.refine_parameters(arguments, result, pre_environment, fresh),
                 ),
             Expression::TaggedExpression { operand, tag } => operand
-                .refine_parameters(arguments, result, fresh)
+                .refine_parameters(arguments, result, pre_environment, fresh)
                 .add_tag(*tag),
             Expression::UninterpretedCall {
                 callee,
@@ -3232,12 +3301,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 result_type,
                 path,
             } => {
-                let refined_callee = callee.refine_parameters(arguments, result, fresh);
+                let refined_callee =
+                    callee.refine_parameters(arguments, result, pre_environment, fresh);
                 let refined_arguments = args
                     .iter()
-                    .map(|arg| arg.refine_parameters(arguments, result, fresh))
+                    .map(|arg| arg.refine_parameters(arguments, result, pre_environment, fresh))
                     .collect();
-                let refined_path = path.refine_parameters(arguments, result, fresh);
+                let refined_path =
+                    path.refine_parameters(arguments, result, pre_environment, fresh);
                 refined_callee.uninterpreted_call(
                     refined_arguments,
                     result_type.clone(),
@@ -3245,7 +3316,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 )
             }
             Expression::UnknownModelField { path, default } => {
-                let refined_path = path.refine_parameters(arguments, result, fresh);
+                let refined_path =
+                    path.refine_parameters(arguments, result, pre_environment, fresh);
                 AbstractValue::make_from(
                     Expression::UnknownModelField {
                         path: refined_path,
@@ -3259,27 +3331,43 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 tag,
                 checking_presence,
             } => AbstractValue::make_tag_check(
-                operand.refine_parameters(arguments, result, fresh),
+                operand.refine_parameters(arguments, result, pre_environment, fresh),
                 *tag,
                 *checking_presence,
             ),
             Expression::UnknownTagField { path } => AbstractValue::make_from(
                 Expression::UnknownTagField {
-                    path: path.refine_parameters(arguments, result, fresh),
+                    path: path.refine_parameters(arguments, result, pre_environment, fresh),
                 },
                 1,
             ),
             Expression::Variable { path, var_type } => {
-                let refined_path = path.refine_parameters(arguments, result, fresh);
+                let refined_path =
+                    path.refine_parameters(arguments, result, pre_environment, fresh);
                 if let PathEnum::Alias { value } = &refined_path.value {
                     value.clone()
+                } else if path.is_rooted_by_parameter_copy() {
+                    // Do path refinement now, using the pre_environment.
+                    let refined_path = refined_path.refine_paths(pre_environment);
+                    // If the path has a value in the pre_environment, use the value
+                    if let Some(val) = pre_environment.value_at(&refined_path) {
+                        return val.clone();
+                    }
+                    // If not, make an unknown value. If the path is still rooted in parameter
+                    // mark the new value as refined, so that it does not get affected by subsequent
+                    // side effects on the parameter.
+                    if refined_path.is_rooted_by_parameter() {
+                        AbstractValue::make_refined_parameter_copy(var_type.clone(), refined_path)
+                    } else {
+                        AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
+                    }
                 } else {
                     AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
                 }
             }
             Expression::Widen { path, operand, .. } => operand
-                .refine_parameters(arguments, result, fresh)
-                .widen(&path.refine_parameters(arguments, result, fresh)),
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .widen(&path.refine_parameters(arguments, result, pre_environment, fresh)),
         }
     }
 
@@ -3491,7 +3579,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         .or(right.refine_with(path_condition, depth + 1))
                 }
             }
-            Expression::Reference(..) => self.clone(),
+            Expression::Reference(..) | Expression::RefinedParameterCopy { .. } => {
+                // We could refine their paths, which will increase precision, but it does not
+                // currently seem cost-effective. This does not affect soundness.
+                self.clone()
+            }
             Expression::Rem { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .remainder(right.refine_with(path_condition, depth + 1)),
@@ -3618,6 +3710,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::CompileTimeConstant(..)
             | Expression::HeapBlock { .. }
             | Expression::Reference(..)
+            | Expression::RefinedParameterCopy { .. }
             | Expression::Top
             | Expression::Variable { .. }
             | Expression::Widen { .. } => self.clone(),

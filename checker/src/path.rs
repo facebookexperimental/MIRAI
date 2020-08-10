@@ -82,6 +82,7 @@ impl Path {
             Expression::HeapBlock { .. } => PathEnum::HeapBlock { value }.into(),
             Expression::Offset { .. } => PathEnum::Offset { value }.into(),
             Expression::UninterpretedCall { path, .. }
+            | Expression::RefinedParameterCopy { path, .. }
             | Expression::Variable { path, .. }
             | Expression::Widen { path, .. } => path.as_ref().clone(),
             _ => PathEnum::Alias { value }.into(),
@@ -464,6 +465,16 @@ impl Path {
         }
     }
 
+    /// True if path qualifies a parameter copy, or another qualified path rooted by a parameter copy.
+    #[logfn_inputs(TRACE)]
+    pub fn is_rooted_by_parameter_copy(&self) -> bool {
+        match &self.value {
+            PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_parameter_copy(),
+            PathEnum::ParameterCopy { .. } => true,
+            _ => false,
+        }
+    }
+
     // Returns the length of the path.
     #[logfn_inputs(TRACE)]
     pub fn path_length(&self) -> usize {
@@ -656,6 +667,7 @@ pub trait PathRefinement: Sized {
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
+        pre_environment: &Environment,
         fresh: usize,
     ) -> Rc<Path>;
 
@@ -685,11 +697,13 @@ impl PathRefinement for Rc<Path> {
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
+        pre_environment: &Environment,
         fresh: usize,
     ) -> Rc<Path> {
         match &self.value {
             PathEnum::HeapBlock { value } => {
-                let refined_value = value.refine_parameters(arguments, result, fresh);
+                let refined_value =
+                    value.refine_parameters(arguments, result, pre_environment, fresh);
                 Path::get_as_path(refined_value)
             }
             PathEnum::LocalVariable { ordinal } => {
@@ -699,9 +713,12 @@ impl PathRefinement for Rc<Path> {
                 }
                 Path::new_local((*ordinal) + fresh)
             }
-            PathEnum::Offset { value } => {
-                Path::get_as_path(value.refine_parameters(arguments, result, fresh))
-            }
+            PathEnum::Offset { value } => Path::get_as_path(value.refine_parameters(
+                arguments,
+                result,
+                pre_environment,
+                fresh,
+            )),
             PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } => {
                 if *ordinal > arguments.len() {
                     debug!("Summary refers to a parameter that does not have a matching argument");
@@ -723,8 +740,10 @@ impl PathRefinement for Rc<Path> {
                 selector,
                 ..
             } => {
-                let refined_qualifier = qualifier.refine_parameters(arguments, result, fresh);
-                let refined_selector = selector.refine_parameters(arguments, result, fresh);
+                let refined_qualifier =
+                    qualifier.refine_parameters(arguments, result, pre_environment, fresh);
+                let refined_selector =
+                    selector.refine_parameters(arguments, result, pre_environment, fresh);
                 Path::new_qualified(refined_qualifier, refined_selector)
             }
             _ => self.clone(),
@@ -1038,6 +1057,7 @@ pub trait PathSelectorRefinement: Sized {
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
+        pre_environment: &Environment,
         fresh: usize,
     ) -> Self;
 
@@ -1055,15 +1075,18 @@ impl PathSelectorRefinement for Rc<PathSelector> {
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
+        pre_environment: &Environment,
         fresh: usize,
     ) -> Rc<PathSelector> {
         match self.as_ref() {
             PathSelector::Index(value) => {
-                let refined_value = value.refine_parameters(arguments, result, fresh);
+                let refined_value =
+                    value.refine_parameters(arguments, result, pre_environment, fresh);
                 Rc::new(PathSelector::Index(refined_value))
             }
             PathSelector::Slice(value) => {
-                let refined_value = value.refine_parameters(arguments, result, fresh);
+                let refined_value =
+                    value.refine_parameters(arguments, result, pre_environment, fresh);
                 Rc::new(PathSelector::Slice(refined_value))
             }
             _ => self.clone(),

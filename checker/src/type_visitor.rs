@@ -170,9 +170,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     self.tcx
                         .mk_imm_ref(self.tcx.lifetimes.re_static, target_type)
                 }
-                Expression::Variable { path, .. } | Expression::Widen { path, .. } => {
-                    self.get_path_rustc_type(path, current_span)
-                }
+                Expression::RefinedParameterCopy { path, .. }
+                | Expression::Variable { path, .. }
+                | Expression::Widen { path, .. } => self.get_path_rustc_type(path, current_span),
                 _ => value.expression.infer_type().as_rustc_type(self.tcx),
             },
             PathEnum::LocalVariable { ordinal } => {

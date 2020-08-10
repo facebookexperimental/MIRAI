@@ -1267,7 +1267,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // use the default value, but only if the qualifier is not rooted in a parameter
                 // value since only the caller will know what the values of the fields are.
                 match &self.actual_args[0].1.expression {
-                    Expression::Reference(path) | Expression::Variable { path, .. }
+                    Expression::Reference(path)
+                    | Expression::RefinedParameterCopy { path, .. }
+                    | Expression::Variable { path, .. }
                         if path.is_rooted_by_parameter() =>
                     {
                         //todo: if the default value is a non primitive then we lose the structure
@@ -1883,12 +1885,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// preconditions and add the post conditions to the exit condition guarding the post call target block.
     #[logfn_inputs(TRACE)]
     pub fn transfer_and_refine_into_current_environment(&mut self, function_summary: &Summary) {
-        debug!("def_id {:?}", self.callee_def_id);
-        debug!("summary {:?}", function_summary);
-        debug!("pre env {:?}", self.block_visitor.bv.current_environment);
-        debug!(
+        trace!("def_id {:?}", self.callee_def_id);
+        trace!("summary {:?}", function_summary);
+        trace!("pre env {:?}", self.block_visitor.bv.current_environment);
+        trace!(
             "target {:?} arguments {:?}",
-            self.destination, self.actual_args
+            self.destination,
+            self.actual_args
         );
         self.check_preconditions_if_necessary(&function_summary);
         self.transfer_and_refine_normal_return_state(&function_summary);
@@ -1930,6 +1933,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .refine_parameters(
                     self.actual_args,
                     &None,
+                    &self.environment_before_call,
                     self.block_visitor.bv.fresh_variable_offset,
                 )
                 .refine_paths(&self.block_visitor.bv.current_environment);
@@ -2057,6 +2061,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             .refine_parameters(
                                 self.actual_args,
                                 result_path,
+                                &self.environment_before_call,
                                 self.block_visitor.bv.fresh_variable_offset,
                             )
                             .refine_paths(&self.block_visitor.bv.current_environment);
@@ -2064,6 +2069,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             path.refine_parameters(
                                 self.actual_args,
                                 result_path,
+                                &self.environment_before_call,
                                 self.block_visitor.bv.fresh_variable_offset,
                             ),
                             rvalue,
@@ -2138,10 +2144,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             if let Some(post_condition) = &function_summary.post_condition {
                 let target_path = self.block_visitor.visit_place(place);
                 let result_path = &Some(target_path);
-                //todo: need to refine old param values with self.environment_before_call
                 let refined_post_condition = post_condition.refine_parameters(
                     self.actual_args,
                     &result_path,
+                    &self.environment_before_call,
                     self.block_visitor.bv.fresh_variable_offset,
                 );
                 debug!(
