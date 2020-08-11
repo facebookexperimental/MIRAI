@@ -605,8 +605,18 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             for (path, value) in side_effects.iter() {
                 if path.is_rooted_by_abstract_heap_block() {
                     self.current_environment.update_value_at(
-                        path.refine_parameters(&[], &None, self.fresh_variable_offset),
-                        value.refine_parameters(&[], &None, self.fresh_variable_offset),
+                        path.refine_parameters(
+                            &[],
+                            &None,
+                            &self.current_environment,
+                            self.fresh_variable_offset,
+                        ),
+                        value.refine_parameters(
+                            &[],
+                            &None,
+                            &self.current_environment,
+                            self.fresh_variable_offset,
+                        ),
                     );
                 }
             }
@@ -692,7 +702,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .map(|precondition| {
                 let refined_condition = precondition
                     .condition
-                    .refine_parameters(&actual_args, &None, self.fresh_variable_offset)
+                    .refine_parameters(
+                        &actual_args,
+                        &None,
+                        &self.current_environment,
+                        self.fresh_variable_offset,
+                    )
                     .refine_paths(&self.current_environment);
                 Precondition {
                     condition: refined_condition,
@@ -994,11 +1009,20 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let refined_dummy_root = Path::new_local(self.fresh_variable_offset + 999_999);
             let mut tpath = path
                 .replace_root(source_path, dummy_root)
-                .refine_parameters(arguments, result_path, self.fresh_variable_offset)
+                .refine_parameters(
+                    arguments,
+                    result_path,
+                    pre_environment,
+                    self.fresh_variable_offset,
+                )
                 .replace_root(&refined_dummy_root, target_path.clone())
                 .refine_paths(pre_environment);
-            let uncanonicalized_rvalue =
-                value.refine_parameters(arguments, result_path, self.fresh_variable_offset);
+            let uncanonicalized_rvalue = value.refine_parameters(
+                arguments,
+                result_path,
+                pre_environment,
+                self.fresh_variable_offset,
+            );
             let mut rvalue = uncanonicalized_rvalue.refine_paths(pre_environment);
             if let Expression::Variable { path, .. } = &uncanonicalized_rvalue.expression {
                 // If the path contains a root that is a static, this will import the static into
@@ -1028,6 +1052,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                                     .refine_parameters(
                                         arguments,
                                         result_path,
+                                        pre_environment,
                                         self.fresh_variable_offset,
                                     )
                                     .refine_paths(&self.current_environment);
@@ -1093,6 +1118,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             }
                         }
                     }
+                }
+                Expression::RefinedParameterCopy { .. } => {
+                    self.current_environment.update_value_at(tpath, rvalue);
+                    continue;
                 }
                 Expression::UninterpretedCall {
                     callee,
@@ -1873,7 +1902,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 update(self, qualified_path, old_value, value.clone());
                 no_children = false;
             }
-            if let Expression::Variable { path, .. } = &value.expression {
+            if let Expression::RefinedParameterCopy { path, .. }
+            | Expression::Variable { path, .. } = &value.expression
+            {
                 if path.is_rooted_by_parameter() {
                     update(self, target_path.clone(), value.clone(), value.clone());
                     no_children = false;
@@ -2347,7 +2378,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
         // Consider the case where there is no value for the tag field in the environment, i.e.,
         // the result of the lookup is just a variable that reflects tag_field_path.
-        if matches!(&tag_field_value.expression, Expression::Variable { path, .. } if path.eq(&tag_field_path))
+        if matches!(&tag_field_value.expression, Expression::RefinedParameterCopy {path, ..} | Expression::Variable { path, .. } if path.eq(&tag_field_path))
         {
             if qualifier.is_rooted_by_parameter() {
                 // If qualifier is rooted by a function parameter, return an unknown tag field.

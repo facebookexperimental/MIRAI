@@ -537,6 +537,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     } else {
                         match &arg_val.expression {
                             Expression::Reference(ipath)
+                            | Expression::RefinedParameterCopy { path: ipath, .. }
                             | Expression::Variable { path: ipath, .. } => {
                                 if (*path) == *ipath || path.is_rooted_by(ipath) {
                                     let param_path_root = Path::new_parameter(i + 1);
@@ -605,6 +606,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 return extract_func_ref(c);
             }
             Expression::Reference(path)
+            | Expression::RefinedParameterCopy {
+                path,
+                var_type: ExpressionType::NonPrimitive,
+            }
+            | Expression::RefinedParameterCopy {
+                path,
+                var_type: ExpressionType::ThinPointer,
+            }
             | Expression::Variable {
                 path,
                 var_type: ExpressionType::NonPrimitive,

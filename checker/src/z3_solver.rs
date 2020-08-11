@@ -317,6 +317,7 @@ impl Z3Solver {
                 path,
                 ..
             }
+            | Expression::RefinedParameterCopy { path, var_type }
             | Expression::Variable { path, var_type } => self.general_variable(path, &var_type),
             Expression::UnknownTagCheck {
                 operand,
@@ -637,6 +638,7 @@ impl Z3Solver {
 
             Expression::UnknownModelField { path, .. }
             | Expression::UnknownTagField { path }
+            | Expression::RefinedParameterCopy { path, .. }
             | Expression::Variable { path, .. } => {
                 // A variable is an unknown value of a place in memory.
                 // Therefore, returns an unknown tag check via the logical predicate has_tag(path, tag).
@@ -1061,6 +1063,7 @@ impl Z3Solver {
                 path,
                 ..
             }
+            | Expression::RefinedParameterCopy { path, var_type }
             | Expression::Variable { path, var_type } => {
                 self.numeric_variable(expression, path, var_type)
             }
@@ -1526,6 +1529,7 @@ impl Z3Solver {
                 path,
                 ..
             }
+            | Expression::RefinedParameterCopy { path, var_type }
             | Expression::Variable { path, var_type } => {
                 if *var_type != ExpressionType::Bool {
                     debug!("path {:?}, type {:?}", path, var_type);
@@ -1655,6 +1659,7 @@ impl Z3Solver {
                 path,
                 ..
             }
+            | Expression::RefinedParameterCopy { path, var_type }
             | Expression::Variable { path, var_type } => self.bv_variable(path, var_type, num_bits),
             Expression::Widen { path, operand } => self.bv_widen(path, operand, num_bits),
             _ => self.get_as_z3_ast(expression),
