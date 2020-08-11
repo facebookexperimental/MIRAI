@@ -224,7 +224,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 selector,
                 ..
             } => {
-                let t = self.get_path_rustc_type(qualifier, current_span);
+                let mut t = self.get_path_rustc_type(qualifier, current_span);
+                if let TyKind::Projection(..) = &t.kind {
+                    t = self.specialize_generic_argument_type(t, &self.generic_argument_map);
+                }
                 match &**selector {
                     PathSelector::ConstantSlice { .. } => {
                         return t;
