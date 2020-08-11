@@ -812,6 +812,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
         if self.bv.function_being_analyzed_is_root()
+            || cond.expression.contains_local_variable()
             || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
             // We expect public functions to have programmer supplied preconditions
