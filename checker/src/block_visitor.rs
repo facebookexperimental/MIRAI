@@ -1943,6 +1943,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     None => Path::new_static(self.bv.tcx, *def_id),
                 };
+                self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
                 self.bv.lookup_path_and_refine_result(path, ty)
             }
 
