@@ -488,6 +488,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             &actual_argument_types,
         );
 
+        let known_name = func_ref_to_call.known_name;
         let func_const = ConstantDomain::Function(func_ref_to_call);
         let func_const_args = &self.get_function_constant_args(&actual_args);
         let mut call_visitor = CallVisitor::new(
@@ -511,6 +512,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let function_summary = call_visitor
             .get_function_summary()
             .unwrap_or_else(Summary::default);
+        if known_name == KnownNames::StdCloneClone {
+            call_visitor.handle_clone(&function_summary);
+            return;
+        }
         if call_visitor.block_visitor.bv.check_for_errors
             && (!function_summary.is_computed || function_summary.is_angelic)
         {

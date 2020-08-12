@@ -26,12 +26,12 @@ pub enum KnownNames {
     MiraiPreconditionStart,
     MiraiResult,
     MiraiSetModelField,
-    MiraiShallowClone,
     MiraiVerify,
     RustAlloc,
     RustAllocZeroed,
     RustDealloc,
     RustRealloc,
+    StdCloneClone,
     StdFutureFromGenerator,
     StdIntrinsicsArithOffset,
     StdIntrinsicsBitreverse,
@@ -173,6 +173,24 @@ impl KnownNamesCache {
                 }
                 _ => KnownNames::None,
             };
+
+        let get_known_name_for_clone_trait = |mut def_path_data_iter: Iter<'_>| {
+            get_path_data_elem_name(def_path_data_iter.next())
+                .map(|n| match n.as_str().deref() {
+                    "clone" => KnownNames::StdCloneClone,
+                    _ => KnownNames::None,
+                })
+                .unwrap_or(KnownNames::None)
+        };
+
+        let get_known_name_for_clone_namespace = |mut def_path_data_iter: Iter<'_>| {
+            get_path_data_elem_name(def_path_data_iter.next())
+                .map(|n| match n.as_str().deref() {
+                    "Clone" => get_known_name_for_clone_trait(def_path_data_iter),
+                    _ => KnownNames::None,
+                })
+                .unwrap_or(KnownNames::None)
+        };
 
         let get_known_name_for_future_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
@@ -326,6 +344,7 @@ impl KnownNamesCache {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
                     "alloc" => get_known_name_for_alloc_namespace(def_path_data_iter),
+                    "clone" => get_known_name_for_clone_namespace(def_path_data_iter),
                     "future" => get_known_name_for_future_namespace(def_path_data_iter),
                     "intrinsics" => get_known_name_for_intrinsics_namespace(def_path_data_iter),
                     "marker" => get_known_name_for_marker_namespace(def_path_data_iter),
@@ -345,7 +364,6 @@ impl KnownNamesCache {
                     "mirai_precondition" => KnownNames::MiraiPrecondition,
                     "mirai_result" => KnownNames::MiraiResult,
                     "mirai_set_model_field" => KnownNames::MiraiSetModelField,
-                    "mirai_shallow_clone" => KnownNames::MiraiShallowClone,
                     "mirai_verify" => KnownNames::MiraiVerify,
                     _ => KnownNames::None,
                 })

@@ -23,7 +23,7 @@ use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
 use crate::known_names::KnownNames;
-use crate::path::{Path, PathEnum, PathRefinement};
+use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
 use crate::smt_solver::SmtResult;
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
@@ -309,6 +309,59 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         None
     }
 
+    /// If this call is to an implementation of the std::clone::Clone::clone trait method
+    /// then make sure any model fields and tag fields are copied to the result as well.
+    /// If there is no MIR implementation available for the clone method, then fall back to a
+    /// deep copy (after calling deal_with_missing_summary).   
+    #[logfn_inputs(DEBUG)]
+    pub fn handle_clone(&mut self, summary: &Summary) {
+        if let Some((place, _)) = &self.destination {
+            checked_assume!(self.actual_args.len() == 1);
+            let source_path = Path::new_deref(self.actual_args[0].0.clone())
+                .refine_paths(&self.block_visitor.bv.current_environment);
+            let target_type = self
+                .block_visitor
+                .bv
+                .type_visitor
+                .get_rustc_place_type(place, self.block_visitor.bv.current_span);
+            let target_path = self.block_visitor.visit_place(place);
+            if !summary.is_computed {
+                self.deal_with_missing_summary();
+                // Now just do a deep copy and carry on.
+                self.block_visitor.bv.copy_or_move_elements(
+                    target_path,
+                    source_path,
+                    target_type,
+                    false,
+                );
+            } else {
+                self.transfer_and_refine_into_current_environment(summary);
+                // Since the clone code is arbitrary it might not have copied model fields and tag fields.
+                // So just copy them again.
+                let value_map = self.block_visitor.bv.current_environment.value_map.clone();
+                for (path, value) in value_map.iter().filter(|(p, _)| {
+                    if let PathEnum::QualifiedPath { selector, .. } = &p.value {
+                        matches!(
+                            **selector,
+                            PathSelector::ModelField(..) | PathSelector::TagField
+                        ) && p.is_rooted_by(&source_path)
+                    } else {
+                        false
+                    }
+                }) {
+                    let target_path = path.replace_root(&source_path, target_path.clone());
+                    self.block_visitor
+                        .bv
+                        .current_environment
+                        .update_value_at(target_path, value.clone());
+                }
+            }
+            self.use_entry_condition_as_exit_condition();
+        } else {
+            assume_unreachable!();
+        }
+    }
+
     /// If the current call is to a well known function for which we don't have a cached summary,
     /// this function will update the environment as appropriate and return true. If the return
     /// result is false, just carry on with the normal logic.
@@ -378,28 +431,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             KnownNames::MiraiSetModelField => {
                 self.handle_set_model_field();
-                return true;
-            }
-            KnownNames::MiraiShallowClone => {
-                if let Some((place, _)) = &self.destination {
-                    checked_assume!(self.actual_args.len() == 1);
-                    let source_path = self.actual_args[0].0.clone();
-                    let target_type = self
-                        .block_visitor
-                        .bv
-                        .type_visitor
-                        .get_rustc_place_type(place, self.block_visitor.bv.current_span);
-                    let target_path = self.block_visitor.visit_place(place);
-                    self.block_visitor.bv.copy_or_move_elements(
-                        target_path,
-                        source_path,
-                        target_type,
-                        false,
-                    );
-                } else {
-                    assume_unreachable!();
-                }
-                self.use_entry_condition_as_exit_condition();
                 return true;
             }
             KnownNames::MiraiResult => {
