@@ -1691,9 +1691,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
                 let indexed_target = Path::new_index(target_path.clone(), target_index_val)
                     .refine_paths(&self.current_environment);
-                debug!(
+                trace!(
                     "indexed_target {:?} indexed_source {:?} elem_ty {:?}",
-                    indexed_target, indexed_source, elem_ty
+                    indexed_target,
+                    indexed_source,
+                    elem_ty
                 );
                 update(self, indexed_target, indexed_source, elem_ty);
             }
@@ -1894,12 +1896,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 } else {
                     trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
-                let rustc_type = self
-                    .type_visitor
-                    .get_path_rustc_type(&qualified_path, self.current_span);
-                let old_value =
-                    self.lookup_path_and_refine_result(qualified_path.clone(), rustc_type);
-                update(self, qualified_path, old_value, value.clone());
+                let old_value = value_map.get(&qualified_path).unwrap_or(&value);
+                update(self, qualified_path, old_value.clone(), value.clone());
                 no_children = false;
             }
             if let Expression::RefinedParameterCopy { path, .. }
