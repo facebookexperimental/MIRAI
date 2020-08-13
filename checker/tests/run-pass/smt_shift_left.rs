@@ -12,7 +12,7 @@ pub fn read_uleb128_as_u32(bytes: [u8; 20]) -> u32 {
     let mut value: u32 = 0;
     let mut shift: u32 = 0;
     let mut cursor = 0;
-    while cursor < bytes.len() {
+    while cursor < bytes.len() && shift <= 28 {
         let byte = bytes[cursor];
         let val = byte & 0x7f;
         value |= (val as u32) << shift;
@@ -20,9 +20,10 @@ pub fn read_uleb128_as_u32(bytes: [u8; 20]) -> u32 {
             return value;
         }
         shift += 7;
-        if shift > 28 {
-            break;
-        }
+        // todo: this guard is not treated as the loop's entry condition because it is dominated by the loop entry
+        // if shift > 28 {
+        //     break;
+        // }
         cursor += 1;
     }
     return value;

@@ -588,7 +588,7 @@ impl Z3Solver {
 
     #[logfn_inputs(TRACE)]
     fn general_variable(&self, path: &Rc<Path>, var_type: &ExpressionType) -> z3_sys::Z3_ast {
-        let path_str = CString::new(format!("{:?}", path)).unwrap();
+        let path_str = CString::new(format!("{:?} original", path)).unwrap();
         unsafe {
             let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
             let sort = self.get_sort_for(var_type);
