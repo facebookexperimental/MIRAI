@@ -783,7 +783,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
 #[logfn_inputs(TRACE)]
 pub fn get_def_id_from_closure(closure_ty: Ty<'_>) -> Option<DefId> {
     match closure_ty.kind {
-        TyKind::Closure(def_id, _) => {
+        TyKind::Closure(def_id, _) | TyKind::Opaque(def_id, _) => {
             return Some(def_id);
         }
         TyKind::Ref(_, ty, _) => {
