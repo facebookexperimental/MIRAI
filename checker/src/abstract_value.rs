@@ -1510,6 +1510,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Important: keep the performance of this function proportional to the size of self.
     #[logfn_inputs(TRACE)]
     fn implies(&self, other: &Rc<AbstractValue>) -> bool {
+        if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
+            return false;
+        }
+
         // x => true, is always true
         // false => x, is always true
         // x => x, is always true
@@ -1532,6 +1536,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returning false does not imply the implication is false, just that we do not know.
     #[logfn_inputs(TRACE)]
     fn implies_not(&self, other: &Rc<AbstractValue>) -> bool {
+        if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
+            return false;
+        }
+
         // x => !false, is always true
         // false => !x, is always true
         if !other.as_bool_if_known().unwrap_or(true) || !self.as_bool_if_known().unwrap_or(true) {
@@ -1635,6 +1643,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn is_bottom(&self) -> bool {
         match &self.expression {
             Expression::Bottom => true,
+            Expression::Variable { path, .. } => {
+                if let PathEnum::Alias { value } = &path.value {
+                    value.is_bottom()
+                } else {
+                    false
+                }
+            }
             _ => false,
         }
     }
@@ -1664,8 +1679,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// True if all possible concrete values are elements of the set corresponding to this domain.
     #[logfn_inputs(TRACE)]
     fn is_top(&self) -> bool {
-        match self.expression {
+        match &self.expression {
             Expression::Top => true,
+            Expression::Variable { path, .. } => {
+                if let PathEnum::Alias { value } = &path.value {
+                    value.is_top()
+                } else {
+                    false
+                }
+            }
             _ => false,
         }
     }

@@ -312,7 +312,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// If this call is to an implementation of the std::clone::Clone::clone trait method
     /// then make sure any model fields and tag fields are copied to the result as well.
     /// If there is no MIR implementation available for the clone method, then fall back to a
-    /// deep copy (after calling deal_with_missing_summary).   
+    /// deep copy (after calling deal_with_missing_summary).
     #[logfn_inputs(DEBUG)]
     pub fn handle_clone(&mut self, summary: &Summary) {
         if let Some((place, _)) = &self.destination {
