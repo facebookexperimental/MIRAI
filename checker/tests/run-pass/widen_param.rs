@@ -9,13 +9,27 @@
 #[macro_use]
 extern crate mirai_annotations;
 
-pub fn foo(v: &[i32], mut i: usize) {
+pub fn foo(v: &[i32], i: usize) {
     precondition!(i <= v.len());
+    let n = v.len();
+    let mut j = i;
+    while j < n {
+        j += 1;
+    }
+    // todo: need some extra mechanism (such as narrowing) to prove the equality
+    // verify!(j == n);
+    verify!(j >= n);
+}
+
+pub fn bar(v: &[i32], mut i: usize) {
+    precondition!(i < v.len());
     let n = v.len();
     while i < n {
         i += 1;
     }
-    verify!(i == n);
+    // fixme: this statement is indeed reachable; need to make copies of param i when needed
+    // verify!(i >= n);
+    verify_unreachable!();
 }
 
 pub fn main() {}

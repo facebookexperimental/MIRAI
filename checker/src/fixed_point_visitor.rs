@@ -242,6 +242,27 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             .0;
 
         let at_loop_anchor = self.loop_anchors.contains(&bb);
+
+        // Identifies loop invariants. Currently we only extract invariant paths, i.e., paths that are not
+        // mutated by the loop. todo: support more kinds of invariants.
+        let mut joined_state_without_loop_variants = joined_state.clone();
+        if at_loop_anchor {
+            self.bv.mir.predecessors()[bb].iter().for_each(|pred_bb| {
+                if self.dominators.is_dominated_by(*pred_bb, bb) {
+                    let pred_out_state = &self.out_state[pred_bb];
+                    for (path, val) in pred_out_state.value_map.iter() {
+                        if let Some(joined_val) = joined_state.value_at(path) {
+                            if !val.eq(joined_val) {
+                                joined_state_without_loop_variants
+                                    .value_map
+                                    .remove_mut(path);
+                            }
+                        }
+                    }
+                }
+            })
+        }
+
         // Now we compute an entry condition from the exit conditions of the eligible predecessors
         let entry_condition = self.bv.mir.predecessors()[bb]
             .iter()
@@ -263,10 +284,10 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
                         // A true exit condition tells us nothing. If we are already widening,
                         // then replace the true condition with equalities from the corresponding
                         // environment.
-                        Some(
-                            pred_exit_condition
-                                .add_equalities_for_widened_vars(pred_out_state, &joined_state),
-                        )
+                        Some(pred_exit_condition.add_equalities_for_widened_vars(
+                            pred_out_state,
+                            &joined_state_without_loop_variants,
+                        ))
                     } else {
                         Some(pred_exit_condition.clone())
                     }
@@ -277,7 +298,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
                 }
             })
             .fold1(|acc, cond| acc.or(cond))
-            .unwrap_or_else(|| Rc::new(abstract_value::TRUE));
+            .unwrap_or_else(|| Rc::new(abstract_value::FALSE)); // an empty join should equal to false
         joined_state.entry_condition = entry_condition;
         joined_state
     }
