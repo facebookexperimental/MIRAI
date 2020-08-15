@@ -1057,7 +1057,7 @@ macro_rules! verify_unreachable {
     };
 }
 
-// Helper function for MIRAI. Should only be called via the result! macro.
+// Helper function for MIRAI. Should only be called via the abstract_value! macro.
 #[doc(hidden)]
 pub fn mirai_abstract_value<T>(x: T) -> T {
     x

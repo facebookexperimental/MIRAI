@@ -394,6 +394,7 @@ pub trait AbstractValueTrait: Sized {
     fn is_compile_time_constant(&self) -> bool;
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
     fn is_top(&self) -> bool;
+    fn is_widened(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
     fn less_than(&self, other: Self) -> Self;
@@ -1665,6 +1666,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn is_top(&self) -> bool {
         match self.expression {
             Expression::Top => true,
+            _ => false,
+        }
+    }
+
+    /// True if this a widened value.
+    #[logfn_inputs(TRACE)]
+    fn is_widened(&self) -> bool {
+        match self.expression {
+            Expression::Widen { .. } => true,
             _ => false,
         }
     }

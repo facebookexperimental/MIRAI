@@ -1017,6 +1017,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 )
                 .replace_root(&refined_dummy_root, target_path.clone())
                 .refine_paths(pre_environment);
+            let pre_state_value = self.current_environment.value_at(&tpath);
+            if matches!(pre_state_value, Some(v) if v.is_widened()) {
+                // If the value is self referential, i.e. if its new value refers to its old
+                // value, widening may not converge. So just stick with the already widened value.
+                continue;
+            }
             let uncanonicalized_rvalue = value.refine_parameters(
                 arguments,
                 result_path,
