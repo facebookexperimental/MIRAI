@@ -1694,12 +1694,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return other;
         }
         // [widened(x) union y] -> widened(x)
-        if let Expression::Widen { .. } = &self.expression {
-            return self.clone();
+        if let Expression::Widen { operand, .. } = &self.expression {
+            return operand.widen(path);
         }
         // [x union widened(y)] -> widened(y)
-        if let Expression::Widen { .. } = &other.expression {
-            return other.clone();
+        if let Expression::Widen { operand, .. } = &other.expression {
+            return operand.widen(path);
         }
         let expression_size = self.expression_size.saturating_add(other.expression_size);
         AbstractValue::make_from(
@@ -3712,8 +3712,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Reference(..)
             | Expression::RefinedParameterCopy { .. }
             | Expression::Top
-            | Expression::Variable { .. }
-            | Expression::Widen { .. } => self.clone(),
+            | Expression::Variable { .. } => self.clone(),
             Expression::HeapBlockLayout {
                 length, alignment, ..
             } => AbstractValue::make_from(
@@ -3724,6 +3723,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
                 1,
             ),
+            Expression::Widen { operand, .. } => operand.widen(path),
             _ => {
                 if self.expression_size > 1000 {
                     AbstractValue::make_typed_unknown(self.expression.infer_type(), path.clone())

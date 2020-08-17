@@ -200,11 +200,7 @@ impl Environment {
     #[logfn_inputs(TRACE)]
     pub fn widen(&self, other: Environment) -> Environment {
         self.clone()
-            .join_or_widen(other, |x, y, p| match (&x.expression, &y.expression) {
-                (Expression::Widen { .. }, _) => x.clone(),
-                (_, Expression::Widen { .. }) => y.clone(),
-                _ => x.clone().join(y.clone(), p).widen(p),
-            })
+            .join_or_widen(other, |x, y, p| x.join(y.clone(), p).widen(p))
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
