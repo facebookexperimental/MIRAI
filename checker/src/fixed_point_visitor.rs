@@ -88,7 +88,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
                         .expect("incorrectly initialized out_state")
                         .exit_conditions = self.bv.current_environment.exit_conditions.clone();
                 } else {
-                    self.compute_fixed_point(bb)
+                    self.compute_fixed_point(bb);
                 }
             }
         }
@@ -117,17 +117,20 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
     /// Repeatedly evaluate the loop body starting at loop_anchor until widening
     /// kicked in and a fixed point has been reached.
     #[logfn_inputs(TRACE)]
-    fn compute_fixed_point(&mut self, loop_anchor: mir::BasicBlock) {
+    fn compute_fixed_point(&mut self, loop_anchor: mir::BasicBlock) -> mir::BasicBlock {
         let saved_already_visited = self.already_visited.clone();
         let saved_fresh_variable_offset = self.bv.fresh_variable_offset;
         let mut iteration_count = 1;
         let mut changed = true;
+        let mut last_block = loop_anchor;
         // Iterate at least 4 times so that widening kicks in for loop variables and at least
         // one iteration was performed starting with widened variables.
         while iteration_count <= 4 || changed {
             self.already_visited = saved_already_visited.clone();
             self.bv.fresh_variable_offset = saved_fresh_variable_offset;
-            changed = self.visit_loop_body(loop_anchor, iteration_count);
+            let result = self.visit_loop_body(loop_anchor, iteration_count);
+            changed = result.0;
+            last_block = result.1;
             check_for_early_break!(self.bv);
             if iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
                 break;
@@ -146,38 +149,46 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
                 self.bv.function_name
             );
         }
+        last_block
     }
 
     /// Visits a loop body. Return true if the out_state computed by this visit is not a subset
     /// of the out_state computed previously. When it is a subset, a fixed point has been reached.
     /// A loop body is all of the blocks that are dominated by the loop anchor.
     #[logfn_inputs(TRACE)]
-    fn visit_loop_body(&mut self, loop_anchor: mir::BasicBlock, iteration_count: usize) -> bool {
+    fn visit_loop_body(
+        &mut self,
+        loop_anchor: mir::BasicBlock,
+        iteration_count: usize,
+    ) -> (bool, mir::BasicBlock) {
         let mut changed = false;
+        let mut last_block = loop_anchor;
         let blocks = self.block_indices.clone();
+        let old_state = self.out_state.clone();
         for bb in blocks {
             if !self.already_visited.contains(&bb)
                 && self.dominators.is_dominated_by(bb, loop_anchor)
             {
+                last_block = bb;
                 // Visit the next block, or the entire nested loop anchored by it.
                 if bb == loop_anchor {
                     self.visit_basic_block(bb, iteration_count); // join or widen
                 } else if self.loop_anchors.contains(&bb) {
-                    self.compute_fixed_point(bb);
+                    last_block = self.compute_fixed_point(bb);
                 } else {
                     self.visit_basic_block(bb, 0); // conditional expressions
                 }
 
                 // Check for a fixed point.
-                if !self.bv.current_environment.subset(&self.out_state[&bb]) {
+                if !self.out_state[&last_block].subset(&old_state[&last_block]) {
                     // There is some path for which self.bv.current_environment.value_at(path) includes
-                    // a value this is not present in self.out_state[bb].value_at(path), so any block
+                    // a value this is not present in self.out_state[last_block].value_at(path), so any block
                     // that used self.out_state[bb] as part of its input state now needs to get reanalyzed.
                     changed = true;
                 }
             }
         }
-        changed
+        (changed, last_block)
     }
 
     /// Join the exit states from all predecessors blocks to get the entry state fo this block.
