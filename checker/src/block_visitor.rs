@@ -2541,13 +2541,40 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// can be serialized and used as a cache key. Also caches the place type with the path as key.
     #[logfn_inputs(TRACE)]
     pub fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
-        let path = self
-            .get_path_for_place(place)
-            .refine_paths(&self.bv.current_environment);
+        let place_path = self.get_path_for_place(place);
+        let mut path = place_path.refine_paths(&self.bv.current_environment);
         let ty = self
             .bv
             .type_visitor
             .get_rustc_place_type(place, self.bv.current_span);
+
+        match &path.value {
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } if **selector == PathSelector::Deref => {
+                if let PathEnum::Alias { value } = &qualifier.value {
+                    match &value.expression {
+                        Expression::Join { left, right, .. } => {
+                            let target_type = ExpressionType::from(&ty.kind);
+                            let distributed_deref = left
+                                .dereference(target_type.clone())
+                                .join(right.dereference(target_type), &place_path);
+                            path = Path::get_as_path(distributed_deref);
+                        }
+                        Expression::Widen { operand, .. } => {
+                            let target_type = ExpressionType::from(&ty.kind);
+                            let distributed_deref =
+                                operand.dereference(target_type).widen(&place_path);
+                            path = Path::get_as_path(distributed_deref);
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            _ => (),
+        };
         self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
         path
     }
