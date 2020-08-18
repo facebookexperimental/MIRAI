@@ -82,6 +82,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 location.statement_index += 1;
             }
             terminator_state.insert(bb, self.bv.current_environment.clone());
+        } else {
+            location.statement_index = terminator_index;
         }
 
         if let Some(mir::Terminator {
@@ -2658,7 +2660,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .type_visitor
                             .get_path_rustc_type(&thin_pointer_path, self.bv.current_span);
                         ty = type_visitor::get_target_type(thin_ptr_type);
-                        let deref_path = Path::new_qualified(thin_pointer_path, Rc::new(selector));
+                        let deref_path = Path::new_deref(thin_pointer_path);
                         self.bv
                             .type_visitor
                             .path_ty_cache

@@ -836,6 +836,12 @@ impl PathRefinement for Rc<Path> {
                                 );
                             }
                         }
+                        Expression::RefinedParameterCopy { .. } => {
+                            return Path::new_qualified(
+                                Path::get_as_path(val.clone()),
+                                refined_selector,
+                            );
+                        }
                         Expression::Variable { path, .. } => {
                             // This is not ideal, but without some kind of check this can overflow the stack.
                             // Investigate this some more in the future. (It involves joins.)
