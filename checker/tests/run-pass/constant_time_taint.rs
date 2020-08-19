@@ -38,7 +38,7 @@ pub fn test2(secret: i32) {
 
 pub fn test3(secret: i32) {
     precondition!(has_tag!(&secret, ConstantTimeTaint));
-    let _ = if secret | 99991 < 5 { true } else { false };
+    let _ = if secret | 99991 < 5 { 32767 } else { 10003 };
     //~ the branch condition has a ConstantTimeTaintKind tag
 }
 

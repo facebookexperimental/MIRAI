@@ -290,7 +290,7 @@ fn crate_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 #[logfn(TRACE)]
 pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
     let mut name = crate_name(tcx, def_id);
-    let mut type_ns: Option<String> = None;
+    let mut parent_is_type = false;
     for component in &tcx.def_path(def_id).data {
         if name.ends_with("foreign_contracts") {
             // By stripping off this special prefix, we allow this crate (or module) to define
@@ -302,24 +302,15 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
             name.push('.');
         }
         push_component_name(component.data, &mut name);
-        if let DefPathData::TypeNs(sym) = component.data {
-            type_ns = Some(sym.as_str().to_string());
+        if let DefPathData::TypeNs(..) = component.data {
+            parent_is_type = true;
         }
         if component.disambiguator != 0 {
             name.push('_');
             if component.data == DefPathData::Impl {
                 if let Some(parent_def_id) = tcx.parent(def_id) {
-                    if let Some(type_ns) = &type_ns {
-                        if type_ns == "num"
-                            && tcx.crate_name(parent_def_id.krate).as_str() == "core"
-                        {
-                            append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
-                            continue;
-                        }
-                    }
-                    if type_ns.is_some() {
-                        let def_path_str = tcx.def_path_str(parent_def_id).replace("::", "_");
-                        name.push_str(&def_path_str);
+                    if parent_is_type {
+                        append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
                         continue;
                     }
                 }
@@ -344,6 +335,7 @@ pub fn is_foreign_contract(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
     }
 }
 
+#[logfn_inputs(TRACE)]
 fn push_component_name(component_data: DefPathData, target: &mut String) {
     use std::ops::Deref;
     use DefPathData::*;

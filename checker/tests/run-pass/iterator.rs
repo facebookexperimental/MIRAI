@@ -11,19 +11,18 @@
 #[macro_use]
 extern crate mirai_annotations;
 
-// pub fn test1() {
-//     let mut it = std::ops::Range {
-//         start: 0usize,
-//         end: 10usize,
-//     };
+pub fn test1() {
+    let mut it = std::ops::Range {
+        start: 0usize,
+        end: 10usize,
+    };
 
-//     while let Some(_) = it.next() {
-//         verify!(it.start <= 10);
-//     }
-//     verify!(it.start >= 10);
-// }
+    while let Some(_) = it.next() {
+        verify!(it.start <= 10);
+    }
+    verify!(it.start >= 10);
+}
 
-// todo: sizes of expressions are too large. Simplify them on the fly.
 // pub fn test2() {
 //     let mut it = std::ops::RangeInclusive::new(0usize, 10usize);
 //     while let Some(_) = it.next() {

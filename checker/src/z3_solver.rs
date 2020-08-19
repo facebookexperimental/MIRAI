@@ -1476,7 +1476,7 @@ impl Z3Solver {
     fn get_as_bool_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
             Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
-                //todo: get operands as booleans and treat this operands as logical
+                //todo: get operands as booleans and treat these operands as logical
                 let bv = self.get_as_bv_z3_ast(expression, 128);
                 unsafe {
                     let i = z3_sys::Z3_mk_bv2int(self.z3_context, bv, false);
@@ -1544,6 +1544,7 @@ impl Z3Solver {
             Expression::Widen { path, operand } => {
                 self.get_ast_for_widened(path, operand, ExpressionType::Bool)
             }
+            //todo: relational operators
             _ => self.get_as_z3_ast(expression),
         }
     }

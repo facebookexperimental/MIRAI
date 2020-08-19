@@ -263,7 +263,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
                     let pred_out_state = &self.out_state[pred_bb];
                     for (path, val) in pred_out_state.value_map.iter() {
                         if let Some(joined_val) = joined_state.value_at(path) {
-                            if !val.eq(joined_val) {
+                            if joined_val.is_widened() || !val.eq(joined_val) {
                                 joined_state_without_loop_variants
                                     .value_map
                                     .remove_mut(path);

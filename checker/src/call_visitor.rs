@@ -156,12 +156,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 return;
             }
             // The parameter environment of the caller provides a resolution context for the callee.
-            let param_env = self
-                .block_visitor
-                .bv
-                .type_visitor
-                .get_param_env()
-                .with_reveal_all();
+            let param_env = rustc_middle::ty::ParamEnv::reveal_all();
             trace!(
                 "devirtualize resolving def_id {:?}: {:?}",
                 self.callee_def_id,
@@ -2207,15 +2202,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         &self.environment_before_call,
                         self.block_visitor.bv.fresh_variable_offset,
                     );
-                    debug!(
+                    trace!(
                         "refined post condition before path refinement {:?}",
                         refined_post_condition
                     );
                     let refined_post_condition = refined_post_condition
                         .refine_paths(&self.block_visitor.bv.current_environment);
-                    debug!("refined post condition {:?}", refined_post_condition);
+                    trace!("refined post condition {:?}", refined_post_condition);
                     exit_condition = exit_condition.and(refined_post_condition);
-                    debug!("post exit conditions {:?}", exit_condition);
+                    trace!("post exit conditions {:?}", exit_condition);
                 }
             }
 

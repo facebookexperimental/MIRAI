@@ -18,7 +18,10 @@ where
 
 pub fn main() {
     let f = |(x, _y)| x;
-    let x = call_once(f, ((10, 20), 30));
+    let mut a = (9, 20);
+    a.0 += 1;
+    let b = (a, 30);
+    let x = call_once(f, b);
     verify!(x.0 == 10);
     verify!(x.1 == 20);
 }

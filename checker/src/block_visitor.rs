@@ -93,7 +93,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             ref kind,
         }) = *terminator
         {
-            self.visit_terminator(location, *source_info, kind);
+            self.visit_terminator(location, kind, *source_info);
         }
     }
 
@@ -118,6 +118,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::StatementKind::LlvmInlineAsm(inline_asm) => self.visit_llvm_inline_asm(inline_asm),
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
             mir::StatementKind::AscribeUserType(..) => assume_unreachable!(),
+            mir::StatementKind::Coverage(..) => (),
             mir::StatementKind::Nop => (),
         }
     }
@@ -142,10 +143,37 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     ) {
         let target_path = Path::new_discriminant(self.visit_place(place))
             .refine_paths(&self.bv.current_environment);
-        let index_val = self.get_u128_const_val(variant_index.as_usize() as u128);
-        self.bv
-            .current_environment
-            .update_value_at(target_path, index_val);
+        let ty = self
+            .bv
+            .type_visitor
+            .get_rustc_place_type(place, self.bv.current_span);
+        match &ty.kind {
+            TyKind::Adt(..) | TyKind::Generator(..) => {
+                let param_env = self.bv.type_visitor.get_param_env();
+                if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
+                    let discr_ty = ty_and_layout.ty.discriminant_ty(self.bv.tcx);
+                    let discr_layout = self.bv.tcx.layout_of(param_env.and(discr_ty)).unwrap();
+                    let discr_bits = match ty_and_layout
+                        .ty
+                        .discriminant_for_variant(self.bv.tcx, variant_index)
+                    {
+                        Some(discr) => discr.val,
+                        None => variant_index.as_u32() as u128,
+                    };
+                    let val = if discr_ty.is_signed() {
+                        let extended = sign_extend(discr_bits, discr_layout.size);
+                        self.get_i128_const_val(extended as i128)
+                    } else {
+                        self.get_u128_const_val(discr_bits)
+                    };
+                    self.bv
+                        .current_environment
+                        .update_value_at(target_path, val);
+                    return;
+                }
+            }
+            _ => assume_unreachable!("rustc should ensure this"),
+        }
     }
 
     /// Start a live range for the storage of the local.
@@ -192,8 +220,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn visit_terminator(
         &mut self,
         location: mir::Location,
-        source_info: mir::SourceInfo,
         kind: &mir::TerminatorKind<'tcx>,
+        source_info: mir::SourceInfo,
     ) {
         debug!("env {:?}", self.bv.current_environment);
         self.bv.current_location = location;
@@ -1196,6 +1224,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             SmtResult::Satisfiable => {
                 // We could get here with cond_val being true. Or perhaps not.
                 // So lets see if !cond_val is provably false.
+                // todo: since the Z3 encoding is heuristic, this may not produce the actual inverse of
+                // the Z3 expression for cond_val. Finesse this by adding a logical negation operation
+                // to the smt_solver interface.
                 let not_cond_expr = &cond_val.logical_not().expression;
                 let smt_expr = self.bv.smt_solver.get_as_smt_predicate(not_cond_expr);
                 let result = self.bv.smt_solver.solve_expression(&smt_expr);
@@ -1951,228 +1982,223 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         user_ty: Option<UserTypeAnnotationIndex>,
         literal: &Const<'tcx>,
     ) -> Rc<AbstractValue> {
+        let mut val = literal.val;
         let ty = literal.ty;
+        if let rustc_middle::ty::ConstKind::Unevaluated(def_ty, substs, promoted) = &literal.val {
+            // Do this to get MIR into the cache
+            val = literal
+                .val
+                .eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
+            let def_id = def_ty.def_id_for_type_of();
+            let substs = self
+                .bv
+                .type_visitor
+                .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
+            self.bv.cv.substs_cache.insert(def_id, substs);
+            let path = match promoted {
+                Some(promoted) => {
+                    let index = promoted.index();
+                    Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
+                }
+                None => Path::new_static(self.bv.tcx, def_id),
+            };
+            self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
+            let static_val = self.bv.lookup_path_and_refine_result(path, ty);
+            if let Expression::Variable { .. } = &static_val.expression {
+                debug!("literal {:?} has no MIR, evaluates to {:?}", literal, val);
+            } else {
+                return static_val;
+            }
+        }
 
-        match &literal.val {
-            rustc_middle::ty::ConstKind::Unevaluated(def_id, substs, promoted) => {
+        let result;
+        match ty.kind {
+            TyKind::Bool
+            | TyKind::Char
+            | TyKind::Float(..)
+            | TyKind::Int(..)
+            | TyKind::Uint(..) => match &val {
+                rustc_middle::ty::ConstKind::Param(ParamConst { index, .. }) => {
+                    if let Some(gen_args) = self.bv.type_visitor.generic_arguments {
+                        if let Some(arg_val) = gen_args.as_ref().get(*index as usize) {
+                            return self.visit_constant(None, arg_val.expect_const());
+                        }
+                    } else {
+                        // todo: figure out why gen_args is None for generic types when
+                        // the flag MIRAI_START_FRESH is on.
+                        return abstract_value::BOTTOM.into();
+                    }
+                    assume_unreachable!(
+                        "reference to unmatched generic constant argument {:?} {:?}",
+                        literal,
+                        self.bv.current_span
+                    );
+                }
+                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
+                    data,
+                    size,
+                })) => {
+                    result = self.get_constant_from_scalar(&ty.kind, *data, *size);
+                }
+                _ => {
+                    assume_unreachable!(
+                        "unexpected kind of literal {:?} {:?}",
+                        literal,
+                        self.bv.current_span
+                    );
+                }
+            },
+            TyKind::FnDef(def_id, substs)
+            | TyKind::Closure(def_id, substs)
+            | TyKind::Generator(def_id, substs, ..) => {
+                let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                    ty,
+                    &self.bv.type_visitor.generic_argument_map,
+                );
                 let substs = self
                     .bv
                     .type_visitor
                     .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
-                self.bv.cv.substs_cache.insert(*def_id, substs);
-                let path = match promoted {
-                    Some(promoted) => {
-                        let index = promoted.index();
-                        Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
-                    }
-                    None => Path::new_static(self.bv.tcx, *def_id),
-                };
-                self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
-                self.bv.lookup_path_and_refine_result(path, ty)
+                result = self.visit_function_reference(def_id, specialized_ty, substs);
             }
+            TyKind::Ref(
+                _,
+                &rustc_middle::ty::TyS {
+                    kind: TyKind::Str, ..
+                },
+                _,
+            ) => {
+                if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) =
+                    &val
+                {
+                    return self.get_reference_to_slice(&ty.kind, data, *start, *end);
+                } else {
+                    debug!("unsupported val of type Ref: {:?}", literal);
+                    unimplemented!();
+                };
+            }
+            TyKind::Ref(
+                _,
+                &rustc_middle::ty::TyS {
+                    kind: TyKind::Array(elem_type, length),
+                    ..
+                },
+                _,
+            ) => {
+                return self.visit_reference_to_array_constant(literal, elem_type, length);
+            }
+            TyKind::Ref(
+                _,
+                &rustc_middle::ty::TyS {
+                    kind: TyKind::Slice(elem_type),
+                    ..
+                },
+                _,
+            ) => match &val {
+                rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
+                    // The rust compiler should ensure this.
+                    assume!(*end >= *start);
+                    let slice_len = *end - *start;
+                    let bytes = data
+                        .get_bytes(
+                            &self.bv.tcx,
+                            // invent a pointer, only the offset is relevant anyway
+                            mir::interpret::Pointer::new(
+                                mir::interpret::AllocId(0),
+                                rustc_target::abi::Size::from_bytes(*start as u64),
+                            ),
+                            rustc_target::abi::Size::from_bytes(slice_len as u64),
+                        )
+                        .unwrap();
 
-            _ => {
-                let result;
-                match ty.kind {
-                    TyKind::Bool
-                    | TyKind::Char
-                    | TyKind::Float(..)
-                    | TyKind::Int(..)
-                    | TyKind::Uint(..) => match &literal.val {
-                        rustc_middle::ty::ConstKind::Param(ParamConst { index, .. }) => {
-                            if let Some(gen_args) = self.bv.type_visitor.generic_arguments {
-                                if let Some(arg_val) = gen_args.as_ref().get(*index as usize) {
-                                    return self.visit_constant(None, arg_val.expect_const());
-                                }
-                            } else {
-                                // todo: figure out why gen_args is None for generic types when
-                                // the flag MIRAI_START_FRESH is on.
-                                return abstract_value::BOTTOM.into();
-                            }
-                            assume_unreachable!(
-                                "reference to unmatched generic constant argument {:?} {:?}",
-                                literal,
-                                self.bv.current_span
-                            );
+                    let slice = &bytes[*start..*end];
+                    let e_type = ExpressionType::from(&elem_type.kind);
+                    return self.deconstruct_reference_to_constant_array(
+                        slice,
+                        e_type,
+                        None,
+                        type_visitor::get_target_type(ty),
+                    );
+                }
+                _ => {
+                    debug!("unsupported val of type Ref: {:?}", literal);
+                    unimplemented!();
+                }
+            },
+            TyKind::RawPtr(rustc_middle::ty::TypeAndMut {
+                ty,
+                mutbl: rustc_hir::Mutability::Mut,
+            })
+            | TyKind::Ref(_, ty, rustc_hir::Mutability::Mut) => match &val {
+                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
+                    let summary_cache_key = format!("{:?}", p).into();
+                    let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
+                    let path = Rc::new(
+                        PathEnum::StaticVariable {
+                            def_id: None,
+                            summary_cache_key,
+                            expression_type,
                         }
-                        rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
-                            data,
-                            size,
-                        })) => {
-                            result = self.get_constant_from_scalar(&ty.kind, *data, *size);
-                        }
-                        _ => {
-                            assume_unreachable!(
-                                "unexpected kind of literal {:?} {:?}",
-                                literal,
-                                self.bv.current_span
-                            );
-                        }
-                    },
-                    TyKind::FnDef(def_id, substs)
-                    | TyKind::Closure(def_id, substs)
-                    | TyKind::Generator(def_id, substs, ..) => {
-                        let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                        .into(),
+                    );
+                    return self.bv.lookup_path_and_refine_result(path, ty);
+                }
+                _ => assume_unreachable!(),
+            },
+            TyKind::Ref(_, ty, rustc_hir::Mutability::Not) => {
+                return self.get_reference_to_constant(literal, ty);
+            }
+            TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
+                return self.get_enum_variant_as_constant(literal, ty);
+            }
+            TyKind::Tuple(..) | TyKind::Adt(..) => {
+                match &val {
+                    rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
+                        size: 0,
+                        ..
+                    })) => {
+                        return self.bv.get_new_heap_block(
+                            Rc::new(0u128.into()),
+                            Rc::new(1u128.into()),
+                            false,
                             ty,
-                            &self.bv.type_visitor.generic_argument_map,
                         );
-                        let substs = self
+                    }
+                    rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
+                        data,
+                        size,
+                    })) => {
+                        let heap_val = self.bv.get_new_heap_block(
+                            Rc::new((*size as u128).into()),
+                            Rc::new(1u128.into()),
+                            false,
+                            ty,
+                        );
+                        let path_to_scalar = Path::get_path_to_field_at_offset_0(
+                            self.bv.tcx,
+                            &self.bv.current_environment,
+                            &Path::get_as_path(heap_val.clone()),
+                            ty,
+                        )
+                        .unwrap_or_else(|| {
+                            unrecoverable!(
+                                "expected serialized constant to be correct at {:?}",
+                                self.bv.current_span
+                            )
+                        });
+                        let scalar_ty = self
                             .bv
                             .type_visitor
-                            .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
-                        result = self.visit_function_reference(def_id, specialized_ty, substs);
-                    }
-                    TyKind::Ref(
-                        _,
-                        &rustc_middle::ty::TyS {
-                            kind: TyKind::Str, ..
-                        },
-                        _,
-                    ) => {
-                        if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice {
-                            data,
-                            start,
-                            end,
-                        }) = &literal.val
-                        {
-                            return self.get_reference_to_slice(&ty.kind, data, *start, *end);
-                        } else {
-                            debug!("unsupported val of type Ref: {:?}", literal);
-                            unimplemented!();
-                        };
-                    }
-                    TyKind::Ref(
-                        _,
-                        &rustc_middle::ty::TyS {
-                            kind: TyKind::Array(elem_type, length),
-                            ..
-                        },
-                        _,
-                    ) => {
-                        return self.visit_reference_to_array_constant(literal, elem_type, length);
-                    }
-                    TyKind::Ref(
-                        _,
-                        &rustc_middle::ty::TyS {
-                            kind: TyKind::Slice(elem_type),
-                            ..
-                        },
-                        _,
-                    ) => match &literal.val {
-                        rustc_middle::ty::ConstKind::Value(ConstValue::Slice {
-                            data,
-                            start,
-                            end,
-                        }) => {
-                            // The rust compiler should ensure this.
-                            assume!(*end >= *start);
-                            let slice_len = *end - *start;
-                            let bytes = data
-                                .get_bytes(
-                                    &self.bv.tcx,
-                                    // invent a pointer, only the offset is relevant anyway
-                                    mir::interpret::Pointer::new(
-                                        mir::interpret::AllocId(0),
-                                        rustc_target::abi::Size::from_bytes(*start as u64),
-                                    ),
-                                    rustc_target::abi::Size::from_bytes(slice_len as u64),
-                                )
-                                .unwrap();
-
-                            let slice = &bytes[*start..*end];
-                            let e_type = ExpressionType::from(&elem_type.kind);
-                            return self.deconstruct_reference_to_constant_array(
-                                slice,
-                                e_type,
-                                None,
-                                type_visitor::get_target_type(ty),
-                            );
-                        }
-                        _ => {
-                            debug!("unsupported val of type Ref: {:?}", literal);
-                            unimplemented!();
-                        }
-                    },
-                    TyKind::RawPtr(rustc_middle::ty::TypeAndMut {
-                        ty,
-                        mutbl: rustc_hir::Mutability::Mut,
-                    })
-                    | TyKind::Ref(_, ty, rustc_hir::Mutability::Mut) => match &literal.val {
-                        rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
-                            let summary_cache_key = format!("{:?}", p).into();
-                            let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
-                            let path = Rc::new(
-                                PathEnum::StaticVariable {
-                                    def_id: None,
-                                    summary_cache_key,
-                                    expression_type,
-                                }
+                            .get_path_rustc_type(&path_to_scalar, self.bv.current_span);
+                        let scalar_val: Rc<AbstractValue> = Rc::new(
+                            self.get_constant_from_scalar(&scalar_ty.kind, *data, *size)
+                                .clone()
                                 .into(),
-                            );
-                            return self.bv.lookup_path_and_refine_result(path, ty);
-                        }
-                        _ => assume_unreachable!(),
-                    },
-                    TyKind::Ref(_, ty, rustc_hir::Mutability::Not) => {
-                        return self.get_reference_to_constant(literal, ty);
-                    }
-                    TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
-                        return self.get_enum_variant_as_constant(literal, ty);
-                    }
-                    TyKind::Tuple(..) | TyKind::Adt(..) => {
-                        match &literal.val {
-                            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
-                                Scalar::Raw { size: 0, .. },
-                            )) => {
-                                return self.bv.get_new_heap_block(
-                                    Rc::new(0u128.into()),
-                                    Rc::new(1u128.into()),
-                                    false,
-                                    ty,
-                                );
-                            }
-                            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
-                                Scalar::Raw { data, size },
-                            )) => {
-                                let heap_val = self.bv.get_new_heap_block(
-                                    Rc::new((*size as u128).into()),
-                                    Rc::new(1u128.into()),
-                                    false,
-                                    ty,
-                                );
-                                let path_to_scalar = Path::get_path_to_field_at_offset_0(
-                                    self.bv.tcx,
-                                    &self.bv.current_environment,
-                                    &Path::get_as_path(heap_val.clone()),
-                                    ty,
-                                )
-                                .unwrap_or_else(|| {
-                                    unrecoverable!(
-                                        "expected serialized constant to be correct at {:?}",
-                                        self.bv.current_span
-                                    )
-                                });
-                                let scalar_ty = self
-                                    .bv
-                                    .type_visitor
-                                    .get_path_rustc_type(&path_to_scalar, self.bv.current_span);
-                                let scalar_val: Rc<AbstractValue> = Rc::new(
-                                    self.get_constant_from_scalar(&scalar_ty.kind, *data, *size)
-                                        .clone()
-                                        .into(),
-                                );
-                                self.bv
-                                    .current_environment
-                                    .update_value_at(path_to_scalar, scalar_val);
-                                return heap_val;
-                            }
-                            _ => {
-                                debug!("span: {:?}", self.bv.current_span);
-                                debug!("type kind {:?}", ty.kind);
-                                debug!("unimplemented constant {:?}", literal);
-                                result = &ConstantDomain::Unimplemented;
-                            }
-                        };
+                        );
+                        self.bv
+                            .current_environment
+                            .update_value_at(path_to_scalar, scalar_val);
+                        return heap_val;
                     }
                     _ => {
                         debug!("span: {:?}", self.bv.current_span);
@@ -2181,9 +2207,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         result = &ConstantDomain::Unimplemented;
                     }
                 };
-                Rc::new(result.clone().into())
             }
-        }
+            _ => {
+                debug!("span: {:?}", self.bv.current_span);
+                debug!("type kind {:?}", ty.kind);
+                debug!("unimplemented constant {:?}", literal);
+                result = &ConstantDomain::Unimplemented;
+            }
+        };
+        Rc::new(result.clone().into())
     }
 
     /// Use for constants that are accessed via references
@@ -2638,7 +2670,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         AbstractValue::make_reference(array_path)
     }
 
-    /// A helper for deconstruct_constant_array. See its comments.
+    /// A helper for deconstruct_reference_to_constant_array. See its comments.
     /// This does the deserialization part, whereas deconstruct_constant_array does the environment
     /// updates.
     #[logfn_inputs(TRACE)]

@@ -726,6 +726,12 @@ impl ConstantDomain {
             (ConstantDomain::F64(val1), ConstantDomain::F64(val2)) => {
                 f64::from_bits(*val1) != f64::from_bits(*val2)
             }
+            (ConstantDomain::I128(val1), ConstantDomain::U128(val2)) => {
+                *val1 < 0 || ((*val1 as u128) != *val2)
+            }
+            (ConstantDomain::U128(val1), ConstantDomain::I128(val2)) => {
+                *val2 < 0 || ((*val2 as u128) != *val1)
+            }
             _ => *self != *other,
         }
         .into()
