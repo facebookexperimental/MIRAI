@@ -2178,6 +2178,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     pub fn add_post_condition_to_exit_conditions(&mut self, function_summary: &Summary) {
         let destination = self.destination;
         if let Some((place, target)) = &destination {
+            let target_path = self.block_visitor.visit_place(place);
+            let result_path = &Some(target_path);
             let mut exit_condition = self
                 .block_visitor
                 .bv
@@ -2185,27 +2187,36 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .entry_condition
                 .clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
-                //todo: refine the unwind condition
-                exit_condition = exit_condition.and(unwind_condition.logical_not());
+                if exit_condition.as_bool_if_known().unwrap_or(true) {
+                    let unwind_condition = unwind_condition
+                        .refine_parameters(
+                            self.actual_args,
+                            &result_path,
+                            &self.environment_before_call,
+                            self.block_visitor.bv.fresh_variable_offset,
+                        )
+                        .refine_paths(&self.block_visitor.bv.current_environment);
+                    exit_condition = exit_condition.and(unwind_condition.logical_not());
+                }
             }
-            if let Some(post_condition) = &function_summary.post_condition {
-                let target_path = self.block_visitor.visit_place(place);
-                let result_path = &Some(target_path);
-                let refined_post_condition = post_condition.refine_parameters(
-                    self.actual_args,
-                    &result_path,
-                    &self.environment_before_call,
-                    self.block_visitor.bv.fresh_variable_offset,
-                );
-                debug!(
-                    "refined post condition before path refinement {:?}",
-                    refined_post_condition
-                );
-                let refined_post_condition =
-                    refined_post_condition.refine_paths(&self.block_visitor.bv.current_environment);
-                debug!("refined post condition {:?}", refined_post_condition);
-                exit_condition = exit_condition.and(refined_post_condition);
-                debug!("post exit conditions {:?}", exit_condition);
+            if exit_condition.as_bool_if_known().unwrap_or(true) {
+                if let Some(post_condition) = &function_summary.post_condition {
+                    let refined_post_condition = post_condition.refine_parameters(
+                        self.actual_args,
+                        &result_path,
+                        &self.environment_before_call,
+                        self.block_visitor.bv.fresh_variable_offset,
+                    );
+                    debug!(
+                        "refined post condition before path refinement {:?}",
+                        refined_post_condition
+                    );
+                    let refined_post_condition = refined_post_condition
+                        .refine_paths(&self.block_visitor.bv.current_environment);
+                    debug!("refined post condition {:?}", refined_post_condition);
+                    exit_condition = exit_condition.and(refined_post_condition);
+                    debug!("post exit conditions {:?}", exit_condition);
+                }
             }
 
             self.block_visitor
