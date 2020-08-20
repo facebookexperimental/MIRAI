@@ -25,10 +25,12 @@ use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::mir::interpret::{ConstValue, Scalar};
+use rustc_middle::mir::interpret::{sign_extend, truncate, ConstValue, Scalar};
 use rustc_middle::ty::adjustment::PointerCast;
+use rustc_middle::ty::layout::PrimitiveExt;
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{Const, ParamConst, Ty, TyKind, UserTypeAnnotationIndex};
+use rustc_target::abi::{TagEncoding, VariantIdx, Variants};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -315,10 +317,25 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             let not_cond = cond.logical_not();
             default_exit_condition = default_exit_condition.and(not_cond);
             let target = targets[i];
-            self.bv
+            let existing_exit_condition = self
+                .bv
                 .current_environment
                 .exit_conditions
-                .insert_mut(target, exit_condition);
+                .get(&target)
+                .cloned();
+            if let Some(existing_exit_condition) = existing_exit_condition {
+                // There are multiple branches with the same target.
+                // In this case, we use the disjunction of the branch conditions as the exit condition.
+                self.bv
+                    .current_environment
+                    .exit_conditions
+                    .insert_mut(target, existing_exit_condition.or(exit_condition));
+            } else {
+                self.bv
+                    .current_environment
+                    .exit_conditions
+                    .insert_mut(target, exit_condition);
+            }
         }
         self.bv
             .current_environment
@@ -2199,35 +2216,202 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
     }
-    /// Used for enum typed constants. Currently only simple variants are understood.
+
+    /// Used for enum typed constants. The implementation relies closely on the enum layout optimization
+    /// in the current implementation of Rust. The enum encoding is not well documented, and it might
+    /// subject to changes in future versions of Rust.
     #[logfn_inputs(TRACE)]
     fn get_enum_variant_as_constant(
         &mut self,
         literal: &rustc_middle::ty::Const<'tcx>,
         ty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
-        let result;
         if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
             data, ..
         })) = &literal.val
         {
-            let e =
-                self.bv
-                    .get_new_heap_block(Rc::new(1u128.into()), Rc::new(1u128.into()), false, ty);
-            if let Expression::HeapBlock { .. } = &e.expression {
-                let p = Path::new_discriminant(Path::get_as_path(e.clone()));
-                let d = self.get_u128_const_val(*data);
-                self.bv.current_environment.update_value_at(p, d);
-                return e;
+            let param_env = self.bv.type_visitor.get_param_env();
+            if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
+                // The type of the discriminant tag
+                let discr_ty = ty_and_layout.ty.discriminant_ty(self.bv.tcx);
+                // The layout of the discriminant tag
+                let discr_layout = self.bv.tcx.layout_of(param_env.and(discr_ty)).unwrap();
+
+                let discr_bits; // The actual representation of the discriminant tag
+                let discr_index; // The index of the discriminant in the enum definition
+                let discr_has_data; // A flag indicating if the enum constant has a sub-component
+
+                match ty_and_layout.variants {
+                    Variants::Single { index } => {
+                        // The enum only contains one variant.
+
+                        // Truncates the value of the discriminant to fit into the layout.
+                        discr_bits = match ty_and_layout
+                            .ty
+                            .discriminant_for_variant(self.bv.tcx, index)
+                        {
+                            Some(discr) => truncate(discr.val, discr_layout.size),
+                            None => truncate(index.as_u32() as u128, discr_layout.size),
+                        };
+                        discr_index = index;
+                        // A single-variant enum can have niches if and only if this variant has a sub-component
+                        // of some special types (such as char).
+                        discr_has_data = ty_and_layout.largest_niche.is_some();
+                    }
+                    Variants::Multiple {
+                        ref tag,
+                        ref tag_encoding,
+                        ref variants,
+                        ..
+                    } => {
+                        // The enum contains multiple (more than one) variants.
+
+                        // The discriminant tag can be defined explicitly, and it can be negative.
+                        // Extracts the tag layout that indicates the tag's sign.
+                        let tag_layout = self
+                            .bv
+                            .tcx
+                            .layout_of(param_env.and(tag.value.to_int_ty(self.bv.tcx)))
+                            .unwrap();
+                        match *tag_encoding {
+                            TagEncoding::Direct => {
+                                // Truncates the discriminant value to fit into the layout.
+                                // But before the truncation, we have to extend it properly if the tag can be negative.
+                                // For example, `std::cmp::Ordering::Less` is defined as -1, and its discriminant
+                                // tag is internally represented as u128::MAX in the type definition.
+                                // However, the constant literal might have a different memory layout.
+                                // Currently, Rust encodes the constant `std::cmp::Ordering::Less` as 0xff.
+                                // So we need to first sign_extend 0xff and then truncate to fit into discr_layout.
+                                let signed = tag_layout.abi.is_signed();
+                                let v = if signed {
+                                    sign_extend(*data, tag_layout.size)
+                                } else {
+                                    *data
+                                };
+                                discr_bits = truncate(v, discr_layout.size);
+
+                                // Iterates through all the variant definitions to find the actual index.
+                                discr_index = match ty_and_layout.ty.kind {
+                                    TyKind::Adt(adt, _) => adt
+                                        .discriminants(self.bv.tcx)
+                                        .find(|(_, var)| var.val == discr_bits),
+                                    TyKind::Generator(def_id, substs, _) => {
+                                        let substs = substs.as_generator();
+                                        substs
+                                            .discriminants(def_id, self.bv.tcx)
+                                            .find(|(_, var)| var.val == discr_bits)
+                                    }
+                                    _ => verify_unreachable!(),
+                                }
+                                .unwrap()
+                                .0;
+
+                                discr_has_data = false;
+                            }
+                            TagEncoding::Niche {
+                                dataful_variant,
+                                ref niche_variants,
+                                niche_start,
+                            } => {
+                                // A niche means that there are some optimizations in the enum layout.
+                                // For example, a value of type Option<char> is encoded as a 32-bit integer.
+                                // There exists one single dataful variant (Some(char)).
+                                // Other variants are encoded as niches with tag values starting as niche_start.
+                                let variants_start = niche_variants.start().as_u32();
+                                let variant = if *data >= niche_start {
+                                    discr_has_data = false;
+                                    let variant_index_relative = (*data - niche_start) as u32;
+                                    let variant_index = variants_start + variant_index_relative;
+                                    VariantIdx::from_u32(variant_index)
+                                } else {
+                                    discr_has_data = true;
+                                    let fields = &variants[dataful_variant].fields;
+                                    checked_assume!(
+                                        fields.count() == 1
+                                            && fields.offset(0).bytes() == 0
+                                            && fields.memory_index(0) == 0,
+                                        "the dataful variant should contain a single sub-component"
+                                    );
+                                    dataful_variant
+                                };
+                                discr_bits = truncate(variant.as_u32() as u128, discr_layout.size);
+                                discr_index = variant;
+                            }
+                        }
+                    }
+                };
+
+                trace!(
+                    "discr tag {:?} index {:?} dataful {:?}",
+                    discr_bits,
+                    discr_index,
+                    discr_has_data
+                );
+                let raw_length = ty_and_layout.size.bytes();
+                let raw_alignment = ty_and_layout.align.abi.bytes();
+                let e = self.bv.get_new_heap_block(
+                    Rc::new((raw_length as u128).into()),
+                    Rc::new((raw_alignment as u128).into()),
+                    false,
+                    ty,
+                );
+                if let Expression::HeapBlock { .. } = &e.expression {
+                    let discr_path = Path::new_discriminant(Path::get_as_path(e.clone()));
+                    let discr_data = self.get_u128_const_val(discr_bits);
+                    self.bv
+                        .current_environment
+                        .update_value_at(discr_path, discr_data);
+
+                    if discr_has_data {
+                        // Obtains the name of this variant.
+                        let name_str = {
+                            use std::ops::Deref;
+                            let enum_def = ty.ty_adt_def().unwrap();
+                            let variant_def = &enum_def.variants[discr_index];
+                            String::from(variant_def.ident.name.as_str().deref())
+                        };
+                        trace!("discr name {:?}", name_str);
+
+                        // Obtains the path to store the data. For example, for Option<char>,
+                        // the path should be `(x as Some).0`.
+                        let content_path = Path::new_field(
+                            Path::new_qualified(
+                                Path::get_as_path(e.clone()),
+                                Rc::new(PathSelector::Downcast(
+                                    Rc::new(name_str),
+                                    discr_index.as_usize(),
+                                )),
+                            ),
+                            0,
+                        );
+                        let content_data = self.get_u128_const_val(*data);
+                        self.bv
+                            .current_environment
+                            .update_value_at(content_path, content_data);
+                    }
+
+                    return e;
+                }
+            } else {
+                let e = self.bv.get_new_heap_block(
+                    Rc::new(1u128.into()),
+                    Rc::new(1u128.into()),
+                    false,
+                    ty,
+                );
+                if let Expression::HeapBlock { .. } = &e.expression {
+                    let p = Path::new_discriminant(Path::get_as_path(e.clone()));
+                    let d = self.get_u128_const_val(*data);
+                    self.bv.current_environment.update_value_at(p, d);
+                    return e;
+                }
             }
             verify_unreachable!();
-        } else {
-            debug!("span: {:?}", self.bv.current_span);
-            debug!("type kind {:?}", ty.kind);
-            debug!("unimplemented constant {:?}", literal);
-            result = &ConstantDomain::Unimplemented;
         }
-        Rc::new(result.clone().into())
+        debug!("span: {:?}", self.bv.current_span);
+        debug!("type kind {:?}", ty.kind);
+        debug!("unimplemented constant {:?}", literal);
+        Rc::new(ConstantDomain::Unimplemented.into())
     }
 
     /// Used only for types with `layout::abi::Scalar` ABI and ZSTs.

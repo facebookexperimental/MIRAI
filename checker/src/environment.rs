@@ -58,7 +58,7 @@ impl Environment {
     /// Updates the path to value map so that the given path now points to the given value.
     #[logfn_inputs(TRACE)]
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
-        if value.is_bottom() || value.is_top() {
+        if value.is_bottom() {
             self.value_map = self.value_map.remove(&path);
             return;
         }

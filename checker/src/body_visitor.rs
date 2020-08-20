@@ -358,7 +358,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 local_val
             }
         };
-        let result = if refined_val.is_bottom() {
+        let result = if refined_val.is_bottom() || refined_val.is_top() {
             if self.imported_root_static(&path) {
                 return self.lookup_path_and_refine_result(path, result_rustc_type);
             }
@@ -409,7 +409,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             }
                             AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
                         }
-                        PathEnum::LocalVariable { .. } => refined_val,
+                        PathEnum::LocalVariable { .. } if !refined_val.is_top() => refined_val,
                         _ => AbstractValue::make_typed_unknown(
                             result_type.clone(),
                             path.replace_parameter_root_with_copy(),
