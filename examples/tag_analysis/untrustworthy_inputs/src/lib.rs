@@ -6,26 +6,36 @@
 // This is an example of using tag analysis to track untrustworthy inputs.
 // The code is extracted from a crate for public-key cryptography.
 
-#![feature(const_generics)]
-#![allow(incomplete_features)]
+#![cfg_attr(mirai, allow(incomplete_features), feature(const_generics))]
 
 #[macro_use]
 extern crate mirai_annotations;
 
 use core::convert::TryFrom;
+#[cfg(mirai)]
 use mirai_annotations::{TagPropagation, TagPropagationSet};
 
+#[cfg(mirai)]
 struct TaintedKind<const MASK: TagPropagationSet> {}
 
+#[cfg(mirai)]
 const TAINTED_MASK: TagPropagationSet = tag_propagation_set!(TagPropagation::SubComponent);
 
+#[cfg(mirai)]
 type Tainted = TaintedKind<TAINTED_MASK>;
+#[cfg(not(mirai))]
+type Tainted = ();
 
+#[cfg(mirai)]
 struct SanitizedKind<const MASK: TagPropagationSet> {}
 
+#[cfg(mirai)]
 const SANITIZED_MASK: TagPropagationSet = tag_propagation_set!(TagPropagation::SubComponent);
 
+#[cfg(mirai)]
 type Sanitized = SanitizedKind<SANITIZED_MASK>;
+#[cfg(not(mirai))]
+type Sanitized = ();
 
 /// A structure for public keys.
 pub struct PublicKey(u32);

@@ -32,18 +32,25 @@ MIRAI supports developer-defined tags and customizable tag propagation behavior.
 provided by the [MIRAI Annotations](https://crates.io/crates/mirai-annotations) crate.
 
 In MIRAI, tags are just Rust types, except that they are assumed to have at least one generic argument, the first of
-which should be a const parameter of type `TagPropagationSet`. The code below declares a tag kind named
+which should be a const parameter of type `TagPropagationSet`. Currently, Rust's support for const generics is
+incomplete. To enable such an incomplete and unstable feature only in MIRAI builds, one can use Rust's mechanism for
+conditional compilation:
+
+``` rust
+#![cfg_attr(mirai, allow(incomplete_features), feature(const_generics))]
+```
+
+The code below declares a tag kind named
 `SecretTaintKind`.
 
 ``` rust
-#![feature(const_generics)]
-#![allow(incomplete_features)]
-
 #[macro_use]
 extern crate mirai_annotations;
 
+#[cfg(mirai)]
 use mirai_annotations::{TagPropagation, TagPropagationSet};
 
+#[cfg(mirai)]
 struct SecretTaintKind<const MASK: TagPropagationSet> {}
 ```
 
@@ -53,9 +60,13 @@ to create a tag-propagation set by specifying all the operations that can propag
 tag named `SecretTaint` that can only be propagated by equality checks.
 
 ``` rust
+#[cfg(mirai)]
 const SECRET_TAINT_MASK = tag_propagation_set!(TagPropagation::Equals, TagPropagation::Ne);
 
+#[cfg(mirai)]
 type SecretTaint = SecretTaintKind<SECRET_TAINT_MASK>;
+#[cfg(not(mirai))]
+type SecretTaint = (); // Ensures code compiles in non-MIRAI builds
 ```
 
 ## Attaching and checking tags on values
@@ -95,6 +106,39 @@ fn result_must_be_tainted() -> Message {
 These annotations are equivalent to no-ops when the code is compiled by an unmodified Rust compiler. When compiled with
 MIRAI, these annotations cause MIRAI to check the conditions and emit diagnostic messages if MIRAI cannot prove the
 conditions to be true.
+
+## Annotating trait methods
+
+Traits provide powerful abstraction mechanisms in Rust, and it is natural to think about adding pre-/post-conditions to
+trait methods, in a way that all the implementors satisfy the contract. For example, we can define a `TaintRemovable`
+trait as follows, where `remove_taint` is the interface, but every implementor should instead implement the
+`_impl_remove_taint` method.
+
+``` rust
+trait TaintRemovable {
+    fn remove_taint(&mut self) {
+        self._impl_remove_taint();
+        postcondition!(does_not_have_tag(self, SecretTaint));
+    }
+
+    fn _impl_remove_taint(&mut self);
+}
+```
+
+With the [Rust design by contracts crate](https://gitlab.com/karroffel/contracts), one can use the `contract_trait`
+attribute to get rid of the boilerplate.
+
+``` rust
+use contracts::*;
+
+#[contract_trait]
+trait TaintRemovable {
+    #[post(does_not_have_tag(self, SecretTaint))]
+    fn remove_taint(&mut self);
+}
+```
+
+See the [trait-methods crate](../examples/tag_analysis/trait_methods) for a complete example.
 
 ## Scenario I: Detect timing side-channels
 
@@ -200,9 +244,17 @@ In a blockchain codebase, there are many verification routines that check the va
 blocks, messages, keys, etc. As pointed out by this [issue](https://github.com/libra/libra/issues/1602), it would add
 clarity to record verification status in the values.
 
-We can implement this mechanism using tag analysis as illustrated below: after a value has gone through a
-verification routine, we attach a `Verified` tag to it. For other code, where a verified value is required, we add a
-condition to enforce that the value has been attached with the `Verified` tag.
+There are two common ways to record such information. One is to introduce a new type, e.g., a verified `VoteMsg` will
+be typed `VerifiedVoteMsg`. The benefit is that the types would not introduce runtime overheads, but one downside is
+that developers would need to refactor a large part of the code. The other is to add a Boolean field to data structures
+to record the verification status, and check these fields at runtime. This approach is more flexible than static
+methods, but one downside it that it introduces runtime overheads.
+
+Using MIRAI's tag analysis, we have a third way that does not have runtime overheads, or rely on Rust's type system, in
+a way that the verification recording is orthogonal to the existing code. MIRAI is is more expressive than the type
+system, though it may still emit false positives in the diagnostics. We can implement this mechanism as illustrated
+below: after a value has gone through a verification routine, we attach a `Verified` tag to it. For other code, where a
+verified value is required, we add a condition to enforce that the value has been attached with the `Verified` tag.
 
 ``` rust
 // Make sure a VoteMsg makes sense.
