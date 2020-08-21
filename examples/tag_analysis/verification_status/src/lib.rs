@@ -6,19 +6,24 @@
 // This is an example of using tag analysis to record verification status of objects.
 // The code is extracted from a blockchain codebase.
 
-#![feature(const_generics)]
-#![allow(incomplete_features)]
+#![cfg_attr(mirai, allow(incomplete_features), feature(const_generics))]
 
 #[macro_use]
 extern crate mirai_annotations;
 
+#[cfg(mirai)]
 use mirai_annotations::{TagPropagation, TagPropagationSet};
 
+#[cfg(mirai)]
 struct VerifiedKind<const MASK: TagPropagationSet> {}
 
+#[cfg(mirai)]
 const VERIFIED_MASK: TagPropagationSet = tag_propagation_set!(TagPropagation::SubComponent);
 
+#[cfg(mirai)]
 type Verified = VerifiedKind<VERIFIED_MASK>;
+#[cfg(not(mirai))]
+type Verified = ();
 
 /// VoteMsg is the structure sent by the voter in response for receiving a proposal.
 pub struct VoteMsg {
