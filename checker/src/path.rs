@@ -721,7 +721,7 @@ impl PathRefinement for Rc<Path> {
             )),
             PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } => {
                 if *ordinal > arguments.len() {
-                    debug!("Summary refers to a parameter that does not have a matching argument");
+                    warn!("Summary refers to a parameter that does not have a matching argument");
                     Path::new_alias(Rc::new(abstract_value::BOTTOM))
                 } else {
                     arguments[*ordinal - 1].0.clone()

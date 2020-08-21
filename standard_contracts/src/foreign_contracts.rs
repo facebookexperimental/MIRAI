@@ -158,9 +158,14 @@ pub mod core {
                 *_self
             }
 
+            pub fn clone__tuple_2_i32_i32(_self: &(i32, i32)) -> (i32, i32) {
+                (_self.0, _self.1)
+            }
+
             pub fn clone__tuple_2_libra_crypto_ed25519_Ed25519Signature_u8<T: Clone>(
                 _self: &(T, u8),
             ) -> (T, u8) {
+                // todo: do not call clone here
                 (_self.0.clone(), _self.1)
             }
         }
