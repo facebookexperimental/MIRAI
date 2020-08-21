@@ -984,17 +984,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             indirect_call_visitor.destination = self.destination;
             let summary = indirect_call_visitor.get_function_summary();
             if let Some(summary) = summary {
-                indirect_call_visitor.transfer_and_refine_into_current_environment(&summary);
-                return;
-            } else {
-                if self.block_visitor.bv.check_for_errors {
-                    let saved_callee_def_id = self.callee_def_id;
-                    self.callee_def_id = def_id;
-                    self.deal_with_missing_summary();
-                    self.callee_def_id = saved_callee_def_id;
+                if summary.is_computed || summary.is_angelic {
+                    indirect_call_visitor.transfer_and_refine_into_current_environment(&summary);
+                    return;
                 }
-                Summary::default()
             }
+            if self.block_visitor.bv.check_for_errors {
+                let saved_callee_def_id = self.callee_def_id;
+                self.callee_def_id = def_id;
+                self.deal_with_missing_summary();
+                self.callee_def_id = saved_callee_def_id;
+            }
+            Summary::default()
         } else {
             if self.block_visitor.bv.check_for_errors {
                 warn!("unknown callee {:?}", callee);

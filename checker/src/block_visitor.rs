@@ -2832,7 +2832,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         .current_environment
                         .update_value_at(len_path, len_val);
                 }
-                TyKind::Closure(def_id, generic_args, ..) => {
+                TyKind::Closure(def_id, generic_args) => {
                     let func_const = self.visit_function_reference(
                         *def_id,
                         ty,
@@ -2842,6 +2842,21 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     self.bv
                         .current_environment
                         .update_value_at(base_path.clone(), func_val);
+                }
+                TyKind::Opaque(def_id, ..) => {
+                    if let TyKind::Closure(def_id, generic_args) =
+                        &self.bv.tcx.type_of(*def_id).kind
+                    {
+                        let func_const = self.visit_function_reference(
+                            *def_id,
+                            ty,
+                            generic_args.as_closure().substs,
+                        );
+                        let func_val = Rc::new(func_const.clone().into());
+                        self.bv
+                            .current_environment
+                            .update_value_at(base_path.clone(), func_val);
+                    }
                 }
                 TyKind::FnDef(def_id, generic_args) => {
                     let func_const = self.visit_function_reference(
