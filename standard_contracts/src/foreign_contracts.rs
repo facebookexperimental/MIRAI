@@ -17,20 +17,6 @@ pub mod alloc {
         }
     }
 
-    pub mod collections {
-        pub mod btree {
-            pub mod map {
-                pub mod implement_map {
-                    pub fn or_insert_with__usize_alloc_vec_Vec_alloc_string_String_fn_alloc_vec_implement_new_alloc_string_String<
-                        T,
-                    >() -> T {
-                        result!()
-                    }
-                }
-            }
-        }
-    }
-
     pub mod fmt {
         pub fn format() -> String {
             result!()
@@ -376,10 +362,6 @@ pub mod core {
 
     pub mod convert {
         pub mod Into {
-            pub fn into__ref_x25519_dalek_x25519_StaticSecret_x25519_dalek_x25519_PublicKey<T>() -> T
-            {
-                result!()
-            }
             pub fn into__usize_usize(t: usize) -> usize {
                 t
             }
@@ -400,14 +382,6 @@ pub mod core {
         }
     }
 
-    pub mod default {
-        pub trait Default {
-            fn default__T() {
-                result!()
-            }
-        }
-    }
-
     pub mod fmt {
         use std::marker::PhantomData;
 
@@ -415,33 +389,8 @@ pub mod core {
             phantom: PhantomData<&'a str>,
         }
 
-        pub mod implement_core_fmt_Arguments {
-            use crate::foreign_contracts::core::fmt::ArgumentV1;
-            use crate::foreign_contracts::core::fmt::Arguments;
-
-            pub fn new_v1<'a>(
-                _pieces: &'a [&'a str],
-                _args: &'a [ArgumentV1<'a>],
-            ) -> Arguments<'a> {
-                result!()
-            }
-        }
-
         pub struct ArgumentV1<'a> {
             phantom: PhantomData<&'a str>,
-        }
-
-        pub mod implement_core_fmt_ArgumentV1 {
-            use crate::foreign_contracts::core::fmt::ArgumentV1;
-            use crate::foreign_contracts::core::fmt::Formatter;
-            use crate::foreign_contracts::core::fmt::Result;
-
-            pub fn new<'b, T>(
-                _x: &'b T,
-                _f: fn(&T, &mut Formatter<'_>) -> Result,
-            ) -> ArgumentV1<'b> {
-                result!()
-            }
         }
 
         pub struct Formatter<'a> {
@@ -1559,31 +1508,6 @@ pub mod core {
                 panic!("unwrap failed")
             }
         }
-
-        pub mod r#try {
-            pub mod Try {
-                pub fn from_error<T>() -> T {
-                    result!()
-                }
-
-                pub fn into_result<T>() -> T {
-                    result!()
-                }
-            }
-        }
-
-        pub mod traits {
-            pub mod collect {
-                pub mod Extend {
-                    pub fn extend() {}
-                }
-                pub mod FromIterator {
-                    pub fn from_iter<T>() -> T {
-                        result!()
-                    }
-                }
-            }
-        }
     }
 
     pub mod i8 {
@@ -2009,12 +1933,6 @@ pub mod core {
     }
 
     pub mod slice {
-        pub mod implement {
-            pub fn get_unchecked_mut<T>() -> T {
-                result!()
-            }
-        }
-
         pub unsafe fn from_raw_parts<'a, T>(data: *const T, len: usize) -> &'a [T] {
             let result = std::slice::from_raw_parts(data, len);
             assumed_postcondition!(result.len() == len);
@@ -2132,16 +2050,6 @@ pub mod log {
     pub fn __private_api_log() {}
 }
 
-pub mod once_cell {
-    pub mod sync {
-        pub mod implement_sync {
-            pub fn force<T>() -> T {
-                result!()
-            }
-        }
-    }
-}
-
 pub mod rand {
     pub mod rngs {
         pub mod std {
@@ -2234,18 +2142,6 @@ pub mod std {
         pub mod implement_std_backtrace_Backtrace {
             pub fn capture() -> (std::backtrace::BacktraceStatus) {
                 (std::backtrace::BacktraceStatus::Unsupported)
-            }
-        }
-    }
-
-    pub mod collections {
-        pub mod hash {
-            pub mod map {
-                pub mod implement_map {
-                    pub fn new<T>() -> T {
-                        result!()
-                    }
-                }
             }
         }
     }
