@@ -1121,20 +1121,17 @@ impl ExpressionType {
     #[logfn_inputs(TRACE)]
     pub fn is_floating_point_number(&self) -> bool {
         use self::ExpressionType::*;
-        match self {
-            F32 | F64 => true,
-            _ => false,
-        }
+        matches!(self, F32 | F64)
     }
 
     /// Returns true if this type is one of the integer types.
     #[logfn_inputs(TRACE)]
     pub fn is_integer(&self) -> bool {
         use self::ExpressionType::*;
-        match self {
-            I8 | I16 | I32 | I64 | I128 | Isize | U8 | U16 | U32 | U64 | U128 | Usize => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            I8 | I16 | I32 | I64 | I128 | Isize | U8 | U16 | U32 | U64 | U128 | Usize
+        )
     }
 
     /// Returns true if this type is not a primitive type. References are not regarded as
@@ -1142,30 +1139,21 @@ impl ExpressionType {
     #[logfn_inputs(TRACE)]
     pub fn is_primitive(&self) -> bool {
         use self::ExpressionType::*;
-        match self {
-            NonPrimitive | ThinPointer => false, //todo: raw pointer should be primitive
-            _ => true,
-        }
+        !matches!(self, NonPrimitive | ThinPointer)
     }
 
     /// Returns true if this type is one of the signed integer types.
     #[logfn_inputs(TRACE)]
     pub fn is_signed_integer(&self) -> bool {
         use self::ExpressionType::*;
-        match self {
-            I8 | I16 | I32 | I64 | I128 | Isize => true,
-            _ => false,
-        }
+        matches!(self, I8 | I16 | I32 | I64 | I128 | Isize)
     }
 
     /// Returns true if this type is one of the unsigned integer types.
     #[logfn_inputs(TRACE)]
     pub fn is_unsigned_integer(&self) -> bool {
         use self::ExpressionType::*;
-        match self {
-            U8 | U16 | U32 | U64 | U128 | Usize => true,
-            _ => false,
-        }
+        matches!(self, U8 | U16 | U32 | U64 | U128 | Usize)
     }
 
     /// Returns the number of bits used to represent the given type, if primitive.

@@ -988,6 +988,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [if !(x) { a } else { b }] -> if x { b } else { a }
             return operand.conditional_expression(alternate, consequent);
         }
+        // [if x == 0 { y } else { true }] -> x || y
+        if let Expression::Equals { left: x, right: z } = &self.expression {
+            if let Expression::CompileTimeConstant(ConstantDomain::U128(0)) = z.expression {
+                if alternate.as_bool_if_known().unwrap_or(false) {
+                    return x.or(consequent);
+                }
+            }
+        }
+        // [if x { true } else { y }] -> x || y
+        if consequent.as_bool_if_known().unwrap_or(false) {
+            return self.or(alternate);
+        }
+        // [if x { y } else { false }] -> x && y
+        if !alternate.as_bool_if_known().unwrap_or(true) {
+            return self.and(consequent);
+        }
         if let Expression::Or { left: x, right: y } = &self.expression {
             match &consequent.expression {
                 Expression::LogicalNot { operand } if *x == *operand => {
@@ -1364,6 +1380,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return Rc::new(v1.equals(v2).into());
         };
         match (&self.expression, &other.expression) {
+            // x == true -> x
+            (_, Expression::CompileTimeConstant(ConstantDomain::True)) => {
+                return self.clone();
+            }
+            // true == x -> x
+            (Expression::CompileTimeConstant(ConstantDomain::True), _) => {
+                return other.clone();
+            }
+            // x == false -> !x
+            (_, Expression::CompileTimeConstant(ConstantDomain::False)) => {
+                return self.logical_not();
+            }
+            // false == x -> !x
+            (Expression::CompileTimeConstant(ConstantDomain::False), _) => {
+                return other.logical_not();
+            }
+
             // [(c ? c1 : c2) == c1] -> c
             // [(c ? c1 : c2) == c2] -> !c
             (
@@ -1657,10 +1690,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// True if this value is a compile time constant.
     #[logfn_inputs(TRACE)]
     fn is_compile_time_constant(&self) -> bool {
-        match &self.expression {
-            Expression::CompileTimeConstant(..) => true,
-            _ => false,
-        }
+        matches!(&self.expression, Expression::CompileTimeConstant(..))
     }
 
     /// True if the storage referenced by this expression is, or is contained in, a zeroed heap allocation.
@@ -1695,10 +1725,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// True if this a widened value.
     #[logfn_inputs(TRACE)]
     fn is_widened(&self) -> bool {
-        match self.expression {
-            Expression::Widen { .. } => true,
-            _ => false,
-        }
+        matches!(self.expression, Expression::Widen { .. })
     }
 
     /// Returns a domain whose corresponding set of concrete values include all of the values
@@ -1935,6 +1962,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return Rc::new(v1.not_equals(v2).into());
         };
         match (&self.expression, &other.expression) {
+            // x != true -> !x
+            (_, Expression::CompileTimeConstant(ConstantDomain::True)) => {
+                return self.logical_not();
+            }
+            // true != x -> !x
+            (Expression::CompileTimeConstant(ConstantDomain::True), _) => {
+                return other.logical_not();
+            }
+            // x != false -> x
+            (_, Expression::CompileTimeConstant(ConstantDomain::False)) => {
+                return self.clone();
+            }
+            // false != x -> x
+            (Expression::CompileTimeConstant(ConstantDomain::False), _) => {
+                return other.clone();
+            }
+
             // [!x != 0] -> !x when x is Boolean. Canonicalize it to the latter.
             (
                 Expression::LogicalNot { operand },
@@ -2070,6 +2114,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
                 // [x || !x] -> true
                 (_, Expression::LogicalNot { ref operand }) if (**operand).eq(&self) => {
+                    Rc::new(TRUE)
+                }
+
+                // [(x == y) || (x != y)] -> true if x is not a floating point
+                (
+                    Expression::Equals {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::Ne {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2)
+                    && y1.eq(y2)
+                    && !x1.expression.infer_type().is_floating_point_number() =>
+                {
                     Rc::new(TRUE)
                 }
 

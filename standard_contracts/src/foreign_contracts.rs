@@ -1939,8 +1939,26 @@ pub mod core {
             result
         }
 
+        pub mod implement {
+            pub mod copy_from_slice {
+                fn len_mismatch_fail(dst_len: usize, src_len: usize) {
+                    panic!(
+                        "source slice length ({}) does not match destination slice length ({})",
+                        src_len, dst_len,
+                    );
+                }
+            }
+        }
+
         pub fn memcmp(_s1: *const u8, _s2: *const u8, _n: usize) -> i32 {
             result!()
+        }
+
+        fn slice_end_index_len_fail(index: usize, len: usize) {
+            panic!(
+                "range end index {} out of range for slice of length {}",
+                index, len
+            );
         }
 
         pub fn slice_index_len_fail(_index: usize, _len: usize) {
