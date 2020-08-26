@@ -152,7 +152,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 let param_env = self.bv.type_visitor.get_param_env();
                 if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
                     let discr_ty = ty_and_layout.ty.discriminant_ty(self.bv.tcx);
-                    let discr_layout = self.bv.tcx.layout_of(param_env.and(discr_ty)).unwrap();
                     let discr_bits = match ty_and_layout
                         .ty
                         .discriminant_for_variant(self.bv.tcx, variant_index)
@@ -160,12 +159,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         Some(discr) => discr.val,
                         None => variant_index.as_u32() as u128,
                     };
-                    let val = if discr_ty.is_signed() {
-                        let extended = sign_extend(discr_bits, discr_layout.size);
-                        self.get_i128_const_val(extended as i128)
-                    } else {
-                        self.get_u128_const_val(discr_bits)
-                    };
+                    let val = self.get_int_const_val(discr_bits, discr_ty);
                     self.bv
                         .current_environment
                         .update_value_at(target_path, val);
@@ -335,7 +329,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         // Continue to deal with the branch targets.
         let discr = discr.as_int_if_known().unwrap_or(discr);
         for i in 0..values.len() {
-            let val: Rc<AbstractValue> = Rc::new(ConstantDomain::U128(values[i]).into());
+            let val = self.get_int_const_val(values[i], switch_ty);
             let cond = discr.equals(val);
             let exit_condition = self
                 .bv
@@ -733,6 +727,30 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
     pub fn get_u128_const_val(&mut self, val: u128) -> Rc<AbstractValue> {
         self.bv.get_u128_const_val(val)
+    }
+
+    /// Gets a constant integer of type `ty` with bit representation specified by `val`.
+    /// `ty` might not be a 128-bit integer type, so this method extends/truncates the bit
+    /// representation accordingly.
+    pub fn get_int_const_val(&mut self, mut val: u128, ty: Ty<'tcx>) -> Rc<AbstractValue> {
+        let param_env = self.bv.type_visitor.get_param_env();
+        let is_signed;
+        if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
+            is_signed = ty_and_layout.abi.is_signed();
+            let size = ty_and_layout.size;
+            if is_signed {
+                val = sign_extend(val, size);
+            } else {
+                val = truncate(val, size);
+            }
+        } else {
+            is_signed = ty.is_signed();
+        }
+        if is_signed {
+            self.get_i128_const_val(val as i128)
+        } else {
+            self.get_u128_const_val(val)
+        }
     }
 
     /// Emit a diagnostic to the effect that the current call might violate a the given precondition
@@ -2269,6 +2287,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // The layout of the discriminant tag
                 let discr_layout = self.bv.tcx.layout_of(param_env.and(discr_ty)).unwrap();
 
+                let discr_signed; // Whether the discriminant tag is signed or not
                 let discr_bits; // The actual representation of the discriminant tag
                 let discr_index; // The index of the discriminant in the enum definition
                 let discr_has_data; // A flag indicating if the enum constant has a sub-component
@@ -2278,11 +2297,18 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         // The enum only contains one variant.
 
                         // Truncates the value of the discriminant to fit into the layout.
+                        discr_signed = discr_layout.abi.is_signed();
                         discr_bits = match ty_and_layout
                             .ty
                             .discriminant_for_variant(self.bv.tcx, index)
                         {
-                            Some(discr) => truncate(discr.val, discr_layout.size),
+                            Some(discr) => {
+                                if discr_signed {
+                                    sign_extend(discr.val, discr_layout.size)
+                                } else {
+                                    truncate(discr.val, discr_layout.size)
+                                }
+                            }
                             None => truncate(index.as_u32() as u128, discr_layout.size),
                         };
                         discr_index = index;
@@ -2305,6 +2331,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .tcx
                             .layout_of(param_env.and(tag.value.to_int_ty(self.bv.tcx)))
                             .unwrap();
+                        discr_signed = tag_layout.abi.is_signed();
                         match *tag_encoding {
                             TagEncoding::Direct => {
                                 // Truncates the discriminant value to fit into the layout.
@@ -2314,8 +2341,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 // However, the constant literal might have a different memory layout.
                                 // Currently, Rust encodes the constant `std::cmp::Ordering::Less` as 0xff.
                                 // So we need to first sign_extend 0xff and then truncate to fit into discr_layout.
-                                let signed = tag_layout.abi.is_signed();
-                                let v = if signed {
+                                let v = if discr_signed {
                                     sign_extend(*data, tag_layout.size)
                                 } else {
                                     *data
@@ -2389,7 +2415,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 );
                 if let Expression::HeapBlock { .. } = &e.expression {
                     let discr_path = Path::new_discriminant(Path::get_as_path(e.clone()));
-                    let discr_data = self.get_u128_const_val(discr_bits);
+                    let discr_data = if discr_signed {
+                        self.get_i128_const_val(discr_bits as i128)
+                    } else {
+                        self.get_u128_const_val(discr_bits)
+                    };
                     self.bv
                         .current_environment
                         .update_value_at(discr_path, discr_data);

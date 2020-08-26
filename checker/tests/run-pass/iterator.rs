@@ -23,13 +23,13 @@ pub fn test1() {
     verify!(it.start >= 10);
 }
 
-// pub fn test2() {
-//     let mut it = std::ops::RangeInclusive::new(0usize, 10usize);
-//     while let Some(_) = it.next() {
-//         verify!(*it.start() <= 10);
-//     }
-//     verify!(it.is_empty());
-// }
+pub fn test2() {
+    let mut it = std::ops::RangeInclusive::new(0usize, 10usize);
+    while let Some(_) = it.next() {
+        verify!(*it.start() <= 10);
+    }
+    verify!(it.is_empty());
+}
 
 struct UsizeRangeInclusive {
     start: usize,
