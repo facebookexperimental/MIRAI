@@ -58,6 +58,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub current_location: mir::Location,
     pub current_span: rustc_span::Span,
     pub start_instant: Instant,
+    // The current environments when the return statement was executed
     pub exit_environment: Option<Environment>,
     pub function_name: Rc<String>,
     pub heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
@@ -749,7 +750,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             self.type_visitor.mir = self.mir;
             let result_rustc_type = self.mir.local_decls[mir::Local::from(0usize)].ty;
             self.visit_promoted_constants_block();
-            if self.exit_environment.is_some() {
+            if let Some(exit_environment) = &self.exit_environment {
+                self.current_environment = exit_environment.clone();
                 let mut result_root: Rc<Path> = Path::new_result();
                 let mut promoted_root: Rc<Path> =
                     Rc::new(PathEnum::PromotedConstant { ordinal }.into());
@@ -770,7 +772,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     promoted_root = Path::new_field(promoted_root, 0);
                     result_root = Path::new_field(result_root, 0);
                 }
-                //todo: probably should use exit environment and probably should expect a value
                 let value =
                     self.lookup_path_and_refine_result(result_root.clone(), result_rustc_type);
                 match &value.expression {
@@ -834,6 +835,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// Unlike other locals, it appears that the life time of promoted constant
     /// function local can exceed the life time of the of promoted constant function
     /// and even the function that hosts it.
+    #[logfn_inputs(TRACE)]
     fn promote_reference(
         &mut self,
         environment: &mut Environment,

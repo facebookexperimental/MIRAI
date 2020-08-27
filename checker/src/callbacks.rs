@@ -141,6 +141,7 @@ impl MiraiCallbacks {
     fn is_excluded(file_name: &str) -> bool {
         file_name.contains("client/libra-dev/src") // takes too long
             || file_name.contains("config/management/src") // false positives
+            || file_name.contains("config/management/genesis") // takes too long
             || file_name.contains("consensus/src") // resolve error
             || file_name.contains("consensus/safety-rules/src") // false positives
             || file_name.contains("crypto/crypto-derive/src") //  `(left == right)`  left: `Type`, right: `Fn`
@@ -164,9 +165,14 @@ impl MiraiCallbacks {
             || file_name.contains("language/resource-viewer/src") // false positives
             || file_name.contains("language/move-prover/docgen/src") // takes too long 
             || file_name.contains("language/move-prover/stackless-bytecode-generator/src") // resolve error
+            || file_name.contains("language/stdlib/src") // z3 encoding
+            || file_name.contains("language/transaction-builder/generator/src") // z3 encoding
+            || file_name.contains("language/tools/move-coverage/src") // stack overflow
+            || file_name.contains("language/tools/transaction-replay/src") // z3 encoding
             || file_name.contains("language/tools/vm-genesis/src") // resolve error
             || file_name.contains("language/tools/genesis-viewer/src") // false positives
             || file_name.contains("language/vm/src") // false positives
+            || file_name.contains("mempool/src") // stack overflow
             || file_name.contains("network/src") // resolve error
             || file_name.contains("network/builder") // takes too long
             || file_name.contains("secure/net/src") // false positives
@@ -177,6 +183,7 @@ impl MiraiCallbacks {
             || file_name.contains("storage/jellyfish-merkle/src") // unreachable code
             || file_name.contains("storage/backup/backup-cli/src") // panics
             || file_name.contains("storage/libradb/src") // resolve error
+            || file_name.contains("storage/schemadb/src") // crash
             || file_name.contains("testsuite/cli/src") // false positives
             || file_name.contains("testsuite/cli/libra-wallet/src") // takes too long
             || file_name.contains("types/src") // resolve error

@@ -2003,10 +2003,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let mut val = literal.val;
         let ty = literal.ty;
         if let rustc_middle::ty::ConstKind::Unevaluated(def_ty, substs, promoted) = &literal.val {
-            // Do this to get MIR into the cache
-            val = literal
-                .val
-                .eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
             let def_id = def_ty.def_id_for_type_of();
             let substs = self
                 .bv
@@ -2021,9 +2017,27 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 None => Path::new_static(self.bv.tcx, def_id),
             };
             self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
+            // Note that this might not find the promoted constant in the current environment,
+            // even though it was imported at the beginning of visit_body. This happens
+            // when the current environment starts of empty because we are visiting an
+            // unreachable block for error reporting purposes.
+            //todo: keep track of the first state containing the promoted constants and use that
+            // to lookup PromotedConstant paths.
             let static_val = self.bv.lookup_path_and_refine_result(path, ty);
             if let Expression::Variable { .. } = &static_val.expression {
-                debug!("literal {:?} has no MIR, evaluates to {:?}", literal, val);
+                // Try getting the value from val.eval
+                val = val.eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
+                match &val {
+                    rustc_middle::ty::ConstKind::Unevaluated(..) => {
+                        // val.eval did not manage to evaluate this, go with unknown.
+                        return static_val;
+                    }
+                    rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { .. }) => {
+                        // Don't currently know how to deal with such a result, go with unknown.
+                        return static_val;
+                    }
+                    _ => {}
+                }
             } else {
                 return static_val;
             }
