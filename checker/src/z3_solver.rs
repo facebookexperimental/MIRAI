@@ -1462,10 +1462,9 @@ impl Z3Solver {
         operand: &Rc<AbstractValue>,
     ) -> (bool, z3_sys::Z3_ast) {
         use self::ExpressionType::*;
-        let expr_type = operand.expression.infer_type();
-        let expr_type = match expr_type {
-            Bool | ThinPointer | NonPrimitive => ExpressionType::I128,
-            _ => expr_type,
+        let expr_type = match operand.expression.infer_type() {
+            Bool | Function | ThinPointer | NonPrimitive => ExpressionType::I128,
+            val => val,
         };
         let is_float = expr_type.is_floating_point_number();
         let ast = self.get_ast_for_widened(path, operand, expr_type);

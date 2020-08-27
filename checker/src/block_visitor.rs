@@ -2290,9 +2290,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         literal: &rustc_middle::ty::Const<'tcx>,
         ty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
+        let mut val = literal.val;
+        if let rustc_middle::ty::ConstKind::Unevaluated(..) = &val {
+            val = val.eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
+        }
+
         if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
             data, ..
-        })) = &literal.val
+        })) = &val
         {
             let param_env = self.bv.type_visitor.get_param_env();
             if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {

@@ -1972,6 +1972,13 @@ pub mod core {
         pub fn slice_index_overflow_fail() {
             panic!("attempted to index slice up to maximum usize");
         }
+
+        fn slice_start_index_len_fail(index: usize, len: usize) -> ! {
+            panic!(
+                "range start index {} out of range for slice of length {}",
+                index, len
+            );
+        }
     }
 
     pub mod usize {
