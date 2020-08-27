@@ -1873,7 +1873,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         // in the final environment are used construct the summary. We work around this
         // by creating an entry for the non primitive (unknown) value. The caller will
         // be saddled with removing it. This case corresponds to no_children being true.
-        if val_type == ExpressionType::NonPrimitive {
+        if val_type == ExpressionType::NonPrimitive || val_type == ExpressionType::Function {
             // First look at paths that are rooted in rpath.
             // Remove an explicit deref from source_path to make it a valid root.
             let source_path = match &source_path.value {

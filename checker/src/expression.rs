@@ -1015,6 +1015,7 @@ impl Expression {
 pub enum ExpressionType {
     Bool,
     Char,
+    Function,
     F32,
     F64,
     I8,
@@ -1041,7 +1042,7 @@ impl From<&ConstantDomain> for ExpressionType {
             ConstantDomain::Bottom => NonPrimitive,
             ConstantDomain::Char(..) => Char,
             ConstantDomain::False => Bool,
-            ConstantDomain::Function { .. } => NonPrimitive,
+            ConstantDomain::Function(..) => Function,
             ConstantDomain::I128(..) => I128,
             ConstantDomain::F64(..) => F64,
             ConstantDomain::F32(..) => F32,
@@ -1078,13 +1079,21 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
             | TyKind::FnDef(..)
             | TyKind::FnPtr(..)
             | TyKind::Generator(..)
-            | TyKind::GeneratorWitness(..) => ExpressionType::ThinPointer,
+            | TyKind::GeneratorWitness(..)
+            | TyKind::Opaque(..) => ExpressionType::Function,
             TyKind::RawPtr(..) | TyKind::Ref(..) => {
                 if type_visitor::is_slice_pointer(ty_kind) {
                     // Such pointer types are non primitive because they are (pointer, length) tuples.
                     ExpressionType::NonPrimitive
                 } else {
                     ExpressionType::ThinPointer
+                }
+            }
+            TyKind::Tuple(types) => {
+                if types.is_empty() {
+                    ExpressionType::Function
+                } else {
+                    ExpressionType::NonPrimitive
                 }
             }
             _ => ExpressionType::NonPrimitive,
@@ -1098,6 +1107,8 @@ impl ExpressionType {
         match self {
             Bool => tcx.types.bool,
             Char => tcx.types.char,
+            // This is a hack
+            Function => tcx.types.unit,
             F32 => tcx.types.f32,
             F64 => tcx.types.f64,
             I8 => tcx.types.i8,
@@ -1164,6 +1175,7 @@ impl ExpressionType {
         match self {
             Bool => 1,
             Char => 16,
+            Function => 64,
             F32 => 32,
             F64 => 64,
             I8 => 8,

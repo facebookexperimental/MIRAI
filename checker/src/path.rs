@@ -275,9 +275,10 @@ impl Path {
         path: &Rc<Path>,
         result_rustc_type: Ty<'tcx>,
     ) -> Option<Rc<Path>> {
-        debug!(
+        trace!(
             "get_path_to_field_at_offset_0 {:?} {:?}",
-            path, result_rustc_type
+            path,
+            result_rustc_type
         );
         match &result_rustc_type.kind {
             TyKind::Adt(def, substs) => {
