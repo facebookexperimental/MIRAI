@@ -2186,7 +2186,7 @@ pub mod std {
 
     pub mod io {
         pub mod error {
-            pub mod implement_std_io_Error {
+            pub mod implement_std_io_error_Error {
                 pub struct Error {
                     repr: Repr,
                 }
