@@ -63,6 +63,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         self.path_ty_cache = HashMap::default();
     }
 
+    //todo: what about generators?
     /// Parameters that are closures bring enclosed variables with them that are effectively
     /// additional parameters. We pre-populate the environment with entries for these because
     /// there is no convenient way to look up their types later on. I.e. unlike ordinary parameters
@@ -70,6 +71,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// types extracted from the closure type definitions via the tricky logic below.
     #[logfn_inputs(TRACE)]
     pub fn add_any_closure_fields_for(
+        &mut self,
         environment: &mut Environment,
         parameter_types: &[Ty<'tcx>],
         first_state: &mut Environment,
@@ -78,26 +80,16 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         if let PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } = &path.value {
             if *ordinal > 0 && *ordinal <= parameter_types.len() {
                 if let TyKind::Closure(_, substs) = parameter_types[*ordinal - 1].kind {
-                    if let Some(i) = substs.iter().position(|gen_arg| {
-                        if let GenericArgKind::Type(ty) = gen_arg.unpack() {
-                            matches!(ty.kind, TyKind::FnPtr(..))
-                        } else {
-                            false
-                        }
-                    }) {
-                        for j in (i + 1)..substs.len() {
-                            let var_type: ExpressionType =
-                                (&substs.get(j).unwrap().expect_ty().kind).into();
-                            let closure_field_path = Path::new_field(path.clone(), j - (i + 1))
-                                .refine_paths(environment);
-                            let closure_field_val = AbstractValue::make_typed_unknown(
-                                var_type,
-                                closure_field_path.clone(),
-                            );
-                            first_state
-                                .value_map
-                                .insert_mut(closure_field_path, closure_field_val);
-                        }
+                    for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
+                        let var_type: ExpressionType = (&ty.kind).into();
+                        let closure_field_path =
+                            Path::new_field(path.clone(), i).refine_paths(environment);
+                        self.path_ty_cache.insert(closure_field_path.clone(), ty);
+                        let closure_field_val =
+                            AbstractValue::make_typed_unknown(var_type, closure_field_path.clone());
+                        first_state
+                            .value_map
+                            .insert_mut(closure_field_path, closure_field_val);
                     }
                 }
             }
@@ -193,9 +185,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 value.expression.infer_type().as_rustc_type(self.tcx)
             }
             PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } => {
-                if self.actual_argument_types.len() >= *ordinal {
-                    self.actual_argument_types[*ordinal - 1]
-                } else if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
+                if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
                     self.specialize_generic_argument_type(
                         self.mir.local_decls[mir::Local::from(*ordinal)].ty,
                         &self.generic_argument_map,
@@ -254,12 +244,14 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 //todo: assume_unreachable!("field ordinal should always be valid");
                             }
                             TyKind::Closure(def_id, subs) => {
-                                let _ = def_id;
-                                return subs.types().nth(*ordinal).unwrap_or_else(|| {
-                                    info!("closure field not found {:?} {:?}", def_id, ordinal);
-                                    self.tcx.types.never
-                                });
+                                return subs.as_closure().upvar_tys().nth(*ordinal).unwrap_or_else(
+                                    || {
+                                        info!("closure field not found {:?} {:?}", def_id, ordinal);
+                                        self.tcx.types.never
+                                    },
+                                );
                             }
+                            //todo: what about generators?
                             TyKind::Opaque(def_id, subs) => {
                                 let closure_ty = self.tcx.type_of(*def_id);
                                 let map = self.get_generic_arguments_map(*def_id, subs, &[]);
@@ -778,6 +770,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     }
 }
 
+//todo: what about generators?
 /// Extracts the def_id of a closure, given the type of a value that is known to be a closure.
 /// Returns None otherwise.
 #[logfn_inputs(TRACE)]

@@ -175,7 +175,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         // Add parameter values that are function constants.
         // Also add entries for closure fields.
         for (path, val) in function_constant_args.iter() {
-            TypeVisitor::add_any_closure_fields_for(
+            self.type_visitor.add_any_closure_fields_for(
                 &mut self.current_environment,
                 parameter_types,
                 &mut first_state,
@@ -1147,9 +1147,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     if matches!(&path.value, PathEnum::PhantomData) {
                         continue;
                     }
-                    let target_type = self
+                    let mut target_type = self
                         .type_visitor
                         .get_path_rustc_type(&tpath, self.current_span);
+                    if target_type == self.tcx.types.never {
+                        //todo: figure out why this happens
+                        target_type = rtype.as_rustc_type(self.tcx);
+                    }
                     if let PathEnum::LocalVariable { ordinal } = &path.value {
                         if *ordinal >= self.fresh_variable_offset {
                             // A fresh variable from the callee adds no information that is not
