@@ -943,12 +943,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if type_visitor::get_def_id_from_closure(closure_ty).is_some() {
             actual_args.insert(0, self.actual_args[0].clone());
             actual_argument_types.insert(0, closure_ref_ty);
+            //todo: could this be a generator?
             if let TyKind::Closure(def_id, substs) = closure_ty.kind {
                 argument_map = self
                     .block_visitor
                     .bv
                     .type_visitor
-                    .get_generic_arguments_map(def_id, substs, &[]);
+                    .get_generic_arguments_map(def_id, substs.as_closure().substs, &[]);
             }
         }
 
