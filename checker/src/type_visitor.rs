@@ -255,7 +255,27 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             TyKind::Opaque(def_id, subs) => {
                                 let closure_ty = self.tcx.type_of(*def_id);
                                 let map = self.get_generic_arguments_map(*def_id, subs, &[]);
-                                return self.specialize_generic_argument_type(closure_ty, &map);
+                                let ct = self.specialize_generic_argument_type(
+                                    self.tcx.type_of(*def_id),
+                                    &map,
+                                );
+                                if let TyKind::Closure(def_id, subts) = &ct.kind {
+                                    return subts
+                                        .as_closure()
+                                        .upvar_tys()
+                                        .nth(*ordinal)
+                                        .unwrap_or_else(|| {
+                                            info!(
+                                                "closure field not found {:?} {:?}",
+                                                def_id, ordinal
+                                            );
+                                            self.tcx.types.never
+                                        });
+                                } else {
+                                    //todo: there might be a generator here
+                                    info!("opaque root does not contain a closure, def_id is {:?} type_of is {:?}", def_id, closure_ty);
+                                    return self.tcx.types.never;
+                                }
                             }
                             TyKind::Tuple(types) => {
                                 if let Some(gen_arg) = types.get(*ordinal as usize) {
