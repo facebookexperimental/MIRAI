@@ -410,7 +410,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             }
                             AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
                         }
-                        PathEnum::LocalVariable { .. } if !refined_val.is_top() => refined_val,
+                        PathEnum::LocalVariable { .. }
+                            if !refined_val.is_top() && !refined_val.is_bottom() =>
+                        {
+                            refined_val
+                        }
                         _ => AbstractValue::make_typed_unknown(
                             result_type.clone(),
                             path.replace_parameter_root_with_copy(),
@@ -1613,6 +1617,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     where
         F: Fn(&mut Self, Rc<Path>, Rc<Path>, Ty<'tcx>),
     {
+        trace!(
+            "try_expand_source_pattern(target_path {:?}, source_path {:?}, root_rustc_ty {:?},)",
+            target_path,
+            source_path,
+            root_rustc_ty
+        );
         if let PathEnum::QualifiedPath {
             ref qualifier,
             ref selector,
@@ -1641,8 +1651,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     let index_val = self.get_u128_const_val(index);
                     let index_path = Path::new_index(qualifier.clone(), index_val)
                         .refine_paths(&self.current_environment);
-                    let elem_ty = type_visitor::get_element_type(root_rustc_ty);
-                    update(self, target_path.clone(), index_path, elem_ty);
+                    update(self, target_path.clone(), index_path, root_rustc_ty);
                     return true;
                 }
                 PathSelector::ConstantSlice { from, to, from_end } => {
@@ -1680,6 +1689,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) where
         F: Fn(&mut Self, Rc<Path>, Rc<Path>, Ty<'tcx>),
     {
+        trace!(
+            "expand_slice(target_path {:?}, source_path {:?}, root_rustc_type {:?},)",
+            target_path,
+            source_path,
+            root_rustc_type
+        );
         let mut elem_ty = type_visitor::get_element_type(root_rustc_type);
         if elem_ty == root_rustc_type {
             elem_ty = type_visitor::get_target_type(root_rustc_type);
@@ -1735,6 +1750,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         G: Fn(&mut Self, Rc<Path>, Rc<Path>, Rc<AbstractValue>),
         H: Fn(&mut Self, Rc<Path>, Rc<Path>, Rc<AbstractValue>),
     {
+        trace!(
+            "try_expand_target_pattern(target_path {:?}, source_path {:?}, root_rustc_type {:?},)",
+            target_path,
+            source_path,
+            root_rustc_type
+        );
         if let PathEnum::QualifiedPath {
             ref qualifier,
             ref selector,
@@ -1871,6 +1892,30 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     {
         trace!("non_patterned_copy_or_move_elements(target_path {:?}, source_path {:?}, root_rustc_type {:?})", target_path, source_path, root_rustc_type);
         let value = self.lookup_path_and_refine_result(source_path.clone(), root_rustc_type);
+        if let Expression::Variable { path, .. } = &value.expression {
+            if path.eq(&source_path) {
+                // The source value is not known and we need to take an additional precaution:
+                let source_type = self
+                    .type_visitor
+                    .get_path_rustc_type(&source_path, self.current_span);
+                if matches!(source_type.kind, TyKind::Array(t, _) if t == root_rustc_type) {
+                    // During path refinement, the original source path was of the intermediate form *&p.
+                    // Mostly, this can just be canonicalized to just p, but if p has an array type
+                    // and *&p is not used as a qualifier, then *&p represents the first element of the array
+                    // if &p is the refinement of a pointer obtained from the array via array::as_ptr.
+                    let zero = Rc::new(0u128.into());
+                    let first_element = Path::new_index(path.clone(), zero);
+                    self.non_patterned_copy_or_move_elements(
+                        target_path,
+                        first_element,
+                        root_rustc_type,
+                        move_elements,
+                        update,
+                    );
+                    return;
+                }
+            }
+        }
         let val_type = value.expression.infer_type();
         let mut no_children = true;
         // If a non primitive parameter is just returned from a function, for example,
