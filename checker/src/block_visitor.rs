@@ -2841,7 +2841,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             _ => (),
         };
-        self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
+        if !self.bv.type_visitor.path_ty_cache.contains_key(&path) {
+            self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
+        }
         path
     }
 

@@ -546,22 +546,22 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 mir::ProjectionElem::Field(_, ty) => {
                     self.specialize_generic_argument_type(ty, &self.generic_argument_map)
                 }
-                //todo: a subslice should probably have the base type, not the element type
-                mir::ProjectionElem::Index(_)
-                | mir::ProjectionElem::ConstantIndex { .. }
-                | mir::ProjectionElem::Subslice { .. } => match &base_ty.kind {
-                    TyKind::Adt(..) => base_ty,
-                    TyKind::Array(ty, _) => *ty,
-                    TyKind::Ref(_, ty, _) => get_element_type(*ty),
-                    TyKind::Slice(ty) => *ty,
-                    _ => {
-                        debug!(
-                            "span: {:?}\nelem: {:?} type: {:?}",
-                            current_span, projection_elem, base_ty
-                        );
-                        assume_unreachable!();
+                mir::ProjectionElem::Subslice { .. } => base_ty,
+                mir::ProjectionElem::Index(_) | mir::ProjectionElem::ConstantIndex { .. } => {
+                    match &base_ty.kind {
+                        TyKind::Adt(..) => base_ty,
+                        TyKind::Array(ty, _) => *ty,
+                        TyKind::Ref(_, ty, _) => get_element_type(*ty),
+                        TyKind::Slice(ty) => *ty,
+                        _ => {
+                            debug!(
+                                "span: {:?}\nelem: {:?} type: {:?}",
+                                current_span, projection_elem, base_ty
+                            );
+                            assume_unreachable!();
+                        }
                     }
-                },
+                }
                 mir::ProjectionElem::Downcast(_, ordinal) => {
                     if let TyKind::Adt(def, substs) = &base_ty.kind {
                         if ordinal.index() >= def.variants.len() {
