@@ -77,7 +77,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         first_state: &mut Environment,
         path: &Rc<Path>,
     ) {
-        if let PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } = &path.value {
+        if let PathEnum::Parameter { ordinal } = &path.value {
             if *ordinal > 0 && *ordinal <= parameter_types.len() {
                 if let TyKind::Closure(_, substs) = parameter_types[*ordinal - 1].kind {
                     for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
@@ -162,7 +162,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     self.tcx
                         .mk_imm_ref(self.tcx.lifetimes.re_static, target_type)
                 }
-                Expression::RefinedParameterCopy { path, .. }
+                Expression::InitialValue { path, .. }
                 | Expression::Variable { path, .. }
                 | Expression::Widen { path, .. } => self.get_path_rustc_type(path, current_span),
                 _ => value.expression.infer_type().as_rustc_type(self.tcx),
@@ -184,7 +184,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             PathEnum::HeapBlock { value } | PathEnum::Offset { value } => {
                 value.expression.infer_type().as_rustc_type(self.tcx)
             }
-            PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } => {
+            PathEnum::Parameter { ordinal } => {
                 if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
                     self.specialize_generic_argument_type(
                         self.mir.local_decls[mir::Local::from(*ordinal)].ty,

@@ -7,7 +7,7 @@ use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::expression::Expression;
-use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
+use crate::path::{Path, PathEnum, PathSelector};
 
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::checked_assume;
@@ -226,9 +226,9 @@ impl Environment {
                         // The bottom value corresponds to dead (impossible) code, so the join collapses.
                         value_map.insert_mut(p, val1.clone());
                     } else {
-                        let val2 = AbstractValue::make_typed_unknown(
+                        let val2 = AbstractValue::make_initial_value(
                             val1.expression.infer_type(),
-                            path.replace_parameter_root_with_copy(),
+                            path.clone(),
                         );
                         value_map.insert_mut(p, join_or_widen(val1, &val2, path));
                     };
@@ -243,9 +243,9 @@ impl Environment {
                     // The bottom value corresponds to dead (impossible) code, so the join collapses.
                     value_map.insert_mut(path.clone(), val2.clone());
                 } else {
-                    let val1 = AbstractValue::make_typed_unknown(
+                    let val1 = AbstractValue::make_initial_value(
                         val2.expression.infer_type(),
-                        path.replace_parameter_root_with_copy(),
+                        path.clone(),
                     );
                     value_map.insert_mut(path.clone(), join_or_widen(&val1, val2, path));
                 };
