@@ -84,7 +84,7 @@ impl Path {
             Expression::UninterpretedCall { path, .. }
             | Expression::InitialValue { path, .. }
             | Expression::Variable { path, .. }
-            | Expression::Widen { path, .. } => path.as_ref().clone(),
+            | Expression::WidenedJoin { path, .. } => path.as_ref().clone(),
             _ => PathEnum::Alias { value }.into(),
         })
     }

@@ -331,7 +331,7 @@ impl Z3Solver {
                     unsafe { z3_sys::Z3_mk_not(self.z3_context, check_ast) }
                 }
             }
-            Expression::Widen { path, operand } => {
+            Expression::WidenedJoin { path, operand } => {
                 self.get_ast_for_widened(path, operand, operand.expression.infer_type())
             }
             Expression::Join { path, .. }
@@ -751,7 +751,7 @@ impl Z3Solver {
                 }
             }
 
-            Expression::Widen { operand, .. } => {
+            Expression::WidenedJoin { operand, .. } => {
                 return self.general_has_tag(&operand.expression, tag);
             }
 
@@ -866,14 +866,7 @@ impl Z3Solver {
             let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
             if target_type.is_integer() {
-                let domain = AbstractValue::make_from(
-                    Expression::Widen {
-                        path: path.clone(),
-                        operand: operand.clone(),
-                    },
-                    1,
-                );
-                let interval = domain.get_as_interval();
+                let interval = operand.widen(&path).get_as_interval();
                 if !interval.is_bottom() {
                     if let Some(lower_bound) = interval.lower_bound() {
                         let lb = self.get_constant_as_ast(&ConstantDomain::I128(lower_bound));
@@ -1067,7 +1060,7 @@ impl Z3Solver {
             | Expression::Variable { path, var_type } => {
                 self.numeric_variable(expression, path, var_type)
             }
-            Expression::Widen { path, operand } => self.numeric_widen(path, operand),
+            Expression::WidenedJoin { path, operand } => self.numeric_widen(path, operand),
             _ => (false, self.get_as_z3_ast(expression)),
         }
     }
@@ -1540,7 +1533,7 @@ impl Z3Solver {
                     z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.bool_sort)
                 }
             }
-            Expression::Widen { path, operand } => {
+            Expression::WidenedJoin { path, operand } => {
                 self.get_ast_for_widened(path, operand, ExpressionType::Bool)
             }
             //todo: relational operators
@@ -1661,7 +1654,7 @@ impl Z3Solver {
             }
             | Expression::InitialValue { path, var_type }
             | Expression::Variable { path, var_type } => self.bv_variable(path, var_type, num_bits),
-            Expression::Widen { path, operand } => self.bv_widen(path, operand, num_bits),
+            Expression::WidenedJoin { path, operand } => self.bv_widen(path, operand, num_bits),
             _ => self.get_as_z3_ast(expression),
         }
     }
