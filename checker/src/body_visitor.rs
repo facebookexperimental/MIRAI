@@ -1151,6 +1151,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     if matches!(&path.value, PathEnum::PhantomData) {
                         continue;
                     }
+                    if tpath.eq(path) {
+                        // amounts to "x = unknown_value_at(x)"
+                        self.current_environment.value_map.remove_mut(path);
+                        continue;
+                    }
                     let mut target_type = self
                         .type_visitor
                         .get_path_rustc_type(&tpath, self.current_span);
