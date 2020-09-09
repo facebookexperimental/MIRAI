@@ -350,11 +350,8 @@ impl AbstractValue {
     /// This value has been refined in the pre-state of a call and should not be refined again
     /// during the current function invocation.
     #[logfn_inputs(TRACE)]
-    pub fn make_refined_parameter_copy(
-        var_type: ExpressionType,
-        path: Rc<Path>,
-    ) -> Rc<AbstractValue> {
-        AbstractValue::make_from(Expression::RefinedParameterCopy { path, var_type }, 1)
+    pub fn make_initial_value(var_type: ExpressionType, path: Rc<Path>) -> Rc<AbstractValue> {
+        AbstractValue::make_from(Expression::InitialValue { path, var_type }, 1)
     }
 }
 
@@ -1210,8 +1207,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .try_to_retype_as(target_type)
                 .subtract(right.try_to_retype_as(target_type)),
             Expression::Neg { operand } => operand.try_to_retype_as(target_type).negate(),
-            Expression::RefinedParameterCopy { path, .. } => {
-                AbstractValue::make_refined_parameter_copy(target_type.clone(), path.clone())
+            Expression::InitialValue { path, .. } => {
+                AbstractValue::make_initial_value(target_type.clone(), path.clone())
             }
             Expression::Switch {
                 discriminator,
@@ -1277,12 +1274,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     AbstractValue::make_typed_unknown(target_type, path.clone())
                 }
             }
-            Expression::RefinedParameterCopy { path, .. } => {
-                AbstractValue::make_refined_parameter_copy(
-                    target_type,
-                    Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
-                )
-            }
+            Expression::InitialValue { path, .. } => AbstractValue::make_initial_value(
+                target_type,
+                Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
+            ),
             Expression::Switch {
                 discriminator,
                 cases,
@@ -1700,7 +1695,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::HeapBlock { is_zeroed, .. } => *is_zeroed,
             Expression::Offset { left, .. } => left.is_contained_in_zeroed_heap_block(),
             Expression::Reference(path)
-            | Expression::RefinedParameterCopy { path, .. }
+            | Expression::InitialValue { path, .. }
             | Expression::Variable { path, .. } => path.is_rooted_by_zeroed_heap_block(),
             _ => false,
         }
@@ -2745,7 +2740,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Reference { .. }
             | Expression::UnknownTagCheck { .. } => return TagDomain::empty_set(),
 
-            Expression::RefinedParameterCopy { .. }
+            Expression::InitialValue { .. }
             | Expression::UnknownModelField { .. }
             | Expression::UnknownTagField { .. }
             | Expression::Variable { .. } => {
@@ -2980,9 +2975,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 let refined_path = path.refine_paths(environment);
                 AbstractValue::make_reference(refined_path)
             }
-            Expression::RefinedParameterCopy { path, var_type } => {
+            Expression::InitialValue { path, var_type } => {
                 let refined_path = path.refine_paths(environment);
-                AbstractValue::make_refined_parameter_copy(var_type.clone(), refined_path)
+                AbstractValue::make_initial_value(var_type.clone(), refined_path)
             }
             Expression::Rem { left, right } => left
                 .refine_paths(environment)
@@ -3287,26 +3282,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // if the path is a parameter, the reference is an artifact of its type
                 // and needs to be removed in the call context
                 match &path.value {
-                    PathEnum::Parameter { ordinal } | PathEnum::ParameterCopy { ordinal } => {
-                        arguments[*ordinal - 1].1.clone()
-                    }
+                    PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].1.clone(),
                     _ => {
                         let refined_path =
                             path.refine_parameters(arguments, result, pre_environment, fresh);
                         AbstractValue::make_reference(refined_path)
                     }
                 }
-            }
-            Expression::RefinedParameterCopy { var_type, path } => {
-                // This copy of the unknown value of a parameter is being transferred into the
-                // calling context, where it should be refined again as needed because the corresponding
-                // argument value may be known in the calling context.
-                AbstractValue::make_typed_unknown(var_type.clone(), path.clone()).refine_parameters(
-                    arguments,
-                    result,
-                    pre_environment,
-                    fresh,
-                )
             }
             Expression::Rem { left, right } => left
                 .refine_parameters(arguments, result, pre_environment, fresh)
@@ -3434,26 +3416,32 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
                 1,
             ),
+            Expression::InitialValue { path, var_type } => {
+                let refined_path =
+                    path.refine_parameters(arguments, result, pre_environment, fresh);
+                // Do path refinement now, using the pre_environment.
+                let refined_path = refined_path.refine_paths(pre_environment);
+                // If the path has a value in the pre_environment, use the value
+                if let Some(val) = pre_environment.value_at(&refined_path) {
+                    return val.clone();
+                }
+                // If not, make an unknown value. If the path is still rooted in parameter
+                // make sure that it does not get affected by subsequent side effects on the parameter.
+                if refined_path.is_rooted_by_parameter() {
+                    // This will not get refined again
+                    AbstractValue::make_initial_value(var_type.clone(), refined_path)
+                } else {
+                    // The value is rooted in a local variable leaked from the callee or
+                    // in a static. In the latter case we want lookup_and_refine_value to
+                    // to see this. In the former, refinement is a no-op.
+                    AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
+                }
+            }
             Expression::Variable { path, var_type } => {
                 let refined_path =
                     path.refine_parameters(arguments, result, pre_environment, fresh);
                 if let PathEnum::Alias { value } = &refined_path.value {
                     value.clone()
-                } else if path.is_rooted_by_parameter_copy() {
-                    // Do path refinement now, using the pre_environment.
-                    let refined_path = refined_path.refine_paths(pre_environment);
-                    // If the path has a value in the pre_environment, use the value
-                    if let Some(val) = pre_environment.value_at(&refined_path) {
-                        return val.clone();
-                    }
-                    // If not, make an unknown value. If the path is still rooted in parameter
-                    // mark the new value as refined, so that it does not get affected by subsequent
-                    // side effects on the parameter.
-                    if refined_path.is_rooted_by_parameter() {
-                        AbstractValue::make_refined_parameter_copy(var_type.clone(), refined_path)
-                    } else {
-                        AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
-                    }
                 } else {
                     AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
                 }
@@ -3672,7 +3660,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         .or(right.refine_with(path_condition, depth + 1))
                 }
             }
-            Expression::Reference(..) | Expression::RefinedParameterCopy { .. } => {
+            Expression::Reference(..) | Expression::InitialValue { .. } => {
                 // We could refine their paths, which will increase precision, but it does not
                 // currently seem cost-effective. This does not affect soundness.
                 self.clone()
@@ -3803,7 +3791,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::CompileTimeConstant(..)
             | Expression::HeapBlock { .. }
             | Expression::Reference(..)
-            | Expression::RefinedParameterCopy { .. }
+            | Expression::InitialValue { .. }
             | Expression::Top
             | Expression::Variable { .. } => self.clone(),
             Expression::HeapBlockLayout {
