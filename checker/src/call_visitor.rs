@@ -785,7 +785,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             | KnownNames::StdIntrinsicsCtpop
             | KnownNames::StdIntrinsicsCttz => {
                 checked_assume!(self.actual_args.len() == 1);
-                let arg_type: ExpressionType = (&self.actual_argument_types[0].kind).into();
+                let arg_type: ExpressionType = self.actual_argument_types[0].kind().into();
                 let bit_length = arg_type.bit_length();
                 self.actual_args[0]
                     .1
@@ -801,7 +801,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         false,
                     );
                 }
-                let arg_type: ExpressionType = (&self.actual_argument_types[0].kind).into();
+                let arg_type: ExpressionType = self.actual_argument_types[0].kind().into();
                 let bit_length = arg_type.bit_length();
                 self.actual_args[0]
                     .1
@@ -905,7 +905,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
         checked_assume!(generic_argument_types.len() == 2);
         let mut actual_argument_types: Vec<Ty<'tcx>>;
-        if let TyKind::Tuple(tuple_types) = generic_argument_types[1].kind {
+        if let TyKind::Tuple(tuple_types) = generic_argument_types[1].kind() {
             actual_argument_types = tuple_types
                 .iter()
                 .map(|gen_arg| gen_arg.expect_ty())
@@ -932,7 +932,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         // Also update the Self parameter in the arguments map.
         let mut closure_ty = self.actual_argument_types[0];
         let closure_ref_ty;
-        if let TyKind::Ref(_, ty, _) = closure_ty.kind {
+        if let TyKind::Ref(_, ty, _) = closure_ty.kind() {
             closure_ref_ty = closure_ty;
             closure_ty = ty;
         } else {
@@ -944,12 +944,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             actual_args.insert(0, self.actual_args[0].clone());
             actual_argument_types.insert(0, closure_ref_ty);
             //todo: could this be a generator?
-            if let TyKind::Closure(def_id, substs) = closure_ty.kind {
+            if let TyKind::Closure(def_id, substs) = closure_ty.kind() {
                 argument_map = self
                     .block_visitor
                     .bv
                     .type_visitor
-                    .get_generic_arguments_map(def_id, substs.as_closure().substs, &[]);
+                    .get_generic_arguments_map(*def_id, substs.as_closure().substs, &[]);
             }
         }
 
@@ -1282,7 +1282,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             // The current value, if any, of the model field are a set of (path, value) pairs
             // where each path is rooted by qualifier.model_field(..)
             let mut qualifier = self.actual_args[0].0.clone();
-            if matches!(&self.actual_argument_types[0].kind, TyKind::Ref{..}) {
+            if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref{..}) {
                 qualifier = Path::new_deref(qualifier);
             }
             let field_name = self.coerce_to_string(&self.actual_args[1].0);
@@ -1434,7 +1434,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let destination = self.destination;
         if let Some((_, target)) = &destination {
             let mut qualifier = self.actual_args[0].0.clone();
-            if matches!(&self.actual_argument_types[0].kind, TyKind::Ref{..}) {
+            if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref{..}) {
                 qualifier = Path::new_deref(qualifier);
             }
             let field_name = self.coerce_to_string(&self.actual_args[1].0);
@@ -1791,7 +1791,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .type_visitor
                 .get_rustc_place_type(place, self.block_visitor.bv.current_span);
-            if type_visitor::is_thin_pointer(&target_rustc_type.kind) {
+            if type_visitor::is_thin_pointer(&target_rustc_type.kind()) {
                 source_path = Path::get_path_to_thin_pointer_at_offset_0(
                     self.block_visitor.bv.tcx,
                     &self.block_visitor.bv.current_environment,
@@ -1799,7 +1799,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     source_rustc_type,
                 )
                 .unwrap_or(source_path);
-            } else if type_visitor::is_thin_pointer(&source_rustc_type.kind) {
+            } else if type_visitor::is_thin_pointer(&source_rustc_type.kind()) {
                 target_path = Path::get_path_to_thin_pointer_at_offset_0(
                     self.block_visitor.bv.tcx,
                     &self.block_visitor.bv.current_environment,
@@ -1854,7 +1854,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .update_value_at(dest_pattern, source_value);
         } else if let Expression::CompileTimeConstant(count) = &count_value.expression {
             if let ConstantDomain::U128(count) = count {
-                if let TyKind::Adt(..) | TyKind::Tuple(..) = &elem_type.kind {
+                if let TyKind::Adt(..) | TyKind::Tuple(..) = &elem_type.kind() {
                     for i in 0..(*count as usize) {
                         let dest_field = Path::new_field(dest_path.clone(), i);
                         let field_type = self
@@ -2332,7 +2332,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // The tag type should be a generic ADT whose first parameter is a constant.
                 let tag_adt_def;
                 let tag_substs_ref;
-                match tag_rustc_type.kind {
+                match tag_rustc_type.kind() {
                     TyKind::Adt(adt_def, substs_ref) if substs_ref.len() > 0 => {
                         tag_adt_def = adt_def;
                         tag_substs_ref = substs_ref;
@@ -2353,7 +2353,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let tag_propagation_set_rustc_const;
                 match tag_substs_ref[0].unpack() {
                     GenericArgKind::Const(rustc_const)
-                        if rustc_const.ty.kind == TyKind::Uint(ast::UintTy::U128) =>
+                        if *rustc_const.ty.kind() == TyKind::Uint(ast::UintTy::U128) =>
                     {
                         tag_propagation_set_rustc_const = rustc_const
                     }
@@ -2386,7 +2386,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
                     Some(tag)
                 } else {
-                    // We have already checked that `tag_propagation_set_rustc_const.ty.kind` is
+                    // We have already checked that `tag_propagation_set_rustc_const.ty.kind()` is
                     // `TyKind::Uint(ast::UintTy::U128)`, so the extracted compile-time constant
                     // must be `ConstantDomain::U128(..)`.
                     assume_unreachable!(

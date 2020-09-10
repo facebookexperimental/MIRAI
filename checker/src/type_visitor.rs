@@ -79,9 +79,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     ) {
         if let PathEnum::Parameter { ordinal } = &path.value {
             if *ordinal > 0 && *ordinal <= parameter_types.len() {
-                if let TyKind::Closure(_, substs) = parameter_types[*ordinal - 1].kind {
+                if let TyKind::Closure(_, substs) = parameter_types[*ordinal - 1].kind() {
                     for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
-                        let var_type: ExpressionType = (&ty.kind).into();
+                        let var_type: ExpressionType = ty.kind().into();
                         let closure_field_path =
                             Path::new_field(path.clone(), i).refine_paths(environment);
                         self.path_ty_cache.insert(closure_field_path.clone(), ty);
@@ -99,7 +99,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// Returns the size in bytes (including padding) of an element of the given collection type.
     /// If the type is not a collection, it returns one.
     pub fn get_elem_type_size(&self, ty: Ty<'tcx>) -> u64 {
-        match ty.kind {
+        match ty.kind() {
             TyKind::Array(ty, _) | TyKind::Slice(ty) => self.get_type_size(ty),
             TyKind::RawPtr(t) => self.get_type_size(t.ty),
             _ => 1,
@@ -115,8 +115,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         path: &Rc<Path>,
         current_span: rustc_span::Span,
     ) -> ExpressionType {
-        match self.get_path_rustc_type(path, current_span).kind {
-            TyKind::Tuple(types) => (&types[0].expect_ty().kind).into(),
+        match self.get_path_rustc_type(path, current_span).kind() {
+            TyKind::Tuple(types) => types[0].expect_ty().kind().into(),
             _ => assume_unreachable!(),
         }
     }
@@ -128,7 +128,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         path: &Rc<Path>,
         current_span: rustc_span::Span,
     ) -> ExpressionType {
-        (&(self.get_path_rustc_type(path, current_span).kind)).into()
+        self.get_path_rustc_type(path, current_span).kind().into()
     }
 
     /// Returns a parameter environment for the current function.
@@ -217,7 +217,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 ..
             } => {
                 let mut t = self.get_path_rustc_type(qualifier, current_span);
-                if let TyKind::Projection(..) = &t.kind {
+                if let TyKind::Projection(..) = t.kind() {
                     t = self.specialize_generic_argument_type(t, &self.generic_argument_map);
                 }
                 match &**selector {
@@ -230,7 +230,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     }
                     | PathSelector::Field(ordinal) => {
                         let bt = Self::get_dereferenced_type(t);
-                        match &bt.kind {
+                        match bt.kind() {
                             TyKind::Adt(def, substs) => {
                                 //todo: checked_assume!(!def.is_enum());
                                 // enum fields have qualifiers that cast onto the right variant.
@@ -261,7 +261,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     self.tcx.type_of(*def_id),
                                     &map,
                                 );
-                                if let TyKind::Closure(def_id, subts) = &ct.kind {
+                                if let TyKind::Closure(def_id, subts) = ct.kind() {
                                     return subts
                                         .as_closure()
                                         .upvar_tys()
@@ -285,7 +285,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 }
                             }
                             _ => {
-                                if is_slice_pointer(&t.kind) {
+                                if is_slice_pointer(t.kind()) {
                                     match *ordinal {
                                         0 => {
                                             return t; // Could be a slice of slice, so close enough, hopefully.
@@ -297,7 +297,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     }
                                 }
                                 if *ordinal == 0
-                                    && matches!(&t.kind, TyKind::FnPtr(..) | TyKind::Ref(..))
+                                    && matches!(t.kind(), TyKind::FnPtr(..) | TyKind::Ref(..))
                                 {
                                     // If the qualifier is a thin pointer to something that
                                     // does not have a field 0, it could be that qualifier.0
@@ -321,7 +321,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     PathSelector::Downcast(_, ordinal) => {
                         // Undo the implicit deref if t is a ref/pointer
                         let t = type_visitor::get_target_type(t);
-                        if let TyKind::Adt(def, substs) = &t.kind {
+                        if let TyKind::Adt(def, substs) = t.kind() {
                             use rustc_index::vec::Idx;
                             if *ordinal >= def.variants.len() {
                                 info!(
@@ -342,7 +342,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         return self.tcx.types.trait_object_dummy_self;
                     }
                     PathSelector::Slice(_) => {
-                        return if type_visitor::is_slice_pointer(&t.kind) {
+                        return if type_visitor::is_slice_pointer(t.kind()) {
                             t
                         } else {
                             let slice_ty = self.tcx.mk_slice(type_visitor::get_element_type(t));
@@ -380,7 +380,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
 
     /// Returns the target type of a reference type.
     fn get_dereferenced_type(ty: Ty<'tcx>) -> Ty<'tcx> {
-        match &ty.kind {
+        match ty.kind() {
             TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
             TyKind::Ref(_, t, _) => *t,
             _ => ty,
@@ -420,8 +420,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         });
         // Add "Self" -> actual_argument_types[0]
         if let Some(self_ty) = actual_argument_types.get(0) {
-            let self_ty = if let TyKind::Ref(_, ty, _) = self_ty.kind {
-                ty
+            let self_ty = if let TyKind::Ref(_, ty, _) = self_ty.kind() {
+                *ty
             } else {
                 self_ty
             };
@@ -442,7 +442,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         place: &mir::Place<'tcx>,
         current_span: rustc_span::Span,
     ) -> ExpressionType {
-        (&self.get_rustc_place_type(place, current_span).kind).into()
+        self.get_rustc_place_type(place, current_span).kind().into()
     }
 
     /// Returns the rustc Ty of the given place in memory.
@@ -460,7 +460,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             );
             self.get_type_for_projection_element(current_span, base_type, &place.projection)
         };
-        match result.kind {
+        match result.kind() {
             TyKind::Param(t_par) => {
                 if let Some(generic_args) = self.generic_arguments {
                     if let Some(gen_arg) = generic_args.as_ref().get(t_par.index as usize) {
@@ -472,13 +472,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 }
             }
             TyKind::Ref(region, ty, mutbl) => {
-                if let TyKind::Param(t_par) = ty.kind {
+                if let TyKind::Param(t_par) = ty.kind() {
                     if t_par.name.as_str() == "Self" && !self.actual_argument_types.is_empty() {
                         return self.tcx.mk_ref(
                             region,
                             rustc_middle::ty::TypeAndMut {
                                 ty: self.actual_argument_types[0],
-                                mutbl,
+                                mutbl: *mutbl,
                             },
                         );
                     }
@@ -498,13 +498,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         match ty_kind {
             TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
                 // Pointers to sized arrays are thin pointers.
-                matches!(&target.kind, TyKind::Slice(..))
+                matches!(target.kind(), TyKind::Slice(..))
             }
             TyKind::Adt(def, substs) => {
                 for v in def.variants.iter() {
                     if let Some(field0) = v.fields.get(0) {
                         let field0_ty = field0.ty(self.tcx, substs);
-                        if self.starts_with_slice_pointer(&field0_ty.kind) {
+                        if self.starts_with_slice_pointer(&field0_ty.kind()) {
                             return true;
                         }
                     }
@@ -513,7 +513,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             }
             TyKind::Tuple(substs) => {
                 if let Some(field0_ty) = substs.iter().map(|s| s.expect_ty()).next() {
-                    self.starts_with_slice_pointer(&field0_ty.kind)
+                    self.starts_with_slice_pointer(field0_ty.kind())
                 } else {
                     false
                 }
@@ -533,7 +533,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         place_projection
             .iter()
             .fold(base_ty, |base_ty, projection_elem| match projection_elem {
-                mir::ProjectionElem::Deref => match &base_ty.kind {
+                mir::ProjectionElem::Deref => match base_ty.kind() {
                     TyKind::Adt(..) => base_ty,
                     TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
                     TyKind::Ref(_, ty, _) => *ty,
@@ -550,7 +550,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 }
                 mir::ProjectionElem::Subslice { .. } => base_ty,
                 mir::ProjectionElem::Index(_) | mir::ProjectionElem::ConstantIndex { .. } => {
-                    match &base_ty.kind {
+                    match base_ty.kind() {
                         TyKind::Adt(..) => base_ty,
                         TyKind::Array(ty, _) => *ty,
                         TyKind::Ref(_, ty, _) => get_element_type(*ty),
@@ -565,7 +565,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     }
                 }
                 mir::ProjectionElem::Downcast(_, ordinal) => {
-                    if let TyKind::Adt(def, substs) = &base_ty.kind {
+                    if let TyKind::Adt(def, substs) = base_ty.kind() {
                         if ordinal.index() >= def.variants.len() {
                             assume_unreachable!(
                                 "illegally down casting to index {} of {:?} at {:?}",
@@ -629,7 +629,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         if map.is_none() {
             return gen_arg_type;
         }
-        match gen_arg_type.kind {
+        match gen_arg_type.kind() {
             TyKind::Adt(def, substs) => self.tcx.mk_adt(def, self.specialize_substs(substs, map)),
             TyKind::Array(elem_ty, len) => {
                 let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
@@ -645,7 +645,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 let specialized_ty = self.specialize_generic_argument_type(ty, map);
                 self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
                     ty: specialized_ty,
-                    mutbl,
+                    mutbl: *mutbl,
                 })
             }
             TyKind::Ref(region, ty, mutbl) => {
@@ -654,13 +654,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     region,
                     rustc_middle::ty::TypeAndMut {
                         ty: specialized_ty,
-                        mutbl,
+                        mutbl: *mutbl,
                     },
                 )
             }
             TyKind::FnDef(def_id, substs) => self
                 .tcx
-                .mk_fn_def(def_id, self.specialize_substs(substs, map)),
+                .mk_fn_def(*def_id, self.specialize_substs(substs, map)),
             TyKind::FnPtr(fn_sig) => {
                 let map_fn_sig = |fn_sig: FnSig<'tcx>| {
                     let specialized_inputs_and_output = self.tcx.mk_type_list(
@@ -709,10 +709,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             }
             TyKind::Closure(def_id, substs) => self
                 .tcx
-                .mk_closure(def_id, self.specialize_substs(substs, map)),
+                .mk_closure(*def_id, self.specialize_substs(substs, map)),
             TyKind::Generator(def_id, substs, movability) => {
                 self.tcx
-                    .mk_generator(def_id, self.specialize_substs(substs, map), movability)
+                    .mk_generator(*def_id, self.specialize_substs(substs, map), *movability)
             }
             TyKind::GeneratorWitness(bound_types) => {
                 let map_types = |types: &rustc_middle::ty::List<Ty<'tcx>>| {
@@ -767,7 +767,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             }
             TyKind::Opaque(def_id, substs) => self
                 .tcx
-                .mk_opaque(def_id, self.specialize_substs(substs, map)),
+                .mk_opaque(*def_id, self.specialize_substs(substs, map)),
             TyKind::Param(ParamTy { name, .. }) => {
                 if let Some(gen_arg) = map.as_ref().unwrap().get(&name) {
                     return gen_arg.expect_ty();
@@ -797,13 +797,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
 /// Returns None otherwise.
 #[logfn_inputs(TRACE)]
 pub fn get_def_id_from_closure(closure_ty: Ty<'_>) -> Option<DefId> {
-    match closure_ty.kind {
+    match closure_ty.kind() {
         TyKind::Closure(def_id, _) | TyKind::Opaque(def_id, _) => {
-            return Some(def_id);
+            return Some(*def_id);
         }
         TyKind::Ref(_, ty, _) => {
-            if let TyKind::Closure(def_id, _) = ty.kind {
-                return Some(def_id);
+            if let TyKind::Closure(def_id, _) = ty.kind() {
+                return Some(*def_id);
             }
         }
         _ => {}
@@ -813,9 +813,9 @@ pub fn get_def_id_from_closure(closure_ty: Ty<'_>) -> Option<DefId> {
 
 /// Returns the element type of an array or slice type.
 pub fn get_element_type(ty: Ty<'_>) -> Ty<'_> {
-    match &ty.kind {
+    match &ty.kind() {
         TyKind::Array(t, _) => *t,
-        TyKind::Ref(_, t, _) => match &t.kind {
+        TyKind::Ref(_, t, _) => match t.kind() {
             TyKind::Array(t, _) => *t,
             TyKind::Slice(t) => *t,
             _ => t,
@@ -828,7 +828,7 @@ pub fn get_element_type(ty: Ty<'_>) -> Ty<'_> {
 /// Returns the type of value that a pointer of ty points to.
 /// If ty is not a pointer type, just return ty.
 pub fn get_target_type(ty: Ty<'_>) -> Ty<'_> {
-    match &ty.kind {
+    match ty.kind() {
         TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => t,
         _ => ty,
     }
@@ -837,7 +837,7 @@ pub fn get_target_type(ty: Ty<'_>) -> Ty<'_> {
 /// Returns true if the given type is a reference (or raw pointer) that is not a slice pointer
 pub fn is_thin_pointer(ty_kind: &TyKind<'_>) -> bool {
     if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
-        !matches!(&target.kind, TyKind::Slice(..) | TyKind::Str)
+        !matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
     } else {
         false
     }
@@ -849,7 +849,7 @@ pub fn is_thin_pointer(ty_kind: &TyKind<'_>) -> bool {
 pub fn is_slice_pointer(ty_kind: &TyKind<'_>) -> bool {
     if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
         // Pointers to sized arrays are thin pointers.
-        matches!(&target.kind, TyKind::Slice(..) | TyKind::Str) || is_slice_pointer(&target.kind)
+        matches!(target.kind(), TyKind::Slice(..) | TyKind::Str) || is_slice_pointer(target.kind())
     } else {
         false
     }

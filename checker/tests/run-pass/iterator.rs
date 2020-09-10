@@ -5,7 +5,6 @@
 
 // A test that uses ranges mutated via iterators in a loop.
 
-#![feature(range_is_empty)]
 #![feature(unchecked_math)]
 
 #[macro_use]
