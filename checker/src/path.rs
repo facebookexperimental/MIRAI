@@ -270,7 +270,7 @@ impl Path {
             path,
             result_rustc_type
         );
-        match &result_rustc_type.kind {
+        match result_rustc_type.kind() {
             TyKind::Adt(def, substs) => {
                 let path0 = Path::new_field(path.clone(), 0);
                 for v in def.variants.iter() {
@@ -324,9 +324,9 @@ impl Path {
             path,
             path_rustc_type
         );
-        match &path_rustc_type.kind {
+        match path_rustc_type.kind() {
             TyKind::Ref(..) | TyKind::RawPtr(..) => {
-                if type_visitor::is_slice_pointer(&path_rustc_type.kind) {
+                if type_visitor::is_slice_pointer(path_rustc_type.kind()) {
                     Some(Path::new_field(path.clone(), 0))
                 } else {
                     Some(path.clone())
@@ -517,7 +517,7 @@ impl Path {
             PathEnum::StaticVariable {
                 def_id: Some(def_id),
                 summary_cache_key: name,
-                expression_type: ExpressionType::from(&ty.kind),
+                expression_type: ExpressionType::from(ty.kind()),
             }
             .into(),
         )
@@ -936,9 +936,9 @@ pub enum PathSelector {
     /// ```
     ConstantIndex {
         /// index or -index (in Python terms), depending on from_end
-        offset: u32,
+        offset: u64,
         /// thing being indexed must be at least this long
-        min_length: u32,
+        min_length: u64,
         /// counting backwards from end?
         from_end: bool,
     },
@@ -947,7 +947,7 @@ pub enum PathSelector {
     ///
     /// If `from_end` is true `slice[from..slice.len() - to]`.
     /// Otherwise `array[from..to]`.
-    ConstantSlice { from: u32, to: u32, from_end: bool },
+    ConstantSlice { from: u64, to: u64, from_end: bool },
 
     /// "Downcast" to a variant of an ADT. Currently, MIR only introduces
     /// this for ADTs with more than one variant. The value is the ordinal of the variant.

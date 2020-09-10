@@ -318,7 +318,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         path: Rc<Path>,
         result_rustc_type: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
-        let result_type: ExpressionType = (&result_rustc_type.kind).into();
+        let result_type: ExpressionType = result_rustc_type.kind().into();
         match &path.value {
             PathEnum::Alias { value } | PathEnum::Offset { value } => {
                 return value.clone();
@@ -758,7 +758,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     Rc::new(PathEnum::PromotedConstant { ordinal }.into());
                 if self
                     .type_visitor
-                    .starts_with_slice_pointer(&result_rustc_type.kind)
+                    .starts_with_slice_pointer(result_rustc_type.kind())
                 {
                     let source_length_path = Path::new_length(result_root.clone());
                     let length_val = self
@@ -846,7 +846,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         mut ordinal: usize,
     ) {
         let target_type = type_visitor::get_target_type(result_rustc_type);
-        if ExpressionType::from(&target_type.kind).is_primitive() {
+        if ExpressionType::from(target_type.kind()).is_primitive() {
             // Kind of weird, but seems to be generated for debugging support.
             // Move the value into an alias path, so that we can drop the reference to the soon to be dead local.
             let target_value = self
@@ -859,7 +859,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let value_path = Path::get_as_path(target_value.clone());
             let promoted_value = AbstractValue::make_from(Expression::Reference(value_path), 1);
             environment.update_value_at(promoted_root.clone(), promoted_value);
-        } else if let TyKind::Ref(_, ty, _) = &target_type.kind {
+        } else if let TyKind::Ref(_, ty, _) = target_type.kind() {
             // Really weird. Promoting a reference to a reference. Seems to be there for debugging.
             // We see it for constant strings, so kind of like primitive values.
             ordinal += 99;
@@ -898,7 +898,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 environment.update_value_at(renamed_path, value.clone());
             }
             let thin_pointer_to_heap = AbstractValue::make_reference(heap_root);
-            if type_visitor::is_slice_pointer(&target_type.kind) {
+            if type_visitor::is_slice_pointer(target_type.kind()) {
                 let promoted_thin_pointer_path = Path::new_field(promoted_root.clone(), 0);
                 environment.update_value_at(promoted_thin_pointer_path, thin_pointer_to_heap);
                 let length_value = self
@@ -1002,7 +1002,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         let target_type = self
             .type_visitor
             .get_path_rustc_type(&target_path, self.current_span);
-        let target_is_thin_pointer = type_visitor::is_thin_pointer(&target_type.kind);
+        let target_is_thin_pointer = type_visitor::is_thin_pointer(target_type.kind());
         for (path, value) in effects
             .iter()
             .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
@@ -1091,7 +1091,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         .get_path_rustc_type(&tpath, self.current_span);
                     if self
                         .type_visitor
-                        .starts_with_slice_pointer(&deref_type.kind)
+                        .starts_with_slice_pointer(deref_type.kind())
                     {
                         if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                             if matches!(selector.as_ref(), PathSelector::Field(0)) {
@@ -1660,7 +1660,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     } = len_value.as_ref()
                     {
                         let to = if from_end {
-                            u32::try_from(*len).unwrap() - to
+                            u64::try_from(*len).unwrap() - to
                         } else {
                             to
                         };
@@ -1681,8 +1681,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         target_path: &Rc<Path>,
         source_path: &Rc<Path>,
         root_rustc_type: Ty<'tcx>,
-        from: u32,
-        to: u32,
+        from: u64,
+        to: u64,
         update: F,
     ) where
         F: Fn(&mut Self, Rc<Path>, Rc<Path>, Ty<'tcx>),
@@ -1779,7 +1779,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             source_path,
                             root_rustc_type,
                             0,
-                            *val as u32,
+                            *val as u64,
                             strong_update,
                         );
                         return true;
@@ -1802,7 +1802,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
 
         // Assigning to a fixed length array is like a pattern
-        if let TyKind::Array(_, len) = &root_rustc_type.kind {
+        if let TyKind::Array(_, len) = root_rustc_type.kind() {
             let param_env = self.type_visitor.get_param_env();
             let len = len
                 .try_eval_usize(self.tcx, param_env)
@@ -1813,7 +1813,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 source_path,
                 root_rustc_type,
                 0,
-                len as u32,
+                len as u64,
                 strong_update,
             );
             return true;
@@ -1896,7 +1896,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let source_type = self
                     .type_visitor
                     .get_path_rustc_type(&source_path, self.current_span);
-                if matches!(source_type.kind, TyKind::Array(t, _) if t == root_rustc_type) {
+                if matches!(source_type.kind(), TyKind::Array(t, _) if *t == root_rustc_type) {
                     // During path refinement, the original source path was of the intermediate form *&p.
                     // Mostly, this can just be canonicalized to just p, but if p has an array type
                     // and *&p is not used as a qualifier, then *&p represents the first element of the array
@@ -1964,7 +1964,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 }
             }
         }
-        let target_type: ExpressionType = (&root_rustc_type.kind).into();
+        let target_type: ExpressionType = (root_rustc_type.kind()).into();
         if target_type != ExpressionType::NonPrimitive
             || no_children
             || root_rustc_type.is_closure()
@@ -1983,9 +1983,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
             if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
                 // The value is a string literal. See if the target will treat it as &[u8].
-                if let TyKind::Ref(_, ty, _) = root_rustc_type.kind {
-                    if let TyKind::Slice(elem_ty) = ty.kind {
-                        if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind {
+                if let TyKind::Ref(_, ty, _) = root_rustc_type.kind() {
+                    if let TyKind::Slice(elem_ty) = ty.kind() {
+                        if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind() {
                             self.expand_aliased_string_literals_if_appropriate(
                                 &target_path,
                                 &value,
