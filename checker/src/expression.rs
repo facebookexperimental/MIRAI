@@ -410,7 +410,7 @@ pub enum Expression {
     /// The value in operand will be the join of several expressions that all reference
     /// the path of this value. This models a variable that is assigned to from inside a loop
     /// body.
-    Widen {
+    WidenedJoin {
         /// The path of the location where an indeterminate number of flows join together.
         path: Rc<Path>,
         /// The join of some of the flows to come together at this path.
@@ -601,11 +601,11 @@ impl Debug for Expression {
             Expression::Variable { path, var_type } => {
                 f.write_fmt(format_args!("{:?}: {:?}", path, var_type))
             }
-            Expression::Widen { path, operand } => {
+            Expression::WidenedJoin { path, operand } => {
                 if operand.expression_size > 100 {
-                    f.write_fmt(format_args!("widen(..) at {:?}", path))
+                    f.write_fmt(format_args!("widened(..) at {:?}", path))
                 } else {
-                    f.write_fmt(format_args!("widen({:?}) at {:?}", operand, path))
+                    f.write_fmt(format_args!("widened({:?}) at {:?}", operand, path))
                 }
             }
         }
@@ -702,7 +702,7 @@ impl Expression {
             Expression::UnknownTagField { path } | Expression::Variable { path, .. } => {
                 path.contains_local_variable()
             }
-            Expression::Widen { .. } => true,
+            Expression::WidenedJoin { .. } => true,
         }
     }
 
@@ -763,7 +763,7 @@ impl Expression {
             Expression::UnknownTagCheck { .. } => None,
             Expression::UnknownTagField { .. } => None,
             Expression::Variable { .. } => None,
-            Expression::Widen { .. } => None,
+            Expression::WidenedJoin { .. } => None,
         }
     }
 
@@ -903,7 +903,7 @@ impl Expression {
             Expression::UnknownTagCheck { .. } => Bool,
             Expression::UnknownTagField { .. } => I8,
             Expression::Variable { var_type, .. } => var_type.clone(),
-            Expression::Widen { operand, .. } => operand.expression.infer_type(),
+            Expression::WidenedJoin { operand, .. } => operand.expression.infer_type(),
         }
     }
 

@@ -69,7 +69,10 @@ impl PartialEq for AbstractValue {
     #[logfn_inputs(TRACE)]
     fn eq(&self, other: &Self) -> bool {
         match (&self.expression, &other.expression) {
-            (Expression::Widen { path: p1, .. }, Expression::Widen { path: p2, .. }) => p1.eq(p2),
+            (
+                Expression::WidenedJoin { path: p1, .. },
+                Expression::WidenedJoin { path: p2, .. },
+            ) => p1.eq(p2),
             (e1, e2) => e1.eq(e2),
         }
     }
@@ -391,7 +394,7 @@ pub trait AbstractValueTrait: Sized {
     fn is_compile_time_constant(&self) -> bool;
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
     fn is_top(&self) -> bool;
-    fn is_widened(&self) -> bool;
+    fn is_widened_join(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
     fn less_than(&self, other: Self) -> Self;
@@ -502,9 +505,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     ) -> Rc<AbstractValue> {
         let mut result = self.clone();
         for (key, val) in widened_env.value_map.iter() {
-            if let Expression::Widen { .. } = val.expression {
+            if let Expression::WidenedJoin { .. } = val.expression {
                 if let Some(self_val) = self_env.value_map.get(key) {
-                    if let Expression::Widen { .. } = self_val.expression {
+                    if let Expression::WidenedJoin { .. } = self_val.expression {
                         continue;
                     };
                     let var_type = self_val.expression.infer_type();
@@ -1229,7 +1232,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Variable { path, .. } => {
                 AbstractValue::make_typed_unknown(target_type.clone(), path.clone())
             }
-            Expression::Widen { .. } => self.clone(),
+            Expression::WidenedJoin { .. } => self.clone(),
 
             _ => self.clone(),
         }
@@ -1300,7 +1303,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
                 )
             }
-            Expression::Widen { path, operand } => operand.dereference(target_type).widen(path),
+            Expression::WidenedJoin { path, operand } => {
+                operand.dereference(target_type).widen(path)
+            }
             _ => {
                 info!(
                     "found unhandled expression that is of type reference: {:?}",
@@ -1717,42 +1722,42 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
-    /// True if this a widened value.
+    /// True if this a widened join.
     #[logfn_inputs(TRACE)]
-    fn is_widened(&self) -> bool {
-        matches!(self.expression, Expression::Widen { .. })
+    fn is_widened_join(&self) -> bool {
+        matches!(self.expression, Expression::WidenedJoin { .. })
     }
 
-    /// Returns a domain whose corresponding set of concrete values include all of the values
-    /// corresponding to self and other. In effect this behaves like set union.
+    /// Returns an abstract value whose corresponding set of concrete values includes all of the values
+    /// corresponding to self and other.
     #[logfn_inputs(TRACE)]
     fn join(&self, other: Rc<AbstractValue>, path: &Rc<Path>) -> Rc<AbstractValue> {
-        // [{} union y] -> y
+        // [{} join y] -> y
         if self.is_bottom() {
             return other;
         }
-        // [TOP union y] -> TOP
+        // [TOP join y] -> TOP
         if self.is_top() {
             return self.clone();
         }
-        // [x union {}] -> x
+        // [x join {}] -> x
         if other.is_bottom() {
             return self.clone();
         }
-        // [x union x] -> x
+        // [x join x] -> x
         if (*self) == other {
             return other;
         }
-        // [x union TOP] -> TOP
+        // [x join TOP] -> TOP
         if other.is_top() {
             return other;
         }
-        // [widened(x) union y] -> widened(x)
-        if let Expression::Widen { operand, .. } = &self.expression {
+        // [widened(x) join y] -> widened(x)
+        if let Expression::WidenedJoin { operand, .. } = &self.expression {
             return operand.widen(path);
         }
-        // [x union widened(y)] -> widened(y)
-        if let Expression::Widen { operand, .. } = &other.expression {
+        // [x join widened(y)] -> widened(y)
+        if let Expression::WidenedJoin { operand, .. } = &other.expression {
             return operand.widen(path);
         }
         let expression_size = self.expression_size.saturating_add(other.expression_size);
@@ -2270,7 +2275,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::UnknownModelField { path, .. }
             | Expression::UnknownTagField { path, .. }
             | Expression::Variable { path, .. }
-            | Expression::Widen { path, .. } => {
+            | Expression::WidenedJoin { path, .. } => {
                 if let PathEnum::Alias { value } = &path.value {
                     return value.refers_to_unknown_location();
                 }
@@ -2474,7 +2479,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // The universal set is not a subset of any set other than the universal set.
             (Expression::Top, _) => false,
             // Widened expressions are equal if their paths are equal, regardless of their operand values.
-            (Expression::Widen { path: p1, .. }, Expression::Widen { path: p2, .. }) => *p1 == *p2,
+            (
+                Expression::WidenedJoin { path: p1, .. },
+                Expression::WidenedJoin { path: p2, .. },
+            ) => *p1 == *p2,
             // (condition ? consequent : alternate) is a subset of x if both consequent and alternate are subsets of x.
             (
                 Expression::ConditionalExpression {
@@ -2500,7 +2508,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 self.subset(&consequent) || self.subset(&alternate)
             }
             // x subset widen { z } if x subset z
-            (_, Expression::Widen { operand, .. }) => self.subset(&operand),
+            (_, Expression::WidenedJoin { operand, .. }) => self.subset(&operand),
             // (left join right) is a subset of x if both left and right are subsets of x.
             (Expression::Join { left, right, .. }, _) => {
                 // This is a conservative answer. False does not imply other.subset(self).
@@ -2677,7 +2685,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     acc.widen(&result.get_as_interval())
                 }),
             Expression::TaggedExpression { operand, .. } => operand.get_as_interval(),
-            Expression::Widen { operand, .. } => {
+            Expression::WidenedJoin { operand, .. } => {
                 let interval = operand.get_as_interval();
                 if interval.is_bottom() {
                     return interval;
@@ -2787,7 +2795,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return operand.get_cached_tags().add_tag(*tag);
             }
 
-            Expression::Widen { operand, .. } => {
+            Expression::WidenedJoin { operand, .. } => {
                 let tags = operand.get_cached_tags();
                 return (*tags).clone();
             }
@@ -3110,7 +3118,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
-            Expression::Widen { path, operand, .. } => operand
+            Expression::WidenedJoin { path, operand, .. } => operand
                 .refine_paths(environment)
                 .widen(&path.refine_paths(environment)),
         }
@@ -3446,7 +3454,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
                 }
             }
-            Expression::Widen { path, operand, .. } => operand
+            Expression::WidenedJoin { path, operand, .. } => operand
                 .refine_parameters(arguments, result, pre_environment, fresh)
                 .widen(&path.refine_parameters(arguments, result, pre_environment, fresh)),
         }
@@ -3761,7 +3769,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
                 self.clone()
             }
-            Expression::Widen { path, operand } => {
+            Expression::WidenedJoin { path, operand } => {
                 operand.refine_with(path_condition, depth + 1).widen(&path)
             }
         }
@@ -3780,7 +3788,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         AbstractValue::make_uninterpreted_call(self.clone(), arguments, result_type, path)
     }
 
-    /// Returns a domain whose corresponding set of concrete values include all of the values
+    /// Returns an abstract value whose corresponding set of concrete values include all of the values
     /// corresponding to self and other. The set of values may be less precise (more inclusive) than
     /// the set returned by join. The chief requirement is that a small number of widen calls
     /// deterministically lead to a set of values that include of the values that could be stored
@@ -3804,20 +3812,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
                 1,
             ),
-            Expression::Widen { operand, .. } => operand.widen(path),
-            _ => {
-                if self.expression_size > 1000 {
-                    AbstractValue::make_typed_unknown(self.expression.infer_type(), path.clone())
-                } else {
-                    AbstractValue::make_from(
-                        Expression::Widen {
-                            path: path.clone(),
-                            operand: self.clone(),
-                        },
-                        3,
-                    )
-                }
-            }
+            Expression::Join { .. } => AbstractValue::make_from(
+                Expression::WidenedJoin {
+                    path: path.clone(),
+                    operand: self.clone(),
+                },
+                3,
+            ),
+            Expression::WidenedJoin { operand, .. } => operand.widen(path),
+            _ => AbstractValue::make_typed_unknown(self.expression.infer_type(), path.clone()),
         }
     }
 }

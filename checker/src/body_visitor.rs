@@ -1021,7 +1021,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .replace_root(&refined_dummy_root, target_path.clone())
                 .refine_paths(pre_environment);
             let pre_state_value = self.current_environment.value_at(&tpath);
-            if matches!(pre_state_value, Some(v) if v.is_widened()) {
+            if matches!(pre_state_value, Some(v) if v.is_widened_join()) {
                 // If the value is self referential, i.e. if its new value refers to its old
                 // value, widening may not converge. So just stick with the already widened value.
                 continue;
@@ -1182,7 +1182,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
                     }
                 }
-                Expression::Widen { operand, .. } => {
+                Expression::WidenedJoin { operand, .. } => {
                     // Refinement did not update the path since it is not known to it
                     rvalue = operand.widen(&tpath);
                 }

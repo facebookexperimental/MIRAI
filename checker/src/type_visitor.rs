@@ -164,7 +164,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 }
                 Expression::InitialValue { path, .. }
                 | Expression::Variable { path, .. }
-                | Expression::Widen { path, .. } => self.get_path_rustc_type(path, current_span),
+                | Expression::WidenedJoin { path, .. } => {
+                    self.get_path_rustc_type(path, current_span)
+                }
                 _ => value.expression.infer_type().as_rustc_type(self.tcx),
             },
             PathEnum::LocalVariable { ordinal } => {

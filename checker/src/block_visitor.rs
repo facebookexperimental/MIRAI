@@ -2829,7 +2829,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 .join(right.dereference(target_type), &place_path);
                             path = Path::get_as_path(distributed_deref);
                         }
-                        Expression::Widen { operand, .. } => {
+                        Expression::WidenedJoin { operand, .. } => {
                             let target_type = ExpressionType::from(&ty.kind);
                             let distributed_deref =
                                 operand.dereference(target_type).widen(&place_path);
