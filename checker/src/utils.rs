@@ -93,10 +93,10 @@ pub fn argument_types_key_str<'tcx>(
 /// be a valid identifier (so that core library contracts can be written for type specialized
 /// generic trait methods).
 fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) {
-    trace!("append_mangled_type {:?} to {}", ty.kind, str);
+    trace!("append_mangled_type {:?} to {}", ty.kind(), str);
     use rustc_ast::ast;
     use TyKind::*;
-    match ty.kind {
+    match ty.kind() {
         Bool => str.push_str("bool"),
         Char => str.push_str("char"),
         Int(int_ty) => {
@@ -127,7 +127,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         }
         Adt(def, subs) => {
             str.push_str(qualified_type_name(tcx, def.did).as_str());
-            for sub in subs {
+            for sub in *subs {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
@@ -136,7 +136,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         }
         Closure(def_id, subs) => {
             str.push_str("closure_");
-            str.push_str(qualified_type_name(tcx, def_id).as_str());
+            str.push_str(qualified_type_name(tcx, *def_id).as_str());
             for sub in subs.as_closure().substs {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
@@ -160,12 +160,12 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         }
         Foreign(def_id) => {
             str.push_str("extern_type_");
-            str.push_str(qualified_type_name(tcx, def_id).as_str());
+            str.push_str(qualified_type_name(tcx, *def_id).as_str());
         }
         FnDef(def_id, subs) => {
             str.push_str("fn_");
-            str.push_str(qualified_type_name(tcx, def_id).as_str());
-            for sub in subs {
+            str.push_str(qualified_type_name(tcx, *def_id).as_str());
+            for sub in *subs {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
@@ -174,7 +174,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         }
         Generator(def_id, subs, ..) => {
             str.push_str("generator_");
-            str.push_str(qualified_type_name(tcx, def_id).as_str());
+            str.push_str(qualified_type_name(tcx, *def_id).as_str());
             for sub in subs.as_generator().substs {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
@@ -190,8 +190,8 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         }
         Opaque(def_id, subs) => {
             str.push_str("impl_");
-            str.push_str(qualified_type_name(tcx, def_id).as_str());
-            for sub in subs {
+            str.push_str(qualified_type_name(tcx, *def_id).as_str());
+            for sub in *subs {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
@@ -217,7 +217,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         }
         Ref(_, ty, mutability) => {
             str.push_str("ref_");
-            if mutability == rustc_hir::Mutability::Mut {
+            if *mutability == rustc_hir::Mutability::Mut {
                 str.push_str("mut_");
             }
             append_mangled_type(str, ty, tcx);
@@ -227,7 +227,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
             str.push_str("fn_ptr_");
             for arg_type in fn_sig.inputs() {
                 append_mangled_type(str, arg_type, tcx);
-                str.push_str("_");
+                str.push('_');
             }
             append_mangled_type(str, fn_sig.output(), tcx);
         }
@@ -254,7 +254,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         _ => {
             //todo: add cases as the need arises, meanwhile make the need obvious.
             debug!("{:?}", ty);
-            debug!("{:?}", ty.kind);
+            debug!("{:?}", ty.kind());
             str.push_str(&format!("default formatted {:?}", ty))
         }
     }
@@ -373,7 +373,7 @@ pub fn def_id_display_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 pub fn are_concrete(gen_args: SubstsRef<'_>) -> bool {
     for gen_arg in gen_args.iter() {
         if let GenericArgKind::Type(ty) = gen_arg.unpack() {
-            if !is_concrete(&ty.kind) {
+            if !is_concrete(ty.kind()) {
                 return false;
             }
         }
@@ -394,7 +394,7 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
             substs: gen_args, ..
         })
         | TyKind::Tuple(gen_args) => are_concrete(gen_args),
-        TyKind::Ref(_, ty, _) => is_concrete(&ty.kind),
+        TyKind::Ref(_, ty, _) => is_concrete(ty.kind()),
         _ => true,
     }
 }

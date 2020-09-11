@@ -147,7 +147,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .type_visitor
             .get_rustc_place_type(place, self.bv.current_span);
-        match &ty.kind {
+        match ty.kind() {
             TyKind::Adt(..) | TyKind::Generator(..) => {
                 let param_env = self.bv.type_visitor.get_param_env();
                 if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
@@ -677,7 +677,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         closure_ty,
                         &self.bv.type_visitor.generic_argument_map,
                     );
-                if let TyKind::Opaque(def_id, substs) = &specialized_closure_ty.kind {
+                if let TyKind::Opaque(def_id, substs) = specialized_closure_ty.kind() {
                     self.bv.cv.substs_cache.insert(*def_id, substs);
                     let closure_ty = self.bv.tcx.type_of(*def_id);
                     let map = self
@@ -689,10 +689,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         .type_visitor
                         .specialize_generic_argument_type(closure_ty, &map);
                 }
-                match specialized_closure_ty.kind {
+                match specialized_closure_ty.kind() {
                     TyKind::Closure(def_id, substs) | TyKind::FnDef(def_id, substs) => {
                         return extract_func_ref(self.visit_function_reference(
-                            def_id,
+                            *def_id,
                             specialized_closure_ty,
                             substs,
                         ));
@@ -705,10 +705,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 &self.bv.type_visitor.generic_argument_map,
                             );
                         if let TyKind::Closure(def_id, substs) | TyKind::FnDef(def_id, substs) =
-                            specialized_closure_ty.kind
+                            specialized_closure_ty.kind()
                         {
                             return extract_func_ref(self.visit_function_reference(
-                                def_id,
+                                *def_id,
                                 specialized_closure_ty,
                                 substs,
                             ));
@@ -1353,7 +1353,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 if self
                     .bv
                     .type_visitor
-                    .starts_with_slice_pointer(&rh_type.kind)
+                    .starts_with_slice_pointer(rh_type.kind())
                 {
                     // todo: visit_constant should probably always return a reference
                     if let Expression::Reference(rpath) | Expression::Variable { path: rpath, .. } =
@@ -1448,11 +1448,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // If the contents at offset 0 from the target of the pointer being dereferenced is
                 // a fat (slice) pointer then the address_of operation results in a copy of the fat pointer.
                 // We check for this by looking at the type of the operation result target.
-                if type_visitor::is_slice_pointer(&target_type.kind)
+                if type_visitor::is_slice_pointer(target_type.kind())
                     || self
                         .bv
                         .type_visitor
-                        .starts_with_slice_pointer(&target_type.kind)
+                        .starts_with_slice_pointer(target_type.kind())
                 {
                     // If we get here we are effectively copying to a fat pointer without a cast,
                     // so there is no type information to use to come up with the length part of
@@ -1564,7 +1564,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .type_visitor
             .get_rustc_place_type(place, self.bv.current_span);
-        let len_value = if let TyKind::Array(_, len) = &place_ty.kind {
+        let len_value = if let TyKind::Array(_, len) = place_ty.kind() {
             // We only get here if "-Z mir-opt-level=0" was specified.
             // With more optimization the len instruction becomes a constant.
             self.visit_constant(None, &len)
@@ -1581,7 +1581,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         .bv
                         .type_visitor
                         .get_path_rustc_type(qualifier, self.bv.current_span);
-                    if type_visitor::is_slice_pointer(&qualifier_type.kind) {
+                    if type_visitor::is_slice_pointer(qualifier_type.kind()) {
                         // de-referencing a slice pointer is normally the same as de-referencing its
                         // thin pointer, so self.visit_place above assumed that much.
                         // In this context, however, we want the length of the slice pointer,
@@ -1638,12 +1638,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 if let PointerCast::Unsize = pointer_cast {
                     // Unsize a pointer/reference value, e.g., `&[T; n]` to`&[T]`.
                     // If the resulting type is a fat pointer, we might have to upgrade the pointer.
-                    if self.bv.type_visitor.starts_with_slice_pointer(&ty.kind) {
+                    if self.bv.type_visitor.starts_with_slice_pointer(ty.kind()) {
                         // Note that the source could be a thin or fat pointer.
                         if !self
                             .bv
                             .type_visitor
-                            .starts_with_slice_pointer(&source_type.kind)
+                            .starts_with_slice_pointer(source_type.kind())
                         {
                             // Need to upgrade the thin pointer to a fat pointer
                             let target_thin_pointer_path =
@@ -1676,7 +1676,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 is_move,
                             );
                             let len_selector = Rc::new(PathSelector::Field(1));
-                            let len_value = if let TyKind::Array(_, len) = &target_type.kind {
+                            let len_value = if let TyKind::Array(_, len) = target_type.kind() {
                                 // We only get here if "-Z mir-opt-level=0" was specified.
                                 // With more optimization the len instruction becomes a constant.
                                 self.visit_constant(None, &len)
@@ -1703,7 +1703,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::CastKind::Misc => {
                 let result = self
                     .visit_operand(operand)
-                    .cast(ExpressionType::from(&ty.kind));
+                    .cast(ExpressionType::from(ty.kind()));
                 if let mir::Operand::Move(place) = operand {
                     let source_path = self.visit_place(place);
                     self.bv.current_environment.value_map =
@@ -2045,7 +2045,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }
 
         let result;
-        match ty.kind {
+        match ty.kind() {
             TyKind::Bool
             | TyKind::Char
             | TyKind::Float(..)
@@ -2071,7 +2071,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     data,
                     size,
                 })) => {
-                    result = self.get_constant_from_scalar(&ty.kind, *data, *size);
+                    result = self.get_constant_from_scalar(&ty.kind(), *data, *size);
                 }
                 _ => {
                     assume_unreachable!(
@@ -2092,42 +2092,26 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .type_visitor
                     .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
-                result = self.visit_function_reference(def_id, specialized_ty, substs);
+                result = self.visit_function_reference(*def_id, specialized_ty, substs);
             }
-            TyKind::Ref(
-                _,
-                &rustc_middle::ty::TyS {
-                    kind: TyKind::Str, ..
-                },
-                _,
-            ) => {
+            TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Str) => {
                 if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) =
                     &val
                 {
-                    return self.get_reference_to_slice(&ty.kind, data, *start, *end);
+                    return self.get_reference_to_slice(ty.kind(), data, *start, *end);
                 } else {
                     debug!("unsupported val of type Ref: {:?}", literal);
                     unimplemented!();
                 };
             }
-            TyKind::Ref(
-                _,
-                &rustc_middle::ty::TyS {
-                    kind: TyKind::Array(elem_type, length),
-                    ..
-                },
-                _,
-            ) => {
-                return self.visit_reference_to_array_constant(literal, elem_type, length);
+            TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Array(..)) => {
+                if let TyKind::Array(elem_type, length) = *t.kind() {
+                    return self.visit_reference_to_array_constant(literal, elem_type, length);
+                } else {
+                    unreachable!(); // match guard
+                }
             }
-            TyKind::Ref(
-                _,
-                &rustc_middle::ty::TyS {
-                    kind: TyKind::Slice(elem_type),
-                    ..
-                },
-                _,
-            ) => match &val {
+            TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Slice(..)) => match &val {
                 rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
                     // The rust compiler should ensure this.
                     assume!(*end >= *start);
@@ -2145,7 +2129,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         .unwrap();
 
                     let slice = &bytes[*start..*end];
-                    let e_type = ExpressionType::from(&elem_type.kind);
+                    let e_type = if let TyKind::Slice(elem_type) = t.kind() {
+                        ExpressionType::from(elem_type.kind())
+                    } else {
+                        unreachable!()
+                    };
                     return self.deconstruct_reference_to_constant_array(
                         slice,
                         e_type,
@@ -2165,7 +2153,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             | TyKind::Ref(_, ty, rustc_hir::Mutability::Mut) => match &val {
                 rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
                     let summary_cache_key = format!("{:?}", p).into();
-                    let expression_type: ExpressionType = ExpressionType::from(&ty.kind);
+                    let expression_type: ExpressionType = ExpressionType::from(ty.kind());
                     let path = Rc::new(
                         PathEnum::StaticVariable {
                             def_id: None,
@@ -2224,7 +2212,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .type_visitor
                             .get_path_rustc_type(&path_to_scalar, self.bv.current_span);
                         let scalar_val: Rc<AbstractValue> = Rc::new(
-                            self.get_constant_from_scalar(&scalar_ty.kind, *data, *size)
+                            self.get_constant_from_scalar(&scalar_ty.kind(), *data, *size)
                                 .clone()
                                 .into(),
                         );
@@ -2235,7 +2223,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     _ => {
                         debug!("span: {:?}", self.bv.current_span);
-                        debug!("type kind {:?}", ty.kind);
+                        debug!("type kind {:?}", ty.kind());
                         debug!("unimplemented constant {:?}", literal);
                         result = &ConstantDomain::Unimplemented;
                     }
@@ -2243,7 +2231,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             _ => {
                 debug!("span: {:?}", self.bv.current_span);
-                debug!("type kind {:?}", ty.kind);
+                debug!("type kind {:?}", ty.kind());
                 debug!("unimplemented constant {:?}", literal);
                 result = &ConstantDomain::Unimplemented;
             }
@@ -2266,16 +2254,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     return AbstractValue::make_reference(Path::new_static(self.bv.tcx, def_id));
                 }
                 debug!("span: {:?}", self.bv.current_span);
-                debug!("type kind {:?}", ty.kind);
+                debug!("type kind {:?}", ty.kind());
                 debug!("ptr {:?}", p);
                 assume_unreachable!();
             }
             rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
-                self.get_reference_to_slice(&ty.kind, *data, *start, *end)
+                self.get_reference_to_slice(ty.kind(), *data, *start, *end)
             }
             _ => {
                 debug!("span: {:?}", self.bv.current_span);
-                debug!("type kind {:?}", ty.kind);
+                debug!("type kind {:?}", ty.kind());
                 debug!("unimplemented constant {:?}", literal);
                 assume_unreachable!();
             }
@@ -2369,14 +2357,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 discr_bits = truncate(v, discr_layout.size);
 
                                 // Iterates through all the variant definitions to find the actual index.
-                                discr_index = match ty_and_layout.ty.kind {
+                                discr_index = match ty_and_layout.ty.kind() {
                                     TyKind::Adt(adt, _) => adt
                                         .discriminants(self.bv.tcx)
                                         .find(|(_, var)| var.val == discr_bits),
                                     TyKind::Generator(def_id, substs, _) => {
                                         let substs = substs.as_generator();
                                         substs
-                                            .discriminants(def_id, self.bv.tcx)
+                                            .discriminants(*def_id, self.bv.tcx)
                                             .find(|(_, var)| var.val == discr_bits)
                                     }
                                     _ => verify_unreachable!(),
@@ -2491,7 +2479,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             verify_unreachable!();
         }
         debug!("span: {:?}", self.bv.current_span);
-        debug!("type kind {:?}", ty.kind);
+        debug!("type kind {:?}", ty.kind());
         debug!("unimplemented constant {:?}", literal);
         Rc::new(ConstantDomain::Unimplemented.into())
     }
@@ -2561,11 +2549,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .unwrap();
         let slice = &bytes[start..end];
         match ty {
-            TyKind::Ref(_, ty, _) => match ty.kind {
+            TyKind::Ref(_, ty, _) => match ty.kind() {
                 TyKind::Array(elem_type, ..) | TyKind::Slice(elem_type) => self
                     .deconstruct_reference_to_constant_array(
                         slice,
-                        (&elem_type.kind).into(),
+                        elem_type.kind().into(),
                         None,
                         ty,
                     ),
@@ -2609,7 +2597,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         )) = &length.val
         {
             let len = *data;
-            let e_type = ExpressionType::from(&elem_type.kind);
+            let e_type = ExpressionType::from(elem_type.kind());
             match &literal.val {
                 rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
                     // The Rust compiler should ensure this.
@@ -2823,14 +2811,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 if let PathEnum::Alias { value } = &qualifier.value {
                     match &value.expression {
                         Expression::Join { left, right, .. } => {
-                            let target_type = ExpressionType::from(&ty.kind);
+                            let target_type = ExpressionType::from(ty.kind());
                             let distributed_deref = left
                                 .dereference(target_type.clone())
                                 .join(right.dereference(target_type), &place_path);
                             path = Path::get_as_path(distributed_deref);
                         }
                         Expression::WidenedJoin { operand, .. } => {
-                            let target_type = ExpressionType::from(&ty.kind);
+                            let target_type = ExpressionType::from(ty.kind());
                             let distributed_deref =
                                 operand.dereference(target_type).widen(&place_path);
                             path = Path::get_as_path(distributed_deref);
@@ -2869,7 +2857,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .type_visitor
                 .get_rustc_place_type(place, self.bv.current_span);
-            match &ty.kind {
+            match ty.kind() {
                 TyKind::Adt(def, ..) => {
                     let ty_name = self.bv.cv.known_names_cache.get(self.bv.tcx, def.did);
                     if ty_name == KnownNames::StdMarkerPhantomData {
@@ -2895,7 +2883,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 TyKind::Opaque(def_id, ..) => {
                     //todo: what about generators?
                     if let TyKind::Closure(def_id, generic_args) =
-                        &self.bv.tcx.type_of(*def_id).kind
+                        self.bv.tcx.type_of(*def_id).kind()
                     {
                         let func_const = self.visit_function_reference(*def_id, ty, generic_args);
                         let func_val = Rc::new(func_const.clone().into());
@@ -2995,7 +2983,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         match projection_elem {
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, ..) => {
-                if let TyKind::Adt(adt_def, _) = base_ty.kind {
+                if let TyKind::Adt(adt_def, _) = base_ty.kind() {
                     if adt_def.is_union() {
                         let variants = &adt_def.variants;
                         assume!(variants.len() == 1); // only enums have more than one variant
