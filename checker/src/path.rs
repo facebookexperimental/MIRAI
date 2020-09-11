@@ -671,6 +671,9 @@ impl PathRefinement for Rc<Path> {
         fresh: usize,
     ) -> Rc<Path> {
         match &self.value {
+            PathEnum::Alias { value } => {
+                Path::new_alias(value.refine_parameters(arguments, result, pre_environment, fresh))
+            }
             PathEnum::HeapBlock { value } => {
                 let refined_value =
                     value.refine_parameters(arguments, result, pre_environment, fresh);
@@ -716,7 +719,9 @@ impl PathRefinement for Rc<Path> {
                     selector.refine_parameters(arguments, result, pre_environment, fresh);
                 Path::new_qualified(refined_qualifier, refined_selector)
             }
-            _ => self.clone(),
+            PathEnum::StaticVariable { .. }
+            | PathEnum::PhantomData
+            | PathEnum::PromotedConstant { .. } => self.clone(),
         }
     }
 
