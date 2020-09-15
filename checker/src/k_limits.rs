@@ -19,7 +19,7 @@ pub const MAX_INFERRED_PRECONDITIONS: usize = 50;
 pub const MAX_EXPRESSION_SIZE: u64 = 1_000;
 
 /// Double the observed maximum used in practice.
-pub const MAX_FIXPOINT_ITERATIONS: usize = 50;
+pub const MAX_FIXPOINT_ITERATIONS: usize = 10;
 
 /// Prevents the outer fixed point loop from creating ever more new abstract values of type Expression::Variable.
 pub const MAX_PATH_LENGTH: usize = 30;

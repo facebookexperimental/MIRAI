@@ -27,9 +27,7 @@ pub fn bar(v: &[i32], mut i: usize) {
     while i < n {
         i += 1;
     }
-    // fixme: this statement is indeed reachable; need to make copies of param i when needed
-    // verify!(i >= n);
-    verify_unreachable!();
+    verify!(i >= n);
 }
 
 pub fn main() {}

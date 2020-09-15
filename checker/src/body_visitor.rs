@@ -167,7 +167,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         *self.active_calls_map.entry(self.def_id).or_insert(0) += 1;
         let saved_heap_counter = self.cv.constant_value_cache.swap_heap_counter(0);
 
-        // The entry block has no predecessors and its initial state is the function parameters
+        // The entry block has no predecessors and the function parameters are its initial state
         // (which we omit here so that we can lazily provision them with additional context)
         // as well any promoted constants.
         let mut first_state = self.promote_constants();
@@ -1033,12 +1033,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 | PathEnum::Offset { .. }
                 | PathEnum::QualifiedPath { .. } => tpath = tpath.refine_paths(pre_environment),
                 _ => {}
-            }
-            let pre_state_value = self.current_environment.value_at(&tpath);
-            if matches!(pre_state_value, Some(v) if v.is_widened_join()) {
-                // If the value is self referential, i.e. if its new value refers to its old
-                // value, widening may not converge. So just stick with the already widened value.
-                continue;
             }
             let uncanonicalized_rvalue = value.refine_parameters(
                 arguments,
