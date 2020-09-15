@@ -183,7 +183,13 @@ impl Environment {
         other: Environment,
         condition: &Rc<AbstractValue>,
     ) -> Environment {
-        self.join_or_widen(other, |x, y, _| {
+        self.join_or_widen(other, |x, y, p| {
+            if let Some(val) = y.get_widened_subexpression(p) {
+                return val;
+            }
+            if let Some(val) = x.get_widened_subexpression(p) {
+                return val;
+            }
             condition.conditional_expression(x.clone(), y.clone())
         })
     }

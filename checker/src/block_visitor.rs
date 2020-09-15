@@ -765,7 +765,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn emit_diagnostic_for_precondition(&mut self, precondition: &Precondition, warn: bool) {
         precondition!(self.bv.check_for_errors);
-        let mut diagnostic = if warn {
+        let mut diagnostic = if warn && !precondition.message.starts_with("possible ") {
             Rc::new(format!("possible {}", precondition.message))
         } else {
             precondition.message.clone()
