@@ -1086,10 +1086,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     self.current_environment.update_value_at(tpath, rvalue);
                     continue;
                 }
-                Expression::Join { left, right, .. } => {
-                    // Refinement did not update the path since it is not known to it
-                    rvalue = left.join(right.clone(), &tpath);
-                }
                 Expression::Offset { .. } => {
                     if self.check_for_errors && self.function_being_analyzed_is_root() {
                         self.check_offset(&rvalue);
@@ -1191,10 +1187,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     } else if rtype == ExpressionType::NonPrimitive {
                         self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
                     }
-                }
-                Expression::WidenedJoin { operand, .. } => {
-                    // Refinement did not update the path since it is not known to it
-                    rvalue = operand.widen(&tpath);
                 }
                 _ => {}
             }

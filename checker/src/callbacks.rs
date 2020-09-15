@@ -158,6 +158,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/compiler/src") // takes too long
             || file_name.contains("language/compiler/bytecode-source-map/src") // false positives
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // false positives
+            || file_name.contains("language/move-prover/errmapgen/src") // stack overflow
             || file_name.contains("language/move-lang/src") // resolve error
             || file_name.contains("language/move-vm/runtime/src") // resolve error
             || file_name.contains("language/move-prover/src") // false positives

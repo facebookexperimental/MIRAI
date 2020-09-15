@@ -412,6 +412,8 @@ pub enum Expression {
     /// body.
     WidenedJoin {
         /// The path of the location where an indeterminate number of flows join together.
+        /// This is the same as the path in operand, and is repeated here for convenience in
+        /// pattern matches.
         path: Rc<Path>,
         /// The join of some of the flows to come together at this path.
         /// The first few iterations do joins. Once widening happens, further iterations

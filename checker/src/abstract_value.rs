@@ -8,7 +8,7 @@ use crate::bool_domain::BoolDomain;
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::Expression::{ConditionalExpression, Join};
-use crate::expression::{Expression, ExpressionType, LayoutSource};
+use crate::expression::{Expression, ExpressionType};
 use crate::interval_domain::{self, IntervalDomain};
 use crate::k_limits;
 use crate::path::PathRefinement;
@@ -3894,31 +3894,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn widen(&self, path: &Rc<Path>) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::CompileTimeConstant(..)
-            | Expression::HeapBlock { .. }
-            | Expression::Reference(..)
-            | Expression::InitialValue { .. }
-            | Expression::Top
-            | Expression::Variable { .. } => self.clone(),
-            Expression::HeapBlockLayout {
-                length, alignment, ..
-            } => AbstractValue::make_from(
-                Expression::HeapBlockLayout {
-                    length: length.widen(path),
-                    alignment: alignment.widen(path),
-                    source: LayoutSource::Alloc,
-                },
-                1,
-            ),
-            Expression::Join { .. } => AbstractValue::make_from(
+            Expression::Join {
+                path: join_path, ..
+            } if path.eq(join_path) => AbstractValue::make_from(
                 Expression::WidenedJoin {
                     path: path.clone(),
                     operand: self.clone(),
                 },
                 3,
             ),
-            Expression::WidenedJoin { operand, .. } => operand.widen(path),
-            _ => AbstractValue::make_typed_unknown(self.expression.infer_type(), path.clone()),
+            _ => self.clone(),
         }
     }
 }
