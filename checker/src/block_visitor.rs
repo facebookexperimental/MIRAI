@@ -126,10 +126,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Write the RHS Rvalue to the LHS Place.
     #[logfn_inputs(TRACE)]
     fn visit_assign(&mut self, place: &mir::Place<'tcx>, rvalue: &mir::Rvalue<'tcx>) {
-        let path = self.visit_place(place);
-        if PathEnum::PhantomData == path.value {
-            // No need to track this data
-            return;
+        let mut path = self.visit_place_defer_refinement(place);
+        match &path.value {
+            PathEnum::PhantomData => {
+                // No need to track this data
+                return;
+            }
+            PathEnum::Alias { .. } | PathEnum::Offset { .. } | PathEnum::QualifiedPath { .. } => {
+                path = path.refine_paths(&self.bv.current_environment);
+            }
+            _ => {}
         }
         self.visit_rvalue(path, rvalue);
     }
@@ -1435,8 +1441,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .type_visitor
             .get_path_rustc_type(&path, self.bv.current_span);
-        let value_path = self.visit_place(place);
-        let value = match &self.visit_place_defer_refinement(place).value {
+        let value_path = self.visit_place_defer_refinement(place);
+        let value = match &value_path.value {
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
@@ -1515,21 +1521,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     return;
                 }
             }
-            PathEnum::QualifiedPath {
-                qualifier,
-                selector,
-                ..
-            } => {
-                // We are taking a reference to a path that may be rooted in a local that
-                // itself contains a reference. We'd like to eliminate that local to keep
-                // paths canonical and to avoid leaking locals into summaries.
-                let refined_qualifier = qualifier.refine_paths(&self.bv.current_environment);
-                if refined_qualifier != *qualifier {
-                    let refined_path = Path::new_qualified(refined_qualifier, selector.clone());
-                    AbstractValue::make_reference(refined_path)
-                } else {
-                    AbstractValue::make_reference(value_path)
-                }
+            PathEnum::Alias { .. } | PathEnum::Offset { .. } | PathEnum::QualifiedPath { .. } => {
+                AbstractValue::make_reference(value_path.refine_paths(&self.bv.current_environment))
             }
             PathEnum::PromotedConstant { .. } => {
                 if let Some(val) = self.bv.current_environment.value_at(&value_path) {
@@ -1544,7 +1537,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
             }
             PathEnum::HeapBlock { value } => value.clone(),
-            _ => AbstractValue::make_reference(value_path),
+            _ => AbstractValue::make_reference(value_path.clone()),
         };
         self.bv.current_environment.update_value_at(path, value);
     }
@@ -2797,6 +2790,31 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     pub fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let place_path = self.get_path_for_place(place);
         let mut path = place_path.refine_paths(&self.bv.current_environment);
+        match &place_path.value {
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } if **selector == PathSelector::Deref => {
+                let refined_qualifier = qualifier.refine_paths(&self.bv.current_environment);
+                let qualifier_ty = self
+                    .bv
+                    .type_visitor
+                    .get_path_rustc_type(&refined_qualifier, self.bv.current_span);
+                if let TyKind::Ref(_, t, _) = qualifier_ty.kind() {
+                    if let TyKind::Array(..) = t.kind() {
+                        // The place path dereferences a qualifier that type checks as a pointer.
+                        // After refinement we know that the qualifier is a reference to an array.
+                        // This means that the current value of path ended up as the refinement of
+                        // *&p which reduced to p, which is of type array. The point of all this
+                        // aliasing is to get to the first element of the array, so just go there
+                        // directly.
+                        path = Path::new_index(path, Rc::new(0u128.into()));
+                    }
+                }
+            }
+            _ => {}
+        }
         let ty = self
             .bv
             .type_visitor
@@ -2850,8 +2868,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn(TRACE)]
     fn get_path_for_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let base_path: Rc<Path> =
-            Path::new_local_parameter_or_result(place.local.as_usize(), self.bv.mir.arg_count)
-                .refine_paths(&self.bv.current_environment);
+            Path::new_local_parameter_or_result(place.local.as_usize(), self.bv.mir.arg_count);
         if place.projection.is_empty() {
             let ty = self
                 .bv

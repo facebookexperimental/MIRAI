@@ -1018,8 +1018,18 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     pre_environment,
                     self.fresh_variable_offset,
                 )
-                .replace_root(&refined_dummy_root, target_path.clone())
-                .refine_paths(pre_environment);
+                .replace_root(&refined_dummy_root, target_path.clone());
+            trace!("parameter refined tpath {:?}", tpath);
+            match &tpath.value {
+                PathEnum::PhantomData => {
+                    // No need to track this data
+                    return;
+                }
+                PathEnum::Alias { .. }
+                | PathEnum::Offset { .. }
+                | PathEnum::QualifiedPath { .. } => tpath = tpath.refine_paths(pre_environment),
+                _ => {}
+            }
             let pre_state_value = self.current_environment.value_at(&tpath);
             if matches!(pre_state_value, Some(v) if v.is_widened_join()) {
                 // If the value is self referential, i.e. if its new value refers to its old
