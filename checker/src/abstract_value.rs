@@ -438,6 +438,7 @@ pub trait AbstractValueTrait: Sized {
     fn get_as_interval(&self) -> IntervalDomain;
     fn get_cached_tags(&self) -> Rc<TagDomain>;
     fn get_tags(&self) -> TagDomain;
+    fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>>;
     fn refine_paths(&self, environment: &Environment) -> Self;
     fn refine_parameters(
         &self,
@@ -1752,13 +1753,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if other.is_top() {
             return other;
         }
-        // [widened(x) join y] -> widened(x)
-        if let Expression::WidenedJoin { operand, .. } = &self.expression {
-            return operand.widen(path);
+        // [(x has a subexpression that widens at path) join y] -> widened subexpression
+        if let Some(widened_subexpression) = self.get_widened_subexpression(path) {
+            return widened_subexpression;
         }
-        // [x join widened(y)] -> widened(y)
-        if let Expression::WidenedJoin { operand, .. } = &other.expression {
-            return operand.widen(path);
+        // [x join (y has a subexpression that widens at path)] -> widened subexpression
+        if let Some(widened_subexpression) = other.get_widened_subexpression(path) {
+            return widened_subexpression;
         }
         let expression_size = self.expression_size.saturating_add(other.expression_size);
         AbstractValue::make_from(
@@ -2860,6 +2861,103 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
             _ => {
                 verify_unreachable!();
+            }
+        }
+    }
+
+    /// Returns a subexpression that is a widened expression at the given path.
+    /// Returns None if no such expression can be found.
+    #[logfn_inputs(TRACE)]
+    fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>> {
+        match &self.expression {
+            Expression::Bottom | Expression::Top => None,
+            Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
+            | Expression::Join { left, right, .. }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
+            | Expression::Ne { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Or { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
+            | Expression::Shr { left, right, .. }
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => left
+                .get_widened_subexpression(path)
+                .or_else(|| right.get_widened_subexpression(path)),
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::Neg { operand }
+            | Expression::LogicalNot { operand }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::UnknownTagCheck { operand, .. } => {
+                operand.get_widened_subexpression(path)
+            }
+            Expression::CompileTimeConstant(..) => None,
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => condition.get_widened_subexpression(path).or_else(|| {
+                consequent
+                    .get_widened_subexpression(path)
+                    .or_else(|| alternate.get_widened_subexpression(path))
+            }),
+            Expression::HeapBlock { .. } => None,
+            Expression::HeapBlockLayout {
+                length, alignment, ..
+            } => length
+                .get_widened_subexpression(path)
+                .or_else(|| alignment.get_widened_subexpression(path)),
+
+            Expression::Reference(..) => None,
+            Expression::InitialValue { .. } => None,
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator.get_widened_subexpression(path).or_else(|| {
+                default.get_widened_subexpression(path).or_else(|| {
+                    cases.iter().find_map(|(case_val, result_val)| {
+                        case_val
+                            .get_widened_subexpression(path)
+                            .or_else(|| result_val.get_widened_subexpression(path))
+                    })
+                })
+            }),
+            Expression::UninterpretedCall {
+                callee,
+                arguments: args,
+                ..
+            } => callee.get_widened_subexpression(path).or_else(|| {
+                args.iter()
+                    .find_map(|arg| arg.get_widened_subexpression(path))
+            }),
+            Expression::UnknownModelField { .. } => None,
+            Expression::UnknownTagField { .. } => None,
+            Expression::Variable { .. } => None,
+            Expression::WidenedJoin { path: p, .. } => {
+                if p.eq(path) {
+                    Some(self.clone())
+                } else {
+                    None
+                }
             }
         }
     }

@@ -7,6 +7,7 @@ use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::block_visitor::BlockVisitor;
 use crate::body_visitor::BodyVisitor;
 use crate::environment::Environment;
+use crate::options::DiagLevel;
 use crate::{abstract_value, k_limits};
 use itertools::Itertools;
 use log_derive::*;
@@ -133,6 +134,14 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             last_block = result.1;
             check_for_early_break!(self.bv);
             if iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
+                if self.bv.cv.options.diag_level == DiagLevel::PARANOID {
+                    let span = self.bv.current_span;
+                    let error = self.bv.cv.session.struct_span_err(
+                        span,
+                        &format!("Fixed point loop took {} iterations", iteration_count),
+                    );
+                    self.bv.emit_diagnostic(error);
+                }
                 break;
             }
             iteration_count += 1;
@@ -180,7 +189,9 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
                 }
 
                 // Check for a fixed point.
-                if !self.out_state[&last_block].subset(&old_state[&last_block]) {
+                if iteration_count > 3
+                    && !self.out_state[&last_block].subset(&old_state[&last_block])
+                {
                     // There is some path for which self.bv.current_environment.value_at(path) includes
                     // a value this is not present in self.out_state[last_block].value_at(path), so any block
                     // that used self.out_state[bb] as part of its input state now needs to get reanalyzed.
