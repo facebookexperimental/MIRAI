@@ -534,6 +534,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
+        // [x + 0] -> x
+        if let Expression::CompileTimeConstant(ConstantDomain::U128(0))
+        | Expression::CompileTimeConstant(ConstantDomain::I128(0)) = &other.expression
+        {
+            return Rc::new(FALSE);
+        }
+        // [0 + x] -> x
+        if let Expression::CompileTimeConstant(ConstantDomain::U128(0))
+        | Expression::CompileTimeConstant(ConstantDomain::I128(0)) = &self.expression
+        {
+            return Rc::new(FALSE);
+        }
+        // [(x + c1) + c2] -> x + c3 where c3 = c1 + c2
+        if let Expression::Add { left, right } = &self.expression {
+            if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+                (&right.expression, &other.expression)
+            {
+                let folded = v1.add(v2);
+                if folded != ConstantDomain::Bottom {
+                    return left.add_overflows(Rc::new(folded.into()), target_type);
+                }
+            }
+        }
+
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -1761,6 +1785,27 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let Some(widened_subexpression) = other.get_widened_subexpression(path) {
             return widened_subexpression;
         }
+        match (&self.expression, &other.expression) {
+            // [(x join y) join (y join z)] -> x join (y join z)
+            (
+                Expression::Join {
+                    left: x, right: y1, ..
+                },
+                Expression::Join { left: y2, .. },
+            ) if y1.eq(y2) => {
+                return x.join(other, path);
+            }
+            // [(x join y) join (z join a)] -> x join (y join (z join a))
+            (
+                Expression::Join {
+                    left: x, right: y, ..
+                },
+                Expression::Join { .. },
+            ) => {
+                return x.join(y.join(other, path), path);
+            }
+            _ => {}
+        }
         let expression_size = self.expression_size.saturating_add(other.expression_size);
         AbstractValue::make_from(
             Expression::Join {
@@ -1918,6 +1963,32 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            match v1 {
+                // [0 * y] -> 0
+                ConstantDomain::I128(0) | ConstantDomain::U128(0) => {
+                    return Rc::new(FALSE);
+                }
+                // [1 * y] -> y
+                ConstantDomain::I128(1) | ConstantDomain::U128(1) => {
+                    return Rc::new(FALSE);
+                }
+                _ => (),
+            }
+        }
+        if let Expression::CompileTimeConstant(c2) = &other.expression {
+            match c2 {
+                // [x * 0] -> 0
+                ConstantDomain::I128(0) | ConstantDomain::U128(0) => {
+                    return Rc::new(FALSE);
+                }
+                // [x * 1] -> x
+                ConstantDomain::I128(1) | ConstantDomain::U128(1) => {
+                    return Rc::new(FALSE);
+                }
+                _ => (),
+            }
+        }
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {

@@ -5,8 +5,7 @@
 
 // A test that infers a precondition from a loop invariant
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn test(v: &[i32]) {
     let mut i = 0;
@@ -18,8 +17,7 @@ fn test(v: &[i32]) {
 }
 
 pub fn main() {
-    //todo: avoid "possible possible"
-    let a = [-1, 2, 3]; //~ possible possible false verification condition
+    let a = [-1, 2, 3]; //~ possible false verification condition
     let b = [1, 2, 3];
     test(&a);
     test(&b);
