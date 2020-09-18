@@ -82,7 +82,7 @@ impl Path {
             Expression::HeapBlock { .. } => PathEnum::HeapBlock { value }.into(),
             Expression::Offset { .. } => PathEnum::Offset { value }.into(),
             Expression::UninterpretedCall { path, .. }
-            | Expression::InitialValue { path, .. }
+            | Expression::InitialParameterValue { path, .. }
             | Expression::Variable { path, .. }
             | Expression::WidenedJoin { path, .. } => path.as_ref().clone(),
             _ => PathEnum::Alias { value }.into(),
@@ -811,7 +811,7 @@ impl PathRefinement for Rc<Path> {
                                 );
                             }
                         }
-                        Expression::InitialValue { .. } => {
+                        Expression::InitialParameterValue { .. } => {
                             return Path::new_qualified(
                                 Path::get_as_path(val.clone()),
                                 refined_selector,

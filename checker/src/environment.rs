@@ -232,7 +232,7 @@ impl Environment {
                         // The bottom value corresponds to dead (impossible) code, so the join collapses.
                         value_map.insert_mut(p, val1.clone());
                     } else {
-                        let val2 = AbstractValue::make_initial_value(
+                        let val2 = AbstractValue::make_initial_parameter_value(
                             val1.expression.infer_type(),
                             path.clone(),
                         );
@@ -249,7 +249,7 @@ impl Environment {
                     // The bottom value corresponds to dead (impossible) code, so the join collapses.
                     value_map.insert_mut(path.clone(), val2.clone());
                 } else {
-                    let val1 = AbstractValue::make_initial_value(
+                    let val1 = AbstractValue::make_initial_parameter_value(
                         val2.expression.infer_type(),
                         path.clone(),
                     );

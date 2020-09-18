@@ -162,7 +162,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     self.tcx
                         .mk_imm_ref(self.tcx.lifetimes.re_static, target_type)
                 }
-                Expression::InitialValue { path, .. }
+                Expression::InitialParameterValue { path, .. }
                 | Expression::Variable { path, .. }
                 | Expression::WidenedJoin { path, .. } => {
                     self.get_path_rustc_type(path, current_span)

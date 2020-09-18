@@ -1312,7 +1312,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // value since only the caller will know what the values of the fields are.
                 match &self.actual_args[0].1.expression {
                     Expression::Reference(path)
-                    | Expression::InitialValue { path, .. }
+                    | Expression::InitialParameterValue { path, .. }
                     | Expression::Variable { path, .. }
                         if path.is_rooted_by_parameter() =>
                     {

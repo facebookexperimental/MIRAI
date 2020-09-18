@@ -349,12 +349,16 @@ impl AbstractValue {
         AbstractValue::make_from(Expression::Variable { path, var_type }, 1)
     }
 
-    /// Creates an abstract value about which nothing is known other than its type and address.
-    /// This value has been refined in the pre-state of a call and should not be refined again
-    /// during the current function invocation.
+    /// Creates an abstract value about which nothing is known other than its type, address and that
+    /// it is rooted in a parameter. This is used to refer to the value of a parameter as it was
+    /// before any assignments to it. When transferred into a calling context, this value must be
+    /// refined with the environment as it was at the start of the call.
     #[logfn_inputs(TRACE)]
-    pub fn make_initial_value(var_type: ExpressionType, path: Rc<Path>) -> Rc<AbstractValue> {
-        AbstractValue::make_from(Expression::InitialValue { path, var_type }, 1)
+    pub fn make_initial_parameter_value(
+        var_type: ExpressionType,
+        path: Rc<Path>,
+    ) -> Rc<AbstractValue> {
+        AbstractValue::make_from(Expression::InitialParameterValue { path, var_type }, 1)
     }
 }
 
@@ -1235,8 +1239,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .try_to_retype_as(target_type)
                 .subtract(right.try_to_retype_as(target_type)),
             Expression::Neg { operand } => operand.try_to_retype_as(target_type).negate(),
-            Expression::InitialValue { path, .. } => {
-                AbstractValue::make_initial_value(target_type.clone(), path.clone())
+            Expression::InitialParameterValue { path, .. } => {
+                AbstractValue::make_initial_parameter_value(target_type.clone(), path.clone())
             }
             Expression::Switch {
                 discriminator,
@@ -1302,10 +1306,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     AbstractValue::make_typed_unknown(target_type, path.clone())
                 }
             }
-            Expression::InitialValue { path, .. } => AbstractValue::make_initial_value(
-                target_type,
-                Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
-            ),
+            Expression::InitialParameterValue { path, .. } => {
+                AbstractValue::make_initial_parameter_value(
+                    target_type,
+                    Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
+                )
+            }
             Expression::Switch {
                 discriminator,
                 cases,
@@ -1725,7 +1731,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::HeapBlock { is_zeroed, .. } => *is_zeroed,
             Expression::Offset { left, .. } => left.is_contained_in_zeroed_heap_block(),
             Expression::Reference(path)
-            | Expression::InitialValue { path, .. }
+            | Expression::InitialParameterValue { path, .. }
             | Expression::Variable { path, .. } => path.is_rooted_by_zeroed_heap_block(),
             _ => false,
         }
@@ -2820,7 +2826,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Reference { .. }
             | Expression::UnknownTagCheck { .. } => return TagDomain::empty_set(),
 
-            Expression::InitialValue { .. }
+            Expression::InitialParameterValue { .. }
             | Expression::UnknownModelField { .. }
             | Expression::UnknownTagField { .. }
             | Expression::Variable { .. } => {
@@ -2998,7 +3004,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .or_else(|| alignment.get_widened_subexpression(path)),
 
             Expression::Reference(..) => None,
-            Expression::InitialValue { .. } => None,
+            Expression::InitialParameterValue { .. } => None,
             Expression::Switch {
                 discriminator,
                 cases,
@@ -3152,9 +3158,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 let refined_path = path.refine_paths(environment);
                 AbstractValue::make_reference(refined_path)
             }
-            Expression::InitialValue { path, var_type } => {
+            Expression::InitialParameterValue { path, var_type } => {
                 let refined_path = path.refine_paths(environment);
-                AbstractValue::make_initial_value(var_type.clone(), refined_path)
+                AbstractValue::make_initial_parameter_value(var_type.clone(), refined_path)
             }
             Expression::Rem { left, right } => left
                 .refine_paths(environment)
@@ -3593,7 +3599,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
                 1,
             ),
-            Expression::InitialValue { path, var_type } => {
+            Expression::InitialParameterValue { path, var_type } => {
                 let refined_path =
                     path.refine_parameters(arguments, result, pre_environment, fresh);
                 // Do path refinement now, using the pre_environment.
@@ -3606,7 +3612,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // make sure that it does not get affected by subsequent side effects on the parameter.
                 if refined_path.is_rooted_by_parameter() {
                     // This will not get refined again
-                    AbstractValue::make_initial_value(var_type.clone(), refined_path)
+                    AbstractValue::make_initial_parameter_value(var_type.clone(), refined_path)
                 } else {
                     // The value is rooted in a local variable leaked from the callee or
                     // in a static. In the latter case we want lookup_and_refine_value to
@@ -3837,7 +3843,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         .or(right.refine_with(path_condition, depth + 1))
                 }
             }
-            Expression::Reference(..) | Expression::InitialValue { .. } => {
+            Expression::Reference(..) | Expression::InitialParameterValue { .. } => {
                 // We could refine their paths, which will increase precision, but it does not
                 // currently seem cost-effective. This does not affect soundness.
                 self.clone()

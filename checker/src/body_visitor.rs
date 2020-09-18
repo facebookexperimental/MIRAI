@@ -412,7 +412,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         }
                         _ => {
                             if path.is_rooted_by_parameter() {
-                                AbstractValue::make_initial_value(result_type.clone(), path.clone())
+                                AbstractValue::make_initial_parameter_value(
+                                    result_type.clone(),
+                                    path.clone(),
+                                )
                             } else {
                                 AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
                             }
@@ -427,9 +430,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             } else {
                 let result = match path.value {
                     PathEnum::LocalVariable { .. } => refined_val,
-                    PathEnum::Parameter { .. } => {
-                        AbstractValue::make_initial_value(result_type.clone(), path.clone())
-                    }
+                    PathEnum::Parameter { .. } => AbstractValue::make_initial_parameter_value(
+                        result_type.clone(),
+                        path.clone(),
+                    ),
                     _ => AbstractValue::make_typed_unknown(result_type.clone(), path.clone()),
                 };
                 if result_type != ExpressionType::NonPrimitive {
@@ -1146,7 +1150,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         tpath.clone(),
                     );
                 }
-                Expression::InitialValue { path, var_type }
+                Expression::InitialParameterValue { path, var_type }
                 | Expression::Variable { path, var_type } => {
                     if matches!(&path.value, PathEnum::PhantomData) {
                         continue;
@@ -1180,7 +1184,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             );
                         }
                     } else if path.is_rooted_by_parameter() {
-                        rvalue = AbstractValue::make_initial_value(var_type.clone(), path.clone());
+                        rvalue = AbstractValue::make_initial_parameter_value(
+                            var_type.clone(),
+                            path.clone(),
+                        );
                         // todo: investigate test failures that happen when removing the next two lines
                         self.current_environment.update_value_at(tpath, rvalue);
                         continue;
@@ -1957,8 +1964,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 update(self, qualified_path, old_value.clone(), value.clone());
                 no_children = false;
             }
-            if let Expression::InitialValue { path, .. } | Expression::Variable { path, .. } =
-                &value.expression
+            if let Expression::InitialParameterValue { path, .. }
+            | Expression::Variable { path, .. } = &value.expression
             {
                 if path.is_rooted_by_parameter() {
                     update(self, target_path.clone(), value.clone(), value.clone());
@@ -2433,7 +2440,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
         // Consider the case where there is no value for the tag field in the environment, i.e.,
         // the result of the lookup is just a variable that reflects tag_field_path.
-        if matches!(&tag_field_value.expression, Expression::InitialValue {path, ..} | Expression::Variable { path, .. } if path.eq(&tag_field_path))
+        if matches!(&tag_field_value.expression, Expression::InitialParameterValue {path, ..} | Expression::Variable { path, .. } if path.eq(&tag_field_path))
         {
             if qualifier.is_rooted_by_parameter() {
                 // If qualifier is rooted by a function parameter, return an unknown tag field.

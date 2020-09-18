@@ -165,6 +165,15 @@ pub enum Expression {
         source: LayoutSource,
     },
 
+    /// The value of a parameter, or a subcomponent of structured parameter, as it was at function
+    /// entry and before any assignments to the parameter. When transferred into a calling context
+    /// via a summary, this value must be refined with the environment as it was at the start of the call.
+    InitialParameterValue {
+        // Must be rooted in a parameter.
+        path: Rc<Path>,
+        var_type: ExpressionType,
+    },
+
     /// An expression that calls the specified intrinsic binary function with given arguments. left.name(right)
     IntrinsicBinary {
         left: Rc<AbstractValue>,
@@ -265,16 +274,6 @@ pub enum Expression {
 
     /// The corresponding concrete value is the runtime address of location identified by the path.
     Reference(Rc<Path>),
-
-    /// Like a Variable, but one that has already been refined by AbstractValue::refine_parameters
-    /// in the pre-state and found to be unknown. It should remain unknown, even if path is defined
-    /// in the current state. Note that only paths rooted in parameters should get wrapped by
-    /// RefinedParameterCopy and only if the path has been refined from Path::ParameterCopy.
-    InitialValue {
-        // Must be rooted in a parameter.
-        path: Rc<Path>,
-        var_type: ExpressionType,
-    },
 
     /// An expression that is the remainder of left divided by right. %
     Rem {
@@ -537,7 +536,7 @@ impl Debug for Expression {
                 f.write_fmt(format_args!("&({:?})[{:?}]", left, right))
             }
             Expression::Reference(path) => f.write_fmt(format_args!("&({:?})", path)),
-            Expression::InitialValue { path, var_type } => {
+            Expression::InitialParameterValue { path, var_type } => {
                 f.write_fmt(format_args!("old({:?}): {:?}", path, var_type))
             }
             Expression::Rem { left, right } => {
@@ -684,7 +683,7 @@ impl Expression {
                 operand.expression.contains_local_variable()
             }
             Expression::Reference(path) => path.contains_local_variable(),
-            Expression::InitialValue { .. } => false,
+            Expression::InitialParameterValue { .. } => false,
             Expression::Switch {
                 discriminator,
                 cases,
@@ -750,7 +749,7 @@ impl Expression {
             Expression::Or { .. } => Some(TagPropagation::Or),
             Expression::Offset { .. } => Some(TagPropagation::Offset),
             Expression::Reference { .. } => None,
-            Expression::InitialValue { .. } => None,
+            Expression::InitialParameterValue { .. } => None,
             Expression::Rem { .. } => Some(TagPropagation::Rem),
             Expression::Shl { .. } => Some(TagPropagation::Shl),
             Expression::ShlOverflows { .. } => Some(TagPropagation::ShlOverflows),
@@ -890,7 +889,7 @@ impl Expression {
             Expression::Or { .. } => Bool,
             Expression::Offset { .. } => ThinPointer,
             Expression::Reference(_) => ThinPointer,
-            Expression::InitialValue { var_type, .. } => var_type.clone(),
+            Expression::InitialParameterValue { var_type, .. } => var_type.clone(),
             Expression::Rem { left, .. } => left.expression.infer_type(),
             Expression::Shl { left, .. } => left.expression.infer_type(),
             Expression::ShlOverflows { .. } => Bool,
