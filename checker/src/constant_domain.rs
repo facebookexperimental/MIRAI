@@ -257,6 +257,8 @@ impl ConstantDomain {
     }
 
     /// Returns a constant that is "self as target_type"
+    /// Returns ConstantDomain::Bottom if there isn't a type safe cast, for example
+    /// if an unsigned integer is being cast to a thin pointer.
     #[allow(clippy::cast_lossless)]
     #[logfn_inputs(TRACE)]
     pub fn cast(&self, target_type: &ExpressionType) -> Self {
@@ -292,9 +294,11 @@ impl ConstantDomain {
                         ExpressionType::U16 => ConstantDomain::U128((*val as u16) as u128),
                         ExpressionType::U32 => ConstantDomain::U128((*val as u32) as u128),
                         ExpressionType::U64 => ConstantDomain::U128((*val as u64) as u128),
+                        ExpressionType::U128 => self.clone(),
+                        ExpressionType::Usize => ConstantDomain::U128((*val as usize) as u128),
                         ExpressionType::F32 => ConstantDomain::F32((*val as f32).to_bits()),
                         ExpressionType::F64 => ConstantDomain::F64((*val as f64).to_bits()),
-                        _ => self.clone(),
+                        _ => ConstantDomain::Bottom.clone(),
                     }
                 }
             }
@@ -307,9 +311,11 @@ impl ConstantDomain {
                         ExpressionType::I16 => ConstantDomain::I128((*val as i16) as i128),
                         ExpressionType::I32 => ConstantDomain::I128((*val as i32) as i128),
                         ExpressionType::I64 => ConstantDomain::I128((*val as i64) as i128),
+                        ExpressionType::I128 => self.clone(),
+                        ExpressionType::Isize => ConstantDomain::I128((*val as isize) as i128),
                         ExpressionType::F32 => ConstantDomain::F32((*val as f32).to_bits()),
                         ExpressionType::F64 => ConstantDomain::F64((*val as f64).to_bits()),
-                        _ => self.clone(),
+                        _ => ConstantDomain::Bottom.clone(),
                     }
                 }
             }
@@ -321,8 +327,10 @@ impl ConstantDomain {
                     ConstantDomain::I128(f as i128).cast(target_type)
                 } else if target_type.is_unsigned_integer() {
                     ConstantDomain::U128(f as u128).cast(target_type)
-                } else {
+                } else if *target_type == ExpressionType::F32 {
                     self.clone()
+                } else {
+                    ConstantDomain::Bottom.clone()
                 }
             }
             ConstantDomain::F64(val) => {
@@ -333,8 +341,10 @@ impl ConstantDomain {
                     ConstantDomain::I128(f as i128).cast(target_type)
                 } else if target_type.is_unsigned_integer() {
                     ConstantDomain::U128(f as u128).cast(target_type)
-                } else {
+                } else if *target_type == ExpressionType::F64 {
                     self.clone()
+                } else {
+                    ConstantDomain::Bottom.clone()
                 }
             }
             _ => self.clone(),
