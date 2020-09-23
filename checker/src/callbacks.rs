@@ -150,6 +150,7 @@ impl MiraiCallbacks {
             || file_name.contains("common/debug-interface") // resolve error
             || file_name.contains("common/logger/src") // resolve error
             || file_name.contains("common/metrics/src") // stack overflow
+            || file_name.contains("common/trace/src") // stack overflow
             || file_name.contains("config/config-builder/src") // false positives
             || file_name.contains("execution/executor/src") // false positives
             || file_name.contains("execution/execution-correctness/src") // takes too long

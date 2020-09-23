@@ -288,6 +288,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 return;
             }
         }
+        let call_depth = *self.active_calls_map.get(&self.def_id).unwrap_or(&0u64);
+        if call_depth > 1 {
+            diagnostic_builder.cancel();
+            return;
+        }
         self.buffered_diagnostics.push(diagnostic_builder);
     }
 
@@ -342,11 +347,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             _ => {}
         }
         let refined_val = {
-            let bottom = abstract_value::BOTTOM.into();
+            let top = abstract_value::TOP.into();
             let local_val = self
                 .current_environment
                 .value_at(&path)
-                .unwrap_or(&bottom)
+                .unwrap_or(&top)
                 .clone();
             if self
                 .current_environment
@@ -359,7 +364,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 local_val
             }
         };
-        let result = if refined_val.is_bottom() || refined_val.is_top() {
+        let result = if refined_val.is_top() {
             if self.imported_root_static(&path) {
                 return self.lookup_path_and_refine_result(path, result_rustc_type);
             }
@@ -584,7 +589,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             if cached_summary.is_computed {
                 cached_summary
             } else {
-                summary = call_visitor.create_and_cache_function_summary();
+                summary = call_visitor.create_and_cache_function_summary(None);
                 &summary
             }
         } else {
@@ -1051,6 +1056,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
+                Expression::Bottom => {
+                    self.current_environment.update_value_at(tpath, rvalue);
+                    continue;
+                }
                 Expression::HeapBlockLayout { source, .. } => {
                     match source {
                         LayoutSource::DeAlloc => {
@@ -1455,7 +1464,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             };
             self.smt_solver.set_backtrack_position();
             self.smt_solver.assert(&smt_expr);
-            if self.smt_solver.solve() == SmtResult::Unsatisfiable {
+            let smt_result = self.smt_solver.solve();
+            if smt_result == SmtResult::Unsatisfiable {
                 // The solver can prove that the entry condition is always false.
                 entry_cond_as_bool = Some(false);
             }
@@ -1482,7 +1492,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 // So lets see if !cond_val is provably false.
                 let not_cond_expr = &cond_val.logical_not().expression;
                 let smt_expr = self.smt_solver.get_as_smt_predicate(not_cond_expr);
-                if self.smt_solver.solve_expression(&smt_expr) == SmtResult::Unsatisfiable {
+                let smt_result = self.smt_solver.solve_expression(&smt_expr);
+                if smt_result == SmtResult::Unsatisfiable {
                     // The solver can prove that !cond_val is always false.
                     Some(true)
                 } else {

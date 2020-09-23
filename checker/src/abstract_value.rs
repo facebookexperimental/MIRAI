@@ -3163,9 +3163,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::IntrinsicFloatingPointUnary { operand, name } => operand
                 .refine_paths(environment)
                 .intrinsic_floating_point_unary(*name),
-            Expression::Join { left, right, path } => left
-                .refine_paths(environment)
-                .join(right.refine_paths(environment), &path),
+            Expression::Join { left, right, path } => left.refine_paths(environment).join(
+                right.refine_paths(environment),
+                &path.refine_paths(environment),
+            ),
             Expression::LessOrEqual { left, right } => left
                 .refine_paths(environment)
                 .less_or_equal(right.refine_paths(environment)),
@@ -3464,7 +3465,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .refine_parameters(arguments, result, pre_environment, fresh)
                 .join(
                     right.refine_parameters(arguments, result, pre_environment, fresh),
-                    &path,
+                    &path.refine_parameters(arguments, result, pre_environment, fresh),
                 ),
             Expression::LessOrEqual { left, right } => left
                 .refine_parameters(arguments, result, pre_environment, fresh)
