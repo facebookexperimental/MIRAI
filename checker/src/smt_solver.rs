@@ -43,6 +43,9 @@ pub trait SmtSolver<SmtExpressionType> {
     /// have been added to the solver.
     fn get_solver_state_as_string(&self) -> String;
 
+    /// Returns an expression that is the logical inverse of the given expression.
+    fn invert_predicate(&self, expression: &SmtExpressionType) -> SmtExpressionType;
+
     /// Create a nested context. When a matching backtrack is called, the current context (state)
     /// of the solver will be restored to what it was when this was called.
     fn set_backtrack_position(&self) {
@@ -90,6 +93,8 @@ impl SmtSolver<()> for SolverStub {
     fn get_solver_state_as_string(&self) -> String {
         String::from("not implemented")
     }
+
+    fn invert_predicate(&self, _: &()) {}
 
     fn set_backtrack_position(&self) {}
 

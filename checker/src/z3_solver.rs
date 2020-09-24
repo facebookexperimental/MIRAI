@@ -166,6 +166,11 @@ impl SmtSolver<Z3ExpressionType> for Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
+    fn invert_predicate(&self, expression: &Z3ExpressionType) -> Z3ExpressionType {
+        unsafe { z3_sys::Z3_mk_not(self.z3_context, *expression) }
+    }
+
+    #[logfn_inputs(TRACE)]
     fn set_backtrack_position(&self) {
         let _guard = Z3_MUTEX.lock().unwrap();
         unsafe {
@@ -1280,6 +1285,13 @@ impl Z3Solver {
                                     && target_type.is_unsigned_integer())
                             {
                                 let ast = self.get_as_numeric_z3_ast(expression).1;
+                                if *target_type == ExpressionType::I128
+                                    || *target_type == ExpressionType::U128
+                                {
+                                    // The cast does not do anything at runtime, so just use ast and
+                                    // keep things simple for the solver.
+                                    return (false, ast);
+                                }
                                 let target_type_min_ast =
                                     self.get_constant_as_ast(&target_type.min_value());
                                 let target_type_max_ast =

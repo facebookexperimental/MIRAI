@@ -1414,7 +1414,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// Only call this when doing actual error checking, since this is expensive.
     #[logfn_inputs(TRACE)]
     #[logfn(TRACE)]
-    fn check_condition_value_and_reachability(
+    pub fn check_condition_value_and_reachability(
         &mut self,
         cond_val: &Rc<AbstractValue>,
     ) -> (Option<bool>, Option<bool>) {

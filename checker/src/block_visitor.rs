@@ -845,7 +845,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         if cond.is_bottom() {
             return None;
         }
-        let (cond_as_bool, entry_cond_as_bool) = self.check_condition_value_and_reachability(cond);
+        let (cond_as_bool, entry_cond_as_bool) =
+            self.bv.check_condition_value_and_reachability(cond);
 
         // If we never get here, rather call verify_unreachable!()
         if !entry_cond_as_bool.unwrap_or(true) {
@@ -928,7 +929,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
         let tag_check = AbstractValue::make_tag_check(value.clone(), tag, expecting_presence);
         let (tag_check_as_bool, entry_cond_as_bool) =
-            self.check_condition_value_and_reachability(&tag_check);
+            self.bv.check_condition_value_and_reachability(&tag_check);
 
         // We perform the tag check if the current block is possibly reachable.
         if entry_cond_as_bool.unwrap_or(true) {
@@ -1053,7 +1054,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // Leave that to the compiler.
                 } else {
                     let (cond_as_bool_opt, entry_cond_as_bool) =
-                        self.check_condition_value_and_reachability(&cond_val);
+                        self.bv.check_condition_value_and_reachability(&cond_val);
 
                     // Quick exit if things are known.
                     if let Some(false) = entry_cond_as_bool {
@@ -1135,74 +1136,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }
     }
 
-    /// Checks the given condition value and also checks if the current entry condition can be true.
-    /// If the abstract domains are undecided, resort to using the SMT solver.
-    /// Only call this when doing actual error checking, since this is expensive.
-    #[logfn_inputs(TRACE)]
-    #[logfn(TRACE)]
-    pub fn check_condition_value_and_reachability(
-        &mut self,
-        cond_val: &Rc<AbstractValue>,
-    ) -> (Option<bool>, Option<bool>) {
-        trace!(
-            "entry condition {:?}",
-            self.bv.current_environment.entry_condition
-        );
-        // Check if the condition is always true (or false) if we get here.
-        let mut cond_as_bool = cond_val.as_bool_if_known();
-        // Check if we can prove that every call to the current function will reach this call site.
-        let mut entry_cond_as_bool = self
-            .bv
-            .current_environment
-            .entry_condition
-            .as_bool_if_known();
-        // Use SMT solver if need be.
-        if let Some(entry_cond_as_bool) = entry_cond_as_bool {
-            if entry_cond_as_bool && cond_as_bool.is_none() {
-                cond_as_bool = self.solve_condition(cond_val);
-            }
-        } else {
-            // Check if path implies condition
-            if cond_as_bool.unwrap_or(false)
-                || self
-                    .bv
-                    .current_environment
-                    .entry_condition
-                    .implies(cond_val)
-            {
-                return (Some(true), None);
-            }
-            if !cond_as_bool.unwrap_or(true)
-                || self
-                    .bv
-                    .current_environment
-                    .entry_condition
-                    .implies_not(cond_val)
-            {
-                return (Some(false), None);
-            }
-            // The abstract domains are unable to decide if the entry condition is always true.
-            // (If it could decide that the condition is always false, we wouldn't be here.)
-            // See if the SMT solver can prove that the entry condition is always true.
-            let smt_expr = {
-                let ec = &self.bv.current_environment.entry_condition.expression;
-                self.bv.smt_solver.get_as_smt_predicate(ec)
-            };
-            self.bv.smt_solver.set_backtrack_position();
-            self.bv.smt_solver.assert(&smt_expr);
-            if self.bv.smt_solver.solve() == SmtResult::Unsatisfiable {
-                // The solver can prove that the entry condition is always false.
-                entry_cond_as_bool = Some(false);
-            }
-            if cond_as_bool.is_none() && entry_cond_as_bool.unwrap_or(true) {
-                // The abstract domains are unable to decide what the value of cond is.
-                cond_as_bool = self.solve_condition(cond_val)
-            }
-            self.bv.smt_solver.backtrack();
-        }
-        (cond_as_bool, entry_cond_as_bool)
-    }
-
     /// Checks if the current entry condition is not known to be false.
     /// If the abstract domains are undecided, resort to using the SMT solver.
     /// Only call this when doing actual error checking, since this is expensive.
@@ -1235,39 +1168,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             self.bv.smt_solver.backtrack();
         }
         entry_cond_as_bool.unwrap_or(true)
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn solve_condition(&mut self, cond_val: &Rc<AbstractValue>) -> Option<bool> {
-        let ce = &cond_val.expression;
-        let cond_smt_expr = self.bv.smt_solver.get_as_smt_predicate(ce);
-        match self.bv.smt_solver.solve_expression(&cond_smt_expr) {
-            SmtResult::Unsatisfiable => {
-                // If we get here, the solver can prove that cond_val is always false.
-                Some(false)
-            }
-            SmtResult::Satisfiable => {
-                // We could get here with cond_val being true. Or perhaps not.
-                // So lets see if !cond_val is provably false.
-                // todo: since the Z3 encoding is heuristic, this may not produce the actual inverse of
-                // the Z3 expression for cond_val. Finesse this by adding a logical negation operation
-                // to the smt_solver interface.
-                let not_cond_expr = &cond_val.logical_not().expression;
-                let smt_expr = self.bv.smt_solver.get_as_smt_predicate(not_cond_expr);
-                let result = self.bv.smt_solver.solve_expression(&smt_expr);
-                if result == SmtResult::Unsatisfiable {
-                    // The solver can prove that !cond_val is always false.
-                    Some(true)
-                } else {
-                    trace!("result {:?}", result);
-                    None
-                }
-            }
-            _ => {
-                trace!("time out");
-                None
-            }
-        }
     }
 
     /// Execute a piece of inline Assembly.

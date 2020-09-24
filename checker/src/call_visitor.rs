@@ -568,6 +568,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let (_, cond) = &self.actual_args[0];
                 let (cond_as_bool, entry_cond_as_bool) = self
                     .block_visitor
+                    .bv
                     .check_condition_value_and_reachability(cond);
 
                 // If we never get here, rather call unreachable!()
@@ -1996,6 +1997,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             let (refined_precondition_as_bool, entry_cond_as_bool) = self
                 .block_visitor
+                .bv
                 .check_condition_value_and_reachability(&refined_condition);
 
             if refined_precondition_as_bool.unwrap_or(false) {
