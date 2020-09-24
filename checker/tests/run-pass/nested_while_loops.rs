@@ -13,11 +13,11 @@ pub fn main() {
     while i < 100 {
         verify!(i < 100);
         let mut j = i;
-        while j <= 100 {
-            verify!(i < 100 && j <= 100);
+        while j <= 200 {
+            verify!(i < 100 && j <= 200);
             j += i;
         }
-        verify!(i < 100 && j > 100);
+        verify!(i < 100 && j > 200);
         i += 1;
     }
     verify!(i >= 100);

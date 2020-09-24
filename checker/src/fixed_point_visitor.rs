@@ -101,11 +101,37 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_basic_block(&mut self, bb: mir::BasicBlock, iteration_count: usize) {
         // Merge output states of predecessors of bb
-        let i_state = if iteration_count == 0 && bb.index() == 0 {
+        let mut i_state = if iteration_count == 0 && bb.index() == 0 {
             self.first_state.clone()
         } else {
             self.get_initial_state_from_predecessors(bb, iteration_count)
         };
+        // Note that iteration_count is zero unless bb is a loop anchor.
+        if iteration_count == 2 || iteration_count == 3 {
+            // We do not have (and don't want to have) a way to distinguish the value of a widened
+            // loop variable in one iteration from its value in the previous iteration, so
+            // conditions involving loop variables are not referentially transparent
+            // and we have to do without them. Also, only the conditions that flow into
+            // the loop anchor at iteration 1 (i.e. before the loop body was executed the first time)
+            // can be loop invariant (and thus apply to all executions of the loop body).
+            let loop_variants = self.in_state[&bb].get_loop_variants(&i_state);
+            let previous_state = &self.in_state[&bb];
+            let invariant_entry_condition = previous_state
+                .entry_condition
+                .remove_conjuncts_that_depend_on(&loop_variants);
+            i_state = if iteration_count == 2 {
+                previous_state.join(i_state)
+            } else {
+                previous_state.widen(i_state)
+            };
+            i_state.entry_condition = invariant_entry_condition;
+        } else if iteration_count > 3 {
+            // From iteration 3 onwards, the entry condition is not affected by changes in the loop
+            // body, so we just stick to the one computed in iteration 3.
+            let invariant_entry_condition = self.in_state[&bb].entry_condition.clone();
+            i_state = self.in_state[&bb].widen(i_state);
+            i_state.entry_condition = invariant_entry_condition;
+        }
         self.in_state.insert(bb, i_state.clone());
         self.bv.current_environment = i_state;
         let mut block_visitor = BlockVisitor::new(self.bv);
@@ -125,7 +151,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
         let mut changed = true;
         let mut last_block = loop_anchor;
         // Iterate at least 4 times so that widening kicks in for loop variables and at least
-        // one iteration was performed starting with widened variables.
+        // two iterations were performed starting with widened variables.
         while iteration_count <= 4 || changed {
             self.already_visited = saved_already_visited.clone();
             self.bv.fresh_variable_offset = saved_fresh_variable_offset;
@@ -133,24 +159,25 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             changed = result.0;
             last_block = result.1;
             check_for_early_break!(self.bv);
-            if iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
-                if self.bv.cv.options.diag_level == DiagLevel::PARANOID {
-                    let span = self.bv.current_span;
-                    let error = self.bv.cv.session.struct_span_err(
-                        span,
-                        &format!("Fixed point loop took {} iterations", iteration_count),
-                    );
-                    self.bv.emit_diagnostic(error);
-                }
+            if changed && iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
                 break;
             }
             iteration_count += 1;
         }
-        if iteration_count > 10 {
-            warn!(
-                "Fixed point loop took {} iterations for {}.",
-                iteration_count, self.bv.function_name
-            );
+        if iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
+            if self.bv.cv.options.diag_level == DiagLevel::PARANOID {
+                let span = self.bv.current_span;
+                let error = self.bv.cv.session.struct_span_err(
+                    span,
+                    &format!("Fixed point loop took {} iterations", iteration_count),
+                );
+                self.bv.emit_diagnostic(error);
+            } else {
+                warn!(
+                    "Fixed point loop took {} iterations for {}.",
+                    iteration_count, self.bv.function_name
+                );
+            }
         } else {
             trace!(
                 "Fixed point loop took {} iterations for {}.",
@@ -188,7 +215,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
                     self.visit_basic_block(bb, 0); // conditional expressions
                 }
 
-                // Check for a fixed point.
+                // Check for a fixed point, once two iterations with widened variables were executed.
                 if iteration_count > 3
                     && !self.out_state[&last_block].subset(&old_state[&last_block])
                 {
@@ -206,18 +233,31 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
     /// If a predecessor has not yet been analyzed, its state does not form part of the join.
     /// If no predecessors have been analyzed, the entry state is a default entry state with an
     /// entry condition of TOP.
+    /// Note that iteration_count should be 0 except if bb is a loop anchor, in which case it
+    /// is greater than 0.
     #[logfn_inputs(TRACE)]
     fn get_initial_state_from_predecessors(
         &mut self,
         bb: mir::BasicBlock,
         iteration_count: usize,
     ) -> Environment {
-        // First compute a joint state from the out states of eligible predecessors.
-        // We use the exit conditions for precise joins.
         let mut predecessor_states_and_conditions: Vec<(Environment, Rc<AbstractValue>)> =
             self.bv.mir.predecessors()[bb]
                 .iter()
                 .filter_map(|pred_bb| {
+                    let is_loop_back = self.dominators.is_dominated_by(*pred_bb, bb);
+                    if iteration_count == 1 && is_loop_back {
+                        // For the first iteration of the loop body we only want state that
+                        // precedes the body. Normally, the loop body's state will be in the
+                        // default state and thus get ignored, but if the loop is nested there
+                        // will be state from the previous iteration of the outer loop.
+                        return None;
+                    }
+                    if iteration_count > 1 && !is_loop_back {
+                        // Once the loop body has been interpreted in its initial state (iteration 1)
+                        // we only want state from the looping back branches.
+                        return None;
+                    }
                     let pred_state = &self.out_state[pred_bb];
                     if let Some(pred_exit_condition) = pred_state.exit_conditions.get(&bb) {
                         if pred_exit_condition.as_bool_if_known().unwrap_or(true) {
@@ -242,87 +282,18 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             initial_state.entry_condition = Rc::new(abstract_value::FALSE);
             return initial_state;
         }
-
-        // we want to do right associative operations (for simplification purposes) and that is easier if we reverse.
-        predecessor_states_and_conditions.reverse();
-        let mut joined_state = predecessor_states_and_conditions
+        if predecessor_states_and_conditions.len() == 1 {
+            let (mut state, entry_condition) = predecessor_states_and_conditions.remove(0);
+            state.entry_condition = entry_condition;
+            return state;
+        }
+        predecessor_states_and_conditions
             .into_iter()
             .fold1(|(state1, cond1), (state2, cond2)| {
-                if iteration_count == 0 {
-                    (state2.conditional_join(state1, &cond2), cond1)
-                } else if iteration_count <= 2 {
-                    (state2.join(state1), cond1)
-                } else {
-                    // Once all paths have already been analyzed for a second time (iteration_count == 2)
-                    // all blocks not involved in loops will have their final environments.
-                    // The remainder will end up here from iteration 3 onwards and we need to
-                    // widen in order to reach a fixed point.
-                    (state2.widen(state1), cond1)
-                }
+                (state2.conditional_join(state1, &cond2), cond1)
             })
             .expect("one or more states to fold into something")
-            .0;
-
-        let at_loop_anchor = self.loop_anchors.contains(&bb);
-
-        // Identifies loop invariants. Currently we only extract invariant paths, i.e., paths that are not
-        // mutated by the loop. todo: support more kinds of invariants.
-        let mut joined_state_without_loop_variants = joined_state.clone();
-        if at_loop_anchor {
-            self.bv.mir.predecessors()[bb].iter().for_each(|pred_bb| {
-                if self.dominators.is_dominated_by(*pred_bb, bb) {
-                    let pred_out_state = &self.out_state[pred_bb];
-                    for (path, val) in pred_out_state.value_map.iter() {
-                        if let Some(joined_val) = joined_state.value_at(path) {
-                            if joined_val.is_widened_join() || !val.eq(joined_val) {
-                                joined_state_without_loop_variants
-                                    .value_map
-                                    .remove_mut(path);
-                            }
-                        }
-                    }
-                }
-            })
-        }
-
-        // Now we compute an entry condition from the exit conditions of the eligible predecessors
-        let entry_condition = self.bv.mir.predecessors()[bb]
-            .iter()
-            .filter_map(|pred_bb| {
-                let pred_out_state = &self.out_state[pred_bb];
-                let pred_exit_condition = pred_out_state.exit_conditions.get(&bb);
-                if at_loop_anchor && self.dominators.is_dominated_by(*pred_bb, bb) {
-                    // A block that is part of the loop body (dominated by bb, which is an anchor,
-                    // as well as preceding bb) does not contribute a useful path condition
-                    // since the state that may be guarded by it cannot safely be distinguished from
-                    // state that was provided by non loop body predecessors.
-                    // Furthermore, since loop back path conditions incorporate the initial path
-                    // conditions of a loop, every fixed point iteration of the loop will expand
-                    // the initial path condition, which is bad in many ways.
-                    return None;
-                }
-                if let Some(pred_exit_condition) = pred_exit_condition {
-                    if pred_exit_condition.as_bool_if_known().unwrap_or(false) {
-                        // A true exit condition tells us nothing. If we are already widening,
-                        // then replace the true condition with equalities from the corresponding
-                        // environment.
-                        Some(pred_exit_condition.add_equalities_for_widened_vars(
-                            pred_out_state,
-                            &joined_state_without_loop_variants,
-                        ))
-                    } else {
-                        Some(pred_exit_condition.clone())
-                    }
-                } else {
-                    // Can happen in iteration 1 when pred_bb is a loop body block (and thus still
-                    // in its default state.
-                    None
-                }
-            })
-            .fold1(|acc, cond| acc.or(cond))
-            .unwrap_or_else(|| Rc::new(abstract_value::FALSE)); // an empty join should equal to false
-        joined_state.entry_condition = entry_condition;
-        joined_state
+            .0
     }
 }
 

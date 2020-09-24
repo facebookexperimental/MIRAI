@@ -25,7 +25,7 @@ pub fn test1() {
 pub fn test2() {
     let mut it = std::ops::RangeInclusive::new(0usize, 10usize);
     while let Some(_) = it.next() {
-        verify!(*it.start() <= 10);
+        verify!(*it.start() <= 10); //~ possible false verification condition
     }
     verify!(it.is_empty());
 }

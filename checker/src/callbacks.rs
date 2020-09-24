@@ -162,6 +162,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-lang/src") // resolve error
             || file_name.contains("language/move-vm/runtime/src") // resolve error
             || file_name.contains("language/move-prover/src") // false positives
+            || file_name.contains("language/move-prover/bytecode/src") // stack overflow
             || file_name.contains("language/move-prover/spec-lang/src") // false positives
             || file_name.contains("language/resource-viewer/src") // false positives
             || file_name.contains("language/move-prover/docgen/src") // takes too long 

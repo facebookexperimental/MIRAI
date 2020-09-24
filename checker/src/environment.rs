@@ -13,6 +13,7 @@ use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::checked_assume;
 use rpds::HashTrieMap;
 use rustc_middle::mir::BasicBlock;
+use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 
@@ -183,13 +184,8 @@ impl Environment {
         other: Environment,
         condition: &Rc<AbstractValue>,
     ) -> Environment {
-        self.join_or_widen(other, |x, y, p| {
-            if let Some(val) = y.get_widened_subexpression(p) {
-                return val;
-            }
-            if let Some(val) = x.get_widened_subexpression(p) {
-                return val;
-            }
+        let entry_condition = self.entry_condition.or(other.entry_condition.clone());
+        self.join_or_widen(other, entry_condition, |x, y, _p| {
             condition.conditional_expression(x.clone(), y.clone())
         })
     }
@@ -198,21 +194,70 @@ impl Environment {
     /// value that is the join of self.value_at(path) and other.value_at(path)
     #[logfn_inputs(TRACE)]
     pub fn join(&self, other: Environment) -> Environment {
-        self.join_or_widen(other, |x, y, p| x.join(y.clone(), p))
+        let entry_condition = other.entry_condition.clone();
+        self.join_or_widen(other, entry_condition, |x, y, p| {
+            if let Some(val) = x.get_widened_subexpression(p) {
+                return val;
+            }
+            if let Some(val) = y.get_widened_subexpression(p) {
+                return val;
+            }
+            x.join(y.clone(), p)
+        })
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the widen of self.value_at(path) and other.value_at(path)
     #[logfn_inputs(TRACE)]
     pub fn widen(&self, other: Environment) -> Environment {
-        self.clone()
-            .join_or_widen(other, |x, y, p| x.join(y.clone(), p).widen(p))
+        let entry_condition = other.entry_condition.clone();
+        self.join_or_widen(other, entry_condition, |x, y, p| {
+            if let Some(val) = x.get_widened_subexpression(p) {
+                return val;
+            }
+            if let Some(val) = y.get_widened_subexpression(p) {
+                return val;
+            }
+            x.join(y.clone(), p).widen(p)
+        })
+    }
+
+    /// Returns a set of paths that do not have identical associated values in both self and other.
+    #[logfn_inputs(TRACE)]
+    pub fn get_loop_variants(&self, other: &Environment) -> HashSet<Rc<Path>> {
+        let mut loop_variants: HashSet<Rc<Path>> = HashSet::new();
+        let value_map1 = &self.value_map;
+        let value_map2 = &other.value_map;
+        for (path, val1) in value_map1.iter() {
+            let p = path.clone();
+            match value_map2.get(path) {
+                Some(val2) => {
+                    if !val1.eq(val2) {
+                        loop_variants.insert(p);
+                    }
+                }
+                None => {
+                    loop_variants.insert(p);
+                }
+            }
+        }
+        for (path, _) in value_map2.iter() {
+            if !value_map1.contains_key(path) {
+                loop_variants.insert(path.clone());
+            }
+        }
+        loop_variants
     }
 
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the join or widen of self.value_at(path) and other.value_at(path).
     #[logfn(TRACE)]
-    fn join_or_widen<F>(&self, other: Environment, join_or_widen: F) -> Environment
+    fn join_or_widen<F>(
+        &self,
+        other: Environment,
+        entry_condition: Rc<AbstractValue>,
+        join_or_widen: F,
+    ) -> Environment
     where
         F: Fn(&Rc<AbstractValue>, &Rc<AbstractValue>, &Rc<Path>) -> Rc<AbstractValue>,
     {
@@ -259,7 +304,7 @@ impl Environment {
         }
         Environment {
             value_map,
-            entry_condition: Rc::new(abstract_value::TRUE),
+            entry_condition,
             exit_conditions: HashTrieMap::default(),
         }
     }

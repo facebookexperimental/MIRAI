@@ -68,13 +68,7 @@ impl Hash for AbstractValue {
 impl PartialEq for AbstractValue {
     #[logfn_inputs(TRACE)]
     fn eq(&self, other: &Self) -> bool {
-        match (&self.expression, &other.expression) {
-            (
-                Expression::WidenedJoin { path: p1, .. },
-                Expression::WidenedJoin { path: p2, .. },
-            ) => p1.eq(p2),
-            (e1, e2) => e1.eq(e2),
-        }
+        self.expression.eq(&other.expression)
     }
 }
 
@@ -364,11 +358,6 @@ impl AbstractValue {
 
 pub trait AbstractValueTrait: Sized {
     fn addition(&self, other: Self) -> Self;
-    fn add_equalities_for_widened_vars(
-        &self,
-        self_env: &Environment,
-        widened_env: &Environment,
-    ) -> Self;
     fn add_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn add_tag(&self, tag: Tag) -> Self;
     fn and(&self, other: Self) -> Self;
@@ -398,7 +387,6 @@ pub trait AbstractValueTrait: Sized {
     fn is_compile_time_constant(&self) -> bool;
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
     fn is_top(&self) -> bool;
-    fn is_widened_join(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
     fn less_than(&self, other: Self) -> Self;
@@ -412,6 +400,7 @@ pub trait AbstractValueTrait: Sized {
     fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>);
     fn refers_to_unknown_location(&self) -> bool;
     fn remainder(&self, other: Self) -> Self;
+    fn remove_conjuncts_that_depend_on(&self, variables: &HashSet<Rc<Path>>) -> Self;
     fn shift_left(&self, other: Self) -> Self;
     fn shl_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn shr(&self, other: Self, expression_type: ExpressionType) -> Self;
@@ -458,6 +447,7 @@ pub trait AbstractValueTrait: Sized {
         result_type: ExpressionType,
         path: Rc<Path>,
     ) -> Self;
+    fn uses(&self, variables: &HashSet<Rc<Path>>) -> bool;
     fn widen(&self, path: &Rc<Path>) -> Self;
 }
 
@@ -496,39 +486,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         self.try_to_simplify_binary_op(other, ConstantDomain::add, Self::addition, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Add { left, right })
         })
-    }
-
-    /// Returns an expression that is self && equalities where the latter term is constructed
-    /// from the values of the self_env for keys that are in the widened_env and have values
-    /// that have been widened. This prevents a true self condition from collapsing the path
-    /// condition at a join point.
-    #[logfn_inputs(TRACE)]
-    fn add_equalities_for_widened_vars(
-        &self,
-        self_env: &Environment,
-        widened_env: &Environment,
-    ) -> Rc<AbstractValue> {
-        let mut result = self.clone();
-        for (key, val) in widened_env.value_map.iter() {
-            if let Expression::WidenedJoin { .. } = val.expression {
-                if let Some(self_val) = self_env.value_map.get(key) {
-                    if let Expression::WidenedJoin { .. } = self_val.expression {
-                        continue;
-                    };
-                    let var_type = self_val.expression.infer_type();
-                    if !var_type.is_primitive() {
-                        continue;
-                    }
-                    let variable = AbstractValue::make_typed_unknown(var_type, key.clone());
-                    let equality =
-                        AbstractValue::make_binary(variable, self_val.clone(), |left, right| {
-                            Expression::Equals { left, right }
-                        });
-                    result = result.and(equality);
-                }
-            }
-        }
-        result
     }
 
     /// Returns an element that is true if "self + other" is not in range of target_type.
@@ -1294,17 +1251,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Join { path, left, right } => left
                 .dereference(target_type.clone())
                 .join(right.dereference(target_type), path),
-            Expression::Offset { .. } => {
+            Expression::Offset { .. } | Expression::Reference(..) => {
                 let path = Path::get_as_path(self.clone());
                 let deref_path = Path::new_deref(path);
                 AbstractValue::make_typed_unknown(target_type, deref_path)
-            }
-            Expression::Reference(path) => {
-                if let PathEnum::HeapBlock { value } = &path.value {
-                    value.clone()
-                } else {
-                    AbstractValue::make_typed_unknown(target_type, path.clone())
-                }
             }
             Expression::InitialParameterValue { path, .. } => {
                 AbstractValue::make_initial_parameter_value(
@@ -1751,12 +1701,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             _ => false,
         }
-    }
-
-    /// True if this a widened join.
-    #[logfn_inputs(TRACE)]
-    fn is_widened_join(&self) -> bool {
-        matches!(self.expression, Expression::WidenedJoin { .. })
     }
 
     /// Returns an abstract value whose corresponding set of concrete values includes all of the values
@@ -2389,6 +2333,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         })
     }
 
+    /// If self refers to any variable in the given set, return TRUE otherwise return self.
+    /// In the case where self is a conjunction apply the function to the conjuncts and return
+    /// a new conjunction. The nett effect is that if self is a conjunction, such as a entry condition,
+    /// it is purged of any conjuncts that depend on variables (expected to be the set of variables
+    /// modified by a loop body).
+    #[logfn_inputs(TRACE)]
+    fn remove_conjuncts_that_depend_on(&self, variables: &HashSet<Rc<Path>>) -> Rc<AbstractValue> {
+        if let Expression::And { left, right } = &self.expression {
+            let purged_left = left.remove_conjuncts_that_depend_on(variables);
+            let purged_right = right.remove_conjuncts_that_depend_on(variables);
+            purged_left.and(purged_right)
+        } else if self.uses(variables) {
+            Rc::new(self::TRUE)
+        } else {
+            self.clone()
+        }
+    }
+
     /// Returns an element that is "self << other".
     #[logfn_inputs(TRACE)]
     fn shift_left(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
@@ -2544,9 +2506,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Note: !x.subset(y) does not imply y.subset(x).
     #[logfn_inputs(TRACE)]
     fn subset(&self, other: &Rc<AbstractValue>) -> bool {
-        if self == other {
-            return true;
-        };
         match (&self.expression, &other.expression) {
             // The empty set is a subset of every other set.
             (Expression::Bottom, _) => true,
@@ -2597,8 +2556,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // This is a conservative answer. False does not imply other.subset(self).
                 self.subset(&left) || self.subset(&right)
             }
-            // in all other cases we conservatively answer false
-            _ => false,
+            (e1, e2) => e1.eq(e2),
         }
     }
 
@@ -3035,6 +2993,87 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 } else {
                     None
                 }
+            }
+        }
+    }
+
+    fn uses(&self, variables: &HashSet<Rc<Path>>) -> bool {
+        match &self.expression {
+            Expression::Bottom => false,
+            Expression::Top => true,
+            Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
+            | Expression::Ne { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Or { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
+            | Expression::Shr { left, right, .. }
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => {
+                left.uses(variables) || right.uses(variables)
+            }
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::Neg { operand }
+            | Expression::LogicalNot { operand }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::UnknownTagCheck { operand, .. } => operand.uses(variables),
+            Expression::CompileTimeConstant(..) => false,
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                condition.uses(variables) || consequent.uses(variables) || alternate.uses(variables)
+            }
+            Expression::HeapBlock { .. } => false,
+            Expression::HeapBlockLayout {
+                length, alignment, ..
+            } => length.uses(variables) || alignment.uses(variables),
+            Expression::Join { left, right, path } => {
+                variables.contains(path) || left.uses(variables) || right.uses(variables)
+            }
+            Expression::Reference(path)
+            | Expression::InitialParameterValue { path, .. }
+            | Expression::UnknownTagField { path }
+            | Expression::Variable { path, .. }
+            | Expression::WidenedJoin { path, .. } => variables.contains(path),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                discriminator.uses(variables)
+                    || default.uses(variables)
+                    || cases.iter().any(|(case_val, result_val)| {
+                        case_val.uses(variables) || result_val.uses(variables)
+                    })
+            }
+            Expression::UninterpretedCall {
+                callee,
+                arguments: args,
+                ..
+            } => callee.uses(variables) || args.iter().any(|arg| arg.uses(variables)),
+            Expression::UnknownModelField { path, default } => {
+                variables.contains(path) || default.uses(variables)
             }
         }
     }
