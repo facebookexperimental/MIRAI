@@ -223,6 +223,16 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     // todo: also translate side-effects, return result and post-condition
                 };
 
+                if !function_constant_args.is_empty() {
+                    if let Some(mut env) = self.exit_environment.clone() {
+                        // Remove function constants so that they do not show up as side-effects.
+                        for (p, _) in function_constant_args {
+                            env.value_map.remove_mut(p);
+                        }
+                        self.exit_environment = Some(env);
+                    }
+                }
+
                 result = summaries::summarize(
                     self.mir.arg_count,
                     self.exit_environment.as_ref(),

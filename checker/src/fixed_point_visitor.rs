@@ -159,29 +159,33 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             changed = result.0;
             last_block = result.1;
             check_for_early_break!(self.bv);
-            if changed && iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
+            if iteration_count >= k_limits::MAX_FIXPOINT_ITERATIONS {
                 break;
             }
             iteration_count += 1;
         }
-        if iteration_count > k_limits::MAX_FIXPOINT_ITERATIONS {
+        if changed {
             if self.bv.cv.options.diag_level == DiagLevel::PARANOID {
                 let span = self.bv.current_span;
                 let error = self.bv.cv.session.struct_span_err(
                     span,
-                    &format!("Fixed point loop took {} iterations", iteration_count),
+                    &format!(
+                        "Fixed point loop iterations exceeded limit of {}",
+                        k_limits::MAX_FIXPOINT_ITERATIONS
+                    ),
                 );
                 self.bv.emit_diagnostic(error);
             } else {
                 warn!(
-                    "Fixed point loop took {} iterations for {}.",
-                    iteration_count, self.bv.function_name
+                    "Fixed point loop iterations exceeded limit of {} at {:?} in function {}.",
+                    iteration_count, self.bv.current_span, self.bv.function_name
                 );
             }
         } else {
             trace!(
-                "Fixed point loop took {} iterations for {}.",
+                "Fixed point loop iterations exceeded limit of {} at {:?} in function {}.",
                 iteration_count,
+                self.bv.current_span,
                 self.bv.function_name
             );
         }
