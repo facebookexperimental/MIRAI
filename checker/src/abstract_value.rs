@@ -1378,52 +1378,84 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return other.logical_not();
             }
 
-            // [(c ? c1 : c2) == c1] -> c
-            // [(c ? c1 : c2) == c2] -> !c
+            // [(c ? v1: v2) == c3] -> !c if v1 != c3 && v2 == c3
+            // [(c ? v1: v2) == c3] -> c if v1 == c3 && v2 != c3
+            // [(c ? v1: v2) == c3] -> true if v1 == c3 && v2 == c3
             (
                 Expression::ConditionalExpression {
                     condition: c,
-                    consequent,
-                    alternate,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
                 },
-                Expression::CompileTimeConstant(ConstantDomain::U128(other_val)),
+                Expression::CompileTimeConstant(..),
             ) => {
-                if let (
-                    Expression::CompileTimeConstant(ConstantDomain::U128(c1)),
-                    Expression::CompileTimeConstant(ConstantDomain::U128(c2)),
-                ) = (&consequent.expression, &alternate.expression)
+                let v2_eq_other = v2.equals(other.clone()).as_bool_if_known().unwrap_or(false);
+                if v1
+                    .not_equals(other.clone())
+                    .as_bool_if_known()
+                    .unwrap_or(false)
+                    && v2_eq_other
                 {
-                    if *c1 == *other_val {
+                    return c.logical_not();
+                }
+                if v1.equals(other.clone()).as_bool_if_known().unwrap_or(false) {
+                    if v2
+                        .not_equals(other.clone())
+                        .as_bool_if_known()
+                        .unwrap_or(false)
+                    {
                         return c.clone();
-                    }
-                    if *c2 == *other_val {
-                        return c.logical_not();
+                    } else if v2_eq_other {
+                        return Rc::new(TRUE);
                     }
                 }
+                let x = &self.expression;
+                let y = &other.expression;
+                if x == y && !x.infer_type().is_floating_point_number() {
+                    return Rc::new(TRUE);
+                }
             }
-            // [c1 == (c ? c1 : c2)] -> c
-            // [c2 == (c ? c1 : c2)] -> !c
+
+            // [c3 == (c ? v1: v2)] -> !c if v1 != c3 && v2 == c3
+            // [c3 == (c ? v1: v2) == c3] -> c if v1 == c3 && v2 != c3
+            // [c3 == (c ? v1: v2) == c3] -> true if v1 == c3 && v2 == c3
             (
-                Expression::CompileTimeConstant(ConstantDomain::U128(self_val)),
+                Expression::CompileTimeConstant(..),
                 Expression::ConditionalExpression {
                     condition: c,
-                    consequent,
-                    alternate,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
                 },
             ) => {
-                if let (
-                    Expression::CompileTimeConstant(ConstantDomain::U128(c1)),
-                    Expression::CompileTimeConstant(ConstantDomain::U128(c2)),
-                ) = (&consequent.expression, &alternate.expression)
+                let v2_eq_self = v2.equals(self.clone()).as_bool_if_known().unwrap_or(false);
+                if v1
+                    .not_equals(self.clone())
+                    .as_bool_if_known()
+                    .unwrap_or(false)
+                    && v2_eq_self
                 {
-                    if *c1 == *self_val {
+                    return c.logical_not();
+                }
+                if v1.equals(self.clone()).as_bool_if_known().unwrap_or(false) {
+                    if v2
+                        .not_equals(self.clone())
+                        .as_bool_if_known()
+                        .unwrap_or(false)
+                    {
                         return c.clone();
-                    }
-                    if *c2 == *self_val {
-                        return c.logical_not();
+                    } else if v2_eq_self {
+                        return Rc::new(TRUE);
                     }
                 }
+                let x = &self.expression;
+                let y = &other.expression;
+                if x == y && !x.infer_type().is_floating_point_number() {
+                    return Rc::new(TRUE);
+                }
             }
+
             // [!x == 0] -> x when x is Boolean. Canonicalize it to the latter.
             (
                 Expression::LogicalNot { operand },
@@ -1628,6 +1660,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let Expression::LogicalNot { operand } = &self.expression {
             return operand.implies(other);
         }
+        if let Expression::Or { left, right } = &self.expression {
+            // (!x && !y) => z if !x => z or !y => z
+            return left.inverse_implies(other) || right.inverse_implies(other);
+        }
         if let Expression::LogicalNot { operand } = &other.expression {
             return self.inverse_implies_not(operand);
         }
@@ -1645,6 +1681,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool {
         if self == other {
             return true;
+        }
+        if let Expression::Or { left, right } = &self.expression {
+            // (!x && !y) => !z if !x => !z or !y => !z
+            return left.inverse_implies_not(other) || right.inverse_implies_not(other);
         }
         if let Expression::And { left, right } = &other.expression {
             return self.inverse_implies_not(left) || self.implies_not(right);
@@ -2014,6 +2054,78 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             (x, Expression::CompileTimeConstant(ConstantDomain::U128(val))) => {
                 if x.infer_type() == ExpressionType::Bool && *val == 0 {
                     return self.clone();
+                }
+            }
+            // [(c ? v1: v2) != c3] -> !c if v1 == c3 && v2 != c3
+            // [(c ? v1: v2) != c3] -> c if v1 != c3 && v2 == c3
+            // [(c ? v1: v2) != c3] -> true if v1 != c3 && v2 != c3
+            (
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
+                },
+                Expression::CompileTimeConstant(..),
+            ) => {
+                let v2_ne_other = v2
+                    .not_equals(other.clone())
+                    .as_bool_if_known()
+                    .unwrap_or(false);
+                if v1.equals(other.clone()).as_bool_if_known().unwrap_or(false) && v2_ne_other {
+                    return c.logical_not();
+                }
+                if v1
+                    .not_equals(other.clone())
+                    .as_bool_if_known()
+                    .unwrap_or(false)
+                {
+                    if v2.equals(other.clone()).as_bool_if_known().unwrap_or(false) {
+                        return c.clone();
+                    } else if v2_ne_other {
+                        return Rc::new(TRUE);
+                    }
+                }
+                let x = &self.expression;
+                let y = &other.expression;
+                if x == y && !x.infer_type().is_floating_point_number() {
+                    return Rc::new(FALSE);
+                }
+            }
+            // [c3 != (c ? v1: v2)] -> !c if v1 == c3 && v2 != c3
+            // [c3 != (c ? v1: v2)] -> c if v1 != c3 && v2 == c3
+            // [c3 != (c ? v1: v2)] -> true if v1 != c3 && v2 != c3
+            (
+                Expression::CompileTimeConstant(..),
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
+                },
+            ) => {
+                let v2_ne_self = v2
+                    .not_equals(self.clone())
+                    .as_bool_if_known()
+                    .unwrap_or(false);
+                if v1.equals(self.clone()).as_bool_if_known().unwrap_or(false) && v2_ne_self {
+                    return c.logical_not();
+                }
+                if v1
+                    .not_equals(self.clone())
+                    .as_bool_if_known()
+                    .unwrap_or(false)
+                {
+                    if v2.equals(self.clone()).as_bool_if_known().unwrap_or(false) {
+                        return c.clone();
+                    } else if v2_ne_self {
+                        return Rc::new(TRUE);
+                    }
+                }
+                let x = &self.expression;
+                let y = &other.expression;
+                if x == y && !x.infer_type().is_floating_point_number() {
+                    return Rc::new(FALSE);
                 }
             }
             (x, y) => {

@@ -11,8 +11,7 @@ extern crate mirai_annotations;
 
 pub fn foo(n: usize) {
     for ordinal in 2..=n {
-        verify!(ordinal - 1 >= 1); //~ possible attempt to subtract with overflow
-                                   //~ possible false verification condition
+        verify!(ordinal - 1 >= 1);
     }
 }
 
