@@ -6,8 +6,7 @@
 
 // A test that uses an explicit post condition.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub struct Block {
     round: u64,

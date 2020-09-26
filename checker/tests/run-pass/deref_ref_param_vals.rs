@@ -9,8 +9,7 @@
 // as a Reference to the parameter. When this gets back to the caller via the return result
 // special handling is needed so that the caller does not end up with a reference to a reference.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 struct S<'a> {
     slice: &'a [i64],

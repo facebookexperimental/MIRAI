@@ -12,8 +12,7 @@
 
 #![allow(non_snake_case)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub mod foreign_contracts {
     pub mod def_id_not_unique {

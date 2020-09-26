@@ -6,9 +6,7 @@
 
 // A test that checks that a provably false assumption is ignored in the assertion.
 
-
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     let a = 5;

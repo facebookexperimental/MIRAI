@@ -6,8 +6,7 @@
 
 // A test that uses a static array.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 static POWERS_10: [u32; 10] = [
     1,

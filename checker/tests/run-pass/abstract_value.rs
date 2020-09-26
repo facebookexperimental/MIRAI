@@ -6,8 +6,7 @@
 
 // A test that uses abstract_value!
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     let a = abstract_value!(6i32);

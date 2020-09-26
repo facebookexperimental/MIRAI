@@ -6,8 +6,7 @@
 
 // A test that calls Iterator::unzip
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn test() {
     let a = [(1, 2), (3, 4)];

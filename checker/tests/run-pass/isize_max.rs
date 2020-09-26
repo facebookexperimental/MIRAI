@@ -5,17 +5,25 @@
 //
 
 // A test that checks that std::isize::MAX is set correctly
-#![allow(non_snake_case)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
-#[cfg(any(target_arch = "x86", target_arch = "mips", target_arch = "mips", target_arch = "powerpc", target_arch = "arm"))]
+#[cfg(any(
+    target_arch = "x86",
+    target_arch = "mips",
+    target_arch = "mips",
+    target_arch = "powerpc",
+    target_arch = "arm"
+))]
 fn test() {
     verify!(std::isize::MAX == 2147483647);
 }
 
-#[cfg(any(target_arch = "x86_64", target_arch = "powerpc64", target_arch = "aarch64"))]
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "powerpc64",
+    target_arch = "aarch64"
+))]
 fn test() {
     verify!(std::isize::MAX == 9223372036854775807);
 }

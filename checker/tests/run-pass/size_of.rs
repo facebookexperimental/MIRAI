@@ -6,15 +6,13 @@
 
 // A test that checks that size_of::<T>() is handled correctly for a struct
 
+use mirai_annotations::*;
 use std::mem::size_of;
 
 pub struct Foo {
     pub bar: i32,
     pub baz: f64,
 }
-
-#[macro_use]
-extern crate mirai_annotations;
 
 pub fn main() {
     verify!(size_of::<Foo>() == 16);

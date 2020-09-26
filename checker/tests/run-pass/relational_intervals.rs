@@ -6,8 +6,7 @@
 
 // Tests if intervals satisfy relational constraints
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn t1(cond: bool) {
     let interval = if cond { -2 } else { 1000000 };

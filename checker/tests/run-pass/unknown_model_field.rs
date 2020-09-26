@@ -6,8 +6,7 @@
 
 // A test that constrains an unknown model field and then relies on the constraint.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub trait Foo {
     fn bar(&mut self) {

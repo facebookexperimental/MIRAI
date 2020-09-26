@@ -6,8 +6,7 @@
 
 // Tests for std::mem::replace
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 use std::mem;
 

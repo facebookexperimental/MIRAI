@@ -6,8 +6,7 @@
 
 // A test that uses an inferred post condition.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn check_index(a: &[i64], i: usize) -> Option<usize> {
     if i < a.len() {

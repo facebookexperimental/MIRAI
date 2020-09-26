@@ -6,8 +6,7 @@
 
 // A test that does a weak update of an array element
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn test1(i: usize) {
     precondition!(i < 3);

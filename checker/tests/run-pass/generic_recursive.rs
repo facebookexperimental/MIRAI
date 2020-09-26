@@ -6,8 +6,7 @@
 
 // Check that self recursive calls happening via trait methods are detected.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub trait X {
     fn foo() -> usize;

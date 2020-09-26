@@ -8,8 +8,7 @@
 
 #![feature(core_intrinsics)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub unsafe fn t1(ptr: *mut i32) {
     *ptr = 123;

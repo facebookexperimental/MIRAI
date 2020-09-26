@@ -6,8 +6,7 @@
 
 // A test that uses bit vectors in the SMT solver
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn write_u32_as_uleb128(value: u32) {
     let mut val = value;

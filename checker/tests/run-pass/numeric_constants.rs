@@ -6,8 +6,7 @@
 
 // A test that exercises the numeric parts of visit_constant.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub static A: isize = -1;
 pub static B: usize = 2;
@@ -23,8 +22,8 @@ pub static K: i64 = -11;
 pub static L: u64 = 12;
 pub static M: i128 = -13;
 pub static N: u128 = 14;
-pub static O:f32 = 15.6;
-pub static P:f64 = 15.6666666666666666666666;
+pub static O: f32 = 15.6;
+pub static P: f64 = 15.6666666666666666666666;
 
 pub fn main() {
     verify!(A == -1);

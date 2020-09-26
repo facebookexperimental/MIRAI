@@ -10,8 +10,7 @@
 #![feature(const_generics)]
 #![allow(incomplete_features)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 use mirai_annotations::{TagPropagationSet, TAG_PROPAGATION_ALL};
 

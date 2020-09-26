@@ -195,7 +195,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let span = self.bv.current_span;
         let err = self.bv.cv.session.struct_span_warn(
             span,
-            "Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
+            "Inline llvm assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
         );
         self.bv.emit_diagnostic(err);
         self.bv.assume_function_is_angelic = true;

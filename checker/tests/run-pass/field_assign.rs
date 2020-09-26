@@ -6,8 +6,7 @@
 
 // A test that visits the ProjectionElem::Field case of Visitor::visit_projection_elem
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub struct Test {
     pub field: usize,

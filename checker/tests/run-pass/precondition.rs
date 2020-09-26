@@ -6,8 +6,7 @@
 
 // A test that declares a precondition and report a failure to satisfy it.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     let mut a = [1, 2];
@@ -20,6 +19,7 @@ fn foo(arr: &mut [i32; 2], i: usize) {
 }
 
 pub fn bad_foo(arr: &mut [i32; 2], i: usize) {
+    //todo: fix this
     if i > 0 {
         precondition!(i < 2); // ~ preconditions should be reached unconditionally
     }

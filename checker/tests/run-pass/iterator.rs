@@ -7,8 +7,7 @@
 
 #![feature(unchecked_math)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn test1() {
     let mut it = std::ops::Range {

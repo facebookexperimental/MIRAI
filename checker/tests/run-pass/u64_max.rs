@@ -5,10 +5,8 @@
 //
 
 // A test that checks that std::u64::MAX is set correctly
-#![allow(non_snake_case)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     verify!(std::u64::MAX == 18446744073709551615);

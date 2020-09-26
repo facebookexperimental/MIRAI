@@ -6,11 +6,14 @@
 
 // A test that uses a function summary where there is a side effect on a mutable reference.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
-struct Foo { x: i32 }
-fn foo(f: &mut Foo) { f.x = 456; }
+struct Foo {
+    x: i32,
+}
+fn foo(f: &mut Foo) {
+    f.x = 456;
+}
 pub fn main() {
     let mut f = Foo { x: 123 };
     foo(&mut f);

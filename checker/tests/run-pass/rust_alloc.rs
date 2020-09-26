@@ -6,8 +6,7 @@
 
 // A test that uses built-in contracts for the Vec struct.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 use std::alloc::{alloc, dealloc, Layout};
 

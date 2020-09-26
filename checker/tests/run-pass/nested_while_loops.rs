@@ -5,8 +5,7 @@
 //
 // Tests a nested loop that uses a loop variable from the outer loop to modify the inner loop variable
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     let mut i = 1;

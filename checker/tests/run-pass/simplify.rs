@@ -6,8 +6,7 @@
 
 // A test that checks various simplifications
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn f1(b: bool) {
     verify!(b || !b);

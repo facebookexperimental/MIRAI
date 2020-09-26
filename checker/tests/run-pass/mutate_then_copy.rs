@@ -6,8 +6,7 @@
 
 // A test that checks that non primitive values can move through a generic copy.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn mutate_and_then_copy(dest: &mut (i32, i32), src: &mut (i32, i32)) {
     src.1 = 789;

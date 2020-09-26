@@ -6,8 +6,7 @@
 
 // A test that exercises visit_used_move with a structured value.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 struct Point {
     pub x: i32,
@@ -15,7 +14,7 @@ struct Point {
 }
 
 pub fn test() {
-    let p = Point { x: 1, y: 2};
+    let p = Point { x: 1, y: 2 };
     let q = p;
     verify!(q.x == 1);
     verify!(q.y == 2);

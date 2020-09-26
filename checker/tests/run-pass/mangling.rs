@@ -6,10 +6,7 @@
 
 // A test that checks that u32::max_value and str::as_bytes(&self) are mangled correctly.
 
-#![allow(non_snake_case)]
-
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub mod foreign_contracts {
     pub mod core {

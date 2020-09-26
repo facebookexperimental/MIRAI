@@ -7,10 +7,8 @@
 // A test that checks that size_of::<u32>() is mangled correctly.
 #![allow(non_snake_case)]
 
+use mirai_annotations::*;
 use std::mem::size_of;
-
-#[macro_use]
-extern crate mirai_annotations;
 
 pub fn main() {
     verify!(size_of::<u32>() == 4);

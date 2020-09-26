@@ -6,7 +6,7 @@
 
 // A test that assumes a post condition on a structured return value
 
-use mirai_annotations::assumed_postcondition;
+use mirai_annotations::*;
 
 pub struct Foo {
     capacity: usize,

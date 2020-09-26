@@ -6,8 +6,7 @@
 
 // A test that invokes std::intrinsics::copy_nonoverlapping;
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn t1() {
     let a = [1, 2, 3];

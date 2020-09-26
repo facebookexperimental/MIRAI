@@ -9,8 +9,7 @@
 // MIRAI_FLAGS -- -Z mir-opt-level=0
 //todo: implement deserialization of constant structs
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 struct Foo {
     x: i32,

@@ -9,8 +9,7 @@
 #![feature(allow_internal_unstable)]
 #![feature(const_fn_union)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub const fn as_bytes(_self: &str) -> &[u8] {
     union Slices<'a> {

@@ -7,8 +7,7 @@
 // A test that assigns to a location that is unknown at compile time.
 #![feature(box_syntax)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     do_join(true);

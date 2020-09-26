@@ -6,8 +6,7 @@
 
 // Tests reasoning over bitwise not operations
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn signed_arith(i: i8) {
     precondition!(!i < i8::max_value());
