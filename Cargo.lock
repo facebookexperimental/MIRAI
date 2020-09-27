@@ -216,6 +216,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "false-assumptions"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "log",
+ "log-derive",
+ "mirai",
+ "mirai-annotations",
+ "rand",
+ "serde",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

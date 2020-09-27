@@ -83,6 +83,7 @@ pub mod fixed_point_visitor;
 pub mod interval_domain;
 pub mod k_limits;
 pub mod known_names;
+pub mod octagons_domain;
 pub mod options;
 pub mod path;
 pub mod smt_solver;

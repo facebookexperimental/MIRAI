@@ -26,6 +26,9 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::rc::Rc;
 
+//todo: without that import Rustc cannot see OctagonsDomain
+use crate::octagons_domain::*;
+
 // See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
 
 /// Mirai is an abstract interpreter and thus produces abstract values.
@@ -51,6 +54,9 @@ pub struct AbstractValue {
     /// Cached tag domain element computed on demand by get_tags.
     #[serde(skip)]
     tags: RefCell<Option<Rc<TagDomain>>>,
+
+    #[serde(skip)]
+    octagons: RefCell<Option<Rc<OctagonsDomain>>>,
 }
 
 impl Debug for AbstractValue {
@@ -79,6 +85,7 @@ pub const BOTTOM: AbstractValue = AbstractValue {
     expression_size: 1,
     interval: RefCell::new(None),
     tags: RefCell::new(None),
+    octagons: RefCell::new(None),
 };
 
 /// An abstract domain element that all represent the single concrete value, false.
@@ -87,6 +94,7 @@ pub const FALSE: AbstractValue = AbstractValue {
     expression_size: 1,
     interval: RefCell::new(None),
     tags: RefCell::new(None),
+    octagons: RefCell::new(None),
 };
 
 /// An abstract domain element that all represents all possible concrete values.
@@ -95,6 +103,7 @@ pub const TOP: AbstractValue = AbstractValue {
     expression_size: 1,
     interval: RefCell::new(None),
     tags: RefCell::new(None),
+    octagons: RefCell::new(None),
 };
 
 /// An abstract domain element that all represent the single concrete value, true.
@@ -103,6 +112,7 @@ pub const TRUE: AbstractValue = AbstractValue {
     expression_size: 1,
     interval: RefCell::new(None),
     tags: RefCell::new(None),
+    octagons: RefCell::new(None),
 };
 
 /// An abstract domain element that represents a dummy untagged value.
@@ -112,6 +122,7 @@ pub const DUMMY_UNTAGGED_VALUE: AbstractValue = AbstractValue {
     expression_size: 1,
     interval: RefCell::new(None),
     tags: RefCell::new(None),
+    octagons: RefCell::new(None),
 };
 
 impl From<bool> for AbstractValue {
@@ -123,6 +134,7 @@ impl From<bool> for AbstractValue {
                 expression_size: 1,
                 interval: RefCell::new(None),
                 tags: RefCell::new(None),
+                octagons: RefCell::new(None),
             }
         } else {
             AbstractValue {
@@ -130,6 +142,7 @@ impl From<bool> for AbstractValue {
                 expression_size: 1,
                 interval: RefCell::new(None),
                 tags: RefCell::new(None),
+                octagons: RefCell::new(None),
             }
         }
     }
@@ -146,6 +159,7 @@ impl From<ConstantDomain> for AbstractValue {
                 expression_size: 1,
                 interval: RefCell::new(None),
                 tags: RefCell::new(None),
+                octagons: RefCell::new(None),
             }
         }
     }
@@ -171,6 +185,7 @@ impl From<u128> for AbstractValue {
             expression_size: 1,
             interval: RefCell::new(None),
             tags: RefCell::new(None),
+            octagons: RefCell::new(None),
         }
     }
 }
@@ -305,6 +320,7 @@ impl AbstractValue {
                 expression_size,
                 interval: RefCell::new(None),
                 tags: RefCell::new(None),
+                octagons: RefCell::new(None),
             });
             let interval = val.get_as_interval();
             let tags = val.get_tags();
@@ -316,6 +332,8 @@ impl AbstractValue {
                 expression_size: 1,
                 interval: RefCell::new(Some(Rc::new(interval))),
                 tags: RefCell::new(Some(Rc::new(tags))),
+                // todo: add Some value
+                octagons: RefCell::new(None),
             })
         } else {
             Rc::new(AbstractValue {
@@ -323,6 +341,7 @@ impl AbstractValue {
                 expression_size,
                 interval: RefCell::new(None),
                 tags: RefCell::new(None),
+                octagons: RefCell::new(None),
             })
         }
     }
