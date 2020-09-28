@@ -89,7 +89,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// Summarize the referenced function, specialized by its generic arguments and the actual
     /// values of any function parameters. Then cache it.
     #[logfn_inputs(TRACE)]
-    pub fn create_and_cache_function_summary(&mut self) -> Summary {
+    pub fn create_and_cache_function_summary(
+        &mut self,
+        func_args: Option<Vec<Rc<FunctionReference>>>,
+    ) -> Summary {
         trace!(
             "summarizing {:?}: {:?}",
             self.callee_def_id,
@@ -114,12 +117,24 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.callee_generic_argument_map.clone();
             body_visitor.analyzing_static_var = self.block_visitor.bv.analyzing_static_var;
             let elapsed_time = self.block_visitor.bv.start_instant.elapsed();
-            let summary =
+            let mut summary =
                 body_visitor.visit_body(self.function_constant_args, self.actual_argument_types);
             let call_was_angelic = body_visitor.assume_function_is_angelic;
             trace!("summary {:?} {:?}", self.callee_def_id, summary);
             let signature = self.get_function_constant_signature(self.function_constant_args);
             if let Some(func_ref) = &self.callee_func_ref {
+                // If there is already a computed summary in the cache, we are in a recursive loop
+                // and hence have to join the summaries.
+                let previous_summary = self
+                    .block_visitor
+                    .bv
+                    .cv
+                    .summary_cache
+                    .get_summary_for_call_site(&func_ref, func_args);
+                if previous_summary.is_computed {
+                    summary.join_side_effects(previous_summary)
+                }
+
                 // We cache the summary with call site details included so that
                 // cached summaries are specialized with respect to call site generic arguments and
                 // function constants arguments. Subsequent calls with the call site signature
@@ -245,6 +260,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             // and pass them to get_summary_for_function_constant so that their signatures
             // can be included in the type specific key that is used to look up non generic
             // predefined summaries.
+
+            //get_function_constant_signature???
             let func_args: Option<Vec<Rc<FunctionReference>>> =
                 if !self.function_constant_args.is_empty() {
                     Some(
@@ -268,16 +285,20 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .cv
                 .summary_cache
-                .get_summary_for_call_site(&func_ref, func_args)
+                .get_summary_for_call_site(&func_ref, func_args.clone())
                 .clone();
             if result.is_computed || func_ref.def_id.is_none() {
                 return Some(result);
             }
             if call_depth < 3 {
-                let mut summary = self.create_and_cache_function_summary();
-                // Widen summary at call level 1 so that the level 0 call sees the widened values.
-                if call_depth == 1 {
-                    summary.widen_side_effects();
+                let mut summary = self.create_and_cache_function_summary(func_args);
+                if call_depth >= 1 {
+                    summary.post_condition = None;
+
+                    // Widen summary at call level 1 so that the level 0 call sees the widened values.
+                    if call_depth == 1 {
+                        summary.widen_side_effects();
+                    }
                     let signature =
                         self.get_function_constant_signature(self.function_constant_args);
                     self.block_visitor
@@ -291,6 +312,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // Probably a statically unbounded self recursive call. Use an empty summary and let
                 // earlier calls do the joining and widening required.
                 let mut summary = Summary::default();
+                summary
+                    .side_effects
+                    .push((Path::new_result(), Rc::new(abstract_value::BOTTOM)));
                 summary.is_computed = true;
                 let signature = self.get_function_constant_signature(self.function_constant_args);
                 self.block_visitor

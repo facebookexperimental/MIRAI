@@ -10,7 +10,6 @@ use crate::expression::Expression;
 use crate::path::{Path, PathEnum, PathSelector};
 
 use log_derive::{logfn, logfn_inputs};
-use mirai_annotations::checked_assume;
 use rpds::HashTrieMap;
 use rustc_middle::mir::BasicBlock;
 use std::collections::HashSet;
@@ -59,10 +58,6 @@ impl Environment {
     /// Updates the path to value map so that the given path now points to the given value.
     #[logfn_inputs(TRACE)]
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
-        if value.is_bottom() {
-            self.value_map = self.value_map.remove(&path);
-            return;
-        }
         self.value_map.insert_mut(path, value);
     }
 
@@ -271,7 +266,6 @@ impl Environment {
                     value_map.insert_mut(p, join_or_widen(val1, val2, path));
                 }
                 None => {
-                    checked_assume!(!val1.is_bottom());
                     if !path.is_rooted_by_parameter() {
                         // joining val1 and bottom
                         // The bottom value corresponds to dead (impossible) code, so the join collapses.
@@ -288,7 +282,6 @@ impl Environment {
         }
         for (path, val2) in value_map2.iter() {
             if !value_map1.contains_key(path) {
-                checked_assume!(!val2.is_bottom());
                 if !path.is_rooted_by_parameter() {
                     // joining bottom and val2
                     // The bottom value corresponds to dead (impossible) code, so the join collapses.
@@ -328,7 +321,6 @@ impl Environment {
                     }
                 }
                 None => {
-                    checked_assume!(!val1.is_bottom());
                     return false;
                 }
             }

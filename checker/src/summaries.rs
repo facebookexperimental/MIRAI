@@ -21,6 +21,7 @@ use sled::{Config, Db};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
+use std::iter::FromIterator;
 use std::ops::Deref;
 use std::rc::Rc;
 
@@ -192,6 +193,27 @@ impl Summary {
             return false;
         }
         Self::is_subset_of_side_effects(&e1[1..], &e2[1..])
+    }
+
+    pub fn join_side_effects(&mut self, other: &Summary) {
+        let other_map: HashMap<Rc<Path>, Rc<AbstractValue>> =
+            HashMap::from_iter(other.side_effects.clone().into_iter());
+        for (path, val1) in self.side_effects.iter_mut() {
+            match other_map.get(path) {
+                Some(val2) => {
+                    *val1 = val1.join((*val2).clone(), path);
+                }
+                None => {
+                    if path.is_rooted_by_parameter() {
+                        let val2 = AbstractValue::make_initial_parameter_value(
+                            val1.expression.infer_type(),
+                            path.clone(),
+                        );
+                        *val1 = val1.join(val2, path);
+                    };
+                }
+            }
+        }
     }
 
     pub fn widen_side_effects(&mut self) {
