@@ -177,9 +177,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         &self.generic_argument_map,
                     )
                 } else {
-                    info!(
+                    trace!(
                         "local var path.value is {:?} at {:?}",
-                        path.value, current_span
+                        path.value,
+                        current_span
                     );
                     self.tcx.types.never
                 }
@@ -218,6 +219,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 ..
             } => {
                 let mut t = self.get_path_rustc_type(qualifier, current_span);
+                if t.is_never() {
+                    return t;
+                }
                 if let TyKind::Projection(..) = t.kind() {
                     t = self.specialize_generic_argument_type(t, &self.generic_argument_map);
                 }
@@ -284,6 +288,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 if let Some(gen_arg) = types.get(*ordinal as usize) {
                                     return gen_arg.expect_ty();
                                 }
+                                if types.is_empty() {
+                                    return self.tcx.types.never;
+                                }
                             }
                             _ => {
                                 if is_slice_pointer(t.kind()) {
@@ -298,7 +305,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     }
                                 }
                                 if *ordinal == 0
-                                    && matches!(t.kind(), TyKind::FnPtr(..) | TyKind::Ref(..))
+                                    && matches!(
+                                        t.kind(),
+                                        TyKind::FnPtr(..) | TyKind::RawPtr(..) | TyKind::Ref(..)
+                                    )
                                 {
                                     // If the qualifier is a thin pointer to something that
                                     // does not have a field 0, it could be that qualifier.0
@@ -335,6 +345,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
                             return self.tcx.mk_tup(field_tys);
                         }
+                        return self.tcx.types.never;
                     }
                     PathSelector::Index(_) | PathSelector::ConstantIndex { .. } => {
                         return get_element_type(t);
