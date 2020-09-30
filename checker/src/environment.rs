@@ -307,20 +307,16 @@ impl Environment {
     pub fn subset(&self, other: &Environment) -> bool {
         let value_map1 = &self.value_map;
         let value_map2 = &other.value_map;
-        if value_map1.size() > value_map2.size() {
-            // There is a key in value_map1 that has a value that is not bottom and which is not
-            // present in value_map2 (and therefore is bottom), hence there is a path where
-            // !(self[path] <= other[path])
-            return false;
-        }
-        for (path, val1) in value_map1.iter() {
+        for (path, val1) in value_map1.iter().filter(|(_, v)| !v.is_bottom()) {
             match value_map2.get(path) {
                 Some(val2) => {
                     if !(val1.subset(val2)) {
+                        trace!("self at {:?} is {:?} other is {:?}", path, val1, val2);
                         return false;
                     }
                 }
                 None => {
+                    trace!("self at {:?} is {:?} other is None", path, val1);
                     return false;
                 }
             }
