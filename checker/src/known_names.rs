@@ -331,10 +331,24 @@ impl KnownNamesCache {
                 .unwrap_or(KnownNames::None)
         };
 
+        let get_known_name_for_ptr_mut_ptr_namespace =
+            |mut def_path_data_iter: Iter<'_>| match path_data_elem_as_disambiguator(
+                def_path_data_iter.next(),
+            ) {
+                Some(0) => get_path_data_elem_name(def_path_data_iter.next())
+                    .map(|n| match n.as_str().deref() {
+                        "write_bytes" => KnownNames::StdIntrinsicsWriteBytes,
+                        _ => KnownNames::None,
+                    })
+                    .unwrap_or(KnownNames::None),
+                _ => KnownNames::None,
+            };
+
         let get_known_name_for_ptr_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
                     "swap_nonoverlapping" => KnownNames::StdPtrSwapNonOverlapping,
+                    "mut_ptr" => get_known_name_for_ptr_mut_ptr_namespace(def_path_data_iter),
                     _ => KnownNames::None,
                 })
                 .unwrap_or(KnownNames::None)

@@ -1922,9 +1922,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
         } else {
             warn!(
-                "unhandled call to write_bytes<{:?}>({:?}: {:?}, {:?}, {:?})",
-                elem_type, self.actual_args[0], dest_type, self.actual_args[1], self.actual_args[2]
+                "unhandled call to write_bytes at {:?}",
+                self.block_visitor.bv.current_span
             );
+            info!("elem_type {:?}", elem_type);
+            info!("dest {:?}", self.actual_args[0]);
+            info!("dest_type {:?}", dest_type);
+            info!("val {:?}", self.actual_args[1]);
+            info!("count {:?}", self.actual_args[2]);
         }
         self.use_entry_condition_as_exit_condition();
     }
