@@ -190,10 +190,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             }
             PathEnum::Parameter { ordinal } => {
                 if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
-                    self.specialize_generic_argument_type(
-                        self.mir.local_decls[mir::Local::from(*ordinal)].ty,
-                        &self.generic_argument_map,
-                    )
+                    self.get_loc_ty(mir::Local::from(*ordinal))
                 } else {
                     info!(
                         "parameter path.value is {:?} at {:?}",
@@ -447,6 +444,18 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
+    pub fn get_loc_ty(&self, local: mir::Local) -> Ty<'tcx> {
+        let i = local.as_usize();
+        if 0 < i && i <= self.mir.arg_count && i <= self.actual_argument_types.len() {
+            self.actual_argument_types[i - 1]
+        } else {
+            self.specialize_generic_argument_type(
+                self.mir.local_decls[local].ty,
+                &self.generic_argument_map,
+            )
+        }
+    }
+
     /// Returns an ExpressionType value corresponding to the Rustc type of the place.
     #[logfn_inputs(TRACE)]
     pub fn get_place_type(
@@ -466,10 +475,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         current_span: rustc_span::Span,
     ) -> Ty<'tcx> {
         let result = {
-            let base_type = self.specialize_generic_argument_type(
-                self.mir.local_decls[place.local].ty,
-                &self.generic_argument_map,
-            );
+            let base_type = self.get_loc_ty(place.local);
             self.get_type_for_projection_element(current_span, base_type, &place.projection)
         };
         match result.kind() {
