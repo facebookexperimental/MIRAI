@@ -6,8 +6,7 @@
 
 // A test that increments a parameter inside a while loop
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn foo(v: &[i32], i: usize) {
     precondition!(i <= v.len());

@@ -6,16 +6,12 @@
 
 // statements and expressions that exercise all visitor code paths
 
-// MIRAI_FLAGS --diag=strict
-
 #![allow(const_err)]
 #![allow(unused)]
 #![feature(llvm_asm)]
-#![feature(box_syntax)]
 #![feature(generators)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 use std::mem;
 
@@ -79,7 +75,7 @@ fn test4() {
 
 pub fn test5() {
     unsafe {
-        llvm_asm!("NOP") //~ Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.
+        llvm_asm!("NOP") //~ Inline llvm assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.
     }
 }
 

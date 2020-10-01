@@ -6,8 +6,7 @@
 
 // A test that dereferences an Arc
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 use std::sync::Arc;
 

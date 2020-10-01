@@ -9,10 +9,7 @@
 #![feature(const_generics)]
 #![allow(incomplete_features)]
 
-#[macro_use]
-extern crate mirai_annotations;
-
-use mirai_annotations::{TagPropagation, TagPropagationSet};
+use mirai_annotations::*;
 
 struct SecretTaintKind<const MASK: TagPropagationSet> {}
 

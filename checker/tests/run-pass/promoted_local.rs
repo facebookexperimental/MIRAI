@@ -6,8 +6,7 @@
 
 // A test that promotes a local from a callee to a caller
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub struct Foo {
     pub x: i64,

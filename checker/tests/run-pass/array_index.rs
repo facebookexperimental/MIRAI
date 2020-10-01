@@ -7,8 +7,7 @@
 // A test that visits the Place::Projection case of Visitor::visit_place
 // and the ProjectionElem::Index case of Visitor::visit_projection_elem.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn foo(arr: &mut [i32], i: usize) {
     arr[i] = 123; //~ possible index out of bounds

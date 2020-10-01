@@ -7,8 +7,7 @@
 // A test that uses a true assumption
 // MIRAI_FLAGS -- -Z mir-opt-level=0
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn test_assume() {
     let i = 1;

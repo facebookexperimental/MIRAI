@@ -6,8 +6,7 @@
 
 // A test that uses PathSelector::Deref and Expression::Reference
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     let a: &[i32] = &[10, 20];

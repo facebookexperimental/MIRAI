@@ -6,8 +6,7 @@
 
 // A test that calls calls unrecoverable! and panic! in way that demonstrates their respective use cases.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn test1() {
     unrecoverable!("Something happened for which the correct response is termination");

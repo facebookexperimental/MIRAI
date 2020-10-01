@@ -8,8 +8,7 @@
 #![allow(arithmetic_overflow)]
 #![allow(unconditional_panic)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn tu8_add() -> u8 {
     let a: u8 = 255;

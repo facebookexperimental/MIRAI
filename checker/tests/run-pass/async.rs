@@ -6,8 +6,7 @@
 
 // A test that adds a precondition to an async function
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 async fn foo(i: i32, j: i32) -> i32 {
     precondition!(i > j); //~ related location

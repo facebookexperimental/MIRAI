@@ -4,8 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn take_out(menu: &mut Option<i32>) -> i32 {
     menu.take().unwrap()

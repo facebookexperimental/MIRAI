@@ -6,8 +6,7 @@
 
 // MIRAI_FLAGS --test_only
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub trait Tr<T> {
     fn virt(&self) -> T;

@@ -6,8 +6,7 @@
 
 // A test that uses bit vectors in the SMT solver
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn write_u32_as_uleb128(binary: &mut Vec<u8>, value: u32) {
     let mut val = value;
@@ -33,5 +32,6 @@ pub fn main() {
     let mut buf = Vec::<u8>::new();
     write_u32_as_uleb128(&mut buf, 129);
     verify!(buf.len() == 2);
+    //todo: fix this
     //verify!(buf.len() == 1); // ~ provably false verification condition
 }

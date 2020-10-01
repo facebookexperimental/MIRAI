@@ -5,8 +5,7 @@
 
 // A test that checks if implicit/explicit dereference works properly when doing weak updates
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 struct I32 {
     content: i32,

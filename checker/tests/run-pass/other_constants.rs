@@ -6,8 +6,7 @@
 
 // A test that exercises the non numeric parts of visit_constant.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub enum Foo {
     Bar,

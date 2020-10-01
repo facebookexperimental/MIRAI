@@ -42,6 +42,7 @@ impl Adder for MyAdder {
 
 #[test]
 pub fn test() {
+    //todo: fix this
     // let mut a = MyAdder(3);
     // a.decrement();
     // checked_verify!(a.current() < 3);

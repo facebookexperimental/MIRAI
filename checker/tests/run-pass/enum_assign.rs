@@ -6,8 +6,7 @@
 
 // A test that visits the ProjectionElem::Downcast case of Visitor::visit_projection_elem
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub enum Foo {
     Bar1(i32),
@@ -17,7 +16,9 @@ pub enum Foo {
 pub fn main() {
     let foo = Foo::Bar1(2);
     match foo {
-        Foo::Bar1(x) => { verify!(x == 2); }
-        _ => unreachable!()
+        Foo::Bar1(x) => {
+            verify!(x == 2);
+        }
+        _ => unreachable!(),
     }
 }

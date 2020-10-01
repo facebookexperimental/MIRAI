@@ -5,17 +5,25 @@
 //
 
 // A test that checks that isize::min_value() is set correctly
-#![allow(non_snake_case)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
-#[cfg(any(target_arch = "x86", target_arch = "mips", target_arch = "mips", target_arch = "powerpc", target_arch = "arm"))]
+#[cfg(any(
+    target_arch = "x86",
+    target_arch = "mips",
+    target_arch = "mips",
+    target_arch = "powerpc",
+    target_arch = "arm"
+))]
 fn test() {
     verify!(isize::min_value() == -2147483648);
 }
 
-#[cfg(any(target_arch = "x86_64", target_arch = "powerpc64", target_arch = "aarch64"))]
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "powerpc64",
+    target_arch = "aarch64"
+))]
 fn test() {
     verify!(isize::min_value() == -9223372036854775808);
 }

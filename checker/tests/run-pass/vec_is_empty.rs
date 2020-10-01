@@ -6,8 +6,7 @@
 
 // A test that uses inferred contracts for the Vec struct.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn foo(a: &[i32]) -> i32 {
     precondition!(!a.is_empty());

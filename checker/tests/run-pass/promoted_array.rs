@@ -9,8 +9,7 @@
 //todo: This is the only way I can find to generate such literals.
 // Find out for sure if there is no other way.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn g(x: &[u8], y: &[u8]) -> bool {
     x[0] == y[0]
@@ -23,4 +22,3 @@ fn f(value: &[u8]) -> bool {
 pub fn main() {
     verify!(f(b"x"));
 }
-

@@ -6,8 +6,7 @@
 
 // A test that checks that non primitive values can move through a generic copy.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn id<T>(x: T) -> T {
     x

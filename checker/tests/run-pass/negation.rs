@@ -6,8 +6,7 @@
 
 // Tests constant folding of arithmetic binary operations
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     ti();
@@ -24,10 +23,10 @@ fn ti() {
 }
 
 fn tf() {
-    let mut a: f32 =   123.456786;
+    let mut a: f32 = 123.456786;
     a = -a;
     verify!(a == -123.456786);
-    let mut b: f64 =   123.45678901233999;
+    let mut b: f64 = 123.45678901233999;
     b = -b;
     verify!(b == -123.45678901233999);
 }

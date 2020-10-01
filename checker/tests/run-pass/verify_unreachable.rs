@@ -8,8 +8,7 @@
 
 #![allow(unused)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn foo1(i: i32) {
     if i < 10 {

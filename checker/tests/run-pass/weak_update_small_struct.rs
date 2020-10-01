@@ -6,8 +6,7 @@
 
 // A test that assigns to a location of type struct that is unknown at compile time.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 struct Bool {
     content: bool,

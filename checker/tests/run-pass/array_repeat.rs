@@ -6,8 +6,7 @@
 
 // A test that calls visit_repeat
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn test1() {
     let x = [1; 2];

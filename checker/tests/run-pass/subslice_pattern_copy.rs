@@ -6,8 +6,7 @@
 
 // A test that visits the ProjectionElem::Subslice case of Visitor::visit_projection_elem
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     subslice_pattern(true);

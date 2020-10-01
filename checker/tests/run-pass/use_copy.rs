@@ -6,8 +6,7 @@
 
 // A test that exercises visit_used_copy with a structured value.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 #[derive(Clone, Copy)]
 struct Point {
@@ -16,7 +15,7 @@ struct Point {
 }
 
 pub fn test() {
-    let p = Point { x: 1, y: 2};
+    let p = Point { x: 1, y: 2 };
     let mut q = p;
     q.x = 3;
     verify!(p.x == 1);

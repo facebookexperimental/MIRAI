@@ -6,8 +6,7 @@
 
 // A test that calls Option::and_then
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn sq(x: u32) -> Option<u32> {
     Some(x * x)

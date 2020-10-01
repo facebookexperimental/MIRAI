@@ -6,8 +6,7 @@
 
 // A test for VecDeque::is_empty
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 use std::collections::VecDeque;
 

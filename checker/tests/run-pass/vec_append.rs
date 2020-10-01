@@ -6,8 +6,7 @@
 
 // This tests the Vector append method
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     let mut v1: Vec<i32> = Vec::new();

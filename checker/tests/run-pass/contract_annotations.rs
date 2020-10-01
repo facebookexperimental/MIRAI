@@ -6,6 +6,8 @@
 
 // Tests for annotations from the contracts crate.
 
+//todo: fix this
+
 // MIRAI_FLAGS --test_only
 
 // use contracts::*;

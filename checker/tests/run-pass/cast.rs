@@ -6,8 +6,7 @@
 
 // A test that uses a cast in a verify condition.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn foo(i: u16) {
     if i > 16 {

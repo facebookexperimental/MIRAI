@@ -6,8 +6,7 @@
 
 // A test that uses built-in contracts for the Vec struct.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 struct Test {
     v: Vec<u8>,
@@ -15,9 +14,7 @@ struct Test {
 
 impl Test {
     fn new() -> Self {
-        let res = Self {
-            v: vec![],
-        };
+        let res = Self { v: vec![] };
         assumed_postcondition!(res.v.is_empty());
         res
     }

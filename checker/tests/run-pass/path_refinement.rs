@@ -8,8 +8,7 @@
 
 #![feature(box_syntax)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub enum Path {
     QualifiedPath { length: usize, qualifier: Box<Path> },

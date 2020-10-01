@@ -6,8 +6,7 @@
 
 // A test that uses a false assertion
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     let i = 1;

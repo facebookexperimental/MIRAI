@@ -6,8 +6,7 @@
 
 // A test that checks that assume_preconditions! works
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     assume_preconditions!();

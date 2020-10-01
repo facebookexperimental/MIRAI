@@ -9,8 +9,7 @@
 #![feature(core_intrinsics)]
 #![allow(unused)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 use std::intrinsics;
 

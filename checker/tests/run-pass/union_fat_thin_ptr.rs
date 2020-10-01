@@ -10,8 +10,7 @@
 #![feature(const_fn)]
 #![feature(const_fn_union)]
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 #[repr(C)]
 pub union FatUnion<T> {

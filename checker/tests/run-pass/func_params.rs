@@ -6,8 +6,7 @@
 
 // A test that uses a function parameter
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 fn bar(x: Option<i32>, j: i32) -> Option<i32> {
     match x {

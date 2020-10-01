@@ -6,8 +6,7 @@
 
 // A test that calls visit_aggregate
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     let x = [1, 2];

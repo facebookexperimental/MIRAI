@@ -7,8 +7,7 @@
 // A test that generates a ConstValue::Unevaluated reference to a constant array
 // and that checks that MIRAI finds the constant in the summary cache via the def_id
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 const FOO: [u8; 3] = [1, 2, 3];
 const BAR: u8 = FOO[0]; // The reference to FOO is unevaluated in the MIR body that computes BAR

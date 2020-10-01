@@ -6,8 +6,7 @@
 
 // A test that uses checked_add
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub struct Foo {
     capacity: usize,

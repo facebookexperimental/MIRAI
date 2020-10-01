@@ -6,14 +6,21 @@
 
 // A test that uses a function summary.
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
-struct Foo { x: i32 }
+struct Foo {
+    x: i32,
+}
 
-fn foo() -> i32 { 123 }
-fn bar(x: f32) -> f32 { x + 1.0 }
-fn bas(foo: &mut Foo) { foo.x = 456; }
+fn foo() -> i32 {
+    123
+}
+fn bar(x: f32) -> f32 {
+    x + 1.0
+}
+fn bas(foo: &mut Foo) {
+    foo.x = 456;
+}
 pub fn main() {
     verify!(foo() == 123);
     verify!(bar(1.0) == 2.0);

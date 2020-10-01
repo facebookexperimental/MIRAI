@@ -6,8 +6,7 @@
 
 // Tests constant folding of bitwise binary operations
 
-#[macro_use]
-extern crate mirai_annotations;
+use mirai_annotations::*;
 
 pub fn main() {
     tu1();
