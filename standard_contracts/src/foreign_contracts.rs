@@ -144,6 +144,10 @@ pub mod core {
                 *_self
             }
 
+            pub fn clone__array_u32(_self: &u32) -> u32 {
+                *_self
+            }
+
             pub fn clone__tuple_2_i32_i32(_self: &(i32, i32)) -> (i32, i32) {
                 (_self.0, _self.1)
             }
@@ -1253,6 +1257,13 @@ pub mod core {
             pub fn add_with_overflow<T>(x: T, y: T) -> (T, bool) {
                 result!()
             }
+            pub fn add_with_overflow__u32(x: u32, y: u32) -> (u128, bool) {
+                let result = (x as u128) + (y as u128);
+                (
+                    result % ((std::u32::MAX as u128) + 1),
+                    result > (std::u32::MAX as u128),
+                )
+            }
             pub fn add_with_overflow__usize(x: usize, y: usize) -> (u128, bool) {
                 let result = (x as u128) + (y as u128);
                 (
@@ -1263,6 +1274,13 @@ pub mod core {
 
             pub fn sub_with_overflow<T>(x: T, y: T) -> (T, bool) {
                 result!()
+            }
+            pub fn sub_with_overflow__u64(x: u64, y: u64) -> (u64, bool) {
+                let result = (x as i128) + (-(y as i128));
+                (
+                    (result % ((std::u64::MAX as i128) + 1)) as u64,
+                    result < 0 || result > (std::usize::MAX as i128),
+                )
             }
             pub fn sub_with_overflow__usize(x: usize, y: usize) -> (usize, bool) {
                 let result = (x as i128) + (-(y as i128));
@@ -1347,6 +1365,14 @@ pub mod core {
             pub fn rotate_left<T>(x: T, y: T) -> T {
                 result!()
             }
+            pub fn rotate_left__u32(x: u32, y: u32) -> u32 {
+                let bw = crate::foreign_contracts::core::mem::size_of__u32() as u32;
+                (x << (y % bw)) | (x >> ((bw - y) % bw))
+            }
+            pub fn rotate_left__u64(x: u64, y: u64) -> u64 {
+                let bw = crate::foreign_contracts::core::mem::size_of__u64() as u64;
+                (x << (y % bw)) | (x >> ((bw - y) % bw))
+            }
             pub fn rotate_left__usize(x: usize, y: usize) -> usize {
                 let bw = crate::foreign_contracts::core::mem::size_of__usize();
                 (x << (y % bw)) | (x >> ((bw - y) % bw))
@@ -1355,6 +1381,10 @@ pub mod core {
             // rotate_right: (X << ((BW - S) % BW)) | (X >> (S % BW))
             pub fn rotate_right<T>(x: T, y: T) -> T {
                 result!()
+            }
+            pub fn rotate_right__u32(x: u32, y: u32) -> u32 {
+                let bw = crate::foreign_contracts::core::mem::size_of__u32() as u32;
+                (x << ((bw - y) % bw)) | (x >> (y % bw))
             }
             pub fn rotate_right__usize(x: usize, y: usize) -> usize {
                 let bw = crate::foreign_contracts::core::mem::size_of__usize();
@@ -1368,6 +1398,9 @@ pub mod core {
             /// (a + b) mod 2<sup>N</sup>, where N is the width of T
             pub fn wrapping_add<T>(a: T, b: T) -> T {
                 result!()
+            }
+            pub fn wrapping_add__u8(a: u8, b: u8) -> u128 {
+                ((a as u128) + (b as u128)) % ((std::u8::MAX as u128) + 1)
             }
             pub fn wrapping_add__usize(a: usize, b: usize) -> u128 {
                 ((a as u128) + (b as u128)) % ((std::usize::MAX as u128) + 1)
@@ -1384,6 +1417,9 @@ pub mod core {
             /// (a * b) mod 2 ** N, where N is the width of T in bits.
             pub fn wrapping_mul<T>(a: T, b: T) -> T {
                 result!()
+            }
+            pub fn wrapping_mul__u64(a: u64, b: u64) -> u128 {
+                ((a as u128) * (b as u128)) % ((std::u64::MAX as u128) + 1)
             }
             pub fn wrapping_mul__usize(a: usize, b: usize) -> u128 {
                 ((a as u128) * (b as u128)) % ((std::usize::MAX as u128) + 1)
@@ -1410,10 +1446,6 @@ pub mod core {
                 } else {
                     a - b
                 }
-            }
-
-            pub fn discriminant_value<T>(v: &T) -> u64 {
-                result!()
             }
             pub fn r#try(f: fn(*mut u8), data: *mut u8, local_ptr: *mut u8) -> i32 {
                 result!()
@@ -1536,6 +1568,14 @@ pub mod core {
     }
 
     pub mod mem {
+        pub mod implement_core_mem_Discriminant_generic_par_T {
+            pub struct Discriminant(u128);
+
+            fn eq<T>(_self: &Discriminant, rhs: &Discriminant) -> bool {
+                (_self.0 as u128) == (rhs.0 as u128)
+            }
+        }
+
         pub fn size_of__i8() -> usize {
             1
         }

@@ -515,6 +515,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.handle_copy_non_overlapping();
                 return true;
             }
+            KnownNames::StdIntrinsicsDiscriminantValue => {
+                self.handle_discriminant_value();
+                return true;
+            }
             KnownNames::StdIntrinsicsTransmute => {
                 self.handle_transmute();
                 return true;
@@ -1543,6 +1547,52 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             collection_type,
             false,
         );
+        self.use_entry_condition_as_exit_condition();
+    }
+
+    /// Returns the value of the discriminant for the variant in 'v',
+    /// cast to a `u64`; if `T` has no discriminant, returns 0.
+    #[logfn_inputs(TRACE)]
+    fn handle_discriminant_value(&mut self) {
+        checked_assume!(self.actual_args.len() == 1);
+        if let Some((place, _)) = &self.destination {
+            let discriminant_path =
+                Path::new_discriminant(Path::new_deref(self.actual_args[0].0.clone()))
+                    .refine_paths(&self.block_visitor.bv.current_environment);
+            let mut discriminant_value = self.block_visitor.bv.lookup_path_and_refine_result(
+                discriminant_path,
+                self.block_visitor.bv.tcx.types.u128,
+            );
+            // If `T` has no discriminant, return 0.
+            match self.callee_generic_arguments {
+                None => assume_unreachable!(
+                    "expected discriminant_value function call to have a generic argument"
+                ),
+                Some(rustc_gen_args) => {
+                    checked_assume!(rustc_gen_args.len() == 1);
+                    match rustc_gen_args[0].unpack() {
+                        GenericArgKind::Type(ty) => match ty.kind() {
+                            TyKind::Adt(..) if ty.is_enum() => {}
+                            TyKind::Generator(..) => {}
+                            _ => {
+                                discriminant_value = Rc::new(ConstantDomain::U128(0).into());
+                            }
+                        },
+                        _ => {
+                            // The rust type checker should ensure that the generic argument is a type.
+                            assume_unreachable!(
+                            "expected the generic argument of discriminant_value function calls to be a type"
+                        );
+                        }
+                    }
+                }
+            }
+            let target_path = self.block_visitor.visit_place(place);
+            self.block_visitor
+                .bv
+                .current_environment
+                .update_value_at(target_path, discriminant_value);
+        }
         self.use_entry_condition_as_exit_condition();
     }
 

@@ -6,6 +6,8 @@
 
 #![feature(allocator_api)]
 #![feature(backtrace)]
+#![feature(core_intrinsics)]
+#![feature(discriminant_kind)]
 
 #[macro_use]
 extern crate mirai_annotations;

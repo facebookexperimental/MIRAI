@@ -8,6 +8,7 @@ use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::path::{Path, PathEnum};
 use crate::path::{PathRefinement, PathSelector};
+use crate::rustc_middle::ty::DefIdTree;
 use crate::{type_visitor, utils};
 
 use log_derive::*;
@@ -757,6 +758,15 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             self.specialize_generic_argument_type(item_type, &map)
                         }
                     } else {
+                        if specialized_substs.len() == 1
+                            && self.tcx.parent(item_def_id)
+                                == self.tcx.lang_items().discriminant_kind_trait()
+                        {
+                            let enum_arg = specialized_substs[0];
+                            if let GenericArgKind::Type(enum_ty) = enum_arg.unpack() {
+                                return enum_ty.discriminant_ty(self.tcx);
+                            }
+                        }
                         debug!("could not resolve an associated type with concrete type arguments");
                         gen_arg_type
                     }
