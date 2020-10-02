@@ -2268,6 +2268,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     Rc::new(TRUE)
                 }
 
+                // [x >= y || x < y] -> true if x is not a floating point
+                (
+                    Expression::GreaterOrEqual {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::LessThan {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2)
+                    && y1.eq(y2)
+                    && !x1.expression.infer_type().is_floating_point_number() =>
+                {
+                    Rc::new(TRUE)
+                }
+
                 // [(x && y) || (x && !y)] -> x
                 // [(x && y1) || (x && y2)] -> (x && (y1 || y2))
                 // [(x && y1) || ((x && x3) && y2)] -> x && (y1 || (x3 && y2))
