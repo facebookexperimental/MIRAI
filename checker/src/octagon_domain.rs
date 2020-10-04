@@ -8,7 +8,6 @@ use crate::expression::ExpressionType::{self, *};
 use log_derive::logfn_inputs;
 use serde::{Deserialize, Serialize};
 use std::cmp;
-//use std::convert::TryFrom;
 
 #[derive(Serialize, Deserialize, Clone, Eq, PartialOrd, PartialEq, Hash, Ord)]
 pub struct OctagonDomain {
@@ -61,8 +60,6 @@ impl OctagonDomain {
         false
     }
 
-    //[x...y] + [a...b] = [x+a...y+b]
-    // TODO: update comment
     #[logfn_inputs(TRACE)]
     pub fn add(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
@@ -76,9 +73,6 @@ impl OctagonDomain {
         OctagonDomain::new(left, right)
     }
 
-    // [x...y] >= [a...b] = x >= b
-    // !([x...y] >= [a...b]) = [a...b] > [x...y] = a > y
-    // TODO: update comment
     #[logfn_inputs(TRACE)]
     pub fn greater_or_equal(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
@@ -92,9 +86,6 @@ impl OctagonDomain {
         }
     }
 
-    // [x...y] > [a...b] = x > b
-    // !([x...y] > [a...b]) = [a...b] >= [x...y] = a >= y
-    // TODO: update comment
     #[logfn_inputs(TRACE)]
     pub fn greater_than(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
@@ -109,8 +100,6 @@ impl OctagonDomain {
     }
 
 
-    // [x...y] * [a...b] = [x*a...y*b]
-    // TODO: update comment
     #[logfn_inputs(TRACE)]
     pub fn mul(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
@@ -124,9 +113,6 @@ impl OctagonDomain {
         OctagonDomain::new(left, right)
     }
 
-    // TODO: add doc
-    // revise the method. The type should be within 2d dimentions, right? if so, I need to add more
-    // rules
     #[logfn_inputs(TRACE)]
     pub fn is_contained_in(&self, target_type: &ExpressionType) -> bool {
         if self.is_bottom() || self.is_top() {
@@ -183,9 +169,6 @@ impl OctagonDomain {
     }
 
     
-    // [x...y] <= [a...b] = y <= a
-    // !([x...y] <= [a...b]) = [a...b] < [x...y] = b < x
-    // TODO: update doc 
     #[logfn_inputs(TRACE)]
     pub fn less_equal(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
@@ -199,9 +182,6 @@ impl OctagonDomain {
         }
     }
 
-    // [x...y] < [a...b] = y < a
-    // !([x...y] < [a...b]) = [a...b] <= [x...y] = b <= x
-    // TODO: update doc 
     #[logfn_inputs(TRACE)]
     pub fn less_than(&self, other: &Self) -> Option<bool> {
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
@@ -216,8 +196,6 @@ impl OctagonDomain {
     }
 
 
-    // -[x...y] = [-y...-x]
-    // TODO: update doc 
     #[logfn_inputs(TRACE)]
     pub fn neg(&self) -> Self {
         if self.is_bottom() {
@@ -231,8 +209,6 @@ impl OctagonDomain {
         OctagonDomain::new(right, left)
     }
 
-    // [x...y] - [a...b] = [x-b...y-a]
-    // TODO: update doc
     #[logfn_inputs(TRACE)]
     pub fn sub(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
@@ -246,7 +222,6 @@ impl OctagonDomain {
         OctagonDomain::new(left, right)
     }
 
-    // [x...y] widen [a...b] = [min(x,a)...max(y,b)],
     #[logfn_inputs(TRACE)]
     pub fn widen(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
