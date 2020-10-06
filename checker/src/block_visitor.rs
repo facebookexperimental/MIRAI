@@ -1917,23 +1917,24 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             // unreachable block for error reporting purposes.
             //todo: keep track of the first state containing the promoted constants and use that
             // to lookup PromotedConstant paths.
-            let static_val = self.bv.lookup_path_and_refine_result(path, ty);
-            if let Expression::Variable { .. } = &static_val.expression {
-                // Try getting the value from val.eval
+            let val_at_path = self.bv.lookup_path_and_refine_result(path, ty);
+            if let Expression::Variable { .. } = &val_at_path.expression {
+                // Seems like there is nothing at the path, but...
+                if self.bv.tcx.is_mir_available(def_id) {
+                    // The MIR body should have computed something. If that something is
+                    // a structure, the value of the path will be unknown (only leaf paths have
+                    // known values). Alternatively, this could be a simple value that is not
+                    // in the environment as explained in the Note above.
+                    return val_at_path;
+                }
+                // Seems like a lazily serialized constant. Force evaluation.
                 val = val.eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
-                match &val {
-                    rustc_middle::ty::ConstKind::Unevaluated(..) => {
-                        // val.eval did not manage to evaluate this, go with unknown.
-                        return static_val;
-                    }
-                    rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { .. }) => {
-                        // Don't currently know how to deal with such a result, go with unknown.
-                        return static_val;
-                    }
-                    _ => {}
+                if let rustc_middle::ty::ConstKind::Unevaluated(..) = &val {
+                    // val.eval did not manage to evaluate this, go with unknown.
+                    return val_at_path;
                 }
             } else {
-                return static_val;
+                return val_at_path;
             }
         }
 
@@ -1999,7 +2000,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Array(..)) => {
                 if let TyKind::Array(elem_type, length) = *t.kind() {
-                    return self.visit_reference_to_array_constant(literal, elem_type, length);
+                    return self
+                        .visit_reference_to_array_constant(&val, literal.ty, elem_type, length);
                 } else {
                     unreachable!(); // match guard
                 }
@@ -2060,10 +2062,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 _ => assume_unreachable!(),
             },
             TyKind::Ref(_, ty, rustc_hir::Mutability::Not) => {
-                return self.get_reference_to_constant(literal, ty);
+                return self.get_reference_to_constant(&val, ty);
             }
             TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
-                return self.get_enum_variant_as_constant(literal, ty);
+                return self.get_enum_variant_as_constant(&val, ty);
             }
             TyKind::Tuple(..) | TyKind::Adt(..) => {
                 match &val {
@@ -2136,10 +2138,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn get_reference_to_constant(
         &mut self,
-        literal: &rustc_middle::ty::Const<'tcx>,
+        val: &rustc_middle::ty::ConstKind<'tcx>,
         ty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
-        match &literal.val {
+        match val {
             rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
                 if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
                     self.bv.tcx.get_global_alloc(p.alloc_id)
@@ -2157,7 +2159,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             _ => {
                 debug!("span: {:?}", self.bv.current_span);
                 debug!("type kind {:?}", ty.kind());
-                debug!("unimplemented constant {:?}", literal);
+                debug!("unimplemented constant {:?}", val);
                 assume_unreachable!();
             }
         }
@@ -2169,17 +2171,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn get_enum_variant_as_constant(
         &mut self,
-        literal: &rustc_middle::ty::Const<'tcx>,
+        val: &rustc_middle::ty::ConstKind<'tcx>,
         ty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
-        let mut val = literal.val;
-        if let rustc_middle::ty::ConstKind::Unevaluated(..) = &val {
-            val = val.eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
-        }
-
         if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
             data, ..
-        })) = &val
+        })) = val
         {
             let param_env = self.bv.type_visitor.get_param_env();
             if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
@@ -2373,7 +2370,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }
         debug!("span: {:?}", self.bv.current_span);
         debug!("type kind {:?}", ty.kind());
-        debug!("unimplemented constant {:?}", literal);
+        debug!("unimplemented constant {:?}", val);
         Rc::new(ConstantDomain::Unimplemented.into())
     }
 
@@ -2478,12 +2475,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_reference_to_array_constant(
         &mut self,
-        literal: &rustc_middle::ty::Const<'tcx>,
-        elem_type: &rustc_middle::ty::TyS<'tcx>,
+        val: &rustc_middle::ty::ConstKind<'tcx>,
+        ty: Ty<'tcx>,
+        elem_type: Ty<'tcx>,
         length: &rustc_middle::ty::Const<'tcx>,
     ) -> Rc<AbstractValue> {
-        use rustc_middle::mir::interpret::{ConstValue, Scalar};
-
         if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
             Scalar::Raw { data, .. },
             ..,
@@ -2491,7 +2487,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         {
             let len = *data;
             let e_type = ExpressionType::from(elem_type.kind());
-            match &literal.val {
+            match val {
                 rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
                     // The Rust compiler should ensure this.
                     assume!(*end > *start);
@@ -2508,12 +2504,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         )
                         .unwrap();
                     let slice = &bytes[*start..*end];
-                    self.deconstruct_reference_to_constant_array(
-                        slice,
-                        e_type,
-                        Some(len),
-                        literal.ty,
-                    )
+                    self.deconstruct_reference_to_constant_array(slice, e_type, Some(len), ty)
                 }
                 rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
                     mir::interpret::Scalar::Ptr(ptr),
@@ -2539,15 +2530,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             rustc_target::abi::Size::from_bytes(num_bytes),
                         )
                         .unwrap();
-                    self.deconstruct_reference_to_constant_array(
-                        &bytes,
-                        e_type,
-                        Some(len),
-                        literal.ty,
-                    )
+                    self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len), ty)
                 }
                 _ => {
-                    debug!("unsupported val of type Ref: {:?}", literal);
+                    debug!("unsupported val of type Ref: {:?}", val);
                     unimplemented!();
                 }
             }
