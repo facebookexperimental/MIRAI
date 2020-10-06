@@ -39,7 +39,7 @@ pub enum ConstantDomain {
     /// 32 bit floating point, stored as a u32 to make it comparable.
     F32(u32),
     /// A string literal.
-    Str(Rc<String>),
+    Str(Rc<str>),
     /// The Boolean true value.
     True,
     /// Unsigned 16 byte integer.
@@ -89,11 +89,11 @@ pub struct FunctionReference {
     /// Indicates if the function is known to be treated specially by the Rust compiler
     pub known_name: KnownNames,
     /// The key to use when retrieving a summary for the function from the summary cache
-    pub summary_cache_key: Rc<String>,
+    pub summary_cache_key: Rc<str>,
     /// To be appended to summary_cache_key when searching for a type specific version of
     /// a summary. This is necessary when a trait method cannot be accurately summarized
     /// in a generic way. For example std::ops::eq.
-    pub argument_type_key: Rc<String>,
+    pub argument_type_key: Rc<str>,
 }
 
 /// Constructors
@@ -1024,7 +1024,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
         let str_value = String::from(value);
         self.str_cache
             .entry(str_value)
-            .or_insert_with(|| ConstantDomain::Str(Rc::new(String::from(value))))
+            .or_insert_with(|| ConstantDomain::Str(Rc::from(value)))
     }
 
     /// Returns a reference to a cached Expression::U128(value).

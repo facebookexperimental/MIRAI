@@ -114,6 +114,7 @@ fn main() {
             &mut callbacks,
             None, // use default file loader
             None, // emit output to default destination
+            None, // use default code gen backend
         )
     })
     .and_then(|result| result);

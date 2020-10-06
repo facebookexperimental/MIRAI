@@ -116,11 +116,11 @@ pub struct Precondition {
     /// The condition that must be satisfied when calling a function that has this precondition.
     pub condition: Rc<AbstractValue>,
     /// A diagnostic message to issue if the precondition is not met.
-    pub message: Rc<String>,
+    pub message: Rc<str>,
     /// The source location of the precondition definition (or the source expression/statement that
     /// would panic if the precondition is not met). This is in textual form because it needs to be
     /// persistable and crate independent.
-    pub provenance: Option<Rc<String>>,
+    pub provenance: Option<Rc<str>>,
     /// A stack of source locations that lead to the definition of the precondition (or the source
     /// expression/statement that would panic if the precondition is not met). It is a stack
     /// because the precondition might have been promoted (when a non public function does not meet
@@ -278,7 +278,9 @@ fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precon
             if !precondition.spans.is_empty() {
                 let last_span = precondition.spans.last();
                 let span = last_span.unwrap().source_callsite();
-                precond.provenance = Some(Rc::new(tcx.sess.source_map().span_to_string(span)));
+                precond.provenance = Some(Rc::from(
+                    tcx.sess.source_map().span_to_string(span).as_str(),
+                ));
             }
             precond
         })
@@ -374,7 +376,7 @@ pub struct PersistentSummaryCache<'tcx> {
     typed_cache_table: HashMap<Vec<Rc<FunctionReference>>, HashMap<usize, Summary>>,
     reference_cache: HashMap<Rc<FunctionReference>, Summary>,
     typed_reference_cache: HashMap<Rc<FunctionReference>, Summary>,
-    key_cache: HashMap<DefId, Rc<String>>,
+    key_cache: HashMap<DefId, Rc<str>>,
     type_context: TyCtxt<'tcx>,
 }
 
@@ -463,7 +465,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
     /// long as the definition does not change its name or location, so it can be used to
     /// transfer information from one compilation to the next, making incremental analysis possible.
     #[logfn_inputs(TRACE)]
-    pub fn get_summary_key_for(&mut self, def_id: DefId) -> &Rc<String> {
+    pub fn get_summary_key_for(&mut self, def_id: DefId) -> &Rc<str> {
         let tcx = self.type_context;
         self.key_cache
             .entry(def_id)

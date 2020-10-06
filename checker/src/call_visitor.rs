@@ -640,7 +640,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     let message = self.coerce_to_string(&self.actual_args[2].0);
                     if self
                         .block_visitor
-                        .check_condition(cond, message, true)
+                        .check_condition(cond, message.as_ref(), true)
                         .is_none()
                     {
                         self.block_visitor.try_extend_post_condition(&cond);
@@ -653,7 +653,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 assume!(self.actual_args.len() == 2); // The type checker ensures this.
                 let (_, cond) = &self.actual_args[0];
                 let message = self.coerce_to_string(&self.actual_args[1].0);
-                if let Some(warning) = self.block_visitor.check_condition(cond, message, false) {
+                if let Some(warning) =
+                    self.block_visitor
+                        .check_condition(cond, message.as_ref(), false)
+                {
                     // Push a precondition so that any known or unknown caller of this function
                     // is warned that this function will fail if the precondition is not met.
                     if !cond.expression.contains_local_variable()
@@ -669,7 +672,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             .or(cond.clone());
                         let precondition = Precondition {
                             condition,
-                            message: Rc::new(warning),
+                            message: warning,
                             provenance: None,
                             spans: vec![self.block_visitor.bv.current_span],
                         };
@@ -732,7 +735,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     // unimplemented!() is unlikely to be a programmer mistake, so need to fixate on that either.
                     // unrecoverable! is way for the programmer to indicate that termination is not a mistake.
                     return;
-                } else if path_cond.is_none() && msg.as_str() == "statement is reachable" {
+                } else if path_cond.is_none() && msg.as_ref() == "statement is reachable" {
                     // verify_unreachable should always complain if possibly reachable
                     // and the current function is public or root.
                     path_cond = Some(true);
@@ -752,7 +755,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             .bv
                             .cv
                             .session
-                            .struct_span_warn(span, msg.as_str());
+                            .struct_span_warn(span, msg.as_ref());
                         self.block_visitor.bv.emit_diagnostic(err);
                     }
                 } else {
@@ -824,11 +827,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 checked_assume!(self.actual_args.len() == 1);
                 if self.block_visitor.bv.check_for_errors {
                     let non_zero = self.actual_args[0].1.not_equals(Rc::new(0u128.into()));
-                    self.block_visitor.check_condition(
-                        &non_zero,
-                        Rc::new("argument is zero".to_owned()),
-                        false,
-                    );
+                    self.block_visitor
+                        .check_condition(&non_zero, "argument is zero", false);
                 }
                 let arg_type: ExpressionType = self.actual_argument_types[0].kind().into();
                 let bit_length = arg_type.bit_length();
@@ -2407,7 +2407,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// and that are required to be invoked via macros that ensure that the argument providing
     /// this value is always a string literal.
     #[logfn_inputs(TRACE)]
-    fn coerce_to_string(&mut self, path: &Rc<Path>) -> Rc<String> {
+    fn coerce_to_string(&mut self, path: &Rc<Path>) -> Rc<str> {
         if let PathEnum::Alias { value } = &path.value {
             if let Expression::Reference(path) = &value.expression {
                 if let PathEnum::Alias { value } = &path.value {
@@ -2436,7 +2436,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             );
             self.block_visitor.bv.emit_diagnostic(warning);
         }
-        Rc::new("dummy argument".to_string())
+        Rc::from("dummy argument")
     }
 
     /// Extract the tag kind and the propagation set from the generic arg of the function call

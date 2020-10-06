@@ -60,7 +60,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub start_instant: Instant,
     // The current environments when the return statement was executed
     pub exit_environment: Option<Environment>,
-    pub function_name: Rc<String>,
+    pub function_name: Rc<str>,
     pub heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     pub post_condition: Option<Rc<AbstractValue>>,
     pub post_condition_block: Option<mir::BasicBlock>,
@@ -549,7 +549,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         &mut self,
         path: &Rc<Path>,
         def_id: Option<DefId>,
-        summary_cache_key: &Rc<String>,
+        summary_cache_key: &Rc<str>,
     ) -> bool {
         let environment_before_call = self.current_environment.clone();
         let saved_analyzing_static_var = self.analyzing_static_var;
