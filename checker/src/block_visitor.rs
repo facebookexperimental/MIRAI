@@ -1256,12 +1256,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 } = constant.borrow();
                 let rh_type = literal.ty;
                 let const_value = self.visit_constant(*user_ty, &literal);
-                if self
-                    .bv
-                    .type_visitor
-                    .starts_with_slice_pointer(rh_type.kind())
-                {
-                    // todo: visit_constant should probably always return a reference
+                if const_value.expression.infer_type() == ExpressionType::NonPrimitive {
+                    // Transfer children into the environment, discard const_value.
                     if let Expression::Reference(rpath) | Expression::Variable { path: rpath, .. } =
                         &const_value.expression
                     {
