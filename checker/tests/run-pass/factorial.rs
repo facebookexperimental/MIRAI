@@ -6,15 +6,15 @@
 
 // A test that uses a widened summary.
 
-use mirai_annotations::*;
+//use mirai_annotations::*;
 
 fn fact(n: u8) -> u128 {
     if n == 0 {
         1
     } else {
         let n1fac = fact(n - 1);
-        assume!(n1fac <= std::u128::MAX / (n as u128));
-        (n as u128) * n1fac
+        //assume!(n1fac <= std::u128::MAX / (n as u128));
+        (n as u128) * n1fac //~ possible attempt to multiply with overflow
     }
 }
 
