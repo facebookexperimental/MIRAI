@@ -87,6 +87,8 @@ pub enum KnownNames {
     StdIntrinsicsRoundf64,
     StdIntrinsicsSinf32,
     StdIntrinsicsSinf64,
+    StdIntrinsicsSizeOf,
+    StdIntrinsicsSizeOfVal,
     StdIntrinsicsSqrtf32,
     StdIntrinsicsSqrtf64,
     StdIntrinsicsTransmute,
@@ -95,7 +97,6 @@ pub enum KnownNames {
     StdIntrinsicsWriteBytes,
     StdMarkerPhantomData,
     StdMemReplace,
-    StdMemSizeOf,
     StdOpsFunctionFnCall,
     StdOpsFunctionFnMutCallMut,
     StdOpsFunctionFnOnceCallOnce,
@@ -267,6 +268,8 @@ impl KnownNamesCache {
                         "roundf64" => KnownNames::StdIntrinsicsRintf64,
                         "sinf32" => KnownNames::StdIntrinsicsSinf32,
                         "sinf64" => KnownNames::StdIntrinsicsSinf64,
+                        "size_of" => KnownNames::StdIntrinsicsSizeOf,
+                        "size_of_val" => KnownNames::StdIntrinsicsSizeOfVal,
                         "sqrtf32" => KnownNames::StdIntrinsicsSqrtf32,
                         "sqrtf64" => KnownNames::StdIntrinsicsSqrtf64,
                         "transmute" => KnownNames::StdIntrinsicsTransmute,
@@ -292,7 +295,6 @@ impl KnownNamesCache {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
                     "replace" => KnownNames::StdMemReplace,
-                    "size_of" => KnownNames::StdMemSizeOf,
                     _ => KnownNames::None,
                 })
                 .unwrap_or(KnownNames::None)

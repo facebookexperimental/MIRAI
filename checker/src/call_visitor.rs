@@ -893,7 +893,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             KnownNames::StdIntrinsicsMulWithOverflow => self.handle_checked_binary_operation(),
             KnownNames::StdIntrinsicsOffset => self.handle_offset(),
-            KnownNames::StdMemSizeOf => self.handle_size_of(),
+            KnownNames::StdIntrinsicsSizeOf => self.handle_size_of(),
+            KnownNames::StdIntrinsicsSizeOfVal => self.handle_size_of_val(),
             _ => abstract_value::BOTTOM.into(),
         }
     }
@@ -1824,28 +1825,89 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     /// Gets the size in bytes of the type parameter T of the std::mem::size_of<T> function.
-    /// Returns and unknown value of type u128 if T is not a concrete type.
+    /// Returns an unknown value of type u128 if T is not a concrete type.
     #[logfn_inputs(TRACE)]
     fn handle_size_of(&mut self) -> Rc<AbstractValue> {
         checked_assume!(self.actual_args.is_empty());
         let sym = rustc_span::Symbol::intern("T");
         let t = (self.callee_generic_argument_map.as_ref())
-            .expect("std::mem::size_of must be called with generic arguments")
+            .expect("std::intrinsics::size_of must be called with generic arguments")
             .get(&sym)
-            .expect("std::mem::size must have generic argument T")
+            .expect("std::intrinsics::size_of must have generic argument T")
             .expect_ty();
         let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
         if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(t)) {
-            Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
-        } else {
-            let path = self.block_visitor.visit_place(
-                &self
-                    .destination
-                    .expect("size_of should have a destination")
-                    .0,
-            );
-            AbstractValue::make_typed_unknown(ExpressionType::U128, path)
+            if !ty_and_layout.is_unsized() {
+                return Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
+            }
         }
+        let path = self.block_visitor.visit_place(
+            &self
+                .destination
+                .expect("std::intrinsics::size_of should have a destination")
+                .0,
+        );
+        AbstractValue::make_typed_unknown(ExpressionType::U128, path)
+    }
+
+    /// Returns the size of the pointed-to value in bytes.
+    ///
+    /// This is usually the same as `size_of::<T>()`. However, when `T` *has* no
+    /// statically-known size, e.g., a slice [`[T]`][slice] or a [trait object],
+    /// then `size_of_val` can be used to get the dynamically-known size.
+    #[logfn_inputs(TRACE)]
+    fn handle_size_of_val(&mut self) -> Rc<AbstractValue> {
+        let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
+        checked_assume!(self.actual_argument_types.len() == 1);
+        let t = self.actual_argument_types[0];
+        checked_assume!(self.actual_args.len() == 1);
+        let val = &self.actual_args[0].1;
+        if matches!(val.expression, Expression::HeapBlock {..}) {
+            // If the value is heap allocated, we can get its size from the layout path
+            let heap_path = Path::get_as_path(val.clone());
+            let layout_path = Path::new_layout(heap_path);
+            let layout_val = self.block_visitor.bv.lookup_path_and_refine_result(
+                layout_path,
+                ExpressionType::NonPrimitive.as_rustc_type(self.block_visitor.bv.tcx),
+            );
+            if let Expression::HeapBlockLayout { length, .. } = &layout_val.expression {
+                return length.clone();
+            }
+        } else if type_visitor::is_slice_pointer(t.kind()) {
+            let elem_t = type_visitor::get_element_type(t);
+            if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(elem_t)) {
+                if !ty_and_layout.is_unsized() {
+                    let elem_size_val: Rc<AbstractValue> =
+                        Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
+                    let length_path = Path::new_length(self.actual_args[0].0.clone())
+                        .refine_paths(&self.block_visitor.bv.current_environment);
+                    let len_val = self.block_visitor.bv.lookup_path_and_refine_result(
+                        length_path,
+                        ExpressionType::Usize.as_rustc_type(self.block_visitor.bv.tcx),
+                    );
+                    return len_val.multiply(elem_size_val);
+                }
+            }
+        }
+        let sym = rustc_span::Symbol::intern("T");
+        let t = (self.callee_generic_argument_map.as_ref())
+            .expect("std::intrinsics::size_of_val must be called with generic arguments")
+            .get(&sym)
+            .expect("std::intrinsics::size_of_val must have generic argument T")
+            .expect_ty();
+        if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(t)) {
+            if !ty_and_layout.is_unsized() {
+                return Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
+            }
+        }
+        // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).
+        let path = self.block_visitor.visit_place(
+            &self
+                .destination
+                .expect("std::intrinsics::size_of_value should have a destination")
+                .0,
+        );
+        AbstractValue::make_typed_unknown(ExpressionType::U128, path)
     }
 
     /// Reinterprets the bits of a value of one type as another type.

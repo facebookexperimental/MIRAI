@@ -836,7 +836,7 @@ pub fn get_def_id_from_closure(closure_ty: Ty<'_>) -> Option<DefId> {
 pub fn get_element_type(ty: Ty<'_>) -> Ty<'_> {
     match &ty.kind() {
         TyKind::Array(t, _) => *t,
-        TyKind::Ref(_, t, _) => match t.kind() {
+        TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => match t.kind() {
             TyKind::Array(t, _) => *t,
             TyKind::Slice(t) => *t,
             _ => t,

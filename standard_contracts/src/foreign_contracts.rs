@@ -365,6 +365,12 @@ pub mod core {
     }
 
     pub mod convert {
+        pub mod AsRef {
+            pub fn as_ref__trait_aead_Buffer_slice_u8<T>(_self: &T) -> &T {
+                _self
+            }
+        }
+
         pub mod Into {
             pub fn into__usize_usize(t: usize) -> usize {
                 t
@@ -1197,10 +1203,6 @@ pub mod core {
             pub fn pref_align_of<T>() -> usize {
                 result!()
             }
-            pub fn size_of_val<T: ?Sized>(_: &T) -> usize {
-                //todo: provide a built in implementation for this
-                result!()
-            }
             pub fn min_align_of_val<T: ?Sized>(_: &T) -> usize {
                 result!()
             }
@@ -1264,6 +1266,13 @@ pub mod core {
                     result > (std::u32::MAX as u128),
                 )
             }
+            pub fn add_with_overflow__u64(x: u64, y: u64) -> (u128, bool) {
+                let result = (x as u128) + (y as u128);
+                (
+                    result % ((std::u64::MAX as u128) + 1),
+                    result > (std::u64::MAX as u128),
+                )
+            }
             pub fn add_with_overflow__usize(x: usize, y: usize) -> (u128, bool) {
                 let result = (x as u128) + (y as u128);
                 (
@@ -1325,7 +1334,7 @@ pub mod core {
                 result!()
             }
             pub fn unchecked_shl__usize(x: usize, y: usize) -> usize {
-                //precondition!(y <= crate::foreign_contracts::core::mem::size_of__usize());
+                //precondition!(y <= size_of__usize());
                 x << y
             }
 
@@ -1333,7 +1342,7 @@ pub mod core {
                 result!()
             }
             pub fn unchecked_shr__usize(x: usize, y: usize) -> usize {
-                //precondition!(y <= crate::foreign_contracts::core::mem::size_of__usize());
+                //precondition!(y <= size_of__usize());
                 x >> y
             }
 
@@ -1366,15 +1375,15 @@ pub mod core {
                 result!()
             }
             pub fn rotate_left__u32(x: u32, y: u32) -> u32 {
-                let bw = crate::foreign_contracts::core::mem::size_of__u32() as u32;
+                let bw = std::intrinsics::size_of::<u32>() as u32;
                 (x << (y % bw)) | (x >> ((bw - y) % bw))
             }
             pub fn rotate_left__u64(x: u64, y: u64) -> u64 {
-                let bw = crate::foreign_contracts::core::mem::size_of__u64() as u64;
+                let bw = std::intrinsics::size_of::<u64>() as u64;
                 (x << (y % bw)) | (x >> ((bw - y) % bw))
             }
             pub fn rotate_left__usize(x: usize, y: usize) -> usize {
-                let bw = crate::foreign_contracts::core::mem::size_of__usize();
+                let bw = std::intrinsics::size_of::<usize>();
                 (x << (y % bw)) | (x >> ((bw - y) % bw))
             }
 
@@ -1383,11 +1392,15 @@ pub mod core {
                 result!()
             }
             pub fn rotate_right__u32(x: u32, y: u32) -> u32 {
-                let bw = crate::foreign_contracts::core::mem::size_of__u32() as u32;
+                let bw = std::intrinsics::size_of::<u32>() as u32;
+                (x << ((bw - y) % bw)) | (x >> (y % bw))
+            }
+            pub fn rotate_right__u64(x: u64, y: u64) -> u64 {
+                let bw = std::intrinsics::size_of::<u64>() as u64;
                 (x << ((bw - y) % bw)) | (x >> (y % bw))
             }
             pub fn rotate_right__usize(x: usize, y: usize) -> usize {
-                let bw = crate::foreign_contracts::core::mem::size_of__usize();
+                let bw = std::intrinsics::size_of::<usize>();
                 (x << ((bw - y) % bw)) | (x >> (y % bw))
             }
 
@@ -1401,6 +1414,12 @@ pub mod core {
             }
             pub fn wrapping_add__u8(a: u8, b: u8) -> u128 {
                 ((a as u128) + (b as u128)) % ((std::u8::MAX as u128) + 1)
+            }
+            pub fn wrapping_add__u32(a: u8, b: u8) -> u128 {
+                ((a as u128) + (b as u128)) % ((std::u32::MAX as u128) + 1)
+            }
+            pub fn wrapping_add__u64(a: u64, b: u64) -> u128 {
+                ((a as u128) + (b as u128)) % ((std::u64::MAX as u128) + 1)
             }
             pub fn wrapping_add__usize(a: usize, b: usize) -> u128 {
                 ((a as u128) + (b as u128)) % ((std::usize::MAX as u128) + 1)
@@ -1573,73 +1592,6 @@ pub mod core {
 
             fn eq<T>(_self: &Discriminant, rhs: &Discriminant) -> bool {
                 (_self.0 as u128) == (rhs.0 as u128)
-            }
-        }
-
-        pub fn size_of__i8() -> usize {
-            1
-        }
-        pub fn size_of__i16() -> usize {
-            2
-        }
-        pub fn size_of__i32() -> usize {
-            4
-        }
-        pub fn size_of__i64() -> usize {
-            8
-        }
-        pub fn size_of__i128() -> usize {
-            16
-        }
-        pub fn size_of__isize() -> usize {
-            if cfg!(any(
-                target_arch = "x86",
-                tagret_arch = "mips",
-                tagret_arch = "powerpc",
-                tagret_arch = "arm"
-            )) {
-                4
-            } else if cfg!(any(
-                target_arch = "x86_64",
-                tagret_arch = "powerpc64",
-                tagret_arch = "aarch64"
-            )) {
-                8
-            } else {
-                panic!("Unsupported architecture");
-            }
-        }
-        pub fn size_of__u8() -> usize {
-            1
-        }
-        pub fn size_of__u16() -> usize {
-            2
-        }
-        pub fn size_of__u32() -> usize {
-            4
-        }
-        pub fn size_of__u64() -> usize {
-            8
-        }
-        pub fn size_of__u128() -> usize {
-            16
-        }
-        pub fn size_of__usize() -> usize {
-            if cfg!(any(
-                target_arch = "x86",
-                tagret_arch = "mips",
-                tagret_arch = "powerpc",
-                tagret_arch = "arm"
-            )) {
-                4
-            } else if cfg!(any(
-                target_arch = "x86_64",
-                tagret_arch = "powerpc64",
-                tagret_arch = "aarch64"
-            )) {
-                8
-            } else {
-                panic!("Unsupported architecture");
             }
         }
     }
@@ -2198,6 +2150,16 @@ pub mod rand {
         pub fn gen_bool__rand_rngs_std_StdRng(_self: &rngs::std::StdRng, probability: f64) -> bool {
             precondition!(probability >= 0.0 && probability <= 1.0);
             result!()
+        }
+    }
+}
+
+pub mod sha2 {
+    pub mod sha256 {
+        pub mod x86 {
+            pub fn compress(state: &mut [u32; 8], _blocks: &[[u8; 64]]) {
+                *state = abstract_value!(*state);
+            }
         }
     }
 }
