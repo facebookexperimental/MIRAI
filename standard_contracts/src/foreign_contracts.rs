@@ -385,9 +385,206 @@ pub mod core {
     }
 
     pub mod core_arch {
+        pub mod simd_llvm {
+            //pub fn simd_select_bitmask
+            pub fn simd_eq<T, U>(x: T, y: T) -> U {
+                result!()
+            }
+            pub fn simd_ne<T, U>(x: T, y: T) -> U {
+                result!()
+            }
+            pub fn simd_lt<T, U>(x: T, y: T) -> U {
+                result!()
+            }
+            pub fn simd_le<T, U>(x: T, y: T) -> U {
+                result!()
+            }
+            pub fn simd_gt<T, U>(x: T, y: T) -> U {
+                result!()
+            }
+            pub fn simd_ge<T, U>(x: T, y: T) -> U {
+                result!()
+            }
+
+            pub fn simd_shuffle2<T, U>(x: T, y: T, idx: [u32; 2]) -> U {
+                result!()
+            }
+            fn simd_shuffle4<T, U>(x: T, y: T, idx: [u32; 4]) -> U {
+                result!()
+            }
+            fn simd_shuffle8<T, U>(x: T, y: T, idx: [u32; 8]) -> U {
+                result!()
+            }
+            fn simd_shuffle16<T, U>(x: T, y: T, idx: [u32; 16]) -> U {
+                result!()
+            }
+            fn simd_shuffle32<T, U>(x: T, y: T, idx: [u32; 32]) -> U {
+                result!()
+            }
+            fn simd_shuffle64<T, U>(x: T, y: T, idx: [u32; 64]) -> U {
+                result!()
+            }
+            fn simd_shuffle128<T, U>(x: T, y: T, idx: [u32; 128]) -> U {
+                result!()
+            }
+
+            fn simd_insert<T, U>(x: T, idx: u32, val: U) -> T {
+                result!()
+            }
+            fn simd_extract<T, U>(x: T, idx: u32) -> U {
+                result!()
+            }
+            //pub fn simd_select
+            fn simd_bitmask<T, U>(x: T) -> U {
+                result!()
+            }
+
+            fn simd_cast<T, U>(x: T) -> U {
+                result!()
+            }
+
+            fn simd_add<T>(x: T, y: T) -> T {
+                result!()
+            }
+            fn simd_sub<T>(x: T, y: T) -> T {
+                result!()
+            }
+            fn simd_mul<T>(x: T, y: T) -> T {
+                result!()
+            }
+            fn simd_div<T>(x: T, y: T) -> T {
+                result!()
+            }
+            fn simd_shl<T>(x: T, y: T) -> T {
+                result!()
+            }
+            fn simd_shr<T>(x: T, y: T) -> T {
+                result!()
+            }
+            fn simd_and<T>(x: T, y: T) -> T {
+                result!()
+            }
+            fn simd_or<T>(x: T, y: T) -> T {
+                result!()
+            }
+            fn simd_xor<T>(x: T, y: T) -> T {
+                result!()
+            }
+
+            fn simd_saturating_add<T>(x: T, y: T) -> T {
+                result!()
+            }
+            fn simd_saturating_sub<T>(x: T, y: T) -> T {
+                result!()
+            }
+
+            fn simd_gather<T, U, V>(values: T, pointers: U, mask: V) -> T {
+                result!()
+            }
+            fn simd_scatter<T, U, V>(values: T, pointers: U, mask: V) {
+                result!()
+            }
+
+            fn simd_reduce_add_unordered<T, U>(x: T) -> U {
+                result!()
+            }
+            fn simd_reduce_mul_unordered<T, U>(x: T) -> U {
+                result!()
+            }
+            fn simd_reduce_add_ordered<T, U>(x: T, acc: U) -> U {
+                result!()
+            }
+            fn simd_reduce_mul_ordered<T, U>(x: T, acc: U) -> U {
+                result!()
+            }
+            fn simd_reduce_min<T, U>(x: T) -> U {
+                result!()
+            }
+            fn simd_reduce_max<T, U>(x: T) -> U {
+                result!()
+            }
+            fn simd_reduce_min_nanless<T, U>(x: T) -> U {
+                result!()
+            }
+            fn simd_reduce_max_nanless<T, U>(x: T) -> U {
+                result!()
+            }
+            fn simd_reduce_and<T, U>(x: T) -> U {
+                result!()
+            }
+            fn simd_reduce_or<T, U>(x: T) -> U {
+                result!()
+            }
+            fn simd_reduce_xor<T, U>(x: T) -> U {
+                result!()
+            }
+            fn simd_reduce_all<T>(x: T) -> bool {
+                result!()
+            }
+            fn simd_reduce_any<T>(x: T) -> bool {
+                result!()
+            }
+
+            fn simd_select<M, T>(m: M, a: T, b: T) -> T {
+                result!()
+            }
+            fn simd_select_bitmask<M, T>(m: M, a: T, b: T) -> T {
+                result!()
+            }
+
+            fn simd_fmin<T>(a: T, b: T) -> T {
+                result!()
+            }
+            fn simd_fmax<T>(a: T, b: T) -> T {
+                result!()
+            }
+
+            fn simd_fsqrt<T>(a: T) -> T {
+                result!()
+            }
+            fn simd_fsin<T>(a: T) -> T {
+                result!()
+            }
+            fn simd_fcos<T>(a: T) -> T {
+                result!()
+            }
+            fn simd_fabs<T>(a: T) -> T {
+                result!()
+            }
+            fn simd_floor<T>(a: T) -> T {
+                result!()
+            }
+            fn simd_ceil<T>(a: T) -> T {
+                result!()
+            }
+            fn simd_fexp<T>(a: T) -> T {
+                result!()
+            }
+            fn simd_fexp2<T>(a: T) -> T {
+                result!()
+            }
+            fn simd_flog10<T>(a: T) -> T {
+                result!()
+            }
+            fn simd_flog2<T>(a: T) -> T {
+                result!()
+            }
+            fn simd_flog<T>(a: T) -> T {
+                result!()
+            }
+            //pub fn simd_fpowi
+            //pub fn simd_fpow
+            fn simd_fma<T>(a: T, b: T, c: T) -> T {
+                result!()
+            }
+        }
+
         pub mod x86 {
             pub mod sse2 {
                 pub fn pause() {}
+                pub fn pmovmskb() -> i32 {
+                    result!()
+                }
             }
         }
     }
@@ -2021,6 +2218,19 @@ pub mod core {
     }
 }
 
+pub mod hashbrown {
+    pub mod raw {
+        pub mod implement {
+            pub fn alloc_err<T>() -> T {
+                result!()
+            }
+            pub fn capacity_overflow<T>() -> T {
+                result!()
+            }
+        }
+    }
+}
+
 pub mod libc {
     pub mod bsd {
         pub mod apple {
@@ -2173,6 +2383,26 @@ pub mod std {
         pub mod implement_std_backtrace_Backtrace {
             pub fn capture() -> (std::backtrace::BacktraceStatus) {
                 (std::backtrace::BacktraceStatus::Unsupported)
+            }
+        }
+    }
+
+    pub mod collections {
+        pub mod hash {
+            pub mod map {
+                pub mod implement_std_collections_hash_map_RandomState {
+                    pub struct RandomState {
+                        pub k0: u64,
+                        pub k1: u64,
+                    }
+
+                    pub fn new() -> RandomState {
+                        RandomState {
+                            k0: abstract_value!(0),
+                            k1: abstract_value!(1),
+                        }
+                    }
+                }
             }
         }
     }
