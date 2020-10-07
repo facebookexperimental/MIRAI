@@ -9,7 +9,7 @@ use rustc_ast::ast;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, SubstsRef};
-use rustc_middle::ty::{Ty, TyKind};
+use rustc_middle::ty::{AdtDef, Ty, TyCtxt, TyKind};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
@@ -1911,6 +1911,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     /// Reinterprets the bits of a value of one type as another type.
+    ///
+    /// Both types must have the same size. Neither the original, nor the result,
+    /// may be an [invalid value](../../nomicon/what-unsafe-does.html).
+    ///
+    /// `transmute` is semantically equivalent to a bitwise move of one type
+    /// into another. It copies the bits from the source value into the
+    /// destination value, then forgets the original. It's equivalent to C's
+    /// `memcpy` under the hood, just like `transmute_copy`.
     #[logfn_inputs(TRACE)]
     fn handle_transmute(&mut self) {
         checked_assume!(self.actual_args.len() == 1);
@@ -1928,6 +1936,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .type_visitor
                 .get_rustc_place_type(place, self.block_visitor.bv.current_span);
+            // todo: use copy_field_bits for these cases (and others)
             if type_visitor::is_thin_pointer(&target_rustc_type.kind()) {
                 source_path = Path::get_path_to_thin_pointer_at_offset_0(
                     self.block_visitor.bv.tcx,
@@ -1945,14 +1954,152 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 )
                 .unwrap_or(target_path);
             }
-            self.block_visitor.bv.copy_or_move_elements(
-                target_path,
-                source_path,
-                target_rustc_type,
-                true,
-            );
+
+            fn add_leaf_fields_for<'a>(
+                path: Rc<Path>,
+                def: &'a AdtDef,
+                substs: SubstsRef<'a>,
+                tcx: TyCtxt<'a>,
+                accumulator: &mut Vec<(Rc<Path>, Ty<'a>)>,
+            ) {
+                let variant = def.variants.iter().next().expect("at least one variant");
+                for (i, field) in variant.fields.iter().enumerate() {
+                    let field_path = Path::new_field(path.clone(), i);
+                    let field_ty = field.ty(tcx, substs);
+                    if let TyKind::Adt(def, substs) = field_ty.kind() {
+                        add_leaf_fields_for(field_path, def, substs, tcx, accumulator)
+                    } else {
+                        accumulator.push((field_path, field_ty))
+                    }
+                }
+            };
+
+            match (source_rustc_type.kind(), target_rustc_type.kind()) {
+                (
+                    TyKind::Adt(source_def, source_substs),
+                    TyKind::Adt(target_def, target_substs),
+                ) => {
+                    let mut source_fields = Vec::new();
+                    add_leaf_fields_for(
+                        source_path,
+                        source_def,
+                        source_substs,
+                        self.block_visitor.bv.tcx,
+                        &mut source_fields,
+                    );
+                    let mut target_fields = Vec::new();
+                    add_leaf_fields_for(
+                        target_path,
+                        target_def,
+                        target_substs,
+                        self.block_visitor.bv.tcx,
+                        &mut target_fields,
+                    );
+                    self.copy_field_bits(source_fields, target_fields);
+                }
+                _ => {
+                    self.block_visitor.bv.copy_or_move_elements(
+                        target_path,
+                        source_path,
+                        target_rustc_type,
+                        true,
+                    );
+                }
+            }
         }
         self.use_entry_condition_as_exit_condition();
+    }
+
+    /// Assign abstract values to the target fields that are consistent with the concrete values
+    /// that will arise at runtime if the sequential (packed) bytes of the source fields are copied to the
+    /// target fields on a little endian machine.
+    #[logfn_inputs(INFO)]
+    fn copy_field_bits(
+        &mut self,
+        source_fields: Vec<(Rc<Path>, Ty<'tcx>)>,
+        target_fields: Vec<(Rc<Path>, Ty<'tcx>)>,
+    ) {
+        let source_len = source_fields.len();
+        let mut source_field_index = 0;
+        let mut copied_source_bits = 0;
+        for (target_path, target_type) in target_fields.into_iter() {
+            if source_field_index >= source_len {
+                // The rust compiler should not permit this to happen
+                assume_unreachable!("transmute called on types with different bit lengths");
+            }
+            let (source_path, source_type) = &source_fields[source_field_index];
+            let source_path = source_path.refine_paths(&self.block_visitor.bv.current_environment);
+            let mut val = self
+                .block_visitor
+                .bv
+                .lookup_path_and_refine_result(source_path.clone(), source_type);
+            if copied_source_bits > 0 {
+                // discard the lower order bits from val since they have already been copied to a previous target field
+                val = val.unsigned_shift_right(copied_source_bits);
+            }
+            let source_bits = ExpressionType::from(source_type.kind()).bit_length();
+            let target_expression_type = ExpressionType::from(target_type.kind());
+            let mut target_bits_to_write = target_expression_type.bit_length();
+            if source_bits - copied_source_bits >= target_bits_to_write {
+                // target field can be completely assigned from bits of source field value
+                if source_bits - copied_source_bits > target_bits_to_write {
+                    // discard higher order bits since they wont fit into the target field
+                    val = val.unsigned_modulo(target_bits_to_write);
+                }
+                self.block_visitor
+                    .bv
+                    .current_environment
+                    .update_value_at(target_path, val.transmute(target_expression_type));
+                copied_source_bits += target_bits_to_write;
+                if copied_source_bits == source_bits {
+                    source_field_index += 1;
+                    copied_source_bits = 0;
+                }
+            } else {
+                // target field needs bits from multiple source fields
+                let mut written_target_bits = source_bits - copied_source_bits;
+                target_bits_to_write -= written_target_bits;
+                val = val.unsigned_modulo(written_target_bits);
+                loop {
+                    // Get another field
+                    source_field_index += 1;
+                    if source_field_index >= source_len {
+                        // The rust compiler should not permit this to happen
+                        assume_unreachable!("transmute called on types with different bit lengths");
+                    }
+                    let (source_path, source_type) = &source_fields[source_field_index];
+                    let source_path =
+                        source_path.refine_paths(&self.block_visitor.bv.current_environment);
+                    let source_bits = ExpressionType::from(source_type.kind()).bit_length();
+                    let mut next_val = self
+                        .block_visitor
+                        .bv
+                        .lookup_path_and_refine_result(source_path.clone(), source_type);
+                    // discard higher order bits that wont fit into the target field
+                    next_val = next_val.unsigned_modulo(target_bits_to_write);
+                    // shift next value to the left, making space for val in the lower order bits
+                    next_val = next_val.unsigned_shift_left(written_target_bits);
+                    // update val to include next_val (in its higher order bits, thanks to the shift left above)
+                    val = next_val.addition(val);
+                    if source_bits >= target_bits_to_write {
+                        // We are done with this target field
+                        self.block_visitor.bv.current_environment.update_value_at(
+                            target_path.clone(),
+                            val.transmute(target_expression_type.clone()),
+                        );
+                        if source_bits == target_bits_to_write {
+                            copied_source_bits = 0;
+                            source_field_index += 1;
+                        } else {
+                            copied_source_bits = target_bits_to_write;
+                        }
+                        break;
+                    }
+                    target_bits_to_write -= source_bits;
+                    written_target_bits += source_bits;
+                }
+            }
+        }
     }
 
     #[logfn_inputs(TRACE)]

@@ -1150,10 +1150,21 @@ impl Z3Solver {
                     z3_sys::Z3_mk_fpa_rem(self.z3_context, left_ast, right_ast),
                 )
             } else {
-                (
-                    false,
-                    z3_sys::Z3_mk_rem(self.z3_context, left_ast, right_ast),
-                )
+                let left_type = left.expression.infer_type();
+                if left_type.is_unsigned_integer() {
+                    (
+                        false,
+                        z3_sys::Z3_mk_rem(self.z3_context, left_ast, right_ast),
+                    )
+                } else {
+                    (false, {
+                        let cond = z3_sys::Z3_mk_lt(self.z3_context, left_ast, self.zero);
+                        let rem = z3_sys::Z3_mk_rem(self.z3_context, left_ast, right_ast);
+                        let tmp = vec![self.zero, rem];
+                        let neg_rem = z3_sys::Z3_mk_sub(self.z3_context, 2, tmp.as_ptr());
+                        z3_sys::Z3_mk_ite(self.z3_context, cond, neg_rem, rem)
+                    })
+                }
             }
         }
     }
@@ -1269,58 +1280,116 @@ impl Z3Solver {
                         let exp_type = expression.infer_type();
                         if exp_type == *target_type {
                             self.get_as_numeric_z3_ast(expression)
-                        } else {
-                            let bv_cast = self.bv_cast(expression, target_type, 128);
-                            let bv_cast_to_int = z3_sys::Z3_mk_bv2int(
-                                self.z3_context,
-                                bv_cast,
-                                target_type.is_signed_integer(),
-                            );
-
-                            // If both exp_type and target_type are signed integers, or both are unsigned
-                            // integers, we don't need to cast exp to bit-vectors if the value of exp lies
-                            // in the range of target_type.
-                            if (exp_type.is_signed_integer() && target_type.is_signed_integer())
-                                || (exp_type.is_unsigned_integer()
-                                    && target_type.is_unsigned_integer())
-                            {
-                                let ast = self.get_as_numeric_z3_ast(expression).1;
-                                if *target_type == ExpressionType::I128
-                                    || *target_type == ExpressionType::U128
-                                {
-                                    // The cast does not do anything at runtime, so just use ast and
-                                    // keep things simple for the solver.
-                                    return (false, ast);
-                                }
-                                let target_type_min_ast =
-                                    self.get_constant_as_ast(&target_type.min_value());
-                                let target_type_max_ast =
-                                    self.get_constant_as_ast(&target_type.max_value());
-                                let range_check = self.get_range_check(
-                                    ast,
-                                    target_type_min_ast,
-                                    target_type_max_ast,
-                                );
-                                (
-                                    false,
-                                    z3_sys::Z3_mk_ite(
-                                        self.z3_context,
-                                        range_check,
-                                        ast,
-                                        bv_cast_to_int,
-                                    ),
+                        } else if exp_type.is_signed_integer() {
+                            // In order to (re-interpret) cast the expr value to unsigned, or
+                            // just to safely truncate it, we need to compute the 2's complement.
+                            let expr_ast = self.get_as_numeric_z3_ast(expression).1;
+                            let modulo_constant = target_type.as_unsigned().modulo_constant();
+                            let modulo_ast = if modulo_constant.is_bottom() {
+                                let num_str = "340282366920938463463374607431768211456";
+                                let c_string = CString::new(num_str).unwrap();
+                                z3_sys::Z3_mk_numeral(
+                                    self.z3_context,
+                                    c_string.into_raw(),
+                                    self.int_sort,
                                 )
                             } else {
-                                (false, bv_cast_to_int)
+                                self.get_constant_as_ast(&modulo_constant)
+                            };
+                            let args = vec![expr_ast, modulo_ast];
+                            let complement = z3_sys::Z3_mk_add(self.z3_context, 2, args.as_ptr());
+                            let is_negative =
+                                z3_sys::Z3_mk_lt(self.z3_context, expr_ast, self.zero);
+                            let mut unsigned_ast = z3_sys::Z3_mk_ite(
+                                self.z3_context,
+                                is_negative,
+                                complement,
+                                expr_ast,
+                            );
+
+                            // Truncate the complement by taking its unsigned remainder, if need be
+                            if target_type.bit_length() < exp_type.bit_length() {
+                                unsigned_ast =
+                                    z3_sys::Z3_mk_rem(self.z3_context, unsigned_ast, modulo_ast);
                             }
+
+                            self.transmute_to_signed_if_necessary(
+                                &target_type,
+                                modulo_ast,
+                                unsigned_ast,
+                            )
+                        } else if exp_type.is_unsigned_integer() {
+                            let mut unsigned_ast = self.get_as_numeric_z3_ast(expression).1;
+                            let modulo_constant = target_type.as_unsigned().modulo_constant();
+                            let modulo_ast = if modulo_constant.is_bottom() {
+                                let num_str = "340282366920938463463374607431768211456";
+                                let c_string = CString::new(num_str).unwrap();
+                                z3_sys::Z3_mk_numeral(
+                                    self.z3_context,
+                                    c_string.into_raw(),
+                                    self.int_sort,
+                                )
+                            } else {
+                                self.get_constant_as_ast(&modulo_constant)
+                            };
+
+                            // Truncate the expression value if need be
+                            if target_type.bit_length() < exp_type.bit_length() {
+                                unsigned_ast =
+                                    z3_sys::Z3_mk_rem(self.z3_context, unsigned_ast, modulo_ast);
+                            }
+
+                            self.transmute_to_signed_if_necessary(
+                                &target_type,
+                                modulo_ast,
+                                unsigned_ast,
+                            )
+                        } else {
+                            // expression type is not numeric, but the result of the cast is expected to
+                            // be numeric. This probably a mistake.
+                            info!(
+                                "non numeric expression {:?} being cast to {:?}",
+                                expression, target_type
+                            );
+                            (
+                                false,
+                                z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.int_sort),
+                            )
                         }
                     } else {
-                        (
-                            false,
-                            z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.int_sort),
-                        )
+                        // target type is not numeric, but the result of the cast is expected to
+                        // be numeric. This probably a mistake.
+                        info!(
+                            "non numeric cast to {:?} found in numeric context {:?}",
+                            target_type, expression
+                        );
+                        self.get_as_numeric_z3_ast(expression)
                     }
                 }
+            }
+        }
+    }
+
+    fn transmute_to_signed_if_necessary(
+        &self,
+        target_type: &ExpressionType,
+        modulo_ast: z3_sys::Z3_ast,
+        unsigned_ast: z3_sys::Z3_ast,
+    ) -> (bool, z3_sys::Z3_ast) {
+        unsafe {
+            if target_type.is_signed_integer() {
+                // re-interpret the unsigned bits as a signed number by conditionally subtracting
+                let max_val_ast = self.get_constant_as_ast(&target_type.max_value());
+                let is_positive = z3_sys::Z3_mk_le(self.z3_context, unsigned_ast, max_val_ast);
+                let signed_ast =
+                    z3_sys::Z3_mk_sub(self.z3_context, 2, vec![unsigned_ast, modulo_ast].as_ptr());
+                (
+                    false,
+                    z3_sys::Z3_mk_ite(self.z3_context, is_positive, unsigned_ast, signed_ast),
+                )
+            } else {
+                // target type is an integer and not signed
+                (false, unsigned_ast)
             }
         }
     }
@@ -1548,8 +1617,20 @@ impl Z3Solver {
             Expression::WidenedJoin { path, operand } => {
                 self.get_ast_for_widened(path, operand, ExpressionType::Bool)
             }
-            //todo: relational operators
-            _ => self.get_as_z3_ast(expression),
+            _ => {
+                let expression_type = expression.infer_type();
+                if expression_type.is_integer() {
+                    let (_, ast) = self.get_as_numeric_z3_ast(expression);
+                    unsafe {
+                        z3_sys::Z3_mk_not(
+                            self.z3_context,
+                            z3_sys::Z3_mk_eq(self.z3_context, ast, self.zero),
+                        )
+                    }
+                } else {
+                    self.get_as_z3_ast(expression)
+                }
+            }
         }
     }
 
@@ -1630,7 +1711,10 @@ impl Z3Solver {
             Expression::BitXor { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvxor)
             }
-            Expression::Cast { target_type, .. } => self.bv_cast(expression, target_type, num_bits),
+            Expression::Cast {
+                target_type,
+                operand,
+            } => self.bv_cast(&operand.expression, target_type, num_bits),
             Expression::CompileTimeConstant(const_domain) => {
                 self.bv_constant(num_bits, const_domain)
             }
@@ -1758,17 +1842,9 @@ impl Z3Solver {
         target_type: &ExpressionType,
         num_bits: u32,
     ) -> z3_sys::Z3_ast {
-        let path_str = CString::new(format!("{:?}", expression)).unwrap();
+        let ast = self.get_as_bv_z3_ast(expression, num_bits);
         let mask = self.bv_constant(num_bits, &target_type.max_value());
-        unsafe {
-            let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
-            let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
-            z3_sys::Z3_mk_bvand(
-                self.z3_context,
-                mask,
-                z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort),
-            )
-        }
+        unsafe { z3_sys::Z3_mk_bvand(self.z3_context, ast, mask) }
     }
 
     #[logfn_inputs(TRACE)]

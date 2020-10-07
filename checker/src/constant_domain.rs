@@ -284,12 +284,11 @@ impl ConstantDomain {
             }
 
             ConstantDomain::U128(val) => {
-                if *target_type == ExpressionType::Char {
-                    ConstantDomain::Char((*val as u8) as char)
-                } else if target_type.is_signed_integer() {
+                if target_type.is_signed_integer() {
                     ConstantDomain::I128(*val as i128).cast(target_type)
                 } else {
                     match target_type {
+                        ExpressionType::Char => ConstantDomain::Char((*val as u8) as char),
                         ExpressionType::U8 => ConstantDomain::U128((*val as u8) as u128),
                         ExpressionType::U16 => ConstantDomain::U128((*val as u16) as u128),
                         ExpressionType::U32 => ConstantDomain::U128((*val as u32) as u128),
@@ -298,7 +297,7 @@ impl ConstantDomain {
                         ExpressionType::Usize => ConstantDomain::U128((*val as usize) as u128),
                         ExpressionType::F32 => ConstantDomain::F32((*val as f32).to_bits()),
                         ExpressionType::F64 => ConstantDomain::F64((*val as f64).to_bits()),
-                        _ => ConstantDomain::Bottom.clone(),
+                        _ => ConstantDomain::Bottom,
                     }
                 }
             }
@@ -307,6 +306,7 @@ impl ConstantDomain {
                     ConstantDomain::U128(*val as u128).cast(target_type)
                 } else {
                     match target_type {
+                        ExpressionType::Char => ConstantDomain::Char((*val as i8 as u8) as char),
                         ExpressionType::I8 => ConstantDomain::I128((*val as i8) as i128),
                         ExpressionType::I16 => ConstantDomain::I128((*val as i16) as i128),
                         ExpressionType::I32 => ConstantDomain::I128((*val as i32) as i128),
@@ -315,7 +315,7 @@ impl ConstantDomain {
                         ExpressionType::Isize => ConstantDomain::I128((*val as isize) as i128),
                         ExpressionType::F32 => ConstantDomain::F32((*val as f32).to_bits()),
                         ExpressionType::F64 => ConstantDomain::F64((*val as f64).to_bits()),
-                        _ => ConstantDomain::Bottom.clone(),
+                        _ => ConstantDomain::Bottom,
                     }
                 }
             }
@@ -330,7 +330,7 @@ impl ConstantDomain {
                 } else if *target_type == ExpressionType::F32 {
                     self.clone()
                 } else {
-                    ConstantDomain::Bottom.clone()
+                    ConstantDomain::Bottom
                 }
             }
             ConstantDomain::F64(val) => {
@@ -344,7 +344,7 @@ impl ConstantDomain {
                 } else if *target_type == ExpressionType::F64 {
                     self.clone()
                 } else {
-                    ConstantDomain::Bottom.clone()
+                    ConstantDomain::Bottom
                 }
             }
             _ => self.clone(),
@@ -618,6 +618,11 @@ impl ConstantDomain {
             }
             _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
         }
+    }
+
+    #[logfn(TRACE)]
+    pub fn is_bottom(&self) -> bool {
+        matches!(self, ConstantDomain::Bottom)
     }
 
     /// Returns a constant that is "self <= other".
@@ -937,6 +942,95 @@ impl ConstantDomain {
                 _ => return ConstantDomain::Bottom,
             }
             .into(),
+            _ => ConstantDomain::Bottom,
+        }
+    }
+
+    /// A cast that re-interprets existing bits rather than doing conversions.
+    /// When the source type and target types differ in length, bits are truncated
+    /// or zero filled as appropriate.
+    #[logfn(TRACE)]
+    #[allow(clippy::transmute_int_to_char)]
+    pub fn transmute(&self, target_type: ExpressionType) -> Self {
+        if target_type == ExpressionType::U128 {
+            match self {
+                ConstantDomain::Char(val) => ConstantDomain::U128(*val as u128),
+                ConstantDomain::False => ConstantDomain::U128(0),
+                ConstantDomain::F64(val) => ConstantDomain::U128(*val as u128),
+                ConstantDomain::F32(val) => ConstantDomain::U128(*val as u128),
+                ConstantDomain::I128(val) => ConstantDomain::U128(*val as u128),
+                ConstantDomain::True => ConstantDomain::U128(1),
+                ConstantDomain::U128(..) => self.clone(),
+                _ => ConstantDomain::Bottom,
+            }
+        } else {
+            let self_as_u128 = self.transmute(ExpressionType::U128);
+            if let ConstantDomain::U128(val) = self_as_u128 {
+                match target_type {
+                    ExpressionType::Char => unsafe {
+                        ConstantDomain::Char(std::mem::transmute::<u32, char>(val as u32))
+                    },
+                    ExpressionType::U8 => ConstantDomain::U128((val as u8) as u128),
+                    ExpressionType::U16 => ConstantDomain::U128((val as u16) as u128),
+                    ExpressionType::U32 => ConstantDomain::U128((val as u32) as u128),
+                    ExpressionType::U64 => ConstantDomain::U128((val as u64) as u128),
+                    ExpressionType::U128 => self.clone(),
+                    ExpressionType::Usize => ConstantDomain::U128((val as usize) as u128),
+                    ExpressionType::F32 => ConstantDomain::F32(val as u32),
+                    ExpressionType::F64 => ConstantDomain::F64(val as u64),
+                    _ => ConstantDomain::Bottom,
+                }
+            } else {
+                ConstantDomain::Bottom
+            }
+        }
+    }
+
+    /// Returns an expression that discards (zero fills) bits that are not in the specified number
+    /// of least significant bits. The result is an unsigned integer.
+    #[logfn(TRACE)]
+    pub fn unsigned_modulo(&self, num_bits: u8) -> Self {
+        let mask: u128 = (1 << num_bits) - 1;
+        match self {
+            ConstantDomain::Char(val) => ConstantDomain::U128((*val as u128) & mask),
+            ConstantDomain::False => ConstantDomain::U128(0),
+            ConstantDomain::F64(val) => ConstantDomain::U128((*val as u128) & mask),
+            ConstantDomain::F32(val) => ConstantDomain::U128((*val as u128) & mask),
+            ConstantDomain::I128(val) => ConstantDomain::U128((*val as u128) & mask),
+            ConstantDomain::True => ConstantDomain::U128(1u128 & mask),
+            ConstantDomain::U128(val) => ConstantDomain::U128(*val & mask),
+            _ => ConstantDomain::Bottom,
+        }
+    }
+
+    /// Returns an expression that shifts the bit representation of the value to the left by the
+    /// given number of bits, filling in with zeroes. The result is an unsigned integer.
+    #[logfn(TRACE)]
+    pub fn unsigned_shift_left(&self, num_bits: u8) -> Self {
+        match self {
+            ConstantDomain::Char(val) => ConstantDomain::U128((*val as u128) << num_bits),
+            ConstantDomain::False => ConstantDomain::U128(0),
+            ConstantDomain::F64(val) => ConstantDomain::U128((*val as u128) << num_bits),
+            ConstantDomain::F32(val) => ConstantDomain::U128((*val as u128) << num_bits),
+            ConstantDomain::I128(val) => ConstantDomain::U128((*val as u128) << num_bits),
+            ConstantDomain::True => ConstantDomain::U128(1u128 << num_bits),
+            ConstantDomain::U128(val) => ConstantDomain::U128(*val << num_bits),
+            _ => ConstantDomain::Bottom,
+        }
+    }
+
+    /// Returns an expression that shifts the bit representation of the value to the right by the
+    /// given number of bits, filling in with zeroes. The result is an unsigned integer.
+    #[logfn(TRACE)]
+    pub fn unsigned_shift_right(&self, num_bits: u8) -> Self {
+        match self {
+            ConstantDomain::Char(val) => ConstantDomain::U128((*val as u128) >> num_bits),
+            ConstantDomain::False => ConstantDomain::U128(0),
+            ConstantDomain::F64(val) => ConstantDomain::U128((*val as u128) >> num_bits),
+            ConstantDomain::F32(val) => ConstantDomain::U128((*val as u128) >> num_bits),
+            ConstantDomain::I128(val) => ConstantDomain::U128((*val as u128) >> num_bits),
+            ConstantDomain::True => ConstantDomain::U128(1u128 >> num_bits),
+            ConstantDomain::U128(val) => ConstantDomain::U128(*val >> num_bits),
             _ => ConstantDomain::Bottom,
         }
     }

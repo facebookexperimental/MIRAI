@@ -1161,6 +1161,21 @@ impl ExpressionType {
         matches!(self, I8 | I16 | I32 | I64 | I128 | Isize)
     }
 
+    /// Returns the unsigned equivalent of a signed integer type, otherwise returns self.
+    #[logfn_inputs(TRACE)]
+    pub fn as_unsigned(&self) -> ExpressionType {
+        use self::ExpressionType::*;
+        match self {
+            I8 => ExpressionType::U8,
+            I16 => ExpressionType::U16,
+            I32 => ExpressionType::U32,
+            I64 => ExpressionType::U64,
+            I128 => ExpressionType::U128,
+            Isize => ExpressionType::Usize,
+            _ => self.clone(),
+        }
+    }
+
     /// Returns true if this type is one of the unsigned integer types.
     #[logfn_inputs(TRACE)]
     pub fn is_unsigned_integer(&self) -> bool {
@@ -1174,8 +1189,8 @@ impl ExpressionType {
     pub fn bit_length(&self) -> u8 {
         use self::ExpressionType::*;
         match self {
-            Bool => 1,
-            Char => 16,
+            Bool => 8,
+            Char => 32,
             Function => 64,
             F32 => 32,
             F64 => 64,
@@ -1203,7 +1218,7 @@ impl ExpressionType {
     pub fn max_value(&self) -> ConstantDomain {
         use self::ExpressionType::*;
         match self {
-            Bool => ConstantDomain::U128(1 as u128),
+            Bool => ConstantDomain::U128(255 as u128),
             Char => ConstantDomain::U128(std::char::MAX as u128),
             F32 => ConstantDomain::F32(std::f32::MAX.to_bits()),
             F64 => ConstantDomain::F64(std::f64::MAX.to_bits()),
@@ -1247,6 +1262,22 @@ impl ExpressionType {
             U128 => ConstantDomain::U128(std::u128::MIN),
             Usize => ConstantDomain::U128(std::usize::MIN as u128),
             _ => ConstantDomain::Bottom,
+        }
+    }
+
+    /// Returns the maximum value for this type, plus one, as ConstantDomain element.
+    /// If the type is not a primitive integer value, the result is Bottom.
+    #[allow(clippy::cast_lossless)]
+    #[logfn_inputs(TRACE)]
+    pub fn modulo_constant(&self) -> Rc<ConstantDomain> {
+        use self::ExpressionType::*;
+        match self {
+            U8 => Rc::new(ConstantDomain::U128((std::u8::MAX) as u128 + 1)),
+            U16 => Rc::new(ConstantDomain::U128((std::u16::MAX) as u128 + 1)),
+            U32 => Rc::new(ConstantDomain::U128((std::u32::MAX) as u128 + 1)),
+            U64 => Rc::new(ConstantDomain::U128((std::u64::MAX) as u128 + 1)),
+            Usize => Rc::new(ConstantDomain::U128((std::usize::MAX) as u128 + 1)),
+            _ => Rc::new(ConstantDomain::Bottom),
         }
     }
 
