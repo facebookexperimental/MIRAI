@@ -8,6 +8,7 @@ use crate::expression::ExpressionType::{self, *};
 use log_derive::logfn_inputs;
 use serde::{Deserialize, Serialize};
 use std::cmp;
+use std::convert::TryFrom;
 
 #[derive(Serialize, Deserialize, Clone, Eq, PartialOrd, PartialEq, Hash, Ord)]
 pub struct OctagonDomain {
@@ -37,6 +38,17 @@ impl From<i128> for OctagonDomain {
     #[logfn_inputs(TRACE)]
     fn from(i: i128) -> OctagonDomain {
         OctagonDomain::new(i, i)
+    }
+}
+
+impl From<u128> for OctagonDomain {
+    #[logfn_inputs(TRACE)]
+    fn from(u: u128) -> OctagonDomain {
+        if let Result::Ok(i) = i128::try_from(u) {
+            i.into()
+        } else {
+            OctagonDomain::new(std::i128::MAX, std::i128::MAX)
+        }
     }
 }
 
