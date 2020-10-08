@@ -10,6 +10,33 @@ use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::convert::TryFrom;
 
+/// An element of the Octagon domain is a Distance-Bound Matrix(DBM) of size 4x4.
+/// Each cell of the matrix represents potential constraint of the form Vi-Vj<=c,
+/// where c is some constant, Vi and Vj are variables. 
+/// For instance, DBM can be represented as follows 
+///   | V1 |  V2 |  V3 |  V4 |
+/// V1|  0 | -10 |  -5 |  15 |
+/// V2| 10 |   0 | -15 |   5 |
+/// V3| -5 |  15 |   0 | -20 |
+/// V4| 15 |   5 |  20 |   0 |
+///
+/// The matrix has twice more columns and rows because each variable represents
+/// positive and negative values in the constraints. More specifically, V2i-1 is
+/// a positive value, V2i is a negative one. In other words, if at some point 
+/// of the static analysis some variable x has been encountered, V1 would 
+/// represent +x values while V2 -x ones. Thus, the constraint V2-V1<=-10 can be
+/// represented as x >=-5.
+/// Octagon domain elements are constructed on demand from AbstractDomain expressions.
+/// They are useful in places where the Interval domain is not precise enough. For
+/// example, in the code below the Interval domain will give y=[0;+inf] precision,
+/// while the Octagon domain - y=[0;4]
+/// ```
+/// let x = 0; let y = 0;
+/// while x < 4 {
+///     x += 1;
+///     y = if random() { y + 1 };
+/// } 
+/// ```
 #[derive(Serialize, Deserialize, Clone, Eq, PartialOrd, PartialEq, Hash, Ord)]
 pub struct OctagonDomain {
     dbm: [[i128; 4]; 4],
