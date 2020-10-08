@@ -2824,10 +2824,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             base_path
         } else {
-            let ty = self.bv.type_visitor.specialize_generic_argument_type(
-                self.bv.mir.local_decls[place.local].ty,
-                &self.bv.type_visitor.generic_argument_map,
-            );
+            let ty = self.bv.type_visitor.get_loc_ty(place.local);
             self.visit_projection(base_path, ty, &place.projection)
         }
     }
