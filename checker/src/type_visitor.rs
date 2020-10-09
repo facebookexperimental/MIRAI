@@ -757,7 +757,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     let param_env = self
                         .tcx
                         .param_env(self.tcx.associated_item(item_def_id).container.id());
-                    let specialized_substs = self.specialize_substs(projection.substs, map);
                     if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
                         self.tcx,
                         param_env,
@@ -766,12 +765,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     ) {
                         let item_def_id = instance.def.def_id();
                         let item_type = self.tcx.type_of(item_def_id);
-                        if item_type == gen_arg_type {
+                        let map = self.get_generic_arguments_map(item_def_id, instance.substs, &[]);
+                        if item_type == gen_arg_type && map.is_none() {
                             // Can happen if the projection just adds a life time
                             item_type
                         } else {
-                            let map =
-                                self.get_generic_arguments_map(item_def_id, instance.substs, &[]);
                             self.specialize_generic_argument_type(item_type, &map)
                         }
                     } else {
