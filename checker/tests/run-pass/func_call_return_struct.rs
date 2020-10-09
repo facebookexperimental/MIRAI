@@ -6,9 +6,6 @@
 
 // A test that uses a function summary where the return value is a structure.
 
-// MIRAI_FLAGS -- -Z mir-opt-level=0
-//todo: implement deserialization of constant structs
-
 use mirai_annotations::*;
 
 struct Foo {
