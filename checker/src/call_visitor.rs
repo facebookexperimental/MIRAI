@@ -891,6 +891,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .1
                     .intrinsic_binary(self.actual_args[1].1.clone(), self.callee_known_name)
             }
+            KnownNames::StdIntrinsicsMinAlignOfVal => self.handle_min_align_of_val(),
             KnownNames::StdIntrinsicsMulWithOverflow => self.handle_checked_binary_operation(),
             KnownNames::StdIntrinsicsOffset => self.handle_offset(),
             KnownNames::StdIntrinsicsSizeOf => self.handle_size_of(),
@@ -1845,6 +1846,26 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             &self
                 .destination
                 .expect("std::intrinsics::size_of should have a destination")
+                .0,
+        );
+        AbstractValue::make_typed_unknown(ExpressionType::U128, path)
+    }
+
+    /// Returns the [ABI]-required minimum alignment of the type of the value that `val` points to.
+    ///
+    /// Every reference to a value of the type `T` must be a multiple of this number.
+    fn handle_min_align_of_val(&mut self) -> Rc<AbstractValue> {
+        let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
+        checked_assume!(self.actual_argument_types.len() == 1);
+        let t = self.actual_argument_types[0];
+        if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(t)) {
+            return Rc::new((ty_and_layout.layout.align.abi.bytes() as u128).into());
+        }
+        // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).
+        let path = self.block_visitor.visit_place(
+            &self
+                .destination
+                .expect("std::intrinsics::min_align_of_val should have a destination")
                 .0,
         );
         AbstractValue::make_typed_unknown(ExpressionType::U128, path)

@@ -1400,9 +1400,6 @@ pub mod core {
             pub fn pref_align_of<T>() -> usize {
                 result!()
             }
-            pub fn min_align_of_val<T: ?Sized>(_: &T) -> usize {
-                result!()
-            }
             pub fn type_name<T: ?Sized>() -> &'static str {
                 result!()
             }
