@@ -12,4 +12,7 @@
 #[macro_use]
 extern crate mirai_annotations;
 
+#[macro_use]
+mod macros;
+
 pub mod foreign_contracts;
