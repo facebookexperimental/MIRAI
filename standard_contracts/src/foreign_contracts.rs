@@ -83,7 +83,7 @@ pub mod core {
             pub fn alloc<T>(
                 _self: T,
                 layout: std::alloc::Layout,
-            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr>
+            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocError>
             where
                 T: std::alloc::AllocRef,
             {
@@ -96,7 +96,7 @@ pub mod core {
             pub fn alloc_zeroed<T>(
                 _self: T,
                 layout: std::alloc::Layout,
-            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr>
+            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocError>
             where
                 T: std::alloc::AllocRef,
             {
@@ -120,7 +120,7 @@ pub mod core {
                 ptr: std::ptr::NonNull<u8>,
                 layout: std::alloc::Layout,
                 new_size: usize,
-            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocErr>
+            ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocError>
             where
                 T: std::alloc::AllocRef,
             {
@@ -1942,34 +1942,38 @@ pub mod core {
             }
         }
 
-        pub fn memcmp(_s1: *const u8, _s2: *const u8, _n: usize) -> i32 {
-            result!()
+        pub mod cmp {
+            pub fn memcmp(_s1: *const u8, _s2: *const u8, _n: usize) -> i32 {
+                result!()
+            }
         }
 
-        fn slice_end_index_len_fail(index: usize, len: usize) {
-            panic!(
-                "range end index {} out of range for slice of length {}",
-                index, len
-            );
-        }
+        pub mod index {
+            fn slice_end_index_len_fail(index: usize, len: usize) {
+                panic!(
+                    "range end index {} out of range for slice of length {}",
+                    index, len
+                );
+            }
 
-        pub fn slice_index_len_fail(_index: usize, _len: usize) {
-            panic!("index out of range for slice");
-        }
+            pub fn slice_index_len_fail(_index: usize, _len: usize) {
+                panic!("index out of range for slice");
+            }
 
-        pub fn slice_index_order_fail(_index: usize, _end: usize) {
-            panic!("slice index starts at after slice end");
-        }
+            pub fn slice_index_order_fail(_index: usize, _end: usize) {
+                panic!("slice index starts at after slice end");
+            }
 
-        pub fn slice_index_overflow_fail() {
-            panic!("attempted to index slice up to maximum usize");
-        }
+            pub fn slice_index_overflow_fail() {
+                panic!("attempted to index slice up to maximum usize");
+            }
 
-        fn slice_start_index_len_fail(index: usize, len: usize) -> ! {
-            panic!(
-                "range start index {} out of range for slice of length {}",
-                index, len
-            );
+            fn slice_start_index_len_fail(index: usize, len: usize) -> ! {
+                panic!(
+                    "range start index {} out of range for slice of length {}",
+                    index, len
+                );
+            }
         }
     }
 

@@ -766,7 +766,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     pub fn emit_diagnostic_for_precondition(&mut self, precondition: &Precondition, warn: bool) {
         precondition!(self.bv.check_for_errors);
         let mut diagnostic = if warn && !precondition.message.starts_with("possible ") {
-            Rc::new(format!("possible {}", precondition.message))
+            Rc::from(format!("possible {}", precondition.message))
         } else {
             precondition.message.clone()
         };
@@ -774,8 +774,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             if let Some(provenance) = &precondition.provenance {
                 let mut buffer = diagnostic.to_string();
                 buffer.push_str(", defined in ");
-                buffer.push_str(provenance.as_str());
-                diagnostic = Rc::new(buffer);
+                buffer.push_str(provenance.as_ref());
+                diagnostic = Rc::from(buffer.as_str());
             }
         }
         let span = self.bv.current_span;
@@ -783,7 +783,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .cv
             .session
-            .struct_span_warn(span, diagnostic.as_str());
+            .struct_span_warn(span, diagnostic.as_ref());
         for pc_span in precondition.spans.iter() {
             let span_str = self.bv.tcx.sess.source_map().span_to_string(*pc_span);
             if span_str.starts_with("/rustc/") {
@@ -838,9 +838,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     pub fn check_condition(
         &mut self,
         cond: &Rc<AbstractValue>,
-        message: Rc<String>,
+        message: &str,
         is_post_condition: bool,
-    ) -> Option<String> {
+    ) -> Option<Rc<str>> {
         precondition!(self.bv.check_for_errors);
         if cond.is_bottom() {
             return None;
@@ -881,7 +881,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // albeit badly written, if we never get here.
                 let condition = self.bv.current_environment.entry_condition.logical_not();
                 if !condition.expression.contains_local_variable() {
-                    let message = Rc::new(format!("possible {}", message));
+                    let message = Rc::from(format!("possible {}", message));
                     let precondition = Precondition {
                         condition,
                         message,
@@ -910,7 +910,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             self.bv.emit_diagnostic(warning);
         }
 
-        Some(warning)
+        Some(Rc::from(warning.as_str()))
     }
 
     /// Check if the existence of a tag on the given value matches the expectation.
@@ -992,7 +992,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .or(tag_check);
                 let precondition = Precondition {
                     condition,
-                    message: Rc::new(format!("the {} may have a {} tag", value_name, tag_name)),
+                    message: Rc::from(format!("the {} may have a {} tag", value_name, tag_name)),
                     provenance: None,
                     spans: vec![self.bv.current_span],
                 };
@@ -1115,7 +1115,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .entry_condition
                             .logical_not()
                             .or(expected_cond);
-                        let message = Rc::new(String::from(get_assert_msg_description(msg)));
+                        let message = Rc::from(String::from(get_assert_msg_description(msg)));
                         let precondition = Precondition {
                             condition,
                             message,
@@ -2323,12 +2323,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         .update_value_at(discr_path, discr_data);
 
                     if discr_has_data {
+                        use std::ops::Deref;
+
                         // Obtains the name of this variant.
                         let name_str = {
-                            use std::ops::Deref;
                             let enum_def = ty.ty_adt_def().unwrap();
                             let variant_def = &enum_def.variants[discr_index];
-                            String::from(variant_def.ident.name.as_str().deref())
+                            variant_def.ident.name.as_str()
                         };
                         trace!("discr name {:?}", name_str);
 
@@ -2338,7 +2339,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             Path::new_qualified(
                                 Path::get_as_path(e.clone()),
                                 Rc::new(PathSelector::Downcast(
-                                    Rc::new(name_str),
+                                    Rc::from(name_str.deref()),
                                     discr_index.as_usize(),
                                 )),
                             ),
@@ -2921,10 +2922,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::ProjectionElem::Downcast(name, index) => {
                 use std::ops::Deref;
                 let name_str = match name {
-                    None => format!("variant#{}", index.as_usize()),
-                    Some(name) => String::from(name.as_str().deref()),
+                    None => Rc::from(format!("variant#{}", index.as_usize())),
+                    Some(name) => Rc::from(name.as_str().deref()),
                 };
-                PathSelector::Downcast(Rc::new(name_str), index.as_usize())
+                PathSelector::Downcast(name_str, index.as_usize())
             }
         }
     }

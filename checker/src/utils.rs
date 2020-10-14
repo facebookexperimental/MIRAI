@@ -77,16 +77,13 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
 /// Returns a string that is a valid identifier, made up from the concatenation of
 /// the string representations of the given list of generic argument types.
 #[logfn(TRACE)]
-pub fn argument_types_key_str<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    generic_args: SubstsRef<'tcx>,
-) -> Rc<String> {
+pub fn argument_types_key_str<'tcx>(tcx: TyCtxt<'tcx>, generic_args: SubstsRef<'tcx>) -> Rc<str> {
     let mut result = "_".to_string();
     for generic_ty_arg in generic_args.types() {
         result.push('_');
         append_mangled_type(&mut result, generic_ty_arg, tcx);
     }
-    Rc::new(result)
+    Rc::from(result.as_str())
 }
 
 /// Appends a string to str with the constraint that it must uniquely identify ty and also
@@ -288,7 +285,7 @@ fn crate_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 /// long as the definition does not change its name or location, so it can be used to
 /// transfer information from one compilation to the next, making incremental analysis possible.
 #[logfn(TRACE)]
-pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
+pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
     let mut name = crate_name(tcx, def_id);
     let mut parent_is_type = false;
     for component in &tcx.def_path(def_id).data {
@@ -319,7 +316,7 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
             name.push_str(da.as_str());
         }
     }
-    Rc::new(name)
+    Rc::from(name.as_str())
 }
 
 /// Returns true if the first component is a module named "foreign_contracts".

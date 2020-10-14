@@ -199,6 +199,7 @@ fn invoke_driver(
             &mut call_backs,
             None, // use default file loader
             None, // emit output to default destination
+            None, // use default code gen backend
         )
     });
     match result {

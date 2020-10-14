@@ -72,7 +72,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
             let def_id = local_def_id.to_def_id();
             let name = utils::summary_key_str(self.tcx, def_id);
             if let Some(white_list) = &function_whitelist {
-                if !self.included_in(white_list.as_ref(), name.as_str(), def_id) {
+                if !self.included_in(white_list.as_ref(), name.as_ref(), def_id) {
                     if self.options.single_func.is_none() {
                         debug!(
                             "skipping function {} as it is not selected for analysis",

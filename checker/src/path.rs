@@ -157,7 +157,7 @@ pub enum PathEnum {
         #[serde(skip)]
         def_id: Option<DefId>,
         /// The key to use when retrieving a summary for the static variable from the summary cache.
-        summary_cache_key: Rc<String>,
+        summary_cache_key: Rc<str>,
         /// The type to use when the static variable value is not yet available.
         expression_type: ExpressionType,
     },
@@ -569,7 +569,7 @@ impl Path {
 
     /// Creates a path the selects the given model field of the value at the given path.
     #[logfn_inputs(TRACE)]
-    pub fn new_model_field(qualifier: Rc<Path>, field_name: Rc<String>) -> Rc<Path> {
+    pub fn new_model_field(qualifier: Rc<Path>, field_name: Rc<str>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::ModelField(field_name));
         Self::new_qualified(qualifier, selector)
     }
@@ -951,12 +951,12 @@ pub enum PathSelector {
 
     /// "Downcast" to a variant of an ADT. Currently, MIR only introduces
     /// this for ADTs with more than one variant. The value is the ordinal of the variant.
-    Downcast(Rc<String>, usize),
+    Downcast(Rc<str>, usize),
 
     /// Select the struct model field with the given name.
     /// A model field is a specification construct used during MIRAI verification
     /// and does not have a runtime location.
-    ModelField(Rc<String>),
+    ModelField(Rc<str>),
 
     /// Select the tag field of a non-scalar value.
     /// Similar to model fields, the tag field is a verification-specific construct and it
