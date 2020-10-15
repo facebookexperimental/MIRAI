@@ -15,8 +15,7 @@ pub fn main() {
     let old_len = v.len();
     verify!(old_len == 0);
     v.push_back(1);
-    //todo: fix these
-    //verify!(v.len() == old_len + 1);
+    verify!(v.len() == old_len + 1);
     v.pop_back();
-    //verify!(v.len() == old_len);
+    verify!(v.len() == old_len);
 }
