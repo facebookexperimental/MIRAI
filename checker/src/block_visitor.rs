@@ -765,6 +765,19 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn emit_diagnostic_for_precondition(&mut self, precondition: &Precondition, warn: bool) {
         precondition!(self.bv.check_for_errors);
+        // In relaxed mode we don't want to complain if the condition or reachability depends on
+        // a parameter, since it is assumed that an implicit precondition was intended by the author.
+        if matches!(self.bv.cv.options.diag_level, DiagLevel::RELAXED)
+            && (precondition.condition.expression.contains_parameter()
+                || self
+                    .bv
+                    .current_environment
+                    .entry_condition
+                    .expression
+                    .contains_parameter())
+        {
+            return;
+        }
         let mut diagnostic = if warn && !precondition.message.starts_with("possible ") {
             Rc::from(format!("possible {}", precondition.message))
         } else {
@@ -902,6 +915,19 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             || cond.expression.contains_local_variable()
             || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
+            // In relaxed mode we don't want to complain if the condition or reachability depends on
+            // a parameter, since it is assumed that an implicit precondition was intended by the author.
+            if matches!(self.bv.cv.options.diag_level, DiagLevel::RELAXED)
+                && (cond.expression.contains_parameter()
+                    || self
+                        .bv
+                        .current_environment
+                        .entry_condition
+                        .expression
+                        .contains_parameter())
+            {
+                return None;
+            }
             // We expect public functions to have programmer supplied preconditions
             // that preclude any assertions from failing. So, at this stage we get to
             // complain a bit.
@@ -1084,6 +1110,19 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
                         || cond_val.expression.contains_local_variable()
                     {
+                        // In relaxed mode we don't want to complain if the condition or reachability depends on
+                        // a parameter, since it is assumed that an implicit precondition was intended by the author.
+                        if matches!(self.bv.cv.options.diag_level, DiagLevel::RELAXED)
+                            && (cond_val.expression.contains_parameter()
+                                || self
+                                    .bv
+                                    .current_environment
+                                    .entry_condition
+                                    .expression
+                                    .contains_parameter())
+                        {
+                            return;
+                        }
                         // Can't make this the caller's problem.
                         let warning = format!("possible {}", get_assert_msg_description(msg));
                         let span = self.bv.current_span;
