@@ -441,12 +441,16 @@ pub trait AbstractValueTrait: Sized {
         fresh: usize,
     ) -> Self;
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Self;
+    fn transmute(&self, target_type: ExpressionType) -> Self;
     fn uninterpreted_call(
         &self,
         arguments: Vec<Rc<AbstractValue>>,
         result_type: ExpressionType,
         path: Rc<Path>,
     ) -> Self;
+    fn unsigned_modulo(&self, num_bits: u8) -> Self;
+    fn unsigned_shift_left(&self, num_bits: u8) -> Self;
+    fn unsigned_shift_right(&self, num_bits: u8) -> Self;
     fn uses(&self, variables: &HashSet<Rc<Path>>) -> bool;
     fn widen(&self, path: &Rc<Path>) -> Self;
 }
@@ -3126,87 +3130,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
-    fn uses(&self, variables: &HashSet<Rc<Path>>) -> bool {
-        match &self.expression {
-            Expression::Bottom => false,
-            Expression::Top => true,
-            Expression::Add { left, right }
-            | Expression::AddOverflows { left, right, .. }
-            | Expression::And { left, right }
-            | Expression::BitAnd { left, right }
-            | Expression::BitOr { left, right }
-            | Expression::BitXor { left, right }
-            | Expression::Div { left, right }
-            | Expression::Equals { left, right }
-            | Expression::GreaterOrEqual { left, right }
-            | Expression::GreaterThan { left, right }
-            | Expression::IntrinsicBinary { left, right, .. }
-            | Expression::LessOrEqual { left, right }
-            | Expression::LessThan { left, right }
-            | Expression::Mul { left, right }
-            | Expression::MulOverflows { left, right, .. }
-            | Expression::Ne { left, right }
-            | Expression::Offset { left, right }
-            | Expression::Or { left, right }
-            | Expression::Rem { left, right }
-            | Expression::Shl { left, right }
-            | Expression::ShlOverflows { left, right, .. }
-            | Expression::Shr { left, right, .. }
-            | Expression::ShrOverflows { left, right, .. }
-            | Expression::Sub { left, right }
-            | Expression::SubOverflows { left, right, .. } => {
-                left.uses(variables) || right.uses(variables)
-            }
-            Expression::BitNot { operand, .. }
-            | Expression::Cast { operand, .. }
-            | Expression::IntrinsicBitVectorUnary { operand, .. }
-            | Expression::IntrinsicFloatingPointUnary { operand, .. }
-            | Expression::Neg { operand }
-            | Expression::LogicalNot { operand }
-            | Expression::TaggedExpression { operand, .. }
-            | Expression::UnknownTagCheck { operand, .. } => operand.uses(variables),
-            Expression::CompileTimeConstant(..) => false,
-            Expression::ConditionalExpression {
-                condition,
-                consequent,
-                alternate,
-            } => {
-                condition.uses(variables) || consequent.uses(variables) || alternate.uses(variables)
-            }
-            Expression::HeapBlock { .. } => false,
-            Expression::HeapBlockLayout {
-                length, alignment, ..
-            } => length.uses(variables) || alignment.uses(variables),
-            Expression::Join { left, right, path } => {
-                variables.contains(path) || left.uses(variables) || right.uses(variables)
-            }
-            Expression::Reference(path)
-            | Expression::InitialParameterValue { path, .. }
-            | Expression::UnknownTagField { path }
-            | Expression::Variable { path, .. }
-            | Expression::WidenedJoin { path, .. } => variables.contains(path),
-            Expression::Switch {
-                discriminator,
-                cases,
-                default,
-            } => {
-                discriminator.uses(variables)
-                    || default.uses(variables)
-                    || cases.iter().any(|(case_val, result_val)| {
-                        case_val.uses(variables) || result_val.uses(variables)
-                    })
-            }
-            Expression::UninterpretedCall {
-                callee,
-                arguments: args,
-                ..
-            } => callee.uses(variables) || args.iter().any(|arg| arg.uses(variables)),
-            Expression::UnknownModelField { path, default } => {
-                variables.contains(path) || default.uses(variables)
-            }
-        }
-    }
-
     /// Replaces occurrences of Expression::Variable(path) with the value at that path
     /// in the given environment (if there is such a value).
     #[logfn_inputs(TRACE)]
@@ -4119,6 +4042,25 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
+    /// A cast that re-interprets existing bits rather than doing conversions.
+    /// When the source type and target types differ in length, bits are truncated
+    /// or zero filled as appropriate.
+    #[logfn(TRACE)]
+    fn transmute(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(c) = &self.expression {
+            Rc::new(c.transmute(target_type).into())
+        } else if target_type.is_integer() {
+            self.unsigned_modulo(target_type.bit_length())
+                .cast(target_type)
+        } else if target_type == ExpressionType::Bool {
+            self.unsigned_modulo(target_type.bit_length())
+                .not_equals(Rc::new(ConstantDomain::U128(0).into()))
+        } else {
+            // todo: add an expression case that will delay transmutation until the operand refines to a constant
+            AbstractValue::make_typed_unknown(target_type, Path::get_as_path(self.clone()))
+        }
+    }
+
     /// Returns a domain whose corresponding set of concrete values include all of the values
     /// that the call expression might return at runtime. The function to be called will not
     /// have been summarized for some reason or another (for example, it might be a foreign function).
@@ -4130,6 +4072,128 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         path: Rc<Path>,
     ) -> Rc<AbstractValue> {
         AbstractValue::make_uninterpreted_call(self.clone(), arguments, result_type, path)
+    }
+
+    /// Returns an expression that discards (zero fills) bits that are not in the specified number
+    /// of least significant bits. The result is an unsigned integer.
+    #[logfn(TRACE)]
+    fn unsigned_modulo(&self, num_bits: u8) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(c) = &self.expression {
+            Rc::new(c.unsigned_modulo(num_bits).into())
+        } else {
+            let power_of_two = Rc::new(ConstantDomain::U128(1 << num_bits).into());
+            let unsigned = self.try_to_retype_as(&ExpressionType::U128);
+            unsigned.remainder(power_of_two)
+        }
+    }
+
+    /// Returns an expression that shifts the bit representation of the value to the left by the
+    /// given number of bits, filling in with zeroes. The result is an unsigned integer.
+    #[logfn(TRACE)]
+    fn unsigned_shift_left(&self, num_bits: u8) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(c) = &self.expression {
+            Rc::new(c.unsigned_shift_left(num_bits).into())
+        } else {
+            let power_of_two = Rc::new(ConstantDomain::U128(1 << num_bits).into());
+            let unsigned = self.try_to_retype_as(&ExpressionType::U128);
+            unsigned.multiply(power_of_two)
+        }
+    }
+
+    /// Returns an expression that shifts the bit representation of the value to the right by the
+    /// given number of bits, filling in with zeroes. The result is an unsigned integer.
+    #[logfn(TRACE)]
+    fn unsigned_shift_right(&self, num_bits: u8) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(c) = &self.expression {
+            Rc::new(c.unsigned_shift_right(num_bits).into())
+        } else {
+            let power_of_two = Rc::new(ConstantDomain::U128(1 << num_bits).into());
+            let unsigned = self.try_to_retype_as(&ExpressionType::U128);
+            unsigned.divide(power_of_two)
+        }
+    }
+
+    /// Returns true if the expression uses any of the variables in the given set.
+    #[logfn(TRACE)]
+    fn uses(&self, variables: &HashSet<Rc<Path>>) -> bool {
+        match &self.expression {
+            Expression::Bottom => false,
+            Expression::Top => true,
+            Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
+            | Expression::Ne { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Or { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
+            | Expression::Shr { left, right, .. }
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => {
+                left.uses(variables) || right.uses(variables)
+            }
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::Neg { operand }
+            | Expression::LogicalNot { operand }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::UnknownTagCheck { operand, .. } => operand.uses(variables),
+            Expression::CompileTimeConstant(..) => false,
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                condition.uses(variables) || consequent.uses(variables) || alternate.uses(variables)
+            }
+            Expression::HeapBlock { .. } => false,
+            Expression::HeapBlockLayout {
+                length, alignment, ..
+            } => length.uses(variables) || alignment.uses(variables),
+            Expression::Join { left, right, path } => {
+                variables.contains(path) || left.uses(variables) || right.uses(variables)
+            }
+            Expression::Reference(path)
+            | Expression::InitialParameterValue { path, .. }
+            | Expression::UnknownTagField { path }
+            | Expression::Variable { path, .. }
+            | Expression::WidenedJoin { path, .. } => variables.contains(path),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                discriminator.uses(variables)
+                    || default.uses(variables)
+                    || cases.iter().any(|(case_val, result_val)| {
+                        case_val.uses(variables) || result_val.uses(variables)
+                    })
+            }
+            Expression::UninterpretedCall {
+                callee,
+                arguments: args,
+                ..
+            } => callee.uses(variables) || args.iter().any(|arg| arg.uses(variables)),
+            Expression::UnknownModelField { path, default } => {
+                variables.contains(path) || default.uses(variables)
+            }
+        }
     }
 
     /// Returns an abstract value whose corresponding set of concrete values include all of the values

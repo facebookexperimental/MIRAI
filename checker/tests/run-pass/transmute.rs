@@ -39,4 +39,73 @@ pub unsafe fn t3() {
     // println!("{}", *ptr1);
 }
 
+#[derive(Clone, Copy)]
+pub struct A {
+    pub x: i16,
+    pub y: i16,
+}
+
+struct B {
+    x0: i8,
+    x1: i8,
+    y0: i8,
+    y1: i8,
+}
+
+#[repr(packed)]
+struct BIB {
+    b1: bool,
+    i: i16,
+    b2: bool,
+}
+
+struct BA {
+    a: BIB,
+}
+
+struct CH {
+    c: char,
+}
+
+struct F {
+    f: f32,
+}
+
+pub unsafe fn t4() {
+    let a = A { x: -1, y: -256 };
+    let b = std::mem::transmute::<A, B>(a);
+    verify!(b.x0 == -1);
+    verify!(b.x1 == -1);
+    verify!(b.y0 == 0);
+    verify!(b.y1 == -1);
+    let a = A { x: -1, y: -256 };
+    let f = std::mem::transmute::<A, F>(a);
+    verify!(f.f == -171470400000000000000000000000000000000.0);
+    let a = A { x: -1, y: -256 };
+    let ba = std::mem::transmute::<A, BA>(a);
+    verify!(ba.a.b1 == true);
+    verify!(ba.a.i == 255);
+    verify!(ba.a.b2 == true);
+    let a = A { x: -1, y: 4 };
+    let ch = std::mem::transmute::<A, CH>(a);
+    verify!(ch.c == '\u{4ffff}');
+    let ba = BA {
+        a: BIB {
+            b1: false,
+            b2: true,
+            i: 123,
+        },
+    };
+    let a = std::mem::transmute::<BA, A>(ba);
+    verify!(a.x == 31488);
+    verify!(a.y == 256);
+}
+
+pub unsafe fn t5(a: A) {
+    let bib = std::mem::transmute::<A, BIB>(a);
+    verify!(bib.b1 || (a.x % 256) == 0);
+    verify!(bib.b2 || (a.y / 256) == 0);
+    verify!(bib.i == (((a.x as u16 / 256) + ((a.y as u16 % 256) * 256)) as i16));
+}
+
 pub fn main() {}

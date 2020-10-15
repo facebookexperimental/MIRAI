@@ -1422,9 +1422,6 @@ pub mod core {
                 result!()
             }
             pub fn forget<T>(_: T) {}
-            pub fn transmute<T, U>(e: T) -> U {
-                result!()
-            }
             pub fn needs_drop<T>() -> bool {
                 result!()
             }
