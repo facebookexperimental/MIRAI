@@ -133,13 +133,9 @@ fn main() {
             "rustc_command_line_arguments {:?}",
             rustc_command_line_arguments
         );
-        rustc_driver::run_compiler(
-            &rustc_command_line_arguments,
-            &mut callbacks,
-            None, // use default file loader
-            None, // emit output to default destination
-            None, // use default code gen backend
-        )
+        let compiler =
+            rustc_driver::RunCompiler::new(&rustc_command_line_arguments, &mut callbacks);
+        compiler.run()
     })
     .and_then(|result| result);
     let exit_code = match result {

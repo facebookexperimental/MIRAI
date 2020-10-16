@@ -243,9 +243,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::TerminatorKind::SwitchInt {
                 discr,
                 switch_ty,
-                values,
                 targets,
-            } => self.visit_switch_int(discr, switch_ty, values, targets),
+            } => self.visit_switch_int(discr, switch_ty, targets),
             mir::TerminatorKind::Resume => self.visit_resume(),
             mir::TerminatorKind::Abort => self.visit_abort(),
             mir::TerminatorKind::Return => self.visit_return(),
@@ -291,25 +290,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .insert_mut(target, self.bv.current_environment.entry_condition.clone());
     }
 
-    /// `discr` evaluates to an integer; jump depending on its value
-    /// to one of the targets, and otherwise fallback to last element of `targets`.
-    ///
-    /// # Arguments
-    /// * `discr` - Discriminant value being tested
-    /// * `switch_ty` - type of value being tested
-    /// * `values` - Possible values. The locations to branch to in each case
-    /// are found in the corresponding indices from the `targets` vector.
-    /// * `targets` - Possible branch sites. The last element of this vector is used
-    /// for the otherwise branch, so targets.len() == values.len() + 1 should hold.
+    /// Operand evaluates to an integer; jump depending on its value
+    /// to one of the targets, and otherwise fallback to `otherwise`.
     #[logfn_inputs(TRACE)]
     fn visit_switch_int(
         &mut self,
         discr: &mir::Operand<'tcx>,
         switch_ty: rustc_middle::ty::Ty<'tcx>,
-        values: &[u128],
-        targets: &[mir::BasicBlock],
+        targets: &rustc_middle::mir::SwitchTargets,
     ) {
-        assume!(targets.len() == values.len() + 1);
         let mut default_exit_condition = self.bv.current_environment.entry_condition.clone();
         let discr = self.visit_operand(discr);
 
@@ -346,8 +335,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
         // Continue to deal with the branch targets.
         let discr = discr.as_int_if_known().unwrap_or(discr);
-        for i in 0..values.len() {
-            let val = self.get_int_const_val(values[i], switch_ty);
+        for (i, target) in targets.iter() {
+            let val = self.get_int_const_val(i, switch_ty);
             let cond = discr.equals(val);
             let exit_condition = self
                 .bv
@@ -356,7 +345,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .and(cond.clone());
             let not_cond = cond.logical_not();
             default_exit_condition = default_exit_condition.and(not_cond);
-            let target = targets[i];
             let existing_exit_condition = self
                 .bv
                 .current_environment
@@ -380,7 +368,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         self.bv
             .current_environment
             .exit_conditions
-            .insert_mut(targets[values.len()], default_exit_condition);
+            .insert_mut(targets.otherwise(), default_exit_condition);
     }
 
     /// Indicates that the landing pad is finished and unwinding should
