@@ -679,7 +679,7 @@ pub trait PathRefinement: Sized {
     /// or leaks it back to the caller in the qualifier of a path then
     /// we want to dereference the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
-    fn refine_paths(&self, environment: &Environment) -> Rc<Path>;
+    fn refine_paths(&self, environment: &Environment, depth: usize) -> Rc<Path>;
 
     /// Returns a copy of self with the root replaced by new_root.
     fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path>;
@@ -760,13 +760,17 @@ impl PathRefinement for Rc<Path> {
     /// we want to remove the reference from the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
     #[logfn_inputs(TRACE)]
-    fn refine_paths(&self, environment: &Environment) -> Rc<Path> {
+    fn refine_paths(&self, environment: &Environment, depth: usize) -> Rc<Path> {
         if let Some(val) = environment.value_at(&self) {
             if val.refers_to_unknown_location() {
                 // self is an alias for val
                 return Path::get_as_path(val.clone());
             }
         };
+        if depth > k_limits::MAX_REFINE_DEPTH {
+            info!("refine depth exceeded for path {:?}", self);
+            return self.clone();
+        }
         // self is a path that is not a key in the environment. This could be because it is not
         // canonical.
         match &self.value {
@@ -779,15 +783,15 @@ impl PathRefinement for Rc<Path> {
             }
             PathEnum::Offset { value } => {
                 checked_assume!(matches!(&value.expression, Expression::Offset{..}));
-                Path::get_as_path(value.refine_paths(environment))
+                Path::get_as_path(value.refine_paths(environment, depth))
             }
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
-                length,
+                ..
             } => {
-                let refined_selector = selector.refine_paths(environment);
-                let refined_qualifier = qualifier.refine_paths(environment);
+                let refined_selector = selector.refine_paths(environment, depth);
+                let refined_qualifier = qualifier.refine_paths(environment, depth);
                 // The qualifier is now canonical. But in the context of a selector, we
                 // might be able to simplify the qualifier by dropping an explicit dereference
                 // or an explicit reference.
@@ -813,7 +817,7 @@ impl PathRefinement for Rc<Path> {
                         // since self is a qualified path we have to drop the reference operator
                         // since selectors implicitly dereference pointers.
                         return Path::new_qualified(path.clone(), refined_selector)
-                            .refine_paths(environment);
+                            .refine_paths(environment, depth);
                     }
                 }
                 if let PathSelector::Downcast(_, variant) = refined_selector.as_ref() {
@@ -847,13 +851,7 @@ impl PathRefinement for Rc<Path> {
                             );
                         }
                         Expression::Variable { path, .. } => {
-                            // This is not ideal, but without some kind of check this can overflow the stack.
-                            // Investigate this some more in the future. (It involves joins.)
-                            let mut refined_path = if path.path_length() < *length {
-                                path.refine_paths(environment)
-                            } else {
-                                path.clone()
-                            };
+                            let mut refined_path = path.refine_paths(environment, depth + 1);
                             // if the variable's path is a qualified path that has a qualifier
                             // that is an explicit dereference (because of parameter refinement)
                             // the dereference has to be dropped in order for the path to be canonical.
@@ -1053,7 +1051,7 @@ pub trait PathSelectorRefinement: Sized {
     /// with the value at that path (if there is one). If no refinement is possible
     /// the result is simply a clone of this value. This refinement only makes sense
     /// following a call to refine_parameters.
-    fn refine_paths(&self, environment: &Environment) -> Self;
+    fn refine_paths(&self, environment: &Environment, depth: usize) -> Self;
 }
 
 impl PathSelectorRefinement for Rc<PathSelector> {
@@ -1086,14 +1084,14 @@ impl PathSelectorRefinement for Rc<PathSelector> {
     /// the result is simply a clone of this value. This refinement only makes sense
     /// following a call to refine_parameters.
     #[logfn_inputs(TRACE)]
-    fn refine_paths(&self, environment: &Environment) -> Rc<PathSelector> {
+    fn refine_paths(&self, environment: &Environment, depth: usize) -> Rc<PathSelector> {
         match self.as_ref() {
             PathSelector::Index(value) => {
-                let refined_value = value.refine_paths(environment);
+                let refined_value = value.refine_paths(environment, depth);
                 Rc::new(PathSelector::Index(refined_value))
             }
             PathSelector::Slice(value) => {
-                let refined_value = value.refine_paths(environment);
+                let refined_value = value.refine_paths(environment, depth);
                 Rc::new(PathSelector::Slice(refined_value))
             }
             _ => self.clone(),

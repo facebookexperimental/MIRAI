@@ -432,7 +432,7 @@ pub trait AbstractValueTrait: Sized {
     fn get_cached_tags(&self) -> Rc<TagDomain>;
     fn get_tags(&self) -> TagDomain;
     fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>>;
-    fn refine_paths(&self, environment: &Environment) -> Self;
+    fn refine_paths(&self, environment: &Environment, depth: usize) -> Self;
     fn refine_parameters(
         &self,
         arguments: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -3137,62 +3137,66 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Replaces occurrences of Expression::Variable(path) with the value at that path
     /// in the given environment (if there is such a value).
     #[logfn_inputs(TRACE)]
-    fn refine_paths(&self, environment: &Environment) -> Rc<AbstractValue> {
+    fn refine_paths(&self, environment: &Environment, depth: usize) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Bottom | Expression::Top => self.clone(),
             Expression::Add { left, right } => left
-                .refine_paths(environment)
-                .addition(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .addition(right.refine_paths(environment, depth)),
             Expression::AddOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_paths(environment)
-                .add_overflows(right.refine_paths(environment), result_type.clone()),
+                .refine_paths(environment, depth)
+                .add_overflows(right.refine_paths(environment, depth), result_type.clone()),
             Expression::And { left, right } => left
-                .refine_paths(environment)
-                .and(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .and(right.refine_paths(environment, depth)),
             Expression::BitAnd { left, right } => left
-                .refine_paths(environment)
-                .bit_and(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .bit_and(right.refine_paths(environment, depth)),
             Expression::BitNot {
                 operand,
                 result_type,
             } => operand
-                .refine_paths(environment)
+                .refine_paths(environment, depth)
                 .bit_not(result_type.clone()),
             Expression::BitOr { left, right } => left
-                .refine_paths(environment)
-                .bit_or(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .bit_or(right.refine_paths(environment, depth)),
             Expression::BitXor { left, right } => left
-                .refine_paths(environment)
-                .bit_xor(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .bit_xor(right.refine_paths(environment, depth)),
             Expression::Cast {
                 operand,
                 target_type,
-            } => operand.refine_paths(environment).cast(target_type.clone()),
+            } => operand
+                .refine_paths(environment, depth)
+                .cast(target_type.clone()),
             Expression::CompileTimeConstant(..) => self.clone(),
             Expression::ConditionalExpression {
                 condition,
                 consequent,
                 alternate,
-            } => condition.refine_paths(environment).conditional_expression(
-                consequent.refine_paths(environment),
-                alternate.refine_paths(environment),
-            ),
+            } => condition
+                .refine_paths(environment, depth)
+                .conditional_expression(
+                    consequent.refine_paths(environment, depth),
+                    alternate.refine_paths(environment, depth),
+                ),
             Expression::Div { left, right } => left
-                .refine_paths(environment)
-                .divide(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .divide(right.refine_paths(environment, depth)),
             Expression::Equals { left, right } => left
-                .refine_paths(environment)
-                .equals(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .equals(right.refine_paths(environment, depth)),
             Expression::GreaterOrEqual { left, right } => left
-                .refine_paths(environment)
-                .greater_or_equal(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .greater_or_equal(right.refine_paths(environment, depth)),
             Expression::GreaterThan { left, right } => left
-                .refine_paths(environment)
-                .greater_than(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .greater_than(right.refine_paths(environment, depth)),
             Expression::HeapBlock { .. } => self.clone(),
             Expression::HeapBlockLayout {
                 length,
@@ -3200,119 +3204,121 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 source,
             } => AbstractValue::make_from(
                 Expression::HeapBlockLayout {
-                    length: length.refine_paths(environment),
-                    alignment: alignment.refine_paths(environment),
+                    length: length.refine_paths(environment, depth),
+                    alignment: alignment.refine_paths(environment, depth),
                     source: *source,
                 },
                 1,
             ),
             Expression::IntrinsicBinary { left, right, name } => left
-                .refine_paths(environment)
-                .intrinsic_binary(right.refine_paths(environment), *name),
+                .refine_paths(environment, depth)
+                .intrinsic_binary(right.refine_paths(environment, depth), *name),
             Expression::IntrinsicBitVectorUnary {
                 operand,
                 bit_length,
                 name,
             } => operand
-                .refine_paths(environment)
+                .refine_paths(environment, depth)
                 .intrinsic_bit_vector_unary(*bit_length, *name),
             Expression::IntrinsicFloatingPointUnary { operand, name } => operand
-                .refine_paths(environment)
+                .refine_paths(environment, depth)
                 .intrinsic_floating_point_unary(*name),
-            Expression::Join { left, right, path } => left.refine_paths(environment).join(
-                right.refine_paths(environment),
-                &path.refine_paths(environment),
+            Expression::Join { left, right, path } => left.refine_paths(environment, depth).join(
+                right.refine_paths(environment, depth),
+                &path.refine_paths(environment, depth),
             ),
             Expression::LessOrEqual { left, right } => left
-                .refine_paths(environment)
-                .less_or_equal(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .less_or_equal(right.refine_paths(environment, depth)),
             Expression::LessThan { left, right } => left
-                .refine_paths(environment)
-                .less_than(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .less_than(right.refine_paths(environment, depth)),
             Expression::Mul { left, right } => left
-                .refine_paths(environment)
-                .multiply(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .multiply(right.refine_paths(environment, depth)),
             Expression::MulOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_paths(environment)
-                .mul_overflows(right.refine_paths(environment), result_type.clone()),
+                .refine_paths(environment, depth)
+                .mul_overflows(right.refine_paths(environment, depth), result_type.clone()),
             Expression::Ne { left, right } => left
-                .refine_paths(environment)
-                .not_equals(right.refine_paths(environment)),
-            Expression::Neg { operand } => operand.refine_paths(environment).negate(),
-            Expression::LogicalNot { operand } => operand.refine_paths(environment).logical_not(),
+                .refine_paths(environment, depth)
+                .not_equals(right.refine_paths(environment, depth)),
+            Expression::Neg { operand } => operand.refine_paths(environment, depth).negate(),
+            Expression::LogicalNot { operand } => {
+                operand.refine_paths(environment, depth).logical_not()
+            }
             Expression::Offset { left, right } => left
-                .refine_paths(environment)
-                .offset(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .offset(right.refine_paths(environment, depth)),
             Expression::Or { left, right } => left
-                .refine_paths(environment)
-                .or(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .or(right.refine_paths(environment, depth)),
             Expression::Reference(path) => {
-                let refined_path = path.refine_paths(environment);
+                let refined_path = path.refine_paths(environment, depth);
                 AbstractValue::make_reference(refined_path)
             }
             Expression::InitialParameterValue { path, var_type } => {
-                let refined_path = path.refine_paths(environment);
+                let refined_path = path.refine_paths(environment, depth);
                 AbstractValue::make_initial_parameter_value(var_type.clone(), refined_path)
             }
             Expression::Rem { left, right } => left
-                .refine_paths(environment)
-                .remainder(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .remainder(right.refine_paths(environment, depth)),
             Expression::Shl { left, right } => left
-                .refine_paths(environment)
-                .shift_left(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .shift_left(right.refine_paths(environment, depth)),
             Expression::ShlOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_paths(environment)
-                .shl_overflows(right.refine_paths(environment), result_type.clone()),
+                .refine_paths(environment, depth)
+                .shl_overflows(right.refine_paths(environment, depth), result_type.clone()),
             Expression::Shr {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_paths(environment)
-                .shr(right.refine_paths(environment), result_type.clone()),
+                .refine_paths(environment, depth)
+                .shr(right.refine_paths(environment, depth), result_type.clone()),
             Expression::ShrOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_paths(environment)
-                .shr_overflows(right.refine_paths(environment), result_type.clone()),
+                .refine_paths(environment, depth)
+                .shr_overflows(right.refine_paths(environment, depth), result_type.clone()),
             Expression::Sub { left, right } => left
-                .refine_paths(environment)
-                .subtract(right.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .subtract(right.refine_paths(environment, depth)),
             Expression::SubOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_paths(environment)
-                .sub_overflows(right.refine_paths(environment), result_type.clone()),
+                .refine_paths(environment, depth)
+                .sub_overflows(right.refine_paths(environment, depth), result_type.clone()),
             Expression::Switch {
                 discriminator,
                 cases,
                 default,
-            } => discriminator.refine_paths(environment).switch(
+            } => discriminator.refine_paths(environment, depth).switch(
                 cases
                     .iter()
                     .map(|(case_val, result_val)| {
                         (
-                            case_val.refine_paths(environment),
-                            result_val.refine_paths(environment),
+                            case_val.refine_paths(environment, depth),
+                            result_val.refine_paths(environment, depth),
                         )
                     })
                     .collect(),
-                default.refine_paths(environment),
+                default.refine_paths(environment, depth),
             ),
             Expression::TaggedExpression { operand, tag } => {
-                operand.refine_paths(environment).add_tag(*tag)
+                operand.refine_paths(environment, depth).add_tag(*tag)
             }
             Expression::UninterpretedCall {
                 callee,
@@ -3320,12 +3326,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 result_type,
                 path,
             } => {
-                let refined_callee = callee.refine_paths(environment);
+                let refined_callee = callee.refine_paths(environment, depth);
                 let refined_arguments = args
                     .iter()
-                    .map(|arg| arg.refine_paths(environment))
+                    .map(|arg| arg.refine_paths(environment, depth))
                     .collect();
-                let refined_path = path.refine_paths(environment);
+                let refined_path = path.refine_paths(environment, depth);
                 refined_callee.uninterpreted_call(
                     refined_arguments,
                     result_type.clone(),
@@ -3333,7 +3339,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 )
             }
             Expression::UnknownModelField { path, default } => {
-                let refined_path = path.refine_paths(environment);
+                let refined_path = path.refine_paths(environment, depth);
                 if let Some(val) = environment.value_at(&refined_path) {
                     // This environment has a value for the model field.
                     val.clone()
@@ -3356,12 +3362,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 tag,
                 checking_presence,
             } => AbstractValue::make_tag_check(
-                operand.refine_paths(environment),
+                operand.refine_paths(environment, depth),
                 *tag,
                 *checking_presence,
             ),
             Expression::UnknownTagField { path } => {
-                let refined_path = path.refine_paths(environment);
+                let refined_path = path.refine_paths(environment, depth);
                 if let Some(val) = environment.value_at(&refined_path) {
                     // This environment has a value for the tag field.
                     val.clone()
@@ -3377,7 +3383,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let Some(val) = environment.value_at(&path) {
                     val.clone()
                 } else {
-                    let refined_path = path.refine_paths(environment);
+                    let refined_path = path.refine_paths(environment, depth);
                     if let PathEnum::Alias { value } = &refined_path.value {
                         value.clone()
                     } else if let Some(val) = environment.value_at(&refined_path) {
@@ -3390,8 +3396,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
             Expression::WidenedJoin { path, operand, .. } => operand
-                .refine_paths(environment)
-                .widen(&path.refine_paths(environment)),
+                .refine_paths(environment, depth)
+                .widen(&path.refine_paths(environment, depth)),
         }
     }
 
@@ -3699,7 +3705,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 let refined_path =
                     path.refine_parameters(arguments, result, pre_environment, fresh);
                 // Do path refinement now, using the pre_environment.
-                let refined_path = refined_path.refine_paths(pre_environment);
+                let refined_path = refined_path.refine_paths(pre_environment, 0);
                 // If the path has a value in the pre_environment, use the value
                 if let Some(val) = pre_environment.value_at(&refined_path) {
                     return val.clone();
