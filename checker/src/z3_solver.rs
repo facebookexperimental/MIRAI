@@ -8,7 +8,6 @@ use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::ConstantDomain;
 use crate::expression::{Expression, ExpressionType};
-use crate::known_names::KnownNames;
 use crate::path::Path;
 use crate::smt_solver::SmtResult;
 use crate::smt_solver::SmtSolver;
@@ -1020,10 +1019,17 @@ impl Z3Solver {
             Expression::IntrinsicBinary { .. } => unsafe {
                 let expresssion_type = expression.infer_type();
                 let sort = self.get_sort_for(&expresssion_type);
-                //todo: use the name to select an appropriate Z3 floating point function
+                //todo: use the name to select an appropriate Z3 function
                 (
                     expresssion_type.is_floating_point_number(),
                     z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort),
+                )
+            },
+            Expression::IntrinsicBitVectorUnary { .. } => unsafe {
+                //todo: use the name to select an appropriate Z3 bitvector function
+                (
+                    false,
+                    z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.int_sort),
                 )
             },
             Expression::IntrinsicFloatingPointUnary { .. } => unsafe {
@@ -1345,24 +1351,28 @@ impl Z3Solver {
                                 unsigned_ast,
                             )
                         } else {
-                            // expression type is not numeric, but the result of the cast is expected to
-                            // be numeric. This probably a mistake.
-                            info!(
-                                "non numeric expression {:?} being cast to {:?}",
-                                expression, target_type
-                            );
+                            if exp_type != ExpressionType::ThinPointer {
+                                // expression type is not numeric and not a pointer, but the result
+                                // of the cast is expected to be numeric. This probably a mistake.
+                                info!(
+                                    "non numeric expression {:?} being cast to {:?}",
+                                    expression, target_type
+                                );
+                            }
                             (
                                 false,
                                 z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.int_sort),
                             )
                         }
                     } else {
-                        // target type is not numeric, but the result of the cast is expected to
-                        // be numeric. This probably a mistake.
-                        info!(
-                            "non numeric cast to {:?} found in numeric context {:?}",
-                            target_type, expression
-                        );
+                        if *target_type != ExpressionType::ThinPointer {
+                            // target type is not numeric and not a pointer, but the result of the
+                            // cast is expected to be numeric. This probably a mistake.
+                            info!(
+                                "non numeric cast to {:?} found in numeric context {:?}",
+                                target_type, expression
+                            );
+                        }
                         self.get_as_numeric_z3_ast(expression)
                     }
                 }
@@ -1723,14 +1733,7 @@ impl Z3Solver {
                 consequent,
                 alternate,
             } => self.bv_conditional(num_bits, condition, consequent, alternate),
-            Expression::IntrinsicBitVectorUnary { name, .. } => match name {
-                KnownNames::StdIntrinsicsCtlz
-                | KnownNames::StdIntrinsicsCtlzNonzero
-                | KnownNames::StdIntrinsicsCtpop
-                | KnownNames::StdIntrinsicsCttz
-                | KnownNames::StdIntrinsicsCttzNonzero => self.numeric_fresh_const().1,
-                _ => self.bv_fresh_const(num_bits),
-            },
+            Expression::IntrinsicBitVectorUnary { .. } => self.bv_fresh_const(num_bits),
             Expression::Join { path, .. } => self.bv_join(num_bits, path),
             Expression::Neg { operand } => self.bv_neg(num_bits, operand),
             Expression::Reference(path) => self.bv_reference(num_bits, path),

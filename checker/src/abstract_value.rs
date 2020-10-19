@@ -1491,6 +1491,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ) if *z == other => {
                 return x.logical_not().or(y.equals(z.clone()));
             }
+            (Expression::Reference { .. }, Expression::Cast { .. })
+            | (Expression::Cast { .. }, Expression::Reference { .. }) => {
+                return Rc::new(FALSE);
+            }
             (x, y) => {
                 // If self and other are the same expression and the expression could not result in
                 // NaN we can simplify this to true.
