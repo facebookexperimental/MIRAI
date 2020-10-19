@@ -1447,216 +1447,226 @@ pub mod core {
                 a * b + c
             }
 
-            pub fn add_with_overflow<T>(x: T, y: T) -> (T, bool) {
-                result!()
-            }
-            pub fn add_with_overflow__u32(x: u32, y: u32) -> (u128, bool) {
-                let result = (x as u128) + (y as u128);
-                (
-                    result % ((std::u32::MAX as u128) + 1),
-                    result > (std::u32::MAX as u128),
-                )
-            }
-            pub fn add_with_overflow__u64(x: u64, y: u64) -> (u128, bool) {
-                let result = (x as u128) + (y as u128);
-                (
-                    result % ((std::u64::MAX as u128) + 1),
-                    result > (std::u64::MAX as u128),
-                )
-            }
-            pub fn add_with_overflow__usize(x: usize, y: usize) -> (u128, bool) {
-                let result = (x as u128) + (y as u128);
-                (
-                    result % ((std::usize::MAX as u128) + 1),
-                    result > (std::usize::MAX as u128),
-                )
-            }
+            add_with_overflow!(i8, i128, add_with_overflow__i8, std::i8::MAX);
+            add_with_overflow!(i16, i128, add_with_overflow__i16, std::i16::MAX);
+            add_with_overflow!(i32, i128, add_with_overflow__i32, std::i32::MAX);
+            add_with_overflow!(i64, i128, add_with_overflow__i64, std::i64::MAX);
+            add_with_overflow!(isize, i128, add_with_overflow__isize, std::isize::MAX);
+            add_with_overflow!(u8, i128, add_with_overflow__u8, std::u8::MAX);
+            add_with_overflow!(u16, i128, add_with_overflow__u16, std::u16::MAX);
+            add_with_overflow!(u32, i128, add_with_overflow__u32, std::u32::MAX);
+            add_with_overflow!(u64, i128, add_with_overflow__u64, std::u64::MAX);
+            add_with_overflow!(usize, i128, add_with_overflow__usize, std::usize::MAX);
 
-            pub fn sub_with_overflow<T>(x: T, y: T) -> (T, bool) {
-                result!()
-            }
-            pub fn sub_with_overflow__u64(x: u64, y: u64) -> (u64, bool) {
-                let result = (x as i128) + (-(y as i128));
-                (
-                    (result % ((std::u64::MAX as i128) + 1)) as u64,
-                    result < 0 || result > (std::usize::MAX as i128),
-                )
-            }
-            pub fn sub_with_overflow__usize(x: usize, y: usize) -> (usize, bool) {
-                let result = (x as i128) + (-(y as i128));
-                (
-                    (result % ((std::usize::MAX as i128) + 1)) as usize,
-                    result < 0 || result > (std::usize::MAX as i128),
-                )
-            }
+            sub_with_overflow!(i8, i128, sub_with_overflow__i8, std::i8::MAX);
+            sub_with_overflow!(i16, i128, sub_with_overflow__i16, std::i16::MAX);
+            sub_with_overflow!(i32, i128, sub_with_overflow__i32, std::i32::MAX);
+            sub_with_overflow!(i64, i128, sub_with_overflow__i64, std::i64::MAX);
+            sub_with_overflow!(isize, i128, sub_with_overflow__isize, std::isize::MAX);
+            sub_with_overflow!(u8, i128, sub_with_overflow__u8, std::u8::MAX);
+            sub_with_overflow!(u16, i128, sub_with_overflow__u16, std::u16::MAX);
+            sub_with_overflow!(u32, i128, sub_with_overflow__u32, std::u32::MAX);
+            sub_with_overflow!(u64, i128, sub_with_overflow__u64, std::u64::MAX);
+            sub_with_overflow!(usize, i128, sub_with_overflow__usize, std::usize::MAX);
 
-            /// Performs an exact division, resulting in undefined behavior when
-            /// `x % y != 0` or `y == 0` or `x == T::min_value() && y == -1`
-            pub fn exact_div<T>(x: T, y: T) -> T {
-                result!()
-            }
-            pub fn exact_div__usize(x: usize, y: usize) -> usize {
-                precondition!(y != 0);
-                precondition!(x % y == 0);
-                x / y
-            }
+            // Performs an exact division, resulting in undefined behavior when
+            // `x % y != 0` or `y == 0` or `x == T::min_value() && y == -1`
+            exact_signed_div!(i8, exact_div__i8, std::i8::MIN);
+            exact_signed_div!(i16, exact_div__i16, std::i16::MIN);
+            exact_signed_div!(i32, exact_div__i32, std::i32::MIN);
+            exact_signed_div!(i64, exact_div__i64, std::i64::MIN);
+            exact_signed_div!(i128, exact_div__i128, std::i128::MIN);
+            exact_signed_div!(isize, exact_div__isize, std::isize::MIN);
+            exact_div!(u8, exact_div__u8);
+            exact_div!(u16, exact_div__u16);
+            exact_div!(u32, exact_div__u32);
+            exact_div!(u64, exact_div__u64);
+            exact_div!(u128, exact_div__u128);
+            exact_div!(usize, exact_div__usize);
 
-            // These operations assume that no overflow/underflow will occur.
-            // This is not checked at runtime, but code generation can proceed
-            // on the assumption that there will be no overflow/underflow.
+            unchecked_signed_div!(i8, unchecked_div__i8, std::i8::MIN);
+            unchecked_signed_div!(i16, unchecked_div__i16, std::i16::MIN);
+            unchecked_signed_div!(i32, unchecked_div__i32, std::i32::MIN);
+            unchecked_signed_div!(i64, unchecked_div__i64, std::i64::MIN);
+            unchecked_signed_div!(i128, unchecked_div__i128, std::i128::MIN);
+            unchecked_signed_div!(isize, unchecked_div__isize, std::isize::MIN);
+            unchecked_div!(u8, unchecked_div__u8);
+            unchecked_div!(u16, unchecked_div__u16);
+            unchecked_div!(u32, unchecked_div__u32);
+            unchecked_div!(u64, unchecked_div__u64);
+            unchecked_div!(u128, unchecked_div__u128);
+            unchecked_div!(usize, unchecked_div__usize);
 
-            pub fn unchecked_div<T>(x: T, y: T) -> T {
-                result!()
-            }
-            pub fn unchecked_div__usize(x: usize, y: usize) -> usize {
-                precondition!(y != 0);
-                x * y
-            }
+            unchecked_signed_rem!(i8, unchecked_rem__i8, std::i8::MIN);
+            unchecked_signed_rem!(i16, unchecked_rem__i16, std::i16::MIN);
+            unchecked_signed_rem!(i32, unchecked_rem__i32, std::i32::MIN);
+            unchecked_signed_rem!(i64, unchecked_rem__i64, std::i64::MIN);
+            unchecked_signed_rem!(i128, unchecked_rem__i128, std::i128::MIN);
+            unchecked_signed_rem!(isize, unchecked_rem__isize, std::isize::MIN);
+            unchecked_rem!(u8, unchecked_rem__u8);
+            unchecked_rem!(u16, unchecked_rem__u16);
+            unchecked_rem!(u32, unchecked_rem__u32);
+            unchecked_rem!(u64, unchecked_rem__u64);
+            unchecked_rem!(u128, unchecked_rem__u128);
+            unchecked_rem!(usize, unchecked_rem__usize);
 
-            pub fn unchecked_rem<T>(x: T, y: T) -> T {
-                result!()
-            }
-            pub fn unchecked_rem__usize(x: usize, y: usize) -> usize {
-                precondition!(y != 0);
-                x % y
-            }
+            unchecked_shl!(i8, unchecked_shl__i8);
+            unchecked_shl!(i16, unchecked_shl__i16);
+            unchecked_shl!(i32, unchecked_shl__i32);
+            unchecked_shl!(i64, unchecked_shl__i64);
+            unchecked_shl!(i128, unchecked_shl__i128);
+            unchecked_shl!(isize, unchecked_shl__isize);
+            unchecked_shl!(u8, unchecked_shl__u8);
+            unchecked_shl!(u16, unchecked_shl__u16);
+            unchecked_shl!(u32, unchecked_shl__u32);
+            unchecked_shl!(u64, unchecked_shl__u64);
+            unchecked_shl!(u128, unchecked_shl__u128);
+            unchecked_shl!(usize, unchecked_shl__usize);
 
-            pub fn unchecked_shl<T>(x: T, y: T) -> T {
-                result!()
-            }
-            pub fn unchecked_shl__usize(x: usize, y: usize) -> usize {
-                //precondition!(y <= size_of__usize());
-                x << y
-            }
+            unchecked_shr!(i8, unchecked_shr__i8);
+            unchecked_shr!(i16, unchecked_shr__i16);
+            unchecked_shr!(i32, unchecked_shr__i32);
+            unchecked_shr!(i64, unchecked_shr__i64);
+            unchecked_shr!(i128, unchecked_shr__i128);
+            unchecked_shr!(isize, unchecked_shr__isize);
+            unchecked_shr!(u8, unchecked_shr__u8);
+            unchecked_shr!(u16, unchecked_shr__u16);
+            unchecked_shr!(u32, unchecked_shr__u32);
+            unchecked_shr!(u64, unchecked_shr__u64);
+            unchecked_shr!(u128, unchecked_shr__u128);
+            unchecked_shr!(usize, unchecked_shr__usize);
 
-            pub fn unchecked_shr<T>(x: T, y: T) -> T {
-                result!()
-            }
-            pub fn unchecked_shr__usize(x: usize, y: usize) -> usize {
-                //precondition!(y <= size_of__usize());
-                x >> y
-            }
+            unchecked_add!(i8, i128, unchecked_add__i8, std::i8::MAX);
+            unchecked_add!(i16, i128, unchecked_add__i16, std::i16::MAX);
+            unchecked_add!(i32, i128, unchecked_add__i32, std::i32::MAX);
+            unchecked_add!(i64, i128, unchecked_add__i64, std::i64::MAX);
+            unchecked_add!(i128, i128, unchecked_add__i128, std::i128::MAX);
+            unchecked_add!(isize, i128, unchecked_add__isize, std::i128::MAX);
+            unchecked_add!(u8, u128, unchecked_add__u8, std::u8::MAX);
+            unchecked_add!(u16, u128, unchecked_add__u16, std::u16::MAX);
+            unchecked_add!(u32, u128, unchecked_add__u32, std::u32::MAX);
+            unchecked_add!(u64, u128, unchecked_add__u64, std::u64::MAX);
+            unchecked_add!(u128, u128, unchecked_add__u128, std::u128::MAX);
+            unchecked_add!(usize, u128, unchecked_add__usize, std::usize::MAX);
 
-            pub fn unchecked_add<T>(x: T, y: T) -> T {
-                result!()
-            }
-            pub fn unchecked_add__usize(x: usize, y: usize) -> usize {
-                precondition!((x as u128) + (y as u128) <= (std::usize::MAX as u128));
-                x + y
-            }
-
-            pub fn unchecked_sub<T>(x: T, y: T) -> T {
-                result!()
-            }
+            unchecked_sub!(i8, unchecked_sub__i8, std::i8::MAX);
+            unchecked_sub!(i16, unchecked_sub__i16, std::i16::MAX);
+            unchecked_sub!(i32, unchecked_sub__i32, std::i32::MAX);
+            unchecked_sub!(i64, unchecked_sub__i64, std::i64::MAX);
+            unchecked_sub!(isize, unchecked_sub__isize, std::i128::MAX);
+            unchecked_sub!(u8, unchecked_sub__u8, std::u8::MAX);
+            unchecked_sub!(u16, unchecked_sub__u16, std::u16::MAX);
+            unchecked_sub!(u32, unchecked_sub__u32, std::u32::MAX);
+            unchecked_sub!(u64, unchecked_sub__u64, std::u64::MAX);
             pub fn unchecked_sub__usize(x: usize, y: usize) -> usize {
-                //precondition!(x >= y);
+                // Do not enable these preconditions until the prover can handle ptr1 - ptr2
+                // where ptr1 has been widened.
+                // precondition!((x as i128) - (y as i128) >= 0);
+                // precondition!((x as i128) - (y as i128) <= (std::usize::MAX as i128));
                 x - y
             }
 
-            pub fn unchecked_mul<T>(x: T, y: T) -> T {
-                result!()
-            }
-            pub fn unchecked_mul__usize(x: usize, y: usize) -> usize {
-                precondition!((x as u128) * (y as u128) <= (std::usize::MAX as u128));
-                x * y
-            }
+            unchecked_mul!(i8, i128, unchecked_mul__i8, std::i8::MAX);
+            unchecked_mul!(i16, i128, unchecked_mul__i16, std::i16::MAX);
+            unchecked_mul!(i32, i128, unchecked_mul__i32, std::i32::MAX);
+            unchecked_mul!(i64, i128, unchecked_mul__i64, std::i64::MAX);
+            unchecked_mul!(i128, i128, unchecked_mul__i128, std::i128::MAX);
+            unchecked_mul!(isize, i128, unchecked_mul__isize, std::isize::MAX);
+            unchecked_mul!(u8, u128, unchecked_mul__u8, std::u8::MAX);
+            unchecked_mul!(u16, u128, unchecked_mul__u16, std::u16::MAX);
+            unchecked_mul!(u32, u128, unchecked_mul__u32, std::u32::MAX);
+            unchecked_mul!(u64, u128, unchecked_mul__u64, std::u64::MAX);
+            unchecked_mul!(u128, u128, unchecked_mul__u128, std::u128::MAX);
+            unchecked_mul!(usize, u128, unchecked_mul__usize, std::usize::MAX);
 
             // rotate_left: (X << (S % BW)) | (X >> ((BW - S) % BW))
-            pub fn rotate_left<T>(x: T, y: T) -> T {
-                result!()
-            }
-            pub fn rotate_left__u32(x: u32, y: u32) -> u32 {
-                let bw = std::intrinsics::size_of::<u32>() as u32;
-                (x << (y % bw)) | (x >> ((bw - y) % bw))
-            }
-            pub fn rotate_left__u64(x: u64, y: u64) -> u64 {
-                let bw = std::intrinsics::size_of::<u64>() as u64;
-                (x << (y % bw)) | (x >> ((bw - y) % bw))
-            }
-            pub fn rotate_left__usize(x: usize, y: usize) -> usize {
-                let bw = std::intrinsics::size_of::<usize>();
-                (x << (y % bw)) | (x >> ((bw - y) % bw))
-            }
+            rotate_left!(i8, rotate_left__i8);
+            rotate_left!(i16, rotate_left__i16);
+            rotate_left!(i32, rotate_left__i32);
+            rotate_left!(i64, rotate_left__i64);
+            rotate_left!(i128, rotate_left__i128);
+            rotate_left!(isize, rotate_left__isize);
+            rotate_left!(u8, rotate_left__u8);
+            rotate_left!(u16, rotate_left__u16);
+            rotate_left!(u32, rotate_left__u32);
+            rotate_left!(u64, rotate_left__u64);
+            rotate_left!(u128, rotate_left__u128);
+            rotate_left!(usize, rotate_left__usize);
 
             // rotate_right: (X << ((BW - S) % BW)) | (X >> (S % BW))
-            pub fn rotate_right<T>(x: T, y: T) -> T {
-                result!()
-            }
-            pub fn rotate_right__u32(x: u32, y: u32) -> u32 {
-                let bw = std::intrinsics::size_of::<u32>() as u32;
-                (x << ((bw - y) % bw)) | (x >> (y % bw))
-            }
-            pub fn rotate_right__u64(x: u64, y: u64) -> u64 {
-                let bw = std::intrinsics::size_of::<u64>() as u64;
-                (x << ((bw - y) % bw)) | (x >> (y % bw))
-            }
-            pub fn rotate_right__usize(x: usize, y: usize) -> usize {
-                let bw = std::intrinsics::size_of::<usize>();
-                (x << ((bw - y) % bw)) | (x >> (y % bw))
-            }
+            rotate_right!(i8, rotate_right__i8);
+            rotate_right!(i16, rotate_right__i16);
+            rotate_right!(i32, rotate_right__i32);
+            rotate_right!(i64, rotate_right__i64);
+            rotate_right!(i128, rotate_right__i128);
+            rotate_right!(isize, rotate_right__isize);
+            rotate_right!(u8, rotate_right__u8);
+            rotate_right!(u16, rotate_right__u16);
+            rotate_right!(u32, rotate_right__u32);
+            rotate_right!(u64, rotate_right__u64);
+            rotate_right!(u128, rotate_right__u128);
+            rotate_right!(usize, rotate_right__usize);
 
-            // Wrapping operations are just the normal CPU ops with no extra runtime checks.
-            // Code generation following such operations have to take into account the possibility
-            // of overflow.
+            // (a + b) mod 2<sup>N</sup>, where N is the width of T
+            wrapping_add!(i8, i128, wrapping_add__i8, std::i8::MAX);
+            wrapping_add!(i16, i128, wrapping_add__i16, std::i16::MAX);
+            wrapping_add!(i32, i128, wrapping_add__i32, std::i32::MAX);
+            wrapping_add!(i64, i128, wrapping_add__i64, std::i64::MAX);
+            wrapping_add!(isize, i128, wrapping_add__isize, std::isize::MAX);
+            wrapping_add!(u8, u128, wrapping_add__u8, std::u8::MAX);
+            wrapping_add!(u16, u128, wrapping_add__u16, std::u16::MAX);
+            wrapping_add!(u32, u128, wrapping_add__u32, std::u32::MAX);
+            wrapping_add!(u64, u128, wrapping_add__u64, std::u64::MAX);
+            wrapping_add!(usize, u128, wrapping_add__usize, std::usize::MAX);
 
-            /// (a + b) mod 2<sup>N</sup>, where N is the width of T
-            pub fn wrapping_add<T>(a: T, b: T) -> T {
-                result!()
-            }
-            pub fn wrapping_add__u8(a: u8, b: u8) -> u128 {
-                ((a as u128) + (b as u128)) % ((std::u8::MAX as u128) + 1)
-            }
-            pub fn wrapping_add__u32(a: u8, b: u8) -> u128 {
-                ((a as u128) + (b as u128)) % ((std::u32::MAX as u128) + 1)
-            }
-            pub fn wrapping_add__u64(a: u64, b: u64) -> u128 {
-                ((a as u128) + (b as u128)) % ((std::u64::MAX as u128) + 1)
-            }
-            pub fn wrapping_add__usize(a: usize, b: usize) -> u128 {
-                ((a as u128) + (b as u128)) % ((std::usize::MAX as u128) + 1)
-            }
+            // (a - b) mod 2 ** N, where N is the width of T in bits.
+            wrapping_sub!(i8, i128, wrapping_sub__i8, std::i8::MAX);
+            wrapping_sub!(i16, i128, wrapping_sub__i16, std::i16::MAX);
+            wrapping_sub!(i32, i128, wrapping_sub__i32, std::i32::MAX);
+            wrapping_sub!(i64, i128, wrapping_sub__i64, std::i64::MAX);
+            wrapping_sub!(isize, i128, wrapping_sub__isize, std::isize::MAX);
+            wrapping_sub!(u8, i128, wrapping_sub__u8, std::u8::MAX);
+            wrapping_sub!(u16, i128, wrapping_sub__u16, std::u16::MAX);
+            wrapping_sub!(u32, i128, wrapping_sub__u32, std::u32::MAX);
+            wrapping_sub!(u64, i128, wrapping_sub__u64, std::u64::MAX);
+            wrapping_sub!(usize, i128, wrapping_sub__usize, std::usize::MAX);
 
-            /// (a - b) mod 2 ** N, where N is the width of T in bits.
-            pub fn wrapping_sub<T>(a: T, b: T) -> T {
-                result!()
-            }
-            pub fn wrapping_sub__usize(a: usize, b: usize) -> usize {
-                (((a as i128) + (-(b as i128))) % ((std::usize::MAX as i128) + 1)) as usize
-            }
+            // (a * b) mod 2 ** N, where N is the width of T in bits.
+            wrapping_mul!(i8, i128, wrapping_mul__i8, std::i8::MAX);
+            wrapping_mul!(i16, i128, wrapping_mul__i16, std::i16::MAX);
+            wrapping_mul!(i32, i128, wrapping_mul__i32, std::i32::MAX);
+            wrapping_mul!(i64, i128, wrapping_mul__i64, std::i64::MAX);
+            wrapping_mul!(isize, i128, wrapping_mul__isize, std::isize::MAX);
+            wrapping_mul!(u8, u128, wrapping_mul__u8, std::u8::MAX);
+            wrapping_mul!(u16, u128, wrapping_mul__u16, std::u16::MAX);
+            wrapping_mul!(u32, u128, wrapping_mul__u32, std::u32::MAX);
+            wrapping_mul!(u64, u128, wrapping_mul__u64, std::u64::MAX);
+            wrapping_mul!(usize, u128, wrapping_mul__usize, std::usize::MAX);
 
-            /// (a * b) mod 2 ** N, where N is the width of T in bits.
-            pub fn wrapping_mul<T>(a: T, b: T) -> T {
-                result!()
-            }
-            pub fn wrapping_mul__u64(a: u64, b: u64) -> u128 {
-                ((a as u128) * (b as u128)) % ((std::u64::MAX as u128) + 1)
-            }
-            pub fn wrapping_mul__usize(a: usize, b: usize) -> u128 {
-                ((a as u128) * (b as u128)) % ((std::usize::MAX as u128) + 1)
-            }
+            saturating_add!(i8, i128, saturating_add__i8, std::i8::MAX);
+            saturating_add!(i16, i128, saturating_add__i16, std::i16::MAX);
+            saturating_add!(i32, i128, saturating_add__i32, std::i32::MAX);
+            saturating_add!(i64, i128, saturating_add__i64, std::i64::MAX);
+            saturating_add!(isize, i128, saturating_add__isize, std::isize::MAX);
+            saturating_add!(u8, u128, saturating_add__u8, std::u8::MAX);
+            saturating_add!(u16, u128, saturating_add__u16, std::u16::MAX);
+            saturating_add!(u32, u128, saturating_add__u32, std::u32::MAX);
+            saturating_add!(u64, u128, saturating_add__u64, std::u64::MAX);
+            saturating_add!(usize, u128, saturating_add__usize, std::usize::MAX);
 
-            pub fn saturating_add<T>(a: T, b: T) -> T {
-                result!()
-            }
-            pub fn saturating_add__usize(a: usize, b: usize) -> usize {
-                let result = (a as u128) + (b as u128);
-                if result > (std::usize::MAX as u128) {
-                    std::usize::MAX
-                } else {
-                    result as usize
-                }
-            }
+            saturating_sub!(i8, saturating_sub__i8);
+            saturating_sub!(i16, saturating_sub__i16);
+            saturating_sub!(i32, saturating_sub__i32);
+            saturating_sub!(i64, saturating_sub__i64);
+            saturating_sub!(i128, saturating_sub__i128);
+            saturating_sub!(isize, saturating_sub__isize);
+            saturating_sub!(u8, saturating_sub__u8);
+            saturating_sub!(u16, saturating_sub__u16);
+            saturating_sub!(u32, saturating_sub__u32);
+            saturating_sub!(u64, saturating_sub__u64);
+            saturating_sub!(u128, saturating_sub__u128);
+            saturating_sub!(usize, saturating_sub__usize);
 
-            pub fn saturating_sub<T>(a: T, b: T) -> T {
-                result!()
-            }
-            pub fn saturating_sub__usize(a: usize, b: usize) -> usize {
-                if a < b {
-                    0
-                } else {
-                    a - b
-                }
-            }
             pub fn r#try(f: fn(*mut u8), data: *mut u8, local_ptr: *mut u8) -> i32 {
                 result!()
             }
