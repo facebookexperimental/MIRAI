@@ -2150,7 +2150,7 @@ pub mod core {
         }
 
         pub mod index {
-            fn slice_end_index_len_fail(index: usize, len: usize) {
+            pub fn slice_end_index_len_fail(index: usize, len: usize) {
                 panic!(
                     "range end index {} out of range for slice of length {}",
                     index, len
@@ -2169,11 +2169,19 @@ pub mod core {
                 panic!("attempted to index slice up to maximum usize");
             }
 
-            fn slice_start_index_len_fail(index: usize, len: usize) -> ! {
+            pub fn slice_start_index_len_fail(index: usize, len: usize) {
                 panic!(
                     "range start index {} out of range for slice of length {}",
                     index, len
                 );
+            }
+
+            pub fn slice_start_index_overflow_fail() -> ! {
+                panic!("attempted to index slice from after maximum usize");
+            }
+
+            pub fn slice_end_index_overflow_fail() -> ! {
+                panic!("attempted to index slice up to maximum usize");
             }
         }
     }

@@ -2248,6 +2248,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             self.destination,
             self.actual_args
         );
+        if function_summary.is_angelic
+            && !self.block_visitor.bv.assume_function_is_angelic
+            && self.block_visitor.might_be_reachable()
+        {
+            self.block_visitor.bv.assume_function_is_angelic = true;
+        }
         self.check_preconditions_if_necessary(&function_summary);
         self.transfer_and_refine_normal_return_state(&function_summary);
         self.transfer_and_refine_cleanup_state(&function_summary);
