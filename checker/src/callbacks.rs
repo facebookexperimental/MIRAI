@@ -139,10 +139,8 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(file_name: &str) -> bool {
-        file_name.contains("language/bytecode-verifier/src") // Z3 encoding
-            || file_name.contains("language/move-lang/src") // Z3 encoding
+        file_name.contains("language/move-lang/src") // takes too long
             || file_name.contains("language/move-prover/src") // takes too long
-            || file_name.contains("language/move-prover/bytecode/src") // Z3 encoding
             || file_name.contains("language/move-prover/spec-lang/src") // takes too long
             || file_name.contains("language/transaction-builder/generator/src") // takes too long
     }

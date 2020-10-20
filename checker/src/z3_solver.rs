@@ -1058,6 +1058,11 @@ impl Z3Solver {
             Expression::Reference(path) => self.numeric_reference(path),
             Expression::Shl { left, right } => self.numeric_shl(left, right),
             Expression::Shr { left, right, .. } => self.numeric_shr(left, right),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => self.numeric_switch(discriminator, cases, default),
             Expression::TaggedExpression { operand, .. } => {
                 self.get_as_numeric_z3_ast(&operand.expression)
             }
@@ -1411,16 +1416,22 @@ impl Z3Solver {
         const_domain: &ConstantDomain,
     ) -> (bool, z3_sys::Z3_ast) {
         match const_domain {
+            ConstantDomain::Char(..) | ConstantDomain::I128(..) | ConstantDomain::U128(..) => {
+                (false, self.get_constant_as_ast(const_domain))
+            }
+            ConstantDomain::F32(..) | ConstantDomain::F64(..) => {
+                (true, self.get_constant_as_ast(const_domain))
+            }
             ConstantDomain::False => unsafe {
                 (false, z3_sys::Z3_mk_int(self.z3_context, 0, self.int_sort))
             },
             ConstantDomain::True => unsafe {
                 (false, z3_sys::Z3_mk_int(self.z3_context, 1, self.int_sort))
             },
-            ConstantDomain::F32(..) | ConstantDomain::F64(..) => {
-                (true, self.get_as_z3_ast(expression))
+            _ => {
+                //info!("fresh constant for {:?}", const_domain);
+                self.numeric_fresh_const()
             }
-            _ => (false, self.get_as_z3_ast(expression)),
         }
     }
 
@@ -1472,6 +1483,30 @@ impl Z3Solver {
                 z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.int_sort),
             )
         }
+    }
+
+    #[logfn_inputs(TRACE)]
+    fn numeric_switch(
+        &self,
+        discriminator: &Rc<AbstractValue>,
+        cases: &[(Rc<AbstractValue>, Rc<AbstractValue>)],
+        default: &Rc<AbstractValue>,
+    ) -> (bool, z3_sys::Z3_ast) {
+        let discriminator_ast = self.get_as_z3_ast(&(**discriminator).expression);
+        let (is_float, default_ast) = self.get_as_numeric_z3_ast(&(**default).expression);
+        (
+            is_float,
+            cases
+                .iter()
+                .fold(default_ast, |acc_ast, (case_val, case_result)| unsafe {
+                    let case_val_ast = self.get_as_z3_ast(&(**case_val).expression);
+                    let cond_ast =
+                        z3_sys::Z3_mk_eq(self.z3_context, discriminator_ast, case_val_ast);
+                    let (_, case_result_ast) =
+                        self.get_as_numeric_z3_ast(&(**case_result).expression);
+                    z3_sys::Z3_mk_ite(self.z3_context, cond_ast, case_result_ast, acc_ast)
+                }),
+        )
     }
 
     #[logfn_inputs(TRACE)]
