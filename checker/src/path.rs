@@ -686,7 +686,7 @@ pub trait PathRefinement: Sized {
 
     /// Returns a copy of self with the selector replace by a new selector.
     /// It is only legal to call this on a qualified path.
-    fn replace_selector(&self, new_selector: Rc<PathSelector>) -> Rc<Path>;
+    fn add_or_replace_selector(&self, new_selector: Rc<PathSelector>) -> Rc<Path>;
 }
 
 impl PathRefinement for Rc<Path> {
@@ -914,14 +914,15 @@ impl PathRefinement for Rc<Path> {
         }
     }
 
-    /// Returns a copy path with the root replaced by new_root.
+    /// Returns a copy of path with the selector replaced by the new selector.
+    /// If the path is unqualified, returns self qualified with the new selector.
     #[logfn_inputs(TRACE)]
-    fn replace_selector(&self, new_selector: Rc<PathSelector>) -> Rc<Path> {
+    fn add_or_replace_selector(&self, new_selector: Rc<PathSelector>) -> Rc<Path> {
         match &self.value {
             PathEnum::QualifiedPath { qualifier, .. } => {
                 Path::new_qualified(qualifier.clone(), new_selector)
             }
-            _ => assume_unreachable!("don't call this on an unqualified path"),
+            _ => Path::new_qualified(self.clone(), new_selector),
         }
     }
 }
