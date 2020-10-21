@@ -1951,20 +1951,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     None => Path::new_static(self.bv.tcx, def_id),
                 };
                 self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
-                // Note that this might not find the promoted constant in the current environment,
-                // even though it was imported at the beginning of visit_body. This happens
-                // when the current environment starts of empty because we are visiting an
-                // unreachable block for error reporting purposes.
-                //todo: keep track of the first state containing the promoted constants and use that
-                // to lookup PromotedConstant paths.
                 let val_at_path = self.bv.lookup_path_and_refine_result(path, ty);
                 if let Expression::Variable { .. } = &val_at_path.expression {
                     // Seems like there is nothing at the path, but...
                     if self.bv.tcx.is_mir_available(def_id) {
                         // The MIR body should have computed something. If that something is
                         // a structure, the value of the path will be unknown (only leaf paths have
-                        // known values). Alternatively, this could be a simple value that is not
-                        // in the environment as explained in the Note above.
+                        // known values).
                         return val_at_path;
                     }
                     // Seems like a lazily serialized constant. Force evaluation.

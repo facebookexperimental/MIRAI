@@ -139,10 +139,14 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(file_name: &str) -> bool {
-        file_name.contains("language/move-lang/src") // takes too long
-            || file_name.contains("language/move-prover/src") // takes too long
-            || file_name.contains("language/move-prover/spec-lang/src") // takes too long
-            || file_name.contains("language/transaction-builder/generator/src") // takes too long
+        // these analyze too slowly to tolerate
+        file_name.contains("common/datatest-stable/src")
+            || file_name.contains("config/management/genesis/src")
+            || file_name.contains("language/move-lang/src")
+            || file_name.contains("language/move-prover/src")
+            || file_name.contains("language/move-prover/spec-lang/src")
+            || file_name.contains("language/tools/genesis-viewer/src")
+            || file_name.contains("language/transaction-builder/generator/src")
     }
 
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
