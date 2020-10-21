@@ -6,7 +6,7 @@
 
 // A test that calls visit_aggregate
 
-// MIRAI_FLAGS -- -Z mir-opt-level=0
+// MIRAI_FLAGS --diag=paranoid -- -Z mir-opt-level=0
 
 #[allow(const_err)]
 #[allow(unconditional_panic)]

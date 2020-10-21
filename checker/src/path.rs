@@ -233,6 +233,35 @@ impl Path {
         }
     }
 
+    /// Returns true if the path contains a value whose expression contains a parameter.
+    #[logfn_inputs(TRACE)]
+    pub fn contains_parameter(&self) -> bool {
+        match &self.value {
+            PathEnum::Alias { value } => value.expression.contains_parameter(),
+            PathEnum::HeapBlock { .. } => false,
+            PathEnum::LocalVariable { .. } => false,
+            PathEnum::Offset { value } => value.expression.contains_parameter(),
+            PathEnum::Parameter { .. } => true,
+            PathEnum::Result => false,
+            PathEnum::StaticVariable { .. } => true,
+            PathEnum::PhantomData => false,
+            PathEnum::PromotedConstant { .. } => false,
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } => {
+                qualifier.contains_parameter() || {
+                    if let PathSelector::Index(value) = selector.as_ref() {
+                        value.expression.contains_parameter()
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
+    }
+
     /// Returns the index value of the index path qualifed by qualifier.
     #[logfn_inputs(TRACE)]
     pub fn get_index_value_qualified_by(&self, root: &Rc<Path>) -> Option<Rc<AbstractValue>> {
