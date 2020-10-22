@@ -1703,7 +1703,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 2);
         let base_val = &self.actual_args[0].1;
         let offset_val = &self.actual_args[1].1;
-        base_val.offset(offset_val.clone())
+        let offset_scale = self.handle_size_of();
+        let offset_in_bytes = offset_val.multiply(offset_scale);
+        base_val.offset(offset_in_bytes)
     }
 
     /// Update the state to reflect a call to an intrinsic binary operation that returns a tuple
@@ -1776,12 +1778,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 2);
         let base_val = &self.actual_args[0].1;
         let offset_val = &self.actual_args[1].1;
-        let result = base_val.offset(offset_val.clone());
+        let offset_scale = self.handle_size_of();
+        let offset_in_bytes = offset_val.multiply(offset_scale);
+        let result = base_val.offset(offset_in_bytes);
         if self.block_visitor.bv.check_for_errors
             && self.block_visitor.bv.function_being_analyzed_is_root()
         {
             self.block_visitor.bv.check_offset(&result)
         }
+        //todo: if the function is not root, promote this to a precondition
         result
     }
 
@@ -1821,7 +1826,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// Returns an unknown value of type u128 if T is not a concrete type.
     #[logfn_inputs(TRACE)]
     fn handle_size_of(&mut self) -> Rc<AbstractValue> {
-        checked_assume!(self.actual_args.is_empty());
         let sym = rustc_span::Symbol::intern("T");
         let t = (self.callee_generic_argument_map.as_ref())
             .expect("std::intrinsics::size_of must be called with generic arguments")
