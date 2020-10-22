@@ -629,10 +629,16 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let (_, assumption) = &self.actual_args[1];
                 let (_, cond) = &self.actual_args[0];
                 if !assumption.as_bool_if_known().unwrap_or(false) {
+                    // Not an assumed post condition, so check the condition and only add this to
+                    // the summary if it is reachable and true.
                     let message = self.coerce_to_string(&self.actual_args[2].0);
                     if self
                         .block_visitor
-                        .check_condition(cond, message.as_ref(), true)
+                        .check_special_function_condition(
+                            cond,
+                            message.as_ref(),
+                            KnownNames::MiraiPostcondition,
+                        )
                         .is_none()
                     {
                         self.block_visitor.try_extend_post_condition(&cond);
@@ -645,32 +651,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 assume!(self.actual_args.len() == 2); // The type checker ensures this.
                 let (_, cond) = &self.actual_args[0];
                 let message = self.coerce_to_string(&self.actual_args[1].0);
-                if let Some(warning) =
-                    self.block_visitor
-                        .check_condition(cond, message.as_ref(), false)
-                {
-                    // Push a precondition so that any known or unknown caller of this function
-                    // is warned that this function will fail if the precondition is not met.
-                    if !cond.expression.contains_local_variable()
-                        && self.block_visitor.bv.preconditions.len()
-                            < k_limits::MAX_INFERRED_PRECONDITIONS
-                    {
-                        let condition = self
-                            .block_visitor
-                            .bv
-                            .current_environment
-                            .entry_condition
-                            .logical_not()
-                            .or(cond.clone());
-                        let precondition = Precondition {
-                            condition,
-                            message: warning,
-                            provenance: None,
-                            spans: vec![self.block_visitor.bv.current_span],
-                        };
-                        self.block_visitor.bv.preconditions.push(precondition);
-                    }
-                }
+                self.block_visitor.check_special_function_condition(
+                    cond,
+                    message.as_ref(),
+                    KnownNames::MiraiVerify,
+                );
             }
             KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
                 assume!(!self.actual_args.is_empty()); // The type checker ensures this.
@@ -819,8 +804,32 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 checked_assume!(self.actual_args.len() == 1);
                 if self.block_visitor.bv.check_for_errors {
                     let non_zero = self.actual_args[0].1.not_equals(Rc::new(0u128.into()));
-                    self.block_visitor
-                        .check_condition(&non_zero, "argument is zero", false);
+                    if let Some(warning) = self.block_visitor.check_special_function_condition(
+                        &non_zero,
+                        "argument is zero",
+                        self.callee_known_name,
+                    ) {
+                        // The condition may be reachable and false. Promote it to a precondition if possible.
+                        if !non_zero.expression.contains_local_variable()
+                            && self.block_visitor.bv.preconditions.len()
+                                < k_limits::MAX_INFERRED_PRECONDITIONS
+                        {
+                            let condition = self
+                                .block_visitor
+                                .bv
+                                .current_environment
+                                .entry_condition
+                                .logical_not()
+                                .or(non_zero.clone());
+                            let precondition = Precondition {
+                                condition,
+                                message: warning,
+                                provenance: None,
+                                spans: vec![self.block_visitor.bv.current_span],
+                            };
+                            self.block_visitor.bv.preconditions.push(precondition);
+                        }
+                    }
                 }
                 let arg_type: ExpressionType = self.actual_argument_types[0].kind().into();
                 let bit_length = arg_type.bit_length();
