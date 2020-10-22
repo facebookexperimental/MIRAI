@@ -6,6 +6,7 @@
 use log::debug;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::assume_unreachable;
+use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
 use rustc_hir::definitions::{DefPathData, DisambiguatedDefPathData};
 use rustc_hir::{ItemKind, Node};
@@ -287,7 +288,6 @@ fn crate_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 #[logfn(TRACE)]
 pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
     let mut name = crate_name(tcx, def_id);
-    let mut parent_is_type = false;
     for component in &tcx.def_path(def_id).data {
         if name.ends_with("foreign_contracts") {
             // By stripping off this special prefix, we allow this crate (or module) to define
@@ -299,14 +299,20 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
             name.push('.');
         }
         push_component_name(component.data, &mut name);
-        if let DefPathData::TypeNs(..) = component.data {
-            parent_is_type = true;
-        }
         if component.disambiguator != 0 {
             name.push('_');
             if component.data == DefPathData::Impl {
                 if let Some(parent_def_id) = tcx.parent(def_id) {
-                    if parent_is_type {
+                    let parent_def_kind = tcx.def_kind(parent_def_id);
+                    if matches!(
+                        parent_def_kind,
+                        DefKind::Struct
+                            | DefKind::Union
+                            | DefKind::Enum
+                            | DefKind::Variant
+                            | DefKind::TyAlias
+                            | DefKind::Impl
+                    ) {
                         append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
                         continue;
                     }
@@ -381,7 +387,6 @@ pub fn are_concrete(gen_args: SubstsRef<'_>) -> bool {
 /// Determines if the given type is fully concrete.
 pub fn is_concrete(ty: &TyKind<'_>) -> bool {
     match ty {
-        TyKind::Bound(..) | TyKind::Param(..) | TyKind::Infer(..) | TyKind::Error(..) => false,
         TyKind::Adt(_, gen_args)
         | TyKind::Closure(_, gen_args)
         | TyKind::FnDef(_, gen_args)
@@ -391,6 +396,11 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
             substs: gen_args, ..
         })
         | TyKind::Tuple(gen_args) => are_concrete(gen_args),
+        TyKind::Bound(..)
+        | TyKind::Dynamic(..)
+        | TyKind::Error(..)
+        | TyKind::Infer(..)
+        | TyKind::Param(..) => false,
         TyKind::Ref(_, ty, _) => is_concrete(ty.kind()),
         _ => true,
     }
