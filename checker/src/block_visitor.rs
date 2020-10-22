@@ -133,7 +133,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 return;
             }
             PathEnum::Alias { .. } | PathEnum::Offset { .. } | PathEnum::QualifiedPath { .. } => {
-                path = path.refine_paths(&self.bv.current_environment);
+                path = path.refine_paths(&self.bv.current_environment, 0);
             }
             _ => {}
         }
@@ -148,7 +148,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         variant_index: rustc_target::abi::VariantIdx,
     ) {
         let target_path = Path::new_discriminant(self.visit_place(place))
-            .refine_paths(&self.bv.current_environment);
+            .refine_paths(&self.bv.current_environment, 0);
         let ty = self
             .bv
             .type_visitor
@@ -1362,7 +1362,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .current_environment
             .update_value_at(length_path, length_value.clone());
         let slice_path =
-            Path::new_slice(path, length_value).refine_paths(&self.bv.current_environment);
+            Path::new_slice(path, length_value).refine_paths(&self.bv.current_environment, 0);
         let initial_value = self.visit_operand(operand);
         self.bv
             .current_environment
@@ -1419,7 +1419,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         if matches!(selector.as_ref(), PathSelector::Field(0)) {
                             self.bv.copy_or_move_elements(
                                 path,
-                                qualifier.refine_paths(&self.bv.current_environment),
+                                qualifier.refine_paths(&self.bv.current_environment, 0),
                                 target_type,
                                 false,
                             );
@@ -1438,7 +1438,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // If that information is not actually there, this results in a conservative over approximation.
                     self.bv.copy_or_move_elements(
                         path,
-                        qualifier.refine_paths(&self.bv.current_environment),
+                        qualifier.refine_paths(&self.bv.current_environment, 0),
                         target_type,
                         false,
                     );
@@ -1449,7 +1449,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // &*source_thin_ptr should just be a non canonical alias for source_thin_ptr.
                     self.bv.copy_or_move_elements(
                         path,
-                        qualifier.refine_paths(&self.bv.current_environment),
+                        qualifier.refine_paths(&self.bv.current_environment, 0),
                         target_type,
                         false,
                     );
@@ -1457,7 +1457,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
             }
             PathEnum::Alias { .. } | PathEnum::Offset { .. } | PathEnum::QualifiedPath { .. } => {
-                AbstractValue::make_reference(value_path.refine_paths(&self.bv.current_environment))
+                AbstractValue::make_reference(
+                    value_path.refine_paths(&self.bv.current_environment, 0),
+                )
             }
             PathEnum::PromotedConstant { .. } => {
                 if let Some(val) = self.bv.current_environment.value_at(&value_path) {
@@ -1531,7 +1533,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
             }
             let length_path =
-                Path::new_length(value_path).refine_paths(&self.bv.current_environment);
+                Path::new_length(value_path).refine_paths(&self.bv.current_environment, 0);
             self.bv
                 .lookup_path_and_refine_result(length_path, self.bv.tcx.types.usize)
         };
@@ -1700,9 +1702,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let (result, overflow_flag) = Self::do_checked_binary_op(bin_op, target_type, left, right);
-        let path0 = Path::new_field(path.clone(), 0).refine_paths(&self.bv.current_environment);
+        let path0 = Path::new_field(path.clone(), 0).refine_paths(&self.bv.current_environment, 0);
         self.bv.current_environment.update_value_at(path0, result);
-        let path1 = Path::new_field(path, 1).refine_paths(&self.bv.current_environment);
+        let path1 = Path::new_field(path, 1).refine_paths(&self.bv.current_environment, 0);
         self.bv
             .current_environment
             .update_value_at(path1, overflow_flag);
@@ -1824,7 +1826,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         for (i, operand) in operands.iter().enumerate() {
             let index_value = self.get_u128_const_val(i as u128);
             let index_path = Path::new_index(path.clone(), index_value)
-                .refine_paths(&self.bv.current_environment);
+                .refine_paths(&self.bv.current_environment, 0);
             self.visit_used_operand(index_path, operand);
         }
     }
@@ -1932,44 +1934,48 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let mut val = literal.val;
         let ty = literal.ty;
         if let rustc_middle::ty::ConstKind::Unevaluated(def_ty, substs, promoted) = &literal.val {
-            let def_id = def_ty.def_id_for_type_of();
-            let substs = self
-                .bv
-                .type_visitor
-                .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
-            self.bv.cv.substs_cache.insert(def_id, substs);
-            let path = match promoted {
-                Some(promoted) => {
-                    let index = promoted.index();
-                    Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
-                }
-                None => Path::new_static(self.bv.tcx, def_id),
-            };
-            self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
-            // Note that this might not find the promoted constant in the current environment,
-            // even though it was imported at the beginning of visit_body. This happens
-            // when the current environment starts of empty because we are visiting an
-            // unreachable block for error reporting purposes.
-            //todo: keep track of the first state containing the promoted constants and use that
-            // to lookup PromotedConstant paths.
-            let val_at_path = self.bv.lookup_path_and_refine_result(path, ty);
-            if let Expression::Variable { .. } = &val_at_path.expression {
-                // Seems like there is nothing at the path, but...
-                if self.bv.tcx.is_mir_available(def_id) {
-                    // The MIR body should have computed something. If that something is
-                    // a structure, the value of the path will be unknown (only leaf paths have
-                    // known values). Alternatively, this could be a simple value that is not
-                    // in the environment as explained in the Note above.
-                    return val_at_path;
-                }
-                // Seems like a lazily serialized constant. Force evaluation.
+            if def_ty.const_param_did.is_some() {
                 val = val.eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
-                if let rustc_middle::ty::ConstKind::Unevaluated(..) = &val {
-                    // val.eval did not manage to evaluate this, go with unknown.
+            } else {
+                let def_id = def_ty.def_id_for_type_of();
+                let substs = self
+                    .bv
+                    .type_visitor
+                    .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
+                self.bv.cv.substs_cache.insert(def_id, substs);
+                let path = match promoted {
+                    Some(promoted) => {
+                        let index = promoted.index();
+                        Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
+                    }
+                    None => Path::new_static(self.bv.tcx, def_id),
+                };
+                self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
+                // Note that this might not find the promoted constant in the current environment,
+                // even though it was imported at the beginning of visit_body. This happens
+                // when the current environment starts of empty because we are visiting an
+                // unreachable block for error reporting purposes.
+                //todo: keep track of the first state containing the promoted constants and use that
+                // to lookup PromotedConstant paths.
+                let val_at_path = self.bv.lookup_path_and_refine_result(path, ty);
+                if let Expression::Variable { .. } = &val_at_path.expression {
+                    // Seems like there is nothing at the path, but...
+                    if self.bv.tcx.is_mir_available(def_id) {
+                        // The MIR body should have computed something. If that something is
+                        // a structure, the value of the path will be unknown (only leaf paths have
+                        // known values). Alternatively, this could be a simple value that is not
+                        // in the environment as explained in the Note above.
+                        return val_at_path;
+                    }
+                    // Seems like a lazily serialized constant. Force evaluation.
+                    val = val.eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
+                    if let rustc_middle::ty::ConstKind::Unevaluated(..) = &val {
+                        // val.eval did not manage to evaluate this, go with unknown.
+                        return val_at_path;
+                    }
+                } else {
                     return val_at_path;
                 }
-            } else {
-                return val_at_path;
             }
         }
 
@@ -2711,14 +2717,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let place_path = self.get_path_for_place(place);
-        let mut path = place_path.refine_paths(&self.bv.current_environment);
+        let mut path = place_path.refine_paths(&self.bv.current_environment, 0);
         match &place_path.value {
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
                 ..
             } if **selector == PathSelector::Deref => {
-                let refined_qualifier = qualifier.refine_paths(&self.bv.current_environment);
+                let refined_qualifier = qualifier.refine_paths(&self.bv.current_environment, 0);
                 let qualifier_ty = self
                     .bv
                     .type_visitor
@@ -2806,7 +2812,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 TyKind::Array(_, len) => {
                     let len_val = self.visit_constant(None, &len);
                     let len_path = Path::new_length(base_path.clone())
-                        .refine_paths(&self.bv.current_environment);
+                        .refine_paths(&self.bv.current_environment, 0);
                     self.bv
                         .current_environment
                         .update_value_at(len_path, len_val);
@@ -2899,7 +2905,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 mir::ProjectionElem::Downcast(..) | mir::ProjectionElem::Subslice { .. } => {}
             }
             result = Path::new_qualified(result, Rc::new(selector))
-                .refine_paths(&self.bv.current_environment);
+                .refine_paths(&self.bv.current_environment, 0);
             self.bv
                 .type_visitor
                 .path_ty_cache

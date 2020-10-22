@@ -84,7 +84,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
                         let var_type: ExpressionType = ty.kind().into();
                         let closure_field_path =
-                            Path::new_field(path.clone(), i).refine_paths(environment);
+                            Path::new_field(path.clone(), i).refine_paths(environment, 0);
                         self.path_ty_cache.insert(closure_field_path.clone(), ty);
                         let closure_field_val =
                             AbstractValue::make_typed_unknown(var_type, closure_field_path.clone());
