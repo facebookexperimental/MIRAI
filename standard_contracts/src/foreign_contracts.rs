@@ -580,9 +580,966 @@ pub mod core {
         }
 
         pub mod x86 {
+            pub mod avx {
+                use core::arch::x86_64::__m128;
+                use core::arch::x86_64::__m128d;
+                use core::arch::x86_64::__m256;
+                use core::arch::x86_64::__m256d;
+                type i8x16 = [i8; 16];
+                type i8x32 = [i8; 32];
+                type i16x8 = [i16; 8];
+                type i16x16 = [i16; 16];
+                type i32x4 = [i32; 4];
+                type i32x8 = [i32; 8];
+                type i64x2 = [i64; 2];
+                type i64x4 = [i64; 4];
+                type u8x16 = [u8; 16];
+                type u8x32 = [u8; 32];
+                type u16x8 = [u16; 8];
+                type u16x16 = [u16; 16];
+                type u32x4 = [u32; 4];
+                type u32x8 = [u32; 8];
+                type u64x2 = [u64; 2];
+                type u64x4 = [u64; 4];
+
+                fn addsubpd256(a: __m256d, b: __m256d) -> __m256d {
+                    result!()
+                }
+                fn addsubps256(a: __m256, b: __m256) -> __m256 {
+                    result!()
+                }
+                fn roundpd256(a: __m256d, b: i32) -> __m256d {
+                    result!()
+                }
+                fn roundps256(a: __m256, b: i32) -> __m256 {
+                    result!()
+                }
+                fn sqrtps256(a: __m256) -> __m256 {
+                    result!()
+                }
+                fn vblendvpd(a: __m256d, b: __m256d, c: __m256d) -> __m256d {
+                    result!()
+                }
+                fn vblendvps(a: __m256, b: __m256, c: __m256) -> __m256 {
+                    result!()
+                }
+                fn vdpps(a: __m256, b: __m256, imm8: i32) -> __m256 {
+                    result!()
+                }
+                fn vhaddpd(a: __m256d, b: __m256d) -> __m256d {
+                    result!()
+                }
+                fn vhaddps(a: __m256, b: __m256) -> __m256 {
+                    result!()
+                }
+                fn vhsubpd(a: __m256d, b: __m256d) -> __m256d {
+                    result!()
+                }
+                fn vhsubps(a: __m256, b: __m256) -> __m256 {
+                    result!()
+                }
+                fn vcmppd(a: __m128d, b: __m128d, imm8: i8) -> __m128d {
+                    result!()
+                }
+                fn vcmppd256(a: __m256d, b: __m256d, imm8: u8) -> __m256d {
+                    result!()
+                }
+                fn vcmpps(a: __m128, b: __m128, imm8: i8) -> __m128 {
+                    result!()
+                }
+                fn vcmpps256(a: __m256, b: __m256, imm8: u8) -> __m256 {
+                    result!()
+                }
+                fn vcmpsd(a: __m128d, b: __m128d, imm8: i8) -> __m128d {
+                    result!()
+                }
+                fn vcmpss(a: __m128, b: __m128, imm8: i8) -> __m128 {
+                    result!()
+                }
+                fn vcvtdq2ps(a: i32x8) -> __m256 {
+                    result!()
+                }
+                fn vcvtpd2ps(a: __m256d) -> __m128 {
+                    result!()
+                }
+                fn vcvtps2dq(a: __m256) -> i32x8 {
+                    result!()
+                }
+                fn vcvttpd2dq(a: __m256d) -> i32x4 {
+                    result!()
+                }
+                fn vcvtpd2dq(a: __m256d) -> i32x4 {
+                    result!()
+                }
+                fn vcvttps2dq(a: __m256) -> i32x8 {
+                    result!()
+                }
+                fn vzeroall() {}
+                fn vzeroupper() {}
+                fn vpermilps256(a: __m256, b: i32x8) -> __m256 {
+                    result!()
+                }
+                fn vpermilps(a: __m128, b: i32x4) -> __m128 {
+                    result!()
+                }
+                fn vpermilpd256(a: __m256d, b: i64x4) -> __m256d {
+                    result!()
+                }
+                fn vpermilpd(a: __m128d, b: i64x2) -> __m128d {
+                    result!()
+                }
+                fn vperm2f128ps256(a: __m256, b: __m256, imm8: i8) -> __m256 {
+                    result!()
+                }
+                fn vperm2f128pd256(a: __m256d, b: __m256d, imm8: i8) -> __m256d {
+                    result!()
+                }
+                fn vperm2f128si256(a: i32x8, b: i32x8, imm8: i8) -> i32x8 {
+                    result!()
+                }
+                fn vbroadcastf128ps256(a: &__m128) -> __m256 {
+                    result!()
+                }
+                fn vbroadcastf128pd256(a: &__m128d) -> __m256d {
+                    result!()
+                }
+                fn storeupd256(mem_addr: *mut f64, a: __m256d) {
+                    result!()
+                }
+                fn storeups256(mem_addr: *mut f32, a: __m256) {
+                    result!()
+                }
+                fn storeudq256(mem_addr: *mut i8, a: i8x32) {
+                    result!()
+                }
+                fn maskloadpd256(mem_addr: *const i8, mask: i64x4) -> __m256d {
+                    result!()
+                }
+                fn maskstorepd256(mem_addr: *mut i8, mask: i64x4, a: __m256d) {
+                    result!()
+                }
+                fn maskloadpd(mem_addr: *const i8, mask: i64x2) -> __m128d {
+                    result!()
+                }
+                fn maskstorepd(mem_addr: *mut i8, mask: i64x2, a: __m128d) {
+                    result!()
+                }
+                fn maskloadps256(mem_addr: *const i8, mask: i32x8) -> __m256 {
+                    result!()
+                }
+                fn maskstoreps256(mem_addr: *mut i8, mask: i32x8, a: __m256) {
+                    result!()
+                }
+                fn maskloadps(mem_addr: *const i8, mask: i32x4) -> __m128 {
+                    result!()
+                }
+                fn maskstoreps(mem_addr: *mut i8, mask: i32x4, a: __m128) {
+                    result!()
+                }
+                fn vlddqu(mem_addr: *const i8) -> i8x32 {
+                    result!()
+                }
+                fn vrcpps(a: __m256) -> __m256 {
+                    result!()
+                }
+                fn vrsqrtps(a: __m256) -> __m256 {
+                    result!()
+                }
+                fn ptestz256(a: i64x4, b: i64x4) -> i32 {
+                    result!()
+                }
+                fn ptestc256(a: i64x4, b: i64x4) -> i32 {
+                    result!()
+                }
+                fn ptestnzc256(a: i64x4, b: i64x4) -> i32 {
+                    result!()
+                }
+                fn vtestzpd256(a: __m256d, b: __m256d) -> i32 {
+                    result!()
+                }
+                fn vtestcpd256(a: __m256d, b: __m256d) -> i32 {
+                    result!()
+                }
+                fn vtestnzcpd256(a: __m256d, b: __m256d) -> i32 {
+                    result!()
+                }
+                fn vtestzpd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn vtestcpd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn vtestnzcpd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn vtestzps256(a: __m256, b: __m256) -> i32 {
+                    result!()
+                }
+                fn vtestcps256(a: __m256, b: __m256) -> i32 {
+                    result!()
+                }
+                fn vtestnzcps256(a: __m256, b: __m256) -> i32 {
+                    result!()
+                }
+                fn vtestzps(a: __m128, b: __m128) -> i32 {
+                    result!()
+                }
+                fn vtestcps(a: __m128, b: __m128) -> i32 {
+                    result!()
+                }
+                fn vtestnzcps(a: __m128, b: __m128) -> i32 {
+                    result!()
+                }
+                fn movmskpd256(a: __m256d) -> i32 {
+                    result!()
+                }
+                fn movmskps256(a: __m256) -> i32 {
+                    result!()
+                }
+            }
+            pub mod avx2 {
+                use core::arch::x86_64::__m128;
+                use core::arch::x86_64::__m128d;
+                use core::arch::x86_64::__m256;
+                use core::arch::x86_64::__m256d;
+                type i8x16 = [i8; 16];
+                type i8x32 = [i8; 32];
+                type i16x8 = [i16; 8];
+                type i16x16 = [i16; 16];
+                type i32x4 = [i32; 4];
+                type i32x8 = [i32; 8];
+                type i64x2 = [i64; 2];
+                type i64x4 = [i64; 4];
+                type u8x16 = [u8; 16];
+                type u8x32 = [u8; 32];
+                type u16x8 = [u16; 8];
+                type u16x16 = [u16; 16];
+                type u32x4 = [u32; 4];
+                type u32x8 = [u32; 8];
+                type u64x2 = [u64; 2];
+                type u64x4 = [u64; 4];
+
+                fn pabsb(a: i8x32) -> u8x32 {
+                    result!()
+                }
+                fn pabsw(a: i16x16) -> u16x16 {
+                    result!()
+                }
+                fn pabsd(a: i32x8) -> u32x8 {
+                    result!()
+                }
+                fn pavgb(a: u8x32, b: u8x32) -> u8x32 {
+                    result!()
+                }
+                fn pavgw(a: u16x16, b: u16x16) -> u16x16 {
+                    result!()
+                }
+                fn pblendvb(a: i8x32, b: i8x32, mask: i8x32) -> i8x32 {
+                    result!()
+                }
+                fn phaddw(a: i16x16, b: i16x16) -> i16x16 {
+                    result!()
+                }
+                fn phaddd(a: i32x8, b: i32x8) -> i32x8 {
+                    result!()
+                }
+                fn phaddsw(a: i16x16, b: i16x16) -> i16x16 {
+                    result!()
+                }
+                fn phsubw(a: i16x16, b: i16x16) -> i16x16 {
+                    result!()
+                }
+                fn phsubd(a: i32x8, b: i32x8) -> i32x8 {
+                    result!()
+                }
+                fn phsubsw(a: i16x16, b: i16x16) -> i16x16 {
+                    result!()
+                }
+                fn pmaddwd(a: i16x16, b: i16x16) -> i32x8 {
+                    result!()
+                }
+                fn pmaddubsw(a: u8x32, b: u8x32) -> i16x16 {
+                    result!()
+                }
+                fn maskloadd(mem_addr: *const i8, mask: i32x4) -> i32x4 {
+                    result!()
+                }
+                fn maskloadd256(mem_addr: *const i8, mask: i32x8) -> i32x8 {
+                    result!()
+                }
+                fn maskloadq(mem_addr: *const i8, mask: i64x2) -> i64x2 {
+                    result!()
+                }
+                fn maskloadq256(mem_addr: *const i8, mask: i64x4) -> i64x4 {
+                    result!()
+                }
+                fn maskstored(mem_addr: *mut i8, mask: i32x4, a: i32x4) {
+                    result!()
+                }
+                fn maskstored256(mem_addr: *mut i8, mask: i32x8, a: i32x8) {
+                    result!()
+                }
+                fn maskstoreq(mem_addr: *mut i8, mask: i64x2, a: i64x2) {
+                    result!()
+                }
+                fn maskstoreq256(mem_addr: *mut i8, mask: i64x4, a: i64x4) {
+                    result!()
+                }
+                fn pmaxsw(a: i16x16, b: i16x16) -> i16x16 {
+                    result!()
+                }
+                fn pmaxsd(a: i32x8, b: i32x8) -> i32x8 {
+                    result!()
+                }
+                fn pmaxsb(a: i8x32, b: i8x32) -> i8x32 {
+                    result!()
+                }
+                fn pmaxuw(a: u16x16, b: u16x16) -> u16x16 {
+                    result!()
+                }
+                fn pmaxud(a: u32x8, b: u32x8) -> u32x8 {
+                    result!()
+                }
+                fn pmaxub(a: u8x32, b: u8x32) -> u8x32 {
+                    result!()
+                }
+                fn pminsw(a: i16x16, b: i16x16) -> i16x16 {
+                    result!()
+                }
+                fn pminsd(a: i32x8, b: i32x8) -> i32x8 {
+                    result!()
+                }
+                fn pminsb(a: i8x32, b: i8x32) -> i8x32 {
+                    result!()
+                }
+                fn pminuw(a: u16x16, b: u16x16) -> u16x16 {
+                    result!()
+                }
+                fn pminud(a: u32x8, b: u32x8) -> u32x8 {
+                    result!()
+                }
+                fn pminub(a: u8x32, b: u8x32) -> u8x32 {
+                    result!()
+                }
+                fn pmovmskb(a: i8x32) -> i32 {
+                    result!()
+                }
+                fn mpsadbw(a: u8x32, b: u8x32, imm8: i32) -> u16x16 {
+                    result!()
+                }
+                fn pmulhuw(a: u16x16, b: u16x16) -> u16x16 {
+                    result!()
+                }
+                fn pmulhw(a: i16x16, b: i16x16) -> i16x16 {
+                    result!()
+                }
+                fn pmuldq(a: i32x8, b: i32x8) -> i64x4 {
+                    result!()
+                }
+                fn pmuludq(a: u32x8, b: u32x8) -> u64x4 {
+                    result!()
+                }
+                fn pmulhrsw(a: i16x16, b: i16x16) -> i16x16 {
+                    result!()
+                }
+                fn packsswb(a: i16x16, b: i16x16) -> i8x32 {
+                    result!()
+                }
+                fn packssdw(a: i32x8, b: i32x8) -> i16x16 {
+                    result!()
+                }
+                fn packuswb(a: i16x16, b: i16x16) -> u8x32 {
+                    result!()
+                }
+                fn packusdw(a: i32x8, b: i32x8) -> u16x16 {
+                    result!()
+                }
+                fn psadbw(a: u8x32, b: u8x32) -> u64x4 {
+                    result!()
+                }
+                fn psignb(a: i8x32, b: i8x32) -> i8x32 {
+                    result!()
+                }
+                fn psignw(a: i16x16, b: i16x16) -> i16x16 {
+                    result!()
+                }
+                fn psignd(a: i32x8, b: i32x8) -> i32x8 {
+                    result!()
+                }
+                fn psllw(a: i16x16, count: i16x8) -> i16x16 {
+                    result!()
+                }
+                fn pslld(a: i32x8, count: i32x4) -> i32x8 {
+                    result!()
+                }
+                fn psllq(a: i64x4, count: i64x2) -> i64x4 {
+                    result!()
+                }
+                fn pslliw(a: i16x16, imm8: i32) -> i16x16 {
+                    result!()
+                }
+                fn psllid(a: i32x8, imm8: i32) -> i32x8 {
+                    result!()
+                }
+                fn pslliq(a: i64x4, imm8: i32) -> i64x4 {
+                    result!()
+                }
+                fn psllvd(a: i32x4, count: i32x4) -> i32x4 {
+                    result!()
+                }
+                fn psllvd256(a: i32x8, count: i32x8) -> i32x8 {
+                    result!()
+                }
+                fn psllvq(a: i64x2, count: i64x2) -> i64x2 {
+                    result!()
+                }
+                fn psllvq256(a: i64x4, count: i64x4) -> i64x4 {
+                    result!()
+                }
+                fn psraw(a: i16x16, count: i16x8) -> i16x16 {
+                    result!()
+                }
+                fn psrad(a: i32x8, count: i32x4) -> i32x8 {
+                    result!()
+                }
+                fn psraiw(a: i16x16, imm8: i32) -> i16x16 {
+                    result!()
+                }
+                fn psraid(a: i32x8, imm8: i32) -> i32x8 {
+                    result!()
+                }
+                fn psravd(a: i32x4, count: i32x4) -> i32x4 {
+                    result!()
+                }
+                fn psravd256(a: i32x8, count: i32x8) -> i32x8 {
+                    result!()
+                }
+                fn psrlw(a: i16x16, count: i16x8) -> i16x16 {
+                    result!()
+                }
+                fn psrld(a: i32x8, count: i32x4) -> i32x8 {
+                    result!()
+                }
+                fn psrlq(a: i64x4, count: i64x2) -> i64x4 {
+                    result!()
+                }
+                fn psrliw(a: i16x16, imm8: i32) -> i16x16 {
+                    result!()
+                }
+                fn psrlid(a: i32x8, imm8: i32) -> i32x8 {
+                    result!()
+                }
+                fn psrliq(a: i64x4, imm8: i32) -> i64x4 {
+                    result!()
+                }
+                fn psrlvd(a: i32x4, count: i32x4) -> i32x4 {
+                    result!()
+                }
+                fn psrlvd256(a: i32x8, count: i32x8) -> i32x8 {
+                    result!()
+                }
+                fn psrlvq(a: i64x2, count: i64x2) -> i64x2 {
+                    result!()
+                }
+                fn psrlvq256(a: i64x4, count: i64x4) -> i64x4 {
+                    result!()
+                }
+                fn pshufb(a: u8x32, b: u8x32) -> u8x32 {
+                    result!()
+                }
+                fn permd(a: u32x8, b: u32x8) -> u32x8 {
+                    result!()
+                }
+                fn permps(a: __m256, b: i32x8) -> __m256 {
+                    result!()
+                }
+                fn vperm2i128(a: i64x4, b: i64x4, imm8: i8) -> i64x4 {
+                    result!()
+                }
+                fn pgatherdd(
+                    src: i32x4,
+                    slice: *const i8,
+                    offsets: i32x4,
+                    mask: i32x4,
+                    scale: i8,
+                ) -> i32x4 {
+                    result!()
+                }
+                fn vpgatherdd(
+                    src: i32x8,
+                    slice: *const i8,
+                    offsets: i32x8,
+                    mask: i32x8,
+                    scale: i8,
+                ) -> i32x8 {
+                    result!()
+                }
+                fn pgatherdq(
+                    src: i64x2,
+                    slice: *const i8,
+                    offsets: i32x4,
+                    mask: i64x2,
+                    scale: i8,
+                ) -> i64x2 {
+                    result!()
+                }
+                fn vpgatherdq(
+                    src: i64x4,
+                    slice: *const i8,
+                    offsets: i32x4,
+                    mask: i64x4,
+                    scale: i8,
+                ) -> i64x4 {
+                    result!()
+                }
+                fn pgatherqd(
+                    src: i32x4,
+                    slice: *const i8,
+                    offsets: i64x2,
+                    mask: i32x4,
+                    scale: i8,
+                ) -> i32x4 {
+                    result!()
+                }
+                fn vpgatherqd(
+                    src: i32x4,
+                    slice: *const i8,
+                    offsets: i64x4,
+                    mask: i32x4,
+                    scale: i8,
+                ) -> i32x4 {
+                    result!()
+                }
+                fn pgatherqq(
+                    src: i64x2,
+                    slice: *const i8,
+                    offsets: i64x2,
+                    mask: i64x2,
+                    scale: i8,
+                ) -> i64x2 {
+                    result!()
+                }
+                fn vpgatherqq(
+                    src: i64x4,
+                    slice: *const i8,
+                    offsets: i64x4,
+                    mask: i64x4,
+                    scale: i8,
+                ) -> i64x4 {
+                    result!()
+                }
+                fn pgatherdpd(
+                    src: __m128d,
+                    slice: *const i8,
+                    offsets: i32x4,
+                    mask: __m128d,
+                    scale: i8,
+                ) -> __m128d {
+                    result!()
+                }
+                fn vpgatherdpd(
+                    src: __m256d,
+                    slice: *const i8,
+                    offsets: i32x4,
+                    mask: __m256d,
+                    scale: i8,
+                ) -> __m256d {
+                    result!()
+                }
+                fn pgatherqpd(
+                    src: __m128d,
+                    slice: *const i8,
+                    offsets: i64x2,
+                    mask: __m128d,
+                    scale: i8,
+                ) -> __m128d {
+                    result!()
+                }
+                fn vpgatherqpd(
+                    src: __m256d,
+                    slice: *const i8,
+                    offsets: i64x4,
+                    mask: __m256d,
+                    scale: i8,
+                ) -> __m256d {
+                    result!()
+                }
+                fn pgatherdps(
+                    src: __m128,
+                    slice: *const i8,
+                    offsets: i32x4,
+                    mask: __m128,
+                    scale: i8,
+                ) -> __m128 {
+                    result!()
+                }
+                fn vpgatherdps(
+                    src: __m256,
+                    slice: *const i8,
+                    offsets: i32x8,
+                    mask: __m256,
+                    scale: i8,
+                ) -> __m256 {
+                    result!()
+                }
+                fn pgatherqps(
+                    src: __m128,
+                    slice: *const i8,
+                    offsets: i64x2,
+                    mask: __m128,
+                    scale: i8,
+                ) -> __m128 {
+                    result!()
+                }
+                fn vpgatherqps(
+                    src: __m128,
+                    slice: *const i8,
+                    offsets: i64x4,
+                    mask: __m128,
+                    scale: i8,
+                ) -> __m128 {
+                    result!()
+                }
+                fn vpslldq(a: i64x4, b: i32) -> i64x4 {
+                    result!()
+                }
+                fn vpsrldq(a: i64x4, b: i32) -> i64x4 {
+                    result!()
+                }
+            }
             pub mod sse2 {
-                pub fn pause() {}
-                pub fn pmovmskb() -> i32 {
+                use core::arch::x86_64::__m128;
+                use core::arch::x86_64::__m128d;
+                use core::arch::x86_64::__m128i;
+                use core::arch::x86_64::__m256;
+                use core::arch::x86_64::__m256d;
+                type i8x16 = [i8; 16];
+                type i8x32 = [i8; 32];
+                type i16x8 = [i16; 8];
+                type i16x16 = [i16; 16];
+                type i32x4 = [i32; 4];
+                type i32x8 = [i32; 8];
+                type i64x2 = [i64; 2];
+                type i64x4 = [i64; 4];
+                type u8x16 = [u8; 16];
+                type u8x32 = [u8; 32];
+                type u16x8 = [u16; 8];
+                type u16x16 = [u16; 16];
+                type u32x4 = [u32; 4];
+                type u32x8 = [u32; 8];
+                type u64x2 = [u64; 2];
+                type u64x4 = [u64; 4];
+
+                fn pause() {}
+                fn clflush(p: *const u8) {}
+                fn lfence() {}
+                fn mfence() {}
+                fn pavgb(a: u8x16, b: u8x16) -> u8x16 {
+                    result!()
+                }
+                fn pavgw(a: u16x8, b: u16x8) -> u16x8 {
+                    result!()
+                }
+                fn pmaddwd(a: i16x8, b: i16x8) -> i32x4 {
+                    result!()
+                }
+                fn pmaxsw(a: i16x8, b: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn pmaxub(a: u8x16, b: u8x16) -> u8x16 {
+                    result!()
+                }
+                fn pminsw(a: i16x8, b: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn pminub(a: u8x16, b: u8x16) -> u8x16 {
+                    result!()
+                }
+                fn pmulhw(a: i16x8, b: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn pmulhuw(a: u16x8, b: u16x8) -> u16x8 {
+                    result!()
+                }
+                fn pmuludq(a: u32x4, b: u32x4) -> u64x2 {
+                    result!()
+                }
+                fn psadbw(a: u8x16, b: u8x16) -> u64x2 {
+                    result!()
+                }
+                fn pslliw(a: i16x8, imm8: i32) -> i16x8 {
+                    result!()
+                }
+                fn psllw(a: i16x8, count: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn psllid(a: i32x4, imm8: i32) -> i32x4 {
+                    result!()
+                }
+                fn pslld(a: i32x4, count: i32x4) -> i32x4 {
+                    result!()
+                }
+                fn pslliq(a: i64x2, imm8: i32) -> i64x2 {
+                    result!()
+                }
+                fn psllq(a: i64x2, count: i64x2) -> i64x2 {
+                    result!()
+                }
+                fn psraiw(a: i16x8, imm8: i32) -> i16x8 {
+                    result!()
+                }
+                fn psraw(a: i16x8, count: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn psraid(a: i32x4, imm8: i32) -> i32x4 {
+                    result!()
+                }
+                fn psrad(a: i32x4, count: i32x4) -> i32x4 {
+                    result!()
+                }
+                fn psrliw(a: i16x8, imm8: i32) -> i16x8 {
+                    result!()
+                }
+                fn psrlw(a: i16x8, count: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn psrlid(a: i32x4, imm8: i32) -> i32x4 {
+                    result!()
+                }
+                fn psrld(a: i32x4, count: i32x4) -> i32x4 {
+                    result!()
+                }
+                fn psrliq(a: i64x2, imm8: i32) -> i64x2 {
+                    result!()
+                }
+                fn psrlq(a: i64x2, count: i64x2) -> i64x2 {
+                    result!()
+                }
+                fn cvtdq2ps(a: i32x4) -> __m128 {
+                    result!()
+                }
+                fn cvtps2dq(a: __m128) -> i32x4 {
+                    result!()
+                }
+                fn maskmovdqu(a: i8x16, mask: i8x16, mem_addr: *mut i8) {
+                    result!()
+                }
+                fn packsswb(a: i16x8, b: i16x8) -> i8x16 {
+                    result!()
+                }
+                fn packssdw(a: i32x4, b: i32x4) -> i16x8 {
+                    result!()
+                }
+                fn packuswb(a: i16x8, b: i16x8) -> u8x16 {
+                    result!()
+                }
+                fn pmovmskb(a: i8x16) -> i32 {
+                    result!()
+                }
+                fn maxsd(a: __m128d, b: __m128d) -> __m128d {
+                    result!()
+                }
+                fn maxpd(a: __m128d, b: __m128d) -> __m128d {
+                    result!()
+                }
+                fn minsd(a: __m128d, b: __m128d) -> __m128d {
+                    result!()
+                }
+                fn minpd(a: __m128d, b: __m128d) -> __m128d {
+                    result!()
+                }
+                fn sqrtsd(a: __m128d) -> __m128d {
+                    result!()
+                }
+                fn sqrtpd(a: __m128d) -> __m128d {
+                    result!()
+                }
+                fn cmpsd(a: __m128d, b: __m128d, imm8: i8) -> __m128d {
+                    result!()
+                }
+                fn cmppd(a: __m128d, b: __m128d, imm8: i8) -> __m128d {
+                    result!()
+                }
+                fn comieqsd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn comiltsd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn comilesd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn comigtsd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn comigesd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn comineqsd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn ucomieqsd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn ucomiltsd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn ucomilesd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn ucomigtsd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn ucomigesd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn ucomineqsd(a: __m128d, b: __m128d) -> i32 {
+                    result!()
+                }
+                fn movmskpd(a: __m128d) -> i32 {
+                    result!()
+                }
+                fn cvtpd2ps(a: __m128d) -> __m128 {
+                    result!()
+                }
+                fn cvtps2pd(a: __m128) -> __m128d {
+                    result!()
+                }
+                fn cvtpd2dq(a: __m128d) -> i32x4 {
+                    result!()
+                }
+                fn cvtsd2si(a: __m128d) -> i32 {
+                    result!()
+                }
+                fn cvtsd2ss(a: __m128, b: __m128d) -> __m128 {
+                    result!()
+                }
+                fn cvtss2sd(a: __m128d, b: __m128) -> __m128d {
+                    result!()
+                }
+                fn cvttpd2dq(a: __m128d) -> i32x4 {
+                    result!()
+                }
+                fn cvttsd2si(a: __m128d) -> i32 {
+                    result!()
+                }
+                fn cvttps2dq(a: __m128) -> i32x4 {
+                    result!()
+                }
+                fn storeudq(mem_addr: *mut i8, a: __m128i) {
+                    result!()
+                }
+                fn storeupd(mem_addr: *mut i8, a: __m128d) {
+                    result!()
+                }
+            }
+            pub mod sse3 {
+                use core::arch::x86_64::__m128;
+                use core::arch::x86_64::__m128d;
+                use core::arch::x86_64::__m128i;
+                use core::arch::x86_64::__m256;
+                use core::arch::x86_64::__m256d;
+                type i8x16 = [i8; 16];
+                type i8x32 = [i8; 32];
+                type i16x8 = [i16; 8];
+                type i16x16 = [i16; 16];
+                type i32x4 = [i32; 4];
+                type i32x8 = [i32; 8];
+                type i64x2 = [i64; 2];
+                type i64x4 = [i64; 4];
+                type u8x16 = [u8; 16];
+                type u8x32 = [u8; 32];
+                type u16x8 = [u16; 8];
+                type u16x16 = [u16; 16];
+                type u32x4 = [u32; 4];
+                type u32x8 = [u32; 8];
+                type u64x2 = [u64; 2];
+                type u64x4 = [u64; 4];
+
+                fn addsubps(a: __m128, b: __m128) -> __m128 {
+                    result!()
+                }
+                fn addsubpd(a: __m128d, b: __m128d) -> __m128d {
+                    result!()
+                }
+                fn haddpd(a: __m128d, b: __m128d) -> __m128d {
+                    result!()
+                }
+                fn haddps(a: __m128, b: __m128) -> __m128 {
+                    result!()
+                }
+                fn hsubpd(a: __m128d, b: __m128d) -> __m128d {
+                    result!()
+                }
+                fn hsubps(a: __m128, b: __m128) -> __m128 {
+                    result!()
+                }
+                fn lddqu(mem_addr: *const i8) -> i8x16 {
+                    result!()
+                }
+            }
+
+            pub mod ssse3 {
+                type i8x16 = [i8; 16];
+                type i8x32 = [i8; 32];
+                type i16x8 = [i16; 8];
+                type i16x16 = [i16; 16];
+                type i32x4 = [i32; 4];
+                type i32x8 = [i32; 8];
+                type i64x2 = [i64; 2];
+                type i64x4 = [i64; 4];
+                type u8x16 = [u8; 16];
+                type u8x32 = [u8; 32];
+                type u16x8 = [u16; 8];
+                type u16x16 = [u16; 16];
+                type u32x4 = [u32; 4];
+                type u32x8 = [u32; 8];
+                type u64x2 = [u64; 2];
+                type u64x4 = [u64; 4];
+
+                fn pabsb128(a: i8x16) -> u8x16 {
+                    result!()
+                }
+                fn pabsw128(a: i16x8) -> u16x8 {
+                    result!()
+                }
+                fn pabsd128(a: i32x4) -> u32x4 {
+                    result!()
+                }
+                fn pshufb128(a: u8x16, b: u8x16) -> u8x16 {
+                    result!()
+                }
+                fn phaddw128(a: i16x8, b: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn phaddsw128(a: i16x8, b: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn phaddd128(a: i32x4, b: i32x4) -> i32x4 {
+                    result!()
+                }
+                fn phsubw128(a: i16x8, b: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn phsubsw128(a: i16x8, b: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn phsubd128(a: i32x4, b: i32x4) -> i32x4 {
+                    result!()
+                }
+                fn pmaddubsw128(a: u8x16, b: i8x16) -> i16x8 {
+                    result!()
+                }
+                fn pmulhrsw128(a: i16x8, b: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn psignb128(a: i8x16, b: i8x16) -> i8x16 {
+                    result!()
+                }
+                fn psignw128(a: i16x8, b: i16x8) -> i16x8 {
+                    result!()
+                }
+                fn psignd128(a: i32x4, b: i32x4) -> i32x4 {
                     result!()
                 }
             }
@@ -2474,6 +3431,16 @@ pub mod std {
     }
 
     pub mod result {}
+
+    pub mod std_detect {
+        pub mod detect {
+            pub mod cache {
+                pub fn test(bit: u32) -> bool {
+                    result!()
+                }
+            }
+        }
+    }
 
     pub mod sys {
         pub mod unix {
