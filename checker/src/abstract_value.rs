@@ -916,20 +916,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     ) -> Rc<AbstractValue> {
         if self.is_bottom() {
             // If the condition is impossible so is the expression.
-            return consequent;
-        }
-        if self.is_top() {
             return self.clone();
         }
+        // If either of the branches is impossible, it must be the other one.
         if consequent.is_bottom() {
             return alternate;
         }
         if alternate.is_bottom() {
             return consequent;
         }
+        // If the branches are the same, the condition does no matter.
         if consequent.expression == alternate.expression {
             // [c ? x : x] -> x
             return consequent;
+        }
+        // If the condition is unknown, the rules below won't fire.
+        if self.is_top() {
+            return self.clone();
         }
         if self.expression == consequent.expression {
             // [x ? x : y] -> x || y

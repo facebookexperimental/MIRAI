@@ -25,7 +25,6 @@ pub struct FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx, E> {
     pub block_indices: Vec<mir::BasicBlock>,
     loop_anchors: HashSet<mir::BasicBlock>,
     dominators: Dominators<mir::BasicBlock>,
-    first_state: Environment,
     in_state: HashMap<mir::BasicBlock, Environment>,
     out_state: HashMap<mir::BasicBlock, Environment>,
     pub terminator_state: HashMap<mir::BasicBlock, Environment>,
@@ -47,7 +46,6 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn new(
         body_visitor: &'fixed mut BodyVisitor<'analysis, 'compilation, 'tcx, E>,
-        first_state: Environment,
     ) -> FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx, E> {
         let dominators = body_visitor.mir.dominators();
         let (block_indices, loop_anchors) = get_sorted_block_indices(body_visitor.mir, &dominators);
@@ -68,7 +66,6 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             block_indices,
             loop_anchors,
             dominators,
-            first_state,
             in_state,
             out_state,
             terminator_state,
@@ -102,7 +99,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
     fn visit_basic_block(&mut self, bb: mir::BasicBlock, iteration_count: usize) {
         // Merge output states of predecessors of bb
         let mut i_state = if iteration_count == 0 && bb.index() == 0 {
-            self.first_state.clone()
+            self.bv.first_environment.clone()
         } else {
             self.get_initial_state_from_predecessors(bb, iteration_count)
         };
@@ -282,7 +279,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             // bb is unreachable, at least in this iteration.
             // We therefore give it a false entry condition so that the block analyses knows
             // the block is unreachable.
-            let mut initial_state = self.in_state[&bb].clone();
+            let mut initial_state = self.bv.first_environment.clone();
             initial_state.entry_condition = Rc::new(abstract_value::FALSE);
             return initial_state;
         }

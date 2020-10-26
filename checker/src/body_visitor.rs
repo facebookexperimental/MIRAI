@@ -60,6 +60,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub start_instant: Instant,
     // The current environments when the return statement was executed
     pub exit_environment: Option<Environment>,
+    pub first_environment: Environment,
     pub function_name: Rc<str>,
     pub heap_addresses: HashMap<mir::Location, Rc<AbstractValue>>,
     pub post_condition: Option<Rc<AbstractValue>>,
@@ -114,6 +115,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             current_span: rustc_span::DUMMY_SP,
             start_instant: Instant::now(),
             exit_environment: None,
+            first_environment: Environment::default(),
             function_name,
             heap_addresses: HashMap::default(),
             post_condition: None,
@@ -185,7 +187,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
 
         // Update the current environment
-        let mut fixed_point_visitor = FixedPointVisitor::new(self, first_state);
+        self.first_environment = first_state;
+        let mut fixed_point_visitor = FixedPointVisitor::new(self);
         fixed_point_visitor.visit_blocks();
 
         let elapsed_time_in_seconds = fixed_point_visitor.bv.start_instant.elapsed().as_secs();
@@ -939,7 +942,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// Computes a fixed point over the blocks of the MIR for a promoted constant block
     #[logfn_inputs(TRACE)]
     fn visit_promoted_constants_block(&mut self) {
-        let mut fixed_point_visitor = FixedPointVisitor::new(self, Environment::default());
+        let mut fixed_point_visitor = FixedPointVisitor::new(self);
         fixed_point_visitor.visit_blocks();
 
         fixed_point_visitor.bv.check_for_errors(
