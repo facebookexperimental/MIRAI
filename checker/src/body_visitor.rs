@@ -374,6 +374,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 local_val
             }
         };
+        //println!("bv. refined_res: {:?}", refined_val);
         let result = if refined_val.is_top() {
             if self.imported_root_static(&path) {
                 return self.lookup_path_and_refine_result(path, result_rustc_type);
