@@ -155,6 +155,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .get_rustc_place_type(place, self.bv.current_span);
         match ty.kind() {
             TyKind::Adt(..) | TyKind::Generator(..) => {
+                if let Some(gen_args) = self.bv.type_visitor.generic_arguments {
+                    if !utils::are_concrete(gen_args) {
+                        info!("failed to infer generic arguments of {:?}", self.bv.def_id);
+                        return;
+                    }
+                }
                 let param_env = self.bv.type_visitor.get_param_env();
                 if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
                     let discr_ty = ty_and_layout.ty.discriminant_ty(self.bv.tcx);
