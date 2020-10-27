@@ -8,6 +8,8 @@
 #![feature(backtrace)]
 #![feature(core_intrinsics)]
 #![feature(discriminant_kind)]
+#![feature(toowned_clone_into)]
+#![feature(pattern)]
 
 #[macro_use]
 extern crate mirai_annotations;
