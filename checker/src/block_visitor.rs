@@ -1611,15 +1611,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 // With more optimization the len instruction becomes a constant.
                                 self.visit_constant(None, &len)
                             } else {
-                                let len_source_path =
-                                    source_thin_pointer_path.replace_selector(len_selector.clone());
+                                let len_source_path = source_thin_pointer_path
+                                    .add_or_replace_selector(len_selector.clone());
                                 self.bv.lookup_path_and_refine_result(
                                     len_source_path,
                                     self.bv.tcx.types.usize,
                                 )
                             };
                             let len_target_path =
-                                target_thin_pointer_path.replace_selector(len_selector);
+                                target_thin_pointer_path.add_or_replace_selector(len_selector);
                             self.bv
                                 .current_environment
                                 .update_value_at(len_target_path, len_value);
