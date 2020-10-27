@@ -13,33 +13,11 @@ Clone the Z3 source repository (preferably into the directory containing the MIR
 git clone https://github.com/Z3Prover/z3.git
 ```
 
-Edit the CMakeLists.txt file to add this:
-```
-################################################################################
-# Position independent code
-################################################################################
-# This is required because code built in the components will end up in a shared
-# library. If not building a shared library ``-fPIC`` isn't needed and would add
-# unnecessary overhead.
-if (BUILD_LIBZ3_SHARED)
-  # Avoid adding -fPIC compiler switch if we compile with MSVC (which does not
-  # support the flag) or if we target Windows, which generally does not use
-  # position independent code for native code shared libraries (DLLs).
-  if (NOT (MSVC OR MINGW OR WIN32))
-    z3_add_cxx_flag("-fPIC" REQUIRED)
-  endif()
-+else()
-+  if (BUILD_PIC)
-+    z3_add_cxx_flag("-fPIC" REQUIRED)
-+  endif()
-endif()
-```
-
 Then do:
 ```
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_LIBZ3_SHARED=FALSE -DBUILD_PIC=TRUE ../
+cmake -DCMAKE_BUILD_TYPE=Release -DZ3_BUILD_LIBZ3_SHARED=FALSE ../
 # use the number of jobs that makes sense for your machine
 make -j32
 ```
