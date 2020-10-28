@@ -171,7 +171,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
         // The entry block has no predecessors and the function parameters are its initial state
         // (which we omit here so that we can lazily provision them with additional context)
-        // as well any promoted constants.
+        // as well as any promoted constants.
         let mut first_state = self.promote_constants();
 
         // Add parameter values that are function constants.
@@ -1105,11 +1105,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     }
                     self.current_environment.update_value_at(tpath, rvalue);
                     continue;
-                }
-                Expression::Offset { .. } => {
-                    if self.check_for_errors && self.function_being_analyzed_is_root() {
-                        self.check_offset(&rvalue);
-                    }
                 }
                 Expression::Reference(path) => {
                     let deref_type = self

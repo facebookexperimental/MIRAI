@@ -6,16 +6,15 @@
 
 // A test that calls Iterator::unzip
 
-//todo: fix this
+use mirai_annotations::*;
 
-// use mirai_annotations::*;
-//
-// pub fn test() {
-//     let a = [(1, 2), (3, 4)];
-//
-//     let (left, right): (Vec<_>, Vec<_>) = a.iter().cloned().unzip();
-//     verify!(left == [1, 3]);
-//     verify!(right == [2, 4]);
-// }
+pub fn test() {
+    let a = [(1, 2), (3, 4)];
+
+    let (left, right): (Vec<_>, Vec<_>) = a.iter().cloned().unzip();
+    //todo: fix the false messages below (implement core.slice.cmp.memcmp)
+    verify!(left == [1, 3]); //~ provably false verification condition
+    verify!(right == [2, 4]); //~ provably false verification condition
+}
 
 pub fn main() {}

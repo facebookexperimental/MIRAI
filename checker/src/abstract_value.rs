@@ -2606,6 +2606,43 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let Expression::Neg { operand } = &other.expression {
             return self.addition(operand.clone());
         }
+        if let (
+            Expression::Cast {
+                operand: left,
+                target_type: ExpressionType::Usize,
+            },
+            Expression::Cast {
+                operand: right,
+                target_type: ExpressionType::Usize,
+            },
+        ) = (&self.expression, &other.expression)
+        {
+            if let (
+                Expression::Variable {
+                    path: left_path,
+                    var_type: ExpressionType::ThinPointer,
+                },
+                Expression::Variable {
+                    path: right_path,
+                    var_type: ExpressionType::ThinPointer,
+                },
+            ) = (&left.expression, &right.expression)
+            {
+                if let PathEnum::Offset { value } = &left_path.value {
+                    if let Expression::Offset {
+                        left: base,
+                        right: offset,
+                    } = &value.expression
+                    {
+                        if let PathEnum::Alias { value: rv } = &right_path.value {
+                            if rv.eq(base) {
+                                return offset.clone();
+                            }
+                        }
+                    }
+                }
+            }
+        }
         self.try_to_simplify_binary_op(other, ConstantDomain::sub, Self::subtract, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Sub { left, right })
         })
