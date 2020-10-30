@@ -1031,7 +1031,7 @@ impl Expression {
 
     /// Adds any heap blocks found in the associated expression to the given set.
     #[logfn_inputs(TRACE)]
-    pub fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>) {
+    pub fn record_heap_blocks_and_strings(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         match &self {
             Expression::Add { left, right }
             | Expression::And { left, right }
@@ -1052,45 +1052,45 @@ impl Expression {
             | Expression::Shl { left, right }
             | Expression::Shr { left, right, .. }
             | Expression::Sub { left, right } => {
-                left.expression.record_heap_blocks(result);
-                right.expression.record_heap_blocks(result);
+                left.expression.record_heap_blocks_and_strings(result);
+                right.expression.record_heap_blocks_and_strings(result);
             }
             Expression::ConditionalExpression {
                 condition,
                 consequent,
                 alternate,
             } => {
-                condition.expression.record_heap_blocks(result);
-                consequent.expression.record_heap_blocks(result);
-                alternate.expression.record_heap_blocks(result);
+                condition.expression.record_heap_blocks_and_strings(result);
+                consequent.expression.record_heap_blocks_and_strings(result);
+                alternate.expression.record_heap_blocks_and_strings(result);
             }
             Expression::HeapBlock { .. } => {
                 result.insert(AbstractValue::make_from(self.clone(), 1));
             }
             Expression::Join { left, right, .. } => {
-                left.expression.record_heap_blocks(result);
-                right.expression.record_heap_blocks(result);
+                left.expression.record_heap_blocks_and_strings(result);
+                right.expression.record_heap_blocks_and_strings(result);
             }
             Expression::Neg { operand }
             | Expression::LogicalNot { operand }
             | Expression::TaggedExpression { operand, .. }
             | Expression::UnknownTagCheck { operand, .. } => {
-                operand.expression.record_heap_blocks(result);
+                operand.expression.record_heap_blocks_and_strings(result);
             }
-            Expression::Reference(path) => path.record_heap_blocks(result),
+            Expression::Reference(path) => path.record_heap_blocks_and_strings(result),
             Expression::Switch {
                 discriminator,
                 cases,
                 default,
             } => {
-                discriminator.record_heap_blocks(result);
+                discriminator.record_heap_blocks_and_strings(result);
                 for (case_val, case_result) in cases {
-                    case_val.record_heap_blocks(result);
-                    case_result.record_heap_blocks(result);
+                    case_val.record_heap_blocks_and_strings(result);
+                    case_result.record_heap_blocks_and_strings(result);
                 }
-                default.record_heap_blocks(result);
+                default.record_heap_blocks_and_strings(result);
             }
-            Expression::Variable { path, .. } => path.record_heap_blocks(result),
+            Expression::Variable { path, .. } => path.record_heap_blocks_and_strings(result),
             _ => (),
         }
     }

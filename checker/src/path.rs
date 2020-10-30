@@ -478,6 +478,17 @@ impl Path {
         }
     }
 
+    pub fn is_rooted_by_string(&self) -> bool {
+        match &self.value {
+            PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_string(),
+            PathEnum::Alias { value } => matches!(
+                value.expression,
+                Expression::CompileTimeConstant(ConstantDomain::Str(..))
+            ),
+            _ => false,
+        }
+    }
+
     // Returns the length of the path.
     #[logfn_inputs(TRACE)]
     pub fn path_length(&self) -> usize {
@@ -634,17 +645,17 @@ impl Path {
         )
     }
 
-    /// Adds any heap blocks found in embedded index values to the given set.
+    /// Adds any heap blocks and string values found in embedded values to the given set.
     #[logfn_inputs(TRACE)]
-    pub fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>) {
+    pub fn record_heap_blocks_and_strings(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         match &self.value {
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
                 ..
             } => {
-                (**qualifier).record_heap_blocks(result);
-                selector.record_heap_blocks(result);
+                (**qualifier).record_heap_blocks_and_strings(result);
+                selector.record_heap_blocks_and_strings(result);
             }
             PathEnum::HeapBlock { value } => {
                 if let Expression::HeapBlock { .. } = &value.expression {
@@ -655,9 +666,17 @@ impl Path {
             }
             PathEnum::Offset { value } => {
                 if let Expression::Offset { left, right } = &value.expression {
-                    left.record_heap_blocks(result);
-                    right.record_heap_blocks(result);
+                    left.record_heap_blocks_and_strings(result);
+                    right.record_heap_blocks_and_strings(result);
                 }
+            }
+            PathEnum::Alias { value }
+                if matches!(
+                    value.expression,
+                    Expression::CompileTimeConstant(ConstantDomain::Str(..))
+                ) =>
+            {
+                result.insert(value.clone());
             }
             _ => (),
         }
@@ -1028,10 +1047,10 @@ impl Debug for PathSelector {
 impl PathSelector {
     /// Adds any abstract heap addresses found in embedded index values to the given set.
     #[logfn_inputs(TRACE)]
-    pub fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>) {
+    pub fn record_heap_blocks_and_strings(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         match self {
             PathSelector::Index(value) | PathSelector::Slice(value) => {
-                value.record_heap_blocks(result);
+                value.record_heap_blocks_and_strings(result);
             }
             _ => (),
         }

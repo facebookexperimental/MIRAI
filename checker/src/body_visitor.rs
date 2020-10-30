@@ -627,7 +627,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             );
             // Effects on the heap
             for (path, value) in side_effects.iter() {
-                if path.is_rooted_by_abstract_heap_block() {
+                if path.is_rooted_by_abstract_heap_block() || path.is_rooted_by_string() {
                     self.current_environment.update_value_at(
                         path.refine_parameters(
                             &[],

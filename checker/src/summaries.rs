@@ -323,8 +323,8 @@ fn extract_side_effects(
                 }
             })
         {
-            path.record_heap_blocks(&mut heap_roots);
-            value.record_heap_blocks(&mut heap_roots);
+            path.record_heap_blocks_and_strings(&mut heap_roots);
+            value.record_heap_blocks_and_strings(&mut heap_roots);
             if let Expression::Variable { path: vpath, .. } | Expression::InitialParameterValue { path: vpath, ..} = &value.expression {
                 if ordinal > 0 && vpath.eq(path) {
                     // The value is not an update, but just what was there at function entry.
@@ -356,8 +356,8 @@ fn extract_reachable_heap_allocations(
                     .iter()
                     .filter(|(p, _)| (**p) == root || p.is_rooted_by(&root))
                 {
-                    path.record_heap_blocks(&mut new_roots);
-                    value.record_heap_blocks(&mut new_roots);
+                    path.record_heap_blocks_and_strings(&mut new_roots);
+                    value.record_heap_blocks_and_strings(&mut new_roots);
                     result.push((path.clone(), value.clone()));
                 }
             }
