@@ -3100,12 +3100,6 @@ pub mod core {
             }
         }
 
-        pub mod cmp {
-            pub fn memcmp(_s1: *const u8, _s2: *const u8, _n: usize) -> i32 {
-                result!()
-            }
-        }
-
         pub mod index {
             pub fn slice_end_index_len_fail(index: usize, len: usize) {
                 panic!(

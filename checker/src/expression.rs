@@ -10,7 +10,7 @@ use crate::path::Path;
 use crate::tag_domain::Tag;
 use crate::type_visitor;
 
-use log_derive::logfn_inputs;
+use log_derive::*;
 use mirai_annotations::*;
 use rustc_ast::ast;
 use rustc_middle::ty::{Ty, TyCtxt, TyKind};
@@ -226,6 +226,14 @@ pub enum Expression {
 
     /// An expression that is true if the operand is false. ! bool
     LogicalNot { operand: Rc<AbstractValue> },
+
+    /// An expression which represents the result of comparing the left operand with
+    /// the right operand, according to the rules of of memcmp in unix.
+    Memcmp {
+        left: Rc<AbstractValue>,
+        right: Rc<AbstractValue>,
+        length: Rc<AbstractValue>,
+    },
 
     /// An expression that is left multiplied by right. *
     Mul {
@@ -519,6 +527,14 @@ impl Debug for Expression {
                 f.write_fmt(format_args!("({:?}) < ({:?})", left, right))
             }
             Expression::LogicalNot { operand } => f.write_fmt(format_args!("!({:?})", operand)),
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => f.write_fmt(format_args!(
+                "memcmp({:?}, {:?}, {:?})",
+                left, right, length
+            )),
             Expression::Mul { left, right } => {
                 f.write_fmt(format_args!("({:?}) * ({:?})", left, right))
             }
@@ -677,6 +693,15 @@ impl Expression {
                 left.expression.contains_local_variable()
                     || right.expression.contains_local_variable()
             }
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                left.expression.contains_local_variable()
+                    || right.expression.contains_local_variable()
+                    || length.expression.contains_local_variable()
+            }
             Expression::Neg { operand }
             | Expression::LogicalNot { operand }
             | Expression::UnknownTagCheck { operand, .. } => {
@@ -767,6 +792,15 @@ impl Expression {
             Expression::Join { left, right, .. } => {
                 left.expression.contains_parameter() || right.expression.contains_parameter()
             }
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                left.expression.contains_parameter()
+                    || right.expression.contains_parameter()
+                    || length.expression.contains_parameter()
+            }
             Expression::Neg { operand }
             | Expression::LogicalNot { operand }
             | Expression::UnknownTagCheck { operand, .. } => {
@@ -830,6 +864,7 @@ impl Expression {
             Expression::LessOrEqual { .. } => Some(TagPropagation::LessOrEqual),
             Expression::LessThan { .. } => Some(TagPropagation::LessThan),
             Expression::LogicalNot { .. } => Some(TagPropagation::LogicalNot),
+            Expression::Memcmp { .. } => Some(TagPropagation::Memcmp),
             Expression::Mul { .. } => Some(TagPropagation::Mul),
             Expression::MulOverflows { .. } => Some(TagPropagation::MulOverflows),
             Expression::Ne { .. } => Some(TagPropagation::Ne),
@@ -970,6 +1005,7 @@ impl Expression {
             Expression::LessOrEqual { .. } => Bool,
             Expression::LessThan { .. } => Bool,
             Expression::LogicalNot { .. } => Bool,
+            Expression::Memcmp { .. } => ExpressionType::I32,
             Expression::Mul { left, .. } => left.expression.infer_type(),
             Expression::MulOverflows { .. } => Bool,
             Expression::Ne { .. } => Bool,
@@ -1033,7 +1069,9 @@ impl Expression {
     #[logfn_inputs(TRACE)]
     pub fn record_heap_blocks_and_strings(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         match &self {
+            Expression::Bottom | Expression::Top => (),
             Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
             | Expression::And { left, right }
             | Expression::BitAnd { left, right }
             | Expression::BitOr { left, right }
@@ -1042,19 +1080,35 @@ impl Expression {
             | Expression::Equals { left, right }
             | Expression::GreaterOrEqual { left, right }
             | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
             | Expression::LessOrEqual { left, right }
             | Expression::LessThan { left, right }
             | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
             | Expression::Ne { left, right }
             | Expression::Offset { left, right }
             | Expression::Or { left, right }
             | Expression::Rem { left, right }
             | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
             | Expression::Shr { left, right, .. }
-            | Expression::Sub { left, right } => {
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => {
                 left.expression.record_heap_blocks_and_strings(result);
                 right.expression.record_heap_blocks_and_strings(result);
             }
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::Neg { operand }
+            | Expression::LogicalNot { operand }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::UnknownTagCheck { operand, .. } => {
+                operand.expression.record_heap_blocks_and_strings(result);
+            }
+            Expression::CompileTimeConstant(..) => (),
             Expression::ConditionalExpression {
                 condition,
                 consequent,
@@ -1067,15 +1121,27 @@ impl Expression {
             Expression::HeapBlock { .. } => {
                 result.insert(AbstractValue::make_from(self.clone(), 1));
             }
+            Expression::HeapBlockLayout {
+                length, alignment, ..
+            } => {
+                length.expression.record_heap_blocks_and_strings(result);
+                alignment.expression.record_heap_blocks_and_strings(result);
+            }
+            Expression::InitialParameterValue { path, .. } | Expression::Variable { path, .. } => {
+                path.record_heap_blocks_and_strings(result)
+            }
             Expression::Join { left, right, .. } => {
                 left.expression.record_heap_blocks_and_strings(result);
                 right.expression.record_heap_blocks_and_strings(result);
             }
-            Expression::Neg { operand }
-            | Expression::LogicalNot { operand }
-            | Expression::TaggedExpression { operand, .. }
-            | Expression::UnknownTagCheck { operand, .. } => {
-                operand.expression.record_heap_blocks_and_strings(result);
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                left.expression.record_heap_blocks_and_strings(result);
+                right.expression.record_heap_blocks_and_strings(result);
+                length.expression.record_heap_blocks_and_strings(result);
             }
             Expression::Reference(path) => path.record_heap_blocks_and_strings(result),
             Expression::Switch {
@@ -1090,8 +1156,25 @@ impl Expression {
                 }
                 default.record_heap_blocks_and_strings(result);
             }
-            Expression::Variable { path, .. } => path.record_heap_blocks_and_strings(result),
-            _ => (),
+            Expression::UninterpretedCall {
+                callee, arguments, ..
+            } => {
+                callee.record_heap_blocks_and_strings(result);
+                for arg in arguments {
+                    arg.record_heap_blocks_and_strings(result);
+                }
+            }
+            Expression::UnknownModelField {
+                path,
+                default: operand,
+            }
+            | Expression::WidenedJoin { path, operand } => {
+                path.record_heap_blocks_and_strings(result);
+                operand.record_heap_blocks_and_strings(result);
+            }
+            Expression::UnknownTagField { path } => {
+                path.record_heap_blocks_and_strings(result);
+            }
         }
     }
 }

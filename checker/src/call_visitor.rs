@@ -897,6 +897,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             KnownNames::StdIntrinsicsOffset => self.handle_offset(),
             KnownNames::StdIntrinsicsSizeOf => self.handle_size_of(),
             KnownNames::StdIntrinsicsSizeOfVal => self.handle_size_of_val(),
+            KnownNames::StdSliceCmpMemcmp => self.handle_memcmp(),
             _ => abstract_value::BOTTOM.into(),
         }
     }
@@ -1854,6 +1855,19 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .0,
         );
         AbstractValue::make_typed_unknown(ExpressionType::U128, path)
+    }
+
+    /// Calls implementation provided memcmp.
+    ///
+    /// Interprets the data as u8.
+    ///
+    /// Returns 0 for equal, < 0 for less than and > 0 for greater than.
+    fn handle_memcmp(&mut self) -> Rc<AbstractValue> {
+        checked_assume!(self.actual_args.len() == 3);
+        let left_val = self.actual_args[0].1.clone();
+        let right_val = self.actual_args[1].1.clone();
+        let len_val = self.actual_args[2].1.clone();
+        AbstractValue::make_memcmp(left_val, right_val, len_val)
     }
 
     /// Returns the [ABI]-required minimum alignment of the type of the value that `val` points to.
