@@ -845,14 +845,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     }
 
     /// Check if the given condition is reachable and true.
-    /// If not issue a warning if the function is public and return the warning message, if
-    /// the condition is not a post condition.
+    /// If not, issue a warning subject to various conditions and return the message.
     #[logfn_inputs(TRACE)]
-    pub fn check_condition(
+    pub fn check_special_function_condition(
         &mut self,
         cond: &Rc<AbstractValue>,
         message: &str,
-        is_post_condition: bool,
+        function_name: KnownNames,
     ) -> Option<Rc<str>> {
         precondition!(self.bv.check_for_errors);
         if cond.is_bottom() {
@@ -876,8 +875,21 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             return None;
         }
 
-        // If the condition is always false, give an error since that is bad style.
-        if !cond_as_bool.unwrap_or(true) {
+        if function_name == KnownNames::MiraiPostcondition {
+            let span = self.bv.current_span;
+            let msg = if cond_as_bool.is_some() {
+                "provably false postcondition"
+            } else {
+                "possible unsatisfied postcondition"
+            };
+            let error = self.bv.cv.session.struct_span_err(span, msg);
+            self.bv.emit_diagnostic(error);
+            // Don't add the post condition to the summary
+            return None;
+        }
+
+        // If a verification condition is always false, give an error since that is bad style.
+        if function_name == KnownNames::MiraiVerify && !cond_as_bool.unwrap_or(true) {
             // If the condition is always false, give a style error
             let span = self.bv.current_span;
             let error = self
@@ -886,8 +898,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .session
                 .struct_span_err(span, "provably false verification condition");
             self.bv.emit_diagnostic(error);
-            if !is_post_condition
-                && entry_cond_as_bool.is_none()
+            if entry_cond_as_bool.is_none()
                 && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
             {
                 // promote the path as a precondition. I.e. the program is only correct,
@@ -911,29 +922,29 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
-        if self.bv.function_being_analyzed_is_root()
+        // or if the condition is not promotable or if the condition is being explicitly verified.
+        if function_name == KnownNames::MiraiVerify
+            || self.bv.function_being_analyzed_is_root()
             || cond.expression.contains_local_variable()
             || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
             // In relaxed mode we don't want to complain if the condition or reachability depends on
-            // a parameter, since it is assumed that an implicit precondition was intended by the author.
-            if matches!(self.bv.cv.options.diag_level, DiagLevel::RELAXED)
-                && (cond.expression.contains_parameter()
-                    || self
+            // a parameter, since it is assumed that an implicit precondition was intended by the author
+            // unless, of course, the condition is being explicitly verified.
+            if function_name == KnownNames::MiraiVerify
+                || !matches!(self.bv.cv.options.diag_level, DiagLevel::RELAXED)
+                || (!cond.expression.contains_parameter()
+                    && !self
                         .bv
                         .current_environment
                         .entry_condition
                         .expression
                         .contains_parameter())
             {
-                return None;
+                let span = self.bv.current_span;
+                let warning = self.bv.cv.session.struct_span_warn(span, warning.as_str());
+                self.bv.emit_diagnostic(warning);
             }
-            // We expect public functions to have programmer supplied preconditions
-            // that preclude any assertions from failing. So, at this stage we get to
-            // complain a bit.
-            let span = self.bv.current_span;
-            let warning = self.bv.cv.session.struct_span_warn(span, warning.as_str());
-            self.bv.emit_diagnostic(warning);
         }
 
         Some(Rc::from(warning.as_str()))

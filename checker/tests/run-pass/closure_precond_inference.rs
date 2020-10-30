@@ -15,7 +15,7 @@ pub fn main() {
 fn call(x: i32) {
     checked_assume!(x > 0);
     let f = || {
-        checked_verify!(x > 0);
+        assert!(x > 0);
     };
     f()
 }
