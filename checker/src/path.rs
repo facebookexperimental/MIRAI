@@ -418,25 +418,30 @@ impl Path {
         }
     }
 
-    /// True if path qualifies an abstract heap block, or another qualified path rooted by an
-    /// abstract heap block.
+    /// True if path qualifies an abstract heap block, string or static, or another qualified path
+    /// rooted by an abstract heap block, string or static.
     #[logfn_inputs(TRACE)]
-    pub fn is_rooted_by_abstract_heap_block(&self) -> bool {
+    pub fn is_rooted_by_non_local_structure(&self) -> bool {
         match &self.value {
-            PathEnum::QualifiedPath { qualifier, .. } => {
-                qualifier.is_rooted_by_abstract_heap_block()
-            }
+            PathEnum::Alias { value } => matches!(
+                value.expression,
+                Expression::CompileTimeConstant(ConstantDomain::Str(..))
+            ),
             PathEnum::HeapBlock { .. } => true,
             PathEnum::Offset { value } => {
                 if let Expression::Offset { left, .. } = &value.expression {
                     if let Expression::Reference(path) | Expression::Variable { path, .. } =
                         &left.expression
                     {
-                        return path.is_rooted_by_abstract_heap_block();
+                        return path.is_rooted_by_non_local_structure();
                     }
                 }
                 false
             }
+            PathEnum::QualifiedPath { qualifier, .. } => {
+                qualifier.is_rooted_by_non_local_structure()
+            }
+            PathEnum::StaticVariable { .. } => true,
             _ => false,
         }
     }
@@ -474,17 +479,6 @@ impl Path {
         match &self.value {
             PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_parameter(),
             PathEnum::Parameter { .. } => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_rooted_by_string(&self) -> bool {
-        match &self.value {
-            PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_string(),
-            PathEnum::Alias { value } => matches!(
-                value.expression,
-                Expression::CompileTimeConstant(ConstantDomain::Str(..))
-            ),
             _ => false,
         }
     }
@@ -677,6 +671,14 @@ impl Path {
                 ) =>
             {
                 result.insert(value.clone());
+            }
+            PathEnum::StaticVariable {
+                expression_type, ..
+            } => {
+                result.insert(AbstractValue::make_typed_unknown(
+                    expression_type.clone(),
+                    Rc::new(self.clone()),
+                ));
             }
             _ => (),
         }

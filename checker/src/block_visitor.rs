@@ -1965,7 +1965,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         let index = promoted.index();
                         Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
                     }
-                    None => Path::new_static(self.bv.tcx, def_id),
+                    None => self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
                 };
                 self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
                 let val_at_path = self.bv.lookup_path_and_refine_result(path, ty);
@@ -2197,7 +2197,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
                     self.bv.tcx.get_global_alloc(p.alloc_id)
                 {
-                    return AbstractValue::make_reference(Path::new_static(self.bv.tcx, def_id));
+                    return AbstractValue::make_reference(
+                        self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
+                    );
                 }
                 debug!("span: {:?}", self.bv.current_span);
                 debug!("type kind {:?}", ty.kind());
@@ -2564,10 +2566,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
                         self.bv.tcx.get_global_alloc(ptr.alloc_id)
                     {
-                        return AbstractValue::make_reference(Path::new_static(
-                            self.bv.tcx,
-                            def_id,
-                        ));
+                        return AbstractValue::make_reference(
+                            self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
+                        );
                     }
                     let alloc = self.bv.tcx.global_alloc(ptr.alloc_id).unwrap_memory();
                     let alloc_len = alloc.len() as u64;
