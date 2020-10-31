@@ -585,12 +585,15 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 mir::ProjectionElem::Downcast(_, ordinal) => {
                     if let TyKind::Adt(def, substs) = base_ty.kind() {
                         if ordinal.index() >= def.variants.len() {
-                            assume_unreachable!(
+                            info!(
                                 "illegally down casting to index {} of {:?} at {:?}",
                                 ordinal.index(),
                                 base_ty,
                                 current_span
                             );
+                            let variant = &def.variants.iter().last().unwrap();
+                            let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
+                            return self.tcx.mk_tup(field_tys);
                         }
                         let variant = &def.variants[*ordinal];
                         let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
