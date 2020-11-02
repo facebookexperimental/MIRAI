@@ -610,7 +610,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 Expression::Or { left: x, right: y } => {
                     // [(x || y) && x] -> x
                     // [(x || y) && y] -> y
-                    if *x == other || *y == other {
+                    if other.implies(x) || other.implies(y) {
                         return other;
                     }
                     if let Expression::LogicalNot { operand } = &other.expression {
@@ -1385,6 +1385,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return other.logical_not();
             }
 
+            // [(c ? v1: true) == 0] -> c && !v1
             // [(c ? v1: v2) == c3] -> !c if v1 != c3 && v2 == c3
             // [(c ? v1: v2) == c3] -> c if v1 == c3 && v2 != c3
             // [(c ? v1: v2) == c3] -> true if v1 == c3 && v2 == c3
@@ -1395,8 +1396,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     alternate: v2,
                     ..
                 },
-                Expression::CompileTimeConstant(..),
+                Expression::CompileTimeConstant(con),
             ) => {
+                if let ConstantDomain::U128(0) = con {
+                    if let Expression::CompileTimeConstant(ConstantDomain::True) = v2.expression {
+                        return c.and(v1.logical_not());
+                    }
+                }
                 let v2_eq_other = v2.equals(other.clone()).as_bool_if_known().unwrap_or(false);
                 if v1
                     .not_equals(other.clone())
