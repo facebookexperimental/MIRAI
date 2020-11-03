@@ -571,7 +571,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .get_function_constant_for(
                     def_id,
                     ty,
-                    generic_args.unwrap_or_else(|| self.tcx.empty_substs_for_def_id(def_id)),
+                    generic_args,
                     self.tcx,
                     &mut self.cv.known_names_cache,
                     &mut self.cv.summary_cache,

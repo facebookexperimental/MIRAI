@@ -106,14 +106,18 @@ impl ConstantDomain {
     pub fn for_function<'a, 'tcx>(
         function_id: usize,
         def_id: DefId,
-        generic_args: SubstsRef<'tcx>,
+        generic_args: Option<SubstsRef<'tcx>>,
         tcx: TyCtxt<'tcx>,
         known_names_cache: &mut KnownNamesCache,
         summary_cache: &mut PersistentSummaryCache<'tcx>,
     ) -> ConstantDomain {
         let summary_cache_key = summary_cache.get_summary_key_for(def_id).to_owned();
         let argument_type_key = utils::argument_types_key_str(tcx, generic_args);
-        let generic_arguments = generic_args.types().map(|t| t.kind().into()).collect();
+        let generic_arguments = if let Some(generic_args) = generic_args {
+            generic_args.types().map(|t| t.kind().into()).collect()
+        } else {
+            vec![]
+        };
         let known_name = known_names_cache.get(tcx, def_id);
         ConstantDomain::Function(Rc::new(FunctionReference {
             def_id: Some(def_id),
@@ -1138,7 +1142,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
         &mut self,
         def_id: DefId,
         ty: Ty<'tcx>,
-        generic_args: SubstsRef<'tcx>,
+        generic_args: Option<SubstsRef<'tcx>>,
         tcx: TyCtxt<'tcx>,
         known_names_cache: &mut KnownNamesCache,
         summary_cache: &mut PersistentSummaryCache<'tcx>,

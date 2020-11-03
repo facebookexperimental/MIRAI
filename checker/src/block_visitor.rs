@@ -700,7 +700,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         return extract_func_ref(self.visit_function_reference(
                             *def_id,
                             specialized_closure_ty,
-                            substs,
+                            Some(substs),
                         ));
                     }
                     //todo: what about generators?
@@ -716,7 +716,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             return extract_func_ref(self.visit_function_reference(
                                 *def_id,
                                 specialized_closure_ty,
-                                substs,
+                                Some(substs),
                             ));
                         }
                     }
@@ -2033,7 +2033,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .type_visitor
                     .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
-                result = self.visit_function_reference(*def_id, specialized_ty, substs);
+                result = self.visit_function_reference(*def_id, specialized_ty, Some(substs));
             }
             TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Str) => {
                 if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) =
@@ -2706,10 +2706,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         &mut self,
         def_id: DefId,
         ty: Ty<'tcx>,
-        generic_args: SubstsRef<'tcx>,
+        generic_args: Option<SubstsRef<'tcx>>,
     ) -> &ConstantDomain {
         //todo: is def_id unique enough? Perhaps add ty?
-        self.bv.cv.substs_cache.insert(def_id, generic_args);
+        if let Some(generic_args) = generic_args {
+            self.bv.cv.substs_cache.insert(def_id, generic_args);
+        }
         &mut self.bv.cv.constant_value_cache.get_function_constant_for(
             def_id,
             ty,
@@ -2826,7 +2828,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 TyKind::Closure(def_id, generic_args)
                 | TyKind::Generator(def_id, generic_args, ..) => {
-                    let func_const = self.visit_function_reference(*def_id, ty, generic_args);
+                    let func_const = self.visit_function_reference(*def_id, ty, Some(generic_args));
                     let func_val = Rc::new(func_const.clone().into());
                     self.bv
                         .current_environment
@@ -2837,7 +2839,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     if let TyKind::Closure(def_id, generic_args) =
                         self.bv.tcx.type_of(*def_id).kind()
                     {
-                        let func_const = self.visit_function_reference(*def_id, ty, generic_args);
+                        let func_const =
+                            self.visit_function_reference(*def_id, ty, Some(generic_args));
                         let func_val = Rc::new(func_const.clone().into());
                         self.bv
                             .current_environment
@@ -2848,7 +2851,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     let func_const = self.visit_function_reference(
                         *def_id,
                         ty,
-                        generic_args.as_closure().substs,
+                        Some(generic_args.as_closure().substs),
                     );
                     let func_val = Rc::new(func_const.clone().into());
                     self.bv

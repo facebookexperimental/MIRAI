@@ -193,7 +193,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .visit_function_reference(
                         resolved_def_id,
                         specialized_resolved_ty,
-                        instance.substs,
+                        Some(instance.substs),
                     )
                     .clone();
                 self.callee_func_ref = if let ConstantDomain::Function(fr) = &func_const {
