@@ -882,13 +882,28 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let promoted_value = AbstractValue::make_from(Expression::Reference(value_path), 1);
             environment.update_value_at(promoted_root.clone(), promoted_value);
         } else if let TyKind::Ref(_, ty, _) = target_type.kind() {
-            // Really weird. Promoting a reference to a reference. Seems to be there for debugging.
-            // We see it for constant strings, so kind of like primitive values.
+            // Promoting a reference to a reference.
             ordinal += 99;
             let value_path: Rc<Path> = Rc::new(PathEnum::PromotedConstant { ordinal }.into());
             self.promote_reference(environment, ty, &value_path, local_path, ordinal);
             let promoted_value = AbstractValue::make_from(Expression::Reference(value_path), 1);
             environment.update_value_at(promoted_root.clone(), promoted_value);
+        } else if let TyKind::Str = target_type.kind() {
+            // Promoting a string constant
+            let exit_env_map = &self.exit_environment.as_ref().unwrap().value_map;
+            let target_value = exit_env_map
+                .get(local_path)
+                .expect("expect reference target to have a value");
+            environment.update_value_at(promoted_root.clone(), target_value.clone());
+            if let Expression::Reference(str_path) = &target_value.expression {
+                if let PathEnum::Alias { value } = &str_path.value {
+                    environment.update_value_at(str_path.clone(), value.clone());
+                    let len_path = Path::new_length(str_path.clone());
+                    if let Some(len_val) = exit_env_map.get(&len_path) {
+                        environment.update_value_at(len_path, len_val.clone());
+                    }
+                }
+            }
         } else {
             // A composite value needs to get to get promoted to the heap
             // in order to propagate it via function summaries.
