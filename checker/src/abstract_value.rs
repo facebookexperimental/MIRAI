@@ -397,7 +397,7 @@ pub trait AbstractValueTrait: Sized {
     fn logical_not(&self) -> Self;
     fn offset(&self, other: Self) -> Self;
     fn or(&self, other: Self) -> Self;
-    fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>);
+    fn record_heap_blocks_and_strings(&self, result: &mut HashSet<Rc<AbstractValue>>);
     fn refers_to_unknown_location(&self) -> bool;
     fn remainder(&self, other: Self) -> Self;
     fn remove_conjuncts_that_depend_on(&self, variables: &HashSet<Rc<Path>>) -> Self;
@@ -2406,10 +2406,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
-    /// Adds any abstract heap addresses found in the associated expression to the given set.
+    /// Adds any abstract heap addresses and strings found in the associated expression to the given set.
     #[logfn_inputs(TRACE)]
-    fn record_heap_blocks(&self, result: &mut HashSet<Rc<AbstractValue>>) {
-        self.expression.record_heap_blocks(result);
+    fn record_heap_blocks_and_strings(&self, result: &mut HashSet<Rc<AbstractValue>>) {
+        self.expression.record_heap_blocks_and_strings(result);
     }
 
     /// True if the value is derived from one or more memory locations whose addresses were not known
