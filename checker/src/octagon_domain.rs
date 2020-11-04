@@ -14,11 +14,11 @@ use std::convert::TryFrom;
 /// Each cell of the matrix represents potential constraint of the form Vi-Vj<=c,
 /// where c is some constant, Vi and Vj are variables. 
 /// For instance, DBM can be represented as follows 
-///   | V1 |  V2 |  V3 |  V4 |
-/// V1|  0 | -10 |  -5 |  15 |
-/// V2| 10 |   0 | -15 |   5 |
-/// V3| -5 |  15 |   0 | -20 |
-/// V4| 15 |   5 |  20 |   0 |
+///   |  V1  |  V2  |  V3  |  V4  |
+/// V1| +inf | +inf |   3  |   3  |
+/// V2| +inf | +inf |   3  |   3  |
+/// V3|   3  |   3  | +inf |   8  |
+/// V4|   3  |   3  |   2  | +inf |
 ///
 /// The matrix has twice more columns and rows because each variable represents
 /// positive and negative values in the constraints. More specifically, V2i-1 is
@@ -37,6 +37,7 @@ use std::convert::TryFrom;
 ///     y = if random() { y + 1 };
 /// } 
 /// ```
+/// For more details, consult the original paper by Antoine Miné (https://arxiv.org/pdf/cs/0703084.pdf)
 #[derive(Serialize, Deserialize, Clone, Eq, PartialOrd, PartialEq, Hash, Ord)]
 pub struct OctagonDomain {
     dbm: [[i128; 4]; 4],
@@ -53,7 +54,7 @@ pub const BOTTOM: OctagonDomain = OctagonDomain {
 };
 
 pub const TOP: OctagonDomain = {
-    let mut dbm = [[0i128; 4]; 4];
+    let mut dbm = [[std::i128::MAX; 4]; 4];
     dbm[0][1] = std::i128::MIN;
     dbm[1][0] = std::i128::MAX;
     OctagonDomain {
@@ -81,7 +82,7 @@ impl From<u128> for OctagonDomain {
 
 impl OctagonDomain {
     pub fn new(left: i128, right: i128) -> Self {
-        let mut dbm = [[0i128; 4]; 4];
+        let mut dbm = [[std::i128::MAX; 4]; 4];
         dbm[0][1] = left;
         dbm[1][0] = right;
         OctagonDomain {

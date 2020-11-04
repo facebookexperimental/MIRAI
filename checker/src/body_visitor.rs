@@ -71,6 +71,8 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub type_visitor: TypeVisitor<'tcx>,
 }
 
+const Z3_SIMPLIFICATION_ENABLED: bool = false;
+
 impl<'analysis, 'compilation, 'tcx, E> Debug for BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "BodyVisitor".fmt(f)
@@ -374,7 +376,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 local_val
             }
         };
-        //println!("bv. refined_res: {:?}", refined_val);
         let result = if refined_val.is_top() {
             if self.imported_root_static(&path) {
                 return self.lookup_path_and_refine_result(path, result_rustc_type);
@@ -1445,16 +1446,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
         // Check if the condition is always true (or false) if we get here.
         let mut cond_as_bool = cond_val.as_bool_if_known();
-        //println!("known as bool? {:?}", cond_as_bool);
         // Check if we can prove that every call to the current function will reach this call site.
         let mut entry_cond_as_bool = self.current_environment.entry_condition.as_bool_if_known();
-        //println!("entry condition as bool? {:?}", cond_as_bool);
         // Use SMT solver if need be.
         if let Some(entry_cond_as_bool) = entry_cond_as_bool {
             if entry_cond_as_bool && cond_as_bool.is_none() {
-                //println!("SMT solver is needed. Trying to solve: {:?}", cond_val);
                 cond_as_bool = self.solve_condition(cond_val);
-                //println!("result: {:?}", cond_as_bool);
             }
         } else {
             // Check if path implies condition
@@ -1497,13 +1494,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     #[logfn_inputs(TRACE)]
     fn solve_condition(&mut self, cond_val: &Rc<AbstractValue>) -> Option<bool> {
         let ce = &cond_val.expression;
-        //println!("before solver: {:?}", ce);
         let mut z3_ast  = self.smt_solver.get_as_smt_predicate(ce);
-        self.smt_solver.simplify(&mut z3_ast);
+        if Z3_SIMPLIFICATION_ENABLED {
+            self.smt_solver.simplify(&mut z3_ast);
+        }
         let cond_smt_expr =  z3_ast;
-        let cond_smt_expr_as_str = self.smt_solver.as_debug_string(&cond_smt_expr);
-        //println!("here is conditional simplified expression: {:?}", cond_smt_expr_as_str);
-        //let cond_smt_expr = self.smt_solver.get_as_smt_predicate(simplified);
         match self.smt_solver.solve_expression(&cond_smt_expr) {
             SmtResult::Unsatisfiable => {
                 // If we get here, the solver can prove that cond_val is always false.
@@ -1512,9 +1507,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             SmtResult::Satisfiable => {
                 // We could get here with cond_val being true. Or perhaps not.
                 // So lets see if !cond_val is provably false.
-                //let not_cond_expr = &cond_val.logical_not().expression;
-                //let smt_expr = self.smt_solver.get_as_smt_predicate(not_cond_expr);
-                let smt_result = self.smt_solver.solve_expression(&self.smt_solver.invert_predicate(&cond_smt_expr));
+                let not_cond_expr = &cond_val.logical_not().expression;
+                let smt_expr = self.smt_solver.get_as_smt_predicate(not_cond_expr);
+                let smt_result = self.smt_solver.solve_expression(&smt_expr);
                 if smt_result == SmtResult::Unsatisfiable {
                     // The solver can prove that !cond_val is always false.
                     Some(true)

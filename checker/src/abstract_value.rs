@@ -14,9 +14,7 @@ use crate::k_limits;
 use crate::octagon_domain::{self, OctagonDomain};
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
-use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::tag_domain::{Tag, TagDomain};
-use crate::z3_solver::Z3Solver;
 
 use crate::known_names::KnownNames;
 use log_derive::{logfn, logfn_inputs};
@@ -81,6 +79,7 @@ impl PartialEq for AbstractValue {
 
 const ID_ENABLED: bool = true;
 const OD_ENABLED: bool = false;
+const SIMPLIFICATION_HEURISTICS_ENABLED: bool = true;
 
 /// An abstract domain element that all represent the impossible concrete value.
 /// I.e. the corresponding set of possible concrete values is empty.
@@ -313,9 +312,6 @@ impl AbstractValue {
     /// Initializes the optional domains to None.
     #[logfn_inputs(TRACE)]
     pub fn make_from(expression: Expression, expression_size: u64) -> Rc<AbstractValue> {
-        //if expression_size >= 1000 {
-            //println!("expression is {:?} and its size {:?}", expression, expression_size);
-        //}
         if expression_size > k_limits::MAX_EXPRESSION_SIZE {
             // If the expression gets too large, refining it gets expensive and composing it
             // into other expressions leads to exponential growth. We therefore need to abstract
@@ -474,7 +470,6 @@ pub trait AbstractValueTrait: Sized {
         fresh: usize,
     ) -> Self;
     fn refine_with(&self, path_condition: &Self,  depth: usize) -> Self;
-    //fn refine_with(&self, path_condition: &Self, smt_solver: &Z3Solver, depth: usize) -> Self;
     fn transmute(&self, target_type: ExpressionType) -> Self;
     fn uninterpreted_call(
         &self,
@@ -2965,7 +2960,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return octagon_domain::BOTTOM;
         }
         match &self.expression {
-            Expression::Top => octagon_domain::BOTTOM,
+            Expression::Top => octagon_domain::TOP,
             Expression::CompileTimeConstant(ConstantDomain::I128(val)) => (*val).into(),
             Expression::CompileTimeConstant(ConstantDomain::U128(val)) => (*val).into(),
             Expression::Add { left, right } => {
@@ -2992,9 +2987,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .fold(default.get_as_octagon(), |acc, (_, result)| {
                     acc.widen(&result.get_as_octagon())
                 }),
+            Expression::Variable { .. } => octagon_domain::TOP,
             _ => {
                 octagon_domain::BOTTOM
-            }
+            },
                 
         }
     }
@@ -3007,7 +3003,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return interval_domain::BOTTOM;
         }
         match &self.expression {
-            Expression::Top => interval_domain::BOTTOM,
+            Expression::Top => interval_domain::TOP,
             Expression::Add { left, right } => left.get_as_interval().add(&right.get_as_interval()),
             Expression::CompileTimeConstant(ConstantDomain::I128(val)) => (*val).into(),
             Expression::CompileTimeConstant(ConstantDomain::U128(val)) => (*val).into(),
@@ -3030,6 +3026,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     acc.widen(&result.get_as_interval())
                 }),
             Expression::TaggedExpression { operand, .. } => operand.get_as_interval(),
+            Expression::Variable { .. } => {
+                interval_domain::TOP
+            },
             Expression::WidenedJoin { operand, .. } => {
                 let interval = operand.get_as_interval();
                 if interval.is_bottom() {
@@ -3310,269 +3309,267 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// in the given environment (if there is such a value).
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment, depth: usize) -> Rc<AbstractValue> {
-        //println!("refining paths. Current env: \n{:?}", environment);
-        self.clone()
-        //match &self.expression {
-            //Expression::Bottom | Expression::Top => self.clone(),
-            //Expression::Add { left, right } => left
-                //.refine_paths(environment, depth)
-                //.addition(right.refine_paths(environment, depth)),
-            //Expression::AddOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_paths(environment, depth)
-                //.add_overflows(right.refine_paths(environment, depth), result_type.clone()),
-            //Expression::And { left, right } => left
-                //.refine_paths(environment, depth)
-                //.and(right.refine_paths(environment, depth)),
-            //Expression::BitAnd { left, right } => left
-                //.refine_paths(environment, depth)
-                //.bit_and(right.refine_paths(environment, depth)),
-            //Expression::BitNot {
-                //operand,
-                //result_type,
-            //} => operand
-                //.refine_paths(environment, depth)
-                //.bit_not(result_type.clone()),
-            //Expression::BitOr { left, right } => left
-                //.refine_paths(environment, depth)
-                //.bit_or(right.refine_paths(environment, depth)),
-            //Expression::BitXor { left, right } => left
-                //.refine_paths(environment, depth)
-                //.bit_xor(right.refine_paths(environment, depth)),
-            //Expression::Cast {
-                //operand,
-                //target_type,
-            //} => operand
-                //.refine_paths(environment, depth)
-                //.cast(target_type.clone()),
-            //Expression::CompileTimeConstant(..) => self.clone(),
-            //Expression::ConditionalExpression {
-                //condition,
-                //consequent,
-                //alternate,
-            //} => condition
-                //.refine_paths(environment, depth)
-                //.conditional_expression(
-                    //consequent.refine_paths(environment, depth),
-                    //alternate.refine_paths(environment, depth),
-                //),
-            //Expression::Div { left, right } => left
-                //.refine_paths(environment, depth)
-                //.divide(right.refine_paths(environment, depth)),
-            //Expression::Equals { left, right } => left
-                //.refine_paths(environment, depth)
-                //.equals(right.refine_paths(environment, depth)),
-            //Expression::GreaterOrEqual { left, right } => left
-                //.refine_paths(environment, depth)
-                //.greater_or_equal(right.refine_paths(environment, depth)),
-            //Expression::GreaterThan { left, right } => left
-                //.refine_paths(environment, depth)
-                //.greater_than(right.refine_paths(environment, depth)),
-            //Expression::HeapBlock { .. } => self.clone(),
-            //Expression::HeapBlockLayout {
-                //length,
-                //alignment,
-                //source,
-            //} => AbstractValue::make_from(
-                //Expression::HeapBlockLayout {
-                    //length: length.refine_paths(environment, depth),
-                    //alignment: alignment.refine_paths(environment, depth),
-                    //source: *source,
-                //},
-                //1,
-            //),
-            //Expression::IntrinsicBinary { left, right, name } => left
-                //.refine_paths(environment, depth)
-                //.intrinsic_binary(right.refine_paths(environment, depth), *name),
-            //Expression::IntrinsicBitVectorUnary {
-                //operand,
-                //bit_length,
-                //name,
-            //} => operand
-                //.refine_paths(environment, depth)
-                //.intrinsic_bit_vector_unary(*bit_length, *name),
-            //Expression::IntrinsicFloatingPointUnary { operand, name } => operand
-                //.refine_paths(environment, depth)
-                //.intrinsic_floating_point_unary(*name),
-            //Expression::Join { left, right, path } => left.refine_paths(environment, depth).join(
-                //right.refine_paths(environment, depth),
-                //&path.refine_paths(environment, depth),
-            //),
-            //Expression::LessOrEqual { left, right } => left
-                //.refine_paths(environment, depth)
-                //.less_or_equal(right.refine_paths(environment, depth)),
-            //Expression::LessThan { left, right } => left
-                //.refine_paths(environment, depth)
-                //.less_than(right.refine_paths(environment, depth)),
-            //Expression::Mul { left, right } => left
-                //.refine_paths(environment, depth)
-                //.multiply(right.refine_paths(environment, depth)),
-            //Expression::MulOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_paths(environment, depth)
-                //.mul_overflows(right.refine_paths(environment, depth), result_type.clone()),
-            //Expression::Ne { left, right } => left
-                //.refine_paths(environment, depth)
-                //.not_equals(right.refine_paths(environment, depth)),
-            //Expression::Neg { operand } => operand.refine_paths(environment, depth).negate(),
-            //Expression::LogicalNot { operand } => {
-                //operand.refine_paths(environment, depth).logical_not()
-            //}
-            //Expression::Offset { left, right } => left
-                //.refine_paths(environment, depth)
-                //.offset(right.refine_paths(environment, depth)),
-            //Expression::Or { left, right } => left
-                //.refine_paths(environment, depth)
-                //.or(right.refine_paths(environment, depth)),
-            //Expression::Reference(path) => {
-                //let refined_path = path.refine_paths(environment, depth);
-                //AbstractValue::make_reference(refined_path)
-            //}
-            //Expression::InitialParameterValue { path, var_type } => {
-                //let refined_path = path.refine_paths(environment, depth);
-                //AbstractValue::make_initial_parameter_value(var_type.clone(), refined_path)
-            //}
-            //Expression::Rem { left, right } => left
-                //.refine_paths(environment, depth)
-                //.remainder(right.refine_paths(environment, depth)),
-            //Expression::Shl { left, right } => left
-                //.refine_paths(environment, depth)
-                //.shift_left(right.refine_paths(environment, depth)),
-            //Expression::ShlOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_paths(environment, depth)
-                //.shl_overflows(right.refine_paths(environment, depth), result_type.clone()),
-            //Expression::Shr {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_paths(environment, depth)
-                //.shr(right.refine_paths(environment, depth), result_type.clone()),
-            //Expression::ShrOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_paths(environment, depth)
-                //.shr_overflows(right.refine_paths(environment, depth), result_type.clone()),
-            //Expression::Sub { left, right } => left
-                //.refine_paths(environment, depth)
-                //.subtract(right.refine_paths(environment, depth)),
-            //Expression::SubOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_paths(environment, depth)
-                //.sub_overflows(right.refine_paths(environment, depth), result_type.clone()),
-            //Expression::Switch {
-                //discriminator,
-                //cases,
-                //default,
-            //} => discriminator.refine_paths(environment, depth).switch(
-                //cases
-                    //.iter()
-                    //.map(|(case_val, result_val)| {
-                        //(
-                            //case_val.refine_paths(environment, depth),
-                            //result_val.refine_paths(environment, depth),
-                        //)
-                    //})
-                    //.collect(),
-                //default.refine_paths(environment, depth),
-            //),
-            //Expression::TaggedExpression { operand, tag } => {
-                //operand.refine_paths(environment, depth).add_tag(*tag)
-            //}
-            //Expression::UninterpretedCall {
-                //callee,
-                //arguments: args,
-                //result_type,
-                //path,
-            //} => {
-                //let refined_callee = callee.refine_paths(environment, depth);
-                //let refined_arguments = args
-                    //.iter()
-                    //.map(|arg| arg.refine_paths(environment, depth))
-                    //.collect();
-                //let refined_path = path.refine_paths(environment, depth);
-                //refined_callee.uninterpreted_call(
-                    //refined_arguments,
-                    //result_type.clone(),
-                    //refined_path,
-                //)
-            //}
-            //Expression::UnknownModelField { path, default } => {
-                //let refined_path = path.refine_paths(environment, depth);
-                //if let Some(val) = environment.value_at(&refined_path) {
-                    //// This environment has a value for the model field.
-                    //val.clone()
-                //} else if refined_path.is_rooted_by_parameter() {
-                    //// Keep passing the buck to the next caller.
-                    //AbstractValue::make_from(
-                        //Expression::UnknownModelField {
-                            //path: refined_path,
-                            //default: default.clone(),
-                        //},
-                        //default.expression_size.saturating_add(1),
-                    //)
-                //} else {
-                    //// The buck stops here and the environment does not have a value for model field.
-                    //default.clone()
-                //}
-            //}
-            //Expression::UnknownTagCheck {
-                //operand,
-                //tag,
-                //checking_presence,
-            //} => AbstractValue::make_tag_check(
-                //operand.refine_paths(environment, depth),
-                //*tag,
-                //*checking_presence,
-            //),
-            //Expression::UnknownTagField { path } => {
-                //let refined_path = path.refine_paths(environment, depth);
-                //if let Some(val) = environment.value_at(&refined_path) {
-                    //// This environment has a value for the tag field.
-                    //val.clone()
-                //} else if !refined_path.is_rooted_by_parameter() {
-                    //// Return the dummy untagged value if refined_path is not rooted by a function parameter.
-                    //Rc::new(DUMMY_UNTAGGED_VALUE)
-                //} else {
-                    //// Otherwise, return again an unknown tag field.
-                    //AbstractValue::make_from(Expression::UnknownTagField { path: refined_path }, 1)
-                //}
-            //}
-            //Expression::Variable { path, var_type } => {
-                //if let Some(val) = environment.value_at(&path) {
-                    //val.clone()
-                //} else {
-                    //let refined_path = path.refine_paths(environment, depth);
-                    //if let PathEnum::Alias { value } = &refined_path.value {
-                        //value.clone()
-                    //} else if let Some(val) = environment.value_at(&refined_path) {
-                        //val.clone()
-                    //} else if refined_path == *path {
-                        //self.clone()
-                    //} else {
-                        //AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
-                    //}
-                //}
-            //}
-            //Expression::WidenedJoin { path, operand, .. } => operand
-                //.refine_paths(environment, depth)
-                //.widen(&path.refine_paths(environment, depth)),
-        //}
+        match &self.expression {
+            Expression::Bottom | Expression::Top => self.clone(),
+            Expression::Add { left, right } => left
+                .refine_paths(environment, depth)
+                .addition(right.refine_paths(environment, depth)),
+            Expression::AddOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment, depth)
+                .add_overflows(right.refine_paths(environment, depth), result_type.clone()),
+            Expression::And { left, right } => left
+                .refine_paths(environment, depth)
+                .and(right.refine_paths(environment, depth)),
+            Expression::BitAnd { left, right } => left
+                .refine_paths(environment, depth)
+                .bit_and(right.refine_paths(environment, depth)),
+            Expression::BitNot {
+                operand,
+                result_type,
+            } => operand
+                .refine_paths(environment, depth)
+                .bit_not(result_type.clone()),
+            Expression::BitOr { left, right } => left
+                .refine_paths(environment, depth)
+                .bit_or(right.refine_paths(environment, depth)),
+            Expression::BitXor { left, right } => left
+                .refine_paths(environment, depth)
+                .bit_xor(right.refine_paths(environment, depth)),
+            Expression::Cast {
+                operand,
+                target_type,
+            } => operand
+                .refine_paths(environment, depth)
+                .cast(target_type.clone()),
+            Expression::CompileTimeConstant(..) => self.clone(),
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => condition
+                .refine_paths(environment, depth)
+                .conditional_expression(
+                    consequent.refine_paths(environment, depth),
+                    alternate.refine_paths(environment, depth),
+                ),
+            Expression::Div { left, right } => left
+                .refine_paths(environment, depth)
+                .divide(right.refine_paths(environment, depth)),
+            Expression::Equals { left, right } => left
+                .refine_paths(environment, depth)
+                .equals(right.refine_paths(environment, depth)),
+            Expression::GreaterOrEqual { left, right } => left
+                .refine_paths(environment, depth)
+                .greater_or_equal(right.refine_paths(environment, depth)),
+            Expression::GreaterThan { left, right } => left
+                .refine_paths(environment, depth)
+                .greater_than(right.refine_paths(environment, depth)),
+            Expression::HeapBlock { .. } => self.clone(),
+            Expression::HeapBlockLayout {
+                length,
+                alignment,
+                source,
+            } => AbstractValue::make_from(
+                Expression::HeapBlockLayout {
+                    length: length.refine_paths(environment, depth),
+                    alignment: alignment.refine_paths(environment, depth),
+                    source: *source,
+                },
+                1,
+            ),
+            Expression::IntrinsicBinary { left, right, name } => left
+                .refine_paths(environment, depth)
+                .intrinsic_binary(right.refine_paths(environment, depth), *name),
+            Expression::IntrinsicBitVectorUnary {
+                operand,
+                bit_length,
+                name,
+            } => operand
+                .refine_paths(environment, depth)
+                .intrinsic_bit_vector_unary(*bit_length, *name),
+            Expression::IntrinsicFloatingPointUnary { operand, name } => operand
+                .refine_paths(environment, depth)
+                .intrinsic_floating_point_unary(*name),
+            Expression::Join { left, right, path } => left.refine_paths(environment, depth).join(
+                right.refine_paths(environment, depth),
+                &path.refine_paths(environment, depth),
+            ),
+            Expression::LessOrEqual { left, right } => left
+                .refine_paths(environment, depth)
+                .less_or_equal(right.refine_paths(environment, depth)),
+            Expression::LessThan { left, right } => left
+                .refine_paths(environment, depth)
+                .less_than(right.refine_paths(environment, depth)),
+            Expression::Mul { left, right } => left
+                .refine_paths(environment, depth)
+                .multiply(right.refine_paths(environment, depth)),
+            Expression::MulOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment, depth)
+                .mul_overflows(right.refine_paths(environment, depth), result_type.clone()),
+            Expression::Ne { left, right } => left
+                .refine_paths(environment, depth)
+                .not_equals(right.refine_paths(environment, depth)),
+            Expression::Neg { operand } => operand.refine_paths(environment, depth).negate(),
+            Expression::LogicalNot { operand } => {
+                operand.refine_paths(environment, depth).logical_not()
+            }
+            Expression::Offset { left, right } => left
+                .refine_paths(environment, depth)
+                .offset(right.refine_paths(environment, depth)),
+            Expression::Or { left, right } => left
+                .refine_paths(environment, depth)
+                .or(right.refine_paths(environment, depth)),
+            Expression::Reference(path) => {
+                let refined_path = path.refine_paths(environment, depth);
+                AbstractValue::make_reference(refined_path)
+            }
+            Expression::InitialParameterValue { path, var_type } => {
+                let refined_path = path.refine_paths(environment, depth);
+                AbstractValue::make_initial_parameter_value(var_type.clone(), refined_path)
+            }
+            Expression::Rem { left, right } => left
+                .refine_paths(environment, depth)
+                .remainder(right.refine_paths(environment, depth)),
+            Expression::Shl { left, right } => left
+                .refine_paths(environment, depth)
+                .shift_left(right.refine_paths(environment, depth)),
+            Expression::ShlOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment, depth)
+                .shl_overflows(right.refine_paths(environment, depth), result_type.clone()),
+            Expression::Shr {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment, depth)
+                .shr(right.refine_paths(environment, depth), result_type.clone()),
+            Expression::ShrOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment, depth)
+                .shr_overflows(right.refine_paths(environment, depth), result_type.clone()),
+            Expression::Sub { left, right } => left
+                .refine_paths(environment, depth)
+                .subtract(right.refine_paths(environment, depth)),
+            Expression::SubOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_paths(environment, depth)
+                .sub_overflows(right.refine_paths(environment, depth), result_type.clone()),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator.refine_paths(environment, depth).switch(
+                cases
+                    .iter()
+                    .map(|(case_val, result_val)| {
+                        (
+                            case_val.refine_paths(environment, depth),
+                            result_val.refine_paths(environment, depth),
+                        )
+                    })
+                    .collect(),
+                default.refine_paths(environment, depth),
+            ),
+            Expression::TaggedExpression { operand, tag } => {
+                operand.refine_paths(environment, depth).add_tag(*tag)
+            }
+            Expression::UninterpretedCall {
+                callee,
+                arguments: args,
+                result_type,
+                path,
+            } => {
+                let refined_callee = callee.refine_paths(environment, depth);
+                let refined_arguments = args
+                    .iter()
+                    .map(|arg| arg.refine_paths(environment, depth))
+                    .collect();
+                let refined_path = path.refine_paths(environment, depth);
+                refined_callee.uninterpreted_call(
+                    refined_arguments,
+                    result_type.clone(),
+                    refined_path,
+                )
+            }
+            Expression::UnknownModelField { path, default } => {
+                let refined_path = path.refine_paths(environment, depth);
+                if let Some(val) = environment.value_at(&refined_path) {
+                    // This environment has a value for the model field.
+                    val.clone()
+                } else if refined_path.is_rooted_by_parameter() {
+                    // Keep passing the buck to the next caller.
+                    AbstractValue::make_from(
+                        Expression::UnknownModelField {
+                            path: refined_path,
+                            default: default.clone(),
+                        },
+                        default.expression_size.saturating_add(1),
+                    )
+                } else {
+                    // The buck stops here and the environment does not have a value for model field.
+                    default.clone()
+                }
+            }
+            Expression::UnknownTagCheck {
+                operand,
+                tag,
+                checking_presence,
+            } => AbstractValue::make_tag_check(
+                operand.refine_paths(environment, depth),
+                *tag,
+                *checking_presence,
+            ),
+            Expression::UnknownTagField { path } => {
+                let refined_path = path.refine_paths(environment, depth);
+                if let Some(val) = environment.value_at(&refined_path) {
+                    // This environment has a value for the tag field.
+                    val.clone()
+                } else if !refined_path.is_rooted_by_parameter() {
+                    // Return the dummy untagged value if refined_path is not rooted by a function parameter.
+                    Rc::new(DUMMY_UNTAGGED_VALUE)
+                } else {
+                    // Otherwise, return again an unknown tag field.
+                    AbstractValue::make_from(Expression::UnknownTagField { path: refined_path }, 1)
+                }
+            }
+            Expression::Variable { path, var_type } => {
+                if let Some(val) = environment.value_at(&path) {
+                    val.clone()
+                } else {
+                    let refined_path = path.refine_paths(environment, depth);
+                    if let PathEnum::Alias { value } = &refined_path.value {
+                        value.clone()
+                    } else if let Some(val) = environment.value_at(&refined_path) {
+                        val.clone()
+                    } else if refined_path == *path {
+                        self.clone()
+                    } else {
+                        AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
+                    }
+                }
+            }
+            Expression::WidenedJoin { path, operand, .. } => operand
+                .refine_paths(environment, depth)
+                .widen(&path.refine_paths(environment, depth)),
+        }
     }
 
     /// Returns a value that is simplified (refined) by replacing parameter values
@@ -3587,329 +3584,328 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         // An offset to add to locals from the called function so that they do not clash with caller locals.
         fresh: usize,
     ) -> Rc<AbstractValue> {
-        self.clone()
-        //match &self.expression {
-            //Expression::Bottom | Expression::Top => self.clone(),
-            //Expression::Add { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.addition(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::AddOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.add_overflows(
-                    //right.refine_parameters(arguments, result, pre_environment, fresh),
-                    //result_type.clone(),
-                //),
-            //Expression::And { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.and(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::BitAnd { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.bit_and(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::BitNot {
-                //operand,
-                //result_type,
-            //} => operand
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.bit_not(result_type.clone()),
-            //Expression::BitOr { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.bit_or(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::BitXor { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.bit_xor(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::Cast {
-                //operand,
-                //target_type,
-            //} => operand
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.cast(target_type.clone()),
-            //Expression::CompileTimeConstant(..) => self.clone(),
-            //Expression::ConditionalExpression {
-                //condition,
-                //consequent,
-                //alternate,
-            //} => condition
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.conditional_expression(
-                    //consequent.refine_parameters(arguments, result, pre_environment, fresh),
-                    //alternate.refine_parameters(arguments, result, pre_environment, fresh),
-                //),
-            //Expression::Div { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.divide(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::Equals { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.equals(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::GreaterOrEqual { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.greater_or_equal(right.refine_parameters(
-                    //arguments,
-                    //result,
-                    //pre_environment,
-                    //fresh,
-                //)),
-            //Expression::GreaterThan { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.greater_than(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::HeapBlock {
-                //abstract_address,
-                //is_zeroed,
-            //} => AbstractValue::make_from(
-                //Expression::HeapBlock {
-                    //abstract_address: *abstract_address + fresh,
-                    //is_zeroed: *is_zeroed,
-                //},
-                //1,
-            //),
-            //Expression::HeapBlockLayout {
-                //length,
-                //alignment,
-                //source,
-            //} => AbstractValue::make_from(
-                //Expression::HeapBlockLayout {
-                    //length: length.refine_parameters(arguments, result, pre_environment, fresh),
-                    //alignment: alignment.refine_parameters(
-                        //arguments,
-                        //result,
-                        //pre_environment,
-                        //fresh,
-                    //),
-                    //source: *source,
-                //},
-                //1,
-            //),
-            //Expression::IntrinsicBinary { left, right, name } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.intrinsic_binary(
-                    //right.refine_parameters(arguments, result, pre_environment, fresh),
-                    //*name,
-                //),
-            //Expression::IntrinsicBitVectorUnary {
-                //operand,
-                //bit_length,
-                //name,
-            //} => operand
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.intrinsic_bit_vector_unary(*bit_length, *name),
-            //Expression::IntrinsicFloatingPointUnary { operand, name } => operand
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.intrinsic_floating_point_unary(*name),
-            //Expression::Join { left, right, path } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.join(
-                    //right.refine_parameters(arguments, result, pre_environment, fresh),
-                    //&path.refine_parameters(arguments, result, pre_environment, fresh),
-                //),
-            //Expression::LessOrEqual { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.less_or_equal(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::LessThan { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.less_than(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::LogicalNot { operand } => operand
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.logical_not(),
-            //Expression::Mul { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.multiply(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::MulOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.mul_overflows(
-                    //right.refine_parameters(arguments, result, pre_environment, fresh),
-                    //result_type.clone(),
-                //),
-            //Expression::Ne { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.not_equals(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::Neg { operand } => operand
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.negate(),
-            //Expression::Offset { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.offset(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::Or { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.or(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::Reference(path) => {
-                //// if the path is a parameter, the reference is an artifact of its type
-                //// and needs to be removed in the call context
-                //match &path.value {
-                    //PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].1.clone(),
-                    //_ => {
-                        //let refined_path =
-                            //path.refine_parameters(arguments, result, pre_environment, fresh);
-                        //AbstractValue::make_reference(refined_path)
-                    //}
-                //}
-            //}
-            //Expression::Rem { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.remainder(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::Shl { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.shift_left(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::ShlOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.shl_overflows(
-                    //right.refine_parameters(arguments, result, pre_environment, fresh),
-                    //result_type.clone(),
-                //),
-            //Expression::Shr {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.shr(
-                    //right.refine_parameters(arguments, result, pre_environment, fresh),
-                    //result_type.clone(),
-                //),
-            //Expression::ShrOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.shr_overflows(
-                    //right.refine_parameters(arguments, result, pre_environment, fresh),
-                    //result_type.clone(),
-                //),
-            //Expression::Sub { left, right } => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.subtract(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            //Expression::SubOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.sub_overflows(
-                    //right.refine_parameters(arguments, result, pre_environment, fresh),
-                    //result_type.clone(),
-                //),
-            //Expression::Switch {
-                //discriminator,
-                //cases,
-                //default,
-            //} => discriminator
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.switch(
-                    //cases
-                        //.iter()
-                        //.map(|(case_val, result_val)| {
-                            //(
-                                //case_val.refine_parameters(
-                                    //arguments,
-                                    //result,
-                                    //pre_environment,
-                                    //fresh,
-                                //),
-                                //result_val.refine_parameters(
-                                    //arguments,
-                                    //result,
-                                    //pre_environment,
-                                    //fresh,
-                                //),
-                            //)
-                        //})
-                        //.collect(),
-                    //default.refine_parameters(arguments, result, pre_environment, fresh),
-                //),
-            //Expression::TaggedExpression { operand, tag } => operand
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.add_tag(*tag),
-            //Expression::UninterpretedCall {
-                //callee,
-                //arguments: args,
-                //result_type,
-                //path,
-            //} => {
-                //let refined_callee =
-                    //callee.refine_parameters(arguments, result, pre_environment, fresh);
-                //let refined_arguments = args
-                    //.iter()
-                    //.map(|arg| arg.refine_parameters(arguments, result, pre_environment, fresh))
-                    //.collect();
-                //let refined_path =
-                    //path.refine_parameters(arguments, result, pre_environment, fresh);
-                //refined_callee.uninterpreted_call(
-                    //refined_arguments,
-                    //result_type.clone(),
-                    //refined_path,
-                //)
-            //}
-            //Expression::UnknownModelField { path, default } => {
-                //let refined_path =
-                    //path.refine_parameters(arguments, result, pre_environment, fresh);
-                //AbstractValue::make_from(
-                    //Expression::UnknownModelField {
-                        //path: refined_path,
-                        //default: default.clone(),
-                    //},
-                    //1,
-                //)
-            //}
-            //Expression::UnknownTagCheck {
-                //operand,
-                //tag,
-                //checking_presence,
-            //} => AbstractValue::make_tag_check(
-                //operand.refine_parameters(arguments, result, pre_environment, fresh),
-                //*tag,
-                //*checking_presence,
-            //),
-            //Expression::UnknownTagField { path } => AbstractValue::make_from(
-                //Expression::UnknownTagField {
-                    //path: path.refine_parameters(arguments, result, pre_environment, fresh),
-                //},
-                //1,
-            //),
-            //Expression::InitialParameterValue { path, var_type } => {
-                //let refined_path =
-                    //path.refine_parameters(arguments, result, pre_environment, fresh);
-                //// Do path refinement now, using the pre_environment.
-                //let refined_path = refined_path.refine_paths(pre_environment, 0);
-                //// If the path has a value in the pre_environment, use the value
-                //if let Some(val) = pre_environment.value_at(&refined_path) {
-                    //return val.clone();
-                //}
-                //// If not, make an unknown value. If the path is still rooted in parameter
-                //// make sure that it does not get affected by subsequent side effects on the parameter.
-                //if refined_path.is_rooted_by_parameter() {
-                    //// This will not get refined again
-                    //AbstractValue::make_initial_parameter_value(var_type.clone(), refined_path)
-                //} else {
-                    //// The value is rooted in a local variable leaked from the callee or
-                    //// in a static. In the latter case we want lookup_and_refine_value to
-                    //// to see this. In the former, refinement is a no-op.
-                    //AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
-                //}
-            //}
-            //Expression::Variable { path, var_type } => {
-                //let refined_path =
-                    //path.refine_parameters(arguments, result, pre_environment, fresh);
-                //if let PathEnum::Alias { value } = &refined_path.value {
-                    //value.clone()
-                //} else {
-                    //AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
-                //}
-            //}
-            //Expression::WidenedJoin { path, operand, .. } => operand
-                //.refine_parameters(arguments, result, pre_environment, fresh)
-                //.widen(&path.refine_parameters(arguments, result, pre_environment, fresh)),
-        //}
+        match &self.expression {
+            Expression::Bottom | Expression::Top => self.clone(),
+            Expression::Add { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .addition(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::AddOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .add_overflows(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    result_type.clone(),
+                ),
+            Expression::And { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .and(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::BitAnd { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .bit_and(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::BitNot {
+                operand,
+                result_type,
+            } => operand
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .bit_not(result_type.clone()),
+            Expression::BitOr { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .bit_or(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::BitXor { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .bit_xor(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::Cast {
+                operand,
+                target_type,
+            } => operand
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .cast(target_type.clone()),
+            Expression::CompileTimeConstant(..) => self.clone(),
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => condition
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .conditional_expression(
+                    consequent.refine_parameters(arguments, result, pre_environment, fresh),
+                    alternate.refine_parameters(arguments, result, pre_environment, fresh),
+                ),
+            Expression::Div { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .divide(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::Equals { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .equals(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::GreaterOrEqual { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .greater_or_equal(right.refine_parameters(
+                    arguments,
+                    result,
+                    pre_environment,
+                    fresh,
+                )),
+            Expression::GreaterThan { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .greater_than(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::HeapBlock {
+                abstract_address,
+                is_zeroed,
+            } => AbstractValue::make_from(
+                Expression::HeapBlock {
+                    abstract_address: *abstract_address + fresh,
+                    is_zeroed: *is_zeroed,
+                },
+                1,
+            ),
+            Expression::HeapBlockLayout {
+                length,
+                alignment,
+                source,
+            } => AbstractValue::make_from(
+                Expression::HeapBlockLayout {
+                    length: length.refine_parameters(arguments, result, pre_environment, fresh),
+                    alignment: alignment.refine_parameters(
+                        arguments,
+                        result,
+                        pre_environment,
+                        fresh,
+                    ),
+                    source: *source,
+                },
+                1,
+            ),
+            Expression::IntrinsicBinary { left, right, name } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .intrinsic_binary(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    *name,
+                ),
+            Expression::IntrinsicBitVectorUnary {
+                operand,
+                bit_length,
+                name,
+            } => operand
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .intrinsic_bit_vector_unary(*bit_length, *name),
+            Expression::IntrinsicFloatingPointUnary { operand, name } => operand
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .intrinsic_floating_point_unary(*name),
+            Expression::Join { left, right, path } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .join(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    &path.refine_parameters(arguments, result, pre_environment, fresh),
+                ),
+            Expression::LessOrEqual { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .less_or_equal(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::LessThan { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .less_than(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::LogicalNot { operand } => operand
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .logical_not(),
+            Expression::Mul { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .multiply(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::MulOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .mul_overflows(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    result_type.clone(),
+                ),
+            Expression::Ne { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .not_equals(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::Neg { operand } => operand
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .negate(),
+            Expression::Offset { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .offset(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::Or { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .or(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::Reference(path) => {
+                // if the path is a parameter, the reference is an artifact of its type
+                // and needs to be removed in the call context
+                match &path.value {
+                    PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].1.clone(),
+                    _ => {
+                        let refined_path =
+                            path.refine_parameters(arguments, result, pre_environment, fresh);
+                        AbstractValue::make_reference(refined_path)
+                    }
+                }
+            }
+            Expression::Rem { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .remainder(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::Shl { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .shift_left(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::ShlOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .shl_overflows(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    result_type.clone(),
+                ),
+            Expression::Shr {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .shr(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    result_type.clone(),
+                ),
+            Expression::ShrOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .shr_overflows(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    result_type.clone(),
+                ),
+            Expression::Sub { left, right } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .subtract(right.refine_parameters(arguments, result, pre_environment, fresh)),
+            Expression::SubOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .sub_overflows(
+                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    result_type.clone(),
+                ),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .switch(
+                    cases
+                        .iter()
+                        .map(|(case_val, result_val)| {
+                            (
+                                case_val.refine_parameters(
+                                    arguments,
+                                    result,
+                                    pre_environment,
+                                    fresh,
+                                ),
+                                result_val.refine_parameters(
+                                    arguments,
+                                    result,
+                                    pre_environment,
+                                    fresh,
+                                ),
+                            )
+                        })
+                        .collect(),
+                    default.refine_parameters(arguments, result, pre_environment, fresh),
+                ),
+            Expression::TaggedExpression { operand, tag } => operand
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .add_tag(*tag),
+            Expression::UninterpretedCall {
+                callee,
+                arguments: args,
+                result_type,
+                path,
+            } => {
+                let refined_callee =
+                    callee.refine_parameters(arguments, result, pre_environment, fresh);
+                let refined_arguments = args
+                    .iter()
+                    .map(|arg| arg.refine_parameters(arguments, result, pre_environment, fresh))
+                    .collect();
+                let refined_path =
+                    path.refine_parameters(arguments, result, pre_environment, fresh);
+                refined_callee.uninterpreted_call(
+                    refined_arguments,
+                    result_type.clone(),
+                    refined_path,
+                )
+            }
+            Expression::UnknownModelField { path, default } => {
+                let refined_path =
+                    path.refine_parameters(arguments, result, pre_environment, fresh);
+                AbstractValue::make_from(
+                    Expression::UnknownModelField {
+                        path: refined_path,
+                        default: default.clone(),
+                    },
+                    1,
+                )
+            }
+            Expression::UnknownTagCheck {
+                operand,
+                tag,
+                checking_presence,
+            } => AbstractValue::make_tag_check(
+                operand.refine_parameters(arguments, result, pre_environment, fresh),
+                *tag,
+                *checking_presence,
+            ),
+            Expression::UnknownTagField { path } => AbstractValue::make_from(
+                Expression::UnknownTagField {
+                    path: path.refine_parameters(arguments, result, pre_environment, fresh),
+                },
+                1,
+            ),
+            Expression::InitialParameterValue { path, var_type } => {
+                let refined_path =
+                    path.refine_parameters(arguments, result, pre_environment, fresh);
+                // Do path refinement now, using the pre_environment.
+                let refined_path = refined_path.refine_paths(pre_environment, 0);
+                // If the path has a value in the pre_environment, use the value
+                if let Some(val) = pre_environment.value_at(&refined_path) {
+                    return val.clone();
+                }
+                // If not, make an unknown value. If the path is still rooted in parameter
+                // make sure that it does not get affected by subsequent side effects on the parameter.
+                if refined_path.is_rooted_by_parameter() {
+                    // This will not get refined again
+                    AbstractValue::make_initial_parameter_value(var_type.clone(), refined_path)
+                } else {
+                    // The value is rooted in a local variable leaked from the callee or
+                    // in a static. In the latter case we want lookup_and_refine_value to
+                    // to see this. In the former, refinement is a no-op.
+                    AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
+                }
+            }
+            Expression::Variable { path, var_type } => {
+                let refined_path =
+                    path.refine_parameters(arguments, result, pre_environment, fresh);
+                if let PathEnum::Alias { value } = &refined_path.value {
+                    value.clone()
+                } else {
+                    AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
+                }
+            }
+            Expression::WidenedJoin { path, operand, .. } => operand
+                .refine_parameters(arguments, result, pre_environment, fresh)
+                .widen(&path.refine_parameters(arguments, result, pre_environment, fresh)),
+        }
     }
 
     /// Returns a domain that is simplified (refined) by using the current path conditions
@@ -3929,13 +3925,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// of refine_paths, which ensures that paths stay unique (dealing with aliasing is expensive).
     #[logfn_inputs(TRACE)]
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Rc<AbstractValue> {
-    //fn refine_with(&self, path_condition: &Self, smt_solver: &Z3Solver, depth: usize) -> Rc<AbstractValue> {
         if self.is_bottom() || self.is_top() {
             return self.clone();
         };
         //do not use false path conditions to refine things
         checked_precondition!(path_condition.as_bool_if_known().is_none());
-        //println!("refining condition {:?} of expression {:?} with depth {:?}", path_condition, path_condition.expression, depth);
         if depth >= k_limits::MAX_REFINE_DEPTH {
             //todo: perhaps this should go away.
             // right now it deals with the situation where some large expressions have sizes
@@ -3946,15 +3940,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if path_condition.eq(self) {
             return Rc::new(TRUE);
         }
-
-        
-        //let mut ec = smt_solver.get_as_smt_predicate(&path_condition.expression);
-        //let smt_res = smt_solver.solve_expression(&mut ec);
-
-        //if SmtResult::Satisfiable == smt_res {
-        //};
-
-        //self.addition(1)
 
         // If the path context constrains the self expression to be equal to a constant, just
         // return the constant.
@@ -3970,273 +3955,276 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
+        if !SIMPLIFICATION_HEURISTICS_ENABLED {
+            return self.clone()
+        }
+
         // Traverse the self expression, looking for recursive refinement opportunities.
         // Important, keep the traversal as trivial as possible and put optimizations in
         // the transfer functions. Also, keep the transfer functions constant in cost as
         // much as possible. Any time they are not, this function becomes quadratic and
         // performance becomes terrible.
-        self.clone()
-        //match &self.expression {
-            //Expression::Bottom | Expression::Top => self.clone(),
-            //Expression::Add { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.addition(right.refine_with(path_condition, depth + 1)),
-            //Expression::AddOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left.refine_with(path_condition, depth + 1).add_overflows(
-                //right.refine_with(path_condition, depth + 1),
-                //result_type.clone(),
-            //),
-            //Expression::And { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.and(right.refine_with(path_condition, depth + 1)),
-            //Expression::BitAnd { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.bit_and(right.refine_with(path_condition, depth + 1)),
-            //Expression::BitNot {
-                //operand,
-                //result_type,
-            //} => operand
-                //.refine_with(path_condition, depth + 1)
-                //.bit_not(result_type.clone()),
-            //Expression::BitOr { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.bit_or(right.refine_with(path_condition, depth + 1)),
-            //Expression::BitXor { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.bit_xor(right.refine_with(path_condition, depth + 1)),
-            //Expression::Cast {
-                //operand,
-                //target_type,
-            //} => operand
-                //.refine_with(path_condition, depth + 1)
-                //.cast(target_type.clone()),
-            //Expression::CompileTimeConstant(..) => self.clone(),
-            //Expression::ConditionalExpression {
-                //condition,
-                //consequent,
-                //alternate,
-            //} => {
-                //// The implies checks should be redundant, but currently help with precision
-                //// presumably because they are not k-limited like the refinement of the path
-                //// condition. They might also help with performance because they avoid
-                //// two refinements and the expensive and constructor, if they succeed.
-                //// If they mostly fail, they will cost more than they save. It is not
-                //// clear at this point if they are a win, but they are kept for the sake of precision.
-                //if path_condition.implies(&condition) {
-                    //consequent.refine_with(path_condition, depth + 1)
-                //} else if path_condition.implies_not(&condition) {
-                    //alternate.refine_with(path_condition, depth + 1)
-                //} else {
-                    //let refined_condition = condition.refine_with(path_condition, depth + 1);
-                    //let refined_condition_as_bool = refined_condition.as_bool_if_known();
-                    //let refined_consequent = consequent.refine_with(path_condition, depth + 1);
-                    //if refined_condition_as_bool.unwrap_or(false) {
-                        //return refined_consequent;
-                    //}
-                    //let refined_alternate = alternate.refine_with(path_condition, depth + 1);
-                    //if !refined_condition_as_bool.unwrap_or(true) {
-                        //return refined_alternate;
-                    //}
-                    //refined_condition.conditional_expression(refined_consequent, refined_alternate)
-                //}
-            //}
-            //Expression::Div { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.divide(right.refine_with(path_condition, depth + 1)),
-            //Expression::Equals { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.equals(right.refine_with(path_condition, depth + 1)),
-            //Expression::GreaterOrEqual { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.greater_or_equal(right.refine_with(path_condition, depth + 1)),
-            //Expression::GreaterThan { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.greater_than(right.refine_with(path_condition, depth + 1)),
-            //Expression::IntrinsicBinary { left, right, name } => left
-                //.refine_with(path_condition, depth + 1)
-                //.intrinsic_binary(right.refine_with(path_condition, depth + 1), *name),
-            //Expression::IntrinsicBitVectorUnary {
-                //operand,
-                //bit_length,
-                //name,
-            //} => operand
-                //.refine_with(path_condition, depth + 1)
-                //.intrinsic_bit_vector_unary(*bit_length, *name),
-            //Expression::HeapBlock { .. } => self.clone(),
-            //Expression::HeapBlockLayout {
-                //length,
-                //alignment,
-                //source,
-            //} => AbstractValue::make_from(
-                //Expression::HeapBlockLayout {
-                    //length: length.refine_with(path_condition, depth + 1),
-                    //alignment: alignment.refine_with(path_condition, depth + 1),
-                    //source: *source,
-                //},
-                //1,
-            //),
-            //Expression::IntrinsicFloatingPointUnary { operand, name } => operand
-                //.refine_with(path_condition, depth + 1)
-                //.intrinsic_floating_point_unary(*name),
-            //Expression::Join { left, right, path } => left
-                //.refine_with(path_condition, depth + 1)
-                //.join(right.refine_with(path_condition, depth + 1), &path),
-            //Expression::LessOrEqual { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.less_or_equal(right.refine_with(path_condition, depth + 1)),
-            //Expression::LessThan { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.less_than(right.refine_with(path_condition, depth + 1)),
-            //Expression::Mul { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.multiply(right.refine_with(path_condition, depth + 1)),
-            //Expression::MulOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left.refine_with(path_condition, depth + 1).mul_overflows(
-                //right.refine_with(path_condition, depth + 1),
-                //result_type.clone(),
-            //),
-            //Expression::Ne { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.not_equals(right.refine_with(path_condition, depth + 1)),
-            //Expression::Neg { operand } => operand.refine_with(path_condition, depth + 1).negate(),
-            //Expression::LogicalNot { operand } => {
-                //operand.refine_with(path_condition, depth + 1).logical_not()
-            //}
-            //Expression::Offset { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.offset(right.refine_with(path_condition, depth + 1)),
-            //Expression::Or { left, right } => {
-                //// Ideally the constructor should do the simplifications, but in practice or
-                //// expressions grow quite large due to composition and it really helps to avoid
-                //// refining the right expression whenever possible, even at the expense of
-                //// more checks here. If the performance of implies and implies_not should become
-                //// significantly worse than it is now, this could become a performance bottle neck.
-                //if path_condition.implies(&left) || path_condition.implies(&right) {
-                    //Rc::new(TRUE)
-                //} else if path_condition.implies_not(&left) {
-                    //if path_condition.implies_not(&right) {
-                        //Rc::new(FALSE)
-                    //} else {
-                        //right.refine_with(path_condition, depth + 1)
-                    //}
-                //} else if path_condition.implies_not(&right) {
-                    //left.refine_with(path_condition, depth + 1)
-                //} else {
-                    //left.refine_with(path_condition, depth + 1)
-                        //.or(right.refine_with(path_condition, depth + 1))
-                //}
-            //}
-            //Expression::Reference(..) | Expression::InitialParameterValue { .. } => {
-                //// We could refine their paths, which will increase precision, but it does not
-                //// currently seem cost-effective. This does not affect soundness.
-                //self.clone()
-            //}
-            //Expression::Rem { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.remainder(right.refine_with(path_condition, depth + 1)),
-            //Expression::Shl { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.shift_left(right.refine_with(path_condition, depth + 1)),
-            //Expression::ShlOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left.refine_with(path_condition, depth + 1).shl_overflows(
-                //right.refine_with(path_condition, depth + 1),
-                //result_type.clone(),
-            //),
-            //Expression::Shr {
-                //left,
-                //right,
-                //result_type,
-            //} => left.refine_with(path_condition, depth + 1).shr(
-                //right.refine_with(path_condition, depth + 1),
-                //result_type.clone(),
-            //),
-            //Expression::ShrOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left.refine_with(path_condition, depth + 1).shr_overflows(
-                //right.refine_with(path_condition, depth + 1),
-                //result_type.clone(),
-            //),
-            //Expression::Sub { left, right } => left
-                //.refine_with(path_condition, depth + 1)
-                //.subtract(right.refine_with(path_condition, depth + 1)),
-            //Expression::SubOverflows {
-                //left,
-                //right,
-                //result_type,
-            //} => left.refine_with(path_condition, depth + 1).sub_overflows(
-                //right.refine_with(path_condition, depth + 1),
-                //result_type.clone(),
-            //),
-            //Expression::Switch {
-                //discriminator,
-                //cases,
-                //default,
-            //} => discriminator.refine_with(path_condition, depth + 1).switch(
-                //cases
-                    //.iter()
-                    //.map(|(case_val, result_val)| {
-                        //(
-                            //case_val.refine_with(path_condition, depth + 1),
-                            //result_val.refine_with(path_condition, depth + 1),
-                        //)
-                    //})
-                    //.collect(),
-                //default.refine_with(path_condition, depth + 1),
-            //),
-            //Expression::TaggedExpression { operand, tag } => {
-                //operand.refine_with(path_condition, depth + 1).add_tag(*tag)
-            //}
-            //Expression::UninterpretedCall {
-                //callee,
-                //arguments,
-                //result_type,
-                //path,
-            //} => callee
-                //.refine_with(path_condition, depth + 1)
-                //.uninterpreted_call(
-                    //arguments
-                        //.iter()
-                        //.map(|v| v.refine_with(path_condition, depth + 1))
-                        //.collect(),
-                    //result_type.clone(),
-                    //path.clone(),
-                //),
-            //Expression::UnknownModelField { .. } => self.clone(),
-            //Expression::UnknownTagCheck {
-                //operand,
-                //tag,
-                //checking_presence,
-            //} => AbstractValue::make_tag_check(
-                //operand.refine_with(path_condition, depth + 1),
-                //*tag,
-                //*checking_presence,
-            //),
-            //Expression::UnknownTagField { .. } => self.clone(),
-            //Expression::Variable { var_type, .. } => {
-                //if *var_type == ExpressionType::Bool {
-                    //if path_condition.implies(&self) {
-                        //return Rc::new(TRUE);
-                    //} else if path_condition.implies_not(&self) {
-                        //return Rc::new(FALSE);
-                    //}
-                //}
-                //self.clone()
-            //}
-            //Expression::WidenedJoin { path, operand } => {
-                //operand.refine_with(path_condition, depth + 1).widen(&path)
-            //}
-        //}
+        match &self.expression {
+            Expression::Bottom | Expression::Top => self.clone(),
+            Expression::Add { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .addition(right.refine_with(path_condition, depth + 1)),
+            Expression::AddOverflows {
+                left,
+                right,
+                result_type,
+            } => left.refine_with(path_condition, depth + 1).add_overflows(
+                right.refine_with(path_condition, depth + 1),
+                result_type.clone(),
+            ),
+            Expression::And { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .and(right.refine_with(path_condition, depth + 1)),
+            Expression::BitAnd { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .bit_and(right.refine_with(path_condition, depth + 1)),
+            Expression::BitNot {
+                operand,
+                result_type,
+            } => operand
+                .refine_with(path_condition, depth + 1)
+                .bit_not(result_type.clone()),
+            Expression::BitOr { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .bit_or(right.refine_with(path_condition, depth + 1)),
+            Expression::BitXor { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .bit_xor(right.refine_with(path_condition, depth + 1)),
+            Expression::Cast {
+                operand,
+                target_type,
+            } => operand
+                .refine_with(path_condition, depth + 1)
+                .cast(target_type.clone()),
+            Expression::CompileTimeConstant(..) => self.clone(),
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                // The implies checks should be redundant, but currently help with precision
+                // presumably because they are not k-limited like the refinement of the path
+                // condition. They might also help with performance because they avoid
+                // two refinements and the expensive and constructor, if they succeed.
+                // If they mostly fail, they will cost more than they save. It is not
+                // clear at this point if they are a win, but they are kept for the sake of precision.
+                if path_condition.implies(&condition) {
+                    consequent.refine_with(path_condition, depth + 1)
+                } else if path_condition.implies_not(&condition) {
+                    alternate.refine_with(path_condition, depth + 1)
+                } else {
+                    let refined_condition = condition.refine_with(path_condition, depth + 1);
+                    let refined_condition_as_bool = refined_condition.as_bool_if_known();
+                    let refined_consequent = consequent.refine_with(path_condition, depth + 1);
+                    if refined_condition_as_bool.unwrap_or(false) {
+                        return refined_consequent;
+                    }
+                    let refined_alternate = alternate.refine_with(path_condition, depth + 1);
+                    if !refined_condition_as_bool.unwrap_or(true) {
+                        return refined_alternate;
+                    }
+                    refined_condition.conditional_expression(refined_consequent, refined_alternate)
+                }
+            }
+            Expression::Div { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .divide(right.refine_with(path_condition, depth + 1)),
+            Expression::Equals { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .equals(right.refine_with(path_condition, depth + 1)),
+            Expression::GreaterOrEqual { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .greater_or_equal(right.refine_with(path_condition, depth + 1)),
+            Expression::GreaterThan { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .greater_than(right.refine_with(path_condition, depth + 1)),
+            Expression::IntrinsicBinary { left, right, name } => left
+                .refine_with(path_condition, depth + 1)
+                .intrinsic_binary(right.refine_with(path_condition, depth + 1), *name),
+            Expression::IntrinsicBitVectorUnary {
+                operand,
+                bit_length,
+                name,
+            } => operand
+                .refine_with(path_condition, depth + 1)
+                .intrinsic_bit_vector_unary(*bit_length, *name),
+            Expression::HeapBlock { .. } => self.clone(),
+            Expression::HeapBlockLayout {
+                length,
+                alignment,
+                source,
+            } => AbstractValue::make_from(
+                Expression::HeapBlockLayout {
+                    length: length.refine_with(path_condition, depth + 1),
+                    alignment: alignment.refine_with(path_condition, depth + 1),
+                    source: *source,
+                },
+                1,
+            ),
+            Expression::IntrinsicFloatingPointUnary { operand, name } => operand
+                .refine_with(path_condition, depth + 1)
+                .intrinsic_floating_point_unary(*name),
+            Expression::Join { left, right, path } => left
+                .refine_with(path_condition, depth + 1)
+                .join(right.refine_with(path_condition, depth + 1), &path),
+            Expression::LessOrEqual { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .less_or_equal(right.refine_with(path_condition, depth + 1)),
+            Expression::LessThan { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .less_than(right.refine_with(path_condition, depth + 1)),
+            Expression::Mul { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .multiply(right.refine_with(path_condition, depth + 1)),
+            Expression::MulOverflows {
+                left,
+                right,
+                result_type,
+            } => left.refine_with(path_condition, depth + 1).mul_overflows(
+                right.refine_with(path_condition, depth + 1),
+                result_type.clone(),
+            ),
+            Expression::Ne { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .not_equals(right.refine_with(path_condition, depth + 1)),
+            Expression::Neg { operand } => operand.refine_with(path_condition, depth + 1).negate(),
+            Expression::LogicalNot { operand } => {
+                operand.refine_with(path_condition, depth + 1).logical_not()
+            }
+            Expression::Offset { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .offset(right.refine_with(path_condition, depth + 1)),
+            Expression::Or { left, right } => {
+                // Ideally the constructor should do the simplifications, but in practice or
+                // expressions grow quite large due to composition and it really helps to avoid
+                // refining the right expression whenever possible, even at the expense of
+                // more checks here. If the performance of implies and implies_not should become
+                // significantly worse than it is now, this could become a performance bottle neck.
+                if path_condition.implies(&left) || path_condition.implies(&right) {
+                    Rc::new(TRUE)
+                } else if path_condition.implies_not(&left) {
+                    if path_condition.implies_not(&right) {
+                        Rc::new(FALSE)
+                    } else {
+                        right.refine_with(path_condition, depth + 1)
+                    }
+                } else if path_condition.implies_not(&right) {
+                    left.refine_with(path_condition, depth + 1)
+                } else {
+                    left.refine_with(path_condition, depth + 1)
+                        .or(right.refine_with(path_condition, depth + 1))
+                }
+            }
+            Expression::Reference(..) | Expression::InitialParameterValue { .. } => {
+                // We could refine their paths, which will increase precision, but it does not
+                // currently seem cost-effective. This does not affect soundness.
+                self.clone()
+            }
+            Expression::Rem { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .remainder(right.refine_with(path_condition, depth + 1)),
+            Expression::Shl { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .shift_left(right.refine_with(path_condition, depth + 1)),
+            Expression::ShlOverflows {
+                left,
+                right,
+                result_type,
+            } => left.refine_with(path_condition, depth + 1).shl_overflows(
+                right.refine_with(path_condition, depth + 1),
+                result_type.clone(),
+            ),
+            Expression::Shr {
+                left,
+                right,
+                result_type,
+            } => left.refine_with(path_condition, depth + 1).shr(
+                right.refine_with(path_condition, depth + 1),
+                result_type.clone(),
+            ),
+            Expression::ShrOverflows {
+                left,
+                right,
+                result_type,
+            } => left.refine_with(path_condition, depth + 1).shr_overflows(
+                right.refine_with(path_condition, depth + 1),
+                result_type.clone(),
+            ),
+            Expression::Sub { left, right } => left
+                .refine_with(path_condition, depth + 1)
+                .subtract(right.refine_with(path_condition, depth + 1)),
+            Expression::SubOverflows {
+                left,
+                right,
+                result_type,
+            } => left.refine_with(path_condition, depth + 1).sub_overflows(
+                right.refine_with(path_condition, depth + 1),
+                result_type.clone(),
+            ),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator.refine_with(path_condition, depth + 1).switch(
+                cases
+                    .iter()
+                    .map(|(case_val, result_val)| {
+                        (
+                            case_val.refine_with(path_condition, depth + 1),
+                            result_val.refine_with(path_condition, depth + 1),
+                        )
+                    })
+                    .collect(),
+                default.refine_with(path_condition, depth + 1),
+            ),
+            Expression::TaggedExpression { operand, tag } => {
+                operand.refine_with(path_condition, depth + 1).add_tag(*tag)
+            }
+            Expression::UninterpretedCall {
+                callee,
+                arguments,
+                result_type,
+                path,
+            } => callee
+                .refine_with(path_condition, depth + 1)
+                .uninterpreted_call(
+                    arguments
+                        .iter()
+                        .map(|v| v.refine_with(path_condition, depth + 1))
+                        .collect(),
+                    result_type.clone(),
+                    path.clone(),
+                ),
+            Expression::UnknownModelField { .. } => self.clone(),
+            Expression::UnknownTagCheck {
+                operand,
+                tag,
+                checking_presence,
+            } => AbstractValue::make_tag_check(
+                operand.refine_with(path_condition, depth + 1),
+                *tag,
+                *checking_presence,
+            ),
+            Expression::UnknownTagField { .. } => self.clone(),
+            Expression::Variable { var_type, .. } => {
+                if *var_type == ExpressionType::Bool {
+                    if path_condition.implies(&self) {
+                        return Rc::new(TRUE);
+                    } else if path_condition.implies_not(&self) {
+                        return Rc::new(FALSE);
+                    }
+                }
+                self.clone()
+            }
+            Expression::WidenedJoin { path, operand } => {
+                operand.refine_with(path_condition, depth + 1).widen(&path)
+            }
+        }
     }
 
     /// A cast that re-interprets existing bits rather than doing conversions.

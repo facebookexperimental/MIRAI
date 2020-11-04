@@ -133,7 +133,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 return;
             }
             PathEnum::Alias { .. } | PathEnum::Offset { .. } | PathEnum::QualifiedPath { .. } => {
-                //println!("Path type is {:?}\npath: {:?}", &path.value, &path);
                 path = path.refine_paths(&self.bv.current_environment, 0);
             }
             _ => {}
