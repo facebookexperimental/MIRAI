@@ -25,6 +25,7 @@ use crate::crate_visitor::CrateVisitor;
 use crate::fixed_point_visitor::FixedPointVisitor;
 use log_derive::*;
 use mirai_annotations::*;
+use rpds::HashTrieMap;
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
@@ -185,6 +186,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             );
             first_state.value_map.insert_mut(path.clone(), val.clone());
         }
+        first_state.exit_conditions = HashTrieMap::default();
 
         // Update the current environment
         self.first_environment = first_state;

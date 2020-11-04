@@ -179,8 +179,7 @@ impl Environment {
         other: Environment,
         condition: &Rc<AbstractValue>,
     ) -> Environment {
-        let entry_condition = self.entry_condition.or(other.entry_condition.clone());
-        self.join_or_widen(other, entry_condition, |x, y, _p| {
+        self.join_or_widen(other, |x, y, _p| {
             condition.conditional_expression(x.clone(), y.clone())
         })
     }
@@ -189,8 +188,7 @@ impl Environment {
     /// value that is the join of self.value_at(path) and other.value_at(path)
     #[logfn_inputs(TRACE)]
     pub fn join(&self, other: Environment) -> Environment {
-        let entry_condition = other.entry_condition.clone();
-        self.join_or_widen(other, entry_condition, |x, y, p| {
+        self.join_or_widen(other, |x, y, p| {
             if let Some(val) = x.get_widened_subexpression(p) {
                 return val;
             }
@@ -205,8 +203,7 @@ impl Environment {
     /// value that is the widen of self.value_at(path) and other.value_at(path)
     #[logfn_inputs(TRACE)]
     pub fn widen(&self, other: Environment) -> Environment {
-        let entry_condition = other.entry_condition.clone();
-        self.join_or_widen(other, entry_condition, |x, y, p| {
+        self.join_or_widen(other, |x, y, p| {
             if let Some(val) = x.get_widened_subexpression(p) {
                 return val;
             }
@@ -247,12 +244,7 @@ impl Environment {
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the join or widen of self.value_at(path) and other.value_at(path).
     #[logfn(TRACE)]
-    fn join_or_widen<F>(
-        &self,
-        other: Environment,
-        entry_condition: Rc<AbstractValue>,
-        join_or_widen: F,
-    ) -> Environment
+    fn join_or_widen<F>(&self, other: Environment, join_or_widen: F) -> Environment
     where
         F: Fn(&Rc<AbstractValue>, &Rc<AbstractValue>, &Rc<Path>) -> Rc<AbstractValue>,
     {
@@ -297,7 +289,7 @@ impl Environment {
         }
         Environment {
             value_map,
-            entry_condition,
+            entry_condition: abstract_value::TRUE.into(),
             exit_conditions: HashTrieMap::default(),
         }
     }
