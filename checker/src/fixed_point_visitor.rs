@@ -258,6 +258,12 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
                     let pred_state = &self.out_state[pred_bb];
                     if let Some(pred_exit_condition) = pred_state.exit_conditions.get(&bb) {
                         if pred_exit_condition.as_bool_if_known().unwrap_or(true) {
+                            trace!(
+                                "pred {:?} exits on condition {:?} with {:?}",
+                                pred_bb,
+                                pred_exit_condition,
+                                pred_state
+                            );
                             Some((pred_state.clone(), pred_exit_condition.clone()))
                         } else {
                             // If pred_bb is known to have a false exit condition for bb it can be ignored.
@@ -290,6 +296,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
                 .map(|(_, c)| c.clone())
                 .fold1(|c1, c2| c1.or(c2))
                 .unwrap();
+            trace!("entry_condition {:?}", entry_condition);
             let mut state = predecessor_states_and_conditions
                 .into_iter()
                 .fold1(|(state1, cond1), (state2, cond2)| {
