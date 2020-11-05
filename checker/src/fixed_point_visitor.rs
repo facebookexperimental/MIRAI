@@ -300,7 +300,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             let mut state = predecessor_states_and_conditions
                 .into_iter()
                 .fold1(|(state1, cond1), (state2, cond2)| {
-                    (state2.conditional_join(state1, &cond2), cond1)
+                    (state2.conditional_join(state1, &cond2, &cond1), cond1)
                 })
                 .expect("one or more states to fold into something")
                 .0;

@@ -9,6 +9,7 @@ use crate::abstract_value::AbstractValueTrait;
 use crate::expression::Expression;
 use crate::path::{Path, PathEnum, PathSelector};
 
+use crate::constant_domain::ConstantDomain;
 use log_derive::{logfn, logfn_inputs};
 use rpds::HashTrieMap;
 use rustc_middle::mir::BasicBlock;
@@ -178,8 +179,22 @@ impl Environment {
         &self,
         other: Environment,
         condition: &Rc<AbstractValue>,
+        other_condition: &Rc<AbstractValue>,
     ) -> Environment {
         self.join_or_widen(other, |x, y, _p| {
+            if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
+                (&x.expression, &y.expression)
+            {
+                match (v1, v2) {
+                    (ConstantDomain::True, ConstantDomain::False) => {
+                        return condition.clone();
+                    }
+                    (ConstantDomain::False, ConstantDomain::True) => {
+                        return other_condition.clone();
+                    }
+                    _ => (),
+                }
+            }
             condition.conditional_expression(x.clone(), y.clone())
         })
     }
