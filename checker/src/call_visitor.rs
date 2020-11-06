@@ -2418,11 +2418,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let result_path = &Some(target_path.clone());
             let return_value_path = Path::new_result();
 
+            let mut pre_environment = self.environment_before_call.clone();
             // Transfer side effects
             if function_summary.is_computed && !function_summary.is_angelic {
                 // Effects on the heap
                 for (path, value) in function_summary.side_effects.iter() {
-                    if path.is_rooted_by_abstract_heap_block() {
+                    if path.is_rooted_by_non_local_structure() {
                         let rvalue = value
                             .clone()
                             .refine_parameters(
@@ -2432,15 +2433,17 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                                 self.block_visitor.bv.fresh_variable_offset,
                             )
                             .refine_paths(&self.block_visitor.bv.current_environment, 0);
-                        self.block_visitor.bv.current_environment.update_value_at(
-                            path.refine_parameters(
-                                self.actual_args,
-                                result_path,
-                                &self.environment_before_call,
-                                self.block_visitor.bv.fresh_variable_offset,
-                            ),
-                            rvalue,
+                        let rpath = path.refine_parameters(
+                            self.actual_args,
+                            result_path,
+                            &self.environment_before_call,
+                            self.block_visitor.bv.fresh_variable_offset,
                         );
+                        self.block_visitor
+                            .bv
+                            .current_environment
+                            .update_value_at(rpath.clone(), rvalue.clone());
+                        pre_environment.update_value_at(rpath, rvalue);
                     }
                     check_for_early_return!(self.block_visitor.bv);
                 }
@@ -2452,7 +2455,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &return_value_path,
                     result_path,
                     self.actual_args,
-                    &self.environment_before_call,
+                    &pre_environment,
                 );
 
                 // Effects on the call arguments
@@ -2464,7 +2467,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         &parameter_path,
                         result_path,
                         self.actual_args,
-                        &self.environment_before_call,
+                        &pre_environment,
                     );
                     check_for_early_return!(self.block_visitor.bv);
                 }

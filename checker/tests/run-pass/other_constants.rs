@@ -26,7 +26,7 @@ pub fn main() {
     verify!(A == true);
     verify!(B == false);
     verify!(C == 'A');
-    verify!(D == "foo"); //~ possible false verification condition
+    verify!(D == "foo");
     verify!(if let Foo::Bar = get_bar() {
         true
     } else {

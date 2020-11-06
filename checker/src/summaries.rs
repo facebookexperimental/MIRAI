@@ -226,6 +226,7 @@ impl Summary {
 /// Constructs a summary of a function body by processing state information gathered during
 /// abstract interpretation of the body.
 #[allow(clippy::too_many_arguments)]
+#[logfn(TRACE)]
 pub fn summarize(
     argument_count: usize,
     exit_environment: Option<&Environment>,

@@ -378,9 +378,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
         };
         let result = if refined_val.is_top() {
-            if self.imported_root_static(&path) {
-                return self.lookup_path_and_refine_result(path, result_rustc_type);
-            }
             if path.path_length() < k_limits::MAX_PATH_LENGTH {
                 let mut result = None;
                 if let PathEnum::QualifiedPath {
@@ -517,49 +514,44 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         None
     }
 
-    /// Returns true if the given path is rooted in a static that has not yet been imported.
-    /// Also imports the static in that case, so looking up the path again when this returns
-    /// true is the thing to do.
+    /// Ensures that the static specified by the path is included in the current environment.
     #[logfn_inputs(TRACE)]
-    pub fn imported_root_static(&mut self, path: &Rc<Path>) -> bool {
+    pub fn import_static(&mut self, path: Rc<Path>) -> Rc<Path> {
         if let PathEnum::StaticVariable {
             def_id,
             summary_cache_key,
             expression_type,
         } = &path.value
         {
-            if self.current_environment.value_map.contains_key(path) {
-                return false;
+            if self.current_environment.value_map.contains_key(&path) {
+                return path;
             }
             self.current_environment.update_value_at(
                 path.clone(),
                 AbstractValue::make_typed_unknown(expression_type.clone(), path.clone()),
             );
-            if self.imported_static(&path, *def_id, summary_cache_key) {
-                return true;
-            }
+            self.import_def_id_as_static(&path, *def_id, summary_cache_key);
         }
-        if let PathEnum::QualifiedPath { qualifier, .. } = &path.value {
-            self.imported_root_static(qualifier)
-        } else {
-            false
-        }
+        path
     }
 
-    /// Gets the value of the given static variable by obtaining a summary for the corresponding def_id.
+    /// Imports the value of the given static variable by obtaining a summary for the corresponding def_id.
     #[logfn_inputs(TRACE)]
-    fn imported_static(
+    fn import_def_id_as_static(
         &mut self,
         path: &Rc<Path>,
         def_id: Option<DefId>,
         summary_cache_key: &Rc<str>,
-    ) -> bool {
+    ) {
         let environment_before_call = self.current_environment.clone();
         let saved_analyzing_static_var = self.analyzing_static_var;
         self.analyzing_static_var = true;
         let mut block_visitor;
         let summary;
         let summary = if let Some(def_id) = def_id {
+            if self.active_calls_map.contains_key(&def_id) {
+                return;
+            }
             let generic_args = self.cv.substs_cache.get(&def_id).cloned();
             let callee_generic_argument_map = if let Some(generic_args) = generic_args {
                 self.type_visitor
@@ -627,7 +619,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             );
             // Effects on the heap
             for (path, value) in side_effects.iter() {
-                if path.is_rooted_by_abstract_heap_block() || path.is_rooted_by_string() {
+                if path.is_rooted_by_non_local_structure() {
                     self.current_environment.update_value_at(
                         path.refine_parameters(
                             &[],
@@ -645,10 +637,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 }
             }
             self.analyzing_static_var = saved_analyzing_static_var;
-            true
         } else {
             self.analyzing_static_var = saved_analyzing_static_var;
-            false
         }
     }
 
@@ -1074,13 +1064,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 self.fresh_variable_offset,
             );
             let mut rvalue = uncanonicalized_rvalue.refine_paths(pre_environment, 0);
-            if let Expression::Variable { path, .. } = &uncanonicalized_rvalue.expression {
-                // If the path contains a root that is a static, this will import the static into
-                // the calling scope.
-                if self.imported_root_static(path) {
-                    rvalue = uncanonicalized_rvalue.refine_paths(&self.current_environment, 0);
-                }
-            }
             trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
