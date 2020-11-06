@@ -29,7 +29,7 @@ use contracts::*;
 #[allow(clippy::inline_fn_without_body)]
 #[contract_trait]
 trait ProcessWithoutTaint {
-    #[pre(does_not_have_tag!(self, SecretTaint))]
+    #[requires(does_not_have_tag!(self, SecretTaint))]
     fn process(&mut self, incr: i32);
 }
 

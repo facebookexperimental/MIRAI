@@ -738,6 +738,21 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 } else {
                     // We might get to this call, depending on the state at the call site.
                     //
+                    if msg.contains("Post-condition of ") || msg.contains("Invariant of ") {
+                        // Dealing with contracts crate
+                        if self.block_visitor.bv.function_being_analyzed_is_root() {
+                            let msg = msg.replace(" violated", " possibly violated");
+                            let err = self
+                                .block_visitor
+                                .bv
+                                .cv
+                                .session
+                                .struct_span_warn(span, msg.as_ref());
+                            self.block_visitor.bv.emit_diagnostic(err);
+                        }
+                        return;
+                    }
+
                     // In the case when an assert macro has been called, the inverse of the assertion
                     // was conjoined into the entry condition and this condition was simplified.
                     // We therefore cannot distinguish the case of maybe reaching a definitely

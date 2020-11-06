@@ -20,8 +20,8 @@ pub fn main() {
 // Simple pre/post
 // ---------------
 
-#[pre(x > 0)]
-#[post(ret >= x)]
+#[requires(x > 0)]
+#[ensures(ret >= x)]
 fn pre_post(x: i32) -> i32 {
     return x;
 }
@@ -37,9 +37,9 @@ fn use_pre_post() {
 trait Adder {
     fn get(&self) -> i32;
 
-    #[pre(x > 0)]
-    #[pre(self.get() <= std::i32::MAX - x)]
-    #[post(ret == old(self.get()) && self.get() > old(self.get()))]
+    #[requires(x > 0)]
+    #[requires(self.get() <= std::i32::MAX - x)]
+    #[ensures(ret == old(self.get()) && self.get() > old(self.get()))]
     fn get_and_add(&mut self, x: i32) -> i32;
 }
 
@@ -76,8 +76,8 @@ struct S {
 
 #[debug_invariant(self.x > 0)]
 impl S {
-    #[pre(self.x < std::i32::MAX)]
-    #[post(ret == old(self.x))]
+    #[requires(self.x < std::i32::MAX)]
+    #[ensures(ret == old(self.x))]
     fn get_and_decrement(&mut self) -> i32 {
         let c = self.x;
         self.x = self.x + 1;

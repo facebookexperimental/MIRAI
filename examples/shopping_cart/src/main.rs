@@ -10,31 +10,36 @@
 // We define a simple shopping cart with an invariant both on items in the cart
 // and the overall cart.
 //
-// TODO(wrwg): this example is not yet fully functional regarding MIRAI verification.
 use contracts::*;
-
 use mirai_annotations::*;
+use std::rc::Rc;
 
 // Items stored in the shopping cart.
+#[allow(dead_code)]
 pub struct Item {
-    // TODO(wrwg): make this String once supported
-    name: &'static str,
+    name: Rc<str>,
     price: u64,
 }
 
 impl Item {
     // Invariant for the Item struct. We define those invariants via functions
     // so they can easily be referenced from attributes.
+    // todo(hermanv): fix handling of Rc<str>::is_empty
+    // fn invariant(&self) -> bool {
+    //     !self.name.is_empty() && self.price > 0
+    // }
     fn invariant(&self) -> bool {
-        !self.name.is_empty() && self.price > 0
+        self.price > 0
     }
 
-    // Creates a new Item, satisfying the invariant. Notice we can't use
-    // the `#[invariant]` attribute for new because this requires a `self` argument.
-    #[pre(!name.is_empty() && price > 0)]
-    #[post(ret.invariant())]
-    fn new(name: &'static str, price: u64) -> Item {
-        Item { name, price }
+    // Creates a new Item, satisfying the invariant.
+    #[requires(!name.is_empty() && price > 0)]
+    #[ensures(ret.invariant())]
+    fn new(name: &str, price: u64) -> Item {
+        Item {
+            name: Rc::from(name),
+            price,
+        }
     }
 }
 
@@ -47,15 +52,14 @@ pub struct ShoppingCart {
 
 impl ShoppingCart {
     // Invariant for the shopping cart.
+    // Note that MIRAI cannot currently prove that such invariants hold and that this is not
+    // likely to change any time soon.
     fn invariant(&self) -> bool {
-        // TODO(wrwg): this invariant is currently not handled by MIRAI:
-        // function DefId(2:1711 ~ core[5a18]::ops[0]::deref[0]::Deref[0]::deref[0])
-        // Comment the code out to see other issues with this code.
         self.items.iter().all(|x| x.invariant())
             && self.items.iter().map(|x| x.price).sum::<u64>() == self.total
     }
 
-    #[post(ret.invariant())]
+    #[ensures(ret.invariant())]
     fn new() -> ShoppingCart {
         ShoppingCart {
             items: vec![],
@@ -68,30 +72,21 @@ impl ShoppingCart {
 // all methods in the impl which work on `self` get automatically injected
 // the invariant both as pre and post condition, in addition to what they state
 // individually.
-// TODO(wrwg): having both an invariant here and a post below is currently not supported
-// by MIRAI: "only one post condition is supported"
+//todo(wrwg): The invariant should be assumed at function entry, not required.
 #[invariant(self.invariant())]
 impl ShoppingCart {
-    #[pre(self.total <= std::u64::MAX - item.price && self.items.len() < std::usize::MAX)]
-    #[post(self.items.len() == old(self.items.len()) + 1)]
-    fn add(&mut self, item: Item) {
+    #[requires(self.total <= std::u64::MAX - item.price && self.items.len() < std::usize::MAX)]
+    pub fn add(&mut self, item: Item) {
         self.total += item.price;
         self.items.push(item);
     }
 
-    // TODO(wrwg): This seems to generate a false positive:
-    // "provably false verification condition" (after warning for
-    // integer overflow, which might be the cause).
-    #[post(self.items.len() == old(self.items.len()) + 1)]
-    fn add_broken_invariant(&mut self, item: Item) {
-        //self.total += item.price;
+    pub fn add_broken_invariant(&mut self, item: Item) {
+        // The below should cause a diagnostic because the invariant is violated.
         self.items.push(item);
     }
 
-    // TODO(wrwg): This currently can not be handled by MIRAI:
-    // DefId(2:1739 ~ core[5a18]::ops[0]::function[0]::FnMut[0]::call_mut[0])
-    #[post(ret == old(self.total))]
-    fn checkout(&mut self) -> u64 {
+    pub fn checkout(&mut self) -> u64 {
         let bill = self.total;
         self.total = 0;
         self.items.clear();
@@ -102,15 +97,14 @@ impl ShoppingCart {
 // A main entry point which violates conditions.
 pub fn main() {
     let mut cart = ShoppingCart::new();
-    // The below should fail because pre-condition of Item::new is violated.
+    // The below causes a diagnostic because pre-condition of Item::new is violated.
+    // todo(wrgr): The diagnostic for the pre-condition is poorly formatted, the MIRAI configuration of the contracts crate
+    // probably needs to be modified. The diagnostic can be quite simple because there is a call stack.
     cart.add(Item::new("free lunch", 0));
-    checked_verify!(cart.checkout() == 0);
 }
 
 #[cfg(test)]
 mod tests {
-    use mirai_annotations::*;
-
     use crate::{Item, ShoppingCart};
 
     #[test]
@@ -118,7 +112,7 @@ mod tests {
         let mut cart = ShoppingCart::new();
         cart.add(Item::new("ipad pro", 899));
         cart.add(Item::new("ipad folio", 169));
-        checked_verify_eq!(cart.checkout(), 899 + 169);
+        assert_eq!(cart.checkout(), 899 + 169);
     }
 
     #[test]
@@ -127,7 +121,6 @@ mod tests {
         let mut cart = ShoppingCart::new();
         // Below violates precondition of Item::new
         cart.add(Item::new("free lunch", 0));
-        checked_verify_eq!(cart.checkout(), 0);
     }
 
     #[test]
@@ -135,6 +128,5 @@ mod tests {
     fn fail_add_invariant() {
         let mut cart = ShoppingCart::new();
         cart.add_broken_invariant(Item::new("ipad pro", 899));
-        checked_verify_eq!(cart.checkout(), 899);
     }
 }

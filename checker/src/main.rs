@@ -104,6 +104,17 @@ fn main() {
             rustc_command_line_arguments.push(always_encode_mir);
         }
 
+        if options.test_only {
+            let test: String = "--test".into();
+            if !rustc_command_line_arguments
+                .iter()
+                .any(|arg| arg.ends_with(&test))
+            {
+                // Tell compiler to compile test code
+                rustc_command_line_arguments.push(test);
+            }
+        }
+
         let mut callbacks = callbacks::MiraiCallbacks::new(options);
         debug!(
             "rustc_command_line_arguments {:?}",
