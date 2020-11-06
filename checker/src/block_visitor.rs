@@ -2913,7 +2913,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 mir::ProjectionElem::Index(..) | mir::ProjectionElem::ConstantIndex { .. } => {
                     ty = type_visitor::get_element_type(ty);
                 }
-                mir::ProjectionElem::Downcast(..) | mir::ProjectionElem::Subslice { .. } => {}
+                mir::ProjectionElem::Downcast(..) => {
+                    ty = self.bv.type_visitor.get_type_for_projection_element(
+                        self.bv.current_span,
+                        ty,
+                        &[*elem],
+                    );
+                }
+                mir::ProjectionElem::Subslice { .. } => {}
             }
             result = Path::new_qualified(result, Rc::new(selector))
                 .refine_paths(&self.bv.current_environment, 0);

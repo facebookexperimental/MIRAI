@@ -219,8 +219,17 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 if t.is_never() {
                     return t;
                 }
-                if let TyKind::Projection(..) = t.kind() {
-                    t = self.specialize_generic_argument_type(t, &self.generic_argument_map);
+                match t.kind() {
+                    TyKind::Infer(..) => {
+                        // The qualifier does not resolve to a useful rustc type.
+                        // This can happen when the qualifier is a PathEnum::Alias where the value
+                        // is TOP, or BOTTOM or a heap layout.
+                        return self.tcx.types.never;
+                    }
+                    TyKind::Projection(..) => {
+                        t = self.specialize_generic_argument_type(t, &self.generic_argument_map);
+                    }
+                    _ => {}
                 }
                 match &**selector {
                     PathSelector::ConstantSlice { .. } => {
@@ -234,10 +243,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         let bt = Self::get_dereferenced_type(t);
                         match bt.kind() {
                             TyKind::Adt(def, substs) => {
-                                //todo: checked_assume!(!def.is_enum());
                                 // enum fields have qualifiers that cast onto the right variant.
                                 // In this case, t ends up as a tuple so we won't get here.
                                 // See the TyKind::Tuple and PathSelector::DownCast cases below.
+                                checked_assume!(!def.is_enum());
                                 let variants = &def.variants;
                                 assume!(variants.len() == 1); // only enums have more than one variant
                                 let variant = &variants[variants.last().unwrap()];
@@ -598,6 +607,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         let variant = &def.variants[*ordinal];
                         let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
                         return self.tcx.mk_tup(field_tys);
+                    } else {
+                        info!("unexpected type for downcast {:?}", base_ty);
                     }
                     base_ty
                 }
