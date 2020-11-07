@@ -354,6 +354,28 @@ impl AbstractValue {
     ) -> Rc<AbstractValue> {
         AbstractValue::make_from(Expression::InitialParameterValue { path, var_type }, 1)
     }
+
+    /// Creates an abstract value which represents the result of comparing the left operand with
+    /// the right operand, according to the rules of memcmp in unix.
+    #[logfn_inputs(TRACE)]
+    pub fn make_memcmp(
+        left: Rc<AbstractValue>,
+        right: Rc<AbstractValue>,
+        length: Rc<AbstractValue>,
+    ) -> Rc<AbstractValue> {
+        let expression_size = length
+            .expression_size
+            .saturating_add(left.expression_size)
+            .saturating_add(right.expression_size);
+        AbstractValue::make_from(
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            },
+            expression_size,
+        )
+    }
 }
 
 pub trait AbstractValueTrait: Sized {
@@ -442,6 +464,8 @@ pub trait AbstractValueTrait: Sized {
     ) -> Self;
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Self;
     fn transmute(&self, target_type: ExpressionType) -> Self;
+    fn try_resolve_as_byte_array(&self, _environment: &Environment) -> Option<Vec<u8>>;
+    fn try_resolve_as_ref_to_str(&self, environment: &Environment) -> Option<Rc<str>>;
     fn uninterpreted_call(
         &self,
         arguments: Vec<Rc<AbstractValue>>,
@@ -3067,6 +3091,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 operand.get_cached_tags().propagate_through(exp_tag_prop)
             }
 
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => left
+                .get_cached_tags()
+                .propagate_through(exp_tag_prop)
+                .or(&right.get_cached_tags().propagate_through(exp_tag_prop))
+                .or(&length.get_cached_tags().propagate_through(exp_tag_prop)),
+
             Expression::UninterpretedCall {
                 callee, arguments, ..
             } => {
@@ -3143,7 +3177,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => length
                 .get_widened_subexpression(path)
                 .or_else(|| alignment.get_widened_subexpression(path)),
-
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => left.get_widened_subexpression(path).or_else(|| {
+                right
+                    .get_widened_subexpression(path)
+                    .or_else(|| length.get_widened_subexpression(path))
+            }),
             Expression::Reference(..) => None,
             Expression::InitialParameterValue { .. } => None,
             Expression::Switch {
@@ -3279,6 +3321,28 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::LessThan { left, right } => left
                 .refine_paths(environment, depth)
                 .less_than(right.refine_paths(environment, depth)),
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                let refined_left = left.refine_paths(environment, depth);
+                let refined_right = right.refine_paths(environment, depth);
+                let refined_length = length.refine_paths(environment, depth);
+
+                let arr1 = refined_left.try_resolve_as_byte_array(environment);
+                let arr2 = refined_right.try_resolve_as_byte_array(environment);
+                if let (Some(arr1), Some(arr2)) = (&arr1, &arr2) {
+                    return Rc::new(ConstantDomain::I128(arr1.cmp(&arr2) as i32 as i128).into());
+                }
+
+                let str1 = refined_left.try_resolve_as_ref_to_str(environment);
+                let str2 = refined_right.try_resolve_as_ref_to_str(environment);
+                if let (Some(str1), Some(str2)) = (str1, str2) {
+                    return Rc::new(ConstantDomain::I128(str1.cmp(&str2) as i32 as i128).into());
+                }
+                AbstractValue::make_memcmp(refined_left, refined_right, refined_length)
+            }
             Expression::Mul { left, right } => left
                 .refine_paths(environment, depth)
                 .multiply(right.refine_paths(environment, depth)),
@@ -3584,6 +3648,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::LogicalNot { operand } => operand
                 .refine_parameters(arguments, result, pre_environment, fresh)
                 .logical_not(),
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                let refined_left =
+                    left.refine_parameters(arguments, result, pre_environment, fresh);
+                let refined_right =
+                    right.refine_parameters(arguments, result, pre_environment, fresh);
+                let refined_length =
+                    length.refine_parameters(arguments, result, pre_environment, fresh);
+                AbstractValue::make_memcmp(refined_left, refined_right, refined_length)
+            }
             Expression::Mul { left, right } => left
                 .refine_parameters(arguments, result, pre_environment, fresh)
                 .multiply(right.refine_parameters(arguments, result, pre_environment, fresh)),
@@ -3949,6 +4026,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::LessThan { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .less_than(right.refine_with(path_condition, depth + 1)),
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                let refined_length = length.refine_with(path_condition, depth + 1);
+                AbstractValue::make_memcmp(left.clone(), right.clone(), refined_length)
+            }
             Expression::Mul { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .multiply(right.refine_with(path_condition, depth + 1)),
@@ -4117,6 +4202,70 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
+    #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
+    fn try_resolve_as_byte_array(&self, environment: &Environment) -> Option<Vec<u8>> {
+        if let Expression::Reference(path) = &self.expression {
+            if matches!(&path.value, PathEnum::HeapBlock {..}) {
+                let heap_layout_path = Path::new_layout(path.clone());
+                if let Some(layout) = environment.value_at(&heap_layout_path) {
+                    if let Expression::HeapBlockLayout { length, .. } = &layout.expression {
+                        if let Expression::CompileTimeConstant(ConstantDomain::U128(len)) =
+                            length.expression
+                        {
+                            let mut arr = Vec::with_capacity(len as usize);
+                            for i in 0..(len as usize) {
+                                let elem_index = Rc::new(ConstantDomain::U128(i as u128).into());
+                                let elem_path = Path::new_index(path.clone(), elem_index);
+                                let elem_val = environment.value_at(&elem_path);
+                                if let Some(val) = elem_val {
+                                    if let Expression::CompileTimeConstant(ConstantDomain::U128(
+                                        v,
+                                    )) = &val.expression
+                                    {
+                                        arr.push(*v as u8);
+                                        continue;
+                                    }
+                                }
+                                return None;
+                            }
+                            return Some(arr);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
+    fn try_resolve_as_ref_to_str(&self, _environment: &Environment) -> Option<Rc<str>> {
+        if let Expression::Variable {
+            path,
+            var_type: ExpressionType::ThinPointer,
+        } = &self.expression
+        {
+            if let PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } = &path.value
+            {
+                if let (PathEnum::Alias { value }, PathSelector::Field(0)) =
+                    (&qualifier.value, selector.as_ref())
+                {
+                    if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) =
+                        &value.expression
+                    {
+                        return Some(s.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Returns a domain whose corresponding set of concrete values include all of the values
     /// that the call expression might return at runtime. The function to be called will not
     /// have been summarized for some reason or another (for example, it might be a foreign function).
@@ -4225,6 +4374,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Join { left, right, path } => {
                 variables.contains(path) || left.uses(variables) || right.uses(variables)
             }
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => left.uses(variables) || right.uses(variables) || length.uses(variables),
             Expression::Reference(path)
             | Expression::InitialParameterValue { path, .. }
             | Expression::UnknownTagField { path }

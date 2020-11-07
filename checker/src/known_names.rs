@@ -104,6 +104,7 @@ pub enum KnownNames {
     StdPanickingBeginPanic,
     StdPanickingBeginPanicFmt,
     StdPtrSwapNonOverlapping,
+    StdSliceCmpMemcmp,
 }
 
 /// An analysis lifetime cache that contains a map from def ids to known names.
@@ -360,6 +361,28 @@ impl KnownNamesCache {
                 .unwrap_or(KnownNames::None)
         };
 
+        let get_known_name_for_slice_cmp_namespace =
+            |mut def_path_data_iter: Iter<'_>| match path_data_elem_as_disambiguator(
+                def_path_data_iter.next(),
+            ) {
+                Some(0) => get_path_data_elem_name(def_path_data_iter.next())
+                    .map(|n| match n.as_str().deref() {
+                        "memcmp" => KnownNames::StdSliceCmpMemcmp,
+                        _ => KnownNames::None,
+                    })
+                    .unwrap_or(KnownNames::None),
+                _ => KnownNames::None,
+            };
+
+        let get_known_name_for_slice_namespace = |mut def_path_data_iter: Iter<'_>| {
+            get_path_data_elem_name(def_path_data_iter.next())
+                .map(|n| match n.as_str().deref() {
+                    "cmp" => get_known_name_for_slice_cmp_namespace(def_path_data_iter),
+                    _ => KnownNames::None,
+                })
+                .unwrap_or(KnownNames::None)
+        };
+
         let get_known_name_for_known_crate = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
@@ -385,6 +408,7 @@ impl KnownNamesCache {
                     "mirai_result" => KnownNames::MiraiResult,
                     "mirai_set_model_field" => KnownNames::MiraiSetModelField,
                     "mirai_verify" => KnownNames::MiraiVerify,
+                    "slice" => get_known_name_for_slice_namespace(def_path_data_iter),
                     _ => KnownNames::None,
                 })
                 .unwrap_or(KnownNames::None)

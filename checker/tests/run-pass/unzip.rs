@@ -12,7 +12,7 @@ pub fn test() {
     let a = [(1, 2), (3, 4)];
 
     let (left, right): (Vec<_>, Vec<_>) = a.iter().cloned().unzip();
-    //todo: fix the false messages below (implement core.slice.cmp.memcmp)
+    //todo: fix the false messages below
     verify!(left == [1, 3]); //~ provably false verification condition
     verify!(right == [2, 4]); //~ provably false verification condition
 }

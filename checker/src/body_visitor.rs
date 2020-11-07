@@ -913,6 +913,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let heap_value =
                 self.get_new_heap_block(byte_size_value, alignment, false, target_type);
             let heap_root = Path::get_as_path(heap_value);
+            let layout_path = Path::new_layout(heap_root.clone());
+            let layout_value = self
+                .current_environment
+                .value_at(&layout_path)
+                .expect("new heap block should have a layout");
+            environment.update_value_at(layout_path, layout_value.clone());
             for (path, value) in self
                 .exit_environment
                 .as_ref()
@@ -924,6 +930,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let renamed_path = path.replace_root(local_path, heap_root.clone());
                 environment.update_value_at(renamed_path, value.clone());
             }
+
             let thin_pointer_to_heap = AbstractValue::make_reference(heap_root);
             if type_visitor::is_slice_pointer(target_type.kind()) {
                 let promoted_thin_pointer_path = Path::new_field(promoted_root.clone(), 0);
