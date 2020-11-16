@@ -311,6 +311,16 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         self.buffered_diagnostics.push(diagnostic_builder);
     }
 
+    pub fn get_char_const_val(&mut self, val: u128) -> Rc<AbstractValue> {
+        Rc::new(
+            self.cv
+                .constant_value_cache
+                .get_char_for(char::try_from(val as u32).unwrap())
+                .clone()
+                .into(),
+        )
+    }
+
     pub fn get_i128_const_val(&mut self, val: i128) -> Rc<AbstractValue> {
         Rc::new(
             self.cv
