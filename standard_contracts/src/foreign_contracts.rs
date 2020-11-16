@@ -148,6 +148,14 @@ pub mod core {
                 *_self
             }
 
+            pub fn clone__array_u64(_self: &u64) -> u64 {
+                *_self
+            }
+
+            pub fn clone__tuple_0() -> () {
+                ()
+            }
+
             pub fn clone__tuple_2_i32_i32(_self: &(i32, i32)) -> (i32, i32) {
                 (_self.0, _self.1)
             }
@@ -1570,6 +1578,10 @@ pub mod core {
         }
 
         pub struct Void {}
+
+        pub fn write() -> Result {
+            result!()
+        }
     }
 
     pub mod hash {
@@ -2890,6 +2902,10 @@ pub mod core {
         }
 
         pub mod implement_u8 {
+            pub fn from_str_radix(src: &str, radix: u32) -> Result<u8, std::num::ParseIntError> {
+                result!()
+            }
+
             pub fn max_value() -> u8 {
                 255
             }
@@ -2944,6 +2960,10 @@ pub mod core {
         }
 
         pub mod implement_u32 {
+            pub fn from_str(_src: &str) -> u32 {
+                result!()
+            }
+
             pub fn max_value() -> u32 {
                 4294967295
             }
@@ -3133,6 +3153,44 @@ pub mod core {
 
             pub fn slice_end_index_overflow_fail() -> ! {
                 panic!("attempted to index slice up to maximum usize");
+            }
+        }
+    }
+
+    pub mod str {
+        pub mod converts {
+            pub fn from_utf8(v: &[u8]) -> Result<&str, core::str::Utf8Error> {
+                result!()
+            }
+        }
+
+        pub mod implement {
+            pub fn trim(_self: &str) -> &str {
+                result!()
+            }
+        }
+
+        pub mod pattern {
+            pub mod implement_core_str_pattern_StrSearcher {
+                use core::str::pattern::StrSearcher;
+
+                pub fn new<'a, 'b>(haystack: &'a str, needle: &'b str) -> StrSearcher<'a, 'b> {
+                    result!()
+                }
+            }
+        }
+
+        pub fn slice_error_fail(s: &str, begin: usize, end: usize) -> ! {
+            panic!("byte index {} is not a char boundary");
+        }
+    }
+
+    pub mod unicode {
+        pub mod unicode_data {
+            pub mod white_space {
+                pub fn lookup(c: char) -> bool {
+                    result!()
+                }
             }
         }
     }
@@ -3370,6 +3428,39 @@ pub mod std {
         }
     }
 
+    pub mod env {
+        pub fn _var_os() -> Option<std::ffi::OsString> {
+            result!()
+        }
+    }
+
+    pub mod ffi {
+        pub mod os_str {
+            pub mod implement_std_ffi_os_str_OsStr {
+                pub struct Slice {
+                    pub inner: [u8],
+                }
+                pub struct OsStr {
+                    inner: Slice,
+                }
+                pub struct Buf {
+                    pub inner: Vec<u8>,
+                }
+                pub struct OsString {
+                    inner: Buf,
+                }
+
+                pub fn to_os_string(_self: &OsStr) -> OsString {
+                    OsString {
+                        inner: Buf {
+                            inner: _self.inner.inner.to_owned(),
+                        },
+                    }
+                }
+            }
+        }
+    }
+
     pub mod fmt {
         pub struct Arguments<'a> {
             // Format string pieces to print.
@@ -3379,6 +3470,58 @@ pub mod std {
         impl<'a> Arguments<'a> {
             pub fn new_v1(pieces: &'a [&'a str]) -> Arguments<'a> {
                 Arguments { pieces }
+            }
+        }
+    }
+
+    pub mod fs {
+        pub mod implement_std_fs_File {
+            use std::fs::File;
+
+            pub fn read(_self: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
+                result!()
+            }
+
+            pub fn seek(_self: &mut File, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+                result!()
+            }
+        }
+
+        pub mod implement_std_fs_OpenOptions {
+            use std::fs::{File, OpenOptions};
+            use std::io::Result;
+            use std::path::Path;
+
+            pub fn append(_self: &OpenOptions, _: bool) -> &OpenOptions {
+                _self
+            }
+
+            pub fn create(_self: &OpenOptions, _: bool) -> &OpenOptions {
+                _self
+            }
+
+            pub fn create_new(_self: &OpenOptions, _: bool) -> &OpenOptions {
+                _self
+            }
+
+            fn new() -> OpenOptions {
+                result!()
+            }
+
+            fn _open(_self: &OpenOptions, path: &Path) -> Result<File> {
+                result!()
+            }
+
+            pub fn read(_self: &OpenOptions, _: bool) -> &OpenOptions {
+                _self
+            }
+
+            pub fn truncate(_self: &OpenOptions, _: bool) -> &OpenOptions {
+                _self
+            }
+
+            pub fn write(_self: &OpenOptions, _: bool) -> &OpenOptions {
+                _self
             }
         }
     }
@@ -3424,6 +3567,52 @@ pub mod std {
         }
     }
 
+    pub mod path {
+
+        pub mod implement_std_ffi_os_str_OsString {
+            use std::ffi::OsStr;
+
+            pub struct Path {
+                inner: OsStr,
+            }
+
+            pub fn as_ref(_self: &Path) -> &OsStr {
+                &_self.inner
+            }
+        }
+        pub mod implement_std_path_Path {
+            use std::ffi::OsString;
+            use std::path::Path;
+
+            pub struct PathBuf {
+                inner: OsString,
+            }
+
+            pub fn as_ref(_self: &Path) -> &Path {
+                _self
+            }
+
+            pub fn to_owned(_self: &Path) -> std::path::PathBuf {
+                _self.to_path_buf()
+            }
+            pub fn clone_into(_self: &Path, target: &mut PathBuf) {
+                _self.as_os_str().clone_into(&mut target.inner);
+            }
+        }
+
+        pub mod implement_std_path_PathBuf {
+            use std::ffi::OsString;
+            use std::path::Path;
+
+            pub struct PathBuf {
+                inner: OsString,
+            }
+            pub fn _push(_self: &mut PathBuf, path: &Path) {
+                _self.inner.push(path);
+            }
+        }
+    }
+
     pub mod result {}
 
     pub mod std_detect {
@@ -3440,6 +3629,12 @@ pub mod std {
         pub mod unix {
             pub mod fast_thread_local {
                 pub fn register_dtor() {}
+            }
+
+            pub mod memchr {
+                pub fn memchr(_needle: u8, _haystack: &[u8]) -> Option<usize> {
+                    result!()
+                }
             }
         }
     }

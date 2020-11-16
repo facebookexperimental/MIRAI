@@ -332,7 +332,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         if let TyKind::Adt(def, substs) = t.kind() {
                             use rustc_index::vec::Idx;
                             if *ordinal >= def.variants.len() {
-                                info!(
+                                debug!(
                                     "illegally down casting to index {} of {:?} at {:?}",
                                     *ordinal, t, current_span
                                 );
@@ -585,7 +585,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 mir::ProjectionElem::Downcast(_, ordinal) => {
                     if let TyKind::Adt(def, substs) = base_ty.kind() {
                         if ordinal.index() >= def.variants.len() {
-                            info!(
+                            debug!(
                                 "illegally down casting to index {} of {:?} at {:?}",
                                 ordinal.index(),
                                 base_ty,

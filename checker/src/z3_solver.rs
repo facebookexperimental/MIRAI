@@ -2031,13 +2031,11 @@ impl Z3Solver {
         unsafe {
             let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
             match var_type {
-                Bool | Char | I8 | I16 | I32 | I64 | I128 | Isize | U8 | U16 | U32 | U64 | U128
-                | Usize | Function | ThinPointer => {
+                Bool | Char | F32 | F64 | I8 | I16 | I32 | I64 | I128 | Isize | U8 | U16 | U32
+                | U64 | U128 | Usize | Function | ThinPointer => {
                     let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
                     z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
                 }
-                F32 => z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.f32_sort),
-                F64 => z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.f64_sort),
                 NonPrimitive => self.bv_fresh_const(num_bits),
             }
         }

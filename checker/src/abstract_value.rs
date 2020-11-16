@@ -590,6 +590,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self && other".
     #[logfn_inputs(TRACE)]
     fn and(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        fn is_contained_in(x: &Rc<AbstractValue>, y: &Rc<AbstractValue>) -> bool {
+            if *x == *y {
+                return true;
+            }
+            if let Expression::And { left, right } = &y.expression {
+                is_contained_in(x, left) || is_contained_in(x, right)
+            } else {
+                false
+            }
+        }
+
         // Do these tests here lest BOTTOM get simplified away.
         if self.is_bottom() {
             return self.clone();
@@ -619,14 +630,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [self && true] -> self
             self.clone()
         } else {
+            // [x && (x && y)] -> x && y
+            // [y && (x && y)] -> x && y
+            // [(x && y) && x] -> x && y
+            // [(x && y) && y] -> x && y
+            if is_contained_in(self, &other) {
+                return other;
+            } else if is_contained_in(&other, self) {
+                return self.clone();
+            }
             match &self.expression {
-                Expression::And { left: x, right: y } => {
-                    // [(x && y) && x] -> x && y
-                    // [(x && y) && y] -> x && y
-                    if *x == other || *y == other {
-                        return self.clone();
-                    }
-                }
                 Expression::LogicalNot { operand } if *operand == other => {
                     // [!x && x] -> false
                     return Rc::new(FALSE);
@@ -4421,7 +4434,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     path: path.clone(),
                     operand: self.clone(),
                 },
-                3,
+                self.expression_size.saturating_add(1),
             ),
             _ => self.clone(),
         }
