@@ -199,9 +199,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .bv
                 .report_timeout(elapsed_time_in_seconds);
         }
-        let mut result = Summary::default();
-        result.is_computed = true; // Otherwise this function keeps getting re-analyzed
-        result.is_angelic = true; // Callers have to make possibly false assumptions.
+        let mut result = Summary {
+            is_computed: true,
+            is_angelic: true,
+            ..Summary::default()
+        };
         if !fixed_point_visitor.bv.assume_function_is_angelic {
             // Now traverse the blocks again, doing checks and emitting diagnostics.
             // terminator_state[bb] is now complete for every basic block bb in the body.

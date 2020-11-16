@@ -1393,7 +1393,7 @@ impl ExpressionType {
     pub fn max_value(&self) -> ConstantDomain {
         use self::ExpressionType::*;
         match self {
-            Bool => ConstantDomain::U128(255 as u128),
+            Bool => ConstantDomain::U128(255_u128),
             Char => ConstantDomain::U128(std::char::MAX as u128),
             F32 => ConstantDomain::F32(std::f32::MAX.to_bits()),
             F64 => ConstantDomain::F64(std::f64::MAX.to_bits()),
@@ -1420,8 +1420,8 @@ impl ExpressionType {
     pub fn min_value(&self) -> ConstantDomain {
         use self::ExpressionType::*;
         match self {
-            Bool => ConstantDomain::U128(0 as u128),
-            Char => ConstantDomain::U128(0 as u128),
+            Bool => ConstantDomain::U128(0_u128),
+            Char => ConstantDomain::U128(0_u128),
             F32 => ConstantDomain::F32(std::f32::MIN.to_bits()),
             F64 => ConstantDomain::F64(std::f64::MIN.to_bits()),
             I8 => ConstantDomain::I128(std::i8::MIN as i128),
