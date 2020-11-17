@@ -12,7 +12,7 @@ use crate::{abstract_value, k_limits};
 use itertools::Itertools;
 use log_derive::*;
 use mirai_annotations::*;
-use rpds::HashTrieSet;
+use rpds::{HashTrieMap, HashTrieSet};
 use rustc_data_structures::graph::dominators::Dominators;
 use rustc_middle::mir;
 use std::collections::{HashMap, HashSet};
@@ -81,10 +81,6 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             if !self.already_visited.contains(&bb) {
                 if !self.loop_anchors.contains(&bb) {
                     self.visit_basic_block(bb, 0);
-                    self.out_state
-                        .get_mut(&bb)
-                        .expect("incorrectly initialized out_state")
-                        .exit_conditions = self.bv.current_environment.exit_conditions.clone();
                 } else {
                     self.compute_fixed_point(bb);
                 }
@@ -286,15 +282,24 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
         if predecessor_states_and_conditions.len() == 1 {
             let (mut state, entry_condition) = predecessor_states_and_conditions.remove(0);
             state.entry_condition = entry_condition;
-            return state;
+            state.exit_conditions = HashTrieMap::default();
+            state
+        } else {
+            let entry_condition = predecessor_states_and_conditions
+                .iter()
+                .map(|(_, c)| c.clone())
+                .fold1(|c1, c2| c1.or(c2))
+                .unwrap();
+            let mut state = predecessor_states_and_conditions
+                .into_iter()
+                .fold1(|(state1, cond1), (state2, cond2)| {
+                    (state2.conditional_join(state1, &cond2), cond1)
+                })
+                .expect("one or more states to fold into something")
+                .0;
+            state.entry_condition = entry_condition;
+            state
         }
-        predecessor_states_and_conditions
-            .into_iter()
-            .fold1(|(state1, cond1), (state2, cond2)| {
-                (state2.conditional_join(state1, &cond2), cond1)
-            })
-            .expect("one or more states to fold into something")
-            .0
     }
 }
 

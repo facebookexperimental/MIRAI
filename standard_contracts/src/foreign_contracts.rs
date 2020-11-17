@@ -3177,6 +3177,16 @@ pub mod core {
                 pub fn new<'a, 'b>(haystack: &'a str, needle: &'b str) -> StrSearcher<'a, 'b> {
                     result!()
                 }
+
+                pub fn next_match<T>() -> T {
+                    result!()
+                }
+            }
+
+            pub mod implement_core_str_pattern_TwoWaySearcher {
+                pub fn next<T>() -> T {
+                    result!()
+                }
             }
         }
 
