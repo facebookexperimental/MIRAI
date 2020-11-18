@@ -1948,6 +1948,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // [!(x != y)] -> x == y
                 x.equals(y.clone())
             }
+            Expression::Or { left: x, right } if matches!(right.expression, Expression::LogicalNot {..}) =>
+            {
+                // [!(x || !y)] -> !x && y
+                if let Expression::LogicalNot { operand: y } = &right.expression {
+                    x.logical_not().and(y.clone())
+                } else {
+                    unreachable!()
+                }
+            }
+            Expression::Or { left, right: y } if matches!(left.expression, Expression::LogicalNot {..}) =>
+            {
+                // [!(!x || y)] -> x && !y
+                if let Expression::LogicalNot { operand: x } = &left.expression {
+                    x.and(y.logical_not())
+                } else {
+                    unreachable!()
+                }
+            }
             _ => AbstractValue::make_unary(self.clone(), |operand| Expression::LogicalNot {
                 operand,
             }),
@@ -2255,8 +2273,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             self.clone()
         } else {
             // [x || x] -> x
-            if self.expression == other.expression {
-                return other;
+            if is_contained_in(self, &other) {
+                return self.clone();
             }
 
             // [!x || x] -> true
@@ -2271,6 +2289,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if is_contained_in(operand, &self) {
                     return Rc::new(TRUE);
                 }
+            } else if is_contained_in(&self.logical_not(), &other) {
+                return Rc::new(TRUE);
             }
 
             // [x || (x || y)] -> x || y
@@ -2422,6 +2442,26 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     if x.inverse_implies(left) && y.inverse_implies(right) =>
                 {
                     Rc::new(TRUE)
+                }
+
+                // [(x && !y) || !(x || y)] -> !y
+                (Expression::And { left: x1, right }, Expression::LogicalNot { operand })
+                    if matches!(right.expression, Expression::LogicalNot{..})
+                        && matches!(operand.expression, Expression::Or{..}) =>
+                {
+                    if let (
+                        Expression::LogicalNot { operand: y1 },
+                        Expression::Or {
+                            left: x2,
+                            right: y2,
+                        },
+                    ) = (&right.expression, &operand.expression)
+                    {
+                        if x1.eq(x2) && y1.eq(y2) {
+                            return right.clone();
+                        }
+                    }
+                    unsimplified(self, other)
                 }
 
                 // [(x && !y) || y] -> (y || x)
