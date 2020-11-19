@@ -301,6 +301,10 @@ impl Path {
         );
         match result_rustc_type.kind() {
             TyKind::Adt(def, substs) => {
+                if def.is_enum() {
+                    let path0 = Path::new_discriminant(path.clone());
+                    return Some(path0);
+                }
                 let path0 = Path::new_field(path.clone(), 0);
                 for v in def.variants.iter() {
                     if let Some(field0) = v.fields.get(0) {
@@ -315,10 +319,6 @@ impl Path {
                             return result;
                         }
                     }
-                }
-                if def.is_enum() {
-                    let path0 = Path::new_discriminant(path.clone());
-                    return Some(path0);
                 }
                 None
             }

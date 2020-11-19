@@ -3434,6 +3434,15 @@ pub mod std {
                         }
                     }
                 }
+
+                #[allow(deprecated)]
+                pub mod implement_std_collections_hash_map_DefaultHasher {
+                    use std::hash::SipHasher13;
+                    pub struct DefaultHasher(SipHasher13);
+                    pub fn new() -> DefaultHasher {
+                        DefaultHasher(SipHasher13::new_with_keys(0, 0))
+                    }
+                }
             }
         }
     }
