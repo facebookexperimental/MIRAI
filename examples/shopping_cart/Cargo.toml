@@ -9,5 +9,4 @@ name = "shopping_cart"
 
 [dependencies]
 mirai-annotations = { path = "../../annotations" }
-# TODO(wrwg): replace with crates.io reference once landed
-contracts = { git = "https://gitlab.com/karroffel/contracts.git", branch = "master", features = [ "mirai_assertions" ]}
+contracts = {version = "0.6.0", features = ["mirai_assertions"]}
