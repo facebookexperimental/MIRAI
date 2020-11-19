@@ -599,7 +599,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             | Expression::Variable { path: ipath, .. } => {
                                 if (*path) == *ipath || path.is_rooted_by(ipath) {
                                     let param_path_root = Path::new_parameter(i + 1);
-                                    let param_path = path.replace_root(arg_path, param_path_root);
+                                    let param_path = path.replace_root(ipath, param_path_root);
                                     result.push((param_path, value.clone()));
                                     break;
                                 }
