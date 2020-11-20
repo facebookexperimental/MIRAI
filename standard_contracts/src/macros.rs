@@ -7,6 +7,16 @@ macro_rules! add_with_overflow {
     };
 }
 
+// No preconditions needed and no post conditions provided
+// Can be safely used as an uninterpreted function.
+macro_rules! default_contract {
+    ($n:ident) => {
+        pub fn $n<T>() -> T {
+            result!()
+        }
+    };
+}
+
 macro_rules! exact_div {
     ($t:ty, $n:ident) => {
         pub fn $n(x: $t, y: $t) -> $t {
