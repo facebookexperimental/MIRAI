@@ -30,6 +30,8 @@ use crate::tag_domain::Tag;
 use crate::{abstract_value, type_visitor, utils};
 
 pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
+    pub actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)>,
+    pub actual_argument_types: Vec<Ty<'tcx>>,
     pub block_visitor: &'call mut BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E>,
     pub callee_def_id: DefId,
     pub callee_func_ref: Option<Rc<FunctionReference>>,
@@ -37,8 +39,6 @@ pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
     pub callee_generic_arguments: Option<SubstsRef<'tcx>>,
     pub callee_known_name: KnownNames,
     pub callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
-    pub actual_args: &'call [(Rc<Path>, Rc<AbstractValue>)],
-    pub actual_argument_types: &'call [Ty<'tcx>],
     pub cleanup: Option<mir::BasicBlock>,
     pub destination: Option<(mir::Place<'tcx>, mir::BasicBlock)>,
     pub environment_before_call: Environment,
@@ -74,8 +74,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 callee_generic_arguments,
                 callee_known_name,
                 callee_generic_argument_map,
-                actual_args: &[],
-                actual_argument_types: &[],
+                actual_args: vec![],
+                actual_argument_types: vec![],
                 cleanup: None,
                 destination: None,
                 environment_before_call,
@@ -93,17 +93,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         &mut self,
         func_args: Option<Vec<Rc<FunctionReference>>>,
     ) -> Summary {
-        trace!(
-            "summarizing {:?}: {:?}",
-            self.callee_def_id,
-            self.block_visitor.bv.tcx.type_of(self.callee_def_id)
-        );
-        if self
-            .block_visitor
-            .bv
-            .tcx
-            .is_mir_available(self.callee_def_id)
-        {
+        let func_type = self.block_visitor.bv.tcx.type_of(self.callee_def_id);
+        trace!("summarizing {:?}: {:?}", self.callee_def_id, func_type);
+        let tcx = self.block_visitor.bv.tcx;
+        if tcx.is_mir_available(self.callee_def_id) {
             let mut body_visitor = BodyVisitor::new(
                 self.block_visitor.bv.cv,
                 self.callee_def_id,
@@ -111,14 +104,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.block_visitor.bv.buffered_diagnostics,
                 self.block_visitor.bv.active_calls_map,
             );
-            body_visitor.type_visitor.actual_argument_types = self.actual_argument_types.into();
+            body_visitor.type_visitor.actual_argument_types = self.actual_argument_types.clone();
             body_visitor.type_visitor.generic_arguments = self.callee_generic_arguments;
             body_visitor.type_visitor.generic_argument_map =
                 self.callee_generic_argument_map.clone();
             body_visitor.analyzing_static_var = self.block_visitor.bv.analyzing_static_var;
             let elapsed_time = self.block_visitor.bv.start_instant.elapsed();
             let mut summary =
-                body_visitor.visit_body(self.function_constant_args, self.actual_argument_types);
+                body_visitor.visit_body(self.function_constant_args, &self.actual_argument_types);
             let call_was_angelic = body_visitor.assume_function_is_angelic;
             trace!("summary {:?} {:?}", self.callee_def_id, summary);
             let signature = self.get_function_constant_signature(self.function_constant_args);
@@ -218,8 +211,22 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .get_generic_arguments_map(
                         resolved_def_id,
                         instance.substs,
-                        self.actual_argument_types,
+                        &self.actual_argument_types,
                     );
+                let tcx = self.block_visitor.bv.tcx;
+                if specialized_resolved_ty.is_closure() && tcx.is_mir_available(resolved_def_id) {
+                    let mir = tcx.optimized_mir(resolved_def_id);
+                    if self.actual_argument_types.len() + 1 == mir.arg_count {
+                        // When the closure has no captured variables, the first argument is just the function pointer.
+                        // Sadly, MIR omits this argument (because the call is via a trait), so we have to add it here.
+                        self.actual_args
+                            .insert(0, (Path::new_result(), self.callee_fun_val.clone()));
+                        self.actual_argument_types.insert(
+                            0,
+                            tcx.mk_mut_ref(tcx.lifetimes.re_static, specialized_resolved_ty),
+                        );
+                    }
+                }
             }
         }
     }
@@ -473,7 +480,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 if self.block_visitor.bv.check_for_errors {
                     self.report_calls_to_special_functions();
                 }
-                self.actual_args = &self.actual_args[0..1];
                 self.handle_assume();
                 return true;
             }
@@ -626,13 +632,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.block_visitor.bv.emit_diagnostic(warning);
             }
             KnownNames::MiraiPostcondition => {
-                assume!(self.actual_args.len() == 3); // The type checker ensures this.
-                let (_, assumption) = &self.actual_args[1];
-                let (_, cond) = &self.actual_args[0];
+                let actual_args = self.actual_args.clone();
+                assume!(actual_args.len() == 3); // The type checker ensures this.
+                let (_, assumption) = &actual_args[1];
+                let (_, cond) = &actual_args[0];
                 if !assumption.as_bool_if_known().unwrap_or(false) {
                     // Not an assumed post condition, so check the condition and only add this to
                     // the summary if it is reachable and true.
-                    let message = self.coerce_to_string(&self.actual_args[2].0);
+                    let message = self.coerce_to_string(&actual_args[2].0);
                     if self
                         .block_visitor
                         .check_special_function_condition(
@@ -649,9 +656,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 }
             }
             KnownNames::MiraiVerify => {
-                assume!(self.actual_args.len() == 2); // The type checker ensures this.
-                let (_, cond) = &self.actual_args[0];
-                let message = self.coerce_to_string(&self.actual_args[1].0);
+                let actual_args = self.actual_args.clone();
+                assume!(actual_args.len() == 2); // The type checker ensures this.
+                let (_, cond) = &actual_args[0];
+                let message = self.coerce_to_string(&actual_args[1].0);
                 self.block_visitor.check_special_function_condition(
                     cond,
                     message.as_ref(),
@@ -691,7 +699,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 }
 
                 let msg = if matches!(self.callee_known_name, KnownNames::StdPanickingBeginPanic) {
-                    self.coerce_to_string(&self.actual_args[0].0)
+                    self.coerce_to_string(&self.actual_args[0].0.clone())
                 } else {
                     let arguments_struct_path = self.actual_args[0]
                         .0
@@ -1005,7 +1013,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             closure_ref_ty = tcx.mk_mut_ref(tcx.lifetimes.re_static, closure_ty);
         }
         let mut argument_map = self.callee_generic_argument_map.clone();
-        if type_visitor::get_def_id_from_closure(closure_ty).is_some() {
+        if closure_ty.is_closure() {
             if self.callee_known_name != KnownNames::StdSyncOnceCallOnce {
                 actual_args.insert(0, self.actual_args[0].clone());
                 actual_argument_types.insert(0, closure_ref_ty);
@@ -1026,6 +1034,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let function_summary = if let Some(func_ref) = &callee_func_ref {
             let func_const = ConstantDomain::Function(func_ref.clone());
             let def_id = func_ref.def_id.expect("defined when used here");
+            if !closure_ty.is_closure() && self.block_visitor.bv.tcx.is_closure(def_id) {
+                // The function appears to be a closure with no captures, so provide the function pointer as the closure state
+                actual_args.insert(0, self.actual_args[0].clone());
+                actual_argument_types.insert(0, closure_ref_ty);
+            }
             let generic_arguments = self.block_visitor.bv.cv.substs_cache.get(&def_id).cloned();
             if let Some(substs) = generic_arguments {
                 argument_map = self
@@ -1044,8 +1057,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 environment_before_call,
                 func_const,
             );
-            indirect_call_visitor.actual_args = &actual_args;
-            indirect_call_visitor.actual_argument_types = &actual_argument_types;
+            indirect_call_visitor.actual_args = actual_args;
+            indirect_call_visitor.actual_argument_types = actual_argument_types;
             indirect_call_visitor.function_constant_args = &function_constant_args;
             indirect_call_visitor.callee_fun_val = callee;
             indirect_call_visitor.callee_known_name = KnownNames::None;
@@ -1352,7 +1365,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref{..}) {
                 qualifier = Path::new_deref(qualifier);
             }
-            let field_name = self.coerce_to_string(&self.actual_args[1].0);
+            let field_name = self.coerce_to_string(&self.actual_args[1].0.clone());
             let source_path = Path::new_model_field(qualifier, field_name)
                 .refine_paths(&self.block_visitor.bv.current_environment, 0);
 
@@ -1483,7 +1496,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if self.block_visitor.bv.check_for_errors {
             let condition = self.actual_args[0].1.clone();
             //todo: give diagnostic if the condition contains a local variable.
-            let message = self.coerce_to_string(&self.actual_args[1].0);
+            let message = self.coerce_to_string(&self.actual_args[1].0.clone());
             let precondition = Precondition {
                 condition,
                 message,
@@ -1504,7 +1517,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref{..}) {
                 qualifier = Path::new_deref(qualifier);
             }
-            let field_name = self.coerce_to_string(&self.actual_args[1].0);
+            let field_name = self.coerce_to_string(&self.actual_args[1].0.clone());
             let target_path = Path::new_model_field(qualifier, field_name)
                 .refine_paths(&self.block_visitor.bv.current_environment, 0);
             let source_path = self.actual_args[2].0.clone();
@@ -1745,8 +1758,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_arith_offset(&mut self) -> Rc<AbstractValue> {
         checked_assume!(self.actual_args.len() == 2);
-        let base_val = &self.actual_args[0].1;
-        let offset_val = &self.actual_args[1].1;
+        let base_val = self.actual_args[0].1.clone();
+        let offset_val = self.actual_args[1].1.clone();
         let offset_scale = self.handle_size_of();
         let offset_in_bytes = offset_val.multiply(offset_scale);
         base_val.offset(offset_in_bytes)
@@ -1820,8 +1833,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_offset(&mut self) -> Rc<AbstractValue> {
         checked_assume!(self.actual_args.len() == 2);
-        let base_val = &self.actual_args[0].1;
-        let offset_val = &self.actual_args[1].1;
+        let base_val = self.actual_args[0].1.clone();
+        let offset_val = self.actual_args[1].1.clone();
         let offset_scale = self.handle_size_of();
         let offset_in_bytes = offset_val.multiply(offset_scale);
         let result = base_val.offset(offset_in_bytes);
@@ -2345,7 +2358,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let mut refined_condition = precondition
                 .condition
                 .refine_parameters(
-                    self.actual_args,
+                    &self.actual_args,
                     &None,
                     &self.environment_before_call,
                     self.block_visitor.bv.fresh_variable_offset,
@@ -2475,14 +2488,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         let rvalue = value
                             .clone()
                             .refine_parameters(
-                                self.actual_args,
+                                &self.actual_args,
                                 result_path,
                                 &self.environment_before_call,
                                 self.block_visitor.bv.fresh_variable_offset,
                             )
                             .refine_paths(&self.block_visitor.bv.current_environment, 0);
                         let rpath = path.refine_parameters(
-                            self.actual_args,
+                            &self.actual_args,
                             result_path,
                             &self.environment_before_call,
                             self.block_visitor.bv.fresh_variable_offset,
@@ -2502,7 +2515,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     target_path,
                     &return_value_path,
                     result_path,
-                    self.actual_args,
+                    &self.actual_args,
                     &pre_environment,
                 );
 
@@ -2514,7 +2527,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         target_path.clone(),
                         &parameter_path,
                         result_path,
-                        self.actual_args,
+                        &self.actual_args,
                         &pre_environment,
                     );
                     check_for_early_return!(self.block_visitor.bv);
@@ -2561,7 +2574,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 if exit_condition.as_bool_if_known().unwrap_or(true) {
                     let unwind_condition = unwind_condition
                         .refine_parameters(
-                            self.actual_args,
+                            &self.actual_args,
                             &result_path,
                             &self.environment_before_call,
                             self.block_visitor.bv.fresh_variable_offset,
@@ -2573,7 +2586,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             if exit_condition.as_bool_if_known().unwrap_or(true) {
                 if let Some(post_condition) = &function_summary.post_condition {
                     let refined_post_condition = post_condition.refine_parameters(
-                        self.actual_args,
+                        &self.actual_args,
                         &result_path,
                         &self.environment_before_call,
                         self.block_visitor.bv.fresh_variable_offset,
@@ -2612,7 +2625,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     target_path.clone(),
                     &parameter_path,
                     &None,
-                    self.actual_args,
+                    &self.actual_args,
                     &self.environment_before_call,
                 );
             }
