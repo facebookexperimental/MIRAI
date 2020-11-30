@@ -992,11 +992,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         let not_self_as_bool = not_self.as_bool_if_known();
         if not_self_as_bool == Some(false) {
             // [true ? x : y] -> x
-            let _not_self = self.logical_not();
             return consequent;
         } else if not_self_as_bool == Some(true) {
             // [false ? x : y] -> y
-            let _not_self = self.logical_not();
             return alternate;
         }
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
