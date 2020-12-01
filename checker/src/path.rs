@@ -918,6 +918,9 @@ impl PathRefinement for Rc<Path> {
     /// Returns a copy path with the root replaced by new_root.
     #[logfn_inputs(TRACE)]
     fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path> {
+        if *self == *old_root {
+            return new_root;
+        }
         match &self.value {
             PathEnum::QualifiedPath {
                 qualifier,
