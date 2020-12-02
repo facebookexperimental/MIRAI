@@ -381,7 +381,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         match self.callee_known_name {
             KnownNames::StdOpsFunctionFnCall
             | KnownNames::StdOpsFunctionFnMutCallMut
-            | KnownNames::StdOpsFunctionFnOnceCallOnce => {
+            | KnownNames::StdOpsFunctionFnOnceCallOnce
+            | KnownNames::StdSyncOnceCallOnce => {
                 self.inline_indirectly_called_function();
                 return true;
             }
@@ -923,6 +924,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// The tuple is unpacked and the callee is then invoked with its normal function signature.
     /// In the case of calling a closure, the closure signature includes the closure as the first argument.
     ///
+    /// Sync::Once::call_once receives two arguments
+    /// 1. A self pointer to the Once object
+    /// 2. The closure instance to call.
+    ///
     /// All of this happens in code that is not encoded as MIR, so MIRAI needs built in support for it.
     #[logfn_inputs(TRACE)]
     fn inline_indirectly_called_function(&mut self) {
@@ -937,7 +942,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             self.function_constant_args
         );
         // Get the function to call (it is either a function pointer or a closure)
-        let callee = self.actual_args[0].1.clone();
+        let callee = if self.callee_known_name == KnownNames::StdSyncOnceCallOnce {
+            self.actual_args[1].1.clone()
+        } else {
+            self.actual_args[0].1.clone()
+        };
 
         // Get the path of the tuple containing the arguments.
         let callee_arg_array_path = self.actual_args[1].0.clone();
@@ -951,15 +960,19 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             .map(|gen_arg| gen_arg.expect_ty())
             .collect();
 
-        checked_assume!(generic_argument_types.len() == 2);
         let mut actual_argument_types: Vec<Ty<'tcx>>;
-        if let TyKind::Tuple(tuple_types) = generic_argument_types[1].kind() {
-            actual_argument_types = tuple_types
-                .iter()
-                .map(|gen_arg| gen_arg.expect_ty())
-                .collect();
+        if self.callee_known_name == KnownNames::StdSyncOnceCallOnce {
+            actual_argument_types = vec![];
         } else {
-            assume_unreachable!("expected second type argument to be a tuple type");
+            checked_assume!(generic_argument_types.len() == 2);
+            if let TyKind::Tuple(tuple_types) = generic_argument_types[1].kind() {
+                actual_argument_types = tuple_types
+                    .iter()
+                    .map(|gen_arg| gen_arg.expect_ty())
+                    .collect();
+            } else {
+                assume_unreachable!("expected second type argument to be a tuple type");
+            }
         }
 
         let mut actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = actual_argument_types
@@ -978,7 +991,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
         // Prepend the closure (if there is one) to the unpacked arguments vector.
         // Also update the Self parameter in the arguments map.
-        let mut closure_ty = self.actual_argument_types[0];
+        let mut closure_ty = if self.callee_known_name == KnownNames::StdSyncOnceCallOnce {
+            self.actual_argument_types[1]
+        } else {
+            self.actual_argument_types[0]
+        };
         let closure_ref_ty;
         if let TyKind::Ref(_, ty, _) = closure_ty.kind() {
             closure_ref_ty = closure_ty;
@@ -989,8 +1006,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         }
         let mut argument_map = self.callee_generic_argument_map.clone();
         if type_visitor::get_def_id_from_closure(closure_ty).is_some() {
-            actual_args.insert(0, self.actual_args[0].clone());
-            actual_argument_types.insert(0, closure_ref_ty);
+            if self.callee_known_name != KnownNames::StdSyncOnceCallOnce {
+                actual_args.insert(0, self.actual_args[0].clone());
+                actual_argument_types.insert(0, closure_ref_ty);
+            }
             //todo: could this be a generator?
             if let TyKind::Closure(def_id, substs) = closure_ty.kind() {
                 argument_map = self
