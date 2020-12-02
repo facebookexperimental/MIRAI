@@ -1329,7 +1329,8 @@ impl Z3Solver {
                                 modulo_ast,
                                 unsigned_ast,
                             )
-                        } else if exp_type.is_unsigned_integer() {
+                        } else if exp_type.is_unsigned_integer() || exp_type == ExpressionType::Char
+                        {
                             let mut unsigned_ast = self.get_as_numeric_z3_ast(expression).1;
                             let modulo_constant = target_type.as_unsigned().modulo_constant();
                             let modulo_ast = if modulo_constant.is_bottom() {
