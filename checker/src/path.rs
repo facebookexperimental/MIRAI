@@ -655,7 +655,7 @@ impl Path {
                 if let Expression::HeapBlock { .. } = &value.expression {
                     result.insert(value.clone());
                 } else {
-                    verify_unreachable!()
+                    unreachable!(); // Heap blocks paths should have HeapBlock values.
                 }
             }
             PathEnum::Offset { value } => {

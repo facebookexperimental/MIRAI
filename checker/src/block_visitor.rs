@@ -552,8 +552,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             self.bv.current_environment.clone(),
             func_const,
         );
-        call_visitor.actual_args = &actual_args;
-        call_visitor.actual_argument_types = &actual_argument_types;
+        call_visitor.actual_args = actual_args;
+        call_visitor.actual_argument_types = actual_argument_types;
         call_visitor.cleanup = cleanup;
         call_visitor.destination = *destination;
         call_visitor.callee_fun_val = func_to_call;
