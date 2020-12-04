@@ -373,6 +373,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     _ => {}
                 }
                 info!("current span is {:?}", current_span);
+                info!(
+                    "cache key is {:?}",
+                    utils::summary_key_str(self.tcx, self.def_id)
+                );
                 info!("path is {:?}", path);
                 info!("t is {:?}", t);
                 info!("qualifier is {:?}", qualifier);
