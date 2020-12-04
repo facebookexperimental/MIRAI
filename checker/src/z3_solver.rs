@@ -307,13 +307,7 @@ impl Z3Solver {
                 discriminator,
                 cases,
                 default,
-            } => {
-                if discriminator.expression.is_bit_vector() {
-                    self.bv_switch(discriminator, cases, default)
-                } else {
-                    self.general_switch(discriminator, cases, default)
-                }
-            }
+            } => self.general_switch(discriminator, cases, default, |e| self.get_as_z3_ast(e)),
             Expression::TaggedExpression { operand, .. } => self.get_as_z3_ast(&operand.expression),
             Expression::Top | Expression::Bottom => self.general_fresh_const(),
             Expression::UninterpretedCall {
@@ -565,21 +559,27 @@ impl Z3Solver {
         }
     }
 
-    #[logfn_inputs(TRACE)]
-    fn general_switch(
+    fn general_switch<F>(
         &self,
         discriminator: &Rc<AbstractValue>,
         cases: &[(Rc<AbstractValue>, Rc<AbstractValue>)],
         default: &Rc<AbstractValue>,
-    ) -> z3_sys::Z3_ast {
+        get_result_ast: F,
+    ) -> z3_sys::Z3_ast
+    where
+        F: FnOnce(&Expression) -> z3_sys::Z3_ast + Copy,
+    {
+        if discriminator.expression.is_bit_vector() {
+            return self.bv_switch(discriminator, cases, default, get_result_ast);
+        }
         let discriminator_ast = self.get_as_z3_ast(&(**discriminator).expression);
-        let default_ast = self.get_as_z3_ast(&(**default).expression);
+        let default_ast = get_result_ast(&(**default).expression);
         cases
             .iter()
             .fold(default_ast, |acc_ast, (case_val, case_result)| unsafe {
                 let case_val_ast = self.get_as_z3_ast(&(**case_val).expression);
                 let cond_ast = z3_sys::Z3_mk_eq(self.z3_context, discriminator_ast, case_val_ast);
-                let case_result_ast = self.get_as_z3_ast(&(**case_result).expression);
+                let case_result_ast = get_result_ast(&(**case_result).expression);
                 z3_sys::Z3_mk_ite(self.z3_context, cond_ast, case_result_ast, acc_ast)
             })
     }
@@ -1062,7 +1062,12 @@ impl Z3Solver {
                 discriminator,
                 cases,
                 default,
-            } => self.numeric_switch(discriminator, cases, default),
+            } => (
+                default.expression.infer_type().is_floating_point_number(),
+                self.general_switch(discriminator, cases, default, |e| {
+                    self.get_as_numeric_z3_ast(e).1
+                }),
+            ),
             Expression::TaggedExpression { operand, .. } => {
                 self.get_as_numeric_z3_ast(&operand.expression)
             }
@@ -1357,14 +1362,7 @@ impl Z3Solver {
                                 unsigned_ast,
                             )
                         } else {
-                            if exp_type != ExpressionType::ThinPointer {
-                                // expression type is not numeric and not a pointer, but the result
-                                // of the cast is expected to be numeric. This probably a mistake.
-                                info!(
-                                    "non numeric expression {:?} being cast to {:?}",
-                                    expression, target_type
-                                );
-                            }
+                            // Could be a thin pointer or an enum
                             (
                                 false,
                                 z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.int_sort),
@@ -1430,7 +1428,7 @@ impl Z3Solver {
                 (false, z3_sys::Z3_mk_int(self.z3_context, 1, self.int_sort))
             },
             _ => {
-                //info!("fresh constant for {:?}", const_domain);
+                //TRACE!("fresh constant for {:?}", const_domain);
                 self.numeric_fresh_const()
             }
         }
@@ -1484,30 +1482,6 @@ impl Z3Solver {
                 z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.int_sort),
             )
         }
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn numeric_switch(
-        &self,
-        discriminator: &Rc<AbstractValue>,
-        cases: &[(Rc<AbstractValue>, Rc<AbstractValue>)],
-        default: &Rc<AbstractValue>,
-    ) -> (bool, z3_sys::Z3_ast) {
-        let discriminator_ast = self.get_as_z3_ast(&(**discriminator).expression);
-        let (is_float, default_ast) = self.get_as_numeric_z3_ast(&(**default).expression);
-        (
-            is_float,
-            cases
-                .iter()
-                .fold(default_ast, |acc_ast, (case_val, case_result)| unsafe {
-                    let case_val_ast = self.get_as_z3_ast(&(**case_val).expression);
-                    let cond_ast =
-                        z3_sys::Z3_mk_eq(self.z3_context, discriminator_ast, case_val_ast);
-                    let (_, case_result_ast) =
-                        self.get_as_numeric_z3_ast(&(**case_result).expression);
-                    z3_sys::Z3_mk_ite(self.z3_context, cond_ast, case_result_ast, acc_ast)
-                }),
-        )
     }
 
     #[logfn_inputs(TRACE)]
@@ -1990,24 +1964,26 @@ impl Z3Solver {
         }
     }
 
-    #[logfn_inputs(TRACE)]
-    fn bv_switch(
+    fn bv_switch<F>(
         &self,
         discriminator: &Rc<AbstractValue>,
         cases: &[(Rc<AbstractValue>, Rc<AbstractValue>)],
         default: &Rc<AbstractValue>,
-    ) -> z3_sys::Z3_ast {
+        get_result_ast: F,
+    ) -> z3_sys::Z3_ast
+    where
+        F: FnOnce(&Expression) -> z3_sys::Z3_ast + Copy,
+    {
         let ty = discriminator.expression.infer_type();
         let num_bits = u32::from(ty.bit_length());
         let discriminator_ast = self.get_as_bv_z3_ast(&(**discriminator).expression, num_bits);
-
-        let default_ast = self.get_as_z3_ast(&(**default).expression);
+        let default_ast = get_result_ast(&(**default).expression);
         cases
             .iter()
             .fold(default_ast, |acc_ast, (case_val, case_result)| unsafe {
                 let case_val_ast = self.get_as_bv_z3_ast(&(**case_val).expression, num_bits);
                 let cond_ast = z3_sys::Z3_mk_eq(self.z3_context, discriminator_ast, case_val_ast);
-                let case_result_ast = self.get_as_z3_ast(&(**case_result).expression);
+                let case_result_ast = get_result_ast(&(**case_result).expression);
                 z3_sys::Z3_mk_ite(self.z3_context, cond_ast, case_result_ast, acc_ast)
             })
     }
