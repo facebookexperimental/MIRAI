@@ -139,14 +139,11 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(file_name: &str) -> bool {
-        file_name.contains("common/datatest-stable/src")
-            || file_name.contains("config/management/genesis/src")
-            || file_name.contains("language/move-lang/src")
-            || file_name.contains("language/move-prover/src")
-            || file_name.contains("language/move-prover/spec-lang/src")
-            || file_name.contains("language/tools/genesis-viewer/src")
-            || file_name.contains("language/transaction-builder/generator/src")
-            || file_name.contains("state-synchronizer/src") // fails in Z3 encoding
+        file_name.contains("language/move-lang/src")
+        || file_name.contains("language/move-prover/src") // compiler panic
+        || file_name.contains("language/move-prover/spec-lang/src") // compiler panic
+        || file_name.contains("language/tools/move-cli/src")
+        || file_name.contains("language/vm/src")
     }
 
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.

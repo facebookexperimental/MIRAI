@@ -2129,12 +2129,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         size: 0,
                         ..
                     })) => {
-                        return self.bv.get_new_heap_block(
-                            Rc::new(0u128.into()),
-                            Rc::new(1u128.into()),
-                            false,
-                            ty,
-                        );
+                        return Rc::new(ConstantDomain::Unit.into());
                     }
                     rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
                         data,
