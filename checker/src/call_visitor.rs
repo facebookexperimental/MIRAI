@@ -260,19 +260,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             // can be included in the type specific key that is used to look up non generic
             // predefined summaries.
 
-            //get_function_constant_signature???
-            let func_args: Option<Vec<Rc<FunctionReference>>> =
-                if !self.function_constant_args.is_empty() {
-                    Some(
-                        self.function_constant_args
-                            .iter()
-                            .filter_map(|(_, v)| self.block_visitor.get_func_ref(v))
-                            .collect(),
-                    )
-                } else {
-                    // common case
-                    None
-                };
+            let func_args = self.get_function_constant_signature(self.function_constant_args);
             let call_depth = *self
                 .block_visitor
                 .bv
@@ -290,7 +278,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 return Some(result);
             }
             if call_depth < 3 {
-                let mut summary = self.create_and_cache_function_summary(func_args);
+                let mut summary = self.create_and_cache_function_summary(func_args.clone());
                 if call_depth >= 1 {
                     summary.post_condition = None;
 
@@ -298,13 +286,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     if call_depth == 1 {
                         summary.widen_side_effects();
                     }
-                    let signature =
-                        self.get_function_constant_signature(self.function_constant_args);
                     self.block_visitor
                         .bv
                         .cv
                         .summary_cache
-                        .set_summary_for_call_site(&func_ref, signature, summary.clone());
+                        .set_summary_for_call_site(&func_ref, func_args, summary.clone());
                 }
                 return Some(summary);
             } else {
@@ -315,12 +301,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .side_effects
                     .push((Path::new_result(), Rc::new(abstract_value::BOTTOM)));
                 summary.is_computed = true;
-                let signature = self.get_function_constant_signature(self.function_constant_args);
                 self.block_visitor
                     .bv
                     .cv
                     .summary_cache
-                    .set_summary_for_call_site(&func_ref, signature, summary.clone());
+                    .set_summary_for_call_site(&func_ref, func_args, summary.clone());
                 return Some(summary);
             }
         }
@@ -1079,7 +1064,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             Summary::default()
         } else {
             if self.block_visitor.bv.check_for_errors {
-                warn!("unknown callee {:?}", callee);
+                info!("unknown callee {:?}", callee);
                 self.deal_with_missing_summary();
             }
             Summary::default()
@@ -2291,6 +2276,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             } else {
                 "".to_string()
             };
+            // todo: when a function parameter is not a compile time constant at the call site
+            // the callee cannot be fully analyzed, which is problematic, in general, but could be
+            // OK if the actual callee has no side effects. In such a case, the call can become an uninterpreted
+            // function, which can be interpreted later on during call site specialization.
+            // That might also be the place to complain if the function turns out to have side effects.
             info!(
                 "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
                 utils::summary_key_str(self.block_visitor.bv.tcx, self.block_visitor.bv.def_id),
