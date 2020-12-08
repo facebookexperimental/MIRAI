@@ -39,6 +39,15 @@ pub mod alloc {
         }
     }
 
+    pub mod string {
+        pub mod implement_alloc_string_String {
+            pub fn clone<T: Copy>(_self: T) -> T {
+                //todo: provide mirai helper that does a deep clone
+                _self
+            }
+        }
+    }
+
     pub mod vec {
         pub mod implement {
             pub mod insert {
@@ -160,11 +169,27 @@ pub mod core {
                 (_self.0, _self.1)
             }
 
-            pub fn clone__tuple_2_libra_crypto_ed25519_Ed25519Signature_u8<T: Clone>(
+            pub fn clone__tuple_2_libra_crypto_ed25519_Ed25519Signature_u8<T: Copy>(
                 _self: &(T, u8),
             ) -> (T, u8) {
-                // todo: do not call clone here
-                (_self.0.clone(), _self.1)
+                (_self.0, _self.1)
+            }
+
+            pub fn clone__tuple_2_alloc_rc_Rc_mirai_abstract_value_AbstractValue_alloc_rc_Rc_mirai_abstract_value_AbstractValue<
+                T: Copy,
+            >(
+                _self: &(T, T),
+            ) -> (T, T) {
+                (_self.0, _self.1)
+            }
+
+            pub fn clone__tuple_2_alloc_rc_Rc_mirai_path_Path_alloc_rc_Rc_mirai_abstract_value_AbstractValue<
+                T: Copy,
+                U: Copy,
+            >(
+                _self: &(T, U),
+            ) -> (T, U) {
+                (_self.0, _self.1)
             }
         }
     }
@@ -2426,6 +2451,8 @@ pub mod core {
             add_with_overflow!(u32, i128, add_with_overflow__u32, std::u32::MAX);
             add_with_overflow!(u64, i128, add_with_overflow__u64, std::u64::MAX);
             add_with_overflow!(usize, i128, add_with_overflow__usize, std::usize::MAX);
+            default_contract!(add_with_overflow__i128);
+            default_contract!(add_with_overflow__u128);
 
             sub_with_overflow!(i8, i128, sub_with_overflow__i8, std::i8::MAX);
             sub_with_overflow!(i16, i128, sub_with_overflow__i16, std::i16::MAX);
@@ -2437,6 +2464,8 @@ pub mod core {
             sub_with_overflow!(u32, i128, sub_with_overflow__u32, std::u32::MAX);
             sub_with_overflow!(u64, i128, sub_with_overflow__u64, std::u64::MAX);
             sub_with_overflow!(usize, i128, sub_with_overflow__usize, std::usize::MAX);
+            default_contract!(sub_with_overflow__i128);
+            default_contract!(sub_with_overflow__u128);
 
             // Performs an exact division, resulting in undefined behavior when
             // `x % y != 0` or `y == 0` or `x == T::min_value() && y == -1`
@@ -2587,6 +2616,8 @@ pub mod core {
             wrapping_add!(u32, u128, wrapping_add__u32, std::u32::MAX);
             wrapping_add!(u64, u128, wrapping_add__u64, std::u64::MAX);
             wrapping_add!(usize, u128, wrapping_add__usize, std::usize::MAX);
+            default_contract!(wrapping_add__i128);
+            default_contract!(wrapping_add__u128);
 
             // (a - b) mod 2 ** N, where N is the width of T in bits.
             wrapping_sub!(i8, i128, wrapping_sub__i8, std::i8::MAX);
@@ -2599,6 +2630,8 @@ pub mod core {
             wrapping_sub!(u32, i128, wrapping_sub__u32, std::u32::MAX);
             wrapping_sub!(u64, i128, wrapping_sub__u64, std::u64::MAX);
             wrapping_sub!(usize, i128, wrapping_sub__usize, std::usize::MAX);
+            default_contract!(wrapping_sub__i128);
+            default_contract!(wrapping_sub__u128);
 
             // (a * b) mod 2 ** N, where N is the width of T in bits.
             wrapping_mul!(i8, i128, wrapping_mul__i8, std::i8::MAX);
@@ -2611,6 +2644,8 @@ pub mod core {
             wrapping_mul!(u32, u128, wrapping_mul__u32, std::u32::MAX);
             wrapping_mul!(u64, u128, wrapping_mul__u64, std::u64::MAX);
             wrapping_mul!(usize, u128, wrapping_mul__usize, std::usize::MAX);
+            default_contract!(wrapping_mul__i128);
+            default_contract!(wrapping_mul__u128);
 
             saturating_add!(i8, i128, saturating_add__i8, std::i8::MAX);
             saturating_add!(i16, i128, saturating_add__i16, std::i16::MAX);
@@ -2622,6 +2657,8 @@ pub mod core {
             saturating_add!(u32, u128, saturating_add__u32, std::u32::MAX);
             saturating_add!(u64, u128, saturating_add__u64, std::u64::MAX);
             saturating_add!(usize, u128, saturating_add__usize, std::usize::MAX);
+            default_contract!(saturating_add__i128);
+            default_contract!(saturating_add__u128);
 
             saturating_sub!(i8, saturating_sub__i8);
             saturating_sub!(i16, saturating_sub__i16);
@@ -2695,6 +2732,9 @@ pub mod core {
 
     pub mod iter {
         pub mod adapters {
+            pub mod map_fold {
+                default_contract!(closure);
+            }
             pub mod zip {
                 pub mod ZipImpl {
                     pub struct Zip<A, B> {
@@ -2960,9 +3000,8 @@ pub mod core {
         }
 
         pub mod implement_u32 {
-            pub fn from_str(_src: &str) -> u32 {
-                result!()
-            }
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
 
             pub fn max_value() -> u32 {
                 4294967295
@@ -3025,6 +3064,11 @@ pub mod core {
             // We currently treat expect as an explicit assumption made by the programmer for
             // reasons that are beyond the analyzer.
             assume_unreachable!();
+        }
+        pub mod implement_3 {
+            pub mod cloned {
+                default_contract!(closure);
+            }
         }
     }
 
@@ -3155,6 +3199,10 @@ pub mod core {
                 panic!("attempted to index slice up to maximum usize");
             }
         }
+
+        pub mod memchr {
+            default_contract!(memchr);
+        }
     }
 
     pub mod str {
@@ -3167,6 +3215,12 @@ pub mod core {
         pub mod implement {
             pub fn trim(_self: &str) -> &str {
                 result!()
+            }
+        }
+
+        pub mod implement_ref_str {
+            pub fn default() -> &'static str {
+                ""
             }
         }
 
@@ -3188,10 +3242,14 @@ pub mod core {
                     result!()
                 }
             }
+
+            pub mod Searcher {
+                default_contract!(next_reject);
+            }
         }
 
         pub fn slice_error_fail(s: &str, begin: usize, end: usize) -> ! {
-            panic!("byte index {} is not a char boundary");
+            panic!("byte index is not a char boundary");
         }
     }
 
@@ -3249,6 +3307,26 @@ pub mod core {
     }
 }
 
+pub mod crossbeam_epoch {
+    pub mod internal {
+        pub mod implement_crossbeam_epoch_internal_Local {
+            default_contract!(defer);
+        }
+    }
+    pub mod sync {
+        pub mod list {
+            pub mod implement_crossbeam_epoch_sync_list_List_generic_par_T_generic_par_C {
+                default_contract!(insert);
+            }
+        }
+        pub mod queue {
+            pub mod implement_crossbeam_epoch_sync_queue_Queue_generic_par_T {
+                default_contract!(push);
+            }
+        }
+    }
+}
+
 pub mod hashbrown {
     pub mod raw {
         pub mod implement {
@@ -3258,6 +3336,10 @@ pub mod hashbrown {
             pub fn capacity_overflow<T>() -> T {
                 result!()
             }
+        }
+        pub mod implement_hashbrown_raw_RawTable_generic_par_T {
+            default_contract!(rehash_in_place);
+            default_contract!(resize);
         }
     }
 }
@@ -3310,6 +3392,20 @@ pub mod libc {
 
 pub mod log {
     pub fn __private_api_log() {}
+}
+
+pub mod parking_lot {
+    pub mod condvar {
+        pub mod implement_parking_lot_condvar_Condvar {
+            default_contract!(notify_all_slow);
+            default_contract!(wait_until_internal);
+        }
+    }
+    pub mod raw_mutex {
+        pub mod implement_parking_lot_raw_mutex_RawMutex {
+            default_contract!(lock_slow);
+        }
+    }
 }
 
 pub mod rand {
@@ -3399,6 +3495,276 @@ pub mod rand {
     }
 }
 
+pub mod regex_syntax {
+    pub mod ast {
+        pub mod parse {
+            pub mod implement_regex_syntax_ast_parse_ParserI_generic_par_P {
+                default_contract!(bump_space);
+                default_contract!(parse_octal);
+                default_contract!(parse_hex_digits);
+                default_contract!(parse_hex_brace);
+                default_contract!(parse_unicode_class);
+            }
+        }
+    }
+}
+
+pub mod rustc_data_structures {
+    pub mod profiling {
+        pub mod implement {
+            pub mod instant_query_event {
+                default_contract!(closure);
+            }
+        }
+    }
+}
+
+pub mod rustc_errors {
+    pub mod diagnostic {
+        pub mod implement_rustc_errors_diagnostic_Diagnostic {
+            default_contract!(message);
+        }
+        pub mod implement_rustc_errors_diagnostic_SubDiagnostic {
+            default_contract!(message);
+        }
+    }
+    pub mod implement_rustc_errors_Handler {
+        default_contract!(emit_diagnostic);
+    }
+}
+
+pub mod rustc_hir {
+    pub mod hir {
+        pub mod implement_rustc_hir_hir_VisibilityKind {
+            default_contract!(is_pub);
+        }
+    }
+}
+
+pub mod rustc_middle {
+    pub mod dep_graph {
+        pub mod dep_node {
+            pub mod implement_rustc_span_def_id_CrateNum {
+                default_contract!(to_fingerprint);
+            }
+        }
+        pub mod implement {
+            default_contract!(is_eval_always);
+        }
+
+        pub mod implement_rustc_middle_ty_context_TyCtxt {
+            default_contract!(diagnostic);
+            default_contract!(has_errors_or_delayed_span_bugs);
+            default_contract!(load_diagnostics);
+            default_contract!(profiler);
+            default_contract!(store_diagnostics);
+            default_contract!(store_diagnostics_for_anon_node);
+            default_contract!(try_force_from_dep_node);
+        }
+    }
+    pub mod hir {
+        pub mod implement_rustc_hir_hir_VisibilityKind {
+            default_contract!(is_pub);
+        }
+        pub mod map {
+            pub mod implement_rustc_middle_hir_map_Map {
+                default_contract!(get_if_local);
+            }
+        }
+    }
+    pub mod infer {
+        pub mod canonical {
+            pub mod implement_rustc_middle_infer_canonical_Canonical_generic_par_V {
+                default_contract!(clone);
+            }
+        }
+    }
+    pub mod ty {
+        pub mod context {
+            pub mod implement {
+                default_contract!(intern_ty);
+            }
+            pub mod implement_rustc_middle_ty_context_TyCtxt {
+                default_contract!(def_path);
+                default_contract!(intern_existential_predicates);
+                default_contract!(intern_substs);
+                default_contract!(intern_type_list);
+                default_contract!(mk_const);
+            }
+            pub mod tls {
+                pub mod TLV {
+                    default_contract!(__getit);
+                }
+            }
+        }
+        pub mod erase_regions {
+            pub mod implement_rustc_middle_ty_erase_regions_RegionEraserVisitor {
+                default_contract!(fold_region);
+                default_contract!(fold_ty);
+                default_contract!(tcx);
+            }
+        }
+        pub mod fold {
+            pub mod implement_rustc_middle_ty_fold_BoundVarReplacer {
+                default_contract!(fold_const);
+                default_contract!(fold_region);
+                default_contract!(fold_ty);
+                default_contract!(tcx);
+            }
+            pub mod implement_rustc_middle_ty_fold_HasEscapingVarsVisitor {
+                default_contract!(visit_const);
+                default_contract!(visit_region);
+                default_contract!(visit_ty);
+            }
+            pub mod implement_rustc_middle_ty_fold_HasTypeFlagsVisitor {
+                default_contract!(visit_const);
+                default_contract!(visit_region);
+                default_contract!(visit_ty);
+            }
+        }
+        pub mod implement_rustc_middle_traits_Reveal {
+            default_contract!(into_usize);
+        }
+        pub mod implement_rustc_middle_ty_context_TyCtxt {
+            default_contract!(parent);
+        }
+        pub mod implement_rustc_middle_ty_FieldDef {
+            default_contract!(ty);
+        }
+        pub mod normalize_erasing_regions {
+            pub mod implement_rustc_middle_ty_normalize_erasing_regions_NormalizeAfterErasingRegionsFolder {
+                default_contract!(fold_const);
+                default_contract!(fold_ty);
+                default_contract!(tcx);
+            }
+        }
+        pub mod query {
+            pub mod implement_rustc_middle_ty_query_Query {
+                default_contract!(clone);
+            }
+            pub mod plumbing {
+                pub mod implement {
+                    default_contract!(current_query_job);
+                    default_contract!(dep_graph);
+                    default_contract!(incremental_verify_ich);
+                    default_contract!(try_collect_active_jobs);
+                }
+            }
+        }
+        pub mod sty {
+            pub mod implement_rustc_middle_ty_sty_Binder_ref_rustc_middle_ty_list_List_rustc_middle_ty_sty_ExistentialPredicate {
+                default_contract!(principal);
+            }
+            pub mod implement_rustc_middle_ty_sty_ClosureSubsts {
+                default_contract!(split);
+            }
+            pub mod implement_rustc_middle_ty_sty_FnSig {
+                default_contract!(inputs);
+                default_contract!(output);
+            }
+            pub mod implement_rustc_middle_ty_sty_ProjectionTy {
+                default_contract!(self_ty);
+            }
+            pub mod implement_rustc_middle_ty_TyS {
+                default_contract!(tuple_fields);
+            }
+        }
+        pub mod subst {
+            pub mod implement_rustc_middle_ty_list_List_rustc_middle_ty_subst_GenericArg {
+                default_contract!(as_closure);
+                default_contract!(as_generator);
+            }
+            pub mod implement_rustc_middle_ty_subst_GenericArg {
+                default_contract!(expect_const);
+                default_contract!(expect_ty);
+                default_contract!(from);
+            }
+        }
+    }
+}
+
+pub mod rustc_query_system {
+    pub mod dep_graph {
+        pub mod dep_node {
+            pub mod implement {
+                default_contract!(construct);
+            }
+        }
+        pub mod graph {
+            pub mod implement_3 {
+                pub mod with_task_impl {
+                    default_contract!(closure);
+                }
+            }
+            pub mod implement_rustc_query_system_dep_graph_graph_DepGraph_generic_par_K {
+                default_contract!(with_task_impl);
+            }
+            pub mod implement_rustc_query_system_dep_graph_graph_DepNodeColorMap {
+                default_contract!(insert);
+            }
+        }
+        pub mod serialized {
+            pub mod implement_rustc_query_system_dep_graph_serialized_SerializedDepNodeIndex {
+                default_contract!(clone);
+            }
+        }
+    }
+    pub mod query {
+        pub mod config {
+            pub mod implement {
+                default_contract!(cache_on_disk);
+                default_contract!(compute);
+                default_contract!(handle_cycle_error);
+                default_contract!(hash_result);
+                default_contract!(try_load_from_disk);
+            }
+        }
+        pub mod job {
+            pub mod implement_rustc_query_system_query_job_QueryLatch_generic_par_CTX {
+                default_contract!(find_cycle_in_stack);
+            }
+        }
+        pub mod plumbing {
+            default_contract!(incremental_verify_ich);
+        }
+    }
+}
+
+pub mod rustc_session {
+    pub mod config {
+        pub mod implement_rustc_session_config_ErrorOutputType {
+            default_contract!(default);
+        }
+    }
+    pub mod session {
+        default_contract!(early_error);
+    }
+}
+
+pub mod rustc_span {
+    pub mod fatal_error {
+        pub mod implement_rustc_span_fatal_error_FatalError {
+            pub fn raise() {
+                panic!("rust compiler fatal error");
+            }
+        }
+    }
+    pub mod implement_rustc_span_span_encoding_Span {
+        default_contract!(partial_cmp);
+        default_contract!(source_callsite);
+    }
+    pub mod source_map {
+        pub mod implement_rustc_span_source_map_SourceMap {
+            default_contract!(span_to_string);
+        }
+    }
+    pub mod symbol {
+        pub mod implement_rustc_span_symbol_Symbol {
+            default_contract!(as_str);
+        }
+    }
+}
+
 pub mod sha2 {
     pub mod sha256 {
         pub mod x86 {
@@ -3407,6 +3773,15 @@ pub mod sha2 {
             }
         }
     }
+}
+
+pub mod shellwords {
+    default_contract!(split);
+}
+
+pub mod stacker {
+    default_contract!(_grow);
+    default_contract!(remaining_stack);
 }
 
 pub mod std {
@@ -3454,6 +3829,19 @@ pub mod std {
     }
 
     pub mod ffi {
+        pub mod c_str {
+            pub mod implement_ref_str {
+                pub mod new {
+                    pub mod implement_ref_str {
+                        default_contract!(into_vec);
+                    }
+                }
+            }
+            pub mod implement_std_ffi_c_str_CString {
+                default_contract!(into_inner);
+                default_contract!(_new);
+            }
+        }
         pub mod os_str {
             pub mod implement_std_ffi_os_str_OsStr {
                 pub struct Slice {
@@ -3570,19 +3958,18 @@ pub mod std {
                         Repr::Simple(kind) => kind,
                     }
                 }
-                fn _new(
-                    kind: std::io::ErrorKind,
-                    error: Box<dyn std::error::Error + Send + Sync>,
-                ) -> Error {
-                    Error {
-                        repr: Repr::Custom(Box::new(Custom { kind, error })),
-                    }
-                }
+                default_contract!(new);
             }
         }
         pub mod stdio {
             use crate::foreign_contracts::core::fmt;
             pub fn _print(_args: fmt::Arguments<'_>) {}
+        }
+    }
+
+    pub mod panicking {
+        pub mod panic_count {
+            default_contract!(is_zero_slow_path);
         }
     }
 
@@ -3626,6 +4013,10 @@ pub mod std {
             pub struct PathBuf {
                 inner: OsString,
             }
+            fn default() -> std::path::PathBuf {
+                std::path::PathBuf::new()
+            }
+            default_contract!(from_str);
             pub fn _push(_self: &mut PathBuf, path: &Path) {
                 _self.inner.push(path);
             }
@@ -3655,18 +4046,78 @@ pub mod std {
                     result!()
                 }
             }
+
+            pub mod thread_local_dtor {
+                default_contract!(register_dtor);
+            }
+        }
+    }
+
+    pub mod sys_common {
+        pub mod mutex {
+            pub mod implement_std_sys_common_mutex_MovableMutex {
+                default_contract!(new);
+            }
         }
     }
 
     pub mod thread {
-        pub fn yield_now() {}
+        default_contract!(current);
+        default_contract!(yield_now);
+        pub mod implement_std_thread_Thread {
+            default_contract!(id);
+        }
+        pub mod implement_std_thread_ThreadId {
+            default_contract!(as_u64);
+        }
+        pub mod local {
+            pub mod implement_std_thread_local_LocalKey_generic_par_T {
+                default_contract!(try_with);
+            }
+        }
     }
 
     pub mod time {
         pub mod implement {
-            pub fn now<T>() -> T {
-                result!()
-            }
+            default_contract!(elapsed);
+            default_contract!(now);
+        }
+    }
+}
+
+pub mod tracing_core {
+    pub mod callsite {
+        default_contract!(register);
+    }
+
+    pub mod dispatcher {
+        default_contract!(get_global);
+        pub mod CURRENT_STATE {
+            default_contract!(__getit);
+        }
+
+        pub mod implement_tracing_core_dispatcher_Dispatch {
+            default_contract!(clone);
+            default_contract!(enabled);
+            default_contract!(event);
+            default_contract!(is);
+        }
+    }
+
+    pub mod field {
+        pub mod implement_tracing_core_field_FieldSet {
+            default_contract!(iter);
+            default_contract!(next);
+        }
+        pub mod implement_tracing_core_field_Iter {
+            default_contract!(iter);
+            default_contract!(next);
+        }
+    }
+
+    pub mod metadata {
+        pub mod implement {
+            default_contract!(fields);
         }
     }
 }
