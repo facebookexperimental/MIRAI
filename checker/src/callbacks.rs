@@ -175,6 +175,7 @@ impl MiraiCallbacks {
         || file_name.contains("language/tools/move-coverage/src")
         || file_name.contains("language/libra-tools/transaction-replay/src")
         || file_name.contains("language/vm/src")
+        || file_name.contains("mempool/src")
         || file_name.contains("network/src") // you should never look at the bits of a ZST 
         || file_name.contains("network/builder/src")    
         || file_name.contains("secure/net/src")
