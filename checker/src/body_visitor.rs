@@ -995,7 +995,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let ge_zero = right.greater_or_equal(Rc::new(ConstantDomain::I128(0).into()));
             let mut len = left.clone();
             if let Expression::Reference(path) = &left.expression {
-                if matches!(&path.value, PathEnum::HeapBlock{..}) {
+                if matches!(&path.value, PathEnum::HeapBlock { .. }) {
                     let layout_path = Path::new_layout(path.clone());
                     if let Expression::HeapBlockLayout { length, .. } = &self
                         .lookup_path_and_refine_result(

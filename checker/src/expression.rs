@@ -1035,34 +1035,28 @@ impl Expression {
     /// Determines if the given expression is the result of a non constant binary bitwise operation.
     #[logfn_inputs(TRACE)]
     pub fn is_bit_vector(&self) -> bool {
-        match self {
-            Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
-                true
-            }
-            _ => false,
-        }
+        matches!(
+            self,
+            Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. }
+        )
     }
 
     /// Determines if the given expression is the compile time constant 1u128.
     #[logfn_inputs(TRACE)]
     pub fn is_one(&self) -> bool {
-        if let Expression::CompileTimeConstant(c) = self {
-            if let ConstantDomain::U128(c) = c {
-                return *c == 1u128;
-            }
-        }
-        false
+        matches!(
+            *self,
+            Expression::CompileTimeConstant(ConstantDomain::U128(1u128))
+        )
     }
 
     /// Determines if the given expression is the compile time constant 0u128.
     #[logfn_inputs(TRACE)]
     pub fn is_zero(&self) -> bool {
-        if let Expression::CompileTimeConstant(c) = self {
-            if let ConstantDomain::U128(c) = c {
-                return *c == 0u128;
-            }
-        }
-        false
+        matches!(
+            *self,
+            Expression::CompileTimeConstant(ConstantDomain::U128(0u128))
+        )
     }
 
     /// Adds any heap blocks found in the associated expression to the given set.

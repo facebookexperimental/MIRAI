@@ -2001,7 +2001,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // [!(x != y)] -> x == y
                 x.equals(y.clone())
             }
-            Expression::Or { left: x, right } if matches!(right.expression, Expression::LogicalNot {..}) =>
+            Expression::Or { left: x, right }
+                if matches!(right.expression, Expression::LogicalNot { .. }) =>
             {
                 // [!(x || !y)] -> !x && y
                 if let Expression::LogicalNot { operand: y } = &right.expression {
@@ -2010,7 +2011,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     unreachable!()
                 }
             }
-            Expression::Or { left, right: y } if matches!(left.expression, Expression::LogicalNot {..}) =>
+            Expression::Or { left, right: y }
+                if matches!(left.expression, Expression::LogicalNot { .. }) =>
             {
                 // [!(!x || y)] -> x && !y
                 if let Expression::LogicalNot { operand: x } = &left.expression {
@@ -2548,8 +2550,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
                 // [(x && !y) || !(x || y)] -> !y
                 (Expression::And { left: x1, right }, Expression::LogicalNot { operand })
-                    if matches!(right.expression, Expression::LogicalNot{..})
-                        && matches!(operand.expression, Expression::Or{..}) =>
+                    if matches!(right.expression, Expression::LogicalNot { .. })
+                        && matches!(operand.expression, Expression::Or { .. }) =>
                 {
                     if let (
                         Expression::LogicalNot { operand: y1 },
@@ -4108,7 +4110,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn(TRACE)]
     fn try_resolve_as_byte_array(&self, environment: &Environment) -> Option<Vec<u8>> {
         if let Expression::Reference(path) = &self.expression {
-            if matches!(&path.value, PathEnum::HeapBlock {..}) {
+            if matches!(&path.value, PathEnum::HeapBlock { .. }) {
                 let heap_layout_path = Path::new_layout(path.clone());
                 if let Some(layout) = environment.value_at(&heap_layout_path) {
                     if let Expression::HeapBlockLayout { length, .. } = &layout.expression {
