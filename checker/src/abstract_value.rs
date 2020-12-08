@@ -295,6 +295,7 @@ impl AbstractValue {
     #[logfn_inputs(TRACE)]
     pub fn make_from(expression: Expression, expression_size: u64) -> Rc<AbstractValue> {
         if expression_size > k_limits::MAX_EXPRESSION_SIZE {
+            info!("Maximum expression size exceeded");
             // If the expression gets too large, refining it gets expensive and composing it
             // into other expressions leads to exponential growth. We therefore need to abstract
             // (go up in the lattice). We do that by making the expression a typed variable and
@@ -1069,6 +1070,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
         if consequent.expression_size <= (k_limits::MAX_REFINE_DEPTH as u64) {
+            //todo: don't abuse depth for size
             consequent = consequent.refine_with(self, 5);
         }
         if alternate.expression_size < (k_limits::MAX_REFINE_DEPTH as u64) {
@@ -2956,6 +2958,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn get_as_interval(&self) -> IntervalDomain {
         if self.expression_size > k_limits::MAX_EXPRESSION_SIZE / 10 {
+            info!("maximum expression size exceeded from getting an interval domain");
             return interval_domain::BOTTOM;
         }
         match &self.expression {
@@ -3937,6 +3940,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         //do not use false path conditions to refine things
         checked_precondition!(path_condition.as_bool_if_known().is_none());
         if depth >= k_limits::MAX_REFINE_DEPTH {
+            info!("max refine depth exceeded during refine_with");
             //todo: perhaps this should go away.
             // right now it deals with the situation where some large expressions have sizes
             // that are not accurately tracked. These really should get fixed.
