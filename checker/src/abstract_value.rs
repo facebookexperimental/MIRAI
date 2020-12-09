@@ -2764,6 +2764,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Note: !x.subset(y) does not imply y.subset(x).
     #[logfn_inputs(TRACE)]
     fn subset(&self, other: &Rc<AbstractValue>) -> bool {
+        if self.expression.eq(&other.expression) {
+            return true;
+        }
         match (&self.expression, &other.expression) {
             // The empty set is a subset of every other set.
             (Expression::Bottom, _) => true,
@@ -2814,7 +2817,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // This is a conservative answer. False does not imply other.subset(self).
                 self.subset(&left) || self.subset(&right)
             }
-            (e1, e2) => e1.eq(e2),
+            _ => false,
         }
     }
 
