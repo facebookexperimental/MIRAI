@@ -626,7 +626,7 @@ impl Path {
         }
         let qualifier_length = qualifier.path_length();
         if qualifier_length >= k_limits::MAX_PATH_LENGTH {
-            debug!("max path length exceeded {:?}.{:?}", qualifier, selector);
+            info!("max path length exceeded {:?}.{:?}", qualifier, selector);
         }
         assume!(qualifier_length < 1_000_000_000); // We'll run out of memory long before this happens
         Rc::new(
@@ -789,7 +789,7 @@ impl PathRefinement for Rc<Path> {
             }
         };
         if depth > k_limits::MAX_REFINE_DEPTH {
-            info!("refine depth exceeded for path {:?}", self);
+            info!("refine_paths depth exceeded for path {:?}", self);
             return self.clone();
         }
         // self is a path that is not a key in the environment. This could be because it is not

@@ -2632,6 +2632,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 let index_value = self.get_u128_const_val(last_index);
                 let index_path = Path::new_index(array_path.clone(), index_value);
                 value_map.insert_mut(index_path, operand);
+            } else {
+                info!(
+                    "constant array has {} elements, but maximum tracked is {}",
+                    i,
+                    k_limits::MAX_BYTE_ARRAY_LENGTH
+                );
             }
         }
         let length_path = Path::new_length(array_path.clone());

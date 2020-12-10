@@ -837,6 +837,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                                 spans: vec![self.block_visitor.bv.current_span],
                             };
                             self.block_visitor.bv.preconditions.push(precondition);
+                        } else {
+                            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                                self.block_visitor.bv.current_span,
+                                warning.as_ref(),
+                            );
+                            self.block_visitor.bv.emit_diagnostic(warning);
                         }
                     }
                 }
