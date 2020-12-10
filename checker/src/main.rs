@@ -21,6 +21,7 @@ extern crate rustc_driver;
 extern crate rustc_interface;
 extern crate rustc_session;
 
+use itertools::Itertools;
 use log::*;
 use mirai::callbacks;
 use mirai::options::Options;
@@ -105,6 +106,18 @@ fn main() {
         }
 
         if options.test_only {
+            let prefix: String = "mirai_annotations=".into();
+            let postfix: String = ".rmeta".into();
+
+            if let Some((_, s)) = rustc_command_line_arguments
+                .iter_mut()
+                .find_position(|arg| arg.starts_with(&prefix))
+            {
+                if s.ends_with(&postfix) {
+                    *s = s.replace(&postfix, ".rlib");
+                }
+            }
+
             let test: String = "--test".into();
             if !rustc_command_line_arguments
                 .iter()
