@@ -1203,6 +1203,7 @@ pub enum ExpressionType {
     U32,
     U64,
     U128,
+    Unit,
     Usize,
 }
 
@@ -1222,6 +1223,7 @@ impl From<&ConstantDomain> for ExpressionType {
             ConstantDomain::True => Bool,
             ConstantDomain::U128(..) => U128,
             ConstantDomain::Unimplemented => NonPrimitive,
+            ConstantDomain::Unit => Unit,
         }
     }
 }
@@ -1263,7 +1265,7 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
             }
             TyKind::Tuple(types) => {
                 if types.is_empty() {
-                    ExpressionType::Function
+                    ExpressionType::Unit
                 } else {
                     ExpressionType::NonPrimitive
                 }
@@ -1280,7 +1282,7 @@ impl ExpressionType {
             Bool => tcx.types.bool,
             Char => tcx.types.char,
             // This is a hack
-            Function => tcx.types.unit,
+            Function => tcx.types.never,
             F32 => tcx.types.f32,
             F64 => tcx.types.f64,
             I8 => tcx.types.i8,
@@ -1294,6 +1296,7 @@ impl ExpressionType {
             U32 => tcx.types.u32,
             U64 => tcx.types.u64,
             U128 => tcx.types.u128,
+            Unit => tcx.types.unit,
             Usize => tcx.types.usize,
             ThinPointer => tcx.mk_nil_ptr(),
             NonPrimitive => tcx.types.trait_object_dummy_self,
@@ -1376,6 +1379,7 @@ impl ExpressionType {
             U32 => 32,
             U64 => 64,
             U128 => 128,
+            Unit => 0,
             Usize => 64,
             ThinPointer => 64,
             NonPrimitive => 128,

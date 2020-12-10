@@ -46,6 +46,8 @@ pub enum ConstantDomain {
     U128(u128),
     /// A place holder for other kinds of constants. Eventually this goes away.
     Unimplemented,
+    /// ()
+    Unit,
 }
 
 impl Debug for ConstantDomain {
@@ -65,6 +67,7 @@ impl Debug for ConstantDomain {
             ConstantDomain::Str(str_val) => str_val.fmt(f),
             ConstantDomain::True => f.write_str("true"),
             ConstantDomain::U128(val) => f.write_fmt(format_args!("{}u", val)),
+            ConstantDomain::Unit => f.write_str("()"),
             ConstantDomain::Unimplemented => f.write_str("unimplemented"),
         }
     }

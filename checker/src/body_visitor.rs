@@ -433,6 +433,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                                     result_type.clone(),
                                     path.clone(),
                                 )
+                            } else if result_type == ExpressionType::Unit {
+                                Rc::new(ConstantDomain::Unit.into())
                             } else {
                                 AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
                             }
@@ -1925,31 +1927,21 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let source_type = self
                     .type_visitor
                     .get_path_rustc_type(&source_path, self.current_span);
-                match source_type.kind() {
-                    TyKind::Array(t, _) if *t == root_rustc_type => {
-                        // During path refinement, the original source path was of the intermediate form *&p.
-                        // Mostly, this can just be canonicalized to just p, but if p has an array type
-                        // and *&p is not used as a qualifier, then *&p represents the first element of the array
-                        // if &p is the refinement of a pointer obtained from the array via array::as_ptr.
-                        let zero = Rc::new(0u128.into());
-                        let first_element = Path::new_index(path.clone(), zero);
-                        self.non_patterned_copy_or_move_elements(
-                            target_path,
-                            first_element,
-                            root_rustc_type,
-                            move_elements,
-                            update,
-                        );
-                        return;
-                    }
-                    TyKind::Tuple(substs) if substs.is_empty() => {
-                        // Special case for empty tuples comes here because ExpressionType::Function
-                        // does not have a convenient rustc type equivalent and thus grabs tcx.types.unit
-                        // as a proxy.
-                        self.current_environment.value_map.remove_mut(&source_path);
-                        return;
-                    }
-                    _ => {}
+                if matches!(source_type.kind(), TyKind::Array(t, _) if *t == root_rustc_type) {
+                    // During path refinement, the original source path was of the intermediate form *&p.
+                    // Mostly, this can just be canonicalized to just p, but if p has an array type
+                    // and *&p is not used as a qualifier, then *&p represents the first element of the array
+                    // if &p is the refinement of a pointer obtained from the array via array::as_ptr.
+                    let zero = Rc::new(0u128.into());
+                    let first_element = Path::new_index(path.clone(), zero);
+                    self.non_patterned_copy_or_move_elements(
+                        target_path,
+                        first_element,
+                        root_rustc_type,
+                        move_elements,
+                        update,
+                    );
+                    return;
                 }
             }
         }

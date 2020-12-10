@@ -853,7 +853,7 @@ impl Z3Solver {
             }
             F32 => self.f32_sort,
             F64 => self.f64_sort,
-            Function | NonPrimitive | ThinPointer => self.any_sort,
+            Function | NonPrimitive | ThinPointer | Unit => self.any_sort,
         }
     }
 
@@ -2013,7 +2013,7 @@ impl Z3Solver {
                     let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
                     z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
                 }
-                NonPrimitive => self.bv_fresh_const(num_bits),
+                NonPrimitive | Unit => self.bv_fresh_const(num_bits),
             }
         }
     }
