@@ -2351,15 +2351,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn check_function_preconditions(&mut self, function_summary: &Summary) {
         verify!(self.block_visitor.bv.check_for_errors);
         for precondition in &function_summary.preconditions {
-            let mut refined_condition = precondition
-                .condition
-                .refine_parameters(
-                    &self.actual_args,
-                    &None,
-                    &self.environment_before_call,
-                    self.block_visitor.bv.fresh_variable_offset,
-                )
-                .refine_paths(&self.block_visitor.bv.current_environment, 0);
+            let mut refined_condition = precondition.condition.refine_parameters_and_paths(
+                &self.actual_args,
+                &None,
+                &self.environment_before_call,
+                &self.block_visitor.bv.current_environment,
+                self.block_visitor.bv.fresh_variable_offset,
+            );
             if self
                 .block_visitor
                 .bv
@@ -2481,19 +2479,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // Effects on the heap
                 for (path, value) in function_summary.side_effects.iter() {
                     if path.is_rooted_by_non_local_structure() {
-                        let rvalue = value
-                            .clone()
-                            .refine_parameters(
-                                &self.actual_args,
-                                result_path,
-                                &self.environment_before_call,
-                                self.block_visitor.bv.fresh_variable_offset,
-                            )
-                            .refine_paths(&self.block_visitor.bv.current_environment, 0);
-                        let rpath = path.refine_parameters(
+                        let rvalue = value.clone().refine_parameters_and_paths(
                             &self.actual_args,
                             result_path,
                             &self.environment_before_call,
+                            &self.block_visitor.bv.current_environment,
+                            self.block_visitor.bv.fresh_variable_offset,
+                        );
+                        let rpath = path.refine_parameters_and_paths(
+                            &self.actual_args,
+                            result_path,
+                            &self.environment_before_call,
+                            &self.block_visitor.bv.current_environment,
                             self.block_visitor.bv.fresh_variable_offset,
                         );
                         self.block_visitor
@@ -2568,31 +2565,25 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .clone();
             if let Some(unwind_condition) = &function_summary.unwind_condition {
                 if exit_condition.as_bool_if_known().unwrap_or(true) {
-                    let unwind_condition = unwind_condition
-                        .refine_parameters(
-                            &self.actual_args,
-                            &result_path,
-                            &self.environment_before_call,
-                            self.block_visitor.bv.fresh_variable_offset,
-                        )
-                        .refine_paths(&self.block_visitor.bv.current_environment, 0);
+                    let unwind_condition = unwind_condition.refine_parameters_and_paths(
+                        &self.actual_args,
+                        &result_path,
+                        &self.environment_before_call,
+                        &self.block_visitor.bv.current_environment,
+                        self.block_visitor.bv.fresh_variable_offset,
+                    );
                     exit_condition = exit_condition.and(unwind_condition.logical_not());
                 }
             }
             if exit_condition.as_bool_if_known().unwrap_or(true) {
                 if let Some(post_condition) = &function_summary.post_condition {
-                    let refined_post_condition = post_condition.refine_parameters(
+                    let refined_post_condition = post_condition.refine_parameters_and_paths(
                         &self.actual_args,
                         &result_path,
                         &self.environment_before_call,
+                        &self.block_visitor.bv.current_environment,
                         self.block_visitor.bv.fresh_variable_offset,
                     );
-                    trace!(
-                        "refined post condition before path refinement {:?}",
-                        refined_post_condition
-                    );
-                    let refined_post_condition = refined_post_condition
-                        .refine_paths(&self.block_visitor.bv.current_environment, 0);
                     trace!("refined post condition {:?}", refined_post_condition);
                     exit_condition = exit_condition.and(refined_post_condition);
                     trace!("post exit conditions {:?}", exit_condition);

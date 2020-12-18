@@ -687,11 +687,12 @@ impl Path {
 
 pub trait PathRefinement: Sized {
     /// Refine parameters inside embedded index values with the given arguments.
-    fn refine_parameters(
+    fn refine_parameters_and_paths(
         &self,
-        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        args: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
-        pre_environment: &Environment,
+        pre_env: &Environment,
+        post_env: &Environment,
         fresh: usize,
     ) -> Rc<Path>;
 
@@ -713,20 +714,21 @@ pub trait PathRefinement: Sized {
 impl PathRefinement for Rc<Path> {
     /// Refine parameters inside embedded index values with the given arguments.
     #[logfn_inputs(TRACE)]
-    fn refine_parameters(
+    fn refine_parameters_and_paths(
         &self,
-        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        args: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
-        pre_environment: &Environment,
+        pre_env: &Environment,
+        post_env: &Environment,
         fresh: usize,
     ) -> Rc<Path> {
         match &self.value {
-            PathEnum::Alias { value } => {
-                Path::new_alias(value.refine_parameters(arguments, result, pre_environment, fresh))
-            }
+            PathEnum::Alias { value } => Path::new_alias(
+                value.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+            ),
             PathEnum::HeapBlock { value } => {
                 let refined_value =
-                    value.refine_parameters(arguments, result, pre_environment, fresh);
+                    value.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
                 Path::get_as_path(refined_value)
             }
             PathEnum::LocalVariable { ordinal } => {
@@ -736,19 +738,123 @@ impl PathRefinement for Rc<Path> {
                 }
                 Path::new_local((*ordinal) + fresh)
             }
-            PathEnum::Offset { value } => Path::get_as_path(value.refine_parameters(
-                arguments,
-                result,
-                pre_environment,
-                fresh,
-            )),
+            PathEnum::Offset { value } => Path::get_as_path(
+                value.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+            ),
             PathEnum::Parameter { ordinal } => {
-                if *ordinal > arguments.len() {
+                if *ordinal > args.len() {
                     warn!("Summary refers to a parameter that does not have a matching argument");
                     Path::new_alias(Rc::new(abstract_value::BOTTOM))
                 } else {
-                    arguments[*ordinal - 1].0.clone()
+                    args[*ordinal - 1].0.clone()
                 }
+            }
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } => {
+                let refined_selector =
+                    selector.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                let refined_qualifier =
+                    qualifier.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                // The qualifier is now canonical. But in the context of a selector, we
+                // might be able to simplify the qualifier by dropping an explicit dereference
+                // or an explicit reference.
+                if let PathEnum::QualifiedPath {
+                    qualifier: base_qualifier,
+                    selector: base_selector,
+                    ..
+                } = &refined_qualifier.value
+                {
+                    if *base_selector.as_ref() == PathSelector::Deref {
+                        // no need for an explicit deref in a qualifier
+                        return Path::new_qualified(base_qualifier.clone(), refined_selector);
+                    }
+                }
+                if let PathEnum::Alias { value } = &refined_qualifier.value {
+                    if *refined_selector.as_ref() == PathSelector::Deref {
+                        if let Expression::Reference(path) = &value.expression {
+                            // *&path during refinement just becomes path
+                            return path.clone();
+                        }
+                    }
+                    if let Expression::Reference(path) = &value.expression {
+                        // since self is a qualified path we have to drop the reference operator
+                        // since selectors implicitly dereference pointers.
+                        return Path::new_qualified(path.clone(), refined_selector)
+                            .refine_paths(post_env, 0);
+                    }
+                }
+                if let PathSelector::Downcast(_, variant) = refined_selector.as_ref() {
+                    let discriminator = Path::new_discriminant(refined_qualifier.clone());
+                    if let Some(val) = post_env.value_at(&discriminator) {
+                        if let Expression::CompileTimeConstant(ConstantDomain::U128(ordinal)) =
+                            &val.expression
+                        {
+                            if (*variant as u128) != *ordinal {
+                                // The downcast is impossible in this calling context
+                                return Path::new_alias(Rc::new(abstract_value::BOTTOM));
+                            }
+                        }
+                    }
+                }
+                if let Some(val) = post_env.value_at(&refined_qualifier) {
+                    match &val.expression {
+                        Expression::CompileTimeConstant(ConstantDomain::Str(..))
+                        | Expression::HeapBlock { .. } => {
+                            if *refined_selector.as_ref() == PathSelector::Deref {
+                                return Path::new_qualified(
+                                    Path::get_as_path(val.clone()),
+                                    refined_selector,
+                                );
+                            }
+                        }
+                        Expression::InitialParameterValue { .. } => {
+                            return Path::new_qualified(
+                                Path::get_as_path(val.clone()),
+                                refined_selector,
+                            );
+                        }
+                        Expression::Variable { path, .. } => {
+                            let mut refined_path = path.refine_paths(post_env, 0);
+                            // if the variable's path is a qualified path that has a qualifier
+                            // that is an explicit dereference (because of parameter refinement)
+                            // the dereference has to be dropped in order for the path to be canonical.
+                            if let PathEnum::QualifiedPath {
+                                qualifier,
+                                selector: base_selector,
+                                ..
+                            } = &refined_path.value
+                            {
+                                if matches!(base_selector.as_ref(), PathSelector::Deref) {
+                                    refined_path = qualifier.clone();
+                                }
+                            }
+                            return Path::new_qualified(refined_path, refined_selector);
+                        }
+                        Expression::Reference(path) => {
+                            if matches!(refined_selector.as_ref(), PathSelector::Deref) {
+                                // A path that is an alias for a & operation must simplify when dereferenced
+                                // in order to stay canonical.
+                                // Note that the tricky semantics of constructing a copy of a struct when doing *&x
+                                // is taken care of when handling the MIR operation and paths need not be concerned with it.
+                                return path.clone();
+                            } else {
+                                return Path::new_qualified(path.clone(), refined_selector);
+                            }
+                        }
+                        _ => {
+                            if val.refers_to_unknown_location() {
+                                return Path::new_qualified(
+                                    Path::get_as_path(val.clone()),
+                                    refined_selector,
+                                );
+                            }
+                        }
+                    }
+                }
+                Path::new_qualified(refined_qualifier, refined_selector)
             }
             PathEnum::Result => {
                 if result.is_none() {
@@ -757,17 +863,6 @@ impl PathRefinement for Rc<Path> {
                 } else {
                     result.as_ref().unwrap().clone()
                 }
-            }
-            PathEnum::QualifiedPath {
-                qualifier,
-                selector,
-                ..
-            } => {
-                let refined_qualifier =
-                    qualifier.refine_parameters(arguments, result, pre_environment, fresh);
-                let refined_selector =
-                    selector.refine_parameters(arguments, result, pre_environment, fresh);
-                Path::new_qualified(refined_qualifier, refined_selector)
             }
             PathEnum::StaticVariable { .. }
             | PathEnum::PhantomData
@@ -1064,11 +1159,12 @@ impl PathSelector {
 
 pub trait PathSelectorRefinement: Sized {
     /// Refine parameters inside embedded index values with the given arguments.
-    fn refine_parameters(
+    fn refine_parameters_and_paths(
         &self,
-        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        args: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
-        pre_environment: &Environment,
+        pre_env: &Environment,
+        post_env: &Environment,
         fresh: usize,
     ) -> Self;
 
@@ -1082,22 +1178,23 @@ pub trait PathSelectorRefinement: Sized {
 impl PathSelectorRefinement for Rc<PathSelector> {
     /// Refine parameters inside embedded index values with the given arguments.
     #[logfn_inputs(TRACE)]
-    fn refine_parameters(
+    fn refine_parameters_and_paths(
         &self,
-        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        args: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
-        pre_environment: &Environment,
+        pre_env: &Environment,
+        post_env: &Environment,
         fresh: usize,
     ) -> Rc<PathSelector> {
         match self.as_ref() {
             PathSelector::Index(value) => {
                 let refined_value =
-                    value.refine_parameters(arguments, result, pre_environment, fresh);
+                    value.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
                 Rc::new(PathSelector::Index(refined_value))
             }
             PathSelector::Slice(value) => {
                 let refined_value =
-                    value.refine_parameters(arguments, result, pre_environment, fresh);
+                    value.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
                 Rc::new(PathSelector::Slice(refined_value))
             }
             _ => self.clone(),

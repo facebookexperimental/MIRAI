@@ -626,15 +626,17 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             for (path, value) in side_effects.iter() {
                 if path.is_rooted_by_non_local_structure() {
                     self.current_environment.update_value_at(
-                        path.refine_parameters(
+                        path.refine_parameters_and_paths(
                             &[],
                             &None,
                             &self.current_environment,
+                            &self.current_environment,
                             self.fresh_variable_offset,
                         ),
-                        value.refine_parameters(
+                        value.refine_parameters_and_paths(
                             &[],
                             &None,
+                            &self.current_environment,
                             &self.current_environment,
                             self.fresh_variable_offset,
                         ),
@@ -719,15 +721,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .preconditions
             .iter()
             .map(|precondition| {
-                let refined_condition = precondition
-                    .condition
-                    .refine_parameters(
-                        &actual_args,
-                        &None,
-                        &self.current_environment,
-                        self.fresh_variable_offset,
-                    )
-                    .refine_paths(&self.current_environment, 0);
+                let refined_condition = precondition.condition.refine_parameters_and_paths(
+                    &actual_args,
+                    &None,
+                    &self.current_environment,
+                    &self.current_environment,
+                    self.fresh_variable_offset,
+                );
                 Precondition {
                     condition: refined_condition,
                     message: precondition.message.clone(),
@@ -1051,10 +1051,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let refined_dummy_root = Path::new_local(self.fresh_variable_offset + 999_999);
             let mut tpath = path
                 .replace_root(source_path, dummy_root)
-                .refine_parameters(
+                .refine_parameters_and_paths(
                     arguments,
                     result_path,
                     pre_environment,
+                    &self.current_environment,
                     self.fresh_variable_offset,
                 )
                 .replace_root(&refined_dummy_root, target_path.clone());
@@ -1069,13 +1070,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 | PathEnum::QualifiedPath { .. } => tpath = tpath.refine_paths(pre_environment, 0),
                 _ => {}
             }
-            let uncanonicalized_rvalue = value.refine_parameters(
+            let mut rvalue = value.refine_parameters_and_paths(
                 arguments,
                 result_path,
                 pre_environment,
+                pre_environment,
                 self.fresh_variable_offset,
             );
-            let mut rvalue = uncanonicalized_rvalue.refine_paths(pre_environment, 0);
             trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
@@ -1096,15 +1097,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             if let Some((_, val)) =
                                 &effects.iter().find(|(p, _)| p.eq(&layout_argument_path))
                             {
-                                let realloc_layout_val = val
-                                    .clone()
-                                    .refine_parameters(
-                                        arguments,
-                                        result_path,
-                                        pre_environment,
-                                        self.fresh_variable_offset,
-                                    )
-                                    .refine_paths(&self.current_environment, 0);
+                                let realloc_layout_val = val.clone().refine_parameters_and_paths(
+                                    arguments,
+                                    result_path,
+                                    pre_environment,
+                                    &self.current_environment,
+                                    self.fresh_variable_offset,
+                                );
                                 self.update_zeroed_flag_for_heap_block_from_environment(
                                     &tpath,
                                     &realloc_layout_val.expression,

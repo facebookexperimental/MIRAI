@@ -456,11 +456,12 @@ pub trait AbstractValueTrait: Sized {
     fn get_tags(&self) -> TagDomain;
     fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>>;
     fn refine_paths(&self, environment: &Environment, depth: usize) -> Self;
-    fn refine_parameters(
+    fn refine_parameters_and_paths(
         &self,
-        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        args: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
-        pre_environment: &Environment,
+        pre_env: &Environment,
+        post_env: &Environment,
         fresh: usize,
     ) -> Self;
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Self;
@@ -2677,7 +2678,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self - other".
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn subtract(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         // [0 - other] -> -other
         if let Expression::CompileTimeConstant(ConstantDomain::I128(0))
@@ -2700,6 +2701,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             },
         ) = (&self.expression, &other.expression)
         {
+            if let (
+                Expression::Offset {
+                    left: base,
+                    right: offset,
+                },
+                Expression::Reference(..),
+            ) = (&left.expression, &right.expression)
+            {
+                if base.eq(right) {
+                    return offset.clone();
+                }
+            }
             if let (
                 Expression::Variable {
                     path: left_path,
@@ -3572,52 +3585,55 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// with their corresponding argument values. If no refinement is possible
     /// the result is simply a clone of this value.
     #[logfn_inputs(TRACE)]
-    fn refine_parameters(
+    fn refine_parameters_and_paths(
         &self,
-        arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        args: &[(Rc<Path>, Rc<AbstractValue>)],
         result: &Option<Rc<Path>>,
-        pre_environment: &Environment,
+        pre_env: &Environment,
+        post_env: &Environment,
         // An offset to add to locals from the called function so that they do not clash with caller locals.
         fresh: usize,
     ) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Bottom | Expression::Top => self.clone(),
             Expression::Add { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .addition(right.refine_parameters(arguments, result, pre_environment, fresh)),
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .addition(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
             Expression::AddOverflows {
                 left,
                 right,
                 result_type,
             } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .add_overflows(
-                    right.refine_parameters(arguments, result, pre_environment, fresh),
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
                     result_type.clone(),
                 ),
             Expression::And { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .and(right.refine_parameters(arguments, result, pre_environment, fresh)),
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .and(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
             Expression::BitAnd { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .bit_and(right.refine_parameters(arguments, result, pre_environment, fresh)),
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .bit_and(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
             Expression::BitNot {
                 operand,
                 result_type,
             } => operand
-                .refine_parameters(arguments, result, pre_environment, fresh)
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .bit_not(result_type.clone()),
             Expression::BitOr { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .bit_or(right.refine_parameters(arguments, result, pre_environment, fresh)),
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .bit_or(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
             Expression::BitXor { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .bit_xor(right.refine_parameters(arguments, result, pre_environment, fresh)),
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .bit_xor(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
             Expression::Cast {
                 operand,
                 target_type,
             } => operand
-                .refine_parameters(arguments, result, pre_environment, fresh)
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .cast(target_type.clone()),
             Expression::CompileTimeConstant(..) => self.clone(),
             Expression::ConditionalExpression {
@@ -3625,28 +3641,27 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent,
                 alternate,
             } => condition
-                .refine_parameters(arguments, result, pre_environment, fresh)
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .conditional_expression(
-                    consequent.refine_parameters(arguments, result, pre_environment, fresh),
-                    alternate.refine_parameters(arguments, result, pre_environment, fresh),
+                    consequent.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    alternate.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
                 ),
             Expression::Div { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .divide(right.refine_parameters(arguments, result, pre_environment, fresh)),
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .divide(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
             Expression::Equals { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .equals(right.refine_parameters(arguments, result, pre_environment, fresh)),
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .equals(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
             Expression::GreaterOrEqual { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .greater_or_equal(right.refine_parameters(
-                    arguments,
-                    result,
-                    pre_environment,
-                    fresh,
-                )),
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .greater_or_equal(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
             Expression::GreaterThan { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .greater_than(right.refine_parameters(arguments, result, pre_environment, fresh)),
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .greater_than(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
             Expression::HeapBlock {
                 abstract_address,
                 is_zeroed,
@@ -3663,235 +3678,25 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 source,
             } => AbstractValue::make_from(
                 Expression::HeapBlockLayout {
-                    length: length.refine_parameters(arguments, result, pre_environment, fresh),
-                    alignment: alignment.refine_parameters(
-                        arguments,
-                        result,
-                        pre_environment,
-                        fresh,
-                    ),
+                    length: length
+                        .refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    alignment: alignment
+                        .refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
                     source: *source,
-                },
-                1,
-            ),
-            Expression::IntrinsicBinary { left, right, name } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .intrinsic_binary(
-                    right.refine_parameters(arguments, result, pre_environment, fresh),
-                    *name,
-                ),
-            Expression::IntrinsicBitVectorUnary {
-                operand,
-                bit_length,
-                name,
-            } => operand
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .intrinsic_bit_vector_unary(*bit_length, *name),
-            Expression::IntrinsicFloatingPointUnary { operand, name } => operand
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .intrinsic_floating_point_unary(*name),
-            Expression::Join { left, right, path } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .join(
-                    right.refine_parameters(arguments, result, pre_environment, fresh),
-                    &path.refine_parameters(arguments, result, pre_environment, fresh),
-                ),
-            Expression::LessOrEqual { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .less_or_equal(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            Expression::LessThan { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .less_than(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            Expression::LogicalNot { operand } => operand
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .logical_not(),
-            Expression::Memcmp {
-                left,
-                right,
-                length,
-            } => {
-                let refined_left =
-                    left.refine_parameters(arguments, result, pre_environment, fresh);
-                let refined_right =
-                    right.refine_parameters(arguments, result, pre_environment, fresh);
-                let refined_length =
-                    length.refine_parameters(arguments, result, pre_environment, fresh);
-                AbstractValue::make_memcmp(refined_left, refined_right, refined_length)
-            }
-            Expression::Mul { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .multiply(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            Expression::MulOverflows {
-                left,
-                right,
-                result_type,
-            } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .mul_overflows(
-                    right.refine_parameters(arguments, result, pre_environment, fresh),
-                    result_type.clone(),
-                ),
-            Expression::Ne { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .not_equals(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            Expression::Neg { operand } => operand
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .negate(),
-            Expression::Offset { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .offset(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            Expression::Or { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .or(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            Expression::Reference(path) => {
-                // if the path is a parameter, the reference is an artifact of its type
-                // and needs to be removed in the call context
-                match &path.value {
-                    PathEnum::Parameter { ordinal } => arguments[*ordinal - 1].1.clone(),
-                    _ => {
-                        let refined_path =
-                            path.refine_parameters(arguments, result, pre_environment, fresh);
-                        AbstractValue::make_reference(refined_path)
-                    }
-                }
-            }
-            Expression::Rem { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .remainder(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            Expression::Shl { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .shift_left(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            Expression::ShlOverflows {
-                left,
-                right,
-                result_type,
-            } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .shl_overflows(
-                    right.refine_parameters(arguments, result, pre_environment, fresh),
-                    result_type.clone(),
-                ),
-            Expression::Shr {
-                left,
-                right,
-                result_type,
-            } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .shr(
-                    right.refine_parameters(arguments, result, pre_environment, fresh),
-                    result_type.clone(),
-                ),
-            Expression::ShrOverflows {
-                left,
-                right,
-                result_type,
-            } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .shr_overflows(
-                    right.refine_parameters(arguments, result, pre_environment, fresh),
-                    result_type.clone(),
-                ),
-            Expression::Sub { left, right } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .subtract(right.refine_parameters(arguments, result, pre_environment, fresh)),
-            Expression::SubOverflows {
-                left,
-                right,
-                result_type,
-            } => left
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .sub_overflows(
-                    right.refine_parameters(arguments, result, pre_environment, fresh),
-                    result_type.clone(),
-                ),
-            Expression::Switch {
-                discriminator,
-                cases,
-                default,
-            } => discriminator
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .switch(
-                    cases
-                        .iter()
-                        .map(|(case_val, result_val)| {
-                            (
-                                case_val.refine_parameters(
-                                    arguments,
-                                    result,
-                                    pre_environment,
-                                    fresh,
-                                ),
-                                result_val.refine_parameters(
-                                    arguments,
-                                    result,
-                                    pre_environment,
-                                    fresh,
-                                ),
-                            )
-                        })
-                        .collect(),
-                    default.refine_parameters(arguments, result, pre_environment, fresh),
-                ),
-            Expression::TaggedExpression { operand, tag } => operand
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .add_tag(*tag),
-            Expression::UninterpretedCall {
-                callee,
-                arguments: args,
-                result_type,
-                path,
-            } => {
-                let refined_callee =
-                    callee.refine_parameters(arguments, result, pre_environment, fresh);
-                let refined_arguments = args
-                    .iter()
-                    .map(|arg| arg.refine_parameters(arguments, result, pre_environment, fresh))
-                    .collect();
-                let refined_path =
-                    path.refine_parameters(arguments, result, pre_environment, fresh);
-                refined_callee.uninterpreted_call(
-                    refined_arguments,
-                    result_type.clone(),
-                    refined_path,
-                )
-            }
-            Expression::UnknownModelField { path, default } => {
-                let refined_path =
-                    path.refine_parameters(arguments, result, pre_environment, fresh);
-                AbstractValue::make_from(
-                    Expression::UnknownModelField {
-                        path: refined_path,
-                        default: default.clone(),
-                    },
-                    1,
-                )
-            }
-            Expression::UnknownTagCheck {
-                operand,
-                tag,
-                checking_presence,
-            } => AbstractValue::make_tag_check(
-                operand.refine_parameters(arguments, result, pre_environment, fresh),
-                *tag,
-                *checking_presence,
-            ),
-            Expression::UnknownTagField { path } => AbstractValue::make_from(
-                Expression::UnknownTagField {
-                    path: path.refine_parameters(arguments, result, pre_environment, fresh),
                 },
                 1,
             ),
             Expression::InitialParameterValue { path, var_type } => {
                 let refined_path =
-                    path.refine_parameters(arguments, result, pre_environment, fresh);
-                // Do path refinement now, using the pre_environment.
-                let refined_path = refined_path.refine_paths(pre_environment, 0);
-                // If the path has a value in the pre_environment, use the value
-                if let Some(val) = pre_environment.value_at(&refined_path) {
+                    path.refine_parameters_and_paths(args, result, pre_env, pre_env, fresh);
+                if let PathEnum::Alias { value } = &refined_path.value {
+                    return value.clone();
+                } else if let Some(val) = pre_env.value_at(&refined_path) {
                     return val.clone();
                 }
-                // If not, make an unknown value. If the path is still rooted in parameter
-                // make sure that it does not get affected by subsequent side effects on the parameter.
+                // If the path does not have a known value in the pre environment, make an unknown
+                // value. If the path is still rooted in parameter make sure that it does not get
+                // affected by subsequent side effects on the parameter.
                 if refined_path.is_rooted_by_parameter() {
                     // This will not get refined again
                     AbstractValue::make_initial_parameter_value(var_type.clone(), refined_path)
@@ -3902,18 +3707,290 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
                 }
             }
+            Expression::IntrinsicBinary { left, right, name } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .intrinsic_binary(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    *name,
+                ),
+            Expression::IntrinsicBitVectorUnary {
+                operand,
+                bit_length,
+                name,
+            } => operand
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .intrinsic_bit_vector_unary(*bit_length, *name),
+            Expression::IntrinsicFloatingPointUnary { operand, name } => operand
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .intrinsic_floating_point_unary(*name),
+            Expression::Join { left, right, path } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .join(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    &path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
+            Expression::LessOrEqual { left, right } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .less_or_equal(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
+            Expression::LessThan { left, right } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .less_than(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
+            Expression::LogicalNot { operand } => operand
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .logical_not(),
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                let refined_left =
+                    left.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                let refined_right =
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                let refined_length =
+                    length.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+
+                let arr1 = refined_left.try_resolve_as_byte_array(post_env);
+                let arr2 = refined_right.try_resolve_as_byte_array(post_env);
+                if let (Some(arr1), Some(arr2)) = (&arr1, &arr2) {
+                    return Rc::new(ConstantDomain::I128(arr1.cmp(&arr2) as i32 as i128).into());
+                }
+
+                let str1 = refined_left.try_resolve_as_ref_to_str(post_env);
+                let str2 = refined_right.try_resolve_as_ref_to_str(post_env);
+                if let (Some(str1), Some(str2)) = (str1, str2) {
+                    return Rc::new(ConstantDomain::I128(str1.cmp(&str2) as i32 as i128).into());
+                }
+                AbstractValue::make_memcmp(refined_left, refined_right, refined_length)
+            }
+            Expression::Mul { left, right } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .multiply(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
+            Expression::MulOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .mul_overflows(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    result_type.clone(),
+                ),
+            Expression::Ne { left, right } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .not_equals(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
+            Expression::Neg { operand } => operand
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .negate(),
+            Expression::Offset { left, right } => {
+                debug!("offset left {:?}", left);
+                debug!("offset right {:?}", right);
+                left.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                    .offset(
+                        right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    )
+            }
+            Expression::Or { left, right } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .or(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
+            Expression::Reference(path) => {
+                // if the path is a parameter, the reference is an artifact of its type
+                // and needs to be removed in the call context
+                match &path.value {
+                    PathEnum::Parameter { ordinal } => args[*ordinal - 1].1.clone(),
+                    _ => {
+                        let refined_path = path
+                            .refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                        AbstractValue::make_reference(refined_path)
+                    }
+                }
+            }
+            Expression::Rem { left, right } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .remainder(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
+            Expression::Shl { left, right } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .shift_left(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
+            Expression::ShlOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .shl_overflows(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    result_type.clone(),
+                ),
+            Expression::Shr {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .shr(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    result_type.clone(),
+                ),
+            Expression::ShrOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .shr_overflows(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    result_type.clone(),
+                ),
+            Expression::Sub { left, right } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .subtract(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
+            Expression::SubOverflows {
+                left,
+                right,
+                result_type,
+            } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .sub_overflows(
+                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    result_type.clone(),
+                ),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .switch(
+                    cases
+                        .iter()
+                        .map(|(case_val, result_val)| {
+                            (
+                                case_val.refine_parameters_and_paths(
+                                    args, result, pre_env, post_env, fresh,
+                                ),
+                                result_val.refine_parameters_and_paths(
+                                    args, result, pre_env, post_env, fresh,
+                                ),
+                            )
+                        })
+                        .collect(),
+                    default.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                ),
+            Expression::TaggedExpression { operand, tag } => operand
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .add_tag(*tag),
+            Expression::UninterpretedCall {
+                callee,
+                arguments,
+                result_type,
+                path,
+            } => {
+                let refined_callee =
+                    callee.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                let refined_arguments = arguments
+                    .iter()
+                    .map(|arg| {
+                        arg.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                    })
+                    .collect();
+                let refined_path =
+                    path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                refined_callee.uninterpreted_call(
+                    refined_arguments,
+                    result_type.clone(),
+                    refined_path,
+                )
+            }
+            Expression::UnknownModelField { path, default } => {
+                let refined_path =
+                    path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                if !matches!(&refined_path.value, PathEnum::Alias {..}) {
+                    if let Some(val) = post_env.value_at(&refined_path) {
+                        // This environment has a value for the model field.
+                        val.clone()
+                    } else if refined_path.is_rooted_by_parameter() {
+                        // Keep passing the buck to the next caller.
+                        AbstractValue::make_from(
+                            Expression::UnknownModelField {
+                                path: refined_path,
+                                default: default.clone(),
+                            },
+                            default.expression_size.saturating_add(1),
+                        )
+                    } else {
+                        // The buck stops here and the environment does not have a value for model field.
+                        default.clone()
+                    }
+                } else {
+                    AbstractValue::make_from(
+                        Expression::UnknownModelField {
+                            path: refined_path,
+                            default: default.clone(),
+                        },
+                        1,
+                    )
+                }
+            }
+            Expression::UnknownTagCheck {
+                operand,
+                tag,
+                checking_presence,
+            } => AbstractValue::make_tag_check(
+                operand.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                *tag,
+                *checking_presence,
+            ),
+            Expression::UnknownTagField { path } => {
+                let refined_path =
+                    path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                if !matches!(&refined_path.value, PathEnum::Alias {..}) {
+                    if let Some(val) = post_env.value_at(&refined_path) {
+                        // This environment has a value for the tag field.
+                        val.clone()
+                    } else if !refined_path.is_rooted_by_parameter() {
+                        // Return the dummy untagged value if refined_path is not rooted by a function parameter.
+                        Rc::new(DUMMY_UNTAGGED_VALUE)
+                    } else {
+                        // Otherwise, return again an unknown tag field.
+                        AbstractValue::make_from(
+                            Expression::UnknownTagField { path: refined_path },
+                            1,
+                        )
+                    }
+                } else {
+                    AbstractValue::make_from(Expression::UnknownTagField { path: refined_path }, 1)
+                }
+            }
             Expression::Variable { path, var_type } => {
                 let refined_path =
-                    path.refine_parameters(arguments, result, pre_environment, fresh);
+                    path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
                 if let PathEnum::Alias { value } = &refined_path.value {
                     value.clone()
+                } else if let Some(val) = post_env.value_at(&refined_path) {
+                    val.clone()
+                } else if refined_path == *path {
+                    self.clone()
                 } else {
                     AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
                 }
             }
             Expression::WidenedJoin { path, operand, .. } => operand
-                .refine_parameters(arguments, result, pre_environment, fresh)
-                .widen(&path.refine_parameters(arguments, result, pre_environment, fresh)),
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .widen(&path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
         }
     }
 
