@@ -410,7 +410,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
                 break;
             }
             debug!("opening db failed {:?}", result);
-            let num_millis = rng.gen_range(100, 200);
+            let num_millis = rng.gen_range(100..200);
             thread::sleep(Duration::from_millis(num_millis));
         }
         let db = result.unwrap_or_else(|err| {
