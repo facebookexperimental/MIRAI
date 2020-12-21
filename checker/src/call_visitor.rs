@@ -2386,7 +2386,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // The precondition is definitely false.
                 if entry_cond_as_bool.unwrap_or(false) {
                     // We always get to this call
-                    self.issue_diagnostic_for_call(precondition, false);
+                    self.issue_diagnostic_for_call(precondition, &refined_condition, false);
                     return;
                 } else {
                     // Promote the precondition, but be assertive.
@@ -2436,14 +2436,19 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
 
             // The precondition cannot be promoted, so the buck stops here.
-            self.issue_diagnostic_for_call(precondition, warn);
+            self.issue_diagnostic_for_call(precondition, &refined_condition, warn);
         }
     }
 
     // Issue a diagnostic, but only if there isn't already a diagnostic for this
     // function call.
     #[logfn_inputs(TRACE)]
-    fn issue_diagnostic_for_call(&mut self, precondition: &Precondition, warn: bool) {
+    fn issue_diagnostic_for_call(
+        &mut self,
+        precondition: &Precondition,
+        condition: &Rc<AbstractValue>,
+        warn: bool,
+    ) {
         if self.block_visitor.bv.check_for_errors
             && !self
                 .block_visitor
@@ -2452,7 +2457,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .contains(&self.callee_fun_val)
         {
             self.block_visitor
-                .emit_diagnostic_for_precondition(precondition, warn);
+                .emit_diagnostic_for_precondition(precondition, condition, warn);
             self.block_visitor
                 .bv
                 .already_reported_errors_for_call_to
