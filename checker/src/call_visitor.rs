@@ -2644,9 +2644,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// this value is always a string literal.
     #[logfn_inputs(TRACE)]
     fn coerce_to_string(&mut self, path: &Rc<Path>) -> Rc<str> {
-        if let PathEnum::Alias { value } = &path.value {
+        if let PathEnum::Computed { value } = &path.value {
             if let Expression::Reference(path) = &value.expression {
-                if let PathEnum::Alias { value } = &path.value {
+                if let PathEnum::Computed { value } = &path.value {
                     if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) =
                         &value.expression
                     {
@@ -2656,7 +2656,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
         } else if let Some(value) = self.block_visitor.bv.current_environment.value_at(path) {
             if let Expression::Reference(path) = &value.expression {
-                if let PathEnum::Alias { value } = &path.value {
+                if let PathEnum::Computed { value } = &path.value {
                     if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) =
                         &value.expression
                     {

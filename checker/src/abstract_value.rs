@@ -311,7 +311,7 @@ impl AbstractValue {
             let tags = val.get_tags();
             Rc::new(AbstractValue {
                 expression: Expression::Variable {
-                    path: Path::new_alias(TOP.into()), //todo: maybe something unique here?
+                    path: Path::new_computed(TOP.into()),
                     var_type,
                 },
                 expression_size: 1,
@@ -1299,7 +1299,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Offset { .. } => {
                 let path = Path::get_as_path(self.clone());
                 let deref_path = Path::new_deref(path);
-                if let PathEnum::Alias { value } = &deref_path.value {
+                if let PathEnum::Computed { value } = &deref_path.value {
                     value.clone()
                 } else {
                     AbstractValue::make_typed_unknown(target_type, deref_path)
@@ -1314,7 +1314,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Reference(path) => {
                 if target_type != ExpressionType::NonPrimitive {
                     // We don't have to shallow copy the value at the  source path, so *&p is just p.
-                    if let PathEnum::Alias { value } = &path.value {
+                    if let PathEnum::Computed { value } = &path.value {
                         return value.clone();
                     }
                 }
@@ -1350,7 +1350,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     "found unhandled expression that is of type reference: {:?}",
                     self.expression
                 );
-                AbstractValue::make_typed_unknown(target_type, Path::new_alias(Rc::new(TOP)))
+                AbstractValue::make_typed_unknown(target_type, Path::new_computed(Rc::new(TOP)))
             }
         }
     }
@@ -1766,7 +1766,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match &self.expression {
             Expression::Bottom => true,
             Expression::Variable { path, .. } => {
-                if let PathEnum::Alias { value } = &path.value {
+                if let PathEnum::Computed { value } = &path.value {
                     value.is_bottom()
                 } else {
                     false
@@ -1801,7 +1801,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match &self.expression {
             Expression::Top => true,
             Expression::Variable { path, .. } => {
-                if let PathEnum::Alias { value } = &path.value {
+                if let PathEnum::Computed { value } = &path.value {
                     value.is_top()
                 } else {
                     false
@@ -2535,7 +2535,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::UnknownTagField { path, .. }
             | Expression::Variable { path, .. }
             | Expression::WidenedJoin { path, .. } => {
-                if let PathEnum::Alias { value } = &path.value {
+                if let PathEnum::Computed { value } = &path.value {
                     return value.refers_to_unknown_location();
                 }
                 false
@@ -2743,7 +2743,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         right: offset,
                     } = &value.expression
                     {
-                        if let PathEnum::Alias { value: rv } = &right_path.value {
+                        if let PathEnum::Computed { value: rv } = &right_path.value {
                             if rv.eq(base) {
                                 return offset.clone();
                             }
@@ -3577,7 +3577,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     val.clone()
                 } else {
                     let refined_path = path.refine_paths(environment, depth);
-                    if let PathEnum::Alias { value } = &refined_path.value {
+                    if let PathEnum::Computed { value } = &refined_path.value {
                         value.clone()
                     } else if let Some(val) = environment.value_at(&refined_path) {
                         val.clone()
@@ -3702,7 +3702,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::InitialParameterValue { path, var_type } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, pre_env, fresh);
-                if let PathEnum::Alias { value } = &refined_path.value {
+                if let PathEnum::Computed { value } = &refined_path.value {
                     return value.clone();
                 } else if let Some(val) = pre_env.value_at(&refined_path) {
                     return val.clone();
@@ -3931,7 +3931,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::UnknownModelField { path, default } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                if !matches!(&refined_path.value, PathEnum::Alias {..}) {
+                if !matches!(&refined_path.value, PathEnum::Computed {..}) {
                     if let Some(val) = post_env.value_at(&refined_path) {
                         // This environment has a value for the model field.
                         val.clone()
@@ -3970,7 +3970,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::UnknownTagField { path } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                if !matches!(&refined_path.value, PathEnum::Alias {..}) {
+                if !matches!(&refined_path.value, PathEnum::Computed {..}) {
                     if let Some(val) = post_env.value_at(&refined_path) {
                         // This environment has a value for the tag field.
                         val.clone()
@@ -3991,7 +3991,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Variable { path, var_type } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                if let PathEnum::Alias { value } = &refined_path.value {
+                if let PathEnum::Computed { value } = &refined_path.value {
                     value.clone()
                 } else if let Some(val) = post_env.value_at(&refined_path) {
                     val.clone()
@@ -4400,7 +4400,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 ..
             } = &path.value
             {
-                if let (PathEnum::Alias { value }, PathSelector::Field(0)) =
+                if let (PathEnum::Computed { value }, PathSelector::Field(0)) =
                     (&qualifier.value, selector.as_ref())
                 {
                     if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) =

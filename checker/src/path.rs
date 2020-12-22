@@ -71,8 +71,8 @@ impl Path {
         result
     }
 
-    /// Requires an abstract value that is an AbstractHeapAddress expression and
-    /// returns a path can be used as the root of paths that define the heap value.
+    /// If the abstract value is the contents of a memory location identified by
+    /// a path, then return that path. If not, returns a path that is computed.
     #[logfn_inputs(TRACE)]
     pub fn get_as_path(value: Rc<AbstractValue>) -> Rc<Path> {
         Rc::new(match &value.expression {
@@ -85,7 +85,7 @@ impl Path {
             | Expression::InitialParameterValue { path, .. }
             | Expression::Variable { path, .. }
             | Expression::WidenedJoin { path, .. } => path.as_ref().clone(),
-            _ => PathEnum::Alias { value }.into(),
+            _ => PathEnum::Computed { value }.into(),
         })
     }
 
@@ -105,7 +105,7 @@ impl Path {
     /// qualified path is `PathSelector::Deref`. If so, the deref selector should also be removed.
     #[logfn_inputs(DEBUG)]
     pub fn try_to_dereference(path: &Rc<Path>, environment: &Environment) -> Option<Rc<Path>> {
-        if let PathEnum::Alias { value } = &path.value {
+        if let PathEnum::Computed { value } = &path.value {
             if let Expression::Reference(path) = &value.expression {
                 return Some(path.clone());
             }
@@ -123,18 +123,15 @@ impl Path {
 /// location. During analysis it is used to keep track of state changes.
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PathEnum {
-    /// A path to a value that is not stored at a single memory location.
-    /// For example, a compile time constant will not have a location.
-    /// Another example is a conditional value with is either a parameter or a local variable,
-    /// depending on a condition.
-    /// In general, such a paths is needed when the value is an argument to a function call and
-    /// the corresponding parameter shows up in the function summary as part of a path (usually a
-    /// qualifier). In order to replace the parameter with the argument value, we need a path that
-    /// wraps the argument value. When the value thus wrapped contains a reference to another path
-    /// (or paths), the wrapper path is an alias to those paths.
-    Alias { value: Rc<AbstractValue> },
+    /// A path that provides a location for a value that is not associated with a place in MIR.
+    /// This can be a structured constant or it can be a computed value. A computed value can
+    /// be a reference, hence a computed path may be an alias for one or more other paths and
+    /// any updates to a computed path should taking aliasing into account, by doing weak updates.
+    Computed { value: Rc<AbstractValue> },
 
-    /// A dynamically allocated memory block.
+    /// A dynamically allocated memory block. Unlike a Computed path, the value of a HeapBlock
+    /// path must have an expression of kind Expression::HeapBlock. Conversely, a heap block
+    /// value will never be wrapped by a Computed path.
     HeapBlock { value: Rc<AbstractValue> },
 
     /// locals [arg_count+1..] are the local variables and compiler temporaries.
@@ -181,7 +178,7 @@ pub enum PathEnum {
 impl Debug for PathEnum {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            PathEnum::Alias { value } => value.fmt(f),
+            PathEnum::Computed { value } => value.fmt(f),
             PathEnum::HeapBlock { value } => f.write_fmt(format_args!("<{:?}>", value)),
             PathEnum::LocalVariable { ordinal } => f.write_fmt(format_args!("local_{}", ordinal)),
             PathEnum::Offset { value } => f.write_fmt(format_args!("<{:?}>", value)),
@@ -208,7 +205,7 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn contains_local_variable(&self) -> bool {
         match &self.value {
-            PathEnum::Alias { value } => value.expression.contains_local_variable(),
+            PathEnum::Computed { value } => value.expression.contains_local_variable(),
             PathEnum::HeapBlock { .. } => true,
             PathEnum::LocalVariable { .. } => true,
             PathEnum::Offset { value } => value.expression.contains_local_variable(),
@@ -237,7 +234,7 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn contains_parameter(&self) -> bool {
         match &self.value {
-            PathEnum::Alias { value } => value.expression.contains_parameter(),
+            PathEnum::Computed { value } => value.expression.contains_parameter(),
             PathEnum::HeapBlock { .. } => false,
             PathEnum::LocalVariable { .. } => false,
             PathEnum::Offset { value } => value.expression.contains_parameter(),
@@ -423,7 +420,7 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn is_rooted_by_non_local_structure(&self) -> bool {
         match &self.value {
-            PathEnum::Alias { value } => matches!(
+            PathEnum::Computed { value } => matches!(
                 value.expression,
                 Expression::CompileTimeConstant(ConstantDomain::Str(..))
             ),
@@ -492,10 +489,15 @@ impl Path {
         }
     }
 
-    /// Creates a path that aliases once or more paths contained inside the value.
+    /// Creates a path to a value. A common use for such a path is a qualifier
+    /// for a tag, a deref or a model field. It can also be a source path of a copy operation
+    /// where the target path is the location of a non structured value. And so on.
+    /// NB: A computed path may be an alias for other paths, so remember to do weak updates
+    /// when using a computed path as key in the environment. When reading, remember to abstract
+    /// over the values from all paths that may alias this path.
     #[logfn_inputs(TRACE)]
-    pub fn new_alias(value: Rc<AbstractValue>) -> Rc<Path> {
-        Rc::new(PathEnum::Alias { value }.into())
+    pub fn new_computed(value: Rc<AbstractValue>) -> Rc<Path> {
+        Rc::new(PathEnum::Computed { value }.into())
     }
 
     /// Creates a path to the target memory of a reference value.
@@ -618,8 +620,8 @@ impl Path {
     /// Creates a path the qualifies the given root path with the given selector.
     #[logfn_inputs(TRACE)]
     pub fn new_qualified(qualifier: Rc<Path>, selector: Rc<PathSelector>) -> Rc<Path> {
-        if let PathEnum::Alias { value } = &qualifier.value {
-            // A path that is an alias for bottom must stay that way even if qualified by a selector.
+        if let PathEnum::Computed { value } = &qualifier.value {
+            // A path to bottom must stay that way even if qualified by a selector.
             if value.is_bottom() {
                 return qualifier;
             }
@@ -664,7 +666,7 @@ impl Path {
                     right.record_heap_blocks_and_strings(result);
                 }
             }
-            PathEnum::Alias { value }
+            PathEnum::Computed { value }
                 if matches!(
                     value.expression,
                     Expression::CompileTimeConstant(ConstantDomain::Str(..))
@@ -723,7 +725,7 @@ impl PathRefinement for Rc<Path> {
         fresh: usize,
     ) -> Rc<Path> {
         match &self.value {
-            PathEnum::Alias { value } => Path::new_alias(
+            PathEnum::Computed { value } => Path::get_as_path(
                 value.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
             ),
             PathEnum::HeapBlock { value } => {
@@ -744,7 +746,7 @@ impl PathRefinement for Rc<Path> {
             PathEnum::Parameter { ordinal } => {
                 if *ordinal > args.len() {
                     warn!("Summary refers to a parameter that does not have a matching argument");
-                    Path::new_alias(Rc::new(abstract_value::BOTTOM))
+                    Path::new_computed(Rc::new(abstract_value::BOTTOM))
                 } else {
                     args[*ordinal - 1].0.clone()
                 }
@@ -772,7 +774,7 @@ impl PathRefinement for Rc<Path> {
                         return Path::new_qualified(base_qualifier.clone(), refined_selector);
                     }
                 }
-                if let PathEnum::Alias { value } = &refined_qualifier.value {
+                if let PathEnum::Computed { value } = &refined_qualifier.value {
                     if *refined_selector.as_ref() == PathSelector::Deref {
                         if let Expression::Reference(path) = &value.expression {
                             // *&path during refinement just becomes path
@@ -794,7 +796,7 @@ impl PathRefinement for Rc<Path> {
                         {
                             if (*variant as u128) != *ordinal {
                                 // The downcast is impossible in this calling context
-                                return Path::new_alias(Rc::new(abstract_value::BOTTOM));
+                                return Path::new_computed(Rc::new(abstract_value::BOTTOM));
                             }
                         }
                     }
@@ -890,7 +892,7 @@ impl PathRefinement for Rc<Path> {
         // self is a path that is not a key in the environment. This could be because it is not
         // canonical.
         match &self.value {
-            PathEnum::Alias { value } => {
+            PathEnum::Computed { value } => {
                 if value.refers_to_unknown_location() {
                     Path::get_as_path(value.clone())
                 } else {
@@ -922,7 +924,7 @@ impl PathRefinement for Rc<Path> {
                         return Path::new_qualified(base_qualifier.clone(), refined_selector);
                     }
                 }
-                if let PathEnum::Alias { value } = &refined_qualifier.value {
+                if let PathEnum::Computed { value } = &refined_qualifier.value {
                     if *refined_selector.as_ref() == PathSelector::Deref {
                         if let Expression::Reference(path) = &value.expression {
                             // *&path during refinement just becomes path
@@ -944,7 +946,7 @@ impl PathRefinement for Rc<Path> {
                         {
                             if (*variant as u128) != *ordinal {
                                 // The downcast is impossible in this calling context
-                                return Path::new_alias(Rc::new(abstract_value::BOTTOM));
+                                return Path::new_computed(Rc::new(abstract_value::BOTTOM));
                             }
                         }
                     }
