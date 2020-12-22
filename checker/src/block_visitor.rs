@@ -774,12 +774,17 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Emit a diagnostic to the effect that the current call might violate a the given precondition
     /// of the called function. Use the provenance and spans of the precondition to point out related locations.
     #[logfn_inputs(TRACE)]
-    pub fn emit_diagnostic_for_precondition(&mut self, precondition: &Precondition, warn: bool) {
+    pub fn emit_diagnostic_for_precondition(
+        &mut self,
+        precondition: &Precondition,
+        condition: &Rc<AbstractValue>,
+        warn: bool,
+    ) {
         precondition!(self.bv.check_for_errors);
         // In relaxed mode we don't want to complain if the condition or reachability depends on
         // a parameter, since it is assumed that an implicit precondition was intended by the author.
         if matches!(self.bv.cv.options.diag_level, DiagLevel::RELAXED)
-            && (precondition.condition.expression.contains_parameter()
+            && (condition.expression.contains_parameter()
                 || self
                     .bv
                     .current_environment
