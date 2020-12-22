@@ -179,8 +179,8 @@ impl AbstractValue {
     /// Creates an abstract value from a binary expression and keeps track of the size.
     #[logfn_inputs(TRACE)]
     fn make_binary(
-        left: Rc<AbstractValue>,
-        right: Rc<AbstractValue>,
+        mut left: Rc<AbstractValue>,
+        mut right: Rc<AbstractValue>,
         operation: fn(Rc<AbstractValue>, Rc<AbstractValue>) -> Expression,
     ) -> Rc<AbstractValue> {
         if left.is_top() || left.is_bottom() {
@@ -189,7 +189,16 @@ impl AbstractValue {
         if right.is_top() || right.is_bottom() {
             return right;
         }
-        let expression_size = left.expression_size.saturating_add(right.expression_size);
+        let mut expression_size = left.expression_size.saturating_add(right.expression_size);
+        if expression_size > k_limits::MAX_EXPRESSION_SIZE {
+            if left.expression_size < right.expression_size {
+                right = AbstractValue::make_from(right.expression.clone(), u64::MAX);
+                expression_size = left.expression_size + 1;
+            } else {
+                left = AbstractValue::make_from(left.expression.clone(), u64::MAX);
+                expression_size = right.expression_size + 1;
+            }
+        }
         Self::make_from(operation(left, right), expression_size)
     }
 
@@ -295,7 +304,10 @@ impl AbstractValue {
     #[logfn_inputs(TRACE)]
     pub fn make_from(expression: Expression, expression_size: u64) -> Rc<AbstractValue> {
         if expression_size > k_limits::MAX_EXPRESSION_SIZE {
-            info!("Maximum expression size exceeded");
+            if expression_size < u64::MAX {
+                trace!("expression {:?}", expression);
+                info!("Maximum expression size exceeded");
+            }
             // If the expression gets too large, refining it gets expensive and composing it
             // into other expressions leads to exponential growth. We therefore need to abstract
             // (go up in the lattice). We do that by making the expression a typed variable and
@@ -1070,12 +1082,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
 
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
-        if consequent.expression_size <= (k_limits::MAX_REFINE_DEPTH as u64) {
-            //todo: don't abuse depth for size
-            consequent = consequent.refine_with(self, 5);
-        }
-        if alternate.expression_size < (k_limits::MAX_REFINE_DEPTH as u64) {
-            alternate = alternate.refine_with(&not_self, 5);
+        if !matches!(self.expression, Expression::Or {..}) {
+            if consequent.expression_size <= k_limits::MAX_EXPRESSION_SIZE / 10 {
+                consequent = consequent.refine_with(self, 0);
+            }
+            if alternate.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10 {
+                alternate = alternate.refine_with(&not_self, 0);
+            }
         }
 
         if let Expression::ConditionalExpression {
@@ -1153,7 +1166,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
         }
 
-        let expression_size = self
+        let mut expression_size = self
             .expression_size
             .saturating_add(consequent.expression_size)
             .saturating_add(alternate.expression_size);
@@ -1177,9 +1190,36 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent_type, consequent, alternate_type, alternate
             );
         }
+        let mut condition = self.clone();
+        if expression_size > k_limits::MAX_EXPRESSION_SIZE {
+            let condition_plus_consequent = self
+                .expression_size
+                .saturating_add(consequent.expression_size);
+            if condition_plus_consequent < k_limits::MAX_EXPRESSION_SIZE - 1 {
+                alternate = AbstractValue::make_from(alternate.expression.clone(), u64::MAX);
+                expression_size = condition_plus_consequent + 1;
+            } else {
+                let condition_plus_alternate = self
+                    .expression_size
+                    .saturating_add(alternate.expression_size);
+                if condition_plus_alternate < k_limits::MAX_EXPRESSION_SIZE - 1 {
+                    consequent = AbstractValue::make_from(consequent.expression.clone(), u64::MAX);
+                    expression_size = condition_plus_alternate + 1;
+                } else {
+                    let consequent_plus_alternate = consequent
+                        .expression_size
+                        .saturating_add(alternate.expression_size);
+                    if consequent_plus_alternate < k_limits::MAX_EXPRESSION_SIZE - 1 {
+                        condition =
+                            AbstractValue::make_from(condition.expression.clone(), u64::MAX);
+                        expression_size = consequent_plus_alternate + 1;
+                    }
+                }
+            }
+        }
         AbstractValue::make_from(
             ConditionalExpression {
-                condition: self.clone(),
+                condition,
                 consequent,
                 alternate,
             },
@@ -2983,10 +3023,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Constructs an element of the Interval domain for simple expressions.
     #[logfn_inputs(TRACE)]
     fn get_as_interval(&self) -> IntervalDomain {
-        if self.expression_size > k_limits::MAX_EXPRESSION_SIZE / 10 {
-            info!("maximum expression size exceeded from getting an interval domain");
-            return interval_domain::BOTTOM;
-        }
         match &self.expression {
             Expression::Top => interval_domain::BOTTOM,
             Expression::Add { left, right } => left.get_as_interval().add(&right.get_as_interval()),
