@@ -2907,7 +2907,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .type_visitor
                             .get_path_rustc_type(&thin_pointer_path, self.bv.current_span);
                         ty = type_visitor::get_target_type(thin_ptr_type);
-                        let deref_path = Path::new_deref(thin_pointer_path);
+                        let deref_path =
+                            Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
                         self.bv
                             .type_visitor
                             .path_ty_cache
