@@ -323,8 +323,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let target_type = ExpressionType::from(
                 type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
             );
-            let source_path = Path::new_deref(self.actual_args[0].0.clone(), target_type)
-                .refine_paths(&self.block_visitor.bv.current_environment, 0);
+            let source_path = Path::new_deref(
+                Path::get_as_path(self.actual_args[0].1.clone()),
+                target_type,
+            )
+            .refine_paths(&self.block_visitor.bv.current_environment, 0);
             let target_type = self
                 .block_visitor
                 .bv
@@ -627,7 +630,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 if !assumption.as_bool_if_known().unwrap_or(false) {
                     // Not an assumed post condition, so check the condition and only add this to
                     // the summary if it is reachable and true.
-                    let message = self.coerce_to_string(&actual_args[2].0);
+                    let message =
+                        self.coerce_to_string(&Path::get_as_path(actual_args[2].1.clone()));
                     if self
                         .block_visitor
                         .check_special_function_condition(
@@ -647,7 +651,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let actual_args = self.actual_args.clone();
                 assume!(actual_args.len() == 2); // The type checker ensures this.
                 let (_, cond) = &actual_args[0];
-                let message = self.coerce_to_string(&actual_args[1].0);
+                let message = self.coerce_to_string(&Path::get_as_path(actual_args[1].1.clone()));
                 self.block_visitor.check_special_function_condition(
                     cond,
                     message.as_ref(),
@@ -687,11 +691,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 }
 
                 let msg = if matches!(self.callee_known_name, KnownNames::StdPanickingBeginPanic) {
-                    self.coerce_to_string(&self.actual_args[0].0.clone())
+                    self.coerce_to_string(&Path::get_as_path(self.actual_args[0].1.clone()))
                 } else {
-                    let arguments_struct_path = self.actual_args[0]
-                        .0
-                        .refine_paths(&self.block_visitor.bv.current_environment, 0);
+                    let arguments_struct_path = Path::get_as_path(self.actual_args[0].1.clone());
                     let pieces_path_fat = Path::new_field(arguments_struct_path, 0)
                         .refine_paths(&self.block_visitor.bv.current_environment, 0);
                     let pieces_path_thin = Path::new_field(pieces_path_fat, 0)
@@ -951,7 +953,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         };
 
         // Get the path of the tuple containing the arguments.
-        let callee_arg_array_path = self.actual_args[1].0.clone();
+        let callee_arg_array_path = Path::get_as_path(self.actual_args[1].1.clone());
 
         // Unpack the arguments. We use the generic arguments of the caller as a proxy for the callee function signature.
         let generic_argument_types: Vec<Ty<'tcx>> = self
@@ -1121,7 +1123,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         precondition!(self.actual_args.len() == 1);
 
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
-            let source_pointer_path = self.actual_args[0].0.clone();
+            let source_pointer_path = Path::get_as_path(self.actual_args[0].1.clone());
             let source_pointer_rustc_type = self.actual_argument_types[0];
             let target_type = ExpressionType::from(
                 type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
@@ -1209,7 +1211,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
         let result: Option<Rc<AbstractValue>>;
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
-            let source_pointer_path = self.actual_args[0].0.clone();
+            let source_pointer_path = Path::get_as_path(self.actual_args[0].1.clone());
             let source_pointer_rustc_type = self.actual_argument_types[0];
             let target_type = ExpressionType::from(
                 type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
@@ -1361,14 +1363,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
             // The current value, if any, of the model field are a set of (path, value) pairs
             // where each path is rooted by qualifier.model_field(..)
-            let mut qualifier = self.actual_args[0].0.clone();
+            let mut qualifier = Path::get_as_path(self.actual_args[0].1.clone());
             if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref{..}) {
                 let target_type = ExpressionType::from(
                     type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
                 );
                 qualifier = Path::new_deref(qualifier, target_type);
             }
-            let field_name = self.coerce_to_string(&self.actual_args[1].0.clone());
+            let field_name =
+                self.coerce_to_string(&Path::get_as_path(self.actual_args[1].1.clone()));
             let source_path = Path::new_model_field(qualifier, field_name)
                 .refine_paths(&self.block_visitor.bv.current_environment, 0);
 
@@ -1414,7 +1417,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             .update_value_at(target_path, rval);
                     }
                     _ => {
-                        let source_path = self.actual_args[2].0.clone();
+                        let source_path = Path::get_as_path(self.actual_args[2].1.clone());
                         self.block_visitor.bv.copy_or_move_elements(
                             target_path,
                             source_path,
@@ -1499,7 +1502,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if self.block_visitor.bv.check_for_errors {
             let condition = self.actual_args[0].1.clone();
             //todo: give diagnostic if the condition contains a local variable.
-            let message = self.coerce_to_string(&self.actual_args[1].0.clone());
+            let message = self.coerce_to_string(&Path::get_as_path(self.actual_args[1].1.clone()));
             let precondition = Precondition {
                 condition,
                 message,
@@ -1516,17 +1519,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 3);
         let destination = self.destination;
         if let Some((_, target)) = &destination {
-            let mut qualifier = self.actual_args[0].0.clone();
+            let mut qualifier = Path::get_as_path(self.actual_args[0].1.clone());
             if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref{..}) {
                 let target_type = ExpressionType::from(
                     type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
                 );
                 qualifier = Path::new_deref(qualifier, target_type);
             }
-            let field_name = self.coerce_to_string(&self.actual_args[1].0.clone());
+            let field_name =
+                self.coerce_to_string(&Path::get_as_path(self.actual_args[1].1.clone()));
             let target_path = Path::new_model_field(qualifier, field_name)
                 .refine_paths(&self.block_visitor.bv.current_environment, 0);
-            let source_path = self.actual_args[2].0.clone();
+            let source_path = Path::get_as_path(self.actual_args[2].1.clone());
             let target_type = self.actual_argument_types[2];
             self.block_visitor.bv.copy_or_move_elements(
                 target_path,
@@ -1562,7 +1566,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         // qualifier of the path is a heap block path.
 
         // Get path to the heap block to deallocate
-        let heap_block_path = self.actual_args[0].0.clone();
+        let heap_block_path = Path::get_as_path(self.actual_args[0].1.clone());
 
         // Create a layout
         let length = self.actual_args[1].1.clone();
@@ -1592,8 +1596,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_copy_non_overlapping(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
-        let source_path = self.actual_args[0].0.clone();
-        let target_root = self.actual_args[1].0.clone();
+        let source_path = Path::get_as_path(self.actual_args[0].1.clone());
+        let target_root = Path::get_as_path(self.actual_args[1].1.clone());
         let count = self.actual_args[2].1.clone();
         let target_path = Path::new_slice(target_root, count)
             .refine_paths(&self.block_visitor.bv.current_environment, 0);
@@ -1616,9 +1620,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let target_type = ExpressionType::from(
                 type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
             );
-            let discriminant_path =
-                Path::new_discriminant(Path::new_deref(self.actual_args[0].0.clone(), target_type))
-                    .refine_paths(&self.block_visitor.bv.current_environment, 0);
+            let discriminant_path = Path::new_discriminant(Path::new_deref(
+                Path::get_as_path(self.actual_args[0].1.clone()),
+                target_type,
+            ))
+            .refine_paths(&self.block_visitor.bv.current_environment, 0);
             let mut discriminant_value = self.block_visitor.bv.lookup_path_and_refine_result(
                 discriminant_path,
                 self.block_visitor.bv.tcx.types.u128,
@@ -1661,8 +1667,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_swap_non_overlapping(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
         let ty = self.actual_argument_types[0];
-        let target_root = self.actual_args[0].0.clone();
-        let source_root = self.actual_args[1].0.clone();
+        let target_root = Path::get_as_path(self.actual_args[0].1.clone());
+        let source_root = Path::get_as_path(self.actual_args[1].1.clone());
         let count = self.actual_args[2].1.clone();
         let source_slice = Path::new_slice(source_root.clone(), count.clone())
             .refine_paths(&self.block_visitor.bv.current_environment, 0);
@@ -1723,7 +1729,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let target_type = ExpressionType::from(
             type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
         );
-        let heap_block_path = Path::new_deref(self.actual_args[0].0.clone(), target_type);
+        let heap_block_path = Path::new_deref(
+            Path::get_as_path(self.actual_args[0].1.clone()),
+            target_type,
+        );
 
         // Create a layout
         let length = self.actual_args[1].1.clone();
@@ -1866,9 +1875,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let target_type = ExpressionType::from(
             type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
         );
-        let dest_path = Path::new_deref(self.actual_args[0].0.clone(), target_type)
-            .refine_paths(&self.block_visitor.bv.current_environment, 0);
-        let source_path = &self.actual_args[1].0;
+        let dest_path = Path::new_deref(
+            Path::get_as_path(self.actual_args[0].1.clone()),
+            target_type,
+        )
+        .refine_paths(&self.block_visitor.bv.current_environment, 0);
+        let source_path = &Path::get_as_path(self.actual_args[1].1.clone());
         if let Some((place, _)) = &self.destination {
             let target_path = self.block_visitor.visit_place(place);
             let root_rustc_type = self
@@ -1981,8 +1993,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 if !ty_and_layout.is_unsized() {
                     let elem_size_val: Rc<AbstractValue> =
                         Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
-                    let length_path = Path::new_length(self.actual_args[0].0.clone())
-                        .refine_paths(&self.block_visitor.bv.current_environment, 0);
+                    let length_path =
+                        Path::new_length(Path::get_as_path(self.actual_args[0].1.clone()));
                     let len_val = self.block_visitor.bv.lookup_path_and_refine_result(
                         length_path,
                         ExpressionType::Usize.as_rustc_type(self.block_visitor.bv.tcx),
@@ -2024,7 +2036,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_transmute(&mut self) {
         checked_assume!(self.actual_args.len() == 1);
-        let mut source_path = self.actual_args[0].0.clone();
+        let mut source_path = Path::get_as_path(self.actual_args[0].1.clone());
         let source_rustc_type = self
             .callee_generic_arguments
             .expect("rustc type error")
@@ -2211,10 +2223,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let target_type = ExpressionType::from(
             type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
         );
-        let dest_path = Path::new_deref(self.actual_args[0].0.clone(), target_type)
-            .refine_paths(&self.block_visitor.bv.current_environment, 0);
+        let dest_path = Path::new_deref(
+            Path::get_as_path(self.actual_args[0].1.clone()),
+            target_type,
+        )
+        .refine_paths(&self.block_visitor.bv.current_environment, 0);
         let dest_type = self.actual_argument_types[0];
-        let source_path = self.actual_args[1].0.clone();
+        let source_path = Path::get_as_path(self.actual_args[1].1.clone());
         let byte_value = &self.actual_args[1].1;
         let count_value = self.actual_args[2].1.clone();
         let elem_type = self
