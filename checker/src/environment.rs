@@ -72,7 +72,7 @@ impl Environment {
         path: &Rc<Path>,
     ) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
         match &path.value {
-            PathEnum::Alias { value } => {
+            PathEnum::Computed { value } => {
                 if let Expression::ConditionalExpression {
                     condition,
                     consequent,
@@ -84,8 +84,8 @@ impl Environment {
                     {
                         return Some((
                             condition.clone(),
-                            Path::new_alias(consequent.refine_with(condition, 0)),
-                            Path::new_alias(alternate.refine_with(&condition.logical_not(), 0)),
+                            Path::get_as_path(consequent.refine_with(condition, 0)),
+                            Path::get_as_path(alternate.refine_with(&condition.logical_not(), 0)),
                         ));
                     }
                 }

@@ -340,7 +340,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) -> Rc<AbstractValue> {
         let result_type: ExpressionType = result_rustc_type.kind().into();
         match &path.value {
-            PathEnum::Alias { value } | PathEnum::Offset { value } => {
+            PathEnum::Computed { value } | PathEnum::Offset { value } => {
                 return value.clone();
             }
             PathEnum::QualifiedPath {
@@ -865,7 +865,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         let target_type = type_visitor::get_target_type(result_rustc_type);
         if ExpressionType::from(target_type.kind()).is_primitive() {
             // Kind of weird, but seems to be generated for debugging support.
-            // Move the value into an alias path, so that we can drop the reference to the soon to be dead local.
+            // Move the value into a path, so that we can drop the reference to the soon to be dead local.
             let target_value = self
                 .exit_environment
                 .as_ref()
@@ -891,7 +891,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .expect("expect reference target to have a value");
             environment.update_value_at(promoted_root.clone(), target_value.clone());
             if let Expression::Reference(str_path) = &target_value.expression {
-                if let PathEnum::Alias { value } = &str_path.value {
+                if let PathEnum::Computed { value } = &str_path.value {
                     environment.update_value_at(str_path.clone(), value.clone());
                     let len_path = Path::new_length(str_path.clone());
                     if let Some(len_val) = exit_env_map.get(&len_path) {
@@ -1065,7 +1065,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     // No need to track this data
                     return;
                 }
-                PathEnum::Alias { .. }
+                PathEnum::Computed { .. }
                 | PathEnum::Offset { .. }
                 | PathEnum::QualifiedPath { .. } => tpath = tpath.refine_paths(pre_environment, 0),
                 _ => {}
@@ -1730,7 +1730,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
         let source_val = self.lookup_path_and_refine_result(source_path.clone(), elem_ty);
         if matches!(source_val.expression, Expression::CompileTimeConstant(..)) {
-            let source_path = Path::new_alias(source_val);
+            let source_path = Path::new_computed(source_val);
             for i in from..to {
                 let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
                 let indexed_target = Path::new_index(target_path.clone(), target_index_val)
@@ -2142,7 +2142,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) where
         F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>, Rc<AbstractValue>),
     {
-        let collection_path = Path::new_alias(value.clone());
+        let collection_path = Path::new_computed(value.clone());
         // Create index elements
         for (i, ch) in str_val.as_bytes().iter().enumerate() {
             let index = Rc::new((i as u128).into());

@@ -154,7 +154,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             return ty;
         }
         match &path.value {
-            PathEnum::Alias { value } => match &value.expression {
+            PathEnum::Computed { value } => match &value.expression {
                 Expression::ConditionalExpression { consequent, .. } => {
                     self.get_path_rustc_type(&Path::get_as_path(consequent.clone()), current_span)
                 }
@@ -222,7 +222,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 match t.kind() {
                     TyKind::Infer(..) => {
                         // The qualifier does not resolve to a useful rustc type.
-                        // This can happen when the qualifier is a PathEnum::Alias where the value
+                        // This can happen when the qualifier is a PathEnum::Computed where the value
                         // is TOP, or BOTTOM or a heap layout.
                         return self.tcx.types.never;
                     }

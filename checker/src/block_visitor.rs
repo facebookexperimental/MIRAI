@@ -132,7 +132,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // No need to track this data
                 return;
             }
-            PathEnum::Alias { .. } | PathEnum::Offset { .. } | PathEnum::QualifiedPath { .. } => {
+            PathEnum::Computed { .. }
+            | PathEnum::Offset { .. }
+            | PathEnum::QualifiedPath { .. } => {
                 path = path.refine_paths(&self.bv.current_environment, 0);
             }
             _ => {}
@@ -616,7 +618,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
         for (i, (path, value)) in actual_args.iter().enumerate() {
-            if let PathEnum::Alias { value: val } = &path.value {
+            if let PathEnum::Computed { value: val } = &path.value {
                 if *val == *value {
                     if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) =
                         &value.expression
@@ -1344,7 +1346,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         self.bv.copy_or_move_elements(path, rpath, rh_type, false);
                     }
                     _ => {
-                        let rpath = Path::new_alias(const_value.clone());
+                        let rpath = Path::new_computed(const_value.clone());
                         self.bv.copy_or_move_elements(path, rpath, rh_type, false);
                     }
                 }
@@ -1483,11 +1485,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     return;
                 }
             }
-            PathEnum::Alias { .. } | PathEnum::Offset { .. } | PathEnum::QualifiedPath { .. } => {
-                AbstractValue::make_reference(
-                    value_path.refine_paths(&self.bv.current_environment, 0),
-                )
-            }
+            PathEnum::Computed { .. }
+            | PathEnum::Offset { .. }
+            | PathEnum::QualifiedPath { .. } => AbstractValue::make_reference(
+                value_path.refine_paths(&self.bv.current_environment, 0),
+            ),
             PathEnum::PromotedConstant { .. } => {
                 if let Some(val) = self.bv.current_environment.value_at(&value_path) {
                     if let Expression::HeapBlock { .. } = &val.expression {
@@ -1887,7 +1889,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn get_operand_path(&mut self, operand: &mir::Operand<'tcx>) -> Rc<Path> {
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => self.visit_place(place),
-            mir::Operand::Constant(..) => Path::new_alias(self.visit_operand(operand)),
+            mir::Operand::Constant(..) => Path::new_computed(self.visit_operand(operand)),
         }
     }
 
@@ -2513,7 +2515,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     let len_val: Rc<AbstractValue> =
                         Rc::new(ConstantDomain::U128(s.len() as u128).into());
 
-                    let str_path = Path::new_alias(string_val.clone());
+                    let str_path = Path::new_computed(string_val.clone());
                     self.bv
                         .current_environment
                         .update_value_at(str_path.clone(), string_val);
@@ -2776,7 +2778,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 selector,
                 ..
             } if **selector == PathSelector::Deref => {
-                if let PathEnum::Alias { value } = &qualifier.value {
+                if let PathEnum::Computed { value } = &qualifier.value {
                     match &value.expression {
                         Expression::Join { left, right, .. } => {
                             let target_type = ExpressionType::from(ty.kind());
