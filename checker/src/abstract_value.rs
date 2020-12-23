@@ -1296,16 +1296,29 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Join { path, left, right } => left
                 .dereference(target_type.clone())
                 .join(right.dereference(target_type), path),
-            Expression::Offset { .. } | Expression::Reference(..) => {
+            Expression::Offset { .. } => {
                 let path = Path::get_as_path(self.clone());
                 let deref_path = Path::new_deref(path);
-                AbstractValue::make_typed_unknown(target_type, deref_path)
+                if let PathEnum::Alias { value } = &deref_path.value {
+                    value.clone()
+                } else {
+                    AbstractValue::make_typed_unknown(target_type, deref_path)
+                }
             }
             Expression::InitialParameterValue { path, .. } => {
                 AbstractValue::make_initial_parameter_value(
                     target_type,
                     Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
                 )
+            }
+            Expression::Reference(path) => {
+                if target_type != ExpressionType::NonPrimitive {
+                    // We don't have to shallow copy the value at the  source path, so *&p is just p.
+                    if let PathEnum::Alias { value } = &path.value {
+                        return value.clone();
+                    }
+                }
+                AbstractValue::make_typed_unknown(target_type, path.clone())
             }
             Expression::Switch {
                 discriminator,
