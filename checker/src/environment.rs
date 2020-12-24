@@ -79,8 +79,8 @@ impl Environment {
                     alternate,
                 } = &value.expression
                 {
-                    if consequent.refers_to_unknown_location()
-                        && alternate.refers_to_unknown_location()
+                    if consequent.might_benefit_from_refinement()
+                        && alternate.might_benefit_from_refinement()
                     {
                         return Some((
                             condition.clone(),

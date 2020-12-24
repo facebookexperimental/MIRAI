@@ -878,11 +878,9 @@ impl PathRefinement for Rc<Path> {
                             }
                         }
                         _ => {
-                            if val.refers_to_unknown_location() {
-                                return Path::new_qualified(
-                                    Path::get_as_path(val.clone()),
-                                    refined_selector,
-                                );
+                            let val_as_path = Path::get_as_path(val.clone());
+                            if !matches!(val_as_path.value, PathEnum::Computed {..}) {
+                                return Path::new_qualified(val_as_path, refined_selector);
                             }
                         }
                     }
@@ -911,7 +909,7 @@ impl PathRefinement for Rc<Path> {
     #[logfn_inputs(TRACE)]
     fn refine_paths(&self, environment: &Environment, depth: usize) -> Rc<Path> {
         if let Some(val) = environment.value_at(&self) {
-            if val.refers_to_unknown_location() {
+            if val.might_benefit_from_refinement() {
                 // self is an alias for val
                 return Path::get_as_path(val.clone());
             }
@@ -924,7 +922,7 @@ impl PathRefinement for Rc<Path> {
         // canonical.
         match &self.value {
             PathEnum::Computed { value } => {
-                if value.refers_to_unknown_location() {
+                if value.might_benefit_from_refinement() {
                     Path::get_as_path(value.clone())
                 } else {
                     self.clone()
@@ -1026,7 +1024,7 @@ impl PathRefinement for Rc<Path> {
                             }
                         }
                         _ => {
-                            if val.refers_to_unknown_location() {
+                            if val.might_benefit_from_refinement() {
                                 return Path::new_qualified(
                                     Path::get_as_path(val.clone()),
                                     refined_selector,
