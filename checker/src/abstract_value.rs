@@ -1298,7 +1298,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .join(right.dereference(target_type), path),
             Expression::Offset { .. } => {
                 let path = Path::get_as_path(self.clone());
-                let deref_path = Path::new_deref(path);
+                let deref_path = Path::new_deref(path, target_type.clone());
                 if let PathEnum::Computed { value } = &deref_path.value {
                     value.clone()
                 } else {

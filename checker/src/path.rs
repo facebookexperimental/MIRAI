@@ -502,7 +502,29 @@ impl Path {
 
     /// Creates a path to the target memory of a reference value.
     #[logfn_inputs(TRACE)]
-    pub fn new_deref(address_path: Rc<Path>) -> Rc<Path> {
+    pub fn new_deref(address_path: Rc<Path>, target_type: ExpressionType) -> Rc<Path> {
+        if target_type != ExpressionType::NonPrimitive {
+            if let PathEnum::Computed { value } = &address_path.value {
+                if let Expression::ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                } = &value.expression
+                {
+                    if let (Expression::Reference(c_path), Expression::Reference(a_path)) =
+                        (&consequent.expression, &alternate.expression)
+                    {
+                        let consequent =
+                            AbstractValue::make_typed_unknown(target_type.clone(), c_path.clone());
+                        let alternate =
+                            AbstractValue::make_typed_unknown(target_type, a_path.clone());
+                        return Path::new_computed(
+                            condition.conditional_expression(consequent, alternate),
+                        );
+                    }
+                }
+            }
+        }
         let selector = Rc::new(PathSelector::Deref);
         Self::new_qualified(address_path, selector)
     }

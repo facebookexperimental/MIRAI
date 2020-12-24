@@ -320,7 +320,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     pub fn handle_clone(&mut self, summary: &Summary) {
         if let Some((place, _)) = &self.destination {
             checked_assume!(self.actual_args.len() == 1);
-            let source_path = Path::new_deref(self.actual_args[0].0.clone())
+            let target_type = ExpressionType::from(
+                type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+            );
+            let source_path = Path::new_deref(self.actual_args[0].0.clone(), target_type)
                 .refine_paths(&self.block_visitor.bv.current_environment, 0);
             let target_type = self
                 .block_visitor
@@ -1120,6 +1123,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
             let source_pointer_path = self.actual_args[0].0.clone();
             let source_pointer_rustc_type = self.actual_argument_types[0];
+            let target_type = ExpressionType::from(
+                type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+            );
             let source_thin_pointer_path = Path::get_path_to_thin_pointer_at_offset_0(
                 self.block_visitor.bv.tcx,
                 &self.block_visitor.bv.current_environment,
@@ -1127,7 +1133,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 source_pointer_rustc_type,
             )
             .unwrap_or(source_pointer_path);
-            let source_path = Path::new_deref(source_thin_pointer_path)
+            let source_path = Path::new_deref(source_thin_pointer_path, target_type)
                 .refine_paths(&self.block_visitor.bv.current_environment, 0);
             trace!("MiraiAddTag: tagging {:?} with {:?}", tag, source_path);
 
@@ -1205,6 +1211,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
             let source_pointer_path = self.actual_args[0].0.clone();
             let source_pointer_rustc_type = self.actual_argument_types[0];
+            let target_type = ExpressionType::from(
+                type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+            );
             let source_thin_pointer_path = Path::get_path_to_thin_pointer_at_offset_0(
                 self.block_visitor.bv.tcx,
                 &self.block_visitor.bv.current_environment,
@@ -1212,7 +1221,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 source_pointer_rustc_type,
             )
             .unwrap_or(source_pointer_path);
-            let source_path = Path::new_deref(source_thin_pointer_path)
+            let source_path = Path::new_deref(source_thin_pointer_path, target_type)
                 .refine_paths(&self.block_visitor.bv.current_environment, 0);
             trace!(
                 "MiraiCheckTag: checking if {:?} has {}been tagged with {:?}",
@@ -1354,7 +1363,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             // where each path is rooted by qualifier.model_field(..)
             let mut qualifier = self.actual_args[0].0.clone();
             if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref{..}) {
-                qualifier = Path::new_deref(qualifier);
+                let target_type = ExpressionType::from(
+                    type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+                );
+                qualifier = Path::new_deref(qualifier, target_type);
             }
             let field_name = self.coerce_to_string(&self.actual_args[1].0.clone());
             let source_path = Path::new_model_field(qualifier, field_name)
@@ -1506,7 +1518,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some((_, target)) = &destination {
             let mut qualifier = self.actual_args[0].0.clone();
             if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref{..}) {
-                qualifier = Path::new_deref(qualifier);
+                let target_type = ExpressionType::from(
+                    type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+                );
+                qualifier = Path::new_deref(qualifier, target_type);
             }
             let field_name = self.coerce_to_string(&self.actual_args[1].0.clone());
             let target_path = Path::new_model_field(qualifier, field_name)
@@ -1598,8 +1613,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_discriminant_value(&mut self) {
         checked_assume!(self.actual_args.len() == 1);
         if let Some((place, _)) = &self.destination {
+            let target_type = ExpressionType::from(
+                type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+            );
             let discriminant_path =
-                Path::new_discriminant(Path::new_deref(self.actual_args[0].0.clone()))
+                Path::new_discriminant(Path::new_deref(self.actual_args[0].0.clone(), target_type))
                     .refine_paths(&self.block_visitor.bv.current_environment, 0);
             let mut discriminant_value = self.block_visitor.bv.lookup_path_and_refine_result(
                 discriminant_path,
@@ -1702,7 +1720,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_rust_realloc(&mut self) -> Rc<AbstractValue> {
         checked_assume!(self.actual_args.len() == 4);
         // Get path to the heap block to reallocate
-        let heap_block_path = Path::new_deref(self.actual_args[0].0.clone());
+        let target_type = ExpressionType::from(
+            type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+        );
+        let heap_block_path = Path::new_deref(self.actual_args[0].0.clone(), target_type);
 
         // Create a layout
         let length = self.actual_args[1].1.clone();
@@ -1842,7 +1863,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_mem_replace(&mut self) {
         checked_assume!(self.actual_args.len() == 2);
-        let dest_path = Path::new_deref(self.actual_args[0].0.clone())
+        let target_type = ExpressionType::from(
+            type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+        );
+        let dest_path = Path::new_deref(self.actual_args[0].0.clone(), target_type)
             .refine_paths(&self.block_visitor.bv.current_environment, 0);
         let source_path = &self.actual_args[1].0;
         if let Some((place, _)) = &self.destination {
@@ -2184,7 +2208,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_write_bytes(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
-        let dest_path = Path::new_deref(self.actual_args[0].0.clone())
+        let target_type = ExpressionType::from(
+            type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+        );
+        let dest_path = Path::new_deref(self.actual_args[0].0.clone(), target_type)
             .refine_paths(&self.block_visitor.bv.current_environment, 0);
         let dest_type = self.actual_argument_types[0];
         let source_path = self.actual_args[1].0.clone();
