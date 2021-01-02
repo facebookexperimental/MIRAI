@@ -900,7 +900,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             } else {
                 "possible unsatisfied postcondition"
             };
-            let error = self.bv.cv.session.struct_span_err(span, msg);
+            let error = self.bv.cv.session.struct_span_warn(span, msg);
             self.bv.emit_diagnostic(error);
             // Don't add the post condition to the summary
             return None;

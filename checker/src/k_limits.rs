@@ -25,4 +25,4 @@ pub const MAX_FIXPOINT_ITERATIONS: usize = 10;
 pub const MAX_PATH_LENGTH: usize = 30;
 
 /// Refining values with a path condition that is a really deep expression leads to exponential blow up.
-pub const MAX_REFINE_DEPTH: usize = 9;
+pub const MAX_REFINE_DEPTH: usize = 40;
