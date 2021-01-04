@@ -408,6 +408,12 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn is_rooted_by(&self, root: &Rc<Path>) -> bool {
         match &self.value {
+            PathEnum::Computed { value } => {
+                if let Expression::InitialParameterValue { path, .. } = &value.expression {
+                    return *path == *root || path.is_rooted_by(root);
+                }
+                false
+            }
             PathEnum::QualifiedPath { qualifier, .. } => {
                 *qualifier == *root || qualifier.is_rooted_by(root)
             }
@@ -474,6 +480,9 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn is_rooted_by_parameter(&self) -> bool {
         match &self.value {
+            PathEnum::Computed { value } => {
+                matches!(&value.expression, Expression::InitialParameterValue{..})
+            }
             PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_parameter(),
             PathEnum::Parameter { .. } => true,
             _ => false,
