@@ -400,29 +400,42 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     ..
                 } = &path.value
                 {
-                    if matches!(
-                        *selector.as_ref(),
-                        PathSelector::Deref | PathSelector::Index(..)
-                    ) {
-                        if let PathSelector::Index(index_val) = selector.as_ref() {
-                            //todo: this step is O(n) which makes the analysis O(n**2) when there
-                            //are a bunch of statics in the code.
-                            //An example of this is https://doc-internal.dalek.rs/develop/src/curve25519_dalek/backend/serial/u64/constants.rs.html#143
-                            result = self.lookup_weak_value(qualifier, index_val);
-                        }
-                        if result.is_none() && result_type.is_integer() {
-                            let qualifier_val = self.lookup_path_and_refine_result(
-                                qualifier.clone(),
-                                ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
-                            );
-                            if qualifier_val.is_contained_in_zeroed_heap_block() {
-                                result = Some(if result_type.is_signed_integer() {
-                                    self.get_i128_const_val(0)
-                                } else {
-                                    self.get_u128_const_val(0)
-                                })
+                    match selector.as_ref() {
+                        PathSelector::Deref | PathSelector::Index(..) => {
+                            if let PathSelector::Index(index_val) = selector.as_ref() {
+                                //todo: this step is O(n) which makes the analysis O(n**2) when there
+                                //are a bunch of statics in the code.
+                                //An example of this is https://doc-internal.dalek.rs/develop/src/curve25519_dalek/backend/serial/u64/constants.rs.html#143
+                                result = self.lookup_weak_value(qualifier, index_val);
+                            }
+                            if result.is_none() && result_type.is_integer() {
+                                let qualifier_val = self.lookup_path_and_refine_result(
+                                    qualifier.clone(),
+                                    ExpressionType::NonPrimitive.as_rustc_type(self.tcx),
+                                );
+                                if qualifier_val.is_contained_in_zeroed_heap_block() {
+                                    result = Some(if result_type.is_signed_integer() {
+                                        self.get_i128_const_val(0)
+                                    } else {
+                                        self.get_u128_const_val(0)
+                                    })
+                                }
                             }
                         }
+                        PathSelector::Discriminant => {
+                            let ty = type_visitor::get_target_type(
+                                self.type_visitor
+                                    .get_path_rustc_type(qualifier, self.current_span),
+                            );
+                            match ty.kind() {
+                                TyKind::Adt(..) if ty.is_enum() => {}
+                                TyKind::Generator(..) => {}
+                                _ => {
+                                    result = Some(self.get_u128_const_val(0));
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 result.unwrap_or_else(|| {

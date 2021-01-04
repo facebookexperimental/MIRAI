@@ -481,7 +481,7 @@ impl Path {
     pub fn is_rooted_by_parameter(&self) -> bool {
         match &self.value {
             PathEnum::Computed { value } => {
-                matches!(&value.expression, Expression::InitialParameterValue{..})
+                matches!(&value.expression, Expression::InitialParameterValue { .. })
             }
             PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_parameter(),
             PathEnum::Parameter { .. } => true,
@@ -923,7 +923,7 @@ impl PathRefinement for Rc<Path> {
                         }
                         _ => {
                             let val_as_path = Path::get_as_path(val.clone());
-                            if !matches!(val_as_path.value, PathEnum::Computed {..}) {
+                            if !matches!(val_as_path.value, PathEnum::Computed { .. }) {
                                 return Path::new_qualified(val_as_path, refined_selector);
                             }
                         }
@@ -960,8 +960,10 @@ impl PathRefinement for Rc<Path> {
             // path that also binds to value &p?
             if val.expression.infer_type() == ExpressionType::ThinPointer {
                 // todo: why are heap blocks and initial parameter values special?
-                if !matches!(&val.expression, Expression::HeapBlock {..}|Expression::InitialParameterValue {..})
-                {
+                if !matches!(
+                    &val.expression,
+                    Expression::HeapBlock { .. } | Expression::InitialParameterValue { .. }
+                ) {
                     return Path::new_computed(val.clone());
                 }
             }

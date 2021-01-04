@@ -1081,7 +1081,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
 
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
-        if !matches!(self.expression, Expression::Or {..}) {
+        if !matches!(self.expression, Expression::Or { .. }) {
             if consequent.expression_size <= k_limits::MAX_EXPRESSION_SIZE / 10 {
                 consequent = consequent.refine_with(self, 0);
             }
@@ -3687,7 +3687,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::UnknownModelField { path, default } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                if !matches!(&refined_path.value, PathEnum::Computed {..}) {
+                if !matches!(&refined_path.value, PathEnum::Computed { .. }) {
                     if let Some(val) = post_env.value_at(&refined_path) {
                         // This environment has a value for the model field.
                         val.clone()
@@ -3726,7 +3726,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::UnknownTagField { path } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                if !matches!(&refined_path.value, PathEnum::Computed {..}) {
+                if !matches!(&refined_path.value, PathEnum::Computed { .. }) {
                     if let Some(val) = post_env.value_at(&refined_path) {
                         // This environment has a value for the tag field.
                         val.clone()

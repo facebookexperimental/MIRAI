@@ -2084,7 +2084,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         accumulator.push((field_path, field_ty))
                     }
                 }
-            };
+            }
 
             match (source_rustc_type.kind(), target_rustc_type.kind()) {
                 (
