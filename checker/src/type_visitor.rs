@@ -238,7 +238,14 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         ..
                     }
                     | PathSelector::Field(ordinal) => {
-                        let bt = Self::get_dereferenced_type(t);
+                        let mut bt = Self::get_dereferenced_type(t);
+                        if let TyKind::Opaque(def_id, subs) = &bt.kind() {
+                            let map = self.get_generic_arguments_map(*def_id, subs, &[]);
+                            bt = self
+                                .specialize_generic_argument_type(self.tcx.type_of(*def_id), &map);
+                            trace!("opaque type_of {:?}", bt.kind());
+                            trace!("opaque type_of {:?}", bt);
+                        }
                         match bt.kind() {
                             TyKind::Adt(def, substs) => {
                                 // enum fields have qualifiers that cast onto the right variant.
@@ -250,7 +257,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 let variant = &variants[variants.last().unwrap()];
                                 if *ordinal < variant.fields.len() {
                                     let field = &variant.fields[*ordinal];
-                                    return field.ty(self.tcx, substs);
+                                    let ft = field.ty(self.tcx, substs);
+                                    trace!("field {:?} type is {:?}", ordinal, ft);
+                                    return ft;
                                 }
                                 //todo: assume_unreachable!("field ordinal should always be valid");
                             }
@@ -261,32 +270,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                         self.tcx.types.never
                                     },
                                 );
-                            }
-                            //todo: what about generators?
-                            TyKind::Opaque(def_id, subs) => {
-                                let closure_ty = self.tcx.type_of(*def_id);
-                                let map = self.get_generic_arguments_map(*def_id, subs, &[]);
-                                let ct = self.specialize_generic_argument_type(
-                                    self.tcx.type_of(*def_id),
-                                    &map,
-                                );
-                                if let TyKind::Closure(def_id, subts) = ct.kind() {
-                                    return subts
-                                        .as_closure()
-                                        .upvar_tys()
-                                        .nth(*ordinal)
-                                        .unwrap_or_else(|| {
-                                            info!(
-                                                "closure field not found {:?} {:?}",
-                                                def_id, ordinal
-                                            );
-                                            self.tcx.types.never
-                                        });
-                                } else {
-                                    //todo: there might be a generator here
-                                    info!("opaque root does not contain a closure, def_id is {:?} type_of is {:?}", def_id, closure_ty);
-                                    return self.tcx.types.never;
-                                }
                             }
                             TyKind::Tuple(types) => {
                                 if let Some(gen_arg) = types.get(*ordinal as usize) {

@@ -227,6 +227,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         );
                     }
                 }
+            } else {
+                info!(
+                    "could not resolve function {:?}, {:?}, {:?}",
+                    self.callee_def_id, param_env, gen_args,
+                )
             }
         }
     }
