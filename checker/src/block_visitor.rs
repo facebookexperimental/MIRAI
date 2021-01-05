@@ -135,7 +135,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             PathEnum::Computed { .. }
             | PathEnum::Offset { .. }
             | PathEnum::QualifiedPath { .. } => {
-                path = path.canonicalize(&self.bv.current_environment, 0);
+                path = path.canonicalize(&self.bv.current_environment);
             }
             _ => {}
         }
@@ -1440,7 +1440,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         if matches!(selector.as_ref(), PathSelector::Field(0)) {
                             self.bv.copy_or_move_elements(
                                 path,
-                                qualifier.canonicalize(&self.bv.current_environment, 0),
+                                qualifier.canonicalize(&self.bv.current_environment),
                                 target_type,
                                 false,
                             );
@@ -1459,7 +1459,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // If that information is not actually there, this results in a conservative over approximation.
                     self.bv.copy_or_move_elements(
                         path,
-                        qualifier.canonicalize(&self.bv.current_environment, 0),
+                        qualifier.canonicalize(&self.bv.current_environment),
                         target_type,
                         false,
                     );
@@ -1470,7 +1470,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // &*source_thin_ptr should just be a non canonical alias for source_thin_ptr.
                     self.bv.copy_or_move_elements(
                         path,
-                        qualifier.canonicalize(&self.bv.current_environment, 0),
+                        qualifier.canonicalize(&self.bv.current_environment),
                         target_type,
                         false,
                     );
@@ -1479,9 +1479,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             PathEnum::Computed { .. }
             | PathEnum::Offset { .. }
-            | PathEnum::QualifiedPath { .. } => AbstractValue::make_reference(
-                value_path.canonicalize(&self.bv.current_environment, 0),
-            ),
+            | PathEnum::QualifiedPath { .. } => {
+                AbstractValue::make_reference(value_path.canonicalize(&self.bv.current_environment))
+            }
             PathEnum::PromotedConstant { .. } => {
                 if let Some(val) = self.bv.current_environment.value_at(&value_path) {
                     if let Expression::HeapBlock { .. } = &val.expression {
@@ -2726,14 +2726,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let place_path = self.get_path_for_place(place);
-        let mut path = place_path.canonicalize(&self.bv.current_environment, 0);
+        let mut path = place_path.canonicalize(&self.bv.current_environment);
         match &place_path.value {
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
                 ..
             } if **selector == PathSelector::Deref => {
-                let refined_qualifier = qualifier.canonicalize(&self.bv.current_environment, 0);
+                let refined_qualifier = qualifier.canonicalize(&self.bv.current_environment);
                 let qualifier_ty = self
                     .bv
                     .type_visitor
@@ -2922,7 +2922,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 mir::ProjectionElem::Subslice { .. } => {}
             }
             result = Path::new_qualified(result, Rc::new(selector))
-                .canonicalize(&self.bv.current_environment, 0);
+                .canonicalize(&self.bv.current_environment);
             self.bv
                 .type_visitor
                 .path_ty_cache

@@ -110,7 +110,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// The result of this function is the t part.
     #[logfn_inputs(TRACE)]
     pub fn get_first_part_of_target_path_type_tuple(
-        &mut self,
+        &self,
         path: &Rc<Path>,
         current_span: rustc_span::Span,
     ) -> ExpressionType {
@@ -123,7 +123,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     // Path is required to be rooted in a temporary used to track an operation result.
     #[logfn_inputs(TRACE)]
     pub fn get_target_path_type(
-        &mut self,
+        &self,
         path: &Rc<Path>,
         current_span: rustc_span::Span,
     ) -> ExpressionType {
@@ -143,11 +143,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// This is a hacky and brittle way to navigate the Rust compiler's type system.
     /// Eventually it should be replaced with a comprehensive and principled mapping.
     #[logfn_inputs(TRACE)]
-    pub fn get_path_rustc_type(
-        &mut self,
-        path: &Rc<Path>,
-        current_span: rustc_span::Span,
-    ) -> Ty<'tcx> {
+    pub fn get_path_rustc_type(&self, path: &Rc<Path>, current_span: rustc_span::Span) -> Ty<'tcx> {
         if let Some(ty) = self.path_ty_cache.get(path) {
             return ty;
         }
