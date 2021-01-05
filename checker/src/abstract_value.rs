@@ -425,6 +425,7 @@ pub trait AbstractValueTrait: Sized {
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
     fn less_than(&self, other: Self) -> Self;
+    fn might_benefit_from_refinement(&self) -> bool;
     fn multiply(&self, other: Self) -> Self;
     fn mul_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn negate(self) -> Self;
@@ -433,7 +434,6 @@ pub trait AbstractValueTrait: Sized {
     fn offset(&self, other: Self) -> Self;
     fn or(&self, other: Self) -> Self;
     fn record_heap_blocks_and_strings(&self, result: &mut HashSet<Rc<AbstractValue>>);
-    fn refers_to_unknown_location(&self) -> bool;
     fn remainder(&self, other: Self) -> Self;
     fn remove_conjuncts_that_depend_on(&self, variables: &HashSet<Rc<Path>>) -> Self;
     fn shift_left(&self, other: Self) -> Self;
@@ -2026,6 +2026,55 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
+    /// A heuristic for whether refining this value in the current environment could lead to simplification.
+    /// Used to reduce the cost of optional refinement.
+    #[logfn_inputs(TRACE)]
+    fn might_benefit_from_refinement(&self) -> bool {
+        match &self.expression {
+            Expression::Cast { operand, .. }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::UnknownTagCheck { operand, .. } => {
+                operand.might_benefit_from_refinement()
+            }
+            Expression::ConditionalExpression {
+                consequent,
+                alternate,
+                ..
+            } => {
+                consequent.might_benefit_from_refinement()
+                    || alternate.might_benefit_from_refinement()
+            }
+            Expression::Join { left, right, .. } => {
+                left.might_benefit_from_refinement() || right.might_benefit_from_refinement()
+            }
+            Expression::Offset { .. } | Expression::Reference(..) => {
+                // These won't benefit directly, but are cheap and make the heuristic useful when
+                // they are directly embedded inside conditional or join expressions.
+                true
+            }
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                discriminator.might_benefit_from_refinement()
+                    || default.might_benefit_from_refinement()
+                    || cases.iter().any(|(_, v)| v.might_benefit_from_refinement())
+            }
+            Expression::UninterpretedCall { path, .. }
+            | Expression::UnknownModelField { path, .. }
+            | Expression::UnknownTagField { path, .. }
+            | Expression::Variable { path, .. }
+            | Expression::WidenedJoin { path, .. } => {
+                if let PathEnum::Computed { value } = &path.value {
+                    return value.might_benefit_from_refinement();
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
     /// Returns an element that is "self * other".
     #[logfn_inputs(TRACE)]
     fn multiply(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
@@ -2541,47 +2590,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn record_heap_blocks_and_strings(&self, result: &mut HashSet<Rc<AbstractValue>>) {
         self.expression.record_heap_blocks_and_strings(result);
-    }
-
-    /// True if the value is derived from one or more memory locations whose addresses were not known
-    /// when the value was constructed. Refining such values in the current environment could
-    /// resolve them to particular locations and those locations may have more useful associated values.
-    #[logfn_inputs(TRACE)]
-    fn refers_to_unknown_location(&self) -> bool {
-        match &self.expression {
-            Expression::Cast { operand, .. }
-            | Expression::TaggedExpression { operand, .. }
-            | Expression::UnknownTagCheck { operand, .. } => operand.refers_to_unknown_location(),
-            Expression::ConditionalExpression {
-                consequent,
-                alternate,
-                ..
-            } => consequent.refers_to_unknown_location() || alternate.refers_to_unknown_location(),
-            Expression::Join { left, right, .. } => {
-                left.refers_to_unknown_location() || right.refers_to_unknown_location()
-            }
-            Expression::Offset { .. } | Expression::Reference(..) => true,
-            Expression::Switch {
-                discriminator,
-                cases,
-                default,
-            } => {
-                discriminator.refers_to_unknown_location()
-                    || default.refers_to_unknown_location()
-                    || cases.iter().any(|(_, v)| v.refers_to_unknown_location())
-            }
-            Expression::UninterpretedCall { path, .. }
-            | Expression::UnknownModelField { path, .. }
-            | Expression::UnknownTagField { path, .. }
-            | Expression::Variable { path, .. }
-            | Expression::WidenedJoin { path, .. } => {
-                if let PathEnum::Computed { value } = &path.value {
-                    return value.refers_to_unknown_location();
-                }
-                false
-            }
-            _ => false,
-        }
     }
 
     /// Returns an element that is "self % other".
