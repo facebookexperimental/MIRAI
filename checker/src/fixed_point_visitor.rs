@@ -157,30 +157,36 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             }
             iteration_count += 1;
         }
-        if changed {
-            if self.bv.cv.options.diag_level == DiagLevel::PARANOID {
-                let span = self.bv.current_span;
-                let error = self.bv.cv.session.struct_span_err(
-                    span,
-                    &format!(
-                        "Fixed point loop iterations exceeded limit of {}",
-                        k_limits::MAX_FIXPOINT_ITERATIONS
-                    ),
-                );
-                self.bv.emit_diagnostic(error);
+        if iteration_count >= k_limits::MAX_FIXPOINT_ITERATIONS {
+            if changed {
+                if self.bv.cv.options.diag_level == DiagLevel::PARANOID {
+                    let span = self.bv.current_span;
+                    let error = self.bv.cv.session.struct_span_err(
+                        span,
+                        &format!(
+                            "Fixed point loop iterations exceeded limit of {}",
+                            k_limits::MAX_FIXPOINT_ITERATIONS
+                        ),
+                    );
+                    self.bv.emit_diagnostic(error);
+                } else {
+                    warn!(
+                        "Fixed point loop iterations {} exceeded limit of {} at {:?} in function {}.",
+                        iteration_count,
+                        k_limits::MAX_FIXPOINT_ITERATIONS,
+                        self.bv.current_span,
+                        self.bv.function_name
+                    );
+                }
             } else {
-                warn!(
-                    "Fixed point loop iterations exceeded limit of {} at {:?} in function {}.",
-                    iteration_count, self.bv.current_span, self.bv.function_name
+                trace!(
+                    "Fixed point loop iterations {} exceeded limit of {} at {:?} in function {}.",
+                    iteration_count,
+                    k_limits::MAX_FIXPOINT_ITERATIONS,
+                    self.bv.current_span,
+                    self.bv.function_name
                 );
             }
-        } else {
-            trace!(
-                "Fixed point loop iterations exceeded limit of {} at {:?} in function {}.",
-                iteration_count,
-                self.bv.current_span,
-                self.bv.function_name
-            );
         }
         last_block
     }
