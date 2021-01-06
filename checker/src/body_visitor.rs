@@ -681,9 +681,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
         // Setting the discriminant to 0 allows the related conditions in the closure's preconditions
         // to get simplified away.
-        let discriminant = Path::new_discriminant(
-            Path::new_field(closure_path.clone(), 0).refine_paths(&self.current_environment, 0),
-        );
+        let discriminant = Path::new_discriminant(Path::new_field(closure_path.clone(), 0));
         let discriminant_val = self.get_u128_const_val(0);
 
         // Populate the closure object fields with the parameters and locals of the current context.
@@ -691,8 +689,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .update_value_at(discriminant, discriminant_val);
         for (i, loc) in self.mir.local_decls.iter().skip(1).enumerate() {
             let qualifier = closure_path.clone();
-            let closure_path = Path::new_field(Path::new_field(qualifier, 0), i)
-                .refine_paths(&self.current_environment, 0);
+            let closure_path = Path::new_field(Path::new_field(qualifier, 0), i);
             // skip(1) above ensures this
             assume!(i < usize::max_value());
             let path = if i < self.mir.arg_count {
@@ -1067,7 +1064,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 }
                 PathEnum::Computed { .. }
                 | PathEnum::Offset { .. }
-                | PathEnum::QualifiedPath { .. } => tpath = tpath.refine_paths(pre_environment, 0),
+                | PathEnum::QualifiedPath { .. } => tpath = tpath.canonicalize(pre_environment, 0),
                 _ => {}
             }
             let mut rvalue = value.refine_parameters_and_paths(
@@ -1678,8 +1675,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         u128::from(offset)
                     };
                     let index_val = self.get_u128_const_val(index);
-                    let index_path = Path::new_index(qualifier.clone(), index_val)
-                        .refine_paths(&self.current_environment, 0);
+                    let index_path = Path::new_index(qualifier.clone(), index_val);
                     update(self, target_path.clone(), index_path, root_rustc_ty);
                     return true;
                 }
@@ -1733,8 +1729,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let source_path = Path::new_computed(source_val);
             for i in from..to {
                 let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
-                let indexed_target = Path::new_index(target_path.clone(), target_index_val)
-                    .refine_paths(&self.current_environment, 0);
+                let indexed_target = Path::new_index(target_path.clone(), target_index_val);
                 update(self, indexed_target, source_path.clone(), elem_ty);
             }
         } else {
@@ -1743,10 +1738,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             for i in from..to {
                 let index_val = self.get_u128_const_val(u128::from(i));
                 let indexed_source = Path::new_index(source_path.clone(), index_val)
-                    .refine_paths(&self.current_environment, 0);
+                    .canonicalize(&self.current_environment, 0);
                 let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
                 let indexed_target = Path::new_index(target_path.clone(), target_index_val)
-                    .refine_paths(&self.current_environment, 0);
+                    .canonicalize(&self.current_environment, 0);
                 trace!(
                     "indexed_target {:?} indexed_source {:?} elem_ty {:?}",
                     indexed_target,
@@ -1972,7 +1967,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 check_for_early_return!(self);
                 let qualified_path = path
                     .replace_root(&source_path, target_path.clone())
-                    .refine_paths(&self.current_environment, 0);
+                    .canonicalize(&self.current_environment, 0);
                 if move_elements {
                     trace!("moving child {:?} to {:?}", value, qualified_path);
                 // todo: doing the remove part of the move here makes it difficult to combine
@@ -2175,7 +2170,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// Get the length of an array. Will be a compile time constant if the array length is known.
     #[logfn_inputs(TRACE)]
     fn get_len(&mut self, path: Rc<Path>) -> Rc<AbstractValue> {
-        let length_path = Path::new_length(path).refine_paths(&self.current_environment, 0);
+        let length_path = Path::new_length(path);
         self.lookup_path_and_refine_result(length_path, self.tcx.types.usize)
     }
 
@@ -2454,7 +2449,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         precondition!(!root_rustc_type.is_scalar());
 
         let tag_field_path =
-            Path::new_tag_field(qualifier.clone()).refine_paths(&self.current_environment, 0);
+            Path::new_tag_field(qualifier.clone()).canonicalize(&self.current_environment, 0);
         let mut tag_field_value = self.lookup_path_and_refine_result(
             tag_field_path.clone(),
             self.type_visitor.dummy_untagged_value_type,

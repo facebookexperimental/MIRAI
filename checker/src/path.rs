@@ -259,7 +259,7 @@ impl Path {
         }
     }
 
-    /// Returns the index value of the index path qualifed by qualifier.
+    /// Returns the index value of the index path qualified by qualifier.
     #[logfn_inputs(TRACE)]
     pub fn get_index_value_qualified_by(&self, root: &Rc<Path>) -> Option<Rc<AbstractValue>> {
         match &self.value {
@@ -542,6 +542,17 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn new_discriminant(enum_path: Rc<Path>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Discriminant);
+        if let PathEnum::QualifiedPath {
+            qualifier: base_qualifier,
+            selector: base_selector,
+            ..
+        } = &enum_path.value
+        {
+            if *base_selector.as_ref() == PathSelector::Deref {
+                // no need for an explicit deref in a qualifier
+                return Path::new_qualified(base_qualifier.clone(), selector);
+            }
+        }
         Self::new_qualified(enum_path, selector)
     }
 
@@ -549,6 +560,17 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn new_field(qualifier: Rc<Path>, field_index: usize) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Field(field_index));
+        if let PathEnum::QualifiedPath {
+            qualifier: base_qualifier,
+            selector: base_selector,
+            ..
+        } = &qualifier.value
+        {
+            if *base_selector.as_ref() == PathSelector::Deref {
+                // no need for an explicit deref in a qualifier
+                return Path::new_qualified(base_qualifier.clone(), selector);
+            }
+        }
         Self::new_qualified(qualifier, selector)
     }
 
@@ -566,6 +588,17 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn new_index(collection_path: Rc<Path>, index_value: Rc<AbstractValue>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Index(index_value));
+        if let PathEnum::QualifiedPath {
+            qualifier: base_qualifier,
+            selector: base_selector,
+            ..
+        } = &collection_path.value
+        {
+            if *base_selector.as_ref() == PathSelector::Deref {
+                // no need for an explicit deref in a qualifier
+                return Path::new_qualified(base_qualifier.clone(), selector);
+            }
+        }
         Self::new_qualified(collection_path, selector)
     }
 
@@ -631,6 +664,17 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn new_length(array_path: Rc<Path>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Field(1));
+        if let PathEnum::QualifiedPath {
+            qualifier: base_qualifier,
+            selector: base_selector,
+            ..
+        } = &array_path.value
+        {
+            if *base_selector.as_ref() == PathSelector::Deref {
+                // no need for an explicit deref in a qualifier
+                return Path::new_qualified(base_qualifier.clone(), selector);
+            }
+        }
         Self::new_qualified(array_path, selector)
     }
 
@@ -734,7 +778,7 @@ pub trait PathRefinement: Sized {
     /// or leaks it back to the caller in the qualifier of a path then
     /// we want to dereference the qualifier in order to normalize the path
     /// and not have more than one path for the same location.
-    fn refine_paths(&self, environment: &Environment, depth: usize) -> Rc<Path>;
+    fn canonicalize(&self, environment: &Environment, depth: usize) -> Rc<Path>;
 
     /// Returns a copy of self with the root replaced by new_root.
     fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path>;
@@ -816,7 +860,7 @@ impl PathRefinement for Rc<Path> {
                         // since self is a qualified path we have to drop the reference operator
                         // since selectors implicitly dereference pointers.
                         return Path::new_qualified(path.clone(), refined_selector)
-                            .refine_paths(post_env, 0);
+                            .canonicalize(post_env, 0);
                     }
                 }
                 if let PathSelector::Downcast(_, variant) = refined_selector.as_ref() {
@@ -850,7 +894,7 @@ impl PathRefinement for Rc<Path> {
                             );
                         }
                         Expression::Variable { path, .. } => {
-                            let mut refined_path = path.refine_paths(post_env, 0);
+                            let mut refined_path = path.canonicalize(post_env, 0);
                             // if the variable's path is a qualified path that has a qualifier
                             // that is an explicit dereference (because of parameter refinement)
                             // the dereference has to be dropped in order for the path to be canonical.
@@ -901,143 +945,137 @@ impl PathRefinement for Rc<Path> {
         }
     }
 
-    /// Refine paths that reference other paths and canonicalize the refinements.
-    /// I.e. when a reference is passed to a function that then returns
-    /// or leaks it back to the caller in the qualifier of a path then
-    /// we want to remove the reference from the qualifier in order to normalize the path
-    /// and not have more than one path for the same location.
+    /// Reduces a path to its canonical form. For example, *&p and p are equivalent if p is not
+    /// structured, and this will lead to inaccuracies if *&p and p are not always bound to the
+    /// same value in an environment. To avoid this, we always reduce a path to the it shortest
+    /// form, after removing indirections. This does not solve the alias problem entirely, but
+    /// it reduces the problem to dealing with PathEnum::Computed and PathSelector::Index and
+    /// PathSelector::Slice.
     #[logfn_inputs(TRACE)]
-    fn refine_paths(&self, environment: &Environment, depth: usize) -> Rc<Path> {
+    fn canonicalize(&self, environment: &Environment, depth: usize) -> Rc<Path> {
         if let Some(val) = environment.value_at(&self) {
-            if val.might_benefit_from_refinement() {
-                // self is an alias for val
-                return Path::get_as_path(val.clone());
+            // If self binds to value &p then self and path &p are equivalent paths.
+            // Since self is derived from p, we use path &p as the canonical form.
+            // If we used self instead, then what would we do if we encounter another
+            // path that also binds to value &p?
+            if val.expression.infer_type() == ExpressionType::ThinPointer {
+                // todo: why are heap blocks and initial parameter values special?
+                if !matches!(&val.expression, Expression::HeapBlock {..}|Expression::InitialParameterValue {..})
+                {
+                    return Path::new_computed(val.clone());
+                }
             }
         };
-        if depth > k_limits::MAX_REFINE_DEPTH {
-            info!("refine_paths depth exceeded for path {:?}", self);
-            return self.clone();
-        }
-        // self is a path that is not a key in the environment. This could be because it is not
-        // canonical.
-        match &self.value {
-            PathEnum::Computed { value } => {
-                if value.might_benefit_from_refinement() {
-                    Path::get_as_path(value.clone())
-                } else {
-                    self.clone()
-                }
-            }
-            PathEnum::Offset { value } => {
-                checked_assume!(matches!(&value.expression, Expression::Offset{..}));
-                Path::get_as_path(value.refine_paths(environment, depth))
-            }
-            PathEnum::QualifiedPath {
-                qualifier,
-                selector,
+        // If self is a qualified path, then recursive canonicalization of the qualifier may
+        // cause substitutions (as above), that would result in a non canonical qualified path.
+        if let PathEnum::QualifiedPath {
+            qualifier,
+            selector,
+            ..
+        } = &self.value
+        {
+            let canonical_qualifier = qualifier.canonicalize(environment, depth);
+            // (*p).q is equivalent to p.q, etc.
+            if let PathEnum::QualifiedPath {
+                qualifier: base_qualifier,
+                selector: base_selector,
                 ..
-            } => {
-                let refined_selector = selector.refine_paths(environment, depth);
-                let refined_qualifier = qualifier.refine_paths(environment, depth);
-                // The qualifier is now canonical. But in the context of a selector, we
-                // might be able to simplify the qualifier by dropping an explicit dereference
-                // or an explicit reference.
-                if let PathEnum::QualifiedPath {
-                    qualifier: base_qualifier,
-                    selector: base_selector,
-                    ..
-                } = &refined_qualifier.value
-                {
-                    if *base_selector.as_ref() == PathSelector::Deref {
-                        // no need for an explicit deref in a qualifier
-                        return Path::new_qualified(base_qualifier.clone(), refined_selector);
-                    }
+            } = &canonical_qualifier.value
+            {
+                if *base_selector.as_ref() == PathSelector::Deref {
+                    // no need for an explicit deref in a qualifier
+                    return Path::new_qualified(base_qualifier.clone(), selector.clone());
                 }
-                if let PathEnum::Computed { value } = &refined_qualifier.value {
-                    if *refined_selector.as_ref() == PathSelector::Deref {
-                        if let Expression::Reference(path) = &value.expression {
-                            // *&path during refinement just becomes path
-                            return path.clone();
-                        }
+            }
+            if let PathEnum::Computed { value } = &canonical_qualifier.value {
+                match &value.expression {
+                    //  old(q).s => old(q.s)
+                    Expression::InitialParameterValue { path, .. } => {
+                        //todo: can't wrap this path because we don't know the type, so either
+                        // provide a new PathEnum or pass in the target type
+                        return Path::new_qualified(path.clone(), selector.clone());
                     }
-                    if let Expression::Reference(path) = &value.expression {
+                    // *&p is equivalent to p and (&p).q is equivalent to p.q, etc.
+                    Expression::Reference(p) => {
+                        // *&p just becomes p
+                        // (except when the value at p is structured and the result is assigned to a local,
+                        // but such paths are never canonicalized).
+                        if *selector.as_ref() == PathSelector::Deref {
+                            return p.clone();
+                        }
                         // since self is a qualified path we have to drop the reference operator
                         // since selectors implicitly dereference pointers.
-                        return Path::new_qualified(path.clone(), refined_selector)
-                            .refine_paths(environment, depth);
+                        return Path::new_qualified(p.clone(), selector.clone())
+                            .canonicalize(environment, depth);
                     }
+                    _ => {}
                 }
-                if let PathSelector::Downcast(_, variant) = refined_selector.as_ref() {
-                    let discriminator = Path::new_discriminant(refined_qualifier.clone());
-                    if let Some(val) = environment.value_at(&discriminator) {
-                        if let Expression::CompileTimeConstant(ConstantDomain::U128(ordinal)) =
-                            &val.expression
-                        {
-                            if (*variant as u128) != *ordinal {
-                                // The downcast is impossible in this calling context
-                                return Path::new_computed(Rc::new(abstract_value::BOTTOM));
-                            }
+            }
+            // An impossible downcast is equivalent to BOTTOM
+            if let PathSelector::Downcast(_, variant) = selector.as_ref() {
+                let discriminator = Path::new_discriminant(canonical_qualifier.clone());
+                if let Some(val) = environment.value_at(&discriminator) {
+                    if let Expression::CompileTimeConstant(ConstantDomain::U128(ordinal)) =
+                        &val.expression
+                    {
+                        if (*variant as u128) != *ordinal {
+                            // The downcast is impossible in this calling context
+                            return Path::new_computed(Rc::new(abstract_value::BOTTOM));
                         }
                     }
                 }
-                if let Some(val) = environment.value_at(&refined_qualifier) {
-                    match &val.expression {
-                        Expression::CompileTimeConstant(ConstantDomain::Str(..))
-                        | Expression::HeapBlock { .. } => {
-                            if *refined_selector.as_ref() == PathSelector::Deref {
-                                return Path::new_qualified(
-                                    Path::get_as_path(val.clone()),
-                                    refined_selector,
-                                );
-                            }
-                        }
-                        Expression::InitialParameterValue { .. } => {
+            }
+
+            // if the canonical qualifier binds to a structured value, we may need to substitute that
+            // value (in path form) for the qualifier in order to be canonical.
+            // (Note that only special values such as strings, simple heap blocks, and unknown structured
+            // values will bind directly to a path. Known structured values will be represented
+            // as a collection of (path, simple_value) pairs.)
+            if let Some(val) = environment.value_at(&canonical_qualifier) {
+                match &val.expression {
+                    // String constants and heap blocks are unique and can have many paths that bind
+                    // to them, hence using them as the qualifier is canonical.
+                    Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
+                        return Path::new_qualified(
+                            Path::get_as_path(val.clone()),
+                            selector.clone(),
+                        );
+                    }
+                    Expression::HeapBlock { .. } => {
+                        // todo: explain this
+                        if *selector.as_ref() == PathSelector::Deref {
                             return Path::new_qualified(
                                 Path::get_as_path(val.clone()),
-                                refined_selector,
+                                selector.clone(),
                             );
                         }
-                        Expression::Variable { path, .. } => {
-                            let mut refined_path = path.refine_paths(environment, depth + 1);
-                            // if the variable's path is a qualified path that has a qualifier
-                            // that is an explicit dereference (because of parameter refinement)
-                            // the dereference has to be dropped in order for the path to be canonical.
-                            if let PathEnum::QualifiedPath {
-                                qualifier,
-                                selector: base_selector,
-                                ..
-                            } = &refined_path.value
-                            {
-                                if matches!(base_selector.as_ref(), PathSelector::Deref) {
-                                    refined_path = qualifier.clone();
-                                }
-                            }
-                            return Path::new_qualified(refined_path, refined_selector);
-                        }
-                        Expression::Reference(path) => {
-                            if matches!(refined_selector.as_ref(), PathSelector::Deref) {
-                                // A path that is an alias for a & operation must simplify when dereferenced
-                                // in order to stay canonical.
-                                // Note that the tricky semantics of constructing a copy of struct when doing *&x
-                                // is taken care of when handling the MIR operation and paths need not be concerned with it.
-                                return path.clone();
-                            }
-                        }
-                        _ => {
-                            if val.might_benefit_from_refinement() {
-                                return Path::new_qualified(
-                                    Path::get_as_path(val.clone()),
-                                    refined_selector,
-                                );
-                            }
-                        }
                     }
+                    // old(q).s => old(q.s)
+                    Expression::InitialParameterValue { path, .. } => {
+                        //todo: can't wrap this path because we don't know the type, so either
+                        // provide a new PathEnum or pass in the target type
+                        return Path::new_qualified(path.clone(), selector.clone());
+                    }
+                    // todo: check that the address_of operator canonicalizes its path
+                    Expression::Reference(path) => {
+                        if matches!(selector.as_ref(), PathSelector::Deref) {
+                            // A path that is an alias for a & operation must simplify when dereferenced
+                            // in order to stay canonical.
+                            // Note that the tricky semantics of constructing a copy of struct when doing *&x
+                            // is taken care of when handling the MIR operation and paths need not be concerned with it.
+                            return path.clone();
+                        }
+                        return Path::new_qualified(
+                            Path::get_as_path(val.clone()),
+                            selector.clone(),
+                        );
+                    }
+                    _ => {}
                 }
-                Path::new_qualified(refined_qualifier, refined_selector)
             }
-            _ => {
-                self.clone() // Non qualified, non offset paths are already canonical
-            }
+            Path::new_qualified(canonical_qualifier, selector.clone())
+        } else {
+            self.clone()
         }
     }
 
@@ -1198,12 +1236,6 @@ pub trait PathSelectorRefinement: Sized {
         post_env: &Environment,
         fresh: usize,
     ) -> Self;
-
-    /// Returns a value that is simplified (refined) by replacing values with Variable(path) expressions
-    /// with the value at that path (if there is one). If no refinement is possible
-    /// the result is simply a clone of this value. This refinement only makes sense
-    /// following a call to refine_parameters.
-    fn refine_paths(&self, environment: &Environment, depth: usize) -> Self;
 }
 
 impl PathSelectorRefinement for Rc<PathSelector> {
@@ -1226,25 +1258,6 @@ impl PathSelectorRefinement for Rc<PathSelector> {
             PathSelector::Slice(value) => {
                 let refined_value =
                     value.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                Rc::new(PathSelector::Slice(refined_value))
-            }
-            _ => self.clone(),
-        }
-    }
-
-    /// Returns a value that is simplified (refined) by replacing values with Variable(path) expressions
-    /// with the value at that path (if there is one). If no refinement is possible
-    /// the result is simply a clone of this value. This refinement only makes sense
-    /// following a call to refine_parameters.
-    #[logfn_inputs(TRACE)]
-    fn refine_paths(&self, environment: &Environment, depth: usize) -> Rc<PathSelector> {
-        match self.as_ref() {
-            PathSelector::Index(value) => {
-                let refined_value = value.refine_paths(environment, depth);
-                Rc::new(PathSelector::Index(refined_value))
-            }
-            PathSelector::Slice(value) => {
-                let refined_value = value.refine_paths(environment, depth);
                 Rc::new(PathSelector::Slice(refined_value))
             }
             _ => self.clone(),

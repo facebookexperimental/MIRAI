@@ -327,7 +327,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 Path::get_as_path(self.actual_args[0].1.clone()),
                 target_type,
             )
-            .refine_paths(&self.block_visitor.bv.current_environment, 0);
+            .canonicalize(&self.block_visitor.bv.current_environment, 0);
             let target_type = self
                 .block_visitor
                 .bv
@@ -695,12 +695,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 } else {
                     let arguments_struct_path = Path::get_as_path(self.actual_args[0].1.clone());
                     let pieces_path_fat = Path::new_field(arguments_struct_path, 0)
-                        .refine_paths(&self.block_visitor.bv.current_environment, 0);
-                    let pieces_path_thin = Path::new_field(pieces_path_fat, 0)
-                        .refine_paths(&self.block_visitor.bv.current_environment, 0);
+                        .canonicalize(&self.block_visitor.bv.current_environment, 0);
+                    let pieces_path_thin = Path::new_field(pieces_path_fat, 0);
                     let index = Rc::new(0u128.into());
                     let piece0_path_fat = Path::new_index(pieces_path_thin, index)
-                        .refine_paths(&self.block_visitor.bv.current_environment, 0);
+                        .canonicalize(&self.block_visitor.bv.current_environment, 0);
                     self.coerce_to_string(&piece0_path_fat)
                 };
                 if msg.contains("entered unreachable code")
@@ -983,8 +982,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let arg_path = Path::new_field(callee_arg_array_path.clone(), i)
-                    .refine_paths(&self.block_visitor.bv.current_environment, 0);
+                let arg_path = Path::new_field(callee_arg_array_path.clone(), i);
                 let arg_val = self
                     .block_visitor
                     .bv
@@ -1136,7 +1134,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             )
             .unwrap_or(source_pointer_path);
             let source_path = Path::new_deref(source_thin_pointer_path, target_type)
-                .refine_paths(&self.block_visitor.bv.current_environment, 0);
+                .canonicalize(&self.block_visitor.bv.current_environment, 0);
             trace!("MiraiAddTag: tagging {:?} with {:?}", tag, source_path);
 
             // Check if the tagged value has a pointer type (e.g., a reference).
@@ -1224,7 +1222,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             )
             .unwrap_or(source_pointer_path);
             let source_path = Path::new_deref(source_thin_pointer_path, target_type)
-                .refine_paths(&self.block_visitor.bv.current_environment, 0);
+                .canonicalize(&self.block_visitor.bv.current_environment, 0);
             trace!(
                 "MiraiCheckTag: checking if {:?} has {}been tagged with {:?}",
                 source_path,
@@ -1373,7 +1371,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let field_name =
                 self.coerce_to_string(&Path::get_as_path(self.actual_args[1].1.clone()));
             let source_path = Path::new_model_field(qualifier, field_name)
-                .refine_paths(&self.block_visitor.bv.current_environment, 0);
+                .canonicalize(&self.block_visitor.bv.current_environment, 0);
 
             let target_path = self.block_visitor.visit_place(place);
             if self
@@ -1529,7 +1527,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let field_name =
                 self.coerce_to_string(&Path::get_as_path(self.actual_args[1].1.clone()));
             let target_path = Path::new_model_field(qualifier, field_name)
-                .refine_paths(&self.block_visitor.bv.current_environment, 0);
+                .canonicalize(&self.block_visitor.bv.current_environment, 0);
             let source_path = Path::get_as_path(self.actual_args[2].1.clone());
             let target_type = self.actual_argument_types[2];
             self.block_visitor.bv.copy_or_move_elements(
@@ -1582,7 +1580,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
         // Get a layout path and update the environment
         let layout_path = Path::new_layout(heap_block_path)
-            .refine_paths(&self.block_visitor.bv.current_environment, 0);
+            .canonicalize(&self.block_visitor.bv.current_environment, 0);
         self.block_visitor
             .bv
             .current_environment
@@ -1599,8 +1597,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let source_path = Path::get_as_path(self.actual_args[0].1.clone());
         let target_root = Path::get_as_path(self.actual_args[1].1.clone());
         let count = self.actual_args[2].1.clone();
-        let target_path = Path::new_slice(target_root, count)
-            .refine_paths(&self.block_visitor.bv.current_environment, 0);
+        let target_path = Path::new_slice(target_root, count);
         let collection_type = self.actual_argument_types[0];
         self.block_visitor.bv.copy_or_move_elements(
             target_path,
@@ -1624,7 +1621,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 Path::get_as_path(self.actual_args[0].1.clone()),
                 target_type,
             ))
-            .refine_paths(&self.block_visitor.bv.current_environment, 0);
+            .canonicalize(&self.block_visitor.bv.current_environment, 0);
             let mut discriminant_value = self.block_visitor.bv.lookup_path_and_refine_result(
                 discriminant_path,
                 self.block_visitor.bv.tcx.types.u128,
@@ -1670,10 +1667,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let target_root = Path::get_as_path(self.actual_args[0].1.clone());
         let source_root = Path::get_as_path(self.actual_args[1].1.clone());
         let count = self.actual_args[2].1.clone();
-        let source_slice = Path::new_slice(source_root.clone(), count.clone())
-            .refine_paths(&self.block_visitor.bv.current_environment, 0);
-        let target_slice = Path::new_slice(target_root.clone(), count.clone())
-            .refine_paths(&self.block_visitor.bv.current_environment, 0);
+        let source_slice = Path::new_slice(source_root.clone(), count.clone());
+        let target_slice = Path::new_slice(target_root.clone(), count.clone());
         let temp_root = Path::new_local(999_999);
         let temp_slice = Path::new_slice(temp_root.clone(), count);
         self.block_visitor
@@ -1760,7 +1755,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
         // Get a layout path and update the environment
         let layout_path = Path::new_layout(heap_block_path)
-            .refine_paths(&self.block_visitor.bv.current_environment, 0);
+            .canonicalize(&self.block_visitor.bv.current_environment, 0);
         self.block_visitor
             .bv
             .current_environment
@@ -1798,10 +1793,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 _ => assume_unreachable!(),
             };
             let target_path = self.block_visitor.visit_place(target_place);
-            let path0 = Path::new_field(target_path.clone(), 0)
-                .refine_paths(&self.block_visitor.bv.current_environment, 0);
-            let path1 = Path::new_field(target_path.clone(), 1)
-                .refine_paths(&self.block_visitor.bv.current_environment, 0);
+            let path0 = Path::new_field(target_path.clone(), 0);
+            let path1 = Path::new_field(target_path.clone(), 1);
             let target_type = self
                 .block_visitor
                 .bv
@@ -1879,7 +1872,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             Path::get_as_path(self.actual_args[0].1.clone()),
             target_type,
         )
-        .refine_paths(&self.block_visitor.bv.current_environment, 0);
+        .canonicalize(&self.block_visitor.bv.current_environment, 0);
         let source_path = &Path::get_as_path(self.actual_args[1].1.clone());
         if let Some((place, _)) = &self.destination {
             let target_path = self.block_visitor.visit_place(place);
@@ -2143,7 +2136,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             let (source_path, source_type) = &source_fields[source_field_index];
             let source_path =
-                source_path.refine_paths(&self.block_visitor.bv.current_environment, 0);
+                source_path.canonicalize(&self.block_visitor.bv.current_environment, 0);
             let mut val = self
                 .block_visitor
                 .bv
@@ -2184,7 +2177,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     let (source_path, source_type) = &source_fields[source_field_index];
                     let source_path =
-                        source_path.refine_paths(&self.block_visitor.bv.current_environment, 0);
+                        source_path.canonicalize(&self.block_visitor.bv.current_environment, 0);
                     let source_bits = ExpressionType::from(source_type.kind()).bit_length();
                     let mut next_val = self
                         .block_visitor
@@ -2227,7 +2220,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             Path::get_as_path(self.actual_args[0].1.clone()),
             target_type,
         )
-        .refine_paths(&self.block_visitor.bv.current_environment, 0);
+        .canonicalize(&self.block_visitor.bv.current_environment, 0);
         let dest_type = self.actual_argument_types[0];
         let source_path = Path::get_as_path(self.actual_args[1].1.clone());
         let byte_value = &self.actual_args[1].1;

@@ -135,7 +135,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             PathEnum::Computed { .. }
             | PathEnum::Offset { .. }
             | PathEnum::QualifiedPath { .. } => {
-                path = path.refine_paths(&self.bv.current_environment, 0);
+                path = path.canonicalize(&self.bv.current_environment, 0);
             }
             _ => {}
         }
@@ -149,8 +149,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         place: &mir::Place<'tcx>,
         variant_index: rustc_target::abi::VariantIdx,
     ) {
-        let target_path = Path::new_discriminant(self.visit_place(place))
-            .refine_paths(&self.bv.current_environment, 0);
+        let target_path = Path::new_discriminant(self.visit_place(place));
         let ty = self
             .bv
             .type_visitor
@@ -1390,8 +1389,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         self.bv
             .current_environment
             .update_value_at(length_path, length_value.clone());
-        let slice_path =
-            Path::new_slice(path, length_value).refine_paths(&self.bv.current_environment, 0);
+        let slice_path = Path::new_slice(path, length_value);
         let initial_value = self.visit_operand(operand);
         self.bv
             .current_environment
@@ -1448,7 +1446,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         if matches!(selector.as_ref(), PathSelector::Field(0)) {
                             self.bv.copy_or_move_elements(
                                 path,
-                                qualifier.refine_paths(&self.bv.current_environment, 0),
+                                qualifier.canonicalize(&self.bv.current_environment, 0),
                                 target_type,
                                 false,
                             );
@@ -1467,7 +1465,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // If that information is not actually there, this results in a conservative over approximation.
                     self.bv.copy_or_move_elements(
                         path,
-                        qualifier.refine_paths(&self.bv.current_environment, 0),
+                        qualifier.canonicalize(&self.bv.current_environment, 0),
                         target_type,
                         false,
                     );
@@ -1478,7 +1476,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // &*source_thin_ptr should just be a non canonical alias for source_thin_ptr.
                     self.bv.copy_or_move_elements(
                         path,
-                        qualifier.refine_paths(&self.bv.current_environment, 0),
+                        qualifier.canonicalize(&self.bv.current_environment, 0),
                         target_type,
                         false,
                     );
@@ -1488,7 +1486,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             PathEnum::Computed { .. }
             | PathEnum::Offset { .. }
             | PathEnum::QualifiedPath { .. } => AbstractValue::make_reference(
-                value_path.refine_paths(&self.bv.current_environment, 0),
+                value_path.canonicalize(&self.bv.current_environment, 0),
             ),
             PathEnum::PromotedConstant { .. } => {
                 if let Some(val) = self.bv.current_environment.value_at(&value_path) {
@@ -1561,8 +1559,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     assume_unreachable!("{:?}", selector);
                 }
             }
-            let length_path =
-                Path::new_length(value_path).refine_paths(&self.bv.current_environment, 0);
+            let length_path = Path::new_length(value_path);
             self.bv
                 .lookup_path_and_refine_result(length_path, self.bv.tcx.types.usize)
         };
@@ -1731,9 +1728,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let (result, overflow_flag) = Self::do_checked_binary_op(bin_op, target_type, left, right);
-        let path0 = Path::new_field(path.clone(), 0).refine_paths(&self.bv.current_environment, 0);
+        let path0 = Path::new_field(path.clone(), 0);
         self.bv.current_environment.update_value_at(path0, result);
-        let path1 = Path::new_field(path, 1).refine_paths(&self.bv.current_environment, 0);
+        let path1 = Path::new_field(path, 1);
         self.bv
             .current_environment
             .update_value_at(path1, overflow_flag);
@@ -1854,8 +1851,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .update_value_at(length_path, length_value);
         for (i, operand) in operands.iter().enumerate() {
             let index_value = self.get_u128_const_val(i as u128);
-            let index_path = Path::new_index(path.clone(), index_value)
-                .refine_paths(&self.bv.current_environment, 0);
+            let index_path = Path::new_index(path.clone(), index_value);
             self.visit_used_operand(index_path, operand);
         }
     }
@@ -2741,14 +2737,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let place_path = self.get_path_for_place(place);
-        let mut path = place_path.refine_paths(&self.bv.current_environment, 0);
+        let mut path = place_path.canonicalize(&self.bv.current_environment, 0);
         match &place_path.value {
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
                 ..
             } if **selector == PathSelector::Deref => {
-                let refined_qualifier = qualifier.refine_paths(&self.bv.current_environment, 0);
+                let refined_qualifier = qualifier.canonicalize(&self.bv.current_environment, 0);
                 let qualifier_ty = self
                     .bv
                     .type_visitor
@@ -2835,8 +2831,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 TyKind::Array(_, len) => {
                     let len_val = self.visit_constant(None, &len);
-                    let len_path = Path::new_length(base_path.clone())
-                        .refine_paths(&self.bv.current_environment, 0);
+                    let len_path = Path::new_length(base_path.clone());
                     self.bv
                         .current_environment
                         .update_value_at(len_path, len_val);
@@ -2937,7 +2932,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 mir::ProjectionElem::Subslice { .. } => {}
             }
             result = Path::new_qualified(result, Rc::new(selector))
-                .refine_paths(&self.bv.current_environment, 0);
+                .canonicalize(&self.bv.current_environment, 0);
             self.bv
                 .type_visitor
                 .path_ty_cache

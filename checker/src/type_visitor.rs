@@ -6,8 +6,7 @@
 use crate::abstract_value::AbstractValue;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
-use crate::path::{Path, PathEnum};
-use crate::path::{PathRefinement, PathSelector};
+use crate::path::{Path, PathEnum, PathSelector};
 use crate::rustc_middle::ty::DefIdTree;
 use crate::{type_visitor, utils};
 
@@ -83,8 +82,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 if let TyKind::Closure(_, substs) = parameter_types[*ordinal - 1].kind() {
                     for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
                         let var_type: ExpressionType = ty.kind().into();
-                        let closure_field_path =
-                            Path::new_field(path.clone(), i).refine_paths(environment, 0);
+                        let closure_field_path = Path::new_field(path.clone(), i);
                         self.path_ty_cache.insert(closure_field_path.clone(), ty);
                         let closure_field_val =
                             AbstractValue::make_typed_unknown(var_type, closure_field_path.clone());
