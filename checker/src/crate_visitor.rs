@@ -219,6 +219,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     /// Emit any diagnostics or, if testing, check that they are as expected.
     #[logfn_inputs(TRACE)]
     fn emit_or_check_diagnostics(&mut self) {
+        self.session.diagnostic().reset_err_count();
         if self.test_run {
             let mut expected_errors = expected_errors::ExpectedErrors::new(self.file_name);
             let mut diags = vec![];
