@@ -866,13 +866,19 @@ impl PathRefinement for Rc<Path> {
             // If we used self instead, then what would we do if we encounter another
             // path that also binds to value &p?
             if val.expression.infer_type() == ExpressionType::ThinPointer {
-                // todo: why are heap blocks and initial parameter values special?
-                if !matches!(
+                if matches!(
                     &val.expression,
-                    Expression::HeapBlock { .. } | Expression::InitialParameterValue { .. }
+                    Expression::HeapBlock { .. } | Expression::Offset { .. }
                 ) {
+                    return Path::get_as_path(val.clone());
+                }
+                if !matches!(&val.expression, Expression::InitialParameterValue { .. }) {
                     return Path::new_computed(val.clone());
                 }
+                //todo: the reason why we fall through to the code below for initial parameter values
+                // is that it strips off the wrapper. That make canonicalization work better
+                // because constructors do not have special handling for initial value wrappers.
+                // That is not right, so fix it.
             }
         };
         // If self is a qualified path, then recursive canonicalization of the qualifier may
@@ -940,23 +946,6 @@ impl PathRefinement for Rc<Path> {
             // as a collection of (path, simple_value) pairs.)
             if let Some(val) = environment.value_at(&canonical_qualifier) {
                 match &val.expression {
-                    // String constants and heap blocks are unique and can have many paths that bind
-                    // to them, hence using them as the qualifier is canonical.
-                    Expression::CompileTimeConstant(ConstantDomain::Str(..)) => {
-                        return Path::new_qualified(
-                            Path::get_as_path(val.clone()),
-                            selector.clone(),
-                        );
-                    }
-                    Expression::HeapBlock { .. } => {
-                        // todo: explain this
-                        if *selector.as_ref() == PathSelector::Deref {
-                            return Path::new_qualified(
-                                Path::get_as_path(val.clone()),
-                                selector.clone(),
-                            );
-                        }
-                    }
                     // old(q).s => old(q.s)
                     Expression::InitialParameterValue { path, .. } => {
                         //todo: can't wrap this path because we don't know the type, so either
