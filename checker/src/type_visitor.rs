@@ -697,31 +697,31 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 self.tcx.mk_fn_ptr(specialized_fn_sig)
             }
             TyKind::Dynamic(predicates, region) => {
-                let map_predicates = |predicates: &rustc_middle::ty::List<
-                    ExistentialPredicate<'tcx>,
-                >| {
-                    self.tcx.mk_existential_predicates(predicates.iter().map(
-                        |pred: ExistentialPredicate<'tcx>| match pred {
-                            ExistentialPredicate::Trait(ExistentialTraitRef { def_id, substs }) => {
-                                ExistentialPredicate::Trait(ExistentialTraitRef {
-                                    def_id,
-                                    substs: self.specialize_substs(substs, map),
+                let specialized_predicates =
+                    self.tcx
+                        .mk_poly_existential_predicates(predicates.iter().map(
+                            |pred: rustc_middle::ty::Binder<ExistentialPredicate<'tcx>>| {
+                                rustc_middle::ty::Binder::bind(match pred.skip_binder() {
+                                    ExistentialPredicate::Trait(ExistentialTraitRef {
+                                        def_id,
+                                        substs,
+                                    }) => ExistentialPredicate::Trait(ExistentialTraitRef {
+                                        def_id,
+                                        substs: self.specialize_substs(substs, map),
+                                    }),
+                                    ExistentialPredicate::Projection(ExistentialProjection {
+                                        item_def_id,
+                                        substs,
+                                        ty,
+                                    }) => ExistentialPredicate::Projection(ExistentialProjection {
+                                        item_def_id,
+                                        substs: self.specialize_substs(substs, map),
+                                        ty: self.specialize_generic_argument_type(ty, map),
+                                    }),
+                                    ExistentialPredicate::AutoTrait(_) => pred.skip_binder(),
                                 })
-                            }
-                            ExistentialPredicate::Projection(ExistentialProjection {
-                                item_def_id,
-                                substs,
-                                ty,
-                            }) => ExistentialPredicate::Projection(ExistentialProjection {
-                                item_def_id,
-                                substs: self.specialize_substs(substs, map),
-                                ty: self.specialize_generic_argument_type(ty, map),
-                            }),
-                            ExistentialPredicate::AutoTrait(_) => pred,
-                        },
-                    ))
-                };
-                let specialized_predicates = predicates.map_bound(map_predicates);
+                            },
+                        ));
                 self.tcx.mk_dynamic(specialized_predicates, region)
             }
             TyKind::Closure(def_id, substs) => self

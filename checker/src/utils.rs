@@ -78,11 +78,16 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
 /// Returns a string that is a valid identifier, made up from the concatenation of
 /// the string representations of the given list of generic argument types.
 #[logfn(TRACE)]
-pub fn argument_types_key_str<'tcx>(tcx: TyCtxt<'tcx>, generic_args: SubstsRef<'tcx>) -> Rc<str> {
+pub fn argument_types_key_str<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    generic_args: Option<SubstsRef<'tcx>>,
+) -> Rc<str> {
     let mut result = "_".to_string();
-    for generic_ty_arg in generic_args.types() {
-        result.push('_');
-        append_mangled_type(&mut result, generic_ty_arg, tcx);
+    if let Some(generic_args) = generic_args {
+        for generic_ty_arg in generic_args.types() {
+            result.push('_');
+            append_mangled_type(&mut result, generic_ty_arg, tcx);
+        }
     }
     Rc::from(result.as_str())
 }
@@ -145,8 +150,8 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         Dynamic(trait_data, ..) => {
             str.push_str("trait_");
             if let Some(principal) = trait_data.principal() {
-                let principal = tcx
-                    .normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), &principal);
+                let principal =
+                    tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), principal);
                 str.push_str(qualified_type_name(tcx, principal.def_id).as_str());
                 for sub in principal.substs {
                     if let GenericArgKind::Type(ty) = sub.unpack() {

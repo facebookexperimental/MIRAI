@@ -25,11 +25,11 @@ use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::mir::interpret::{sign_extend, truncate, ConstValue, Scalar};
+use rustc_middle::mir::interpret::{ConstValue, Scalar};
 use rustc_middle::ty::adjustment::PointerCast;
 use rustc_middle::ty::layout::PrimitiveExt;
 use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{Const, ParamConst, Ty, TyKind, UserTypeAnnotationIndex};
+use rustc_middle::ty::{Const, ParamConst, ScalarInt, Ty, TyKind, UserTypeAnnotationIndex};
 use rustc_target::abi::{TagEncoding, VariantIdx, Variants};
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -243,9 +243,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::TerminatorKind::SwitchInt {
                 discr,
                 switch_ty,
-                values,
                 targets,
-            } => self.visit_switch_int(discr, switch_ty, values, targets),
+            } => self.visit_switch_int(discr, switch_ty, targets),
             mir::TerminatorKind::Resume => self.visit_resume(),
             mir::TerminatorKind::Abort => self.visit_abort(),
             mir::TerminatorKind::Return => self.visit_return(),
@@ -291,25 +290,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .insert_mut(target, self.bv.current_environment.entry_condition.clone());
     }
 
-    /// `discr` evaluates to an integer; jump depending on its value
-    /// to one of the targets, and otherwise fallback to last element of `targets`.
-    ///
-    /// # Arguments
-    /// * `discr` - Discriminant value being tested
-    /// * `switch_ty` - type of value being tested
-    /// * `values` - Possible values. The locations to branch to in each case
-    /// are found in the corresponding indices from the `targets` vector.
-    /// * `targets` - Possible branch sites. The last element of this vector is used
-    /// for the otherwise branch, so targets.len() == values.len() + 1 should hold.
+    /// Operand evaluates to an integer; jump depending on its value
+    /// to one of the targets, and otherwise fallback to `otherwise`.
     #[logfn_inputs(TRACE)]
     fn visit_switch_int(
         &mut self,
         discr: &mir::Operand<'tcx>,
         switch_ty: rustc_middle::ty::Ty<'tcx>,
-        values: &[u128],
-        targets: &[mir::BasicBlock],
+        targets: &rustc_middle::mir::SwitchTargets,
     ) {
-        assume!(targets.len() == values.len() + 1);
         let mut default_exit_condition = self.bv.current_environment.entry_condition.clone();
         let discr = self.visit_operand(discr);
 
@@ -346,8 +335,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
         // Continue to deal with the branch targets.
         let discr = discr.as_int_if_known().unwrap_or(discr);
-        for i in 0..values.len() {
-            let val = self.get_int_const_val(values[i], switch_ty);
+        for (i, target) in targets.iter() {
+            let val = self.get_int_const_val(i, switch_ty);
             let cond = discr.equals(val);
             let exit_condition = self
                 .bv
@@ -356,7 +345,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .and(cond.clone());
             let not_cond = cond.logical_not();
             default_exit_condition = default_exit_condition.and(not_cond);
-            let target = targets[i];
             let existing_exit_condition = self
                 .bv
                 .current_environment
@@ -380,7 +368,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         self.bv
             .current_environment
             .exit_conditions
-            .insert_mut(targets[values.len()], default_exit_condition);
+            .insert_mut(targets.otherwise(), default_exit_condition);
     }
 
     /// Indicates that the landing pad is finished and unwinding should
@@ -712,7 +700,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         return extract_func_ref(self.visit_function_reference(
                             *def_id,
                             specialized_closure_ty,
-                            substs,
+                            Some(substs),
                         ));
                     }
                     //todo: what about generators?
@@ -728,7 +716,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             return extract_func_ref(self.visit_function_reference(
                                 *def_id,
                                 specialized_closure_ty,
-                                substs,
+                                Some(substs),
                             ));
                         }
                     }
@@ -738,6 +726,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             _ => {}
         }
         None
+    }
+
+    pub fn get_char_const_val(&mut self, val: u128) -> Rc<AbstractValue> {
+        self.bv.get_char_const_val(val)
     }
 
     pub fn get_i128_const_val(&mut self, val: i128) -> Rc<AbstractValue> {
@@ -758,15 +750,17 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             is_signed = ty_and_layout.abi.is_signed();
             let size = ty_and_layout.size;
             if is_signed {
-                val = sign_extend(val, size);
+                val = size.sign_extend(val);
             } else {
-                val = truncate(val, size);
+                val = size.truncate(val);
             }
         } else {
             is_signed = ty.is_signed();
         }
         if is_signed {
             self.get_i128_const_val(val as i128)
+        } else if ty.is_char() {
+            self.get_char_const_val(val)
         } else {
             self.get_u128_const_val(val)
         }
@@ -2020,11 +2014,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         self.bv.current_span
                     );
                 }
-                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
-                    data,
-                    size,
-                })) => {
-                    result = self.get_constant_from_scalar(&ty.kind(), *data, *size);
+                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) => {
+                    result = self.get_constant_from_scalar(&ty.kind(), *scalar_int);
                 }
                 _ => {
                     assume_unreachable!(
@@ -2045,7 +2036,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .type_visitor
                     .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
-                result = self.visit_function_reference(*def_id, specialized_ty, substs);
+                result = self.visit_function_reference(*def_id, specialized_ty, Some(substs));
             }
             TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Str) => {
                 if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) =
@@ -2128,18 +2119,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             TyKind::Tuple(..) | TyKind::Adt(..) => {
                 match &val {
-                    rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
-                        size: 0,
-                        ..
-                    })) => {
+                    rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(
+                        scalar_int,
+                    ))) if *scalar_int == ScalarInt::ZST => {
                         return Rc::new(ConstantDomain::Unit.into());
                     }
-                    rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
-                        data,
-                        size,
-                    })) => {
+                    rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(
+                        scalar_int,
+                    ))) => {
                         let heap_val = self.bv.get_new_heap_block(
-                            Rc::new((*size as u128).into()),
+                            Rc::new((scalar_int.size().bytes() as u128).into()),
                             Rc::new(1u128.into()),
                             false,
                             ty,
@@ -2161,7 +2150,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .type_visitor
                             .get_path_rustc_type(&path_to_scalar, self.bv.current_span);
                         let scalar_val: Rc<AbstractValue> = Rc::new(
-                            self.get_constant_from_scalar(&scalar_ty.kind(), *data, *size)
+                            self.get_constant_from_scalar(&scalar_ty.kind(), *scalar_int)
                                 .clone()
                                 .into(),
                         );
@@ -2230,10 +2219,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         val: &rustc_middle::ty::ConstKind<'tcx>,
         ty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
-        if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Raw {
-            data, ..
-        })) = val
+        if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) = val
         {
+            let data = scalar_int.to_bits(scalar_int.size()).unwrap();
             let param_env = self.bv.type_visitor.get_param_env();
             if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
                 // The type of the discriminant tag
@@ -2258,12 +2246,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         {
                             Some(discr) => {
                                 if discr_signed {
-                                    sign_extend(discr.val, discr_layout.size)
+                                    discr_layout.size.sign_extend(discr.val)
                                 } else {
-                                    truncate(discr.val, discr_layout.size)
+                                    discr_layout.size.truncate(discr.val)
                                 }
                             }
-                            None => truncate(index.as_u32() as u128, discr_layout.size),
+                            None => discr_layout.size.truncate(index.as_u32() as u128),
                         };
                         discr_index = index;
                         // A single-variant enum can have niches if and only if this variant has a sub-component
@@ -2296,11 +2284,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 // Currently, Rust encodes the constant `std::cmp::Ordering::Less` as 0xff.
                                 // So we need to first sign_extend 0xff and then truncate to fit into discr_layout.
                                 let v = if discr_signed {
-                                    sign_extend(*data, tag_layout.size)
+                                    tag_layout.size.sign_extend(data)
                                 } else {
-                                    *data
+                                    data
                                 };
-                                discr_bits = truncate(v, discr_layout.size);
+                                discr_bits = discr_layout.size.truncate(v);
 
                                 // Iterates through all the variant definitions to find the actual index.
                                 discr_index = match ty_and_layout.ty.kind() {
@@ -2327,12 +2315,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             } => {
                                 // A niche means that there are some optimizations in the enum layout.
                                 // For example, a value of type Option<char> is encoded as a 32-bit integer.
-                                // There exists one single dataful variant (Some(char)).
+                                // There exists one single data containing variant (Some(char)).
                                 // Other variants are encoded as niches with tag values starting as niche_start.
                                 let variants_start = niche_variants.start().as_u32();
-                                let variant = if *data >= niche_start {
+                                let variant = if data >= niche_start {
                                     discr_has_data = false;
-                                    let variant_index_relative = (*data - niche_start) as u32;
+                                    let variant_index_relative = (data - niche_start) as u32;
                                     let variant_index = variants_start + variant_index_relative;
                                     VariantIdx::from_u32(variant_index)
                                 } else {
@@ -2342,11 +2330,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                         fields.count() == 1
                                             && fields.offset(0).bytes() == 0
                                             && fields.memory_index(0) == 0,
-                                        "the dataful variant should contain a single sub-component"
+                                        "the data containing variant should contain a single sub-component"
                                     );
                                     dataful_variant
                                 };
-                                discr_bits = truncate(variant.as_u32() as u128, discr_layout.size);
+                                discr_bits = discr_layout.size.truncate(variant.as_u32() as u128);
                                 discr_index = variant;
                             }
                         }
@@ -2401,7 +2389,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             ),
                             0,
                         );
-                        let content_data = self.get_u128_const_val(*data);
+                        let content_data = self.get_u128_const_val(data);
                         self.bv
                             .current_environment
                             .update_value_at(content_path, content_data);
@@ -2418,7 +2406,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 );
                 if let Expression::HeapBlock { .. } = &e.expression {
                     let p = Path::new_discriminant(Path::get_as_path(e.clone()));
-                    let d = self.get_u128_const_val(*data);
+                    let d = self.get_u128_const_val(data);
                     self.bv.current_environment.update_value_at(p, d);
                     return e;
                 }
@@ -2436,9 +2424,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn get_constant_from_scalar(
         &mut self,
         ty: &TyKind<'tcx>,
-        data: u128,
-        size: u8,
+        scalar_int: ScalarInt,
     ) -> &ConstantDomain {
+        let data = scalar_int.to_bits(scalar_int.size()).unwrap();
+        let size = scalar_int.size().bytes();
         match ty {
             TyKind::Bool => {
                 if data == 0 {
@@ -2537,12 +2526,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         elem_type: Ty<'tcx>,
         length: &rustc_middle::ty::Const<'tcx>,
     ) -> Rc<AbstractValue> {
-        if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
-            Scalar::Raw { data, .. },
-            ..,
-        )) = &length.val
+        if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int), ..)) =
+            &length.val
         {
-            let len = *data;
+            let len = scalar_int.to_bits(scalar_int.size()).unwrap();
             let e_type = ExpressionType::from(elem_type.kind());
             match val {
                 rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
@@ -2718,10 +2705,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         &mut self,
         def_id: DefId,
         ty: Ty<'tcx>,
-        generic_args: SubstsRef<'tcx>,
+        generic_args: Option<SubstsRef<'tcx>>,
     ) -> &ConstantDomain {
         //todo: is def_id unique enough? Perhaps add ty?
-        self.bv.cv.substs_cache.insert(def_id, generic_args);
+        if let Some(generic_args) = generic_args {
+            self.bv.cv.substs_cache.insert(def_id, generic_args);
+        }
         &mut self.bv.cv.constant_value_cache.get_function_constant_for(
             def_id,
             ty,
@@ -2838,7 +2827,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 TyKind::Closure(def_id, generic_args)
                 | TyKind::Generator(def_id, generic_args, ..) => {
-                    let func_const = self.visit_function_reference(*def_id, ty, generic_args);
+                    let func_const = self.visit_function_reference(*def_id, ty, Some(generic_args));
                     let func_val = Rc::new(func_const.clone().into());
                     self.bv
                         .current_environment
@@ -2849,7 +2838,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     if let TyKind::Closure(def_id, generic_args) =
                         self.bv.tcx.type_of(*def_id).kind()
                     {
-                        let func_const = self.visit_function_reference(*def_id, ty, generic_args);
+                        let func_const =
+                            self.visit_function_reference(*def_id, ty, Some(generic_args));
                         let func_val = Rc::new(func_const.clone().into());
                         self.bv
                             .current_environment
@@ -2860,7 +2850,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     let func_const = self.visit_function_reference(
                         *def_id,
                         ty,
-                        generic_args.as_closure().substs,
+                        Some(generic_args.as_closure().substs),
                     );
                     let func_val = Rc::new(func_const.clone().into());
                     self.bv

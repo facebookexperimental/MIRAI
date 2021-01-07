@@ -21,7 +21,6 @@ use sled::{Config, Db};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
-use std::iter::FromIterator;
 use std::ops::Deref;
 use std::rc::Rc;
 
@@ -197,7 +196,7 @@ impl Summary {
 
     pub fn join_side_effects(&mut self, other: &Summary) {
         let other_map: HashMap<Rc<Path>, Rc<AbstractValue>> =
-            HashMap::from_iter(other.side_effects.clone().into_iter());
+            other.side_effects.clone().into_iter().collect();
         for (path, val1) in self.side_effects.iter_mut() {
             match other_map.get(path) {
                 Some(val2) => {

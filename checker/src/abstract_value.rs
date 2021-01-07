@@ -1081,7 +1081,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
 
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
-        if !matches!(self.expression, Expression::Or {..}) {
+        if !matches!(self.expression, Expression::Or { .. }) {
             if consequent.expression_size <= k_limits::MAX_EXPRESSION_SIZE / 10 {
                 consequent = consequent.refine_with(self, 0);
             }
@@ -2001,7 +2001,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // [!(x != y)] -> x == y
                 x.equals(y.clone())
             }
-            Expression::Or { left: x, right } if matches!(right.expression, Expression::LogicalNot {..}) =>
+            Expression::Or { left: x, right }
+                if matches!(right.expression, Expression::LogicalNot { .. }) =>
             {
                 // [!(x || !y)] -> !x && y
                 if let Expression::LogicalNot { operand: y } = &right.expression {
@@ -2010,7 +2011,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     unreachable!()
                 }
             }
-            Expression::Or { left, right: y } if matches!(left.expression, Expression::LogicalNot {..}) =>
+            Expression::Or { left, right: y }
+                if matches!(left.expression, Expression::LogicalNot { .. }) =>
             {
                 // [!(!x || y)] -> x && !y
                 if let Expression::LogicalNot { operand: x } = &left.expression {
@@ -2548,8 +2550,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
                 // [(x && !y) || !(x || y)] -> !y
                 (Expression::And { left: x1, right }, Expression::LogicalNot { operand })
-                    if matches!(right.expression, Expression::LogicalNot{..})
-                        && matches!(operand.expression, Expression::Or{..}) =>
+                    if matches!(right.expression, Expression::LogicalNot { .. })
+                        && matches!(operand.expression, Expression::Or { .. }) =>
                 {
                     if let (
                         Expression::LogicalNot { operand: y1 },
@@ -3685,7 +3687,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::UnknownModelField { path, default } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                if !matches!(&refined_path.value, PathEnum::Computed {..}) {
+                if !matches!(&refined_path.value, PathEnum::Computed { .. }) {
                     if let Some(val) = post_env.value_at(&refined_path) {
                         // This environment has a value for the model field.
                         val.clone()
@@ -3724,7 +3726,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::UnknownTagField { path } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                if !matches!(&refined_path.value, PathEnum::Computed {..}) {
+                if !matches!(&refined_path.value, PathEnum::Computed { .. }) {
                     if let Some(val) = post_env.value_at(&refined_path) {
                         // This environment has a value for the tag field.
                         val.clone()
@@ -4108,7 +4110,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn(TRACE)]
     fn try_resolve_as_byte_array(&self, environment: &Environment) -> Option<Vec<u8>> {
         if let Expression::Reference(path) = &self.expression {
-            if matches!(&path.value, PathEnum::HeapBlock {..}) {
+            if matches!(&path.value, PathEnum::HeapBlock { .. }) {
                 let heap_layout_path = Path::new_layout(path.clone());
                 if let Some(layout) = environment.value_at(&heap_layout_path) {
                     if let Expression::HeapBlockLayout { length, .. } = &layout.expression {

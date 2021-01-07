@@ -193,7 +193,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .visit_function_reference(
                         resolved_def_id,
                         specialized_resolved_ty,
-                        instance.substs,
+                        Some(instance.substs),
                     )
                     .clone();
                 self.callee_func_ref = if let ConstantDomain::Function(fr) = &func_const {
@@ -1367,7 +1367,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             // The current value, if any, of the model field are a set of (path, value) pairs
             // where each path is rooted by qualifier.model_field(..)
             let mut qualifier = Path::get_as_path(self.actual_args[0].1.clone());
-            if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref{..}) {
+            if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref { .. }) {
                 let target_type = ExpressionType::from(
                     type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
                 );
@@ -1523,7 +1523,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let destination = self.destination;
         if let Some((_, target)) = &destination {
             let mut qualifier = Path::get_as_path(self.actual_args[0].1.clone());
-            if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref{..}) {
+            if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref { .. }) {
                 let target_type = ExpressionType::from(
                     type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
                 );
@@ -1974,7 +1974,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let t = self.actual_argument_types[0];
         checked_assume!(self.actual_args.len() == 1);
         let val = &self.actual_args[0].1;
-        if matches!(val.expression, Expression::HeapBlock {..}) {
+        if matches!(val.expression, Expression::HeapBlock { .. }) {
             // If the value is heap allocated, we can get its size from the layout path
             let heap_path = Path::get_as_path(val.clone());
             let layout_path = Path::new_layout(heap_path);
@@ -2084,7 +2084,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         accumulator.push((field_path, field_ty))
                     }
                 }
-            };
+            }
 
             match (source_rustc_type.kind(), target_rustc_type.kind()) {
                 (

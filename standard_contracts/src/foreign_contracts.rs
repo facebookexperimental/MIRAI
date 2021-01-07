@@ -88,13 +88,13 @@ pub mod alloc {
 
 pub mod core {
     pub mod alloc {
-        pub mod AllocRef {
+        pub mod Allocator {
             pub fn alloc<T>(
                 _self: T,
                 layout: std::alloc::Layout,
             ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocError>
             where
-                T: std::alloc::AllocRef,
+                T: std::alloc::Allocator,
             {
                 unsafe {
                     let buf = std::alloc::alloc(layout);
@@ -107,7 +107,7 @@ pub mod core {
                 layout: std::alloc::Layout,
             ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocError>
             where
-                T: std::alloc::AllocRef,
+                T: std::alloc::Allocator,
             {
                 unsafe {
                     let buf = std::alloc::alloc_zeroed(layout);
@@ -117,7 +117,7 @@ pub mod core {
 
             pub fn dealloc<T>(_self: T, ptr: std::ptr::NonNull<u8>, layout: std::alloc::Layout)
             where
-                T: std::alloc::AllocRef,
+                T: std::alloc::Allocator,
             {
                 unsafe {
                     std::alloc::dealloc(ptr.as_ptr(), layout);
@@ -131,7 +131,7 @@ pub mod core {
                 new_size: usize,
             ) -> Result<(std::ptr::NonNull<u8>, usize), core::alloc::AllocError>
             where
-                T: std::alloc::AllocRef,
+                T: std::alloc::Allocator,
             {
                 unsafe {
                     let buf = std::alloc::realloc(ptr.as_ptr(), layout, new_size);

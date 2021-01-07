@@ -144,6 +144,8 @@ impl MiraiCallbacks {
         || file_name.contains("language/move-prover/spec-lang/src") // compiler panic
         || file_name.contains("language/tools/move-cli/src")
         || file_name.contains("language/vm/src")
+        || file_name.contains("network/src") // you should never look at the bits of a ZST
+        || file_name.contains("state-synchronizer/src") // Z3 encoding error
     }
 
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
