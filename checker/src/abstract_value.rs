@@ -423,6 +423,7 @@ pub trait AbstractValueTrait: Sized {
     fn is_compile_time_constant(&self) -> bool;
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
     fn is_top(&self) -> bool;
+    fn is_unit(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
     fn less_than(&self, other: Self) -> Self;
@@ -1855,6 +1856,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             _ => false,
         }
+    }
+
+    /// True if this value is an empty tuple, which is the sole value of the unit type.
+    #[logfn_inputs(TRACE)]
+    fn is_unit(&self) -> bool {
+        matches!(
+            &self.expression,
+            Expression::CompileTimeConstant(ConstantDomain::Unit)
+        )
     }
 
     /// Returns an abstract value whose corresponding set of concrete values includes all of the values

@@ -453,13 +453,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
                         }
                         _ => {
-                            if path.is_rooted_by_parameter() {
+                            if result_type == ExpressionType::Unit {
+                                Rc::new(ConstantDomain::Unit.into())
+                            } else if path.is_rooted_by_parameter() {
                                 AbstractValue::make_initial_parameter_value(
                                     result_type.clone(),
                                     path.clone(),
                                 )
-                            } else if result_type == ExpressionType::Unit {
-                                Rc::new(ConstantDomain::Unit.into())
                             } else {
                                 AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
                             }
