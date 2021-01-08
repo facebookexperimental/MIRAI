@@ -396,6 +396,26 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn is_result_or_is_rooted_by_result(&self) -> bool {
         match &self.value {
+            PathEnum::Computed { value } => {
+                if let Expression::InitialParameterValue { path, .. }
+                | Expression::Reference(path)
+                | Expression::Variable { path, .. } = &value.expression
+                {
+                    return path.is_result_or_is_rooted_by_result();
+                }
+                false
+            }
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, .. } = &value.expression {
+                    if let Expression::InitialParameterValue { path, .. }
+                    | Expression::Reference(path)
+                    | Expression::Variable { path, .. } = &left.expression
+                    {
+                        return path.is_result_or_is_rooted_by_result();
+                    }
+                }
+                false
+            }
             PathEnum::QualifiedPath { qualifier, .. } => {
                 qualifier.is_result_or_is_rooted_by_result()
             }
@@ -409,8 +429,22 @@ impl Path {
     pub fn is_rooted_by(&self, root: &Rc<Path>) -> bool {
         match &self.value {
             PathEnum::Computed { value } => {
-                if let Expression::InitialParameterValue { path, .. } = &value.expression {
+                if let Expression::InitialParameterValue { path, .. }
+                | Expression::Reference(path)
+                | Expression::Variable { path, .. } = &value.expression
+                {
                     return *path == *root || path.is_rooted_by(root);
+                }
+                false
+            }
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, .. } = &value.expression {
+                    if let Expression::InitialParameterValue { path, .. }
+                    | Expression::Reference(path)
+                    | Expression::Variable { path, .. } = &left.expression
+                    {
+                        return *path == *root || path.is_rooted_by(root);
+                    }
                 }
                 false
             }
@@ -454,7 +488,15 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn is_rooted_by_zeroed_heap_block(&self) -> bool {
         match &self.value {
-            PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_zeroed_heap_block(),
+            PathEnum::Computed { value } => {
+                if let Expression::InitialParameterValue { path, .. }
+                | Expression::Reference(path)
+                | Expression::Variable { path, .. } = &value.expression
+                {
+                    return path.is_rooted_by_zeroed_heap_block();
+                }
+                false
+            }
             PathEnum::HeapBlock { value, .. } => {
                 if let Expression::HeapBlock { is_zeroed, .. } = &value.expression {
                     *is_zeroed
@@ -472,6 +514,7 @@ impl Path {
                 }
                 false
             }
+            PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_zeroed_heap_block(),
             _ => false,
         }
     }
@@ -481,7 +524,24 @@ impl Path {
     pub fn is_rooted_by_parameter(&self) -> bool {
         match &self.value {
             PathEnum::Computed { value } => {
-                matches!(&value.expression, Expression::InitialParameterValue { .. })
+                if let Expression::InitialParameterValue { path, .. }
+                | Expression::Reference(path)
+                | Expression::Variable { path, .. } = &value.expression
+                {
+                    return path.is_rooted_by_parameter();
+                }
+                false
+            }
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, .. } = &value.expression {
+                    if let Expression::InitialParameterValue { path, .. }
+                    | Expression::Reference(path)
+                    | Expression::Variable { path, .. } = &left.expression
+                    {
+                        return path.is_rooted_by_parameter();
+                    }
+                }
+                false
             }
             PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_parameter(),
             PathEnum::Parameter { .. } => true,
@@ -965,6 +1025,17 @@ impl PathRefinement for Rc<Path> {
                     self.clone()
                 }
             }
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, right } = &value.expression {
+                    if let Expression::InitialParameterValue { path, var_type } = &left.expression {
+                        let unwrapped_left =
+                            AbstractValue::make_typed_unknown(var_type.clone(), path.clone());
+                        let unwrapped_offset = unwrapped_left.offset(right.clone());
+                        return Path::get_as_path(unwrapped_offset);
+                    }
+                }
+                self.clone()
+            }
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
@@ -984,6 +1055,60 @@ impl PathRefinement for Rc<Path> {
             return new_root;
         }
         match &self.value {
+            PathEnum::Computed { value } => match &value.expression {
+                Expression::InitialParameterValue { path, .. } => {
+                    path.replace_root(old_root, new_root)
+                }
+                Expression::Reference(path) => Path::new_computed(AbstractValue::make_reference(
+                    path.replace_root(old_root, new_root),
+                )),
+                Expression::Variable { path, var_type } => {
+                    Path::new_computed(AbstractValue::make_typed_unknown(
+                        var_type.clone(),
+                        path.replace_root(old_root, new_root),
+                    ))
+                }
+                _ => {
+                    if value.is_top() || value.is_bottom() {
+                        return self.clone();
+                    }
+                    unimplemented!(
+                        "replacing root of {:?}, old_root {:?}, new_root {:?}",
+                        self,
+                        old_root,
+                        new_root
+                    );
+                }
+            },
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, right } = &value.expression {
+                    match &left.expression {
+                        Expression::InitialParameterValue { path, var_type }
+                        | Expression::Variable { path, var_type } => {
+                            let replaced_left = AbstractValue::make_typed_unknown(
+                                var_type.clone(),
+                                path.replace_root(old_root, new_root),
+                            );
+                            let replaced_offset = replaced_left.offset(right.clone());
+                            return Path::get_as_path(replaced_offset);
+                        }
+                        Expression::Reference(path) => {
+                            let replaced_left = AbstractValue::make_reference(
+                                path.replace_root(old_root, new_root),
+                            );
+                            let replaced_offset = replaced_left.offset(right.clone());
+                            return Path::get_as_path(replaced_offset);
+                        }
+                        _ => {}
+                    }
+                }
+                unimplemented!(
+                    "replacing root of {:?}, old_root {:?}, new_root {:?}",
+                    self,
+                    old_root,
+                    new_root
+                );
+            }
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
