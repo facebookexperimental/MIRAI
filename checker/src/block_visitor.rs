@@ -51,8 +51,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E> Debug
     }
 }
 
-/// A visitor that simply traverses enough of the MIR associated with a particular code body
-/// so that we can test a call to every default implementation of the MirVisitor trait.
 impl<'block, 'analysis, 'compilation, 'tcx, E>
     BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E>
 {
@@ -605,7 +603,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
         for (i, (path, value)) in actual_args.iter().enumerate() {
-            if let PathEnum::Computed { value: val } = &path.value {
+            if let PathEnum::Computed { value: val }
+            | PathEnum::HeapBlock { value: val }
+            | PathEnum::Offset { value: val } = &path.value
+            {
                 if *val == *value {
                     if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) =
                         &value.expression
@@ -1773,13 +1774,19 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
         let param_env = self.bv.type_visitor.get_param_env();
-        let len = if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
-            Rc::new((ty_and_layout.layout.size.bytes() as u128).into())
+        let (len, alignment) = if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
+            let layout = ty_and_layout.layout;
+            (
+                Rc::new((layout.size.bytes() as u128).into()),
+                Rc::new((layout.align.abi.bytes() as u128).into()),
+            )
         } else {
-            //todo: need an expression that eventually refines into the actual layout size
-            AbstractValue::make_typed_unknown(ExpressionType::U128, Path::new_local(998))
+            //todo: need expressions that eventually refines into the actual layout size/alignment
+            (
+                AbstractValue::make_typed_unknown(ExpressionType::U128, Path::new_local(998)),
+                AbstractValue::make_typed_unknown(ExpressionType::U128, Path::new_local(997)),
+            )
         };
-        let alignment = Rc::new(1u128.into());
         let value = match null_op {
             mir::NullOp::Box => {
                 // The box is a struct that is located at path.

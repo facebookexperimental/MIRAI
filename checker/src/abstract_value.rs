@@ -1338,7 +1338,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Offset { .. } => {
                 let path = Path::get_as_path(self.clone());
                 let deref_path = Path::new_deref(path, target_type.clone());
-                if let PathEnum::Computed { value } = &deref_path.value {
+                if let PathEnum::Computed { value }
+                | PathEnum::HeapBlock { value }
+                | PathEnum::Offset { value } = &deref_path.value
+                {
                     value.clone()
                 } else {
                     AbstractValue::make_typed_unknown(target_type, deref_path)
@@ -1353,7 +1356,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Reference(path) => {
                 if target_type != ExpressionType::NonPrimitive {
                     // We don't have to shallow copy the value at the  source path, so *&p is just p.
-                    if let PathEnum::Computed { value } = &path.value {
+                    if let PathEnum::Computed { value }
+                    | PathEnum::HeapBlock { value }
+                    | PathEnum::Offset { value } = &path.value
+                    {
                         return value.clone();
                     }
                 }
@@ -2792,7 +2798,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         right: offset,
                     } = &value.expression
                     {
-                        if let PathEnum::Computed { value: rv } = &right_path.value {
+                        if let PathEnum::Computed { value: rv }
+                        | PathEnum::HeapBlock { value: rv }
+                        | PathEnum::Offset { value: rv } = &right_path.value
+                        {
                             if rv.eq(base) {
                                 return offset.clone();
                             }
@@ -3458,7 +3467,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::InitialParameterValue { path, var_type } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, pre_env, fresh);
-                if let PathEnum::Computed { value } = &refined_path.value {
+                if let PathEnum::Computed { value }
+                | PathEnum::HeapBlock { value }
+                | PathEnum::Offset { value } = &refined_path.value
+                {
                     return value.clone();
                 } else if let Some(val) = pre_env.value_at(&refined_path) {
                     return val.clone();
@@ -3559,14 +3571,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Neg { operand } => operand
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .negate(),
-            Expression::Offset { left, right } => {
-                debug!("offset left {:?}", left);
-                debug!("offset right {:?}", right);
-                left.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
-                    .offset(
-                        right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    )
-            }
+            Expression::Offset { left, right } => left
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .offset(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
             Expression::Or { left, right } => left
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .or(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
@@ -3747,7 +3754,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Variable { path, var_type } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                if let PathEnum::Computed { value } = &refined_path.value {
+                if let PathEnum::Computed { value }
+                | PathEnum::HeapBlock { value }
+                | PathEnum::Offset { value } = &refined_path.value
+                {
                     value.clone()
                 } else if let Some(val) = post_env.value_at(&refined_path) {
                     val.clone()
