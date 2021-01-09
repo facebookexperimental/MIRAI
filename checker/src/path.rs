@@ -902,7 +902,16 @@ impl PathRefinement for Rc<Path> {
                     return Path::new_qualified(base_qualifier.clone(), selector.clone());
                 }
             }
-            if let PathEnum::Computed { value } = &canonical_qualifier.value {
+            // If the canonical qualifier binds to a special value, we may need to deconstruct that
+            // value before constructing the qualified path.
+            let qualifier_as_value =
+                if let PathEnum::Computed { value } = &canonical_qualifier.value {
+                    Some(value)
+                } else {
+                    environment.value_at(&canonical_qualifier)
+                };
+
+            if let Some(value) = qualifier_as_value {
                 match &value.expression {
                     //  old(q).s => old(q.s)
                     Expression::InitialParameterValue { path, .. } => {
@@ -936,37 +945,6 @@ impl PathRefinement for Rc<Path> {
                             return Path::new_computed(Rc::new(abstract_value::BOTTOM));
                         }
                     }
-                }
-            }
-
-            // if the canonical qualifier binds to a structured value, we may need to substitute that
-            // value (in path form) for the qualifier in order to be canonical.
-            // (Note that only special values such as strings, simple heap blocks, and unknown structured
-            // values will bind directly to a path. Known structured values will be represented
-            // as a collection of (path, simple_value) pairs.)
-            if let Some(val) = environment.value_at(&canonical_qualifier) {
-                match &val.expression {
-                    // old(q).s => old(q.s)
-                    Expression::InitialParameterValue { path, .. } => {
-                        //todo: can't wrap this path because we don't know the type, so either
-                        // provide a new PathEnum or pass in the target type
-                        return Path::new_qualified(path.clone(), selector.clone());
-                    }
-                    // todo: check that the address_of operator canonicalizes its path
-                    Expression::Reference(path) => {
-                        if matches!(selector.as_ref(), PathSelector::Deref) {
-                            // A path that is an alias for a & operation must simplify when dereferenced
-                            // in order to stay canonical.
-                            // Note that the tricky semantics of constructing a copy of struct when doing *&x
-                            // is taken care of when handling the MIR operation and paths need not be concerned with it.
-                            return path.clone();
-                        }
-                        return Path::new_qualified(
-                            Path::get_as_path(val.clone()),
-                            selector.clone(),
-                        );
-                    }
-                    _ => {}
                 }
             }
             Path::new_qualified(canonical_qualifier, selector.clone())
