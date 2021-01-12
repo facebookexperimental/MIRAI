@@ -784,6 +784,11 @@ pub trait PathRefinement: Sized {
     /// Returns a copy of self with the root replaced by new_root.
     fn replace_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Rc<Path>;
 
+    /// Replaces a path prefix that is an initial parameter value, with just a reference to
+    /// the parameter value. This only makes sense when the resulting path will be be embedded
+    /// in wrapper itself. I.e. a canonical path only ever contains one wrapper.
+    fn remove_initial_value_wrapper(&self) -> Rc<Path>;
+
     /// Returns a copy of self with the selector replace by a new selector.
     /// It is only legal to call this on a qualified path.
     fn add_or_replace_selector(&self, new_selector: Rc<PathSelector>) -> Rc<Path>;
@@ -872,13 +877,7 @@ impl PathRefinement for Rc<Path> {
                 ) {
                     return Path::get_as_path(val.clone());
                 }
-                if !matches!(&val.expression, Expression::InitialParameterValue { .. }) {
-                    return Path::new_computed(val.clone());
-                }
-                //todo: the reason why we fall through to the code below for initial parameter values
-                // is that it strips off the wrapper. That make canonicalization work better
-                // because constructors do not have special handling for initial value wrappers.
-                // That is not right, so fix it.
+                return Path::new_computed(val.clone());
             }
         };
         // If self is a qualified path, then recursive canonicalization of the qualifier may
@@ -950,6 +949,31 @@ impl PathRefinement for Rc<Path> {
             Path::new_qualified(canonical_qualifier, selector.clone())
         } else {
             self.clone()
+        }
+    }
+
+    /// Replaces a path prefix that is an initial parameter value, with just a reference to
+    /// the parameter value. This only makes sense when the resulting path will be be embedded
+    /// in wrapper itself. I.e. a canonical path only ever contains one wrapper.
+    #[logfn_inputs(TRACE)]
+    fn remove_initial_value_wrapper(&self) -> Rc<Path> {
+        match &self.value {
+            PathEnum::Computed { value } => {
+                if let Expression::InitialParameterValue { path, .. } = &value.expression {
+                    path.clone()
+                } else {
+                    self.clone()
+                }
+            }
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } => {
+                let qualifier = qualifier.remove_initial_value_wrapper();
+                Path::new_qualified(qualifier, selector.clone())
+            }
+            _ => self.clone(),
         }
     }
 

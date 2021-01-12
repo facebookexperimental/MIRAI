@@ -353,6 +353,7 @@ impl AbstractValue {
     /// Creates an abstract value about which nothing is known other than its type and address.
     #[logfn_inputs(TRACE)]
     pub fn make_typed_unknown(var_type: ExpressionType, path: Rc<Path>) -> Rc<AbstractValue> {
+        let path = path.remove_initial_value_wrapper();
         AbstractValue::make_from(Expression::Variable { path, var_type }, 1)
     }
 
@@ -2746,7 +2747,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Returns an element that is "self - other".
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn subtract(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         // [0 - other] -> -other
         if let Expression::CompileTimeConstant(ConstantDomain::I128(0))
