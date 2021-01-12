@@ -191,6 +191,8 @@ impl AbstractValue {
         }
         let mut expression_size = left.expression_size.saturating_add(right.expression_size);
         if expression_size > k_limits::MAX_EXPRESSION_SIZE {
+            // The overall expression is going to overflow, so pre-compute the simpler domains from
+            // the larger expression and then replace its expression with TOP.
             if left.expression_size < right.expression_size {
                 right = AbstractValue::make_from(right.expression.clone(), u64::MAX);
                 expression_size = left.expression_size + 1;
