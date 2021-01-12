@@ -33,7 +33,6 @@ pub fn test(secret: i32) {
 
     let info = secret | 1;
     verify!(has_tag!(&info, SecretTaint));
-    // todo: keep track of tag information from preconditions
     verify!(does_not_have_tag!(&info, SecretSanitizer));
 
     let encrypted = info ^ 99991;
@@ -47,7 +46,6 @@ pub fn test(secret: i32) {
 
     let polluted = temp | secret;
     verify!(has_tag!(&polluted, SecretTaint));
-    // todo: keep track of tag information from preconditions
     verify!(does_not_have_tag!(&polluted, SecretSanitizer));
 }
 

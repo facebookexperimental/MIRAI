@@ -273,7 +273,7 @@ impl Environment {
                     value_map.insert_mut(p, join_or_widen(val1, val2, path));
                 }
                 None => {
-                    if !path.is_rooted_by_parameter() {
+                    if !path.is_rooted_by_parameter() || val1.is_unit() {
                         // joining val1 and bottom
                         // The bottom value corresponds to dead (impossible) code, so the join collapses.
                         value_map.insert_mut(p, val1.clone());
