@@ -178,12 +178,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         // Add parameter values that are function constants.
         // Also add entries for closure fields.
         for (path, val) in function_constant_args.iter() {
-            self.type_visitor.add_any_closure_fields_for(
-                &mut self.current_environment,
-                parameter_types,
-                &mut first_state,
-                &path,
-            );
+            let path_ty = self
+                .type_visitor
+                .get_path_rustc_type(path, self.current_span);
+            self.type_visitor
+                .add_any_closure_fields_for(path_ty, &path, &mut first_state);
             first_state.value_map.insert_mut(path.clone(), val.clone());
         }
         first_state.exit_conditions = HashTrieMap::default();
