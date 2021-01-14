@@ -1106,6 +1106,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     self.current_environment.update_value_at(tpath, rvalue);
                     continue;
                 }
+                Expression::Top if rtype != ExpressionType::NonPrimitive => {
+                    self.current_environment.update_value_at(tpath, rvalue);
+                    continue;
+                }
                 Expression::HeapBlockLayout { source, .. } => {
                     match source {
                         LayoutSource::DeAlloc => {
@@ -1230,7 +1234,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             var_type.clone(),
                             path.clone(),
                         );
-                        // todo: investigate test failures that happen when removing the next two lines
                         self.current_environment.update_value_at(tpath, rvalue);
                         continue;
                     } else if rtype == ExpressionType::NonPrimitive {
