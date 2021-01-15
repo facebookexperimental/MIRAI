@@ -69,28 +69,35 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// there is no convenient way to look up their types later on. I.e. unlike ordinary parameters
     /// whose types can be looked up in mir.local_decls, these extra parameters need their
     /// types extracted from the closure type definitions via the tricky logic below.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     pub fn add_any_closure_fields_for(
         &mut self,
-        environment: &mut Environment,
-        parameter_types: &[Ty<'tcx>],
-        first_state: &mut Environment,
+        mut path_ty: Ty<'tcx>,
         path: &Rc<Path>,
+        first_state: &mut Environment,
     ) {
-        if let PathEnum::Parameter { ordinal } = &path.value {
-            if *ordinal > 0 && *ordinal <= parameter_types.len() {
-                if let TyKind::Closure(_, substs) = parameter_types[*ordinal - 1].kind() {
-                    for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
-                        let var_type: ExpressionType = ty.kind().into();
-                        let closure_field_path = Path::new_field(path.clone(), i);
-                        self.path_ty_cache.insert(closure_field_path.clone(), ty);
-                        let closure_field_val =
-                            AbstractValue::make_typed_unknown(var_type, closure_field_path.clone());
-                        first_state
-                            .value_map
-                            .insert_mut(closure_field_path, closure_field_val);
-                    }
+        if let TyKind::Ref(_, t, _) = path_ty.kind() {
+            path_ty = t;
+        }
+        match path_ty.kind() {
+            TyKind::Closure(_, substs) => {
+                for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
+                    let var_type: ExpressionType = ty.kind().into();
+                    let closure_field_path = Path::new_field(path.clone(), i);
+                    self.path_ty_cache.insert(closure_field_path.clone(), ty);
+                    let closure_field_val =
+                        AbstractValue::make_typed_unknown(var_type, closure_field_path.clone());
+                    first_state
+                        .value_map
+                        .insert_mut(closure_field_path, closure_field_val);
                 }
+            }
+            TyKind::Opaque(def_id, ..) => {
+                self.add_any_closure_fields_for(self.tcx.type_of(*def_id), path, first_state);
+            }
+            TyKind::FnDef(..) | TyKind::FnPtr(..) => {}
+            _ => {
+                info!("unexpected closure type {:?}", path_ty.kind());
             }
         }
     }

@@ -957,7 +957,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         };
 
         // Get the path of the tuple containing the arguments.
-        let callee_arg_array_path = Path::get_as_path(self.actual_args[1].1.clone());
+        let callee_arg_array_path = self.actual_args[1].0.clone();
 
         // Unpack the arguments. We use the generic arguments of the caller as a proxy for the callee function signature.
         let generic_argument_types: Vec<Ty<'tcx>> = self
