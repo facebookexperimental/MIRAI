@@ -744,6 +744,110 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         }
                     }
                 }
+                // [(x >= y) && (x == y)] -> x == y
+                (
+                    Expression::GreaterOrEqual {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::Equals {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return other.clone();
+                }
+                // [(x <= y) && (x == y)] -> x == y
+                (
+                    Expression::LessOrEqual {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::Equals {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return other.clone();
+                }
+                // [(x == y) && (x >= y)] -> x == y
+                (
+                    Expression::Equals {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::GreaterOrEqual {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return self.clone();
+                }
+                // [(x == y) && (x <= y)] -> x == y
+                (
+                    Expression::Equals {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::LessOrEqual {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return self.clone();
+                }
+                // [(x >= y) && (x != y)] -> x > y
+                (
+                    Expression::GreaterOrEqual {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::Ne {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return x1.greater_than(y1.clone());
+                }
+                // [(x <= y) && (x != y)] -> x < y
+                (
+                    Expression::LessOrEqual {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::Ne {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return x1.less_than(y1.clone());
+                }
+                // [(x != y) && (x >= y)] -> x > y
+                (
+                    Expression::Ne {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::GreaterOrEqual {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return x1.greater_than(y1.clone());
+                }
+                // [(x != y) && (x <= y)] -> x < y
+                (
+                    Expression::Ne {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::LessOrEqual {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return x1.less_than(y1.clone());
+                }
                 _ => (),
             }
 
@@ -1489,6 +1593,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [(c ? v1: v2) == c3] -> !c if v1 != c3 && v2 == c3
             // [(c ? v1: v2) == c3] -> c if v1 == c3 && v2 != c3
             // [(c ? v1: v2) == c3] -> true if v1 == c3 && v2 == c3
+            // [(c ? v1: v2) == c3] -> c ? (v1 == c3) : (v2 == c3)
             (
                 Expression::ConditionalExpression {
                     condition: c,
@@ -1528,11 +1633,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if x == y && !x.infer_type().is_floating_point_number() {
                     return Rc::new(TRUE);
                 }
+                return c
+                    .conditional_expression(v1.equals(other.clone()), v2.equals(other.clone()));
             }
 
             // [c3 == (c ? v1: v2)] -> !c if v1 != c3 && v2 == c3
-            // [c3 == (c ? v1: v2) == c3] -> c if v1 == c3 && v2 != c3
-            // [c3 == (c ? v1: v2) == c3] -> true if v1 == c3 && v2 == c3
+            // [c3 == (c ? v1: v2)] -> c if v1 == c3 && v2 != c3
+            // [c3 == (c ? v1: v2)] -> true if v1 == c3 && v2 == c3
+            // [c3 == (c ? v1: v2)] -> c ? (c3 == v1) : (c3 == v2)
             (
                 Expression::CompileTimeConstant(..),
                 Expression::ConditionalExpression {
@@ -1567,6 +1675,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if x == y && !x.infer_type().is_floating_point_number() {
                     return Rc::new(TRUE);
                 }
+                return c.conditional_expression(self.equals(v1.clone()), self.equals(v2.clone()));
             }
 
             // [!x == 0] -> x when x is Boolean. Canonicalize it to the latter.
@@ -1632,6 +1741,39 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(result.into());
         }
+        match (&self.expression, &other.expression) {
+            // [(c ? v1 : v2) >= c3] -> c ? (v1 >= c3) : (v2 >= c3)
+            (
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
+                },
+                Expression::CompileTimeConstant(..),
+            ) => {
+                return c.conditional_expression(
+                    v1.greater_or_equal(other.clone()),
+                    v2.greater_or_equal(other.clone()),
+                );
+            }
+            // [c3 >= (c ? v1 : v2)] -> c ? (c3 >= v1) : (c3 >= v2 )
+            (
+                Expression::CompileTimeConstant(..),
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
+                },
+            ) => {
+                return c.conditional_expression(
+                    self.greater_or_equal(v1.clone()),
+                    self.greater_or_equal(v2.clone()),
+                );
+            }
+            _ => {}
+        }
         AbstractValue::make_binary(self.clone(), other, |left, right| {
             Expression::GreaterOrEqual { left, right }
         })
@@ -1650,6 +1792,39 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             .greater_than(other.get_cached_interval().as_ref())
         {
             return Rc::new(result.into());
+        }
+        match (&self.expression, &other.expression) {
+            // [(c ? v1 : v2) > c3] -> c ? (v1 > c3) : (v2 > c3)
+            (
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
+                },
+                Expression::CompileTimeConstant(..),
+            ) => {
+                return c.conditional_expression(
+                    v1.greater_than(other.clone()),
+                    v2.greater_than(other.clone()),
+                );
+            }
+            // [c3 > (c ? v1 : v2)] -> c ? (c3 > v1) : (c3 > v2 )
+            (
+                Expression::CompileTimeConstant(..),
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
+                },
+            ) => {
+                return c.conditional_expression(
+                    self.greater_than(v1.clone()),
+                    self.greater_than(v2.clone()),
+                );
+            }
+            _ => {}
         }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::GreaterThan {
             left,
@@ -1947,6 +2122,39 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(result.into());
         }
+        match (&self.expression, &other.expression) {
+            // [(c ? v1 : v2) <= c3] -> c ? (v1 <= c3) : (v2 <= c3)
+            (
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
+                },
+                Expression::CompileTimeConstant(..),
+            ) => {
+                return c.conditional_expression(
+                    v1.less_or_equal(other.clone()),
+                    v2.less_or_equal(other.clone()),
+                );
+            }
+            // [c3 <= (c ? v1 : v2)] -> c ? (c3 <= v1) : (c3 <= v2 )
+            (
+                Expression::CompileTimeConstant(..),
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
+                },
+            ) => {
+                return c.conditional_expression(
+                    self.less_or_equal(v1.clone()),
+                    self.less_or_equal(v2.clone()),
+                );
+            }
+            _ => {}
+        }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::LessOrEqual {
             left,
             right,
@@ -1966,6 +2174,39 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             .less_than(other.get_cached_interval().as_ref())
         {
             return Rc::new(result.into());
+        }
+        match (&self.expression, &other.expression) {
+            // [(c ? v1 : v2) < c3] -> c ? (v1 < c3) : (v2 < c3)
+            (
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
+                },
+                Expression::CompileTimeConstant(..),
+            ) => {
+                return c.conditional_expression(
+                    v1.less_than(other.clone()),
+                    v2.less_than(other.clone()),
+                );
+            }
+            // [c3 < (c ? v1 : v2)] -> c ? (c3 < v1) : (c3 < v2 )
+            (
+                Expression::CompileTimeConstant(..),
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: v1,
+                    alternate: v2,
+                    ..
+                },
+            ) => {
+                return c.conditional_expression(
+                    self.less_than(v1.clone()),
+                    self.less_than(v2.clone()),
+                );
+            }
+            _ => {}
         }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::LessThan {
             left,
@@ -2254,6 +2495,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [(c ? v1: v2) != c3] -> !c if v1 == c3 && v2 != c3
             // [(c ? v1: v2) != c3] -> c if v1 != c3 && v2 == c3
             // [(c ? v1: v2) != c3] -> true if v1 != c3 && v2 != c3
+            // [(c ? v1: v2) != c3] -> c ? (v1 != c3) : (v2 != c3)
             (
                 Expression::ConditionalExpression {
                     condition: c,
@@ -2286,10 +2528,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if x == y && !x.infer_type().is_floating_point_number() {
                     return Rc::new(FALSE);
                 }
+                return c.conditional_expression(
+                    v1.not_equals(other.clone()),
+                    v2.not_equals(other.clone()),
+                );
             }
             // [c3 != (c ? v1: v2)] -> !c if v1 == c3 && v2 != c3
             // [c3 != (c ? v1: v2)] -> c if v1 != c3 && v2 == c3
             // [c3 != (c ? v1: v2)] -> true if v1 != c3 && v2 != c3
+            // [c3 != (c ? v1: v2)] -> c ? (c3 != v1) : (c3 != v2)
             (
                 Expression::CompileTimeConstant(..),
                 Expression::ConditionalExpression {
@@ -2322,6 +2569,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if x == y && !x.infer_type().is_floating_point_number() {
                     return Rc::new(FALSE);
                 }
+                return c.conditional_expression(
+                    self.not_equals(v1.clone()),
+                    self.not_equals(v2.clone()),
+                );
             }
             (x, y) => {
                 // If self and other are the same expression and the expression could not result in
@@ -2481,6 +2732,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 {
                     Rc::new(TRUE)
                 }
+
+                // [x > y || x == y] -> x >= y
+                (
+                    Expression::GreaterThan {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::Equals {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => x1.greater_or_equal(y1.clone()),
+
+                // [x < y || x == y] -> x <= y
+                (
+                    Expression::LessThan {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::Equals {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => x1.less_or_equal(y1.clone()),
 
                 // [(x && y) || (x && !y)] -> x
                 // [(x && y1) || (x && y2)] -> (x && (y1 || y2))
