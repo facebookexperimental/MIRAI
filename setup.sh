@@ -19,3 +19,5 @@ rustup "+$TOOLCHAIN" component add rustc-dev
 rustup "+$TOOLCHAIN" component add llvm-tools-preview
 # install audit
 cargo "+$TOOLCHAIN" install cargo-audit
+# override tool chain
+rustup override set $TOOLCHAIN
