@@ -93,7 +93,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .summary_cache
             .get_summary_key_for(def_id)
             .clone();
-        let mir = crate_visitor.tcx.optimized_mir(def_id);
+        let id = rustc_middle::ty::WithOptConstParam::unknown(def_id);
+        let def = rustc_middle::ty::InstanceDef::Item(id);
+        let mir = crate_visitor.tcx.instance_mir(def);
         let tcx = crate_visitor.tcx;
         BodyVisitor {
             cv: crate_visitor,
@@ -783,6 +785,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     #[logfn_inputs(TRACE)]
     fn promote_constants(&mut self) -> Environment {
         let mut environment = Environment::default();
+        if matches!(
+            self.tcx.def_kind(self.def_id),
+            rustc_hir::def::DefKind::Variant
+        ) {
+            return environment;
+        }
+        trace!("def_id {:?}", self.tcx.def_kind(self.def_id));
         let saved_mir = self.mir;
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
             self.mir = constant_mir;
@@ -1170,7 +1179,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         } = &tpath.value
                         {
                             match selector.as_ref() {
-                                PathSelector::Field(0) | PathSelector::UnionField { .. } => {
+                                PathSelector::Field(0)
+                                | PathSelector::Slice(..)
+                                | PathSelector::UnionField { .. } => {
                                     // assign the pointer field of the slice pointer to the unqualified target
                                     tpath = qualifier.clone();
                                 }
