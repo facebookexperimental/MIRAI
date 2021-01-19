@@ -12,8 +12,7 @@ use crate::type_visitor;
 
 use log_derive::*;
 use mirai_annotations::*;
-use rustc_ast::ast;
-use rustc_middle::ty::{Ty, TyCtxt, TyKind};
+use rustc_middle::ty::{FloatTy, IntTy, Ty, TyCtxt, TyKind, UintTy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
@@ -1351,20 +1350,20 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
         match ty_kind {
             TyKind::Bool => ExpressionType::Bool,
             TyKind::Char => ExpressionType::Char,
-            TyKind::Int(ast::IntTy::Isize) => ExpressionType::Isize,
-            TyKind::Int(ast::IntTy::I8) => ExpressionType::I8,
-            TyKind::Int(ast::IntTy::I16) => ExpressionType::I16,
-            TyKind::Int(ast::IntTy::I32) => ExpressionType::I32,
-            TyKind::Int(ast::IntTy::I64) => ExpressionType::I64,
-            TyKind::Int(ast::IntTy::I128) => ExpressionType::I128,
-            TyKind::Uint(ast::UintTy::Usize) => ExpressionType::Usize,
-            TyKind::Uint(ast::UintTy::U8) => ExpressionType::U8,
-            TyKind::Uint(ast::UintTy::U16) => ExpressionType::U16,
-            TyKind::Uint(ast::UintTy::U32) => ExpressionType::U32,
-            TyKind::Uint(ast::UintTy::U64) => ExpressionType::U64,
-            TyKind::Uint(ast::UintTy::U128) => ExpressionType::U128,
-            TyKind::Float(ast::FloatTy::F32) => ExpressionType::F32,
-            TyKind::Float(ast::FloatTy::F64) => ExpressionType::F64,
+            TyKind::Int(IntTy::Isize) => ExpressionType::Isize,
+            TyKind::Int(IntTy::I8) => ExpressionType::I8,
+            TyKind::Int(IntTy::I16) => ExpressionType::I16,
+            TyKind::Int(IntTy::I32) => ExpressionType::I32,
+            TyKind::Int(IntTy::I64) => ExpressionType::I64,
+            TyKind::Int(IntTy::I128) => ExpressionType::I128,
+            TyKind::Uint(UintTy::Usize) => ExpressionType::Usize,
+            TyKind::Uint(UintTy::U8) => ExpressionType::U8,
+            TyKind::Uint(UintTy::U16) => ExpressionType::U16,
+            TyKind::Uint(UintTy::U32) => ExpressionType::U32,
+            TyKind::Uint(UintTy::U64) => ExpressionType::U64,
+            TyKind::Uint(UintTy::U128) => ExpressionType::U128,
+            TyKind::Float(FloatTy::F32) => ExpressionType::F32,
+            TyKind::Float(FloatTy::F64) => ExpressionType::F64,
             TyKind::Dynamic(..)
             | TyKind::Foreign(..)
             | TyKind::FnDef(..)

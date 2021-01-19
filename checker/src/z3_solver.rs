@@ -816,8 +816,7 @@ impl Z3Solver {
                 Expression::UninterpretedCall {
                     callee, arguments, ..
                 } => {
-                    let mut checks = Vec::new();
-                    checks.push(self.general_has_tag(&callee.expression, tag));
+                    let mut checks = vec![self.general_has_tag(&callee.expression, tag)];
                     for argument in arguments {
                         checks.push(self.general_has_tag(&argument.expression, tag));
                     }

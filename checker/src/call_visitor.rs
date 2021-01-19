@@ -5,11 +5,10 @@
 
 use log_derive::*;
 use mirai_annotations::*;
-use rustc_ast::ast;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, SubstsRef};
-use rustc_middle::ty::{AdtDef, Ty, TyCtxt, TyKind};
+use rustc_middle::ty::{AdtDef, Ty, TyCtxt, TyKind, UintTy};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
@@ -2834,7 +2833,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let tag_propagation_set_rustc_const;
                 match tag_substs_ref[0].unpack() {
                     GenericArgKind::Const(rustc_const)
-                        if *rustc_const.ty.kind() == TyKind::Uint(ast::UintTy::U128) =>
+                        if *rustc_const.ty.kind() == TyKind::Uint(UintTy::U128) =>
                     {
                         tag_propagation_set_rustc_const = rustc_const
                     }

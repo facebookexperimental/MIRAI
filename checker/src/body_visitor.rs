@@ -29,7 +29,7 @@ use rpds::HashTrieMap;
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::ty::{Ty, TyCtxt, TyKind};
+use rustc_middle::ty::{Ty, TyCtxt, TyKind, UintTy};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Formatter, Result};
@@ -93,7 +93,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .summary_cache
             .get_summary_key_for(def_id)
             .clone();
-        let mir = crate_visitor.tcx.optimized_mir(def_id);
+        let id = rustc_middle::ty::WithOptConstParam::unknown(def_id);
+        let def = rustc_middle::ty::InstanceDef::Item(id);
+        let mir = crate_visitor.tcx.instance_mir(def);
         let tcx = crate_visitor.tcx;
         BodyVisitor {
             cv: crate_visitor,
@@ -161,8 +163,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         function_constant_args: &[(Rc<Path>, Rc<AbstractValue>)],
         parameter_types: &[Ty<'tcx>],
     ) -> Summary {
-        if cfg!(DEBUG) {
-            let mut stdout = std::io::stdout();
+        if !cfg!(DEBUG) {
+            let mut stdout = std::io::sink();
             stdout.write_fmt(format_args!("{:?}", self.def_id)).unwrap();
             rustc_mir::util::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
             info!("{:?}", stdout.flush());
@@ -783,6 +785,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     #[logfn_inputs(TRACE)]
     fn promote_constants(&mut self) -> Environment {
         let mut environment = Environment::default();
+        if matches!(
+            self.tcx.def_kind(self.def_id),
+            rustc_hir::def::DefKind::Variant
+        ) {
+            return environment;
+        }
+        trace!("def_id {:?}", self.tcx.def_kind(self.def_id));
         let saved_mir = self.mir;
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
             self.mir = constant_mir;
@@ -2056,7 +2065,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 // The value is a string literal. See if the target will treat it as &[u8].
                 if let TyKind::Ref(_, ty, _) = root_rustc_type.kind() {
                     if let TyKind::Slice(elem_ty) = ty.kind() {
-                        if let TyKind::Uint(rustc_ast::ast::UintTy::U8) = elem_ty.kind() {
+                        if let TyKind::Uint(UintTy::U8) = elem_ty.kind() {
                             self.expand_aliased_string_literals_if_appropriate(
                                 &target_path,
                                 &value,
