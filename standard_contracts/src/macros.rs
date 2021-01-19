@@ -7,8 +7,8 @@ macro_rules! add_with_overflow {
     };
 }
 
-// No preconditions needed and no post conditions provided
-// Can be safely used as an uninterpreted function.
+// No preconditions needed and no post conditions provided.
+// No side-effects and can be safely used as an uninterpreted function.
 macro_rules! default_contract {
     ($n:ident) => {
         pub fn $n<T>() -> T {

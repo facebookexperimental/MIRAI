@@ -18,9 +18,7 @@ pub mod alloc {
     }
 
     pub mod fmt {
-        pub fn format() -> String {
-            result!()
-        }
+        default_contract!(format);
     }
 
     pub mod raw_vec {
@@ -420,196 +418,69 @@ pub mod core {
     pub mod core_arch {
         pub mod simd_llvm {
             //pub fn simd_select_bitmask
-            pub fn simd_eq<T, U>(x: T, y: T) -> U {
-                result!()
-            }
-            pub fn simd_ne<T, U>(x: T, y: T) -> U {
-                result!()
-            }
-            pub fn simd_lt<T, U>(x: T, y: T) -> U {
-                result!()
-            }
-            pub fn simd_le<T, U>(x: T, y: T) -> U {
-                result!()
-            }
-            pub fn simd_gt<T, U>(x: T, y: T) -> U {
-                result!()
-            }
-            pub fn simd_ge<T, U>(x: T, y: T) -> U {
-                result!()
-            }
-
-            pub fn simd_shuffle2<T, U>(x: T, y: T, idx: [u32; 2]) -> U {
-                result!()
-            }
-            fn simd_shuffle4<T, U>(x: T, y: T, idx: [u32; 4]) -> U {
-                result!()
-            }
-            fn simd_shuffle8<T, U>(x: T, y: T, idx: [u32; 8]) -> U {
-                result!()
-            }
-            fn simd_shuffle16<T, U>(x: T, y: T, idx: [u32; 16]) -> U {
-                result!()
-            }
-            fn simd_shuffle32<T, U>(x: T, y: T, idx: [u32; 32]) -> U {
-                result!()
-            }
-            fn simd_shuffle64<T, U>(x: T, y: T, idx: [u32; 64]) -> U {
-                result!()
-            }
-            fn simd_shuffle128<T, U>(x: T, y: T, idx: [u32; 128]) -> U {
-                result!()
-            }
-
-            fn simd_insert<T, U>(x: T, idx: u32, val: U) -> T {
-                result!()
-            }
-            fn simd_extract<T, U>(x: T, idx: u32) -> U {
-                result!()
-            }
+            default_contract!(simd_eq);
+            default_contract!(simd_ne);
+            default_contract!(simd_lt);
+            default_contract!(simd_le);
+            default_contract!(simd_gt);
+            default_contract!(simd_ge);
+            default_contract!(simd_shuffle2);
+            default_contract!(simd_shuffle4);
+            default_contract!(simd_shuffle8);
+            default_contract!(simd_shuffle16);
+            default_contract!(simd_shuffle32);
+            default_contract!(simd_shuffle64);
+            default_contract!(simd_shuffle128);
+            default_contract!(simd_insert);
+            default_contract!(simd_extract);
             //pub fn simd_select
-            fn simd_bitmask<T, U>(x: T) -> U {
-                result!()
-            }
-
-            fn simd_cast<T, U>(x: T) -> U {
-                result!()
-            }
-
-            fn simd_add<T>(x: T, y: T) -> T {
-                result!()
-            }
-            fn simd_sub<T>(x: T, y: T) -> T {
-                result!()
-            }
-            fn simd_mul<T>(x: T, y: T) -> T {
-                result!()
-            }
-            fn simd_div<T>(x: T, y: T) -> T {
-                result!()
-            }
-            fn simd_shl<T>(x: T, y: T) -> T {
-                result!()
-            }
-            fn simd_shr<T>(x: T, y: T) -> T {
-                result!()
-            }
-            fn simd_and<T>(x: T, y: T) -> T {
-                result!()
-            }
-            fn simd_or<T>(x: T, y: T) -> T {
-                result!()
-            }
-            fn simd_xor<T>(x: T, y: T) -> T {
-                result!()
-            }
-
-            fn simd_saturating_add<T>(x: T, y: T) -> T {
-                result!()
-            }
-            fn simd_saturating_sub<T>(x: T, y: T) -> T {
-                result!()
-            }
-
-            fn simd_gather<T, U, V>(values: T, pointers: U, mask: V) -> T {
-                result!()
-            }
-            fn simd_scatter<T, U, V>(values: T, pointers: U, mask: V) {
-                result!()
-            }
-
-            fn simd_reduce_add_unordered<T, U>(x: T) -> U {
-                result!()
-            }
-            fn simd_reduce_mul_unordered<T, U>(x: T) -> U {
-                result!()
-            }
-            fn simd_reduce_add_ordered<T, U>(x: T, acc: U) -> U {
-                result!()
-            }
-            fn simd_reduce_mul_ordered<T, U>(x: T, acc: U) -> U {
-                result!()
-            }
-            fn simd_reduce_min<T, U>(x: T) -> U {
-                result!()
-            }
-            fn simd_reduce_max<T, U>(x: T) -> U {
-                result!()
-            }
-            fn simd_reduce_min_nanless<T, U>(x: T) -> U {
-                result!()
-            }
-            fn simd_reduce_max_nanless<T, U>(x: T) -> U {
-                result!()
-            }
-            fn simd_reduce_and<T, U>(x: T) -> U {
-                result!()
-            }
-            fn simd_reduce_or<T, U>(x: T) -> U {
-                result!()
-            }
-            fn simd_reduce_xor<T, U>(x: T) -> U {
-                result!()
-            }
-            fn simd_reduce_all<T>(x: T) -> bool {
-                result!()
-            }
-            fn simd_reduce_any<T>(x: T) -> bool {
-                result!()
-            }
-
-            fn simd_select<M, T>(m: M, a: T, b: T) -> T {
-                result!()
-            }
-            fn simd_select_bitmask<M, T>(m: M, a: T, b: T) -> T {
-                result!()
-            }
-
-            fn simd_fmin<T>(a: T, b: T) -> T {
-                result!()
-            }
-            fn simd_fmax<T>(a: T, b: T) -> T {
-                result!()
-            }
-
-            fn simd_fsqrt<T>(a: T) -> T {
-                result!()
-            }
-            fn simd_fsin<T>(a: T) -> T {
-                result!()
-            }
-            fn simd_fcos<T>(a: T) -> T {
-                result!()
-            }
-            fn simd_fabs<T>(a: T) -> T {
-                result!()
-            }
-            fn simd_floor<T>(a: T) -> T {
-                result!()
-            }
-            fn simd_ceil<T>(a: T) -> T {
-                result!()
-            }
-            fn simd_fexp<T>(a: T) -> T {
-                result!()
-            }
-            fn simd_fexp2<T>(a: T) -> T {
-                result!()
-            }
-            fn simd_flog10<T>(a: T) -> T {
-                result!()
-            }
-            fn simd_flog2<T>(a: T) -> T {
-                result!()
-            }
-            fn simd_flog<T>(a: T) -> T {
-                result!()
-            }
+            default_contract!(simd_bitmask);
+            default_contract!(simd_cast);
+            default_contract!(simd_add);
+            default_contract!(simd_sub);
+            default_contract!(simd_mul);
+            default_contract!(simd_div);
+            default_contract!(simd_shl);
+            default_contract!(simd_shr);
+            default_contract!(simd_and);
+            default_contract!(simd_or);
+            default_contract!(simd_xor);
+            default_contract!(simd_saturating_add);
+            default_contract!(simd_saturating_sub);
+            default_contract!(simd_gather);
+            // fn simd_scatter<T, U, V>(values: T, pointers: U, mask: V) {
+            // }
+            default_contract!(simd_reduce_add_unordered);
+            default_contract!(simd_reduce_mul_unordered);
+            default_contract!(simd_reduce_add_ordered);
+            default_contract!(simd_reduce_mul_ordered);
+            default_contract!(simd_reduce_min);
+            default_contract!(simd_reduce_max);
+            default_contract!(simd_reduce_min_nanless);
+            default_contract!(simd_reduce_max_nanless);
+            default_contract!(simd_reduce_and);
+            default_contract!(simd_reduce_or);
+            default_contract!(simd_reduce_xor);
+            default_contract!(simd_reduce_all);
+            default_contract!(simd_reduce_any);
+            default_contract!(simd_select);
+            default_contract!(simd_select_bitmask);
+            default_contract!(simd_fmin);
+            default_contract!(simd_fmax);
+            default_contract!(simd_fsqrt);
+            default_contract!(simd_fsin);
+            default_contract!(simd_fcos);
+            default_contract!(simd_fabs);
+            default_contract!(simd_floor);
+            default_contract!(simd_ceil);
+            default_contract!(simd_fexp);
+            default_contract!(simd_fexp2);
+            default_contract!(simd_flog10);
+            default_contract!(simd_flog2);
+            default_contract!(simd_flog);
             //pub fn simd_fpowi
             //pub fn simd_fpow
-            fn simd_fma<T>(a: T, b: T, c: T) -> T {
-                result!()
-            }
+            default_contract!(simd_fma);
         }
 
         pub mod x86 {
@@ -635,200 +506,77 @@ pub mod core {
                 type u64x2 = [u64; 2];
                 type u64x4 = [u64; 4];
 
-                fn addsubpd256(a: __m256d, b: __m256d) -> __m256d {
-                    result!()
-                }
-                fn addsubps256(a: __m256, b: __m256) -> __m256 {
-                    result!()
-                }
-                fn roundpd256(a: __m256d, b: i32) -> __m256d {
-                    result!()
-                }
-                fn roundps256(a: __m256, b: i32) -> __m256 {
-                    result!()
-                }
-                fn sqrtps256(a: __m256) -> __m256 {
-                    result!()
-                }
-                fn vblendvpd(a: __m256d, b: __m256d, c: __m256d) -> __m256d {
-                    result!()
-                }
-                fn vblendvps(a: __m256, b: __m256, c: __m256) -> __m256 {
-                    result!()
-                }
-                fn vdpps(a: __m256, b: __m256, imm8: i32) -> __m256 {
-                    result!()
-                }
-                fn vhaddpd(a: __m256d, b: __m256d) -> __m256d {
-                    result!()
-                }
-                fn vhaddps(a: __m256, b: __m256) -> __m256 {
-                    result!()
-                }
-                fn vhsubpd(a: __m256d, b: __m256d) -> __m256d {
-                    result!()
-                }
-                fn vhsubps(a: __m256, b: __m256) -> __m256 {
-                    result!()
-                }
-                fn vcmppd(a: __m128d, b: __m128d, imm8: i8) -> __m128d {
-                    result!()
-                }
-                fn vcmppd256(a: __m256d, b: __m256d, imm8: u8) -> __m256d {
-                    result!()
-                }
-                fn vcmpps(a: __m128, b: __m128, imm8: i8) -> __m128 {
-                    result!()
-                }
-                fn vcmpps256(a: __m256, b: __m256, imm8: u8) -> __m256 {
-                    result!()
-                }
-                fn vcmpsd(a: __m128d, b: __m128d, imm8: i8) -> __m128d {
-                    result!()
-                }
-                fn vcmpss(a: __m128, b: __m128, imm8: i8) -> __m128 {
-                    result!()
-                }
-                fn vcvtdq2ps(a: i32x8) -> __m256 {
-                    result!()
-                }
-                fn vcvtpd2ps(a: __m256d) -> __m128 {
-                    result!()
-                }
-                fn vcvtps2dq(a: __m256) -> i32x8 {
-                    result!()
-                }
-                fn vcvttpd2dq(a: __m256d) -> i32x4 {
-                    result!()
-                }
-                fn vcvtpd2dq(a: __m256d) -> i32x4 {
-                    result!()
-                }
-                fn vcvttps2dq(a: __m256) -> i32x8 {
-                    result!()
-                }
-                fn vzeroall() {}
-                fn vzeroupper() {}
-                fn vpermilps256(a: __m256, b: i32x8) -> __m256 {
-                    result!()
-                }
-                fn vpermilps(a: __m128, b: i32x4) -> __m128 {
-                    result!()
-                }
-                fn vpermilpd256(a: __m256d, b: i64x4) -> __m256d {
-                    result!()
-                }
-                fn vpermilpd(a: __m128d, b: i64x2) -> __m128d {
-                    result!()
-                }
-                fn vperm2f128ps256(a: __m256, b: __m256, imm8: i8) -> __m256 {
-                    result!()
-                }
-                fn vperm2f128pd256(a: __m256d, b: __m256d, imm8: i8) -> __m256d {
-                    result!()
-                }
-                fn vperm2f128si256(a: i32x8, b: i32x8, imm8: i8) -> i32x8 {
-                    result!()
-                }
-                fn vbroadcastf128ps256(a: &__m128) -> __m256 {
-                    result!()
-                }
-                fn vbroadcastf128pd256(a: &__m128d) -> __m256d {
-                    result!()
-                }
-                fn storeupd256(mem_addr: *mut f64, a: __m256d) {
-                    result!()
-                }
-                fn storeups256(mem_addr: *mut f32, a: __m256) {
-                    result!()
-                }
-                fn storeudq256(mem_addr: *mut i8, a: i8x32) {
-                    result!()
-                }
-                fn maskloadpd256(mem_addr: *const i8, mask: i64x4) -> __m256d {
-                    result!()
-                }
-                fn maskstorepd256(mem_addr: *mut i8, mask: i64x4, a: __m256d) {
-                    result!()
-                }
-                fn maskloadpd(mem_addr: *const i8, mask: i64x2) -> __m128d {
-                    result!()
-                }
-                fn maskstorepd(mem_addr: *mut i8, mask: i64x2, a: __m128d) {
-                    result!()
-                }
-                fn maskloadps256(mem_addr: *const i8, mask: i32x8) -> __m256 {
-                    result!()
-                }
-                fn maskstoreps256(mem_addr: *mut i8, mask: i32x8, a: __m256) {
-                    result!()
-                }
-                fn maskloadps(mem_addr: *const i8, mask: i32x4) -> __m128 {
-                    result!()
-                }
-                fn maskstoreps(mem_addr: *mut i8, mask: i32x4, a: __m128) {
-                    result!()
-                }
-                fn vlddqu(mem_addr: *const i8) -> i8x32 {
-                    result!()
-                }
-                fn vrcpps(a: __m256) -> __m256 {
-                    result!()
-                }
-                fn vrsqrtps(a: __m256) -> __m256 {
-                    result!()
-                }
-                fn ptestz256(a: i64x4, b: i64x4) -> i32 {
-                    result!()
-                }
-                fn ptestc256(a: i64x4, b: i64x4) -> i32 {
-                    result!()
-                }
-                fn ptestnzc256(a: i64x4, b: i64x4) -> i32 {
-                    result!()
-                }
-                fn vtestzpd256(a: __m256d, b: __m256d) -> i32 {
-                    result!()
-                }
-                fn vtestcpd256(a: __m256d, b: __m256d) -> i32 {
-                    result!()
-                }
-                fn vtestnzcpd256(a: __m256d, b: __m256d) -> i32 {
-                    result!()
-                }
-                fn vtestzpd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn vtestcpd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn vtestnzcpd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn vtestzps256(a: __m256, b: __m256) -> i32 {
-                    result!()
-                }
-                fn vtestcps256(a: __m256, b: __m256) -> i32 {
-                    result!()
-                }
-                fn vtestnzcps256(a: __m256, b: __m256) -> i32 {
-                    result!()
-                }
-                fn vtestzps(a: __m128, b: __m128) -> i32 {
-                    result!()
-                }
-                fn vtestcps(a: __m128, b: __m128) -> i32 {
-                    result!()
-                }
-                fn vtestnzcps(a: __m128, b: __m128) -> i32 {
-                    result!()
-                }
-                fn movmskpd256(a: __m256d) -> i32 {
-                    result!()
-                }
-                fn movmskps256(a: __m256) -> i32 {
-                    result!()
-                }
+                default_contract!(addsubpd256);
+                default_contract!(addsubps256);
+                default_contract!(roundpd256);
+                default_contract!(roundps256);
+                default_contract!(sqrtps256);
+                default_contract!(vblendvpd);
+                default_contract!(vblendvps);
+                default_contract!(vdpps);
+                default_contract!(vhaddpd);
+                default_contract!(vhaddps);
+                default_contract!(vhsubpd);
+                default_contract!(vhsubps);
+                default_contract!(vcmppd);
+                default_contract!(vcmppd256);
+                default_contract!(vcmpps);
+                default_contract!(vcmpps256);
+                default_contract!(vcmpsd);
+                default_contract!(vcmpss);
+                default_contract!(vcvtdq2ps);
+                default_contract!(vcvtpd2ps);
+                default_contract!(vcvtps2dq);
+                default_contract!(vcvttpd2dq);
+                default_contract!(vcvtpd2dq);
+                default_contract!(vcvttps2dq);
+                // fn vzeroall() {}
+                // fn vzeroupper() {}
+                default_contract!(vpermilps256);
+                default_contract!(vpermilps);
+                default_contract!(vpermilpd256);
+                default_contract!(vpermilpd);
+                default_contract!(vperm2f128ps256);
+                default_contract!(vperm2f128pd256);
+                default_contract!(vperm2f128si256);
+                default_contract!(vbroadcastf128ps256);
+                default_contract!(vbroadcastf128pd256);
+                // fn storeupd256(mem_addr: *mut f64, a: __m256d) {
+                // }
+                // fn storeups256(mem_addr: *mut f32, a: __m256) {
+                // }
+                // fn storeudq256(mem_addr: *mut i8, a: i8x32) {
+                // }
+                default_contract!(maskloadpd256);
+                default_contract!(maskstorepd256);
+                default_contract!(maskloadpd);
+                default_contract!(maskstorepd);
+                default_contract!(maskloadps256);
+                default_contract!(maskstoreps256);
+                default_contract!(maskloadps);
+                // fn maskstoreps(mem_addr: *mut i8, mask: i32x4, a: __m128) {
+                //     result!()
+                // }
+                default_contract!(vlddqu);
+                default_contract!(vrcpps);
+                default_contract!(vrsqrtps);
+                default_contract!(ptestz256);
+                default_contract!(ptestc256);
+                default_contract!(ptestnzc256);
+                default_contract!(vtestzpd256);
+                default_contract!(vtestcpd256);
+                default_contract!(vtestnzcpd256);
+                default_contract!(vtestzpd);
+                default_contract!(vtestcpd);
+                default_contract!(vtestnzcpd);
+                default_contract!(vtestzps256);
+                default_contract!(vtestcps256);
+                default_contract!(vtestnzcps256);
+                default_contract!(vtestzps);
+                default_contract!(vtestcps);
+                default_contract!(vtestnzcps);
+                default_contract!(movmskpd256);
+                default_contract!(movmskps256);
             }
             pub mod avx2 {
                 use core::arch::x86_64::__m128;
@@ -852,393 +600,111 @@ pub mod core {
                 type u64x2 = [u64; 2];
                 type u64x4 = [u64; 4];
 
-                fn pabsb(a: i8x32) -> u8x32 {
-                    result!()
-                }
-                fn pabsw(a: i16x16) -> u16x16 {
-                    result!()
-                }
-                fn pabsd(a: i32x8) -> u32x8 {
-                    result!()
-                }
-                fn pavgb(a: u8x32, b: u8x32) -> u8x32 {
-                    result!()
-                }
-                fn pavgw(a: u16x16, b: u16x16) -> u16x16 {
-                    result!()
-                }
-                fn pblendvb(a: i8x32, b: i8x32, mask: i8x32) -> i8x32 {
-                    result!()
-                }
-                fn phaddw(a: i16x16, b: i16x16) -> i16x16 {
-                    result!()
-                }
-                fn phaddd(a: i32x8, b: i32x8) -> i32x8 {
-                    result!()
-                }
-                fn phaddsw(a: i16x16, b: i16x16) -> i16x16 {
-                    result!()
-                }
-                fn phsubw(a: i16x16, b: i16x16) -> i16x16 {
-                    result!()
-                }
-                fn phsubd(a: i32x8, b: i32x8) -> i32x8 {
-                    result!()
-                }
-                fn phsubsw(a: i16x16, b: i16x16) -> i16x16 {
-                    result!()
-                }
-                fn pmaddwd(a: i16x16, b: i16x16) -> i32x8 {
-                    result!()
-                }
-                fn pmaddubsw(a: u8x32, b: u8x32) -> i16x16 {
-                    result!()
-                }
-                fn maskloadd(mem_addr: *const i8, mask: i32x4) -> i32x4 {
-                    result!()
-                }
-                fn maskloadd256(mem_addr: *const i8, mask: i32x8) -> i32x8 {
-                    result!()
-                }
-                fn maskloadq(mem_addr: *const i8, mask: i64x2) -> i64x2 {
-                    result!()
-                }
-                fn maskloadq256(mem_addr: *const i8, mask: i64x4) -> i64x4 {
-                    result!()
-                }
-                fn maskstored(mem_addr: *mut i8, mask: i32x4, a: i32x4) {
-                    result!()
-                }
-                fn maskstored256(mem_addr: *mut i8, mask: i32x8, a: i32x8) {
-                    result!()
-                }
-                fn maskstoreq(mem_addr: *mut i8, mask: i64x2, a: i64x2) {
-                    result!()
-                }
-                fn maskstoreq256(mem_addr: *mut i8, mask: i64x4, a: i64x4) {
-                    result!()
-                }
-                fn pmaxsw(a: i16x16, b: i16x16) -> i16x16 {
-                    result!()
-                }
-                fn pmaxsd(a: i32x8, b: i32x8) -> i32x8 {
-                    result!()
-                }
-                fn pmaxsb(a: i8x32, b: i8x32) -> i8x32 {
-                    result!()
-                }
-                fn pmaxuw(a: u16x16, b: u16x16) -> u16x16 {
-                    result!()
-                }
-                fn pmaxud(a: u32x8, b: u32x8) -> u32x8 {
-                    result!()
-                }
-                fn pmaxub(a: u8x32, b: u8x32) -> u8x32 {
-                    result!()
-                }
-                fn pminsw(a: i16x16, b: i16x16) -> i16x16 {
-                    result!()
-                }
-                fn pminsd(a: i32x8, b: i32x8) -> i32x8 {
-                    result!()
-                }
-                fn pminsb(a: i8x32, b: i8x32) -> i8x32 {
-                    result!()
-                }
-                fn pminuw(a: u16x16, b: u16x16) -> u16x16 {
-                    result!()
-                }
-                fn pminud(a: u32x8, b: u32x8) -> u32x8 {
-                    result!()
-                }
-                fn pminub(a: u8x32, b: u8x32) -> u8x32 {
-                    result!()
-                }
-                fn pmovmskb(a: i8x32) -> i32 {
-                    result!()
-                }
-                fn mpsadbw(a: u8x32, b: u8x32, imm8: i32) -> u16x16 {
-                    result!()
-                }
-                fn pmulhuw(a: u16x16, b: u16x16) -> u16x16 {
-                    result!()
-                }
-                fn pmulhw(a: i16x16, b: i16x16) -> i16x16 {
-                    result!()
-                }
-                fn pmuldq(a: i32x8, b: i32x8) -> i64x4 {
-                    result!()
-                }
-                fn pmuludq(a: u32x8, b: u32x8) -> u64x4 {
-                    result!()
-                }
-                fn pmulhrsw(a: i16x16, b: i16x16) -> i16x16 {
-                    result!()
-                }
-                fn packsswb(a: i16x16, b: i16x16) -> i8x32 {
-                    result!()
-                }
-                fn packssdw(a: i32x8, b: i32x8) -> i16x16 {
-                    result!()
-                }
-                fn packuswb(a: i16x16, b: i16x16) -> u8x32 {
-                    result!()
-                }
-                fn packusdw(a: i32x8, b: i32x8) -> u16x16 {
-                    result!()
-                }
-                fn psadbw(a: u8x32, b: u8x32) -> u64x4 {
-                    result!()
-                }
-                fn psignb(a: i8x32, b: i8x32) -> i8x32 {
-                    result!()
-                }
-                fn psignw(a: i16x16, b: i16x16) -> i16x16 {
-                    result!()
-                }
-                fn psignd(a: i32x8, b: i32x8) -> i32x8 {
-                    result!()
-                }
-                fn psllw(a: i16x16, count: i16x8) -> i16x16 {
-                    result!()
-                }
-                fn pslld(a: i32x8, count: i32x4) -> i32x8 {
-                    result!()
-                }
-                fn psllq(a: i64x4, count: i64x2) -> i64x4 {
-                    result!()
-                }
-                fn pslliw(a: i16x16, imm8: i32) -> i16x16 {
-                    result!()
-                }
-                fn psllid(a: i32x8, imm8: i32) -> i32x8 {
-                    result!()
-                }
-                fn pslliq(a: i64x4, imm8: i32) -> i64x4 {
-                    result!()
-                }
-                fn psllvd(a: i32x4, count: i32x4) -> i32x4 {
-                    result!()
-                }
-                fn psllvd256(a: i32x8, count: i32x8) -> i32x8 {
-                    result!()
-                }
-                fn psllvq(a: i64x2, count: i64x2) -> i64x2 {
-                    result!()
-                }
-                fn psllvq256(a: i64x4, count: i64x4) -> i64x4 {
-                    result!()
-                }
-                fn psraw(a: i16x16, count: i16x8) -> i16x16 {
-                    result!()
-                }
-                fn psrad(a: i32x8, count: i32x4) -> i32x8 {
-                    result!()
-                }
-                fn psraiw(a: i16x16, imm8: i32) -> i16x16 {
-                    result!()
-                }
-                fn psraid(a: i32x8, imm8: i32) -> i32x8 {
-                    result!()
-                }
-                fn psravd(a: i32x4, count: i32x4) -> i32x4 {
-                    result!()
-                }
-                fn psravd256(a: i32x8, count: i32x8) -> i32x8 {
-                    result!()
-                }
-                fn psrlw(a: i16x16, count: i16x8) -> i16x16 {
-                    result!()
-                }
-                fn psrld(a: i32x8, count: i32x4) -> i32x8 {
-                    result!()
-                }
-                fn psrlq(a: i64x4, count: i64x2) -> i64x4 {
-                    result!()
-                }
-                fn psrliw(a: i16x16, imm8: i32) -> i16x16 {
-                    result!()
-                }
-                fn psrlid(a: i32x8, imm8: i32) -> i32x8 {
-                    result!()
-                }
-                fn psrliq(a: i64x4, imm8: i32) -> i64x4 {
-                    result!()
-                }
-                fn psrlvd(a: i32x4, count: i32x4) -> i32x4 {
-                    result!()
-                }
-                fn psrlvd256(a: i32x8, count: i32x8) -> i32x8 {
-                    result!()
-                }
-                fn psrlvq(a: i64x2, count: i64x2) -> i64x2 {
-                    result!()
-                }
-                fn psrlvq256(a: i64x4, count: i64x4) -> i64x4 {
-                    result!()
-                }
-                fn pshufb(a: u8x32, b: u8x32) -> u8x32 {
-                    result!()
-                }
-                fn permd(a: u32x8, b: u32x8) -> u32x8 {
-                    result!()
-                }
-                fn permps(a: __m256, b: i32x8) -> __m256 {
-                    result!()
-                }
-                fn vperm2i128(a: i64x4, b: i64x4, imm8: i8) -> i64x4 {
-                    result!()
-                }
-                fn pgatherdd(
-                    src: i32x4,
-                    slice: *const i8,
-                    offsets: i32x4,
-                    mask: i32x4,
-                    scale: i8,
-                ) -> i32x4 {
-                    result!()
-                }
-                fn vpgatherdd(
-                    src: i32x8,
-                    slice: *const i8,
-                    offsets: i32x8,
-                    mask: i32x8,
-                    scale: i8,
-                ) -> i32x8 {
-                    result!()
-                }
-                fn pgatherdq(
-                    src: i64x2,
-                    slice: *const i8,
-                    offsets: i32x4,
-                    mask: i64x2,
-                    scale: i8,
-                ) -> i64x2 {
-                    result!()
-                }
-                fn vpgatherdq(
-                    src: i64x4,
-                    slice: *const i8,
-                    offsets: i32x4,
-                    mask: i64x4,
-                    scale: i8,
-                ) -> i64x4 {
-                    result!()
-                }
-                fn pgatherqd(
-                    src: i32x4,
-                    slice: *const i8,
-                    offsets: i64x2,
-                    mask: i32x4,
-                    scale: i8,
-                ) -> i32x4 {
-                    result!()
-                }
-                fn vpgatherqd(
-                    src: i32x4,
-                    slice: *const i8,
-                    offsets: i64x4,
-                    mask: i32x4,
-                    scale: i8,
-                ) -> i32x4 {
-                    result!()
-                }
-                fn pgatherqq(
-                    src: i64x2,
-                    slice: *const i8,
-                    offsets: i64x2,
-                    mask: i64x2,
-                    scale: i8,
-                ) -> i64x2 {
-                    result!()
-                }
-                fn vpgatherqq(
-                    src: i64x4,
-                    slice: *const i8,
-                    offsets: i64x4,
-                    mask: i64x4,
-                    scale: i8,
-                ) -> i64x4 {
-                    result!()
-                }
-                fn pgatherdpd(
-                    src: __m128d,
-                    slice: *const i8,
-                    offsets: i32x4,
-                    mask: __m128d,
-                    scale: i8,
-                ) -> __m128d {
-                    result!()
-                }
-                fn vpgatherdpd(
-                    src: __m256d,
-                    slice: *const i8,
-                    offsets: i32x4,
-                    mask: __m256d,
-                    scale: i8,
-                ) -> __m256d {
-                    result!()
-                }
-                fn pgatherqpd(
-                    src: __m128d,
-                    slice: *const i8,
-                    offsets: i64x2,
-                    mask: __m128d,
-                    scale: i8,
-                ) -> __m128d {
-                    result!()
-                }
-                fn vpgatherqpd(
-                    src: __m256d,
-                    slice: *const i8,
-                    offsets: i64x4,
-                    mask: __m256d,
-                    scale: i8,
-                ) -> __m256d {
-                    result!()
-                }
-                fn pgatherdps(
-                    src: __m128,
-                    slice: *const i8,
-                    offsets: i32x4,
-                    mask: __m128,
-                    scale: i8,
-                ) -> __m128 {
-                    result!()
-                }
-                fn vpgatherdps(
-                    src: __m256,
-                    slice: *const i8,
-                    offsets: i32x8,
-                    mask: __m256,
-                    scale: i8,
-                ) -> __m256 {
-                    result!()
-                }
-                fn pgatherqps(
-                    src: __m128,
-                    slice: *const i8,
-                    offsets: i64x2,
-                    mask: __m128,
-                    scale: i8,
-                ) -> __m128 {
-                    result!()
-                }
-                fn vpgatherqps(
-                    src: __m128,
-                    slice: *const i8,
-                    offsets: i64x4,
-                    mask: __m128,
-                    scale: i8,
-                ) -> __m128 {
-                    result!()
-                }
-                fn vpslldq(a: i64x4, b: i32) -> i64x4 {
-                    result!()
-                }
-                fn vpsrldq(a: i64x4, b: i32) -> i64x4 {
-                    result!()
-                }
+                default_contract!(pabsb);
+                default_contract!(pabsw);
+                default_contract!(pabsd);
+                default_contract!(pavgb);
+                default_contract!(pavgw);
+                default_contract!(pblendvb);
+                default_contract!(phaddw);
+                default_contract!(phaddd);
+                default_contract!(phaddsw);
+                default_contract!(phsubw);
+                default_contract!(phsubd);
+                default_contract!(phsubsw);
+                default_contract!(pmaddwd);
+                default_contract!(pmaddubsw);
+                default_contract!(maskloadd);
+                default_contract!(maskloadd256);
+                default_contract!(maskloadq);
+                default_contract!(maskloadq256);
+                // fn maskstored(mem_addr: *mut i8, mask: i32x4, a: i32x4) {
+                //     result!()
+                // }
+                // fn maskstored256(mem_addr: *mut i8, mask: i32x8, a: i32x8) {
+                //     result!()
+                // }
+                // fn maskstoreq(mem_addr: *mut i8, mask: i64x2, a: i64x2) {
+                //     result!()
+                // }
+                // fn maskstoreq256(mem_addr: *mut i8, mask: i64x4, a: i64x4) {
+                //     result!()
+                // }
+                default_contract!(pmaxsw);
+                default_contract!(pmaxsd);
+                default_contract!(pmaxsb);
+                default_contract!(pmaxuw);
+                default_contract!(pmaxud);
+                default_contract!(pmaxub);
+                default_contract!(pminsw);
+                default_contract!(pminsd);
+                default_contract!(pminsb);
+                default_contract!(pminuw);
+                default_contract!(pminud);
+                default_contract!(pminub);
+                default_contract!(pmovmskb);
+                default_contract!(mpsadbw);
+                default_contract!(pmulhuw);
+                default_contract!(pmulhw);
+                default_contract!(pmuldq);
+                default_contract!(pmuludq);
+                default_contract!(pmulhrsw);
+                default_contract!(packsswb);
+                default_contract!(packssdw);
+                default_contract!(packuswb);
+                default_contract!(packusdw);
+                default_contract!(psadbw);
+                default_contract!(psignb);
+                default_contract!(psignw);
+                default_contract!(psignd);
+                default_contract!(psllw);
+                default_contract!(pslld);
+                default_contract!(psllq);
+                default_contract!(pslliw);
+                default_contract!(psllid);
+                default_contract!(pslliq);
+                default_contract!(psllvd);
+                default_contract!(psllvd256);
+                default_contract!(psllvq);
+                default_contract!(psllvq256);
+                default_contract!(psraw);
+                default_contract!(psrad);
+                default_contract!(psraiw);
+                default_contract!(psraid);
+                default_contract!(psravd);
+                default_contract!(psravd256);
+                default_contract!(psrlw);
+                default_contract!(psrld);
+                default_contract!(psrlq);
+                default_contract!(psrliw);
+                default_contract!(psrlid);
+                default_contract!(psrliq);
+                default_contract!(psrlvd);
+                default_contract!(psrlvd256);
+                default_contract!(psrlvq);
+                default_contract!(psrlvq256);
+                default_contract!(pshufb);
+                default_contract!(permd);
+                default_contract!(permps);
+                default_contract!(vperm2i128);
+                default_contract!(pgatherdd);
+                default_contract!(vpgatherdd);
+                default_contract!(pgatherdq);
+                default_contract!(vpgatherdq);
+                default_contract!(pgatherqd);
+                default_contract!(vpgatherqd);
+                default_contract!(pgatherqq);
+                default_contract!(vpgatherqq);
+                default_contract!(pgatherdpd);
+                default_contract!(vpgatherdpd);
+                default_contract!(pgatherqpd);
+                default_contract!(vpgatherqpd);
+                default_contract!(pgatherdps);
+                default_contract!(vpgatherdps);
+                default_contract!(pgatherqps);
+                default_contract!(vpgatherqps);
+                default_contract!(vpslldq);
+                default_contract!(vpsrldq);
             }
             pub mod sse2 {
                 use core::arch::x86_64::__m128;
@@ -1264,207 +730,81 @@ pub mod core {
                 type u64x4 = [u64; 4];
 
                 fn pause() {}
-                fn clflush(p: *const u8) {}
+                // fn clflush(p: *const u8) {}
                 fn lfence() {}
                 fn mfence() {}
-                fn pavgb(a: u8x16, b: u8x16) -> u8x16 {
-                    result!()
-                }
-                fn pavgw(a: u16x8, b: u16x8) -> u16x8 {
-                    result!()
-                }
-                fn pmaddwd(a: i16x8, b: i16x8) -> i32x4 {
-                    result!()
-                }
-                fn pmaxsw(a: i16x8, b: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn pmaxub(a: u8x16, b: u8x16) -> u8x16 {
-                    result!()
-                }
-                fn pminsw(a: i16x8, b: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn pminub(a: u8x16, b: u8x16) -> u8x16 {
-                    result!()
-                }
-                fn pmulhw(a: i16x8, b: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn pmulhuw(a: u16x8, b: u16x8) -> u16x8 {
-                    result!()
-                }
-                fn pmuludq(a: u32x4, b: u32x4) -> u64x2 {
-                    result!()
-                }
-                fn psadbw(a: u8x16, b: u8x16) -> u64x2 {
-                    result!()
-                }
-                fn pslliw(a: i16x8, imm8: i32) -> i16x8 {
-                    result!()
-                }
-                fn psllw(a: i16x8, count: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn psllid(a: i32x4, imm8: i32) -> i32x4 {
-                    result!()
-                }
-                fn pslld(a: i32x4, count: i32x4) -> i32x4 {
-                    result!()
-                }
-                fn pslliq(a: i64x2, imm8: i32) -> i64x2 {
-                    result!()
-                }
-                fn psllq(a: i64x2, count: i64x2) -> i64x2 {
-                    result!()
-                }
-                fn psraiw(a: i16x8, imm8: i32) -> i16x8 {
-                    result!()
-                }
-                fn psraw(a: i16x8, count: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn psraid(a: i32x4, imm8: i32) -> i32x4 {
-                    result!()
-                }
-                fn psrad(a: i32x4, count: i32x4) -> i32x4 {
-                    result!()
-                }
-                fn psrliw(a: i16x8, imm8: i32) -> i16x8 {
-                    result!()
-                }
-                fn psrlw(a: i16x8, count: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn psrlid(a: i32x4, imm8: i32) -> i32x4 {
-                    result!()
-                }
-                fn psrld(a: i32x4, count: i32x4) -> i32x4 {
-                    result!()
-                }
-                fn psrliq(a: i64x2, imm8: i32) -> i64x2 {
-                    result!()
-                }
-                fn psrlq(a: i64x2, count: i64x2) -> i64x2 {
-                    result!()
-                }
-                fn cvtdq2ps(a: i32x4) -> __m128 {
-                    result!()
-                }
-                fn cvtps2dq(a: __m128) -> i32x4 {
-                    result!()
-                }
-                fn maskmovdqu(a: i8x16, mask: i8x16, mem_addr: *mut i8) {
-                    result!()
-                }
-                fn packsswb(a: i16x8, b: i16x8) -> i8x16 {
-                    result!()
-                }
-                fn packssdw(a: i32x4, b: i32x4) -> i16x8 {
-                    result!()
-                }
-                fn packuswb(a: i16x8, b: i16x8) -> u8x16 {
-                    result!()
-                }
-                fn pmovmskb(a: i8x16) -> i32 {
-                    result!()
-                }
-                fn maxsd(a: __m128d, b: __m128d) -> __m128d {
-                    result!()
-                }
-                fn maxpd(a: __m128d, b: __m128d) -> __m128d {
-                    result!()
-                }
-                fn minsd(a: __m128d, b: __m128d) -> __m128d {
-                    result!()
-                }
-                fn minpd(a: __m128d, b: __m128d) -> __m128d {
-                    result!()
-                }
-                fn sqrtsd(a: __m128d) -> __m128d {
-                    result!()
-                }
-                fn sqrtpd(a: __m128d) -> __m128d {
-                    result!()
-                }
-                fn cmpsd(a: __m128d, b: __m128d, imm8: i8) -> __m128d {
-                    result!()
-                }
-                fn cmppd(a: __m128d, b: __m128d, imm8: i8) -> __m128d {
-                    result!()
-                }
-                fn comieqsd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn comiltsd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn comilesd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn comigtsd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn comigesd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn comineqsd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn ucomieqsd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn ucomiltsd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn ucomilesd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn ucomigtsd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn ucomigesd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn ucomineqsd(a: __m128d, b: __m128d) -> i32 {
-                    result!()
-                }
-                fn movmskpd(a: __m128d) -> i32 {
-                    result!()
-                }
-                fn cvtpd2ps(a: __m128d) -> __m128 {
-                    result!()
-                }
-                fn cvtps2pd(a: __m128) -> __m128d {
-                    result!()
-                }
-                fn cvtpd2dq(a: __m128d) -> i32x4 {
-                    result!()
-                }
-                fn cvtsd2si(a: __m128d) -> i32 {
-                    result!()
-                }
-                fn cvtsd2ss(a: __m128, b: __m128d) -> __m128 {
-                    result!()
-                }
-                fn cvtss2sd(a: __m128d, b: __m128) -> __m128d {
-                    result!()
-                }
-                fn cvttpd2dq(a: __m128d) -> i32x4 {
-                    result!()
-                }
-                fn cvttsd2si(a: __m128d) -> i32 {
-                    result!()
-                }
-                fn cvttps2dq(a: __m128) -> i32x4 {
-                    result!()
-                }
-                fn storeudq(mem_addr: *mut i8, a: __m128i) {
-                    result!()
-                }
-                fn storeupd(mem_addr: *mut i8, a: __m128d) {
-                    result!()
-                }
+                default_contract!(pavgb);
+                default_contract!(pavgw);
+                default_contract!(pmaddwd);
+                default_contract!(pmaxsw);
+                default_contract!(pmaxub);
+                default_contract!(pminsw);
+                default_contract!(pminub);
+                default_contract!(pmulhw);
+                default_contract!(pmulhuw);
+                default_contract!(pmuludq);
+                default_contract!(psadbw);
+                default_contract!(pslliw);
+                default_contract!(psllw);
+                default_contract!(psllid);
+                default_contract!(pslld);
+                default_contract!(pslliq);
+                default_contract!(psllq);
+                default_contract!(psraiw);
+                default_contract!(psraw);
+                default_contract!(psraid);
+                default_contract!(psrad);
+                default_contract!(psrliw);
+                default_contract!(psrlw);
+                default_contract!(psrlid);
+                default_contract!(psrld);
+                default_contract!(psrliq);
+                default_contract!(psrlq);
+                default_contract!(cvtdq2ps);
+                default_contract!(cvtps2dq);
+                // fn maskmovdqu(a: i8x16, mask: i8x16, mem_addr: *mut i8) {
+                //     result!()
+                // }
+                default_contract!(packsswb);
+                default_contract!(packssdw);
+                default_contract!(packuswb);
+                default_contract!(pmovmskb);
+                default_contract!(maxsd);
+                default_contract!(maxpd);
+                default_contract!(minsd);
+                default_contract!(minpd);
+                default_contract!(sqrtsd);
+                default_contract!(sqrtpd);
+                default_contract!(cmpsd);
+                default_contract!(cmppd);
+                default_contract!(comieqsd);
+                default_contract!(comiltsd);
+                default_contract!(comilesd);
+                default_contract!(comigtsd);
+                default_contract!(comigesd);
+                default_contract!(comineqsd);
+                default_contract!(ucomieqsd);
+                default_contract!(ucomiltsd);
+                default_contract!(ucomilesd);
+                default_contract!(ucomigtsd);
+                default_contract!(ucomigesd);
+                default_contract!(ucomineqsd);
+                default_contract!(movmskpd);
+                default_contract!(cvtpd2ps);
+                default_contract!(cvtps2pd);
+                default_contract!(cvtpd2dq);
+                default_contract!(cvtsd2si);
+                default_contract!(cvtsd2ss);
+                default_contract!(cvtss2sd);
+                default_contract!(cvttpd2dq);
+                default_contract!(cvttsd2si);
+                default_contract!(cvttps2dq);
+                // fn storeudq(mem_addr: *mut i8, a: __m128i) {
+                //     result!()
+                // }
+                // fn storeupd(mem_addr: *mut i8, a: __m128d) {
+                //     result!()
+                // }
             }
             pub mod sse3 {
                 use core::arch::x86_64::__m128;
@@ -1489,27 +829,13 @@ pub mod core {
                 type u64x2 = [u64; 2];
                 type u64x4 = [u64; 4];
 
-                fn addsubps(a: __m128, b: __m128) -> __m128 {
-                    result!()
-                }
-                fn addsubpd(a: __m128d, b: __m128d) -> __m128d {
-                    result!()
-                }
-                fn haddpd(a: __m128d, b: __m128d) -> __m128d {
-                    result!()
-                }
-                fn haddps(a: __m128, b: __m128) -> __m128 {
-                    result!()
-                }
-                fn hsubpd(a: __m128d, b: __m128d) -> __m128d {
-                    result!()
-                }
-                fn hsubps(a: __m128, b: __m128) -> __m128 {
-                    result!()
-                }
-                fn lddqu(mem_addr: *const i8) -> i8x16 {
-                    result!()
-                }
+                default_contract!(addsubps);
+                default_contract!(addsubpd);
+                default_contract!(haddpd);
+                default_contract!(haddps);
+                default_contract!(hsubpd);
+                default_contract!(hsubps);
+                default_contract!(lddqu);
             }
 
             pub mod ssse3 {
@@ -1530,51 +856,21 @@ pub mod core {
                 type u64x2 = [u64; 2];
                 type u64x4 = [u64; 4];
 
-                fn pabsb128(a: i8x16) -> u8x16 {
-                    result!()
-                }
-                fn pabsw128(a: i16x8) -> u16x8 {
-                    result!()
-                }
-                fn pabsd128(a: i32x4) -> u32x4 {
-                    result!()
-                }
-                fn pshufb128(a: u8x16, b: u8x16) -> u8x16 {
-                    result!()
-                }
-                fn phaddw128(a: i16x8, b: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn phaddsw128(a: i16x8, b: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn phaddd128(a: i32x4, b: i32x4) -> i32x4 {
-                    result!()
-                }
-                fn phsubw128(a: i16x8, b: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn phsubsw128(a: i16x8, b: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn phsubd128(a: i32x4, b: i32x4) -> i32x4 {
-                    result!()
-                }
-                fn pmaddubsw128(a: u8x16, b: i8x16) -> i16x8 {
-                    result!()
-                }
-                fn pmulhrsw128(a: i16x8, b: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn psignb128(a: i8x16, b: i8x16) -> i8x16 {
-                    result!()
-                }
-                fn psignw128(a: i16x8, b: i16x8) -> i16x8 {
-                    result!()
-                }
-                fn psignd128(a: i32x4, b: i32x4) -> i32x4 {
-                    result!()
-                }
+                default_contract!(pabsb128);
+                default_contract!(pabsw128);
+                default_contract!(pabsd128);
+                default_contract!(pshufb128);
+                default_contract!(phaddw128);
+                default_contract!(phaddsw128);
+                default_contract!(phaddd128);
+                default_contract!(phsubw128);
+                default_contract!(phsubsw128);
+                default_contract!(phsubd128);
+                default_contract!(pmaddubsw128);
+                default_contract!(pmulhrsw128);
+                default_contract!(psignb128);
+                default_contract!(psignw128);
+                default_contract!(psignd128);
             }
         }
     }
@@ -1604,9 +900,9 @@ pub mod core {
 
         pub struct Void {}
 
-        pub fn write() -> Result {
-            result!()
-        }
+        // pub fn write() -> Result {
+        //     result!()
+        // }
     }
 
     pub mod hash {
@@ -2354,21 +1650,21 @@ pub mod core {
         pub fn prefetch_write_instruction<T>(data: *const T, locality: i32) {}
 
         pub mod _1 {
-            pub fn assert_inhabited() {}
-            pub fn assert_zero_valid() {}
-            pub fn assert_uninit_valid() {}
-            pub fn atomic_fence() {}
-            pub fn atomic_fence_acq() {}
-            pub fn atomic_fence_rel() {}
-            pub fn atomic_fence_acqrel() {}
-            pub fn atomic_singlethreadfence() {}
-            pub fn atomic_singlethreadfence_acq() {}
-            pub fn atomic_singlethreadfence_rel() {}
-            pub fn atomic_singlethreadfence_acqrel() {}
-            pub fn rustc_peek<T>(_: T) -> T {
-                result!()
+            default_contract!(assert_inhabited);
+            default_contract!(assert_zero_valid);
+            default_contract!(assert_uninit_valid);
+            default_contract!(atomic_fence);
+            default_contract!(atomic_fence_acq);
+            default_contract!(atomic_fence_rel);
+            default_contract!(atomic_fence_acqrel);
+            default_contract!(atomic_singlethreadfence);
+            default_contract!(atomic_singlethreadfence_acq);
+            default_contract!(atomic_singlethreadfence_rel);
+            default_contract!(atomic_singlethreadfence_acqrel);
+            default_contract!(rustc_peek);
+            pub fn abort() {
+                assume_unreachable!();
             }
-            pub fn abort() {}
             pub fn unreachable() {
                 assume_unreachable!();
             }
@@ -2381,7 +1677,7 @@ pub mod core {
             pub fn unlikely(b: bool) -> bool {
                 b
             }
-            pub fn breakpoint() {}
+            default_contract!(breakpoint);
             pub unsafe fn move_val_init<T>(dst: *mut T, src: T)
             where
                 T: Copy,
@@ -2391,31 +1687,23 @@ pub mod core {
             pub fn min_align_of<T>() -> usize {
                 4
             }
-            pub fn pref_align_of<T>() -> usize {
-                result!()
-            }
-            pub fn type_name<T: ?Sized>() -> &'static str {
-                result!()
-            }
-            pub fn type_id<T: ?Sized + 'static>() -> u64 {
-                result!()
-            }
+            // pub fn pref_align_of<T>() -> usize {
+            //     result!()
+            // }
+            // pub fn type_name<T: ?Sized>() -> &'static str {
+            //     result!()
+            // }
+            // pub fn type_id<T: ?Sized + 'static>() -> u64 {
+            //     result!()
+            // }
             pub fn panic_if_uninhabited<T>() {
                 // Compiler bootstrapping support. Nothing to do here when analyzing.
             }
-            pub fn caller_location<T>() -> T {
-                result!()
-            }
-            pub fn init<T>() -> T {
-                result!()
-            }
-            pub fn uninit<T>() -> T {
-                result!()
-            }
-            pub fn forget<T>(_: T) {}
-            pub fn needs_drop<T>() -> bool {
-                result!()
-            }
+            default_contract!(caller_location);
+            default_contract!(init);
+            default_contract!(uninit);
+            // pub fn forget<T>(_: T) {}
+            default_contract!(needs_drop);
             pub unsafe fn volatile_copy_nonoverlapping_memory<T>(
                 dst: *mut T,
                 src: *const T,
@@ -2423,16 +1711,22 @@ pub mod core {
             ) {
                 std::intrinsics::copy_nonoverlapping(src, dst, count);
             }
-            pub fn volatile_copy_memory<T>(dst: *mut T, src: *const T, count: usize) {}
-            pub fn volatile_set_memory<T>(dst: *mut T, val: u8, count: usize) {}
-            pub fn volatile_load<T>(src: *const T) -> T {
-                result!()
-            }
-            pub fn volatile_store<T>(dst: *mut T, val: T) {}
-            pub fn unaligned_volatile_load<T>(src: *const T) -> T {
-                result!()
-            }
-            pub fn unaligned_volatile_store<T>(dst: *mut T, val: T) {}
+            // pub fn volatile_copy_memory<T>(dst: *mut T, src: *const T, count: usize) {}
+            // pub fn volatile_set_memory<T>(dst: *mut T, val: T, count: usize) {
+            //     *dst = val;
+            // }
+            // pub fn volatile_load<T>(src: *const T) -> T {
+            //     *src
+            // }
+            // pub fn volatile_store<T>(dst: *mut T, val: T) {
+            //     *dst = val;
+            // }
+            // pub fn unaligned_volatile_load<T>(src: *const T) -> T {
+            //     *src
+            // }
+            // pub fn unaligned_volatile_store<T>(dst: *mut T, val: T) {
+            //     *dst = val
+            // }
 
             pub fn fmaf32(a: f32, b: f32, c: f32) -> f32 {
                 a * b + c
@@ -2673,15 +1967,19 @@ pub mod core {
             saturating_sub!(u128, saturating_sub__u128);
             saturating_sub!(usize, saturating_sub__usize);
 
-            pub fn r#try(f: fn(*mut u8), data: *mut u8, local_ptr: *mut u8) -> i32 {
-                result!()
+            // pub fn r#try(f: fn(*mut u8), data: *mut u8, local_ptr: *mut u8) -> i32 {
+            //     result!()
+            // }
+            // pub fn nontemporal_store<T>(ptr: *mut T, val: T) {
+            //     *ptr = val;
+            // }
+            // pub fn ptr_offset_from<T>(ptr: *const T, base: *const T) -> isize {
+            //     result!()
+            // }
+            pub fn miri_start_panic<T>(data: T) {
+                assume_unreachable!()
             }
-            pub fn nontemporal_store<T>(ptr: *mut T, val: T) {}
-            pub fn ptr_offset_from<T>(ptr: *const T, base: *const T) -> isize {
-                result!()
-            }
-            pub fn miri_start_panic<T>(data: T) {}
-            pub fn count_code_region(_index: u32) {}
+            default_contract!(count_code_region);
             pub fn ptr_guaranteed_eq<T>(ptr: *const T, other: *const T) -> bool {
                 ptr == other
             }
@@ -2690,13 +1988,9 @@ pub mod core {
             }
         }
 
-        pub fn is_aligned_and_not_null<T>(ptr: *const T) -> bool {
-            result!()
-        }
+        default_contract!(is_aligned_and_not_null);
 
-        pub fn is_nonoverlapping<T>(src: *const T, dst: *const T, count: usize) -> bool {
-            result!()
-        }
+        default_contract!(is_nonoverlapping);
     }
 
     pub mod isize {
@@ -2924,15 +2218,15 @@ pub mod core {
             pub fn is_power_of_two(n: usize) -> bool {
                 if cfg!(any(
                     target_arch = "x86",
-                    tagret_arch = "mips",
-                    tagret_arch = "powerpc",
-                    tagret_arch = "arm"
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
                 )) {
                     (n as u32).is_power_of_two()
                 } else if cfg!(any(
                     target_arch = "x86_64",
-                    tagret_arch = "powerpc64",
-                    tagret_arch = "aarch64"
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
                 )) {
                     (n as u64).is_power_of_two()
                 } else {
@@ -2942,9 +2236,7 @@ pub mod core {
         }
 
         pub mod implement_u8 {
-            pub fn from_str_radix(src: &str, radix: u32) -> Result<u8, std::num::ParseIntError> {
-                result!()
-            }
+            default_contract!(from_str_radix);
 
             pub fn max_value() -> u8 {
                 255
@@ -3207,15 +2499,11 @@ pub mod core {
 
     pub mod str {
         pub mod converts {
-            pub fn from_utf8(v: &[u8]) -> Result<&str, core::str::Utf8Error> {
-                result!()
-            }
+            default_contract!(from_utf8);
         }
 
         pub mod implement {
-            pub fn trim(_self: &str) -> &str {
-                result!()
-            }
+            default_contract!(trim);
         }
 
         pub mod implement_ref_str {
@@ -3228,19 +2516,13 @@ pub mod core {
             pub mod implement_core_str_pattern_StrSearcher {
                 use core::str::pattern::StrSearcher;
 
-                pub fn new<'a, 'b>(haystack: &'a str, needle: &'b str) -> StrSearcher<'a, 'b> {
-                    result!()
-                }
+                default_contract!(new);
 
-                pub fn next_match<T>() -> T {
-                    result!()
-                }
+                default_contract!(next_match);
             }
 
             pub mod implement_core_str_pattern_TwoWaySearcher {
-                pub fn next<T>() -> T {
-                    result!()
-                }
+                default_contract!(next);
             }
 
             pub mod Searcher {
@@ -3256,9 +2538,7 @@ pub mod core {
     pub mod unicode {
         pub mod unicode_data {
             pub mod white_space {
-                pub fn lookup(c: char) -> bool {
-                    result!()
-                }
+                default_contract!(lookup);
             }
         }
     }
@@ -3330,12 +2610,10 @@ pub mod crossbeam_epoch {
 pub mod hashbrown {
     pub mod raw {
         pub mod implement {
-            pub fn alloc_err<T>() -> T {
-                result!()
-            }
-            pub fn capacity_overflow<T>() -> T {
-                result!()
-            }
+            // pub fn alloc_err<T>() -> T {
+            //     result!()
+            // }
+            default_contract!(capacity_overflow);
         }
         pub mod implement_hashbrown_raw_RawTable_generic_par_T {
             default_contract!(rehash_in_place);
@@ -3391,7 +2669,7 @@ pub mod libc {
 }
 
 pub mod log {
-    pub fn __private_api_log() {}
+    default_contract!(__private_api_log);
 }
 
 pub mod parking_lot {
@@ -3823,9 +3101,7 @@ pub mod std {
     }
 
     pub mod env {
-        pub fn _var_os() -> Option<std::ffi::OsString> {
-            result!()
-        }
+        default_contract!(_var_os);
     }
 
     pub mod ffi {
@@ -3886,12 +3162,13 @@ pub mod std {
             use std::fs::File;
 
             pub fn read(_self: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
+                for i in 0..100000 {
+                    buf[i] = abstract_value!(0);
+                }
                 result!()
             }
 
-            pub fn seek(_self: &mut File, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-                result!()
-            }
+            default_contract!(seek);
         }
 
         pub mod implement_std_fs_OpenOptions {
@@ -3911,13 +3188,9 @@ pub mod std {
                 _self
             }
 
-            fn new() -> OpenOptions {
-                result!()
-            }
+            default_contract!(new);
 
-            fn _open(_self: &OpenOptions, path: &Path) -> Result<File> {
-                result!()
-            }
+            default_contract!(_open);
 
             pub fn read(_self: &OpenOptions, _: bool) -> &OpenOptions {
                 _self
@@ -3962,8 +3235,7 @@ pub mod std {
             }
         }
         pub mod stdio {
-            use crate::foreign_contracts::core::fmt;
-            pub fn _print(_args: fmt::Arguments<'_>) {}
+            default_contract!(_print);
         }
     }
 
@@ -4028,9 +3300,7 @@ pub mod std {
     pub mod std_detect {
         pub mod detect {
             pub mod cache {
-                pub fn test(bit: u32) -> bool {
-                    result!()
-                }
+                default_contract!(test);
             }
         }
     }
@@ -4038,13 +3308,11 @@ pub mod std {
     pub mod sys {
         pub mod unix {
             pub mod fast_thread_local {
-                pub fn register_dtor() {}
+                default_contract!(register_dtor);
             }
 
             pub mod memchr {
-                pub fn memchr(_needle: u8, _haystack: &[u8]) -> Option<usize> {
-                    result!()
-                }
+                default_contract!(memchr);
             }
 
             pub mod thread_local_dtor {
