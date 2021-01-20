@@ -403,6 +403,11 @@ pub mod core {
         }
 
         pub mod Into {
+            pub fn into__ref_str_alloc_boxed_Box_trait_std_error_Error_alloc_alloc_Global(
+                s: &str,
+            ) -> Box<&str> {
+                Box::new(s)
+            }
             pub fn into__usize_usize(t: usize) -> usize {
                 t
             }
@@ -1159,141 +1164,141 @@ pub mod core {
             *dst = src;
             result
         }
-        pub unsafe fn atomic_xadd<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::AddAssign,
-        {
-            let result = *dst;
-            *dst += src;
-            result
-        }
-        pub unsafe fn atomic_xadd_acq<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::AddAssign,
-        {
-            let result = *dst;
-            *dst += src;
-            result
-        }
-        pub unsafe fn atomic_xadd_rel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::AddAssign,
-        {
-            let result = *dst;
-            *dst += src;
-            result
-        }
-        pub unsafe fn atomic_xadd_acqrel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::AddAssign,
-        {
-            let result = *dst;
-            *dst += src;
-            result
-        }
-        pub unsafe fn atomic_xadd_relaxed<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::AddAssign,
-        {
-            let result = *dst;
-            *dst += src;
-            result
-        }
-        pub unsafe fn atomic_xsub<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::SubAssign,
-        {
-            let result = *dst;
-            *dst -= src;
-            result
-        }
-        pub unsafe fn atomic_xsub_acq<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::SubAssign,
-        {
-            let result = *dst;
-            *dst -= src;
-            result
-        }
-        pub unsafe fn atomic_xsub_rel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::SubAssign,
-        {
-            let result = *dst;
-            *dst -= src;
-            result
-        }
-        pub unsafe fn atomic_xsub_acqrel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::SubAssign,
-        {
-            let result = *dst;
-            *dst -= src;
-            result
-        }
-        pub unsafe fn atomic_xsub_relaxed<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::SubAssign,
-        {
-            let result = *dst;
-            *dst -= src;
-            result
-        }
-        pub unsafe fn atomic_and<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitAndAssign,
-        {
-            let result = *dst;
-            *dst &= src;
-            result
-        }
-        pub unsafe fn atomic_and_acq<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitAndAssign,
-        {
-            let result = *dst;
-            *dst &= src;
-            result
-        }
-        pub unsafe fn atomic_and_rel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitAndAssign,
-        {
-            let result = *dst;
-            *dst &= src;
-            result
-        }
-        pub unsafe fn atomic_and_acqrel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitAndAssign,
-        {
-            let result = *dst;
-            *dst &= src;
-            result
-        }
-        pub unsafe fn atomic_and_relaxed<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitAndAssign,
-        {
-            let result = *dst;
-            *dst &= src;
-            result
-        }
+        // pub unsafe fn atomic_xadd<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::AddAssign,
+        // {
+        //     let result = *dst;
+        //     *dst += src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xadd_acq<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::AddAssign,
+        // {
+        //     let result = *dst;
+        //     *dst += src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xadd_rel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::AddAssign,
+        // {
+        //     let result = *dst;
+        //     *dst += src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xadd_acqrel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::AddAssign,
+        // {
+        //     let result = *dst;
+        //     *dst += src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xadd_relaxed<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::AddAssign,
+        // {
+        //     let result = *dst;
+        //     *dst += src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xsub<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::SubAssign,
+        // {
+        //     let result = *dst;
+        //     *dst -= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xsub_acq<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::SubAssign,
+        // {
+        //     let result = *dst;
+        //     *dst -= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xsub_rel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::SubAssign,
+        // {
+        //     let result = *dst;
+        //     *dst -= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xsub_acqrel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::SubAssign,
+        // {
+        //     let result = *dst;
+        //     *dst -= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xsub_relaxed<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::SubAssign,
+        // {
+        //     let result = *dst;
+        //     *dst -= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_and<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitAndAssign,
+        // {
+        //     let result = *dst;
+        //     *dst &= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_and_acq<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitAndAssign,
+        // {
+        //     let result = *dst;
+        //     *dst &= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_and_rel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitAndAssign,
+        // {
+        //     let result = *dst;
+        //     *dst &= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_and_acqrel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitAndAssign,
+        // {
+        //     let result = *dst;
+        //     *dst &= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_and_relaxed<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitAndAssign,
+        // {
+        //     let result = *dst;
+        //     *dst &= src;
+        //     result
+        // }
         pub unsafe fn atomic_nand<T>(dst: *mut T, src: T) -> T
         where
             T: Copy,
@@ -1334,320 +1339,320 @@ pub mod core {
             *dst = abstract_value!(result);
             result
         }
-        pub unsafe fn atomic_or<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitOrAssign,
-        {
-            let result = *dst;
-            *dst |= src;
-            result
-        }
-        pub unsafe fn atomic_or_acq<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitOrAssign,
-        {
-            let result = *dst;
-            *dst |= src;
-            result
-        }
-        pub unsafe fn atomic_or_rel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitOrAssign,
-        {
-            let result = *dst;
-            *dst |= src;
-            result
-        }
-        pub unsafe fn atomic_or_acqrel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitOrAssign,
-        {
-            let result = *dst;
-            *dst |= src;
-            result
-        }
-        pub unsafe fn atomic_or_relaxed<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitOrAssign,
-        {
-            let result = *dst;
-            *dst |= src;
-            result
-        }
-        pub unsafe fn atomic_xor<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitXorAssign,
-        {
-            let result = *dst;
-            *dst ^= src;
-            result
-        }
-        pub unsafe fn atomic_xor_acq<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitXorAssign,
-        {
-            let result = *dst;
-            *dst ^= src;
-            result
-        }
-        pub unsafe fn atomic_xor_rel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitXorAssign,
-        {
-            let result = *dst;
-            *dst ^= src;
-            result
-        }
-        pub unsafe fn atomic_xor_acqrel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitXorAssign,
-        {
-            let result = *dst;
-            *dst ^= src;
-            result
-        }
-        pub unsafe fn atomic_xor_relaxed<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: std::ops::BitXorAssign,
-        {
-            let result = *dst;
-            *dst ^= src;
-            result
-        }
-        pub unsafe fn atomic_max<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst <= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_max_acq<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst <= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_max_rel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst <= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_max_acqrel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst <= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_max_relaxed<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst <= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_min<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst >= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_min_acq<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst >= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_min_rel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst >= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_min_acqrel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst >= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_min_relaxed<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst >= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_umin<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst >= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_umin_acq<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst >= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_umin_rel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst >= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_umin_acqrel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst >= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_umin_relaxed<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst >= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_umax<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst <= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_umax_acq<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst <= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_umax_rel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst <= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_umax_acqrel<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst <= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub unsafe fn atomic_umax_relaxed<T>(dst: *mut T, src: T) -> T
-        where
-            T: Copy,
-            T: PartialOrd,
-        {
-            if *dst <= src {
-                src
-            } else {
-                *dst
-            }
-        }
-        pub fn prefetch_read_data<T>(data: *const T, locality: i32) {}
-        pub fn prefetch_write_data<T>(data: *const T, locality: i32) {}
-        pub fn prefetch_read_instruction<T>(data: *const T, locality: i32) {}
-        pub fn prefetch_write_instruction<T>(data: *const T, locality: i32) {}
+        // pub unsafe fn atomic_or<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitOrAssign,
+        // {
+        //     let result = *dst;
+        //     *dst |= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_or_acq<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitOrAssign,
+        // {
+        //     let result = *dst;
+        //     *dst |= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_or_rel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitOrAssign,
+        // {
+        //     let result = *dst;
+        //     *dst |= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_or_acqrel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitOrAssign,
+        // {
+        //     let result = *dst;
+        //     *dst |= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_or_relaxed<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitOrAssign,
+        // {
+        //     let result = *dst;
+        //     *dst |= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xor<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitXorAssign,
+        // {
+        //     let result = *dst;
+        //     *dst ^= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xor_acq<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitXorAssign,
+        // {
+        //     let result = *dst;
+        //     *dst ^= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xor_rel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitXorAssign,
+        // {
+        //     let result = *dst;
+        //     *dst ^= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xor_acqrel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitXorAssign,
+        // {
+        //     let result = *dst;
+        //     *dst ^= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_xor_relaxed<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: std::ops::BitXorAssign,
+        // {
+        //     let result = *dst;
+        //     *dst ^= src;
+        //     result
+        // }
+        // pub unsafe fn atomic_max<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst <= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_max_acq<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst <= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_max_rel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst <= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_max_acqrel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst <= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_max_relaxed<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst <= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_min<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst >= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_min_acq<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst >= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_min_rel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst >= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_min_acqrel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst >= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_min_relaxed<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst >= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_umin<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst >= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_umin_acq<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst >= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_umin_rel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst >= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_umin_acqrel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst >= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_umin_relaxed<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst >= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_umax<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst <= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_umax_acq<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst <= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_umax_rel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst <= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_umax_acqrel<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst <= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub unsafe fn atomic_umax_relaxed<T>(dst: *mut T, src: T) -> T
+        // where
+        //     T: Copy,
+        //     T: PartialOrd,
+        // {
+        //     if *dst <= src {
+        //         src
+        //     } else {
+        //         *dst
+        //     }
+        // }
+        // pub fn prefetch_read_data<T>(data: *const T, locality: i32) {}
+        // pub fn prefetch_write_data<T>(data: *const T, locality: i32) {}
+        // pub fn prefetch_read_instruction<T>(data: *const T, locality: i32) {}
+        // pub fn prefetch_write_instruction<T>(data: *const T, locality: i32) {}
 
         pub mod _1 {
             default_contract!(assert_inhabited);
@@ -3162,7 +3167,7 @@ pub mod std {
             use std::fs::File;
 
             pub fn read(_self: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
-                for i in 0..100000 {
+                for i in 0..buf.len() {
                     buf[i] = abstract_value!(0);
                 }
                 result!()
@@ -3231,7 +3236,15 @@ pub mod std {
                         Repr::Simple(kind) => kind,
                     }
                 }
-                default_contract!(new);
+
+                pub fn _new(
+                    kind: std::io::ErrorKind,
+                    error: Box<dyn std::error::Error + Send + Sync>,
+                ) -> Error {
+                    Error {
+                        repr: Repr::Custom(Box::new(Custom { kind, error })),
+                    }
+                }
             }
         }
         pub mod stdio {
@@ -3270,12 +3283,12 @@ pub mod std {
                 _self
             }
 
-            pub fn to_owned(_self: &Path) -> std::path::PathBuf {
-                _self.to_path_buf()
-            }
-            pub fn clone_into(_self: &Path, target: &mut PathBuf) {
-                _self.as_os_str().clone_into(&mut target.inner);
-            }
+            // pub fn to_owned(_self: &Path) -> std::path::PathBuf {
+            //     _self.to_path_buf()
+            // }
+            // pub fn clone_into(_self: &Path, target: &mut PathBuf) {
+            //     _self.as_os_str().clone_into(&mut target.inner);
+            // }
         }
 
         pub mod implement_std_path_PathBuf {
@@ -3285,13 +3298,13 @@ pub mod std {
             pub struct PathBuf {
                 inner: OsString,
             }
-            fn default() -> std::path::PathBuf {
-                std::path::PathBuf::new()
-            }
+            // fn default() -> std::path::PathBuf {
+            //     std::path::PathBuf::new()
+            // }
             default_contract!(from_str);
-            pub fn _push(_self: &mut PathBuf, path: &Path) {
-                _self.inner.push(path);
-            }
+            // pub fn _push(_self: &mut PathBuf, path: &Path) {
+            //     _self.inner.push(path);
+            // }
         }
     }
 

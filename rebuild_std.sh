@@ -18,7 +18,7 @@ cargo install --debug --path ./checker
 
 # build the mirai-standard-contracts crate
 touch standard_contracts/src/lib.rs
-RUSTFLAGS="-Z force-overflow-checks=off" RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn MIRAI_START_FRESH=true MIRAI_SHARE_PERSISTENT_STORE=true cargo build --lib -p mirai-standard-contracts
+RUSTFLAGS="-Z force-overflow-checks=off" RUSTC_WRAPPER=mirai RUST_BACKTRACE=1 MIRAI_LOG=warn MIRAI_START_FRESH=true MIRAI_SHARE_PERSISTENT_STORE=true MIRAI_FLAGS="--diag=paranoid" cargo build --lib -p mirai-standard-contracts
 
 # collect the summary store into a tar file
 cd target/debug/deps
