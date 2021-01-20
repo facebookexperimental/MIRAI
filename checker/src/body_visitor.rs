@@ -1249,6 +1249,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         self.type_visitor
                             .get_path_rustc_type(&target_path, self.current_span),
                     );
+                    let previous_value = pre_environment.value_at(&tpath);
+                    if let Some(pval) = previous_value {
+                        if rvalue.eq(pval) {
+                            // This effect is a no-op
+                            continue;
+                        }
+                    }
                     self.copy_or_move_elements(tpath.clone(), source_path, target_type, false);
                     continue;
                 }
