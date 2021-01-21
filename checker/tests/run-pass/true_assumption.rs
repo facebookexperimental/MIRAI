@@ -17,7 +17,7 @@ pub fn test_assume() {
 pub fn test_unreachable_assume() {
     let i = 1;
     if i != 1 {
-        assume!(i == 1); //~ this is unreachable, mark it as such by using the unreachable! macro
+        assume!(i == 1); //~ this is unreachable, mark it as such by using the verify_unreachable! macro
     }
 }
 

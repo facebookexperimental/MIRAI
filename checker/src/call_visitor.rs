@@ -594,11 +594,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .check_condition_value_and_reachability(cond);
 
-                // If we never get here, rather call unreachable!()
+                // If we never get here, rather call verify_unreachable!()
                 if !entry_cond_as_bool.unwrap_or(true) {
                     let span = self.block_visitor.bv.current_span;
                     let message =
-                        "this is unreachable, mark it as such by using the unreachable! macro";
+                        "this is unreachable, mark it as such by using the verify_unreachable! macro";
                     let warning = self
                         .block_visitor
                         .bv

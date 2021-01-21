@@ -154,6 +154,7 @@ impl MiraiCallbacks {
         || file_name.contains("common/metrics/src")
         || file_name.contains("common/metrics-core/src")    
         || file_name.contains("common/trace/src")
+        || file_name.contains("diem-node/src")    
         || file_name.contains("execution/execution-correctness/src")    
         || file_name.contains("execution/executor/src")    
         || file_name.contains("json-rpc/src")    
@@ -167,6 +168,7 @@ impl MiraiCallbacks {
         || file_name.contains("language/move-model/src")    
         || file_name.contains("language/move-prover/src") // compiler panic
         || file_name.contains("language/move-prover/bytecode/src")    
+        || file_name.contains("language/move-prover/abigen/src")    
         || file_name.contains("language/move-prover/docgen/src")    
         || file_name.contains("language/move-prover/spec-lang/src") // compiler panic
         || file_name.contains("language/move-vm/test-utils/src")    
