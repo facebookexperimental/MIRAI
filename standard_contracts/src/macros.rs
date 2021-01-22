@@ -7,6 +7,16 @@ macro_rules! add_with_overflow {
     };
 }
 
+macro_rules! atomic_int {
+    ($n:ident, $t:ty, $op:tt) => {
+        pub unsafe fn $n(dst: *mut $t, src: $t) -> $t {
+            let result = *dst;
+            *dst $op src;
+            result
+        }
+    };
+}
+
 // No preconditions needed and no post conditions provided.
 // No side-effects and can be safely used as an uninterpreted function.
 macro_rules! default_contract {
