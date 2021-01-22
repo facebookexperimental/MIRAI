@@ -9,18 +9,17 @@
 use mirai_annotations::*;
 
 struct Guard<'a> {
-    j: i32,
     i: &'a mut i32,
 }
 
 impl Drop for Guard<'_> {
     fn drop(&mut self) {
-        *self.i = self.j;
+        *self.i = 100;
     }
 }
 
 fn call_guard(i: &mut i32) {
-    let _ = Guard { j: 100, i };
+    let _ = Guard { i };
 }
 
 pub fn t1() {
