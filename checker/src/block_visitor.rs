@@ -431,7 +431,50 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         target: mir::BasicBlock,
         unwind: Option<mir::BasicBlock>,
     ) {
-        //todo: probably should remove all paths that are rooted in place.
+        let ty = self
+            .bv
+            .type_visitor
+            .get_rustc_place_type(place, self.bv.current_span);
+        if let TyKind::Adt(def, substs) = ty.kind() {
+            if let Some(destructor) = self.bv.tcx.adt_destructor(def.did) {
+                let actual_argument_types = vec![ty];
+                let callee_generic_arguments = self
+                    .bv
+                    .type_visitor
+                    .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
+                let callee_generic_argument_map = self.bv.type_visitor.get_generic_arguments_map(
+                    def.did,
+                    callee_generic_arguments,
+                    &actual_argument_types,
+                );
+                let fun_ty = self.bv.tcx.type_of(destructor.did);
+                let func_const = self
+                    .visit_function_reference(destructor.did, fun_ty, Some(substs))
+                    .clone();
+                let func_to_call = Rc::new(func_const.clone().into());
+                let destination = Some((*place, target));
+                let path = self.visit_place(place);
+                let val = self.bv.lookup_path_and_refine_result(path.clone(), ty);
+                let mut call_visitor = CallVisitor::new(
+                    self,
+                    destructor.did,
+                    Some(callee_generic_arguments),
+                    callee_generic_argument_map.clone(),
+                    self.bv.current_environment.clone(),
+                    func_const,
+                );
+                call_visitor.actual_args = vec![(path, val)];
+                call_visitor.actual_argument_types = actual_argument_types;
+                call_visitor.cleanup = unwind;
+                call_visitor.destination = destination;
+                call_visitor.callee_fun_val = func_to_call;
+                let function_summary = call_visitor
+                    .get_function_summary()
+                    .unwrap_or_else(Summary::default);
+                call_visitor.transfer_and_refine_into_current_environment(&function_summary);
+                return;
+            }
+        }
 
         // Propagate the entry condition to the successor blocks.
         self.bv
