@@ -17,6 +17,28 @@ macro_rules! atomic_int {
     };
 }
 
+macro_rules! atomic_nand {
+    ($n:ident, $t:ty) => {
+        pub unsafe fn $n(dst: *mut $t, src: $t) -> $t {
+            let result = *dst;
+            *dst = !(*dst ^ src);
+            result
+        }
+    };
+}
+
+macro_rules! atomic_max_min {
+    ($n:ident, $t:ty, $op:tt) => {
+        pub unsafe fn $n(dst: *mut $t, src: $t) -> $t {
+            if *dst $op src {
+                src
+            } else {
+                *dst
+            }
+        }
+    };
+}
+
 // No preconditions needed and no post conditions provided.
 // No side-effects and can be safely used as an uninterpreted function.
 macro_rules! default_contract {
