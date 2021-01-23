@@ -180,6 +180,7 @@ impl MiraiCallbacks {
         || file_name.contains("mempool/src")
         || file_name.contains("network/src") // you should never look at the bits of a ZST 
         || file_name.contains("network/builder/src")    
+        || file_name.contains("secure/push-metrics/src")    
         || file_name.contains("secure/net/src")
         || file_name.contains("secure/storage/src")    
         || file_name.contains("secure/storage/vault/src")    
