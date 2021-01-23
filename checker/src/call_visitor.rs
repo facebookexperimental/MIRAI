@@ -1180,7 +1180,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .current_environment
                 .entry_condition
-                .and(Rc::new(abstract_value::TRUE))
+                .clone()
         } else {
             self.block_visitor
                 .bv

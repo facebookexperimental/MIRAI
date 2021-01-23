@@ -399,6 +399,7 @@ pub trait AbstractValueTrait: Sized {
     fn add_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn add_tag(&self, tag: Tag) -> Self;
     fn and(&self, other: Self) -> Self;
+    fn trim_prefix_conjuncts(&self, target_size: u64) -> Option<Rc<AbstractValue>>;
     fn as_bool_if_known(&self) -> Option<bool>;
     fn as_int_if_known(&self) -> Option<Rc<AbstractValue>>;
     fn bit_and(&self, other: Self) -> Self;
@@ -619,10 +620,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
 
         // Do these tests here lest BOTTOM get simplified away.
-        if self.is_bottom() {
+        if self.is_bottom() || other.is_top() {
             return self.clone();
         }
-        if other.is_bottom() {
+        if other.is_bottom() || self.is_top() {
             return other;
         }
         let self_bool = self.as_bool_if_known();
@@ -856,11 +857,52 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } else {
                 other
             };
-            AbstractValue::make_binary(self.clone(), other, |left, right| Expression::And {
+            if other.expression_size >= k_limits::MAX_EXPRESSION_SIZE {
+                return other;
+            }
+            let mut trimmed_self = self.clone();
+            if self.expression_size.saturating_add(other.expression_size)
+                > k_limits::MAX_EXPRESSION_SIZE
+            {
+                // The overall expression is going to overflow, so abstract away part of the self
+                // (left) expression to keep the overall expression within bounds.
+                // We keep the right expression intact because it is usually path conditions that
+                // overflow and in a path condition the most recent (i.e. the right hand) condition
+                // is the most useful. In particular, we don't want to abstract away assume conditions.
+                if let Some(trimmed) = self
+                    .trim_prefix_conjuncts(k_limits::MAX_EXPRESSION_SIZE - other.expression_size)
+                {
+                    trimmed_self = trimmed;
+                } else {
+                    return other;
+                }
+            }
+            AbstractValue::make_binary(trimmed_self, other, |left, right| Expression::And {
                 left,
                 right,
             })
         }
+    }
+
+    /// Returns an value with an expression that is either TOP or TOP && something, but with
+    /// the other domains precomputed from the original expression.
+    /// This helps path conditions to stay within limits while losing as little information as possible.
+    /// The returned expression must be of size at most target_size.
+    #[logfn_inputs(TRACE)]
+    fn trim_prefix_conjuncts(&self, target_size: u64) -> Option<Rc<AbstractValue>> {
+        precondition!(target_size > 0);
+        if let Expression::And { left, right } = &self.expression {
+            if right.expression_size < target_size - 1 {
+                if let Some(trimmed_left) =
+                    left.trim_prefix_conjuncts(target_size - right.expression_size)
+                {
+                    return Some(trimmed_left.and(right.clone()));
+                } else {
+                    return Some(right.clone());
+                }
+            }
+        }
+        None
     }
 
     /// The Boolean value of this expression, if known, otherwise None.
