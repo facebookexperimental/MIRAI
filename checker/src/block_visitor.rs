@@ -2925,6 +2925,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         base_ty: Ty<'tcx>,
         projection: &[mir::PlaceElem<'tcx>],
     ) -> Rc<Path> {
+        let mut prev_result = None;
         let mut result = base_path;
         let mut ty: Ty<'_> = base_ty;
         for elem in projection.iter() {
@@ -2948,16 +2949,27 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .type_visitor
                             .path_ty_cache
                             .insert(deref_path.clone(), ty);
+                        prev_result = Some(result);
                         result = deref_path;
                         continue;
                     }
                     ty = type_visitor::get_target_type(ty);
                 }
                 mir::ProjectionElem::Field(_, field_ty) => {
+                    if let Some(prev) = prev_result {
+                        // The previous selector was a deref of a fat pointer, which in MIR seems
+                        // to be any struct that has a field 0 that is a thin or fat pointer.
+                        // When such a path is used as is, or as the qualifier of an index or slice
+                        // we want to unroll the fat pointer chain to a path that ends in the thin pointer.
+                        // When the path qualifies a field, however, we simply want to omit the deref
+                        // and use the path to the outermost fat pointer as the qualifier.
+                        // This is pretty subtle and quite sad, but that is MIR for you.
+                        result = prev.clone()
+                    };
                     ty = self.bv.type_visitor.specialize_generic_argument_type(
                         field_ty,
                         &self.bv.type_visitor.generic_argument_map,
-                    )
+                    );
                 }
                 mir::ProjectionElem::Index(..) | mir::ProjectionElem::ConstantIndex { .. } => {
                     ty = type_visitor::get_element_type(ty);
@@ -2971,6 +2983,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 mir::ProjectionElem::Subslice { .. } => {}
             }
+            prev_result = None;
             result = Path::new_qualified(result, Rc::new(selector))
                 .canonicalize(&self.bv.current_environment);
             self.bv
