@@ -632,6 +632,18 @@ impl ConstantDomain {
         matches!(self, ConstantDomain::Bottom)
     }
 
+    /// True if this value is the constant 0 of some numeric type.
+    #[logfn_inputs(TRACE)]
+    pub fn is_zero(&self) -> bool {
+        match &self {
+            ConstantDomain::F32(val) => *val == 0,
+            ConstantDomain::F64(val) => *val == 0,
+            ConstantDomain::I128(val) => *val == 0,
+            ConstantDomain::U128(val) => *val == 0,
+            _ => false,
+        }
+    }
+
     /// Returns a constant that is "self <= other".
     #[logfn_inputs(TRACE)]
     pub fn less_or_equal(&self, other: &Self) -> Self {

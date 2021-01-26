@@ -1041,6 +1041,20 @@ impl Expression {
         )
     }
 
+    /// True if the expression involves a comparison operator (= != > >= < <=)
+    #[logfn_inputs(TRACE)]
+    pub fn is_comparison(&self) -> bool {
+        matches!(
+            self,
+            Expression::Equals { .. }
+                | Expression::Ne { .. }
+                | Expression::GreaterOrEqual { .. }
+                | Expression::GreaterThan { .. }
+                | Expression::LessOrEqual { .. }
+                | Expression::LessThan { .. }
+        )
+    }
+
     /// Determines if the given expression is the compile time constant 1u128.
     #[logfn_inputs(TRACE)]
     pub fn is_one(&self) -> bool {
