@@ -529,6 +529,42 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let Expression::Neg { operand } = &other.expression {
             return self.subtract(operand.clone());
         }
+        // [x + x] -> 2 * x
+        if self.eq(&other) {
+            let t = self.expression.infer_type();
+            if t.is_unsigned_integer() {
+                let two: Rc<AbstractValue> = Rc::new(ConstantDomain::U128(2).into());
+                return two.multiply(other);
+            } else if t.is_signed_integer() {
+                let two: Rc<AbstractValue> = Rc::new(ConstantDomain::I128(2).into());
+                return two.multiply(other);
+            }
+        }
+
+        // [(c * x) + (c * y)] -> c * (x + y)
+        if let (Expression::Mul { left: c1, right: x }, Expression::Mul { left: c2, right: y }) =
+            (&self.expression, &other.expression)
+        {
+            if let (Expression::CompileTimeConstant(..), Expression::CompileTimeConstant(..)) =
+                (&c1.expression, &c2.expression)
+            {
+                if !c1.eq(c2) {
+                    let right = x.addition(y.clone());
+                    // Don't use multiply because we don't want to simplify this
+                    let expression_size = c1
+                        .expression_size
+                        .saturating_add(right.expression_size)
+                        .saturating_add(1);
+                    return AbstractValue::make_from(
+                        Expression::Mul {
+                            left: c1.clone(),
+                            right,
+                        },
+                        expression_size,
+                    );
+                }
+            }
+        }
 
         self.try_to_simplify_binary_op(other, ConstantDomain::add, Self::addition, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Add { left, right })
@@ -1767,6 +1803,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ) if *z == other => {
                 return x.logical_not().or(y.equals(z.clone()));
             }
+            // [(c1 * x) == c2] -> x == c2 / c1
+            (Expression::Mul { left: c1, right: x }, _)
+                if c1.is_compile_time_constant()
+                    && other.is_compile_time_constant()
+                    && other.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.equals(c1.divide(other.clone()));
+            }
+            // [c1 == (c2 * x)] -> x == c1 / c2
+            (_, Expression::Mul { left: c2, right: x })
+                if self.is_compile_time_constant()
+                    && c2.is_compile_time_constant()
+                    && self.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c2.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.equals(self.divide(c2.clone()));
+            }
             (Expression::Reference { .. }, Expression::Cast { .. })
             | (Expression::Cast { .. }, Expression::Reference { .. }) => {
                 return Rc::new(FALSE);
@@ -1830,6 +1884,25 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     self.greater_or_equal(v2.clone()),
                 );
             }
+            // [(c1 * x) >= c2] -> x >= c2 / c1
+            (Expression::Mul { left: c1, right: x }, _)
+                if c1.is_compile_time_constant()
+                    && other.is_compile_time_constant()
+                    && other.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.greater_or_equal(c1.divide(other.clone()));
+            }
+            // [c1 >= (c2 * x)] -> x < c1 / c2
+            (_, Expression::Mul { left: c2, right: x })
+                if self.is_compile_time_constant()
+                    && c2.is_compile_time_constant()
+                    && self.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c2.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.less_than(self.divide(c2.clone()));
+            }
+
             _ => {}
         }
         AbstractValue::make_binary(self.clone(), other, |left, right| {
@@ -1881,6 +1954,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     self.greater_than(v1.clone()),
                     self.greater_than(v2.clone()),
                 );
+            }
+            // [(c1 * x) > c2] -> x > c2 / c1
+            (Expression::Mul { left: c1, right: x }, _)
+                if c1.is_compile_time_constant()
+                    && other.is_compile_time_constant()
+                    && other.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.greater_than(c1.divide(other.clone()));
+            }
+            // [c1 > (c2 * x)] -> x <= c1 / c2
+            (_, Expression::Mul { left: c2, right: x })
+                if self.is_compile_time_constant()
+                    && c2.is_compile_time_constant()
+                    && self.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c2.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.less_or_equal(self.divide(c2.clone()));
             }
             _ => {}
         }
@@ -2224,6 +2315,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     self.less_or_equal(v2.clone()),
                 );
             }
+            // [(c1 * x) <= c2] -> x <= c2 / c1
+            (Expression::Mul { left: c1, right: x }, _)
+                if c1.is_compile_time_constant()
+                    && other.is_compile_time_constant()
+                    && other.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.less_or_equal(c1.divide(other.clone()));
+            }
+            // [c1 <= (c2 * x)] -> x > c1 / c2
+            (_, Expression::Mul { left: c2, right: x })
+                if self.is_compile_time_constant()
+                    && c2.is_compile_time_constant()
+                    && self.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c2.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.greater_than(self.divide(c2.clone()));
+            }
             _ => {}
         }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::LessOrEqual {
@@ -2276,6 +2385,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     self.less_than(v1.clone()),
                     self.less_than(v2.clone()),
                 );
+            }
+            // [(c1 * x) < c2] -> x < c2 / c1
+            (Expression::Mul { left: c1, right: x }, _)
+                if c1.is_compile_time_constant()
+                    && other.is_compile_time_constant()
+                    && other.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.less_than(c1.divide(other.clone()));
+            }
+            // [c1 < (c2 * x)] -> x >= c1 / c2
+            (_, Expression::Mul { left: c2, right: x })
+                if self.is_compile_time_constant()
+                    && c2.is_compile_time_constant()
+                    && self.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c2.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.greater_or_equal(self.divide(c2.clone()));
             }
             _ => {}
         }
@@ -2420,7 +2547,41 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 ConstantDomain::I128(1) | ConstantDomain::U128(1) => {
                     return other;
                 }
-                _ => (),
+                ConstantDomain::I128(..) | ConstantDomain::U128(..) => match &other.expression {
+                    // [c * (x + y)] -> (c * x) + (c * y)
+                    Expression::Add { left: x, right: y } => {
+                        let unsimplified_size =
+                            self.expression_size.saturating_add(other.expression_size);
+                        let cx_cy = self.multiply(x.clone()).addition(self.multiply(y.clone()));
+                        if !cx_cy.is_bottom() && cx_cy.expression_size < unsimplified_size {
+                            return cx_cy;
+                        }
+                    }
+                    // [c1 * (c2 * y)] -> (c1 * c2) * y
+                    // [c1 * (x * c2)] -> (c1 * c2) * x
+                    Expression::Mul { left: x, right: y } => {
+                        if x.is_compile_time_constant() {
+                            return self.multiply(x.clone()).multiply(y.clone());
+                        }
+                        if y.is_compile_time_constant() {
+                            return self.multiply(y.clone()).multiply(x.clone());
+                        }
+                    }
+                    // [c * cast(x, t)] -> cast((c * x), t)
+                    Expression::Cast {
+                        operand: x,
+                        target_type,
+                    } => {
+                        let unsimplified_size =
+                            self.expression_size.saturating_add(other.expression_size);
+                        let cx = self.multiply(x.clone());
+                        if !cx.is_bottom() && cx.expression_size <= unsimplified_size {
+                            return cx.cast(target_type.clone());
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
             }
         }
         if let Expression::CompileTimeConstant(c2) = &other.expression {
@@ -2558,11 +2719,36 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
             // [x != 0] -> x when x is a Boolean. Canonicalize it to the latter.
-            (x, Expression::CompileTimeConstant(ConstantDomain::U128(val))) => {
-                if x.infer_type() == ExpressionType::Bool && *val == 0 {
-                    return self.clone();
-                }
+            (x, Expression::CompileTimeConstant(ConstantDomain::U128(val)))
+                if *val == 0 && x.infer_type() == ExpressionType::Bool =>
+            {
+                return self.clone();
             }
+            // [0 != y] -> y when y is a Boolean. Canonicalize it to the latter.
+            (Expression::CompileTimeConstant(ConstantDomain::U128(val)), y)
+                if *val == 0 && y.infer_type() == ExpressionType::Bool =>
+            {
+                return other.clone();
+            }
+            // [(c1 * x) == c2] -> x == c2 / c1
+            (Expression::Mul { left: c1, right: x }, _)
+                if c1.is_compile_time_constant()
+                    && other.is_compile_time_constant()
+                    && other.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.equals(c1.divide(other.clone()));
+            }
+            // [c1 == (c2 * x)] -> x == c1 / c2
+            (_, Expression::Mul { left: c2, right: x })
+                if self.is_compile_time_constant()
+                    && c2.is_compile_time_constant()
+                    && self.expression.infer_type().is_integer() =>
+            {
+                debug_checked_assume!(!c2.is_zero()); // otherwise constant folding would have reduced the Mul
+                return x.equals(self.divide(c2.clone()));
+            }
+
             // [(c ? v1: v2) != c3] -> !c if v1 == c3 && v2 != c3
             // [(c ? v1: v2) != c3] -> c if v1 != c3 && v2 == c3
             // [(c ? v1: v2) != c3] -> true if v1 != c3 && v2 != c3
