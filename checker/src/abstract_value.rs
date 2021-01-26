@@ -427,6 +427,7 @@ pub trait AbstractValueTrait: Sized {
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
     fn is_top(&self) -> bool;
     fn is_unit(&self) -> bool;
+    fn is_zero(&self) -> bool;
     fn join(&self, other: Self, path: &Rc<Path>) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
     fn less_than(&self, other: Self) -> Self;
@@ -1240,6 +1241,21 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
         }
 
+        //[if x != 0 { x / c } else { 0 }] -> x / c
+        if alternate.is_zero() {
+            match &self.expression {
+                Expression::Ne { left: x1, right } if right.is_zero() => {
+                    if let Expression::Div { left: x2, right: c } = &consequent.expression {
+                        if x1.eq(x2) && matches!(&c.expression, Expression::CompileTimeConstant(..))
+                        {
+                            return x1.divide(c.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
         if let Expression::ConditionalExpression {
             condition: c2,
             consequent: a,
@@ -2006,7 +2022,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if other.as_bool_if_known().unwrap_or(false) || self.as_bool_if_known().unwrap_or(false) {
             return true;
         }
-        false
+        if self.expression.is_comparison() {
+            self.logical_not().implies(other)
+        } else {
+            false
+        }
     }
 
     /// Returns true if "!self => !other" is known at compile time to be true.
@@ -2084,6 +2104,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             &self.expression,
             Expression::CompileTimeConstant(ConstantDomain::Unit)
         )
+    }
+
+    /// True if this value is the constant 0 of some numeric type.
+    #[logfn_inputs(TRACE)]
+    fn is_zero(&self) -> bool {
+        if let Expression::CompileTimeConstant(c) = &self.expression {
+            return c.is_zero();
+        }
+        false
     }
 
     /// Returns an abstract value whose corresponding set of concrete values includes all of the values
@@ -3138,6 +3167,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         }
                     }
                 }
+            }
+        }
+        // [x - x] -> 0 if x is an integer
+        if self.eq(&other) {
+            let t = self.expression.infer_type();
+            if t.is_unsigned_integer() {
+                return Rc::new(ConstantDomain::U128(0).into());
+            } else if t.is_signed_integer() {
+                return Rc::new(ConstantDomain::I128(0).into());
             }
         }
         self.try_to_simplify_binary_op(other, ConstantDomain::sub, Self::subtract, |l, r| {
