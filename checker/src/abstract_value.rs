@@ -2989,6 +2989,54 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 {
                     Rc::new(TRUE)
                 }
+                // [x < y || x >= y] -> true if x is not a floating point
+                (
+                    Expression::LessThan {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::GreaterOrEqual {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2)
+                    && y1.eq(y2)
+                    && !x1.expression.infer_type().is_floating_point_number() =>
+                {
+                    Rc::new(TRUE)
+                }
+                // [x <= y || x > y] -> true if x is not a floating point
+                (
+                    Expression::LessOrEqual {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::GreaterThan {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2)
+                    && y1.eq(y2)
+                    && !x1.expression.infer_type().is_floating_point_number() =>
+                {
+                    Rc::new(TRUE)
+                }
+                // [x > y || x <= y] -> true if x is not a floating point
+                (
+                    Expression::GreaterThan {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::LessOrEqual {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2)
+                    && y1.eq(y2)
+                    && !x1.expression.infer_type().is_floating_point_number() =>
+                {
+                    Rc::new(TRUE)
+                }
 
                 // [x > y || x == y] -> x >= y
                 (
@@ -3001,6 +3049,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         right: y2,
                     },
                 ) if x1.eq(x2) && y1.eq(y2) => x1.greater_or_equal(y1.clone()),
+                // [x == y || x > y] -> x >= y
+                (
+                    Expression::Equals {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::GreaterThan {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => x1.greater_or_equal(y1.clone()),
 
                 // [x < y || x == y] -> x <= y
                 (
@@ -3009,6 +3068,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         right: y1,
                     },
                     Expression::Equals {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => x1.less_or_equal(y1.clone()),
+                // [x == y || x <==> y] -> x <= y
+                (
+                    Expression::Equals {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::LessThan {
                         left: x2,
                         right: y2,
                     },
