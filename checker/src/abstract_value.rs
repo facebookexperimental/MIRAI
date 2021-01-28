@@ -2710,38 +2710,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return Rc::new(v1.not_equals(v2).into());
         };
         match (&self.expression, &other.expression) {
-            // x != true -> !x
-            (_, Expression::CompileTimeConstant(ConstantDomain::True)) => {
-                return self.logical_not();
+            (_, Expression::CompileTimeConstant(..)) => {
+                // Normalize not equals expressions so that if only one of the operands is a constant, it is
+                // always the left operand.
+                return other.not_equals(self.clone());
             }
             // true != x -> !x
             (Expression::CompileTimeConstant(ConstantDomain::True), _) => {
                 return other.logical_not();
-            }
-            // x != false -> x
-            (_, Expression::CompileTimeConstant(ConstantDomain::False)) => {
-                return self.clone();
             }
             // false != x -> x
             (Expression::CompileTimeConstant(ConstantDomain::False), _) => {
                 return other.clone();
             }
 
-            // [!x != 0] -> !x when x is Boolean. Canonicalize it to the latter.
-            (
-                Expression::LogicalNot { operand },
-                Expression::CompileTimeConstant(ConstantDomain::U128(val)),
-            ) => {
-                if *val == 0 && operand.expression.infer_type() == ExpressionType::Bool {
-                    return self.clone();
-                }
-            }
-            // [x != 0] -> x when x is a Boolean. Canonicalize it to the latter.
-            (x, Expression::CompileTimeConstant(ConstantDomain::U128(val)))
-                if *val == 0 && x.infer_type() == ExpressionType::Bool =>
-            {
-                return self.clone();
-            }
             // [0 != y] -> y when y is a Boolean. Canonicalize it to the latter.
             (Expression::CompileTimeConstant(ConstantDomain::U128(val)), y)
                 if *val == 0 && y.infer_type() == ExpressionType::Bool =>
@@ -2767,47 +2749,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return x.equals(self.divide(c2.clone()));
             }
 
-            // [(c ? v1: v2) != c3] -> !c if v1 == c3 && v2 != c3
-            // [(c ? v1: v2) != c3] -> c if v1 != c3 && v2 == c3
-            // [(c ? v1: v2) != c3] -> true if v1 != c3 && v2 != c3
-            // [(c ? v1: v2) != c3] -> c ? (v1 != c3) : (v2 != c3)
-            (
-                Expression::ConditionalExpression {
-                    condition: c,
-                    consequent: v1,
-                    alternate: v2,
-                    ..
-                },
-                Expression::CompileTimeConstant(..),
-            ) => {
-                let v2_ne_other = v2
-                    .not_equals(other.clone())
-                    .as_bool_if_known()
-                    .unwrap_or(false);
-                if v1.equals(other.clone()).as_bool_if_known().unwrap_or(false) && v2_ne_other {
-                    return c.logical_not();
-                }
-                if v1
-                    .not_equals(other.clone())
-                    .as_bool_if_known()
-                    .unwrap_or(false)
-                {
-                    if v2.equals(other.clone()).as_bool_if_known().unwrap_or(false) {
-                        return c.clone();
-                    } else if v2_ne_other {
-                        return Rc::new(TRUE);
-                    }
-                }
-                let x = &self.expression;
-                let y = &other.expression;
-                if x == y && !x.infer_type().is_floating_point_number() {
-                    return Rc::new(FALSE);
-                }
-                return c.conditional_expression(
-                    v1.not_equals(other.clone()),
-                    v2.not_equals(other.clone()),
-                );
-            }
             // [c3 != (c ? v1: v2)] -> !c if v1 == c3 && v2 != c3
             // [c3 != (c ? v1: v2)] -> c if v1 != c3 && v2 == c3
             // [c3 != (c ? v1: v2)] -> true if v1 != c3 && v2 != c3
