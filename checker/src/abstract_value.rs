@@ -1244,8 +1244,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [if !(x) { a } else { b }] -> if x { b } else { a }
             return operand.conditional_expression(alternate, consequent);
         }
-        // [if x == 0 { y } else { true }] -> x || y
-        if let Expression::Equals { left: x, right: z } = &self.expression {
+        // [if 0 == x { y } else { true }] -> x || y
+        if let Expression::Equals { left: z, right: x } = &self.expression {
             if let Expression::CompileTimeConstant(ConstantDomain::U128(0)) = z.expression {
                 if alternate.as_bool_if_known().unwrap_or(false) {
                     return x.or(consequent);
@@ -1376,11 +1376,42 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     );
                 }
             }
+
+            // [if y == x { consequent } else { if z == x  { a } else { b } } ] -> switch x { y => consequent, z => a, _ => b }
+            if let (
+                Expression::Equals { left: y, right: x },
+                Expression::Equals { left: z, right: x1 },
+            ) = (&self.expression, &c2.expression)
+            {
+                if x.eq(x1) {
+                    return x.switch(
+                        vec![(y.clone(), consequent), (z.clone(), a.clone())],
+                        b.clone(),
+                    );
+                }
+            }
         }
 
         // [if x == y { consequent } else { switch x { z  => a, _ => b } ] -> switch x { y => consequent, z => a, _ => b }
         if let (
             Expression::Equals { left: x, right: y },
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            },
+        ) = (&self.expression, &alternate.expression)
+        {
+            if x.eq(discriminator) {
+                let mut cases = cases.clone();
+                cases.push((y.clone(), consequent));
+                return discriminator.switch(cases, default.clone());
+            }
+        }
+
+        // [if y == x { consequent } else { switch x { z  => a, _ => b } ] -> switch x { y => consequent, z => a, _ => b }
+        if let (
+            Expression::Equals { left: y, right: x },
             Expression::Switch {
                 discriminator,
                 cases,
@@ -1697,71 +1728,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return Rc::new(v1.equals(v2).into());
         };
         match (&self.expression, &other.expression) {
-            // x == true -> x
-            (_, Expression::CompileTimeConstant(ConstantDomain::True)) => {
-                return self.clone();
+            (_, Expression::CompileTimeConstant(..)) => {
+                // Normalize equality expressions so that if only one of the operands is a constant, it is
+                // always the left operand.
+                return other.equals(self.clone());
             }
             // true == x -> x
             (Expression::CompileTimeConstant(ConstantDomain::True), _) => {
                 return other.clone();
             }
-            // x == false -> !x
-            (_, Expression::CompileTimeConstant(ConstantDomain::False)) => {
-                return self.logical_not();
-            }
             // false == x -> !x
             (Expression::CompileTimeConstant(ConstantDomain::False), _) => {
                 return other.logical_not();
             }
-
-            // [(c ? v1: true) == 0] -> c && !v1
-            // [(c ? v1: v2) == c3] -> !c if v1 != c3 && v2 == c3
-            // [(c ? v1: v2) == c3] -> c if v1 == c3 && v2 != c3
-            // [(c ? v1: v2) == c3] -> true if v1 == c3 && v2 == c3
-            // [(c ? v1: v2) == c3] -> c ? (v1 == c3) : (v2 == c3)
-            (
-                Expression::ConditionalExpression {
-                    condition: c,
-                    consequent: v1,
-                    alternate: v2,
-                    ..
-                },
-                Expression::CompileTimeConstant(con),
-            ) => {
-                if let ConstantDomain::U128(0) = con {
-                    if let Expression::CompileTimeConstant(ConstantDomain::True) = v2.expression {
-                        return c.and(v1.logical_not());
-                    }
-                }
-                let v2_eq_other = v2.equals(other.clone()).as_bool_if_known().unwrap_or(false);
-                if v1
-                    .not_equals(other.clone())
-                    .as_bool_if_known()
-                    .unwrap_or(false)
-                    && v2_eq_other
-                {
-                    return c.logical_not();
-                }
-                if v1.equals(other.clone()).as_bool_if_known().unwrap_or(false) {
-                    if v2
-                        .not_equals(other.clone())
-                        .as_bool_if_known()
-                        .unwrap_or(false)
-                    {
-                        return c.clone();
-                    } else if v2_eq_other {
-                        return Rc::new(TRUE);
-                    }
-                }
-                let x = &self.expression;
-                let y = &other.expression;
-                if x == y && !x.infer_type().is_floating_point_number() {
-                    return Rc::new(TRUE);
-                }
-                return c
-                    .conditional_expression(v1.equals(other.clone()), v2.equals(other.clone()));
-            }
-
             // [c3 == (c ? v1: v2)] -> !c if v1 != c3 && v2 == c3
             // [c3 == (c ? v1: v2)] -> c if v1 == c3 && v2 != c3
             // [c3 == (c ? v1: v2)] -> true if v1 == c3 && v2 == c3
@@ -1802,24 +1781,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
                 return c.conditional_expression(self.equals(v1.clone()), self.equals(v2.clone()));
             }
-
-            // [!x == 0] -> x when x is Boolean. Canonicalize it to the latter.
+            // [0 == !x] -> x when x is Boolean. Canonicalize it to the latter.
             (
-                Expression::LogicalNot { operand },
                 Expression::CompileTimeConstant(ConstantDomain::U128(val)),
+                Expression::LogicalNot { operand },
             ) => {
                 if *val == 0 && operand.expression.infer_type() == ExpressionType::Bool {
                     return operand.clone();
                 }
             }
-            // [x == 0] -> !x when x is a Boolean. Canonicalize it to the latter.
-            // [x == 1] -> x when x is a Boolean. Canonicalize it to the latter.
-            (x, Expression::CompileTimeConstant(ConstantDomain::U128(val))) => {
+            // [0 == x] -> !x when x is a Boolean. Canonicalize it to the latter.
+            // [1 == x] -> x when x is a Boolean. Canonicalize it to the latter.
+            (Expression::CompileTimeConstant(ConstantDomain::U128(val)), x) => {
                 if x.infer_type() == ExpressionType::Bool {
                     if *val == 0 {
-                        return self.logical_not();
+                        return other.logical_not();
                     } else if *val == 1 {
-                        return self.clone();
+                        return other.clone();
                     }
                 }
             }
@@ -1834,23 +1812,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ) if *z == other => {
                 return x.logical_not().or(y.equals(z.clone()));
             }
-            // [(c1 * x) == c2] -> x == c2 / c1
-            (Expression::Mul { left: c1, right: x }, _)
-                if c1.is_compile_time_constant()
-                    && other.is_compile_time_constant()
-                    && other.expression.infer_type().is_integer() =>
-            {
-                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
-                return x.equals(c1.divide(other.clone()));
+            // [z == (if x { y } else { z })]  -> [if x { y == z } else { true }] -> !x || y == z
+            (
+                _,
+                Expression::ConditionalExpression {
+                    condition: x,
+                    consequent: y,
+                    alternate: z,
+                },
+            ) if *z == *self => {
+                return x.logical_not().or(y.equals(z.clone()));
             }
             // [c1 == (c2 * x)] -> x == c1 / c2
-            (_, Expression::Mul { left: c2, right: x })
-                if self.is_compile_time_constant()
-                    && c2.is_compile_time_constant()
-                    && self.expression.infer_type().is_integer() =>
+            (Expression::CompileTimeConstant(..), Expression::Mul { left: c2, right: x })
+                if c2.is_compile_time_constant() && self.expression.infer_type().is_integer() =>
             {
                 debug_checked_assume!(!c2.is_zero()); // otherwise constant folding would have reduced the Mul
-                return x.equals(self.divide(c2.clone()));
+                return self.divide(c2.clone()).equals(x.clone());
             }
             (Expression::Reference { .. }, Expression::Cast { .. })
             | (Expression::Cast { .. }, Expression::Reference { .. }) => {
@@ -3119,6 +3097,33 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         consequent: e,
                         alternate: one,
                     } = &l1.expression
+                    {
+                        if one.expression.is_one() {
+                            let not_c = c.logical_not();
+                            let e_eq_0 = e.equals(Rc::new(ConstantDomain::U128(0).into()));
+                            let e_eq_1 = e.equals(Rc::new(ConstantDomain::U128(1).into()));
+                            return not_c.or(e_eq_0).or(e_eq_1);
+                        }
+                    }
+                    unsimplified(self, other)
+                }
+
+                // [1 == ((c ? e : 1)) || (0 == (c ? e : 1))] -> !c || 0 == e || 1 == e
+                (
+                    Expression::Equals {
+                        left: l1,
+                        right: r1,
+                    },
+                    Expression::Equals {
+                        left: l2,
+                        right: r2,
+                    },
+                ) if r1 == r2 && l1.expression.is_one() && l2.expression.is_zero() => {
+                    if let Expression::ConditionalExpression {
+                        condition: c,
+                        consequent: e,
+                        alternate: one,
+                    } = &r1.expression
                     {
                         if one.expression.is_one() {
                             let not_c = c.logical_not();
