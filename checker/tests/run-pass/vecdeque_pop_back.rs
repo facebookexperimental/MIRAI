@@ -17,5 +17,5 @@ pub fn main() {
     v.push_back(1);
     verify!(v.len() == old_len + 1);
     v.pop_back();
-    verify!(v.len() == old_len); //~ possible false verification condition
+    verify!(v.len() == old_len);
 }

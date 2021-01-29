@@ -753,6 +753,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         return other.clone();
                     }
                 }
+                // [x && c == y] -> c == y if refining x with c == y produces true
+                Expression::Equals { left: c, .. }
+                    if c.is_compile_time_constant()
+                        && self
+                            .refine_with(&other, 0)
+                            .as_bool_if_known()
+                            .unwrap_or(false) =>
+                {
+                    return other.clone();
+                }
                 Expression::LogicalNot { operand } if *operand == *self => {
                     // [x && !x] -> false
                     return Rc::new(FALSE);
@@ -1252,10 +1262,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
+        let consequent_as_bool_if_known = consequent.as_bool_if_known();
         // [if x { true } else { y }] -> x || y
-        if consequent.as_bool_if_known().unwrap_or(false) {
+        if consequent_as_bool_if_known.unwrap_or(false) {
             return self.or(alternate);
         }
+        // [if x { false } else { x && y) ] -> false
+        if !consequent_as_bool_if_known.unwrap_or(true) {
+            if let Expression::And { left: x, right: y } = &alternate.expression {
+                if self.eq(x) || self.eq(y) {
+                    return Rc::new(FALSE);
+                }
+            }
+        }
+
         // [if x { y } else { false }] -> x && y
         if !alternate.as_bool_if_known().unwrap_or(true) {
             return self.and(consequent);
@@ -1388,6 +1408,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         vec![(y.clone(), consequent), (z.clone(), a.clone())],
                         b.clone(),
                     );
+                }
+            }
+
+            // [if c { a } else { if c && d { .. } else { b } }] -> if c { a } else { b }
+            if let Expression::ConditionalExpression {
+                condition,
+                alternate: b,
+                ..
+            } = &alternate.expression
+            {
+                if condition.implies(self) {
+                    return self.conditional_expression(consequent, b.clone());
                 }
             }
         }
@@ -2324,6 +2356,26 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     self.less_or_equal(v2.clone()),
                 );
             }
+            // [(if x <= y { x } else { y }) <= y] -> true
+            (
+                Expression::ConditionalExpression {
+                    condition: c,
+                    consequent: x,
+                    alternate: y,
+                    ..
+                },
+                _,
+            ) if y.eq(&other) => {
+                if let Expression::LessOrEqual {
+                    left: x1,
+                    right: y1,
+                } = &c.expression
+                {
+                    if x1.eq(x) && y1.eq(y) {
+                        return Rc::new(TRUE);
+                    }
+                }
+            }
             // [x & c <= c] -> true
             (
                 Expression::BitAnd {
@@ -2332,7 +2384,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
                 Expression::CompileTimeConstant(..),
             ) if c1.eq(&other) => {
-                return Rc::new(ConstantDomain::True.into());
+                return Rc::new(TRUE);
             }
             // [(c1 * x) <= c2] -> x <= c2 / c1
             (Expression::Mul { left: c1, right: x }, _)
@@ -2700,6 +2752,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
+        // [-(x - y)] -> y - x
+        if let Expression::Sub { left: x, right: y } = &self.expression {
+            return y.subtract(x.clone());
+        }
         AbstractValue::make_unary(self, |operand| Expression::Neg { operand })
     }
 
@@ -2905,6 +2961,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [x || (x && y)] -> x, etc.
             if self.inverse_implies_not(&other) {
                 return self.clone();
+            }
+
+            // [x || !(x && y)] -> true, etc.
+            if self.inverse_implies(&other) {
+                return Rc::new(TRUE);
             }
 
             match (&self.expression, &other.expression) {
@@ -3177,11 +3238,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     unsimplified(self, other)
                 }
 
-                // [(x && !y) || y] -> (y || x)
-                (Expression::And { left: x, right }, _) => match &right.expression {
-                    Expression::LogicalNot { operand: y } if *y == other => y.or(x.clone()),
-                    _ => unsimplified(self, other),
-                },
+                (Expression::And { left, right }, _) => {
+                    match (&left.expression, &right.expression) {
+                        // [(x && !y) || y] -> (x || y)
+                        (_, Expression::LogicalNot { operand: y }) if *y == other => {
+                            left.or(y.clone())
+                        }
+                        // [(!x && y) || x] -> (x || y)
+                        (Expression::LogicalNot { operand: x }, _) if *x == other => {
+                            x.or(right.clone())
+                        }
+                        _ => unsimplified(self, other),
+                    }
+                }
 
                 // [x || !(x || y)] -> x || !y
                 (_, Expression::LogicalNot { operand }) => match &operand.expression {
@@ -3373,6 +3442,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             (Expression::CompileTimeConstant(ConstantDomain::I128(0)), _)
             | (Expression::CompileTimeConstant(ConstantDomain::U128(0)), _) => {
                 return other.negate();
+            }
+            // [self - 0] -> self
+            (_, Expression::CompileTimeConstant(ConstantDomain::I128(0)))
+            | (_, Expression::CompileTimeConstant(ConstantDomain::U128(0))) => {
+                return self.clone();
             }
             // [self - (- operand)] -> self + operand
             (_, Expression::Neg { operand }) => {
