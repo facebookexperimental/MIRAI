@@ -502,32 +502,33 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self + other".
     #[logfn_inputs(TRACE)]
     fn addition(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        // [x + 0] -> x
-        if let Expression::CompileTimeConstant(ConstantDomain::U128(0))
-        | Expression::CompileTimeConstant(ConstantDomain::I128(0)) = &other.expression
-        {
-            return self.clone();
-        }
-        // [0 + x] -> x
-        if let Expression::CompileTimeConstant(ConstantDomain::U128(0))
-        | Expression::CompileTimeConstant(ConstantDomain::I128(0)) = &self.expression
-        {
-            return other;
-        }
-        // [(x + c1) + c2] -> x + c3 where c3 = c1 + c2
-        if let Expression::Add { left, right } = &self.expression {
-            if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-                (&right.expression, &other.expression)
-            {
-                let folded = v1.add(v2);
-                if folded != ConstantDomain::Bottom {
-                    return left.addition(Rc::new(folded.into()));
+        if let Expression::CompileTimeConstant(c1) = &self.expression {
+            // [0 + x] -> x
+            if c1.is_zero() {
+                return other;
+            }
+            // [c1 + (c2 + x)] -> c3 + x where c3 = c1 + c2
+            if let Expression::Add { left, right: x } = &other.expression {
+                if let Expression::CompileTimeConstant(c2) = &left.expression {
+                    let c3 = c1.add(c2);
+                    if c3 != ConstantDomain::Bottom {
+                        let c3val: Rc<AbstractValue> = Rc::new(c3.into());
+                        return c3val.addition(x.clone());
+                    }
                 }
             }
+        } else if matches!(&other.expression, Expression::CompileTimeConstant(..)) {
+            // Normalize addition expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.addition(self.clone());
         }
         // [x + (-y)] -> x - y
         if let Expression::Neg { operand } = &other.expression {
             return self.subtract(operand.clone());
+        }
+        // [(-x) + y] -> y - x
+        if let Expression::Neg { operand } = &self.expression {
+            return other.subtract(operand.clone());
         }
         // [x + x] -> 2 * x
         if self.eq(&other) {
@@ -542,22 +543,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
 
         // [(c * x) + (c * y)] -> c * (x + y)
-        if let (Expression::Mul { left: c1, right: x }, Expression::Mul { left: c2, right: y }) =
-            (&self.expression, &other.expression)
+        if let (
+            Expression::Mul {
+                left: cv1,
+                right: x,
+            },
+            Expression::Mul {
+                left: cv2,
+                right: y,
+            },
+        ) = (&self.expression, &other.expression)
         {
-            if let (Expression::CompileTimeConstant(..), Expression::CompileTimeConstant(..)) =
-                (&c1.expression, &c2.expression)
+            if let (Expression::CompileTimeConstant(c1), Expression::CompileTimeConstant(c2)) =
+                (&cv1.expression, &cv2.expression)
             {
                 if !c1.eq(c2) {
                     let right = x.addition(y.clone());
                     // Don't use multiply because we don't want to simplify this
-                    let expression_size = c1
+                    let expression_size = cv1
                         .expression_size
                         .saturating_add(right.expression_size)
                         .saturating_add(1);
                     return AbstractValue::make_from(
                         Expression::Mul {
-                            left: c1.clone(),
+                            left: cv1.clone(),
                             right,
                         },
                         expression_size,
@@ -578,30 +587,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
-        // [x + 0] -> x
-        if let Expression::CompileTimeConstant(ConstantDomain::U128(0))
-        | Expression::CompileTimeConstant(ConstantDomain::I128(0)) = &other.expression
-        {
-            return Rc::new(FALSE);
-        }
-        // [0 + x] -> x
-        if let Expression::CompileTimeConstant(ConstantDomain::U128(0))
-        | Expression::CompileTimeConstant(ConstantDomain::I128(0)) = &self.expression
-        {
-            return Rc::new(FALSE);
-        }
-        // [(x + c1) + c2] -> x + c3 where c3 = c1 + c2
-        if let Expression::Add { left, right } = &self.expression {
-            if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-                (&right.expression, &other.expression)
-            {
-                let folded = v1.add(v2);
-                if folded != ConstantDomain::Bottom {
-                    return left.add_overflows(Rc::new(folded.into()), target_type);
-                }
-            }
-        }
-
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -610,6 +595,39 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
+        if let Expression::CompileTimeConstant(c1) = &self.expression {
+            // [0 + x] -> x
+            if c1.is_zero() {
+                return Rc::new(FALSE);
+            }
+            // [c1 + (c2 + x)] -> c3 + x where c3 = c1 + c2
+            if let Expression::Add { left, right: x } = &other.expression {
+                if let Expression::CompileTimeConstant(c2) = &left.expression {
+                    let c3 = c1.add(c2);
+                    if c3 != ConstantDomain::Bottom {
+                        let c3val: Rc<AbstractValue> = Rc::new(c3.into());
+                        return c3val.add_overflows(x.clone(), target_type);
+                    }
+                }
+            }
+        }
+        if matches!(&other.expression, Expression::CompileTimeConstant(..)) {
+            // Normalize addition expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.add_overflows(self.clone(), target_type);
+        }
+        // [x + x] -> 2 * x
+        if self.eq(&other) {
+            let t = self.expression.infer_type();
+            if t.is_unsigned_integer() {
+                let two: Rc<AbstractValue> = Rc::new(ConstantDomain::U128(2).into());
+                return two.mul_overflows(other, target_type);
+            } else if t.is_signed_integer() {
+                let two: Rc<AbstractValue> = Rc::new(ConstantDomain::I128(2).into());
+                return two.mul_overflows(other, target_type);
+            }
+        }
+
         let interval = self.get_cached_interval().add(&other.get_cached_interval());
         if interval.is_contained_in(&target_type) {
             return Rc::new(FALSE);
