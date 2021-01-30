@@ -2555,8 +2555,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self * other".
     #[logfn_inputs(TRACE)]
     fn multiply(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            match v1 {
+        if let Expression::CompileTimeConstant(c1) = &self.expression {
+            match c1 {
                 // [0 * y] -> 0
                 ConstantDomain::I128(0) | ConstantDomain::U128(0) => {
                     return self.clone();
@@ -2576,14 +2576,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         }
                     }
                     // [c1 * (c2 * y)] -> (c1 * c2) * y
-                    // [c1 * (x * c2)] -> (c1 * c2) * x
-                    Expression::Mul { left: x, right: y } => {
-                        if x.is_compile_time_constant() {
-                            return self.multiply(x.clone()).multiply(y.clone());
-                        }
-                        if y.is_compile_time_constant() {
-                            return self.multiply(y.clone()).multiply(x.clone());
-                        }
+                    Expression::Mul { left: x, right: y } if x.is_compile_time_constant() => {
+                        return self.multiply(x.clone()).multiply(y.clone());
                     }
                     // [c * cast(x, t)] -> cast((c * x), t)
                     Expression::Cast {
@@ -2599,33 +2593,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                     _ => {}
                 },
-                _ => {}
-            }
-        }
-        if let Expression::CompileTimeConstant(c2) = &other.expression {
-            match c2 {
-                // [x * 0] -> 0
-                ConstantDomain::I128(0) | ConstantDomain::U128(0) => {
-                    return other;
-                }
-                // [x * 1] -> x
-                ConstantDomain::I128(1) | ConstantDomain::U128(1) => {
-                    return self.clone();
-                }
                 _ => {
-                    // [(x / c1) * c2] -> x / (c1 / c2) if c1 > c2 && c1 % c2 == 0
-                    if let Expression::Div { left: x, right } = &self.expression {
-                        if let Expression::CompileTimeConstant(c1) = &right.expression {
+                    // [c1 * (x / c2)] -> x / (c2 / c1) if c2 > c1 && c2 % c1 == 0
+                    if let Expression::Div { left: x, right } = &other.expression {
+                        if let Expression::CompileTimeConstant(c2) = &right.expression {
                             if let (ConstantDomain::U128(c1), ConstantDomain::U128(c2)) = (c1, c2) {
-                                if c1 > c2 && c1 % c2 == 0 {
-                                    let c1_div_c2: Rc<AbstractValue> = Rc::new((c1 / c2).into());
-                                    return x.divide(c1_div_c2);
+                                if c2 > c1 && c2 % c1 == 0 {
+                                    let c2_div_c1: Rc<AbstractValue> = Rc::new((c2 / c1).into());
+                                    return x.divide(c2_div_c1);
                                 }
                             }
                         }
                     }
                 }
             }
+        } else if matches!(&other.expression, Expression::CompileTimeConstant(..)) {
+            // Normalize multiply expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.multiply(self.clone());
         }
         self.try_to_simplify_binary_op(other, ConstantDomain::mul, Self::multiply, |l, r| {
             AbstractValue::make_binary(l, r, |left, right| Expression::Mul { left, right })
@@ -2639,32 +2624,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            match v1 {
-                // [0 * y] -> 0
-                ConstantDomain::I128(0) | ConstantDomain::U128(0) => {
-                    return Rc::new(FALSE);
-                }
-                // [1 * y] -> y
-                ConstantDomain::I128(1) | ConstantDomain::U128(1) => {
-                    return Rc::new(FALSE);
-                }
-                _ => (),
-            }
-        }
-        if let Expression::CompileTimeConstant(c2) = &other.expression {
-            match c2 {
-                // [x * 0] -> 0
-                ConstantDomain::I128(0) | ConstantDomain::U128(0) => {
-                    return Rc::new(FALSE);
-                }
-                // [x * 1] -> x
-                ConstantDomain::I128(1) | ConstantDomain::U128(1) => {
-                    return Rc::new(FALSE);
-                }
-                _ => (),
-            }
-        }
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -2673,6 +2632,48 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
+        if let Expression::CompileTimeConstant(c1) = &self.expression {
+            match c1 {
+                // [0 * y] -> 0
+                ConstantDomain::I128(0) | ConstantDomain::U128(0) => {
+                    return Rc::new(FALSE);
+                }
+                // [1 * y] -> y
+                ConstantDomain::I128(1) | ConstantDomain::U128(1) => {
+                    return Rc::new(FALSE);
+                }
+                ConstantDomain::I128(..) | ConstantDomain::U128(..) => match &other.expression {
+                    // [c * (x + y)] -> (c * x) + (c * y)
+                    // Do not apply distribution rule because it may introduce spurious overflows
+
+                    // [c1 * (c2 * y)] -> (c1 * c2) * y
+                    Expression::Mul { left: x, right: y } if x.is_compile_time_constant() => {
+                        return self
+                            .multiply(x.clone())
+                            .mul_overflows(y.clone(), target_type);
+                    }
+                    _ => {}
+                },
+
+                _ => {
+                    // [overflows(c1 * (x / c2))] -> false if c2 > c1 && c2 % c1 == 0
+                    if let Expression::Div { right, .. } = &other.expression {
+                        if let Expression::CompileTimeConstant(c2) = &right.expression {
+                            if let (ConstantDomain::U128(c1), ConstantDomain::U128(c2)) = (c1, c2) {
+                                if c2 > c1 && c2 % c1 == 0 {
+                                    return Rc::new(FALSE);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if matches!(&other.expression, Expression::CompileTimeConstant(..)) {
+            // Normalize multiply expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.mul_overflows(self.clone(), target_type);
+        }
         let interval = self.get_cached_interval().mul(&other.get_cached_interval());
         if interval.is_contained_in(&target_type) {
             return Rc::new(FALSE);
