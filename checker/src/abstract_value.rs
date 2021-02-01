@@ -194,9 +194,11 @@ impl AbstractValue {
             // The overall expression is going to overflow, so pre-compute the simpler domains from
             // the larger expression and then replace its expression with TOP.
             if left.expression_size < right.expression_size {
+                info!("binary expression right operand abstracted");
                 right = AbstractValue::make_from(right.expression.clone(), u64::MAX);
                 expression_size = left.expression_size + 1;
             } else {
+                info!("binary expression left operand abstracted");
                 left = AbstractValue::make_from(left.expression.clone(), u64::MAX);
                 expression_size = right.expression_size + 1;
             }
@@ -308,7 +310,7 @@ impl AbstractValue {
         if expression_size > k_limits::MAX_EXPRESSION_SIZE {
             if expression_size < u64::MAX {
                 trace!("expression {:?}", expression);
-                info!("Maximum expression size exceeded");
+                info!("expression abstracted");
             }
             // If the expression gets too large, refining it gets expensive and composing it
             // into other expressions leads to exponential growth. We therefore need to abstract
@@ -927,6 +929,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let Some(trimmed) = self
                     .trim_prefix_conjuncts(k_limits::MAX_EXPRESSION_SIZE - other.expression_size)
                 {
+                    info!("and expression prefix trimmed");
                     trimmed_self = trimmed;
                 } else {
                     return other;
@@ -1415,6 +1418,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .expression_size
                 .saturating_add(consequent.expression_size);
             if condition_plus_consequent < k_limits::MAX_EXPRESSION_SIZE - 1 {
+                info!("alternate abstracted");
                 alternate = AbstractValue::make_from(alternate.expression.clone(), u64::MAX);
                 expression_size = condition_plus_consequent + 1;
             } else {
@@ -1422,6 +1426,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     .expression_size
                     .saturating_add(alternate.expression_size);
                 if condition_plus_alternate < k_limits::MAX_EXPRESSION_SIZE - 1 {
+                    info!("consequent abstracted");
                     consequent = AbstractValue::make_from(consequent.expression.clone(), u64::MAX);
                     expression_size = condition_plus_alternate + 1;
                 } else {
@@ -1429,6 +1434,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         .expression_size
                         .saturating_add(alternate.expression_size);
                     if consequent_plus_alternate < k_limits::MAX_EXPRESSION_SIZE - 1 {
+                        info!("condition abstracted");
                         condition =
                             AbstractValue::make_from(condition.expression.clone(), u64::MAX);
                         expression_size = consequent_plus_alternate + 1;
