@@ -544,6 +544,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
         }
 
+        // [x + (y - x)] -> y
+        if let Expression::Sub { left: y, right: x } = &other.expression {
+            if self.eq(x) {
+                return y.clone();
+            }
+        }
+
         // [(c * x) + (c * y)] -> c * (x + y)
         if let (
             Expression::Mul {
@@ -2339,6 +2346,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     self.less_or_equal(v2.clone()),
                 );
             }
+            // [x & c <= c] -> true
+            (
+                Expression::BitAnd {
+                    left: _x,
+                    right: c1,
+                },
+                Expression::CompileTimeConstant(..),
+            ) if c1.eq(&other) => {
+                return Rc::new(ConstantDomain::True.into());
+            }
             // [(c1 * x) <= c2] -> x <= c2 / c1
             (Expression::Mul { left: c1, right: x }, _)
                 if c1.is_compile_time_constant()
@@ -3169,6 +3186,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     _ => unsimplified(self, other),
                 },
 
+                // [!x || (x && y ? false : z)] -> !x || (!y && z)
+                (
+                    Expression::LogicalNot { operand: x1 },
+                    Expression::ConditionalExpression {
+                        condition: c,
+                        consequent,
+                        alternate: z,
+                    },
+                ) => {
+                    if let Expression::And { left: x2, right: y } = &c.expression {
+                        if x1.eq(x2) && !consequent.as_bool_if_known().unwrap_or(true) {
+                            return self.or(y.logical_not().and(z.clone()));
+                        }
+                    }
+                    unsimplified(self, other)
+                }
+
                 _ => unsimplified(self, other),
             }
         }
@@ -3329,75 +3363,88 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self - other".
     #[logfn_inputs(TRACE)]
     fn subtract(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        // [0 - other] -> -other
-        if let Expression::CompileTimeConstant(ConstantDomain::I128(0))
-        | Expression::CompileTimeConstant(ConstantDomain::U128(0)) = &self.expression
-        {
-            return other.negate();
-        };
-        // [self - (- operand)] -> self + operand
-        if let Expression::Neg { operand } = &other.expression {
-            return self.addition(operand.clone());
-        }
-        if let (
-            Expression::Cast {
-                operand: left,
-                target_type: ExpressionType::Usize,
-            },
-            Expression::Cast {
-                operand: right,
-                target_type: ExpressionType::Usize,
-            },
-        ) = (&self.expression, &other.expression)
-        {
-            if let (
-                Expression::Offset {
-                    left: base,
-                    right: offset,
-                },
-                Expression::Reference(..),
-            ) = (&left.expression, &right.expression)
+        match (&self.expression, &other.expression) {
+            // [0 - other] -> -other
+            (Expression::CompileTimeConstant(ConstantDomain::I128(0)), _)
+            | (Expression::CompileTimeConstant(ConstantDomain::U128(0)), _) => {
+                return other.negate();
+            }
+            // [self - (- operand)] -> self + operand
+            (_, Expression::Neg { operand }) => {
+                return self.addition(operand.clone());
+            }
+            // [(c1 + x) - c2] -> (c1 - c2) + x
+            (Expression::Add { left: c1, right: x }, Expression::CompileTimeConstant(..))
+                if c1.is_compile_time_constant() =>
             {
-                if base.eq(right) {
-                    return offset.clone();
+                let c1_min_c2 = c1.subtract(other.clone());
+                if !c1_min_c2.is_bottom() {
+                    return c1_min_c2.addition(x.clone());
                 }
             }
-            if let (
-                Expression::Variable {
-                    path: left_path,
-                    var_type: ExpressionType::ThinPointer,
+            (
+                Expression::Cast {
+                    operand: left,
+                    target_type: ExpressionType::Usize,
                 },
-                Expression::Variable {
-                    path: right_path,
-                    var_type: ExpressionType::ThinPointer,
+                Expression::Cast {
+                    operand: right,
+                    target_type: ExpressionType::Usize,
                 },
-            ) = (&left.expression, &right.expression)
-            {
-                if let PathEnum::Offset { value } = &left_path.value {
-                    if let Expression::Offset {
+            ) => {
+                // [(&x[y] as usize) - (&x as usize)] -> y
+                if let (
+                    Expression::Offset {
                         left: base,
                         right: offset,
-                    } = &value.expression
-                    {
-                        if let PathEnum::Computed { value: rv }
-                        | PathEnum::HeapBlock { value: rv }
-                        | PathEnum::Offset { value: rv } = &right_path.value
+                    },
+                    Expression::Reference(..),
+                ) = (&left.expression, &right.expression)
+                {
+                    if base.eq(right) {
+                        return offset.clone();
+                    }
+                }
+                // [(expr[y] as usize) - (expr as usize)] -> y
+                if let (
+                    Expression::Variable {
+                        path: left_path,
+                        var_type: ExpressionType::ThinPointer,
+                    },
+                    Expression::Variable {
+                        path: right_path,
+                        var_type: ExpressionType::ThinPointer,
+                    },
+                ) = (&left.expression, &right.expression)
+                {
+                    if let PathEnum::Offset { value } = &left_path.value {
+                        if let Expression::Offset {
+                            left: base,
+                            right: offset,
+                        } = &value.expression
                         {
-                            if rv.eq(base) {
-                                return offset.clone();
+                            if let PathEnum::Computed { value: rv }
+                            | PathEnum::HeapBlock { value: rv }
+                            | PathEnum::Offset { value: rv } = &right_path.value
+                            {
+                                if rv.eq(base) {
+                                    return offset.clone();
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-        // [x - x] -> 0 if x is an integer
-        if self.eq(&other) {
-            let t = self.expression.infer_type();
-            if t.is_unsigned_integer() {
-                return Rc::new(ConstantDomain::U128(0).into());
-            } else if t.is_signed_integer() {
-                return Rc::new(ConstantDomain::I128(0).into());
+            (x, y) => {
+                // [x - x] -> 0 if x is an integer
+                if x.eq(y) {
+                    let t = x.infer_type();
+                    if t.is_unsigned_integer() {
+                        return Rc::new(ConstantDomain::U128(0).into());
+                    } else if t.is_signed_integer() {
+                        return Rc::new(ConstantDomain::I128(0).into());
+                    }
+                }
             }
         }
         self.try_to_simplify_binary_op(other, ConstantDomain::sub, Self::subtract, |l, r| {
