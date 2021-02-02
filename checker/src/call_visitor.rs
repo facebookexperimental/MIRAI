@@ -596,7 +596,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
                 // If we never get here, rather call verify_unreachable!()
                 if !entry_cond_as_bool.unwrap_or(true) {
-                    let span = self.block_visitor.bv.current_span;
+                    let span = self.block_visitor.bv.current_span.source_callsite();
                     let message =
                         "this is unreachable, mark it as such by using the verify_unreachable! macro";
                     let warning = self
@@ -618,7 +618,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 } else {
                     return;
                 };
-                let span = self.block_visitor.bv.current_span;
+                let span = self.block_visitor.bv.current_span.source_callsite();
                 let warning = self
                     .block_visitor
                     .bv
@@ -721,7 +721,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     path_cond = Some(true);
                 };
 
-                let span = self.block_visitor.bv.current_span;
+                let span = self.block_visitor.bv.current_span.source_callsite();
 
                 if path_cond.unwrap_or(false)
                     && self.block_visitor.bv.function_being_analyzed_is_root()
