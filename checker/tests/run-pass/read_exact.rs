@@ -11,6 +11,7 @@
 // (instead of just relying on it being there already) might overwrite a previous effect.
 
 use mirai_annotations::*;
+use std::io::Read;
 
 fn read_exact(a: &[u8], buf: &mut [u8]) {
     precondition!(buf.len() <= a.len());
@@ -26,6 +27,18 @@ pub fn t1(c: &[u8]) {
     let mut buf = [0; 1];
     let _ = read_exact(c, &mut buf);
     verify!(buf[0] == 0); //~ possible false verification condition
+}
+
+fn read_u8(_self: &mut std::io::Cursor<&[u8]>) -> std::io::Result<u8> {
+    let mut buf = [0; 1];
+    _self.read_exact(&mut buf)?;
+    Ok(buf[0])
+}
+pub fn t2(val: &[u8]) -> std::io::Result<()> {
+    let mut reader = std::io::Cursor::new(val);
+    let num_nibbles = read_u8(&mut reader)? as usize;
+    verify!(num_nibbles == 0); //~ possible false verification condition
+    Ok(())
 }
 
 pub fn main() {}

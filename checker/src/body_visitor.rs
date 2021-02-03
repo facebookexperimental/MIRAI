@@ -1101,11 +1101,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             trace!("refined effect {:?} {:?}", tpath, rvalue);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
-                Expression::Bottom => {
-                    self.current_environment.update_value_at(tpath, rvalue);
-                    continue;
-                }
-                Expression::Top if rtype != ExpressionType::NonPrimitive => {
+                Expression::Bottom | Expression::Top => {
                     self.current_environment.update_value_at(tpath, rvalue);
                     continue;
                 }
@@ -1626,8 +1622,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             |_self, target_path, source_path, index_value: Rc<AbstractValue>| {
                 _self.weak_updates(&target_path, &source_path, |v| index_value.equals(v));
             },
-            |_self, target_path, _source_path, count: Rc<AbstractValue>| {
-                _self.weaken_paths_that_index(&target_path, &count);
+            |_self, target_path, source_path, count: Rc<AbstractValue>| {
+                _self.weaken_paths_that_overlap_slice(
+                    &target_path,
+                    source_path,
+                    root_rustc_type,
+                    &count,
+                );
             },
         );
         if expanded_target_pattern {
@@ -2064,17 +2065,27 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// Weaken (path, value) pairs from the environment if path is rooted by root_path[index].
     /// Do so by replacing value with: if index < count { unknown_var } else { value }
     #[logfn_inputs(TRACE)]
-    fn weaken_paths_that_index(&mut self, root_path: &Rc<Path>, count: &Rc<AbstractValue>) {
+    fn weaken_paths_that_overlap_slice(
+        &mut self,
+        root_path: &Rc<Path>,
+        source_path: Rc<Path>,
+        element_type: Ty<'tcx>,
+        count: &Rc<AbstractValue>,
+    ) {
         let mut value_map = self.current_environment.value_map.clone();
+        let slice_initializer = self.lookup_path_and_refine_result(source_path, element_type);
         for (path, value) in self.current_environment.value_map.iter() {
             if let Some(index) = path.get_index_value_qualified_by(root_path) {
-                //todo: can we do better than this?
-                let unknown_value =
-                    AbstractValue::make_typed_unknown(value.expression.infer_type(), path.clone());
-                let weakened_value = index
+                // The slice initializer may be a conditional that leaves the value at this
+                // particular index unchanged, so weaken the current value by joining it with
+                // the slice initializer.
+                let weakened_value = value.join(slice_initializer.clone(), path);
+                // Any values that are at indices greater than or equal to the count of the slice
+                // are not affected by the slice assignment, so can be conditionally maintained.
+                let guarded_weakened_value = index
                     .less_than(count.clone())
-                    .conditional_expression(unknown_value.clone(), value.clone());
-                value_map.insert_mut(path.clone(), weakened_value);
+                    .conditional_expression(weakened_value.clone(), value.clone());
+                value_map.insert_mut(path.clone(), guarded_weakened_value);
             }
         }
         self.current_environment.value_map = value_map;

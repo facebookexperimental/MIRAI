@@ -614,7 +614,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let message = if cond_as_bool == Some(true) {
                     "assumption is provably true and can be deleted"
                 } else if cond_as_bool == Some(false) {
-                    "assumption is provably false and it will be ignored in the assertion"
+                    "assumption is provably false and it will be ignored"
                 } else {
                     return;
                 };
