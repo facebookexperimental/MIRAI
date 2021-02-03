@@ -15,5 +15,5 @@ pub fn main() {
     let old_len = v.len();
     verify!(old_len == 0);
     v.push_back(0);
-    verify!(v.len() == old_len + 1); //~ possible false verification condition
+    verify!(v.len() == old_len + 1);
 }
