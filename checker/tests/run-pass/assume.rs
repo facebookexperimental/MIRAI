@@ -8,21 +8,24 @@
 
 use mirai_annotations::*;
 
-pub fn main() {
-    foo(2); // This breaks an assumed pre-condition and leads to a runtime failure.
-            // It is not checked by Mirai, because of the assumption.
-            // Unlike this test case, in real life assumptions are made for complicated reasons that are
-            // hard to encode in checked preconditions.
-    foo2(2); //~ assertion failed: `(left == right)`
-             // This gives a diagnostic because foo2 asserts i == 3 which gets promoted to a precondition
+pub fn t1() {
+    foo1(2); // This breaks an assumed pre-condition and leads to a runtime failure.
+             // It is not checked by Mirai, because of the assumption.
+             // Unlike this test case, in real life assumptions are made for complicated reasons that are
+             // hard to encode in checked preconditions.
 }
 
-pub fn foo(i: i32) {
-    checked_assume!(i == 3); // this is a pre-condition that is assumed to hold.
+pub fn foo1(i: i32) {
+    checked_assume!(i == 3); // this is a pre-condition that is assumed to hold at call sites.
                              // It is not promoted, but it is checked here at runtime.
     let x = if i == 3 { 1 } else { 2 };
     verify!(x == 1); // This is neither true, nor checked at runtime, but it can only fail if
                      // the assumption above, which is checked at runtime, does not fail.
+}
+
+pub fn t2() {
+    foo2(2); //~ assertion failed: `(left == right)`
+             // This gives a diagnostic because foo2 asserts i == 3 which gets promoted to a precondition
 }
 
 fn foo2(i: i32) {
@@ -30,5 +33,7 @@ fn foo2(i: i32) {
     assert_eq!(i, 3); //~ related location
     let x = if i == 3 { 1 } else { 2 };
     verify!(x == 1); // This is neither true, nor checked at runtime, but it can only fail if
-                     // the first verify fails, so the problem is already pointed out and we need not repeat ourselves.
+                     // the assert_eq fails, so the problem is already pointed out and we need not repeat ourselves.
 }
+
+pub fn main() {}

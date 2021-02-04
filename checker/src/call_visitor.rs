@@ -2368,6 +2368,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn check_preconditions_if_necessary(&mut self, function_summary: &Summary) {
         if self.block_visitor.bv.check_for_errors
+            && self
+                .block_visitor
+                .bv
+                .current_environment
+                .entry_condition
+                .as_bool_if_known()
+                .unwrap_or(true)
             && !self.block_visitor.bv.assume_preconditions_of_next_call
             && !self
                 .block_visitor
@@ -2419,6 +2426,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // The precondition is definitely true.
                 continue;
             };
+
+            if !entry_cond_as_bool.unwrap_or(true) {
+                // The call is unreachable, so the precondition does not matter
+                continue;
+            }
 
             let warn;
             if !refined_precondition_as_bool.unwrap_or(true) {
