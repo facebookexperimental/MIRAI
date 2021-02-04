@@ -797,6 +797,25 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 _ => (),
             }
             match (&self.expression, &other.expression) {
+                // [(c ? a : b) && (c ? x : y)] -> c ? (a && x) : (b && y)
+                (
+                    Expression::ConditionalExpression {
+                        condition: c,
+                        consequent: a,
+                        alternate: b,
+                    },
+                    ConditionalExpression {
+                        condition,
+                        consequent,
+                        alternate,
+                    },
+                ) if c.eq(condition) => {
+                    return c.conditional_expression(
+                        a.and(consequent.clone()),
+                        b.and(alternate.clone()),
+                    );
+                }
+
                 // [!x && !y] -> !(x || y)
                 (Expression::LogicalNot { operand: x }, Expression::LogicalNot { operand: y }) => {
                     return x.or(y.clone()).logical_not();
@@ -1156,6 +1175,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                             return left.cast(target_type);
                         }
                     }
+                    // [(v : t1) as target_type] -> (v: t1) if t1.max_value() == target_type.max_value()
+                    Expression::Variable { var_type: t1, .. }
+                    | Expression::InitialParameterValue { var_type: t1, .. } => {
+                        if t1.is_integer()
+                            && target_type.is_unsigned_integer()
+                            && t1
+                                .max_value()
+                                .equals(&target_type.max_value())
+                                .as_bool_if_known()
+                                .unwrap_or(false)
+                        {
+                            return self.clone();
+                        }
+                    }
                     _ => (),
                 }
                 let source_type = self.expression.infer_type();
@@ -1322,6 +1355,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             if alternate.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10 {
                 alternate = alternate.refine_with(&not_self, 0);
+            } else if let Expression::ConditionalExpression {
+                condition: c,
+                consequent: x,
+                alternate: y,
+            } = &alternate.expression
+            {
+                if let Expression::Or {
+                    left: cl,
+                    right: cr,
+                } = &c.expression
+                {
+                    if self.eq(cl) {
+                        alternate = cr.conditional_expression(x.clone(), y.clone());
+                    } else if self.eq(cr) {
+                        alternate = cl.conditional_expression(x.clone(), y.clone());
+                    }
+                }
             }
         }
 
