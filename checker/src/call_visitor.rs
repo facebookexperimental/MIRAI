@@ -2326,7 +2326,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             // OK if the actual callee has no side effects. In such a case, the call can become an uninterpreted
             // function, which can be interpreted later on during call site specialization.
             // That might also be the place to complain if the function turns out to have side effects.
-            info!(
+            warn!(
                 "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
                 utils::summary_key_str(self.block_visitor.bv.tcx, self.block_visitor.bv.def_id),
                 utils::summary_key_str(self.block_visitor.bv.tcx, self.callee_def_id),

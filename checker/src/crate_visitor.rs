@@ -99,6 +99,8 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                 } else {
                     info!("analyzing function {}", name);
                 }
+            } else {
+                info!("analyzing function {}", name);
             }
             self.analyze_body(def_id);
         }

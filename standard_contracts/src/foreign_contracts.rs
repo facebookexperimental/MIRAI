@@ -43,6 +43,7 @@ pub mod alloc {
                 //todo: provide mirai helper that does a deep clone
                 _self
             }
+            default_contract!(from);
         }
     }
 
@@ -75,6 +76,27 @@ pub mod alloc {
                         "swap_remove index (is {}) should be < len (is {})",
                         index, len
                     );
+                }
+            }
+        }
+        pub mod implement_1 {
+            fn assert_failed(index: usize, len: usize) -> ! {
+                panic!(
+                    "insertion index (is {}) should be <= len (is {})",
+                    index, len
+                );
+            }
+            pub mod insert {
+                fn assert_failed(index: usize, len: usize) -> ! {
+                    panic!(
+                        "insertion index (is {}) should be <= len (is {})",
+                        index, len
+                    );
+                }
+            }
+            pub mod remove {
+                fn assert_failed(index: usize, len: usize) -> ! {
+                    panic!("removal index (is {}) should be < len (is {})", index, len);
                 }
             }
         }
@@ -142,6 +164,12 @@ pub mod core {
             pub fn capacity_overflow() {
                 assume_unreachable!("capacity overflow");
             }
+        }
+    }
+
+    pub mod char {
+        pub mod implement_core_char_CaseMappingIter {
+            default_contract!(new);
         }
     }
 
@@ -880,6 +908,12 @@ pub mod core {
         }
     }
 
+    pub mod default {
+        pub mod Default {
+            default_contract!(default);
+        }
+    }
+
     pub mod fmt {
         use std::marker::PhantomData;
 
@@ -905,9 +939,7 @@ pub mod core {
 
         pub struct Void {}
 
-        // pub fn write() -> Result {
-        //     result!()
-        // }
+        default_contract!(write);
     }
 
     pub mod hash {
@@ -2388,9 +2420,10 @@ pub mod core {
             // pub fn nontemporal_store<T>(ptr: *mut T, val: T) {
             //     *ptr = val;
             // }
-            // pub fn ptr_offset_from<T>(ptr: *const T, base: *const T) -> isize {
-            //     result!()
-            // }
+            pub fn ptr_offset_from<T>(ptr: *const T, base: *const T) -> isize {
+                // todo: implement this inside MIRAI
+                result!()
+            }
             pub fn miri_start_panic<T>(data: T) {
                 assume_unreachable!()
             }
@@ -2517,6 +2550,9 @@ pub mod core {
 
     pub mod num {
         pub mod implement_isize {
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
+
             pub fn max_value() -> isize {
                 if cfg!(any(
                     target_arch = "x86",
@@ -2556,6 +2592,9 @@ pub mod core {
         }
 
         pub mod implement_i8 {
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
+
             pub fn max_value() -> i8 {
                 127
             }
@@ -2565,6 +2604,9 @@ pub mod core {
         }
 
         pub mod implement_i16 {
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
+
             pub fn max_value() -> i16 {
                 32767
             }
@@ -2574,6 +2616,9 @@ pub mod core {
         }
 
         pub mod implement_i32 {
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
+
             pub fn max_value() -> i32 {
                 2147483647
             }
@@ -2583,6 +2628,9 @@ pub mod core {
         }
 
         pub mod implement_i64 {
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
+
             pub fn max_value() -> i64 {
                 9223372036854775807
             }
@@ -2592,6 +2640,9 @@ pub mod core {
         }
 
         pub mod implement_i128 {
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
+
             pub fn max_value() -> i128 {
                 170141183460469231731687303715884105727
             }
@@ -2601,6 +2652,36 @@ pub mod core {
         }
 
         pub mod implement_usize {
+            pub fn checked_add(_self: usize, value: usize) -> Option<usize> {
+                if _self > max_value() - value {
+                    None
+                } else {
+                    Some(_self + value)
+                }
+            }
+
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
+
+            pub fn is_power_of_two(n: usize) -> bool {
+                if cfg!(any(
+                    target_arch = "x86",
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
+                )) {
+                    (n as u32).is_power_of_two()
+                } else if cfg!(any(
+                    target_arch = "x86_64",
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
+                )) {
+                    (n as u64).is_power_of_two()
+                } else {
+                    panic!("Unsupported architecture");
+                }
+            }
+
             pub fn max_value() -> usize {
                 if cfg!(any(
                     target_arch = "x86",
@@ -2622,35 +2703,10 @@ pub mod core {
             pub fn min_value() -> usize {
                 0
             }
-            pub fn checked_add(_self: usize, value: usize) -> Option<usize> {
-                if _self > max_value() - value {
-                    None
-                } else {
-                    Some(_self + value)
-                }
-            }
-
-            pub fn is_power_of_two(n: usize) -> bool {
-                if cfg!(any(
-                    target_arch = "x86",
-                    target_arch = "mips",
-                    target_arch = "powerpc",
-                    target_arch = "arm"
-                )) {
-                    (n as u32).is_power_of_two()
-                } else if cfg!(any(
-                    target_arch = "x86_64",
-                    target_arch = "powerpc64",
-                    target_arch = "aarch64"
-                )) {
-                    (n as u64).is_power_of_two()
-                } else {
-                    panic!("Unsupported architecture");
-                }
-            }
         }
 
         pub mod implement_u8 {
+            default_contract!(from_str);
             default_contract!(from_str_radix);
 
             pub fn max_value() -> u8 {
@@ -2679,12 +2735,8 @@ pub mod core {
         }
 
         pub mod implement_u16 {
-            pub fn max_value() -> u16 {
-                65535
-            }
-            pub fn min_value() -> u16 {
-                0
-            }
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
 
             pub fn is_power_of_two(n: u16) -> bool {
                 n == 1 << 0
@@ -2704,6 +2756,13 @@ pub mod core {
                     || n == 1 << 14
                     || n == 1 << 15
             }
+
+            pub fn max_value() -> u16 {
+                65535
+            }
+            pub fn min_value() -> u16 {
+                0
+            }
         }
 
         pub mod implement_u32 {
@@ -2719,6 +2778,9 @@ pub mod core {
         }
 
         pub mod implement_u64 {
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
+
             pub fn max_value() -> u64 {
                 18446744073709551615
             }
@@ -2728,6 +2790,9 @@ pub mod core {
         }
 
         pub mod implement_u128 {
+            default_contract!(from_str);
+            default_contract!(from_str_radix);
+
             pub fn max_value() -> u128 {
                 340282366920938463463374607431768211455
             }
@@ -2909,6 +2974,7 @@ pub mod core {
 
         pub mod memchr {
             default_contract!(memchr);
+            default_contract!(memrchr);
         }
     }
 
@@ -2950,10 +3016,44 @@ pub mod core {
         }
     }
 
+    pub mod time {
+        pub mod implement_core_time_Duration {
+            default_contract!(mul);
+        }
+    }
+
     pub mod unicode {
         pub mod unicode_data {
+            pub mod alphabetic {
+                default_contract!(lookup);
+            }
+            pub mod case_ignorable {
+                default_contract!(lookup);
+            }
+            pub mod cased {
+                default_contract!(lookup);
+            }
+            pub mod cc {
+                default_contract!(lookup);
+            }
+            pub mod grapheme_extend {
+                default_contract!(lookup);
+            }
+            pub mod lowercase {
+                default_contract!(lookup);
+            }
+            pub mod n {
+                default_contract!(lookup);
+            }
+            pub mod uppercase {
+                default_contract!(lookup);
+            }
             pub mod white_space {
                 default_contract!(lookup);
+            }
+            pub mod conversions {
+                default_contract!(to_lower);
+                default_contract!(to_upper);
             }
         }
     }
@@ -3056,7 +3156,23 @@ pub mod libc {
                 0
             }
 
+            pub fn pthread_cond_destroy() -> u64 {
+                0
+            }
+
+            pub fn pthread_cond_wait() -> u64 {
+                0
+            }
+
+            pub fn pthread_mutex_destroy() -> u64 {
+                0
+            }
+
             pub fn pthread_mutex_lock() -> u64 {
+                0
+            }
+
+            pub fn pthread_rwlock_unlock() -> u64 {
                 0
             }
 
@@ -3071,6 +3187,8 @@ pub mod libc {
             pub fn read() -> u64 {
                 0
             }
+
+            default_contract!(sysconf);
         }
 
         pub mod bsd {
@@ -3087,6 +3205,15 @@ pub mod log {
     default_contract!(__private_api_log);
 }
 
+pub mod measureme {
+    pub mod profiler {
+        pub mod implement {
+            default_contract!(nanos_since_start);
+            default_contract!(record_raw_event);
+        }
+    }
+}
+
 pub mod parking_lot {
     pub mod condvar {
         pub mod implement_parking_lot_condvar_Condvar {
@@ -3097,7 +3224,14 @@ pub mod parking_lot {
     pub mod raw_mutex {
         pub mod implement_parking_lot_raw_mutex_RawMutex {
             default_contract!(lock_slow);
+            default_contract!(unlock_slow);
         }
+    }
+}
+
+pub mod proc_macro {
+    pub mod implement_proc_macro_Ident {
+        default_contract!(to_string);
     }
 }
 
@@ -3280,6 +3414,7 @@ pub mod rustc_middle {
             pub mod implement_rustc_middle_ty_context_TyCtxt {
                 default_contract!(def_path);
                 default_contract!(intern_existential_predicates);
+                default_contract!(intern_poly_existential_predicates);
                 default_contract!(intern_substs);
                 default_contract!(intern_type_list);
                 default_contract!(mk_const);
@@ -3372,6 +3507,11 @@ pub mod rustc_middle {
                 default_contract!(expect_ty);
                 default_contract!(from);
             }
+        }
+    }
+    pub mod util {
+        pub mod bug {
+            default_contract!(bug_fmt);
         }
     }
 }
@@ -3516,7 +3656,12 @@ pub mod std {
     }
 
     pub mod env {
+        default_contract!(_var);
         default_contract!(_var_os);
+
+        pub mod implement_std_env_VarsOs {
+            default_contract!(next);
+        }
     }
 
     pub mod ffi {
@@ -3534,6 +3679,9 @@ pub mod std {
             }
         }
         pub mod os_str {
+            pub mod implement {
+                default_contract!(into_string);
+            }
             pub mod implement_std_ffi_os_str_OsStr {
                 pub struct Slice {
                     pub inner: [u8],
@@ -3573,6 +3721,12 @@ pub mod std {
     }
 
     pub mod fs {
+        pub mod implement_std_fs_DirBuilder {
+            default_contract!(_create);
+            default_contract!(new);
+            default_contract!(recursive);
+        }
+
         pub mod implement_std_fs_File {
             use std::fs::File;
 
@@ -3584,6 +3738,7 @@ pub mod std {
             }
 
             default_contract!(seek);
+            default_contract!(write);
         }
 
         pub mod implement_std_fs_OpenOptions {
@@ -3662,10 +3817,44 @@ pub mod std {
         }
     }
 
+    pub mod net {
+        pub mod addr {
+            pub mod implement_std_net_addr_SocketAddr {
+                default_contract!(to_socket_addrs);
+            }
+        }
+
+        pub mod ip {
+            pub mod implement_std_net_ip_Ipv4Addr {
+                default_contract!(from);
+            }
+
+            pub mod implement_u32 {
+                default_contract!(from);
+            }
+        }
+
+        pub mod parser {
+            pub mod implement_std_net_ip_IpAddr {
+                default_contract!(from_str);
+            }
+        }
+
+        pub mod tcp {
+            pub mod implement {
+                default_contract!(set_read_timeout);
+                default_contract!(set_write_timeout);
+                default_contract!(shutdown);
+            }
+        }
+    }
+
     pub mod panicking {
         pub mod panic_count {
             default_contract!(is_zero_slow_path);
         }
+
+        default_contract!(set_hook);
     }
 
     pub mod path {
@@ -3681,6 +3870,7 @@ pub mod std {
                 &_self.inner
             }
         }
+
         pub mod implement_std_path_Path {
             use std::ffi::OsString;
             use std::path::Path;
@@ -3693,28 +3883,13 @@ pub mod std {
                 _self
             }
 
-            // pub fn to_owned(_self: &Path) -> std::path::PathBuf {
-            //     _self.to_path_buf()
-            // }
-            // pub fn clone_into(_self: &Path, target: &mut PathBuf) {
-            //     _self.as_os_str().clone_into(&mut target.inner);
-            // }
+            default_contract!(_join);
         }
 
         pub mod implement_std_path_PathBuf {
-            use std::ffi::OsString;
-            use std::path::Path;
-
-            pub struct PathBuf {
-                inner: OsString,
-            }
-            // fn default() -> std::path::PathBuf {
-            //     std::path::PathBuf::new()
-            // }
+            default_contract!(default);
             default_contract!(from_str);
-            // pub fn _push(_self: &mut PathBuf, path: &Path) {
-            //     _self.inner.push(path);
-            // }
+            default_contract!(_push);
         }
     }
 
@@ -3724,6 +3899,14 @@ pub mod std {
         pub mod detect {
             pub mod cache {
                 default_contract!(test);
+            }
+        }
+    }
+
+    pub mod sync {
+        pub mod condvar {
+            pub mod implement_std_sync_condvar_Condvar {
+                default_contract!(new);
             }
         }
     }
@@ -3750,6 +3933,24 @@ pub mod std {
                 default_contract!(new);
             }
         }
+
+        pub mod net {
+            pub mod implement_std_sys_common_net_TcpListener {
+                default_contract!(bind);
+            }
+        }
+
+        pub mod thread {
+            default_contract!(min_stack);
+        }
+
+        pub mod thread_parker {
+            pub mod generic {
+                pub mod implement {
+                    default_contract!(unpark);
+                }
+            }
+        }
     }
 
     pub mod thread {
@@ -3770,6 +3971,16 @@ pub mod std {
 
     pub mod time {
         pub mod implement {
+            default_contract!(duration);
+            default_contract!(elapsed);
+            default_contract!(now);
+        }
+        pub mod implement_std_time_Instant {
+            default_contract!(add);
+        }
+        pub mod implement_std_time_SystemTime {
+            default_contract!(duration);
+            default_contract!(duration_since);
             default_contract!(elapsed);
             default_contract!(now);
         }
@@ -3810,5 +4021,24 @@ pub mod tracing_core {
         pub mod implement {
             default_contract!(fields);
         }
+    }
+}
+
+pub mod z3_sys {
+    default_contract!(Z3_mk_bool_sort);
+    default_contract!(Z3_mk_config);
+    default_contract!(Z3_mk_context);
+    default_contract!(Z3_mk_func_decl);
+    default_contract!(Z3_mk_int);
+    default_contract!(Z3_mk_int_sort);
+    default_contract!(Z3_mk_solver);
+    default_contract!(Z3_mk_string_symbol);
+    default_contract!(Z3_mk_uninterpreted_sort);
+    default_contract!(Z3_set_param_value);
+
+    pub mod _2 {
+        default_contract!(Z3_mk_fpa_round_nearest_ties_to_even);
+        default_contract!(Z3_mk_fpa_sort_32);
+        default_contract!(Z3_mk_fpa_sort_64);
     }
 }
