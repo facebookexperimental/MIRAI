@@ -917,7 +917,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
         // If we never get here, rather call verify_unreachable!()
         if !entry_cond_as_bool.unwrap_or(true) {
-            let span = self.bv.current_span;
+            let span = self.bv.current_span.source_callsite();
             let message =
                 "this is unreachable, mark it as such by using the verify_unreachable! macro";
             let warning = self.bv.cv.session.struct_span_warn(span, message);
@@ -931,7 +931,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }
 
         if function_name == KnownNames::MiraiPostcondition {
-            let span = self.bv.current_span;
+            let span = self.bv.current_span.source_callsite();
             let msg = if cond_as_bool.is_some() {
                 "provably false postcondition"
             } else {
@@ -946,7 +946,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         // If a verification condition is always false, give an error since that is bad style.
         if function_name == KnownNames::MiraiVerify && !cond_as_bool.unwrap_or(true) {
             // If the condition is always false, give a style error
-            let span = self.bv.current_span;
+            let span = self.bv.current_span.source_callsite();
             let error = self
                 .bv
                 .cv
@@ -996,7 +996,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         .expression
                         .contains_parameter())
             {
-                let span = self.bv.current_span;
+                let span = self.bv.current_span.source_callsite();
                 let warning = self.bv.cv.session.struct_span_warn(span, warning.as_str());
                 self.bv.emit_diagnostic(warning);
             }
@@ -1034,14 +1034,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     if self.bv.function_being_analyzed_is_root()
                         || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
                     {
-                        let span = self.bv.current_span;
+                        let span = self.bv.current_span.source_callsite();
                         let warning = self.bv.cv.session.struct_span_warn(
                             span,
                             format!("the {} may have a {} tag", value_name, tag_name).as_str(),
                         );
                         self.bv.emit_diagnostic(warning);
                     } else if tag_check.expression.contains_local_variable() {
-                        let span = self.bv.current_span;
+                        let span = self.bv.current_span.source_callsite();
                         let warning = self.bv.cv.session.struct_span_warn(
                             span,
                             format!(
@@ -1059,7 +1059,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 Some(tag_check_result) if !tag_check_result => {
                     // The existence of the tag on the value is different from the expectation.
                     // In this case, report an error.
-                    let span = self.bv.current_span;
+                    let span = self.bv.current_span.source_callsite();
                     let error = self.bv.cv.session.struct_span_err(
                         span,
                         format!("the {} has a {} tag", value_name, tag_name).as_str(),
@@ -1086,7 +1086,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     condition,
                     message: Rc::from(format!("the {} may have a {} tag", value_name, tag_name)),
                     provenance: None,
-                    spans: vec![self.bv.current_span],
+                    spans: vec![self.bv.current_span.source_callsite()],
                 };
                 self.bv.preconditions.push(precondition);
             }
