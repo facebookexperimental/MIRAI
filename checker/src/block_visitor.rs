@@ -2271,7 +2271,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     ) -> Rc<AbstractValue> {
         if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) = val
         {
-            let data = scalar_int.to_bits(scalar_int.size()).unwrap();
+            let size = scalar_int.size();
+            if size == rustc_target::abi::Size::ZERO {
+                return Rc::new(ConstantDomain::U128(0).into());
+            }
+            let data = scalar_int.to_bits(size).unwrap();
             let param_env = self.bv.type_visitor.get_param_env();
             if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
                 // The type of the discriminant tag

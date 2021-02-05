@@ -13,6 +13,14 @@ pub enum Foo {
     Bar2(i32),
 }
 
+pub enum Zero {
+    ZERO = 0,
+}
+
+pub fn dup(z: Zero) -> Zero {
+    z
+}
+
 pub fn main() {
     let foo = Foo::Bar1(2);
     match foo {
