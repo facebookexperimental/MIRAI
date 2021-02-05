@@ -732,8 +732,7 @@ impl Expression {
         }
     }
 
-    /// Returns true if any part of the expression is a parameter.
-    /// Use this to weed out diagnostics that would need preconditions to silence them.
+    /// Returns true if any part of the expression is a widened join.
     #[logfn_inputs(TRACE)]
     pub fn contains_parameter(&self) -> bool {
         match &self {
@@ -824,6 +823,106 @@ impl Expression {
             }
             Expression::UnknownTagField { path } | Expression::Variable { path, .. } => {
                 path.contains_parameter()
+            }
+            Expression::WidenedJoin { .. } => true,
+        }
+    }
+
+    /// Returns true if any part of the expression is a parameter.
+    /// Use this to weed out diagnostics that would need preconditions to silence them.
+    #[logfn_inputs(TRACE)]
+    pub fn contains_widened_join(&self) -> bool {
+        match &self {
+            Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
+            | Expression::Ne { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Or { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
+            | Expression::Shr { left, right, .. }
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => {
+                left.expression.contains_widened_join() || right.expression.contains_widened_join()
+            }
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::TaggedExpression { operand, .. } => {
+                operand.expression.contains_widened_join()
+            }
+            Expression::Bottom => false,
+
+            Expression::CompileTimeConstant(..) => false,
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                condition.expression.contains_widened_join()
+                    || consequent.expression.contains_widened_join()
+                    || alternate.expression.contains_widened_join()
+            }
+            Expression::HeapBlock { .. } => false,
+            Expression::HeapBlockLayout {
+                length, alignment, ..
+            } => {
+                length.expression.contains_widened_join()
+                    || alignment.expression.contains_widened_join()
+            }
+            Expression::Join { left, right, .. } => {
+                left.expression.contains_widened_join() || right.expression.contains_widened_join()
+            }
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                left.expression.contains_widened_join()
+                    || right.expression.contains_widened_join()
+                    || length.expression.contains_widened_join()
+            }
+            Expression::Neg { operand }
+            | Expression::LogicalNot { operand }
+            | Expression::UnknownTagCheck { operand, .. } => {
+                operand.expression.contains_widened_join()
+            }
+            Expression::Reference(path) => path.contains_widened_join(),
+            Expression::InitialParameterValue { .. } => false,
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                discriminator.expression.contains_widened_join()
+                    || default.expression.contains_widened_join()
+                    || cases
+                        .iter()
+                        .any(|(_, v)| v.expression.contains_widened_join())
+            }
+            Expression::Top => true,
+            Expression::UninterpretedCall { .. } => false,
+            Expression::UnknownModelField { path, default } => {
+                path.contains_widened_join() || default.expression.contains_widened_join()
+            }
+            Expression::UnknownTagField { path } | Expression::Variable { path, .. } => {
+                path.contains_widened_join()
             }
             Expression::WidenedJoin { .. } => true,
         }

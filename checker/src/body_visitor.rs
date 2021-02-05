@@ -1826,6 +1826,24 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     if let Expression::CompileTimeConstant(..) = &value.expression {
                         // fall through, the target path is unique
                     } else {
+                        if value.expression.contains_widened_join() {
+                            // A widened index is like a pattern because it changes from one loop
+                            // iteration to the next, we can't use the current environment to reason
+                            // about the state of any element indexed by it. Consequently, we set all
+                            // entries rooted in qualifier to TOP.
+                            let old_value_map = self.current_environment.value_map.clone();
+                            let mut new_value_map = old_value_map.clone();
+                            for (path, value) in old_value_map
+                                .iter()
+                                .filter(|(path, _)| path.is_rooted_by(qualifier))
+                            {
+                                let top_val =
+                                    AbstractValue::make_from(value.expression.clone(), u64::MAX);
+                                new_value_map.insert_mut(path.clone(), top_val);
+                            }
+                            self.current_environment.value_map = new_value_map;
+                            return true; // stop the caller from any further updates to the state.
+                        }
                         weak_update(self, qualifier.clone(), source_path.clone(), value.clone());
                         // fall through
                     }
