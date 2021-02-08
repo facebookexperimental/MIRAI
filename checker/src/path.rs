@@ -972,8 +972,27 @@ impl PathRefinement for Rc<Path> {
 
             if let Some(value) = qualifier_as_value {
                 match &value.expression {
-                    //  old(q).s => old(q.s)
+                    // old(q).s => q.s
+                    //todo: this is true if q the param root, since that is the
+                    // address of the parameter, which is the same in the pre and post state,
+                    // but is it true in other cases?
                     Expression::InitialParameterValue { path, .. } => {
+                        if let PathEnum::QualifiedPath {
+                            qualifier,
+                            selector: qs,
+                            ..
+                        } = &path.value
+                        {
+                            if *qs.as_ref() == PathSelector::Deref {
+                                // old(q.deref).s => old(q.s)
+                                return Path::new_computed(
+                                    AbstractValue::make_initial_parameter_value(
+                                        ExpressionType::ThinPointer,
+                                        Path::new_qualified(qualifier.clone(), selector.clone()),
+                                    ),
+                                );
+                            }
+                        }
                         return Path::new_qualified(path.clone(), selector.clone());
                     }
                     // *&p is equivalent to p and (&p).q is equivalent to p.q, etc.
