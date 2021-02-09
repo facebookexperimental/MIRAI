@@ -513,7 +513,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         match ty_kind {
             TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
                 // Pointers to sized arrays are thin pointers.
-                matches!(target.kind(), TyKind::Slice(..))
+                matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
             }
             TyKind::Adt(def, substs) => {
                 for v in def.variants.iter() {
@@ -875,7 +875,7 @@ pub fn is_thin_pointer(ty_kind: &TyKind<'_>) -> bool {
 /// tracking a slice of the underlying collection.
 pub fn is_slice_pointer(ty_kind: &TyKind<'_>) -> bool {
     if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
-        // Pointers to sized arrays and slice pointers are thin pointers.
+        // Pointers to sized arrays are thin pointers.
         matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
     } else {
         false
