@@ -124,7 +124,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Write the RHS Rvalue to the LHS Place.
     #[logfn_inputs(TRACE)]
     fn visit_assign(&mut self, place: &mir::Place<'tcx>, rvalue: &mir::Rvalue<'tcx>) {
-        let mut path = self.visit_place_defer_refinement(place);
+        let mut path = self.visit_lh_place(place);
         match &path.value {
             PathEnum::PhantomData => {
                 // No need to track this data
@@ -147,7 +147,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         place: &mir::Place<'tcx>,
         variant_index: rustc_target::abi::VariantIdx,
     ) {
-        let target_path = Path::new_discriminant(self.visit_place(place));
+        let target_path = Path::new_discriminant(self.visit_rh_place(place));
         let ty = self
             .bv
             .type_visitor
@@ -453,8 +453,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .clone();
                 let func_to_call = Rc::new(func_const.clone().into());
                 let destination = Some((*place, target));
-                let path = self.visit_place(place);
-                let val = self.bv.lookup_path_and_refine_result(path.clone(), ty);
+                let path = self.visit_rh_place(place);
+                let ref_to_path_value = AbstractValue::make_reference(path);
                 let mut call_visitor = CallVisitor::new(
                     self,
                     destructor.did,
@@ -463,7 +463,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     self.bv.current_environment.clone(),
                     func_const,
                 );
-                call_visitor.actual_args = vec![(path, val)];
+                call_visitor.actual_args = vec![(
+                    Path::new_computed(ref_to_path_value.clone()),
+                    ref_to_path_value,
+                )];
                 call_visitor.actual_argument_types = actual_argument_types;
                 call_visitor.cleanup = unwind;
                 call_visitor.destination = destination;
@@ -1396,7 +1399,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// with place.
     #[logfn_inputs(TRACE)]
     fn visit_used_copy(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
-        let rpath = self.visit_place(place);
+        let rpath = self.visit_rh_place(place);
         let rtype = self
             .bv
             .type_visitor
@@ -1410,7 +1413,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// with place, and also remove the (path', value) pair from the environment.
     #[logfn_inputs(TRACE)]
     fn visit_used_move(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
-        let rpath = self.visit_place(place);
+        let rpath = self.visit_rh_place(place);
         let rtype = self
             .bv
             .type_visitor
@@ -1441,7 +1444,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .type_visitor
             .get_path_rustc_type(&path, self.bv.current_span);
-        let value_path = self.visit_place_defer_refinement(place);
+        let value_path = self.visit_lh_place(place);
         let value = match &value_path.value {
             PathEnum::QualifiedPath {
                 qualifier,
@@ -1563,7 +1566,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             // With more optimization the len instruction becomes a constant.
             self.visit_constant(None, &len)
         } else {
-            let mut value_path = self.visit_place_defer_refinement(place);
+            let mut value_path = self.visit_lh_place(place);
             if let PathEnum::QualifiedPath {
                 qualifier,
                 selector,
@@ -1626,7 +1629,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         return;
                     }
                 };
-                let source_path = self.visit_place(place);
+                let source_path = self.visit_rh_place(place);
                 let source_type = self.get_operand_rustc_type(operand);
                 if let PointerCast::Unsize = pointer_cast {
                     // Unsize a pointer/reference value, e.g., `&[T; n]` to`&[T]`.
@@ -1694,7 +1697,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .visit_operand(operand)
                     .cast(ExpressionType::from(ty.kind()));
                 if let mir::Operand::Move(place) = operand {
-                    let source_path = self.visit_place(place);
+                    let source_path = self.visit_rh_place(place);
                     self.bv.current_environment.value_map =
                         self.bv.current_environment.value_map.remove(&source_path);
                 }
@@ -1862,7 +1865,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Read the discriminant of an enum and assign to path.
     #[logfn_inputs(TRACE)]
     fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
-        let discriminant_path = Path::new_discriminant(self.visit_place(place));
+        let discriminant_path = Path::new_discriminant(self.visit_rh_place(place));
         let discriminant_value = self
             .bv
             .lookup_path_and_refine_result(discriminant_path, self.bv.tcx.types.u128);
@@ -1923,7 +1926,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn get_operand_path(&mut self, operand: &mir::Operand<'tcx>) -> Rc<Path> {
         match operand {
-            mir::Operand::Copy(place) | mir::Operand::Move(place) => self.visit_place(place),
+            mir::Operand::Copy(place) | mir::Operand::Move(place) => self.visit_rh_place(place),
             mir::Operand::Constant(..) => Path::new_computed(self.visit_operand(operand)),
         }
     }
@@ -1965,7 +1968,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// by construction during build, but also checked by the MIR type checker.
     #[logfn_inputs(TRACE)]
     fn visit_copy(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
-        let path = self.visit_place(place);
+        let path = self.visit_rh_place(place);
         let rust_place_type = self
             .bv
             .type_visitor
@@ -1980,7 +1983,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// `Copy` may be converted to `Move` to enable "last-use" optimizations.
     #[logfn_inputs(TRACE)]
     fn visit_move(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
-        let path = self.visit_place(place);
+        let path = self.visit_rh_place(place);
         let rust_place_type = self
             .bv
             .type_visitor
@@ -2773,7 +2776,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Returns a normalized Path instance that is the essentially the same as the Place instance, but which
     /// can be serialized and used as a cache key. Also caches the place type with the path as key.
     #[logfn_inputs(TRACE)]
-    pub fn visit_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
+    pub fn visit_rh_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let place_path = self.get_path_for_place(place);
         let mut path = place_path.canonicalize(&self.bv.current_environment);
         match &place_path.value {
@@ -2839,13 +2842,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         path
     }
 
-    /// Returns a Path instance that is the essentially the same as the Place instance, but which
+    /// Returns a Path instance that is essentially the same as the Place instance, but which
     /// can be serialized and used as a cache key. Also caches the place type with the path as key.
     /// The path is not normalized so deref selectors are left in place until it is determined if
     /// the fat pointer is being dereferenced to get at its target value, or dereferenced to make
     /// a copy of it.
     #[logfn_inputs(TRACE)]
-    pub fn visit_place_defer_refinement(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
+    pub fn visit_lh_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         self.get_path_for_place(place)
     }
 
@@ -2946,7 +2949,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .type_visitor
                             .path_ty_cache
                             .insert(deref_path.clone(), ty);
-                        prev_result = Some(result);
+                        let fat_pointer_target_type = type_visitor::get_target_type(ty);
+                        let fat_pointer_path = Path::new_deref(
+                            result,
+                            ExpressionType::from(fat_pointer_target_type.kind()),
+                        );
+                        prev_result = Some(fat_pointer_path);
                         result = deref_path;
                         continue;
                     }
