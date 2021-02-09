@@ -338,7 +338,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .type_visitor
                 .get_rustc_place_type(place, self.block_visitor.bv.current_span);
-            let target_path = self.block_visitor.visit_place(place);
+            let target_path = self.block_visitor.visit_rh_place(place);
             if !summary.is_computed {
                 self.deal_with_missing_summary();
                 // Now just do a deep copy and carry on.
@@ -450,7 +450,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             KnownNames::MiraiResult => {
                 if let Some((place, _)) = &self.destination {
-                    let target_path = self.block_visitor.visit_place(place);
+                    let target_path = self.block_visitor.visit_rh_place(place);
                     let target_rustc_type = self
                         .block_visitor
                         .bv
@@ -547,7 +547,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let result = self.try_to_inline_special_function();
                 if !result.is_bottom() {
                     if let Some((place, _)) = &self.destination {
-                        let target_path = self.block_visitor.visit_place(place);
+                        let target_path = self.block_visitor.visit_rh_place(place);
                         self.block_visitor
                             .bv
                             .current_environment
@@ -1014,7 +1014,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let mut argument_map = self.callee_generic_argument_map.clone();
         if closure_ty.is_closure() {
             if self.callee_known_name != KnownNames::StdSyncOnceCallOnce {
-                actual_args.insert(0, self.actual_args[0].clone());
+                let closure_path = self.actual_args[0].0.clone();
+                let closure_reference = AbstractValue::make_reference(closure_path);
+                actual_args.insert(
+                    0,
+                    (
+                        Path::get_as_path(closure_reference.clone()),
+                        closure_reference,
+                    ),
+                );
                 actual_argument_types.insert(0, closure_ref_ty);
             }
             //todo: could this be a generator?
@@ -1092,7 +1100,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_abstract_value(&mut self) {
         if let Some((place, target)) = &self.destination {
-            let path = self.block_visitor.visit_place(place);
+            let path = self.block_visitor.visit_rh_place(place);
             let expression_type = self
                 .block_visitor
                 .bv
@@ -1338,7 +1346,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         // Return the abstract result and update exit conditions.
         let destination = &self.destination;
         if let Some((place, _)) = destination {
-            let target_path = self.block_visitor.visit_place(place);
+            let target_path = self.block_visitor.visit_rh_place(place);
             self.block_visitor.bv.current_environment.update_value_at(
                 target_path.clone(),
                 result.unwrap_or_else(|| {
@@ -1378,7 +1386,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let source_path = Path::new_model_field(qualifier, field_name)
                 .canonicalize(&self.block_visitor.bv.current_environment);
 
-            let target_path = self.block_visitor.visit_place(place);
+            let target_path = self.block_visitor.visit_rh_place(place);
             if self
                 .block_visitor
                 .bv
@@ -1655,7 +1663,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     }
                 }
             }
-            let target_path = self.block_visitor.visit_place(place);
+            let target_path = self.block_visitor.visit_rh_place(place);
             self.block_visitor
                 .bv
                 .current_environment
@@ -1797,7 +1805,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 KnownNames::StdIntrinsicsMulWithOverflow => mir::BinOp::Mul,
                 _ => assume_unreachable!(),
             };
-            let target_path = self.block_visitor.visit_place(target_place);
+            let target_path = self.block_visitor.visit_rh_place(target_place);
             let path0 = Path::new_field(target_path.clone(), 0);
             let path1 = Path::new_field(target_path.clone(), 1);
             let target_type = self
@@ -1880,7 +1888,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         .canonicalize(&self.block_visitor.bv.current_environment);
         let source_path = &Path::get_as_path(self.actual_args[1].1.clone());
         if let Some((place, _)) = &self.destination {
-            let target_path = self.block_visitor.visit_place(place);
+            let target_path = self.block_visitor.visit_rh_place(place);
             let root_rustc_type = self
                 .block_visitor
                 .bv
@@ -1920,7 +1928,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 return Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
             }
         }
-        let path = self.block_visitor.visit_place(
+        let path = self.block_visitor.visit_rh_place(
             &self
                 .destination
                 .expect("std::intrinsics::size_of should have a destination")
@@ -1953,7 +1961,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             return Rc::new((ty_and_layout.layout.align.abi.bytes() as u128).into());
         }
         // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).
-        let path = self.block_visitor.visit_place(
+        let path = self.block_visitor.visit_rh_place(
             &self
                 .destination
                 .expect("std::intrinsics::min_align_of_val should have a destination")
@@ -2013,7 +2021,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
         // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).
-        let path = self.block_visitor.visit_place(
+        let path = self.block_visitor.visit_rh_place(
             &self
                 .destination
                 .expect("std::intrinsics::size_of_value should have a destination")
@@ -2042,7 +2050,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             .expect("rustc type error")
             .expect_ty();
         if let Some((place, _)) = &self.destination {
-            let mut target_path = self.block_visitor.visit_place(place);
+            let mut target_path = self.block_visitor.visit_rh_place(place);
             let target_rustc_type = self
                 .block_visitor
                 .bv
@@ -2527,7 +2535,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let destination = self.destination;
         if let Some((place, _)) = &destination {
             // Assign function result to place
-            let target_path = self.block_visitor.visit_place(place);
+            let target_path = self.block_visitor.visit_rh_place(place);
             let result_path = &Some(target_path.clone());
             let return_value_path = Path::new_result();
 
@@ -2613,7 +2621,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     pub fn add_post_condition_to_exit_conditions(&mut self, function_summary: &Summary) {
         let destination = self.destination;
         if let Some((place, target)) = &destination {
-            let target_path = self.block_visitor.visit_place(place);
+            let target_path = self.block_visitor.visit_rh_place(place);
             let result_path = &Some(target_path);
             let mut exit_condition = self
                 .block_visitor

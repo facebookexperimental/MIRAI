@@ -92,7 +92,7 @@ impl Path {
     /// When splitting paths while doing weak updates, it is important to not refine paths because
     /// they are already canonical and because doing so can lead to recursive loops as refined paths
     /// re-introduce joined paths that have been split earlier.
-    /// A split path, however, can be serve as the qualifier of a newly constructed qualified path
+    /// A split path, however, can serve as the qualifier of a newly constructed qualified path
     /// and the qualified path might not be canonical. This routine tries to remove the two sources of
     /// de-canonicalization that are currently know. Essentially: when a path that binds to a value
     /// that is a reference is implicitly dereferenced by the selector, the canonical path will
@@ -103,7 +103,7 @@ impl Path {
     /// If the function returns a re-canonicalized path, which is used as the qualifier of a newly
     /// constructed qualified path, the caller of this function should check if the selector of the
     /// qualified path is `PathSelector::Deref`. If so, the deref selector should also be removed.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     pub fn try_to_dereference(path: &Rc<Path>, environment: &Environment) -> Option<Rc<Path>> {
         if let PathEnum::Computed { value } = &path.value {
             if let Expression::Reference(path) = &value.expression {
@@ -639,17 +639,6 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn new_discriminant(enum_path: Rc<Path>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Discriminant);
-        if let PathEnum::QualifiedPath {
-            qualifier: base_qualifier,
-            selector: base_selector,
-            ..
-        } = &enum_path.value
-        {
-            if *base_selector.as_ref() == PathSelector::Deref {
-                // no need for an explicit deref in a qualifier
-                return Path::new_qualified(base_qualifier.clone(), selector);
-            }
-        }
         Self::new_qualified(enum_path, selector)
     }
 
@@ -657,17 +646,6 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn new_field(qualifier: Rc<Path>, field_index: usize) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Field(field_index));
-        if let PathEnum::QualifiedPath {
-            qualifier: base_qualifier,
-            selector: base_selector,
-            ..
-        } = &qualifier.value
-        {
-            if *base_selector.as_ref() == PathSelector::Deref {
-                // no need for an explicit deref in a qualifier
-                return Path::new_qualified(base_qualifier.clone(), selector);
-            }
-        }
         Self::new_qualified(qualifier, selector)
     }
 
@@ -685,17 +663,6 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn new_index(collection_path: Rc<Path>, index_value: Rc<AbstractValue>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Index(index_value));
-        if let PathEnum::QualifiedPath {
-            qualifier: base_qualifier,
-            selector: base_selector,
-            ..
-        } = &collection_path.value
-        {
-            if *base_selector.as_ref() == PathSelector::Deref {
-                // no need for an explicit deref in a qualifier
-                return Path::new_qualified(base_qualifier.clone(), selector);
-            }
-        }
         Self::new_qualified(collection_path, selector)
     }
 
@@ -761,17 +728,6 @@ impl Path {
     #[logfn_inputs(TRACE)]
     pub fn new_length(array_path: Rc<Path>) -> Rc<Path> {
         let selector = Rc::new(PathSelector::Field(1));
-        if let PathEnum::QualifiedPath {
-            qualifier: base_qualifier,
-            selector: base_selector,
-            ..
-        } = &array_path.value
-        {
-            if *base_selector.as_ref() == PathSelector::Deref {
-                // no need for an explicit deref in a qualifier
-                return Path::new_qualified(base_qualifier.clone(), selector);
-            }
-        }
         Self::new_qualified(array_path, selector)
     }
 
@@ -986,18 +942,6 @@ impl PathRefinement for Rc<Path> {
         } = &self.value
         {
             let canonical_qualifier = qualifier.canonicalize(environment);
-            // (*p).q is equivalent to p.q, etc.
-            if let PathEnum::QualifiedPath {
-                qualifier: base_qualifier,
-                selector: base_selector,
-                ..
-            } = &canonical_qualifier.value
-            {
-                if *base_selector.as_ref() == PathSelector::Deref {
-                    // no need for an explicit deref in a qualifier
-                    return Path::new_qualified(base_qualifier.clone(), selector.clone());
-                }
-            }
             // If the canonical qualifier binds to a special value, we may need to deconstruct that
             // value before constructing the qualified path.
             let qualifier_as_value =
@@ -1014,18 +958,13 @@ impl PathRefinement for Rc<Path> {
                     // address of the parameter, which is the same in the pre and post state,
                     // but is it true in other cases?
                     Expression::InitialParameterValue { path, .. } => {
-                        if let PathEnum::QualifiedPath {
-                            qualifier,
-                            selector: qs,
-                            ..
-                        } = &path.value
-                        {
+                        if let PathEnum::QualifiedPath { selector: qs, .. } = &path.value {
                             if *qs.as_ref() == PathSelector::Deref {
-                                // old(q.deref).s => old(q.s)
+                                // old(q.deref).s => old(q.deref.s)
                                 return Path::new_computed(
                                     AbstractValue::make_initial_parameter_value(
                                         ExpressionType::ThinPointer,
-                                        Path::new_qualified(qualifier.clone(), selector.clone()),
+                                        Path::new_qualified(path.clone(), selector.clone()),
                                     ),
                                 );
                             }
@@ -1044,6 +983,9 @@ impl PathRefinement for Rc<Path> {
                         // since selectors implicitly dereference pointers.
                         return Path::new_qualified(p.clone(), selector.clone())
                             .canonicalize(environment);
+                    }
+                    Expression::Variable { path, .. } => {
+                        return Path::new_qualified(path.clone(), selector.clone());
                     }
                     _ => {}
                 }
