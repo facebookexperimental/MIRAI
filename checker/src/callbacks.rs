@@ -134,63 +134,34 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
 }
 
 impl MiraiCallbacks {
-    fn is_test_excluded(file_name: &str) -> bool {
-        file_name.contains("storage/storage-service/src") || file_name.contains("client/cli/src")
+    fn is_test_excluded(_file_name: &str) -> bool {
+        false
     }
 
     fn is_excluded(file_name: &str) -> bool {
-        file_name.contains("client/faucet/src")
-        || file_name.contains("client/json-rpc/src")
-        || file_name.contains("client/swiss-knife/src")
-        || file_name.contains("config/src")
-        || file_name.contains("config/management/src")    
-        || file_name.contains("config/management/genesis/src")
-        || file_name.contains("config/management/network-address-encryption/src")
-        || file_name.contains("config/management/operational/src")  
-        || file_name.contains("consensus/src")    
-        || file_name.contains("consensus/safety-rules/src")    
-        || file_name.contains("common/debug-interface/src")
-        || file_name.contains("common/logger/src")
-        || file_name.contains("common/metrics/src")
-        || file_name.contains("common/metrics-core/src")    
-        || file_name.contains("common/trace/src")
-        || file_name.contains("diem-node/src")    
-        || file_name.contains("execution/execution-correctness/src")    
-        || file_name.contains("execution/executor/src")    
-        || file_name.contains("json-rpc/src")    
-        || file_name.contains("language/bytecode-verifier/src")    
-        || file_name.contains("language/compiler/src")    
-        || file_name.contains("language/compiler/ir-to-bytecode/src")    
-        || file_name.contains("language/compiler/ir-to-bytecode/syntax/src")    
-        || file_name.contains("language/diem-tools/diem-events-fetcher/src")    
-        || file_name.contains("language/diem-vm/src")    
+        file_name.contains("common/logger/src")
+        || file_name.contains("language/bytecode-verifier/src")
+        || file_name.contains("language/compiler/src")
+        || file_name.contains("language/compiler/ir-to-bytecode/src")
+        || file_name.contains("language/compiler/ir-to-bytecode/syntax/src")
+        || file_name.contains("language/diem-tools/diem-events-fetcher/src")
+        || file_name.contains("language/diem-vm/src")
         || file_name.contains("language/move-lang/src")
-        || file_name.contains("language/move-model/src")    
+        || file_name.contains("language/move-model/src")
         || file_name.contains("language/move-prover/src") // compiler panic
-        || file_name.contains("language/move-prover/bytecode/src")    
-        || file_name.contains("language/move-prover/abigen/src")    
-        || file_name.contains("language/move-prover/docgen/src")    
+        || file_name.contains("language/move-prover/bytecode/src")
+        || file_name.contains("language/move-prover/abigen/src")
+        || file_name.contains("language/move-prover/docgen/src")
         || file_name.contains("language/move-prover/spec-lang/src") // compiler panic
-        || file_name.contains("language/move-vm/test-utils/src")    
-        || file_name.contains("language/stdlib/src")    
+        || file_name.contains("language/move-vm/test-utils/src")
+        || file_name.contains("language/stdlib/src")
         || file_name.contains("language/tools/move-cli/src")
         || file_name.contains("language/tools/move-coverage/src")
         || file_name.contains("language/libra-tools/transaction-replay/src")
         || file_name.contains("language/vm/src")
-        || file_name.contains("mempool/src")
-        || file_name.contains("network/src") // you should never look at the bits of a ZST 
-        || file_name.contains("network/builder/src")    
-        || file_name.contains("network/simple-onchain-discovery/src")    
-        || file_name.contains("secure/push-metrics/src")    
-        || file_name.contains("secure/net/src")
-        || file_name.contains("secure/storage/src")    
-        || file_name.contains("secure/storage/vault/src")    
+        || file_name.contains("secure/push-metrics/src")
         || file_name.contains("state-synchronizer/src") // Z3 encoding error 
-        || file_name.contains("storage/backup/backup-cli/src")
-        || file_name.contains("storage/backup/backup-service/src")
-        || file_name.contains("storage/diemdb/src")    
-        || file_name.contains("storage/storage-client/src")
-        || file_name.contains("types/src")
+        || file_name.contains("storage/diemdb/src")
     }
 
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
