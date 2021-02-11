@@ -194,11 +194,11 @@ impl AbstractValue {
             // The overall expression is going to overflow, so pre-compute the simpler domains from
             // the larger expression and then replace its expression with TOP.
             if left.expression_size < right.expression_size {
-                info!("binary expression right operand abstracted");
+                debug!("binary expression right operand abstracted");
                 right = AbstractValue::make_from(right.expression.clone(), u64::MAX);
                 expression_size = left.expression_size + 1;
             } else {
-                info!("binary expression left operand abstracted");
+                debug!("binary expression left operand abstracted");
                 left = AbstractValue::make_from(left.expression.clone(), u64::MAX);
                 expression_size = right.expression_size + 1;
             }
@@ -310,7 +310,7 @@ impl AbstractValue {
         if expression_size > k_limits::MAX_EXPRESSION_SIZE {
             if expression_size < u64::MAX {
                 trace!("expression {:?}", expression);
-                info!("expression abstracted");
+                debug!("expression abstracted");
             }
             // If the expression gets too large, refining it gets expensive and composing it
             // into other expressions leads to exponential growth. We therefore need to abstract
@@ -484,6 +484,7 @@ pub trait AbstractValueTrait: Sized {
         fresh: usize,
     ) -> Self;
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Self;
+    fn replace_embedded_path_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Self;
     fn transmute(&self, target_type: ExpressionType) -> Self;
     fn try_resolve_as_byte_array(&self, _environment: &Environment) -> Option<Vec<u8>>;
     fn try_resolve_as_ref_to_str(&self, environment: &Environment) -> Option<Rc<str>>;
@@ -965,7 +966,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let Some(trimmed) = self
                     .trim_prefix_conjuncts(k_limits::MAX_EXPRESSION_SIZE - other.expression_size)
                 {
-                    info!("and expression prefix trimmed");
+                    debug!("and expression prefix trimmed");
                     trimmed_self = trimmed;
                 } else {
                     return other;
@@ -1538,7 +1539,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .expression_size
                 .saturating_add(consequent.expression_size);
             if condition_plus_consequent < k_limits::MAX_EXPRESSION_SIZE - 1 {
-                info!("alternate abstracted");
+                debug!("alternate abstracted");
                 alternate = AbstractValue::make_from(alternate.expression.clone(), u64::MAX);
                 expression_size = condition_plus_consequent + 1;
             } else {
@@ -1546,7 +1547,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     .expression_size
                     .saturating_add(alternate.expression_size);
                 if condition_plus_alternate < k_limits::MAX_EXPRESSION_SIZE - 1 {
-                    info!("consequent abstracted");
+                    debug!("consequent abstracted");
                     consequent = AbstractValue::make_from(consequent.expression.clone(), u64::MAX);
                     expression_size = condition_plus_alternate + 1;
                 } else {
@@ -1554,7 +1555,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         .expression_size
                         .saturating_add(alternate.expression_size);
                     if consequent_plus_alternate < k_limits::MAX_EXPRESSION_SIZE - 1 {
-                        info!("condition abstracted");
+                        debug!("condition abstracted");
                         condition =
                             AbstractValue::make_from(condition.expression.clone(), u64::MAX);
                         expression_size = consequent_plus_alternate + 1;
@@ -4562,7 +4563,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         //do not use false path conditions to refine things
         checked_precondition!(path_condition.as_bool_if_known().is_none());
         if depth >= k_limits::MAX_REFINE_DEPTH {
-            info!("max refine depth exceeded during refine_with");
+            debug!("max refine depth exceeded during refine_with");
             //todo: perhaps this should go away.
             // right now it deals with the situation where some large expressions have sizes
             // that are not accurately tracked. These really should get fixed.
@@ -4859,6 +4860,55 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             Expression::WidenedJoin { path, operand } => {
                 operand.refine_with(path_condition, depth + 1).widen(&path)
+            }
+        }
+    }
+
+    /// Given a left-hand expression that occurs in a Path that is in a root position, look for an embedded
+    /// path that is rooted in old_root and replace the path with one that is rooted in new_root.
+    #[logfn_inputs(TRACE)]
+    fn replace_embedded_path_root(
+        &self,
+        old_root: &Rc<Path>,
+        new_root: Rc<Path>,
+    ) -> Rc<AbstractValue> {
+        match &self.expression {
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                let replaced_consequent =
+                    consequent.replace_embedded_path_root(old_root, new_root.clone());
+                let replaced_alternate = alternate.replace_embedded_path_root(old_root, new_root);
+                condition.conditional_expression(replaced_consequent, replaced_alternate)
+            }
+            Expression::InitialParameterValue { path, var_type } => {
+                AbstractValue::make_initial_parameter_value(
+                    var_type.clone(),
+                    path.replace_root(old_root, new_root),
+                )
+            }
+            Expression::Reference(path) => {
+                AbstractValue::make_reference(path.replace_root(old_root, new_root))
+            }
+            Expression::Variable { path, var_type } => AbstractValue::make_typed_unknown(
+                var_type.clone(),
+                path.replace_root(old_root, new_root),
+            ),
+            Expression::WidenedJoin { path, operand } => {
+                operand.widen(&path.replace_root(old_root, new_root))
+            }
+            _ => {
+                if self.is_top() || self.is_bottom() {
+                    return self.clone();
+                }
+                unimplemented!(
+                    "replacing embedded path root of {:?}, old_root {:?}, new_root {:?}",
+                    self,
+                    old_root,
+                    new_root
+                );
             }
         }
     }
