@@ -3774,6 +3774,10 @@ pub mod std {
                 _self
             }
         }
+
+        default_contract!(read);
+        default_contract!(read_to_string);
+        default_contract!(write);
     }
 
     pub mod io {
@@ -3884,6 +3888,7 @@ pub mod std {
             }
 
             default_contract!(_join);
+            default_contract!(to_str);
         }
 
         pub mod implement_std_path_PathBuf {

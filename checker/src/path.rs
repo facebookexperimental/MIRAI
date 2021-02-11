@@ -1053,59 +1053,18 @@ impl PathRefinement for Rc<Path> {
             return new_root;
         }
         match &self.value {
-            PathEnum::Computed { value } => match &value.expression {
-                Expression::InitialParameterValue { path, .. } => {
-                    path.replace_root(old_root, new_root)
-                }
-                Expression::Reference(path) => Path::new_computed(AbstractValue::make_reference(
-                    path.replace_root(old_root, new_root),
-                )),
-                Expression::Variable { path, var_type } => {
-                    Path::new_computed(AbstractValue::make_typed_unknown(
-                        var_type.clone(),
-                        path.replace_root(old_root, new_root),
-                    ))
-                }
-                _ => {
-                    if value.is_top() || value.is_bottom() {
-                        return self.clone();
-                    }
-                    unimplemented!(
-                        "replacing root of {:?}, old_root {:?}, new_root {:?}",
-                        self,
-                        old_root,
-                        new_root
-                    );
-                }
-            },
+            PathEnum::Computed { value } => {
+                Path::new_computed(value.replace_embedded_path_root(old_root, new_root))
+            }
             PathEnum::Offset { value } => {
                 if let Expression::Offset { left, right } = &value.expression {
-                    match &left.expression {
-                        Expression::InitialParameterValue { path, var_type }
-                        | Expression::Variable { path, var_type } => {
-                            let replaced_left = AbstractValue::make_typed_unknown(
-                                var_type.clone(),
-                                path.replace_root(old_root, new_root),
-                            );
-                            let replaced_offset = replaced_left.offset(right.clone());
-                            return Path::get_as_path(replaced_offset);
-                        }
-                        Expression::Reference(path) => {
-                            let replaced_left = AbstractValue::make_reference(
-                                path.replace_root(old_root, new_root),
-                            );
-                            let replaced_offset = replaced_left.offset(right.clone());
-                            return Path::get_as_path(replaced_offset);
-                        }
-                        _ => {}
-                    }
+                    let replaced_left = left.replace_embedded_path_root(old_root, new_root);
+                    Path::get_as_path(replaced_left.offset(right.clone()))
+                } else {
+                    assume_unreachable!(
+                        "PathEnum::Offset has value that is not Expression::Offset"
+                    );
                 }
-                unimplemented!(
-                    "replacing root of {:?}, old_root {:?}, new_root {:?}",
-                    self,
-                    old_root,
-                    new_root
-                );
             }
             PathEnum::QualifiedPath {
                 qualifier,
