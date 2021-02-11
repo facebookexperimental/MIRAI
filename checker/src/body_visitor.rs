@@ -1166,7 +1166,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         } = &tpath.value
                         {
                             match selector.as_ref() {
-                                PathSelector::Field(0) | PathSelector::UnionField { .. } => {
+                                PathSelector::Field(0)
+                                | PathSelector::Slice(..)
+                                | PathSelector::UnionField { .. } => {
                                     // assign the pointer field of the slice pointer to the unqualified target
                                     tpath = qualifier.clone();
                                 }
