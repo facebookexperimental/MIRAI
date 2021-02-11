@@ -140,6 +140,10 @@ impl MiraiCallbacks {
 
     fn is_excluded(file_name: &str) -> bool {
         file_name.contains("common/logger/src")
+        || file_name.contains("config/src")    
+        || file_name.contains("config/management/src")    
+        || file_name.contains("config/management/operational/src")
+        || file_name.contains("config/management/genesis/src")
         || file_name.contains("language/bytecode-verifier/src")
         || file_name.contains("language/compiler/src")
         || file_name.contains("language/compiler/ir-to-bytecode/src")
