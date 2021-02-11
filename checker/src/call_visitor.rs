@@ -1956,7 +1956,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_min_align_of_val(&mut self) -> Rc<AbstractValue> {
         let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
         checked_assume!(self.actual_argument_types.len() == 1);
-        let t = self.actual_argument_types[0];
+        let t = type_visitor::get_target_type(self.actual_argument_types[0]);
         if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(t)) {
             return Rc::new((ty_and_layout.layout.align.abi.bytes() as u128).into());
         }
