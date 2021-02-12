@@ -1454,11 +1454,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // If the contents at offset 0 from the target of the pointer being dereferenced is
                 // a fat (slice) pointer then the address_of operation results in a copy of the fat pointer.
                 // We check for this by looking at the type of the operation result target.
-                if type_visitor::is_slice_pointer(target_type.kind())
-                    || self
-                        .bv
-                        .type_visitor
-                        .starts_with_slice_pointer(target_type.kind())
+                if self
+                    .bv
+                    .type_visitor
+                    .starts_with_slice_pointer(target_type.kind())
                 {
                     // If we get here we are effectively copying to a fat pointer without a cast,
                     // so there is no type information to use to come up with the length part of

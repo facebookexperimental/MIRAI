@@ -8,6 +8,7 @@
 set -e
 # start clean
 cargo clean
+cargo update
 # Run format checks
 cargo fmt --all
 # Run lint checks
