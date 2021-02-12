@@ -808,7 +808,10 @@ impl Z3Solver {
                 | Expression::IntrinsicBitVectorUnary { operand, .. }
                 | Expression::IntrinsicFloatingPointUnary { operand, .. }
                 | Expression::LogicalNot { operand, .. }
-                | Expression::Neg { operand, .. } => self.general_has_tag(&operand.expression, tag),
+                | Expression::Neg { operand, .. }
+                | Expression::Transmute { operand, .. } => {
+                    self.general_has_tag(&operand.expression, tag)
+                }
 
                 Expression::UninterpretedCall {
                     callee, arguments, ..
@@ -1071,6 +1074,17 @@ impl Z3Solver {
             Expression::TaggedExpression { operand, .. } => {
                 self.get_as_numeric_z3_ast(&operand.expression)
             }
+            Expression::Transmute { target_type, .. } => unsafe {
+                if target_type.is_floating_point_number() {
+                    let sort = self.get_sort_for(target_type);
+                    (
+                        true,
+                        z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort),
+                    )
+                } else {
+                    self.numeric_fresh_const()
+                }
+            },
             Expression::Top | Expression::Bottom => self.numeric_fresh_const(),
             Expression::UninterpretedCall {
                 result_type: var_type,

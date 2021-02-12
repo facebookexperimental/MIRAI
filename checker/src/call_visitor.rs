@@ -2119,6 +2119,20 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     );
                     self.copy_field_bits(source_fields, target_fields);
                 }
+                (TyKind::Float(..), TyKind::Uint(..))
+                | (TyKind::Float(..), TyKind::Int(..))
+                | (TyKind::Uint(..), TyKind::Float(..))
+                | (TyKind::Int(..), TyKind::Float(..)) => {
+                    let val = self
+                        .block_visitor
+                        .bv
+                        .lookup_path_and_refine_result(source_path, source_rustc_type);
+                    let target_expression_type = ExpressionType::from(target_rustc_type.kind());
+                    self.block_visitor
+                        .bv
+                        .current_environment
+                        .update_value_at(target_path, val.transmute(target_expression_type));
+                }
                 _ => {
                     self.block_visitor.bv.copy_or_move_elements(
                         target_path,

@@ -2614,6 +2614,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match &self.expression {
             Expression::Cast { operand, .. }
             | Expression::TaggedExpression { operand, .. }
+            | Expression::Transmute { operand, .. }
             | Expression::UnknownTagCheck { operand, .. } => {
                 operand.might_benefit_from_refinement()
             }
@@ -3991,7 +3992,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::IntrinsicBitVectorUnary { operand, .. }
             | Expression::IntrinsicFloatingPointUnary { operand, .. }
             | Expression::LogicalNot { operand, .. }
-            | Expression::Neg { operand, .. } => {
+            | Expression::Neg { operand, .. }
+            | Expression::Transmute { operand, .. } => {
                 operand.get_cached_tags().propagate_through(exp_tag_prop)
             }
 
@@ -4062,6 +4064,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Neg { operand }
             | Expression::LogicalNot { operand }
             | Expression::TaggedExpression { operand, .. }
+            | Expression::Transmute { operand, .. }
             | Expression::UnknownTagCheck { operand, .. } => {
                 operand.get_widened_subexpression(path)
             }
@@ -4436,6 +4439,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::TaggedExpression { operand, tag } => operand
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .add_tag(*tag),
+            Expression::Transmute {
+                operand,
+                target_type,
+            } => operand
+                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                .transmute(target_type.clone()),
             Expression::UninterpretedCall {
                 callee,
                 arguments,
@@ -4822,6 +4831,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::TaggedExpression { operand, tag } => {
                 operand.refine_with(path_condition, depth + 1).add_tag(*tag)
             }
+            Expression::Transmute {
+                operand,
+                target_type,
+            } => operand
+                .refine_with(path_condition, depth + 1)
+                .transmute(target_type.clone()),
             Expression::UninterpretedCall {
                 callee,
                 arguments,
@@ -4920,15 +4935,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn transmute(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         if let Expression::CompileTimeConstant(c) = &self.expression {
             Rc::new(c.transmute(target_type).into())
-        } else if target_type.is_integer() {
+        } else if target_type.is_integer() && self.expression.infer_type().is_integer() {
             self.unsigned_modulo(target_type.bit_length())
                 .cast(target_type)
         } else if target_type == ExpressionType::Bool {
             self.unsigned_modulo(target_type.bit_length())
                 .not_equals(Rc::new(ConstantDomain::U128(0).into()))
         } else {
-            // todo: add an expression case that will delay transmutation until the operand refines to a constant
-            AbstractValue::make_typed_unknown(target_type, Path::get_as_path(self.clone()))
+            AbstractValue::make_typed_unary(self.clone(), target_type, |operand, target_type| {
+                Expression::Transmute {
+                    operand,
+                    target_type,
+                }
+            })
         }
     }
 
@@ -5088,6 +5107,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Neg { operand }
             | Expression::LogicalNot { operand }
             | Expression::TaggedExpression { operand, .. }
+            | Expression::Transmute { operand, .. }
             | Expression::UnknownTagCheck { operand, .. } => operand.uses(variables),
             Expression::CompileTimeConstant(..) => false,
             Expression::ConditionalExpression {
