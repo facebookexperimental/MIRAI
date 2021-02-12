@@ -141,12 +141,11 @@ impl MiraiCallbacks {
     fn is_excluded(file_name: &str) -> bool {
         file_name.contains("config/management/src") // too slow
         || file_name.contains("language/bytecode-verifier/src") // too slow
-        || file_name.contains("language/move-lang/src") // too slow
+        || file_name.contains("language/move-lang/src") // probably does not terminate
         || file_name.contains("language/move-model/src") // too slow
-        || file_name.contains("language/move-prover/bytecode/src") // too slow 
-        || file_name.contains("language/tools/move-coverage/src") // too slow    
+        || file_name.contains("language/move-prover/bytecode/src") // too slow
+        || file_name.contains("language/tools/move-coverage/src") /* probably does not terminate */
         || file_name.contains("language/vm/src") // too slow
-        || file_name.contains("state-synchronizer/src") // Z3 encoding error
         || file_name.contains("types/src") // too slow
     }
 
