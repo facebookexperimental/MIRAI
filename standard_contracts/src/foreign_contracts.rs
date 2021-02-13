@@ -171,6 +171,10 @@ pub mod core {
         pub mod implement_core_char_CaseMappingIter {
             default_contract!(new);
         }
+
+        pub mod implement_core_char_ToLowercase {
+            default_contract!(next);
+        }
     }
 
     pub mod clone {
@@ -201,9 +205,17 @@ pub mod core {
                 (_self.0, _self.1)
             }
 
+            default_contract!(clone__fn_core_clone_Clone_clone_tuple_2_diem_crypto_ed25519_Ed25519Signature_u8_tuple_1_ref_tuple_2_diem_crypto_ed25519_Ed25519Signature_u8);
+
             pub fn clone__tuple_2_alloc_rc_Rc_mirai_abstract_value_AbstractValue_alloc_rc_Rc_mirai_abstract_value_AbstractValue<
                 T: Copy,
             >(
+                _self: &(T, T),
+            ) -> (T, T) {
+                (_self.0, _self.1)
+            }
+
+            pub fn clone__tuple_2_alloc_string_String_qstring_QValue<T: Copy>(
                 _self: &(T, T),
             ) -> (T, T) {
                 (_self.0, _self.1)
@@ -3184,6 +3196,10 @@ pub mod libc {
                 0
             }
 
+            pub fn pthread_rwlock_wrlock() -> u64 {
+                0
+            }
+
             pub fn read() -> u64 {
                 0
             }
@@ -3703,6 +3719,11 @@ pub mod std {
                         },
                     }
                 }
+
+                default_contract!(to_str);
+            }
+            pub mod implement_std_ffi_os_str_OsString {
+                default_contract!(eq);
             }
         }
     }
@@ -3806,6 +3827,8 @@ pub mod std {
                     }
                 }
 
+                default_contract!(last_os_error);
+
                 pub fn _new(
                     kind: std::io::ErrorKind,
                     error: Box<dyn std::error::Error + Send + Sync>,
@@ -3817,7 +3840,11 @@ pub mod std {
             }
         }
         pub mod stdio {
+            default_contract!(_eprint);
             default_contract!(_print);
+        }
+        pub mod Read {
+            default_contract!(read);
         }
     }
 
@@ -3830,7 +3857,9 @@ pub mod std {
 
         pub mod ip {
             pub mod implement_std_net_ip_Ipv4Addr {
+                default_contract!(cmp);
                 default_contract!(from);
+                default_contract!(partial_cmp);
             }
 
             pub mod implement_u32 {
@@ -3912,6 +3941,7 @@ pub mod std {
         pub mod condvar {
             pub mod implement_std_sync_condvar_Condvar {
                 default_contract!(new);
+                default_contract!(notify_one);
             }
         }
     }

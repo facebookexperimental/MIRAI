@@ -471,7 +471,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     result
                 })
             } else {
-                info!("max path length exceeded in refined value");
+                debug!("max path length exceeded in refined value");
                 let result = match path.value {
                     PathEnum::LocalVariable { .. } => refined_val,
                     PathEnum::Parameter { .. } => AbstractValue::make_initial_parameter_value(

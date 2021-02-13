@@ -7,8 +7,6 @@ rust:
 - nightly-2021-01-01
 
 install:
-# install grcov
-- if [ ${TRAVIS_OS_NAME} == "osx" ]; then curl -L https://github.com/mozilla/grcov/releases/latest/download/grcov-osx-x86_64.tar.bz2 | tar jxf -; fi
 # install rustc-dev
 - rustup component add rustc-dev
 # install formatter
@@ -45,16 +43,3 @@ script:
 
 # Run unit and integration tests
 - RUST_BACKTRACE=1 cargo test
-
-# Run code coverage tests
-- export CARGO_INCREMENTAL=0
-- export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
-- |
-  if [ ${TRAVIS_OS_NAME} == "osx" ]
-  then
-    cargo build --verbose $CARGO_OPTIONS
-    cargo test --verbose $CARGO_OPTIONS
-    zip -0 ccov.zip `find . \( -name "mirai*.gc*" \) -print`
-    ./grcov ccov.zip -s . -t lcov --llvm --branch --ignore-not-existing --ignore "/*" -o lcov.info;
-    bash <(curl -s https://codecov.io/bash) -f lcov.info
-  fi
