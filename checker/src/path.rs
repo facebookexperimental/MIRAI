@@ -373,7 +373,7 @@ impl Path {
         environment: &Environment,
         path: &Rc<Path>,
         path_rustc_type: Ty<'tcx>,
-    ) -> Option<Rc<Path>> {
+    ) -> Option<(Rc<Path>, Ty<'tcx>)> {
         trace!(
             "get_path_to_thin_pointer_at_offset_0 {:?} {:?}",
             path,
@@ -382,12 +382,20 @@ impl Path {
         match path_rustc_type.kind() {
             TyKind::Ref(..) | TyKind::RawPtr(..) => {
                 if type_visitor::is_slice_pointer(path_rustc_type.kind()) {
-                    Some(Path::new_field(path.clone(), 0))
+                    let elem_t = type_visitor::get_element_type(path_rustc_type);
+                    let ft = tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                        ty: elem_t,
+                        mutbl: rustc_hir::Mutability::Not,
+                    });
+                    Some((Path::new_field(path.clone(), 0), ft))
                 } else {
-                    Some(path.clone())
+                    Some((path.clone(), path_rustc_type))
                 }
             }
             TyKind::Adt(def, substs) => {
+                if def.is_enum() {
+                    return None;
+                }
                 let path0 = Path::new_field(path.clone(), 0);
                 for v in def.variants.iter() {
                     if let Some(field0) = v.fields.get(0) {

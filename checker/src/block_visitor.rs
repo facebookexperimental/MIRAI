@@ -1639,7 +1639,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .starts_with_slice_pointer(source_type.kind())
                         {
                             // Need to upgrade the thin pointer to a fat pointer
-                            let target_thin_pointer_path =
+                            let (target_thin_pointer_path, _) =
                                 Path::get_path_to_thin_pointer_at_offset_0(
                                     self.bv.tcx,
                                     &self.bv.current_environment,
@@ -1647,7 +1647,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                     ty,
                                 )
                                 .expect("there to be such path because ty starts with it");
-                            let source_thin_pointer_path =
+                            let (source_thin_pointer_path, thin_ptr_type) =
                                 Path::get_path_to_thin_pointer_at_offset_0(
                                     self.bv.tcx,
                                     &self.bv.current_environment,
@@ -1657,10 +1657,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 .expect(
                                     "there to be such a path because source_type can cast to target type",
                                 );
-                            let thin_ptr_type = self.bv.type_visitor.get_path_rustc_type(
-                                &source_thin_pointer_path,
-                                self.bv.current_span,
-                            );
                             let target_type = type_visitor::get_target_type(thin_ptr_type);
                             self.bv.copy_or_move_elements(
                                 target_thin_pointer_path.clone(),
@@ -2935,16 +2931,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             let selector = self.visit_projection_elem(ty, elem);
             match elem {
                 mir::ProjectionElem::Deref => {
-                    if let Some(thin_pointer_path) = Path::get_path_to_thin_pointer_at_offset_0(
-                        self.bv.tcx,
-                        &self.bv.current_environment,
-                        &result,
-                        ty,
-                    ) {
-                        let thin_ptr_type = self
-                            .bv
-                            .type_visitor
-                            .get_path_rustc_type(&thin_pointer_path, self.bv.current_span);
+                    if let Some((thin_pointer_path, thin_ptr_type)) =
+                        Path::get_path_to_thin_pointer_at_offset_0(
+                            self.bv.tcx,
+                            &self.bv.current_environment,
+                            &result,
+                            ty,
+                        )
+                    {
                         ty = type_visitor::get_target_type(thin_ptr_type);
                         let deref_path =
                             Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
@@ -2960,6 +2954,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 mir::ProjectionElem::Field(_, field_ty) => {
                     if let Some(prev) = prev_result {
+                        //todo: Actually, field 0 of fat pointer path does not have to mean
+                        //the thin pointer. It looks like we might have to unroll the qualifier
+                        //if the field type is not an actual raw pointer. Perhaps only well known
+                        //types behave like fat pointers. Perhaps also, we might be better off to
+                        // normalize fields into (typed) offsets. At any rate, the code below is wrong.
+                        // Make some test cases.
+
                         // The previous selector was a deref of a fat pointer, which in MIR seems
                         // to be any struct that has a field 0 that is a thin or fat pointer.
                         // When such a path is used as is, or as the qualifier of an index or slice

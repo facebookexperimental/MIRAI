@@ -1131,13 +1131,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let target_type = ExpressionType::from(
                 type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
             );
-            let source_thin_pointer_path = Path::get_path_to_thin_pointer_at_offset_0(
+            let (source_thin_pointer_path, _) = Path::get_path_to_thin_pointer_at_offset_0(
                 self.block_visitor.bv.tcx,
                 &self.block_visitor.bv.current_environment,
                 &source_pointer_path,
                 source_pointer_rustc_type,
             )
-            .unwrap_or(source_pointer_path);
+            .unwrap_or((source_pointer_path, source_pointer_rustc_type));
             let source_path = Path::new_deref(source_thin_pointer_path, target_type)
                 .canonicalize(&self.block_visitor.bv.current_environment);
             trace!("MiraiAddTag: tagging {:?} with {:?}", tag, source_path);
@@ -1219,13 +1219,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let target_type = ExpressionType::from(
                 type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
             );
-            let source_thin_pointer_path = Path::get_path_to_thin_pointer_at_offset_0(
+            let (source_thin_pointer_path, _) = Path::get_path_to_thin_pointer_at_offset_0(
                 self.block_visitor.bv.tcx,
                 &self.block_visitor.bv.current_environment,
                 &source_pointer_path,
                 source_pointer_rustc_type,
             )
-            .unwrap_or(source_pointer_path);
+            .unwrap_or((source_pointer_path, source_pointer_rustc_type));
             let source_path = Path::new_deref(source_thin_pointer_path, target_type)
                 .canonicalize(&self.block_visitor.bv.current_environment);
             trace!(
@@ -2056,7 +2056,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &source_path,
                     source_rustc_type,
                 )
-                .unwrap_or(source_path);
+                .unwrap_or((source_path, target_rustc_type))
+                .0;
             } else if type_visitor::is_thin_pointer(&source_rustc_type.kind()) {
                 target_path = Path::get_path_to_thin_pointer_at_offset_0(
                     self.block_visitor.bv.tcx,
@@ -2064,7 +2065,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     &target_path,
                     target_rustc_type,
                 )
-                .unwrap_or(target_path);
+                .unwrap_or((target_path, source_rustc_type))
+                .0;
             }
 
             fn add_leaf_fields_for<'a>(
