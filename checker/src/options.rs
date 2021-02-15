@@ -58,14 +58,15 @@ pub enum DiagLevel {
     /// This minimizes false positives but can lead to a lot code not being analyzed
     /// while devirtualization isn't perfect and not all intrinsics have been modeled.
     RELAXED,
-    /// When a function calls another function without a body or summary, it assumes that the called
-    /// function is angelic and that it has no preconditions and no post condition. Analysis of the
-    /// caller continues optimistically. This can lead to false positives because of the missing
-    /// post conditions and imprecision can be amplified if the missing function occurs deep down
-    /// in a long call chain.
+    /// Always emit at least one diagnostic for functions that cannot be fully analyzed because of
+    /// time-outs or calls to functions without bodies or foreign function summaries. In this mode
+    /// the analysis is sound because every potential issue in analyzed has a related diagnostic,
+    /// but it is also angelic because it assumes that argument values provided by code that is not
+    /// being analyzed will never cause the program to wrong, i.e. that non analyzed code is "angelic".
     STRICT,
-    /// When a function calls another function without a body or summary, a diagnostic is generated
-    /// to flag the call as a problem. Analysis of the caller then proceeds as in the STRICT case.
+    /// Like strict, but issues diagnostics if non analyzed code can provide arguments will cause
+    /// the analyzed code to go wrong. I.e. it requires all preconditions to be explicit.
+    /// This mode should be used for any library whose callers are not known and there not analyzed.
     PARANOID,
 }
 
