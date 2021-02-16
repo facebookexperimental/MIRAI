@@ -1174,7 +1174,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                                     // drop the assignment of the length field
                                     continue;
                                 }
-                                _ => assume_unreachable!("something went wrong here"),
+                                _ => assume_unreachable!("something went wrong here: {:?}", tpath),
                             }
                         }
                     }
@@ -2003,15 +2003,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         // be saddled with removing it. This case corresponds to no_children being true.
         if val_type == ExpressionType::NonPrimitive || val_type == ExpressionType::Function {
             // First look at paths that are rooted in rpath.
-            // Remove an explicit deref from source_path to make it a valid root.
-            let source_path = match &source_path.value {
-                PathEnum::QualifiedPath {
-                    qualifier,
-                    selector,
-                    ..
-                } if **selector == PathSelector::Deref => qualifier.clone(),
-                _ => source_path,
-            };
             let value_map = self.current_environment.value_map.clone();
             for (path, value) in value_map
                 .iter()
@@ -2511,8 +2502,14 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) -> (Rc<Path>, Rc<AbstractValue>) {
         precondition!(!root_rustc_type.is_scalar());
 
-        let tag_field_path =
-            Path::new_tag_field(qualifier.clone()).canonicalize(&self.current_environment);
+        let target_type = type_visitor::get_target_type(root_rustc_type);
+        let tag_field_path = if target_type != root_rustc_type {
+            let target_type = ExpressionType::from(target_type.kind());
+            Path::new_tag_field(Path::new_deref(qualifier.clone(), target_type))
+                .canonicalize(&self.current_environment)
+        } else {
+            Path::new_tag_field(qualifier.clone()).canonicalize(&self.current_environment)
+        };
         let mut tag_field_value = self.lookup_path_and_refine_result(
             tag_field_path.clone(),
             self.type_visitor.dummy_untagged_value_type,

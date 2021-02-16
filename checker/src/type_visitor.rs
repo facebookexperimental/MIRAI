@@ -76,14 +76,20 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         path: &Rc<Path>,
         first_state: &mut Environment,
     ) {
+        let mut is_ref = false;
         if let TyKind::Ref(_, t, _) = path_ty.kind() {
+            is_ref = true;
             path_ty = t;
         }
         match path_ty.kind() {
             TyKind::Closure(_, substs) => {
                 for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
                     let var_type: ExpressionType = ty.kind().into();
-                    let closure_field_path = Path::new_field(path.clone(), i);
+                    let mut qualifier = path.clone();
+                    if is_ref {
+                        qualifier = Path::new_deref(path.clone(), ExpressionType::NonPrimitive)
+                    }
+                    let closure_field_path = Path::new_field(qualifier, i);
                     self.path_ty_cache.insert(closure_field_path.clone(), ty);
                     let closure_field_val =
                         AbstractValue::make_typed_unknown(var_type, closure_field_path.clone());
