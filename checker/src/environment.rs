@@ -108,9 +108,7 @@ impl Environment {
                             // deref_true_path is now the canonical version of true_path
                             deref_true_path
                         } else {
-                            // The selector implicit dereferences true_path, so deref_true_path.selector
-                            // is thus a shorter version, which should be canonical.
-                            Path::new_qualified(deref_true_path, selector.clone())
+                            Path::new_qualified(true_path, selector.clone())
                         }
                     } else {
                         Path::new_qualified(true_path, selector.clone())
@@ -123,9 +121,7 @@ impl Environment {
                             // deref_false_path is now the canonical version of false_path
                             deref_false_path
                         } else {
-                            // The selector implicit dereferences true_path, so deref_false_path.selector
-                            // is thus a shorter version, which should be canonical.
-                            Path::new_qualified(deref_false_path, selector.clone())
+                            Path::new_qualified(false_path, selector.clone())
                         }
                     } else {
                         Path::new_qualified(false_path, selector.clone())
