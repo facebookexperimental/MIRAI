@@ -98,8 +98,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         .insert_mut(closure_field_path, closure_field_val);
                 }
             }
-            TyKind::Opaque(def_id, ..) => {
-                self.add_any_closure_fields_for(self.tcx.type_of(*def_id), path, first_state);
+            TyKind::Opaque(def_id, substs) => {
+                let map = self.get_generic_arguments_map(*def_id, substs, &[]);
+                let path_ty =
+                    self.specialize_generic_argument_type(self.tcx.type_of(*def_id), &map);
+                self.add_any_closure_fields_for(path_ty, path, first_state);
             }
             TyKind::FnDef(..) | TyKind::FnPtr(..) => {}
             _ => {
