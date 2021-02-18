@@ -944,12 +944,13 @@ impl PathRefinement for Rc<Path> {
             let canonical_qualifier = qualifier.canonicalize(environment);
             // If the canonical qualifier binds to a special value, we may need to deconstruct that
             // value before constructing the qualified path.
-            let qualifier_as_value =
-                if let PathEnum::Computed { value } = &canonical_qualifier.value {
-                    Some(value)
-                } else {
-                    environment.value_at(&canonical_qualifier)
-                };
+            let qualifier_as_value = if let PathEnum::Computed { value }
+            | PathEnum::Offset { value } = &canonical_qualifier.value
+            {
+                Some(value)
+            } else {
+                environment.value_at(&canonical_qualifier)
+            };
 
             if let Some(value) = qualifier_as_value {
                 match &value.expression {
@@ -970,6 +971,21 @@ impl PathRefinement for Rc<Path> {
                             }
                         }
                         return Path::new_qualified(path.clone(), selector.clone());
+                    }
+                    Expression::Offset { left, right } if right.is_zero() => {
+                        if let Expression::Reference(p) = &left.expression {
+                            // *offset(&p, 0) becomes p
+                            if *selector.as_ref() == PathSelector::Deref {
+                                return p.clone();
+                            }
+                            // offset(&p, 0) becomes &p in a qualifier
+                            let p_ref = Path::new_computed(left.clone());
+                            return Path::new_qualified(p_ref, selector.clone());
+                        }
+                        return Path::new_qualified(
+                            Path::get_as_path(value.clone()),
+                            selector.clone(),
+                        );
                     }
                     // *&p is equivalent to p and (&p).q is equivalent to p.q, etc.
                     Expression::Reference(p) => {
