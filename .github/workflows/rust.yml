@@ -14,7 +14,8 @@ jobs:
         with:
           toolchain: nightly
           override: true
-          profile: complete
+          profile: minimal
+          components: rustc-dev, llvm-tools-preview
 
       - name: Execute tests
         uses: actions-rs/cargo@v1
