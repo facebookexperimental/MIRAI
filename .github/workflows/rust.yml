@@ -23,13 +23,24 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all
+          args: --all -- --test-threads=2
         env:
           CARGO_INCREMENTAL: 0
           RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"          
       - uses: actions-rs/grcov@v0.1
       
+      - name: Run grcov
+        env:
+          PROJECT_NAME: "mirai"
+          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads"
+          CARGO_INCREMENTAL: 0
+        run: |
+          cargo build --verbose
+          cargo test --verbose
+          zip -0 cov.zip $(find . -name "$PROJECT_NAME*.gc*" -print)
+          grcov cov.zip -s . -t lcov --llvm --ignore-not-existing --ignore "/*" -o lcov.info
+      
       - name: Upload coverage data to codecov.io
         uses: codecov/codecov-action@v1
         with:
-          verbose: true
+          path-to-lcov: "lcov.info"
