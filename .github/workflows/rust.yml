@@ -15,6 +15,9 @@ jobs:
           override: true
           profile: minimal
           components: rustc-dev, llvm-tools-preview
+          
+      - name: Install Z3
+        run: cp binaries/libz3.dylib /usr/local/lib
 
       - name: Execute tests
         uses: actions-rs/cargo@v1
