@@ -1,15 +1,14 @@
 os:
   - linux
   - osx
-  # - windows
+  - windows
 language: rust
 rust:
 - nightly-2021-01-01
 
-before_install:
-- if [ ${TRAVIS_OS_NAME} == "osx" ]; then curl -L https://github.com/mozilla/grcov/releases/download/v0.5.9/grcov-osx-x86_64.tar.bz2 | tar jxf -; fi
-
-before_script:
+install:
+# install grcov
+- if [ ${TRAVIS_OS_NAME} == "osx" ]; then curl -L https://github.com/mozilla/grcov/releases/latest/download/grcov-osx-x86_64.tar.bz2 | tar jxf -; fi
 # install rustc-dev
 - rustup component add rustc-dev
 # install formatter
@@ -23,6 +22,7 @@ before_script:
 # install z3
 - if [ ${TRAVIS_OS_NAME} == "linux" ]; then export RUSTFLAGS='-Clink-arg=-L./binaries -Clink-arg=-lstdc++'; fi
 - if [ ${TRAVIS_OS_NAME} == "osx" ]; then cp binaries/libz3.dylib /usr/local/lib; fi
+- if [ ${TRAVIS_OS_NAME} == "windows" ]; then mkdir -p target/debug; cp binaries/libz3.dll target/debug; cp binaries/libz3.lib target/debug; fi
 
 script:
 # Exit immediately if a command exits with a non-zero status.
@@ -42,16 +42,18 @@ script:
 
 # Build
 - cargo build
-- if [ ${TRAVIS_OS_NAME} == "windows" ]; then cp binaries/libz3.dll target/debug; fi
 
 # Run unit and integration tests
 - RUST_BACKTRACE=1 cargo test
 
 # Run code coverage tests
+- export CARGO_INCREMENTAL=0
+- export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
 - |
   if [ ${TRAVIS_OS_NAME} == "osx" ]
   then
-    CARGO_INCREMENTAL=0 RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off" MIRAI_FLAGS=MIRAI_SINGLE cargo test --verbose
+    cargo build --verbose $CARGO_OPTIONS
+    cargo test --verbose $CARGO_OPTIONS
     zip -0 ccov.zip `find . \( -name "mirai*.gc*" \) -print`
     ./grcov ccov.zip -s . -t lcov --llvm --branch --ignore-not-existing --ignore "/*" -o lcov.info;
     bash <(curl -s https://codecov.io/bash) -f lcov.info
