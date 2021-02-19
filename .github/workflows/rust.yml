@@ -32,7 +32,7 @@ jobs:
       - name: Run grcov
         env:
           PROJECT_NAME: "mirai"
-          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads"
+          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
           CARGO_INCREMENTAL: 0
         run: |
           cargo build --verbose
