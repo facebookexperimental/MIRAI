@@ -28,5 +28,3 @@ jobs:
       
       - name: Upload coverage data to codecov.io
         uses: codecov/codecov-action@v1
-        with:
-          files: ${{ find . \( -name "mirai*.gc*" \) -print }}
