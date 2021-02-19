@@ -19,16 +19,6 @@ jobs:
       - name: Install Z3
         run: cp binaries/libz3.dylib /usr/local/lib
 
-      - name: Execute tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all -- --test-threads=2
-        env:
-          CARGO_INCREMENTAL: 0
-          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"          
-      - uses: actions-rs/grcov@v0.1
-      
       - name: Run grcov
         env:
           PROJECT_NAME: "mirai"
