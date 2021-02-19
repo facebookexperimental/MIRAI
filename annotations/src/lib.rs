@@ -64,6 +64,7 @@ pub enum TagPropagation {
     Sub,
     SubComponent,
     SubOverflows,
+    Transmute,
     UninterpretedCall,
 }
 

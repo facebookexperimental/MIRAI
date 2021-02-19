@@ -363,6 +363,12 @@ pub enum Expression {
         tag: Tag,
     },
 
+    /// An expression that interprets the bits of operand as being a value of the target type
+    Transmute {
+        operand: Rc<AbstractValue>,
+        target_type: ExpressionType,
+    },
+
     /// An expression that represents the result of calling an unknown function.
     /// Typically this will be a trait method, function parameter, or an intrinsic/foreign function.
     /// In the case of a trait method or a function parameter, the caller might be able to refine
@@ -591,6 +597,10 @@ impl Debug for Expression {
             Expression::TaggedExpression { operand, tag } => {
                 f.write_fmt(format_args!("{:?} tagged with {:?}", operand, tag))
             }
+            Expression::Transmute {
+                operand,
+                target_type,
+            } => f.write_fmt(format_args!("transmute({:?}, {:?})", operand, target_type)),
             Expression::UninterpretedCall {
                 callee,
                 arguments,
@@ -667,9 +677,8 @@ impl Expression {
             | Expression::Cast { operand, .. }
             | Expression::IntrinsicBitVectorUnary { operand, .. }
             | Expression::IntrinsicFloatingPointUnary { operand, .. }
-            | Expression::TaggedExpression { operand, .. } => {
-                operand.expression.contains_local_variable()
-            }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::Transmute { operand, .. } => operand.expression.contains_local_variable(),
             Expression::Bottom => true,
 
             Expression::CompileTimeConstant(..) => false,
@@ -767,9 +776,8 @@ impl Expression {
             | Expression::Cast { operand, .. }
             | Expression::IntrinsicBitVectorUnary { operand, .. }
             | Expression::IntrinsicFloatingPointUnary { operand, .. }
-            | Expression::TaggedExpression { operand, .. } => {
-                operand.expression.contains_parameter()
-            }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::Transmute { operand, .. } => operand.expression.contains_parameter(),
             Expression::Bottom => true,
 
             Expression::CompileTimeConstant(..) => false,
@@ -864,9 +872,8 @@ impl Expression {
             | Expression::Cast { operand, .. }
             | Expression::IntrinsicBitVectorUnary { operand, .. }
             | Expression::IntrinsicFloatingPointUnary { operand, .. }
-            | Expression::TaggedExpression { operand, .. } => {
-                operand.expression.contains_widened_join()
-            }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::Transmute { operand, .. } => operand.expression.contains_widened_join(),
             Expression::Bottom => false,
 
             Expression::CompileTimeConstant(..) => false,
@@ -981,6 +988,7 @@ impl Expression {
             Expression::SubOverflows { .. } => Some(TagPropagation::SubOverflows),
             Expression::Switch { .. } => None,
             Expression::TaggedExpression { .. } => None,
+            Expression::Transmute { .. } => Some(TagPropagation::Transmute),
             Expression::UninterpretedCall { .. } => Some(TagPropagation::UninterpretedCall),
             Expression::UnknownModelField { .. } => None,
             Expression::UnknownTagCheck { .. } => None,
@@ -1122,6 +1130,7 @@ impl Expression {
             Expression::SubOverflows { .. } => Bool,
             Expression::Switch { default, .. } => default.expression.infer_type(),
             Expression::TaggedExpression { operand, .. } => operand.expression.infer_type(),
+            Expression::Transmute { target_type, .. } => target_type.clone(),
             Expression::UninterpretedCall { result_type, .. } => result_type.clone(),
             Expression::UnknownModelField { default, .. } => default.expression.infer_type(),
             Expression::UnknownTagCheck { .. } => Bool,
@@ -1212,6 +1221,7 @@ impl Expression {
             | Expression::Neg { operand }
             | Expression::LogicalNot { operand }
             | Expression::TaggedExpression { operand, .. }
+            | Expression::Transmute { operand, .. }
             | Expression::UnknownTagCheck { operand, .. } => {
                 operand.expression.record_heap_blocks_and_strings(result);
             }
