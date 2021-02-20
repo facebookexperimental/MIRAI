@@ -756,7 +756,7 @@ impl Path {
         }
         let qualifier_length = qualifier.path_length();
         if qualifier_length >= k_limits::MAX_PATH_LENGTH {
-            info!("max path length exceeded {:?}.{:?}", qualifier, selector);
+            debug!("max path length exceeded {:?}.{:?}", qualifier, selector);
         }
         assume!(qualifier_length < 1_000_000_000); // We'll run out of memory long before this happens
         Rc::new(
