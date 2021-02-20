@@ -18,8 +18,11 @@ jobs:
           
       - name: Install Z3
         run: cp binaries/libz3.dylib /usr/local/lib
+        
+      - name: Install grcov
+        uses: actions-rs/grcov@v0.1
 
-      - name: Run grcov
+      - name: Run grcov        
         env:
           PROJECT_NAME: "mirai"
           RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
