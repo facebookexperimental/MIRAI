@@ -19,18 +19,19 @@ jobs:
       - name: Install Z3
         run: cp binaries/libz3.dylib /usr/local/lib
         
-      - name: Install grcov
-        uses: actions-rs/grcov@v0.1
+      - name: Execute tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all -- --test-threads=2
+        env:
+          CARGO_INCREMENTAL: 0
+          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"          
+      - uses: actions-rs/grcov@v0.1
 
       - name: Run grcov        
-        env:
-          PROJECT_NAME: "mirai"
-          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
-          CARGO_INCREMENTAL: 0
         run: |
-          cargo build --verbose
-          cargo test --verbose
-          zip -0 cov.zip $(find . -name "$PROJECT_NAME*.gc*" -print)
+          zip -0 cov.zip $(find . -name "mirai*.gc*" -print)
           grcov cov.zip -s . -t lcov --llvm --ignore-not-existing --ignore "/*" -o lcov.info
       
       - name: Upload coverage data to codecov.io
