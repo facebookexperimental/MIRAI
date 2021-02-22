@@ -683,11 +683,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             DiagLevel::PARANOID => {
                 if self.bv.check_for_errors && self.might_be_reachable() {
                     // Give a diagnostic about this call, and make it the programmer's problem.
-                    let error = self.bv.cv.session.struct_span_err(
+                    let warning = self.bv.cv.session.struct_span_warn(
                         self.bv.current_span,
                         "the called function could not be summarized, all bets are off",
                     );
-                    self.bv.emit_diagnostic(error);
+                    self.bv.emit_diagnostic(warning);
                 }
             }
         }

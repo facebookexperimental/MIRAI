@@ -161,14 +161,14 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
             if changed {
                 if self.bv.cv.options.diag_level == DiagLevel::PARANOID {
                     let span = self.bv.current_span;
-                    let error = self.bv.cv.session.struct_span_err(
+                    let warning = self.bv.cv.session.struct_span_warn(
                         span,
                         &format!(
                             "Fixed point loop iterations exceeded limit of {}",
                             k_limits::MAX_FIXPOINT_ITERATIONS
                         ),
                     );
-                    self.bv.emit_diagnostic(error);
+                    self.bv.emit_diagnostic(warning);
                 } else {
                     warn!(
                         "Fixed point loop iterations {} exceeded limit of {} at {:?} in function {}.",
