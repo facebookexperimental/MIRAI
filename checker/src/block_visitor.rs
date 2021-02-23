@@ -636,7 +636,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             | Expression::InitialParameterValue { path: ipath, .. }
                             | Expression::Variable { path: ipath, .. } => {
                                 if (*path) == *ipath || path.is_rooted_by(ipath) {
-                                    let param_path_root = Path::new_parameter(i + 1);
+                                    let mut param_path_root = Path::new_parameter(i + 1);
+                                    if matches!(&arg_val.expression, Expression::Reference(..)) {
+                                        let deref_type = self
+                                            .bv
+                                            .type_visitor
+                                            .get_target_path_type(ipath, self.bv.current_span);
+                                        param_path_root =
+                                            Path::new_deref(param_path_root, deref_type);
+                                    }
                                     let param_path = path.replace_root(ipath, param_path_root);
                                     result.push((param_path, value.clone()));
                                     break;

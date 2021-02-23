@@ -95,8 +95,8 @@ impl Path {
     /// A split path, however, can serve as the qualifier of a newly constructed qualified path
     /// and the qualified path might not be canonical. This routine tries to remove the two sources of
     /// de-canonicalization that are currently know. Essentially: when a path that binds to a value
-    /// that is a reference is implicitly dereferenced by the selector, the canonical path will
-    /// be the one without the reference, or the actual heap block, if the path binds to a heap
+    /// that is a reference is explicitly dereferenced by the selector, the canonical path will
+    /// be the one without the ref-deref, or the actual heap block, if the path binds to a heap
     /// location. This routine returns a re-canonicalized path in the two scenarios above,
     /// otherwise returns `None`.
     ///

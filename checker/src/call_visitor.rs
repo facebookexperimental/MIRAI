@@ -1607,8 +1607,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_copy_non_overlapping(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
-        let source_path = Path::get_as_path(self.actual_args[0].1.clone());
-        let target_root = Path::get_as_path(self.actual_args[1].1.clone());
+        let source_path = Path::new_deref(
+            Path::get_as_path(self.actual_args[0].1.clone()),
+            ExpressionType::NonPrimitive,
+        );
+        let target_root = Path::new_deref(
+            Path::get_as_path(self.actual_args[1].1.clone()),
+            ExpressionType::NonPrimitive,
+        );
         let count = self.actual_args[2].1.clone();
         let target_path = Path::new_slice(target_root, count);
         let collection_type = self.actual_argument_types[0];
@@ -1677,8 +1683,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_swap_non_overlapping(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
         let ty = self.actual_argument_types[0];
-        let target_root = Path::get_as_path(self.actual_args[0].1.clone());
-        let source_root = Path::get_as_path(self.actual_args[1].1.clone());
+        let target_root = Path::new_deref(
+            Path::get_as_path(self.actual_args[0].1.clone()),
+            ExpressionType::NonPrimitive,
+        );
+        let source_root = Path::new_deref(
+            Path::get_as_path(self.actual_args[1].1.clone()),
+            ExpressionType::NonPrimitive,
+        );
         let count = self.actual_args[2].1.clone();
         let source_slice = Path::new_slice(source_root.clone(), count.clone());
         let target_slice = Path::new_slice(target_root.clone(), count.clone());

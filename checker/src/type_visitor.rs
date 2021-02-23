@@ -104,7 +104,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     self.specialize_generic_argument_type(self.tcx.type_of(*def_id), &map);
                 self.add_any_closure_fields_for(path_ty, path, first_state);
             }
-            TyKind::FnDef(..) | TyKind::FnPtr(..) => {}
+            TyKind::Dynamic(..) | TyKind::FnDef(..) | TyKind::FnPtr(..) => {}
             _ => {
                 info!("unexpected closure type {:?}", path_ty.kind());
             }
@@ -250,15 +250,14 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         ..
                     }
                     | PathSelector::Field(ordinal) => {
-                        let mut bt = Self::get_dereferenced_type(t);
-                        if let TyKind::Opaque(def_id, subs) = &bt.kind() {
+                        if let TyKind::Opaque(def_id, subs) = &t.kind() {
                             let map = self.get_generic_arguments_map(*def_id, subs, &[]);
-                            bt = self
+                            t = self
                                 .specialize_generic_argument_type(self.tcx.type_of(*def_id), &map);
-                            trace!("opaque type_of {:?}", bt.kind());
-                            trace!("opaque type_of {:?}", bt);
+                            trace!("opaque type_of {:?}", t.kind());
+                            trace!("opaque type_of {:?}", t);
                         }
-                        match bt.kind() {
+                        match t.kind() {
                             TyKind::Adt(def, substs) => {
                                 // enum fields have qualifiers that cast onto the right variant.
                                 // In this case, t ends up as a tuple so we won't get here.
@@ -323,14 +322,12 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         }
                     }
                     PathSelector::Deref => {
-                        return Self::get_dereferenced_type(t);
+                        return self.get_dereferenced_type(t);
                     }
                     PathSelector::Discriminant => {
                         return self.tcx.types.i32;
                     }
                     PathSelector::Downcast(_, ordinal) => {
-                        // Undo the implicit deref if t is a ref/pointer
-                        let t = type_visitor::get_target_type(t);
                         if let TyKind::Adt(def, substs) = t.kind() {
                             use rustc_index::vec::Idx;
                             if *ordinal >= def.variants.len() {
@@ -394,10 +391,23 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     }
 
     /// Returns the target type of a reference type.
-    fn get_dereferenced_type(ty: Ty<'tcx>) -> Ty<'tcx> {
+    fn get_dereferenced_type(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
         match ty.kind() {
             TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
             TyKind::Ref(_, t, _) => *t,
+            TyKind::Adt(def, substs) => {
+                if def.is_enum() {
+                    return ty;
+                }
+                for v in def.variants.iter() {
+                    if let Some(field0) = v.fields.get(0) {
+                        let field0_ty = field0.ty(self.tcx, substs);
+                        let deref_ty = self.get_dereferenced_type(field0_ty);
+                        return if deref_ty != field0_ty { deref_ty } else { ty };
+                    }
+                }
+                ty
+            }
             _ => ty,
         }
     }
@@ -655,9 +665,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         gen_arg_type: Ty<'tcx>,
         map: &Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     ) -> Ty<'tcx> {
-        if map.is_none() {
-            return gen_arg_type;
-        }
         match gen_arg_type.kind() {
             TyKind::Adt(def, substs) => self.tcx.mk_adt(def, self.specialize_substs(substs, map)),
             TyKind::Array(elem_ty, len) => {
@@ -805,8 +812,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 .tcx
                 .mk_opaque(*def_id, self.specialize_substs(substs, map)),
             TyKind::Param(ParamTy { name, .. }) => {
-                if let Some(gen_arg) = map.as_ref().unwrap().get(&name) {
-                    return gen_arg.expect_ty();
+                if let Some(map) = map {
+                    if let Some(gen_arg) = map.get(&name) {
+                        return gen_arg.expect_ty();
+                    }
                 }
                 gen_arg_type
             }
