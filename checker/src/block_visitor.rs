@@ -669,18 +669,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Give diagnostic, depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     pub fn report_missing_summary(&mut self) {
+        // This cuts down on false positives/negatives caused by missing post conditions and side-effects.
+        self.bv.assume_function_is_angelic = true;
         match self.bv.cv.options.diag_level {
             DiagLevel::RELAXED => {
-                // Assume the callee is perfect and assume the caller and all of its callers are perfect
-                // little angels as well. This cuts down on false positives caused by missing post
-                // conditions.
-                self.bv.assume_function_is_angelic = true;
+                // In this mode we suppress any diagnostics about issues that might not be true
+                // positives.
             }
-            DiagLevel::STRICT => {
-                // Assume the callee is perfect and that the caller does not need to prove any
-                // preconditions and that the callee guarantees no post conditions.
-            }
-            DiagLevel::PARANOID => {
+            DiagLevel::STRICT | DiagLevel::PARANOID => {
                 if self.bv.check_for_errors && self.might_be_reachable() {
                     // Give a diagnostic about this call, and make it the programmer's problem.
                     let warning = self.bv.cv.session.struct_span_warn(
@@ -823,9 +819,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         warn: bool,
     ) {
         precondition!(self.bv.check_for_errors);
-        // In relaxed mode we don't want to complain if the condition or reachability depends on
+        // In non paranoid mode we don't want to complain if the condition or reachability depends on
         // a parameter, since it is assumed that an implicit precondition was intended by the author.
-        if matches!(self.bv.cv.options.diag_level, DiagLevel::RELAXED)
+        if !matches!(self.bv.cv.options.diag_level, DiagLevel::PARANOID)
             && (condition.expression.contains_parameter()
                 || self
                     .bv
@@ -912,7 +908,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         function_name: KnownNames,
     ) -> Option<Rc<str>> {
         precondition!(self.bv.check_for_errors);
-        if cond.is_bottom() {
+        if cond.is_bottom() || self.bv.assume_function_is_angelic {
             return None;
         }
         let (cond_as_bool, entry_cond_as_bool) =
@@ -986,11 +982,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             || cond.expression.contains_local_variable()
             || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
-            // In relaxed mode we don't want to complain if the condition or reachability depends on
+            // In non paranoid mode we don't want to complain if the condition or reachability depends on
             // a parameter, since it is assumed that an implicit precondition was intended by the author
             // unless, of course, the condition is being explicitly verified.
             if function_name == KnownNames::MiraiVerify
-                || !matches!(self.bv.cv.options.diag_level, DiagLevel::RELAXED)
+                || matches!(self.bv.cv.options.diag_level, DiagLevel::PARANOID)
                 || (!cond.expression.contains_parameter()
                     && !self
                         .bv
@@ -1179,9 +1175,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
                         || cond_val.expression.contains_local_variable()
                     {
-                        // In relaxed mode we don't want to complain if the condition or reachability depends on
+                        // In non paranoid mode we don't want to complain if the condition or reachability depends on
                         // a parameter, since it is assumed that an implicit precondition was intended by the author.
-                        if matches!(self.bv.cv.options.diag_level, DiagLevel::RELAXED)
+                        if !matches!(self.bv.cv.options.diag_level, DiagLevel::PARANOID)
                             && (cond_val.expression.contains_parameter()
                                 || self
                                     .bv

@@ -1086,7 +1086,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             Summary::default()
         } else {
             if self.block_visitor.bv.check_for_errors {
-                info!("unknown callee {:?}", callee);
+                debug!("unknown callee {:?}", callee);
                 self.deal_with_missing_summary();
             }
             Summary::default()
@@ -2345,17 +2345,25 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             } else {
                 "".to_string()
             };
-            // todo: when a function parameter is not a compile time constant at the call site
-            // the callee cannot be fully analyzed, which is problematic, in general, but could be
-            // OK if the actual callee has no side effects. In such a case, the call can become an uninterpreted
-            // function, which can be interpreted later on during call site specialization.
-            // That might also be the place to complain if the function turns out to have side effects.
-            warn!(
-                "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
-                utils::summary_key_str(self.block_visitor.bv.tcx, self.block_visitor.bv.def_id),
-                utils::summary_key_str(self.block_visitor.bv.tcx, self.callee_def_id),
-                argument_type_hint,
-            );
+            // todo: when a call site has an expression that does not result in a compile time
+            // constant function, perhaps construct a dummy function that is the join of the
+            // summaries of the function constants that might flow into the expression.
+            //todo: handle parameters that are arrays of functions
+            if self.block_visitor.bv.def_id.is_local() {
+                warn!(
+                    "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
+                    utils::summary_key_str(self.block_visitor.bv.tcx, self.block_visitor.bv.def_id),
+                    utils::summary_key_str(self.block_visitor.bv.tcx, self.callee_def_id),
+                    argument_type_hint,
+                );
+            } else {
+                debug!(
+                    "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
+                    utils::summary_key_str(self.block_visitor.bv.tcx, self.block_visitor.bv.def_id),
+                    utils::summary_key_str(self.block_visitor.bv.tcx, self.callee_def_id),
+                    argument_type_hint,
+                );
+            }
             debug!("def_id {:?}", self.callee_def_id);
         }
     }

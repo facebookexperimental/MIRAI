@@ -15,7 +15,7 @@ fn some_test() {
 
 #[test]
 fn another_test() {
-    verify!(2 == 1); //~provably false verification condition
+    verify!(2 == 1); //~ provably false verification condition
 }
 
 #[test]
@@ -31,12 +31,11 @@ fn no_summary_analyzed_anyway() {
     }
     let d: &dyn Dynamic = &S {} as &dyn Dynamic; // forget type info of S
 
-    // With --diag=strict we still see an error even though d.f is uninterpreted.
-    verify!(d.f(1) == 3); //~ possible false verification condition
-    verify!(3 == 4); //~provably false verification condition
+    let i = d.f(1); //~ the called function could not be summarized, all bets are off
+    verify!(i == 3); // ignored because the previous unresolved call makes every subsequent thing moot
 }
 
-pub fn not_a_test() {
-    // Should not complain because it is not a test function.
+pub fn main() {
+    // Should not complain because it is not a test function and therefore not analyzed.
     verify!(2 == 1);
 }
