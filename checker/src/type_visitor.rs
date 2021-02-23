@@ -161,7 +161,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     #[logfn_inputs(TRACE)]
     pub fn get_path_rustc_type(&self, path: &Rc<Path>, current_span: rustc_span::Span) -> Ty<'tcx> {
         if let Some(ty) = self.path_ty_cache.get(path) {
-            return ty;
+            return *ty;
         }
         match &path.value {
             PathEnum::Computed { value } => match &value.expression {
@@ -209,6 +209,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     self.tcx.types.never
                 }
             }
+            PathEnum::PhantomData => self.tcx.types.never,
             PathEnum::Result => {
                 if self.mir.local_decls.is_empty() {
                     info!("result type wanted from function without result local");
@@ -395,20 +396,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         match ty.kind() {
             TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
             TyKind::Ref(_, t, _) => *t,
-            TyKind::Adt(def, substs) => {
-                if def.is_enum() {
-                    return ty;
+            _ => {
+                if ty.is_box() {
+                    ty.boxed_ty()
+                } else {
+                    ty
                 }
-                for v in def.variants.iter() {
-                    if let Some(field0) = v.fields.get(0) {
-                        let field0_ty = field0.ty(self.tcx, substs);
-                        let deref_ty = self.get_dereferenced_type(field0_ty);
-                        return if deref_ty != field0_ty { deref_ty } else { ty };
-                    }
-                }
-                ty
             }
-            _ => ty,
         }
     }
 
@@ -521,39 +515,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             _ => {}
         }
         result
-    }
-
-    /// Returns true if the given type is a reference (or raw pointer) to a collection type, in which
-    /// case the reference/pointer independently tracks the length of the collection, thus effectively
-    /// tracking a slice of the underlying collection.
-    #[logfn_inputs(TRACE)]
-    #[logfn(TRACE)]
-    pub fn starts_with_slice_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
-        match ty_kind {
-            TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
-                // Pointers to sized arrays are thin pointers.
-                matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
-            }
-            TyKind::Adt(def, substs) => {
-                for v in def.variants.iter() {
-                    if let Some(field0) = v.fields.get(0) {
-                        let field0_ty = field0.ty(self.tcx, substs);
-                        if self.starts_with_slice_pointer(&field0_ty.kind()) {
-                            return true;
-                        }
-                    }
-                }
-                false
-            }
-            TyKind::Tuple(substs) => {
-                if let Some(field0_ty) = substs.iter().map(|s| s.expect_ty()).next() {
-                    self.starts_with_slice_pointer(field0_ty.kind())
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        }
     }
 
     /// Returns the rustc TyKind of the element selected by projection_elem.
