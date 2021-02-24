@@ -2917,12 +2917,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self.other".
     #[logfn_inputs(TRACE)]
     fn offset(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if matches!(
-            other.expression,
-            Expression::CompileTimeConstant(ConstantDomain::I128(0))
-        ) {
-            return self.clone();
-        }
         if let Expression::Offset { left, right } = &self.expression {
             AbstractValue::make_binary(left.clone(), right.addition(other), |left, right| {
                 Expression::Offset { left, right }

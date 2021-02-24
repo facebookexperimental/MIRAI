@@ -531,9 +531,9 @@ dependencies = [
 
 [[package]]
 name = "rpds"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56481afe084b54bb78bf63b9914dddef620d786af556530e0fad1398eaf11b2a"
+checksum = "387f58b714cda2b5042ef9e91819445f60189900b618475186b11d7876f6adb4"
 dependencies = [
  "archery",
  "serde",
