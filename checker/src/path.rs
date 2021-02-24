@@ -110,8 +110,8 @@ impl Path {
                 return Some(path.clone());
             }
         } else if let Some(value) = environment.value_map.get(path) {
-            if let Expression::HeapBlock { .. } = &value.expression {
-                return Some(Path::get_as_path(value.clone()));
+            if let Expression::Reference(path) = &value.expression {
+                return Some(path.clone());
             }
         }
         None

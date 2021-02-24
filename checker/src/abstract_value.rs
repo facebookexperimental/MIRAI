@@ -4231,9 +4231,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::InitialParameterValue { path, var_type } => {
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, pre_env, fresh);
-                if let PathEnum::Computed { value }
-                | PathEnum::HeapBlock { value }
-                | PathEnum::Offset { value } = &refined_path.value
+                if let PathEnum::Computed { value } | PathEnum::Offset { value } =
+                    &refined_path.value
                 {
                     return value.clone();
                 } else if let Some(val) = pre_env.value_at(&refined_path) {

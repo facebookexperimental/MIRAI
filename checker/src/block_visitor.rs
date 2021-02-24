@@ -1448,6 +1448,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .type_visitor
             .get_path_rustc_type(&path, self.bv.current_span);
+        let source_type = self
+            .bv
+            .type_visitor
+            .get_rustc_place_type(place, self.bv.current_span);
         let value_path = self.visit_lh_place(place);
         let value = match &value_path.value {
             PathEnum::QualifiedPath {
@@ -1455,6 +1459,19 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 selector,
                 ..
             } if *selector.as_ref() == PathSelector::Deref => {
+                if source_type.is_box() {
+                    // taking the address of the thing in the box, which is, of course, a pointer.
+                    // Special case this because we want that pointer, not a pointer to the pointer
+                    // Use copy_or_move_elements because the pointer could be fat.
+                    self.bv.copy_or_move_elements(
+                        path,
+                        qualifier.canonicalize(&self.bv.current_environment),
+                        target_type,
+                        false,
+                    );
+                    return;
+                }
+
                 // We are taking a reference to the result of a deref. This is a bit awkward.
                 // The deref, by itself, essentially does a copy of the value denoted by the qualifier.
                 // When combined with an address_of operation, however, things are more complicated.
@@ -1837,8 +1854,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // The box is a struct that is located at path.
                 // It contains a pointer at field 0, which is a struct of type Unique,
                 // which contains the pointer that points to the new heap block.
+                // This instruction only allocates the heap block
+                // and fills in the box pointer. The initialization of the heap block is done
+                // in a subsequent MIR instruction of the form (*box) = box_value. De-referencing
+                // a box structure amounts to de-referencing the pointer in field 0.
                 path = Path::new_field(Path::new_field(path, 0), 0);
-                self.bv.get_new_heap_block(len, alignment, false, ty)
+                AbstractValue::make_reference(Path::get_as_path(
+                    self.bv.get_new_heap_block(len, alignment, false, ty),
+                ))
             }
             mir::NullOp::SizeOf => len,
         };
@@ -2938,31 +2961,37 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             let selector = self.visit_projection_elem(ty, elem);
             match elem {
                 mir::ProjectionElem::Deref => {
-                    if let Some((thin_pointer_path, thin_ptr_type)) =
-                        Path::get_path_to_thin_pointer_at_offset_0(
-                            self.bv.tcx,
-                            &self.bv.current_environment,
-                            &result,
-                            ty,
-                        )
-                    {
-                        ty = type_visitor::get_target_type(thin_ptr_type);
-                        let deref_path =
-                            Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
-                        self.bv
-                            .type_visitor
-                            .path_ty_cache
-                            .insert(deref_path.clone(), ty);
-                        let fat_pointer_target_type = type_visitor::get_target_type(ty);
-                        let fat_pointer_path = Path::new_deref(
-                            result,
-                            ExpressionType::from(fat_pointer_target_type.kind()),
-                        );
-                        prev_result = Some(fat_pointer_path);
-                        result = deref_path;
-                        continue;
+                    if ty.is_box() {
+                        // Deref the pointer at field 0 of the box
+                        result = Path::new_field(Path::new_field(result, 0), 0);
+                        ty = ty.boxed_ty();
+                    } else {
+                        if let Some((thin_pointer_path, thin_ptr_type)) =
+                            Path::get_path_to_thin_pointer_at_offset_0(
+                                self.bv.tcx,
+                                &self.bv.current_environment,
+                                &result,
+                                ty,
+                            )
+                        {
+                            ty = type_visitor::get_target_type(thin_ptr_type);
+                            let deref_path =
+                                Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
+                            self.bv
+                                .type_visitor
+                                .path_ty_cache
+                                .insert(deref_path.clone(), ty);
+                            let fat_pointer_target_type = type_visitor::get_target_type(ty);
+                            let fat_pointer_path = Path::new_deref(
+                                result,
+                                ExpressionType::from(fat_pointer_target_type.kind()),
+                            );
+                            prev_result = Some(fat_pointer_path);
+                            result = deref_path;
+                            continue;
+                        }
+                        ty = type_visitor::get_target_type(ty);
                     }
-                    ty = type_visitor::get_target_type(ty);
                 }
                 mir::ProjectionElem::Field(_, field_ty) => {
                     if let Some(prev) = prev_result {
