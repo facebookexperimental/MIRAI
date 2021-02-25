@@ -364,6 +364,20 @@ impl Path {
         }
     }
 
+    /// If path is a fat pointer, return the path to the thin pointer that must be used when de-referencing the fat
+    /// pointer. Otherwise just return path.
+    #[logfn_inputs(DEBUG)]
+    #[logfn(DEBUG)]
+    pub fn get_path_to_thin_pointer(path: Rc<Path>, path_rustc_type: Ty<'_>) -> Rc<Path> {
+        if path_rustc_type.is_box() {
+            Path::new_field(Path::new_field(path, 0), 0)
+        } else if type_visitor::is_slice_pointer(path_rustc_type.kind()) {
+            Path::new_field(path, 0)
+        } else {
+            path
+        }
+    }
+
     /// Returns the path to the first leaf field of the structure described by path_rustc_type.
     /// A field that is of type struct, is not a leaf field.
     /// The field at offset 0 must be a thin pointer.
@@ -992,7 +1006,7 @@ impl PathRefinement for Rc<Path> {
                         // *&p just becomes p
                         // (except when the value at p is structured and the result is assigned to a local,
                         // but such paths are never canonicalized).
-                        if *selector.as_ref() == PathSelector::Deref {
+                        if **selector == PathSelector::Deref {
                             return p.clone();
                         }
                         // since self is a qualified path we have to drop the reference operator

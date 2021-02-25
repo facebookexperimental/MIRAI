@@ -1134,18 +1134,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         precondition!(self.actual_args.len() == 1);
 
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
-            let source_pointer_path = Path::get_as_path(self.actual_args[0].1.clone());
+            let source_pointer_path = self.actual_args[0].0.clone();
             let source_pointer_rustc_type = self.actual_argument_types[0];
             let target_type = ExpressionType::from(
-                type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+                type_visitor::get_target_type(source_pointer_rustc_type).kind(),
             );
-            let (source_thin_pointer_path, _) = Path::get_path_to_thin_pointer_at_offset_0(
-                self.block_visitor.bv.tcx,
-                &self.block_visitor.bv.current_environment,
-                &source_pointer_path,
-                source_pointer_rustc_type,
-            )
-            .unwrap_or((source_pointer_path, source_pointer_rustc_type));
+            let source_thin_pointer_path =
+                Path::get_path_to_thin_pointer(source_pointer_path, source_pointer_rustc_type);
             let source_path = Path::new_deref(source_thin_pointer_path, target_type)
                 .canonicalize(&self.block_visitor.bv.current_environment);
             trace!("MiraiAddTag: tagging {:?} with {:?}", tag, source_path);
@@ -1222,18 +1217,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
         let result: Option<Rc<AbstractValue>>;
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
-            let source_pointer_path = Path::get_as_path(self.actual_args[0].1.clone());
+            let source_pointer_path = self.actual_args[0].0.clone();
             let source_pointer_rustc_type = self.actual_argument_types[0];
             let target_type = ExpressionType::from(
-                type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+                type_visitor::get_target_type(source_pointer_rustc_type).kind(),
             );
-            let (source_thin_pointer_path, _) = Path::get_path_to_thin_pointer_at_offset_0(
-                self.block_visitor.bv.tcx,
-                &self.block_visitor.bv.current_environment,
-                &source_pointer_path,
-                source_pointer_rustc_type,
-            )
-            .unwrap_or((source_pointer_path, source_pointer_rustc_type));
+            let source_thin_pointer_path =
+                Path::get_path_to_thin_pointer(source_pointer_path, source_pointer_rustc_type);
             let source_path = Path::new_deref(source_thin_pointer_path, target_type)
                 .canonicalize(&self.block_visitor.bv.current_environment);
             trace!(
