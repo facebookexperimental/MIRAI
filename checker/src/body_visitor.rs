@@ -794,10 +794,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let mut result_root: Rc<Path> = Path::new_result();
                 let mut promoted_root: Rc<Path> =
                     Rc::new(PathEnum::PromotedConstant { ordinal }.into());
-                if self
-                    .type_visitor
-                    .starts_with_slice_pointer(result_rustc_type.kind())
-                {
+                if type_visitor::is_slice_pointer(result_rustc_type.kind()) {
                     let source_length_path = Path::new_length(result_root.clone());
                     let length_val = self
                         .exit_environment
@@ -1137,13 +1134,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     continue;
                 }
                 Expression::Reference(path) => {
-                    let deref_type = self
+                    let lh_type = self
                         .type_visitor
                         .get_path_rustc_type(&tpath, self.current_span);
-                    if self
-                        .type_visitor
-                        .starts_with_slice_pointer(deref_type.kind())
-                    {
+                    if type_visitor::is_slice_pointer(lh_type.kind()) {
                         if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                             if matches!(selector.as_ref(), PathSelector::Field(0)) {
                                 // tpath = qualifier.0 and rvalue = &path, so thin pointer copy
@@ -1152,10 +1146,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             }
                         }
                         // transferring a (pointer, length) tuple.
-                        self.copy_or_move_elements(tpath.clone(), path.clone(), deref_type, false);
+                        self.copy_or_move_elements(tpath.clone(), path.clone(), lh_type, false);
                         continue;
                     }
-                    if target_is_thin_pointer && deref_type == self.tcx.types.never {
+                    if target_is_thin_pointer && lh_type == self.tcx.types.never {
                         // This can happen if the result of the called function is actually a slice pointer
                         // that is being implicitly cast to a thin pointer. In that case, tpath needs
                         // to drop the field 0 bit.

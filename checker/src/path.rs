@@ -1017,7 +1017,14 @@ impl PathRefinement for Rc<Path> {
                     Expression::Variable { path, .. } => {
                         return Path::new_qualified(path.clone(), selector.clone());
                     }
-                    _ => {}
+                    _ => {
+                        if **selector == PathSelector::Deref {
+                            return Path::new_qualified(
+                                Path::get_as_path(value.clone()),
+                                selector.clone(),
+                            );
+                        }
+                    }
                 }
             }
             // An impossible downcast is equivalent to BOTTOM

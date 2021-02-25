@@ -1478,11 +1478,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // If the contents at offset 0 from the target of the pointer being dereferenced is
                 // a fat (slice) pointer then the address_of operation results in a copy of the fat pointer.
                 // We check for this by looking at the type of the operation result target.
-                if self
-                    .bv
-                    .type_visitor
-                    .starts_with_slice_pointer(target_type.kind())
-                {
+                if type_visitor::is_slice_pointer(target_type.kind()) {
                     // If we get here we are effectively copying to a fat pointer without a cast,
                     // so there is no type information to use to come up with the length part of
                     // the fat pointer. This implies that the source value must itself be a fat
@@ -1601,7 +1597,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         .get_path_rustc_type(qualifier, self.bv.current_span);
                     if type_visitor::is_slice_pointer(qualifier_type.kind()) {
                         // de-referencing a slice pointer is normally the same as de-referencing its
-                        // thin pointer, so self.visit_place above assumed that much.
+                        // thin pointer, so self.visit_lh_place above assumed that much.
                         // In this context, however, we want the length of the slice pointer,
                         // so we need to drop the thin pointer field selector.
                         if let PathEnum::QualifiedPath {
@@ -2954,7 +2950,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         base_ty: Ty<'tcx>,
         projection: &[mir::PlaceElem<'tcx>],
     ) -> Rc<Path> {
-        let mut prev_result = None;
         let mut result = base_path;
         let mut ty: Ty<'_> = base_ty;
         for elem in projection.iter() {
@@ -2965,52 +2960,23 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         // Deref the pointer at field 0 of the box
                         result = Path::new_field(Path::new_field(result, 0), 0);
                         ty = ty.boxed_ty();
+                    } else if type_visitor::is_slice_pointer(ty.kind()) {
+                        // Deref the thin pointer part
+                        ty = type_visitor::get_target_type(ty);
+                        let thin_pointer_path = Path::new_field(result, 0);
+                        let deref_path =
+                            Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
+                        self.bv
+                            .type_visitor
+                            .path_ty_cache
+                            .insert(deref_path.clone(), ty);
+                        result = deref_path;
+                        continue;
                     } else {
-                        if let Some((thin_pointer_path, thin_ptr_type)) =
-                            Path::get_path_to_thin_pointer_at_offset_0(
-                                self.bv.tcx,
-                                &self.bv.current_environment,
-                                &result,
-                                ty,
-                            )
-                        {
-                            ty = type_visitor::get_target_type(thin_ptr_type);
-                            let deref_path =
-                                Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
-                            self.bv
-                                .type_visitor
-                                .path_ty_cache
-                                .insert(deref_path.clone(), ty);
-                            let fat_pointer_target_type = type_visitor::get_target_type(ty);
-                            let fat_pointer_path = Path::new_deref(
-                                result,
-                                ExpressionType::from(fat_pointer_target_type.kind()),
-                            );
-                            prev_result = Some(fat_pointer_path);
-                            result = deref_path;
-                            continue;
-                        }
                         ty = type_visitor::get_target_type(ty);
                     }
                 }
                 mir::ProjectionElem::Field(_, field_ty) => {
-                    if let Some(prev) = prev_result {
-                        //todo: Actually, field 0 of fat pointer path does not have to mean
-                        //the thin pointer. It looks like we might have to unroll the qualifier
-                        //if the field type is not an actual raw pointer. Perhaps only well known
-                        //types behave like fat pointers. Perhaps also, we might be better off to
-                        // normalize fields into (typed) offsets. At any rate, the code below is wrong.
-                        // Make some test cases.
-
-                        // The previous selector was a deref of a fat pointer, which in MIR seems
-                        // to be any struct that has a field 0 that is a thin or fat pointer.
-                        // When such a path is used as is, or as the qualifier of an index or slice
-                        // we want to unroll the fat pointer chain to a path that ends in the thin pointer.
-                        // When the path qualifies a field, however, we simply want to omit the deref
-                        // and use the path to the outermost fat pointer as the qualifier.
-                        // This is pretty subtle and quite sad, but that is MIR for you.
-                        result = prev.clone()
-                    };
                     ty = self.bv.type_visitor.specialize_generic_argument_type(
                         field_ty,
                         &self.bv.type_visitor.generic_argument_map,
@@ -3028,13 +2994,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 mir::ProjectionElem::Subslice { .. } => {}
             }
-            prev_result = None;
-            result = Path::new_qualified(result, Rc::new(selector))
-                .canonicalize(&self.bv.current_environment);
-            self.bv
-                .type_visitor
-                .path_ty_cache
-                .insert(result.clone(), ty);
+            result = Path::new_qualified(result, Rc::new(selector));
         }
         result
     }
