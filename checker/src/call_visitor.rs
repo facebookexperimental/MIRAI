@@ -2054,7 +2054,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handle_transmute(&mut self) {
         checked_assume!(self.actual_args.len() == 1);
-        let mut source_path = Path::get_as_path(self.actual_args[0].1.clone());
+        let source_path = Path::get_as_path(self.actual_args[0].1.clone());
         let source_rustc_type = self
             .callee_generic_arguments
             .expect("rustc type error")
@@ -2062,32 +2062,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             .expect("rustc type error")
             .expect_ty();
         if let Some((place, _)) = &self.destination {
-            let mut target_path = self.block_visitor.visit_rh_place(place);
+            let target_path = self.block_visitor.visit_rh_place(place);
             let target_rustc_type = self
                 .block_visitor
                 .bv
                 .type_visitor
                 .get_rustc_place_type(place, self.block_visitor.bv.current_span);
-            // todo: use copy_field_bits for these cases (and others)
-            if type_visitor::is_thin_pointer(&target_rustc_type.kind()) {
-                source_path = Path::get_path_to_thin_pointer_at_offset_0(
-                    self.block_visitor.bv.tcx,
-                    &self.block_visitor.bv.current_environment,
-                    &source_path,
-                    source_rustc_type,
-                )
-                .unwrap_or((source_path, target_rustc_type))
-                .0;
-            } else if type_visitor::is_thin_pointer(&source_rustc_type.kind()) {
-                target_path = Path::get_path_to_thin_pointer_at_offset_0(
-                    self.block_visitor.bv.tcx,
-                    &self.block_visitor.bv.current_environment,
-                    &target_path,
-                    target_rustc_type,
-                )
-                .unwrap_or((target_path, source_rustc_type))
-                .0;
-            }
 
             fn add_leaf_fields_for<'a>(
                 path: Rc<Path>,
@@ -2129,6 +2109,34 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         self.block_visitor.bv.tcx,
                         &mut target_fields,
                     );
+                    self.copy_field_bits(source_fields, target_fields);
+                }
+                (_, TyKind::Adt(target_def, target_substs))
+                    if type_visitor::is_thin_pointer(source_rustc_type.kind()) =>
+                {
+                    let source_fields = vec![(source_path, source_rustc_type)];
+                    let mut target_fields = Vec::new();
+                    add_leaf_fields_for(
+                        target_path,
+                        target_def,
+                        target_substs,
+                        self.block_visitor.bv.tcx,
+                        &mut target_fields,
+                    );
+                    self.copy_field_bits(source_fields, target_fields);
+                }
+                (TyKind::Adt(source_def, source_substs), _)
+                    if type_visitor::is_thin_pointer(target_rustc_type.kind()) =>
+                {
+                    let mut source_fields = Vec::new();
+                    add_leaf_fields_for(
+                        source_path,
+                        source_def,
+                        source_substs,
+                        self.block_visitor.bv.tcx,
+                        &mut source_fields,
+                    );
+                    let target_fields = vec![(target_path, target_rustc_type)];
                     self.copy_field_bits(source_fields, target_fields);
                 }
                 (TyKind::Float(..), TyKind::Uint(..))
@@ -2188,7 +2196,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let source_bits = ExpressionType::from(source_type.kind()).bit_length();
             let target_expression_type = ExpressionType::from(target_type.kind());
             let mut target_bits_to_write = target_expression_type.bit_length();
-            if source_bits - copied_source_bits >= target_bits_to_write {
+            if source_bits == target_bits_to_write
+                && copied_source_bits == 0
+                && target_expression_type == val.expression.infer_type()
+            {
+                self.block_visitor
+                    .bv
+                    .current_environment
+                    .update_value_at(target_path, val);
+            } else if source_bits - copied_source_bits >= target_bits_to_write {
                 // target field can be completely assigned from bits of source field value
                 if source_bits - copied_source_bits > target_bits_to_write {
                     // discard higher order bits since they wont fit into the target field
