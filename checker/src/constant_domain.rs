@@ -627,6 +627,27 @@ impl ConstantDomain {
         }
     }
 
+    /// Returns the predefined rustc type that matches this constants.
+    /// Since there is no predefined type that matches a Function constant,
+    /// the predefined type never is returned in this case (as is for Bottom).
+    #[logfn(TRACE)]
+    pub fn get_rustc_type<'a>(&self, tcx: TyCtxt<'a>) -> Ty<'a> {
+        match self {
+            ConstantDomain::Bottom => tcx.types.never,
+            ConstantDomain::Char(..) => tcx.types.char,
+            ConstantDomain::False => tcx.types.bool,
+            ConstantDomain::Function(..) => tcx.types.never,
+            ConstantDomain::I128(..) => tcx.types.i128,
+            ConstantDomain::F64(..) => tcx.types.f64,
+            ConstantDomain::F32(..) => tcx.types.f32,
+            ConstantDomain::Str(..) => tcx.types.str_,
+            ConstantDomain::True => tcx.types.bool,
+            ConstantDomain::U128(..) => tcx.types.u128,
+            ConstantDomain::Unimplemented => tcx.types.trait_object_dummy_self,
+            ConstantDomain::Unit => tcx.types.unit,
+        }
+    }
+
     #[logfn(TRACE)]
     pub fn is_bottom(&self) -> bool {
         matches!(self, ConstantDomain::Bottom)

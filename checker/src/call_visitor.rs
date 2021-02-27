@@ -1136,9 +1136,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
             let source_pointer_path = self.actual_args[0].0.clone();
             let source_pointer_rustc_type = self.actual_argument_types[0];
-            let target_type = ExpressionType::from(
-                type_visitor::get_target_type(source_pointer_rustc_type).kind(),
-            );
+            let source_rustc_type = type_visitor::get_target_type(source_pointer_rustc_type);
+            let target_type = ExpressionType::from(source_rustc_type.kind());
             let source_thin_pointer_path =
                 Path::get_path_to_thin_pointer(source_pointer_path, source_pointer_rustc_type);
             let source_path = Path::new_deref(source_thin_pointer_path, target_type)
@@ -1147,11 +1146,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
             // Check if the tagged value has a pointer type (e.g., a reference).
             // Emit an error message if so.
-            let source_rustc_type = self
-                .block_visitor
-                .bv
-                .type_visitor
-                .get_path_rustc_type(&source_path, self.block_visitor.bv.current_span);
             if self.block_visitor.bv.check_for_errors && source_rustc_type.is_any_ptr() {
                 let err = self.block_visitor.bv.cv.session.struct_span_err(
                     self.block_visitor.bv.current_span,
@@ -1219,9 +1213,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
             let source_pointer_path = self.actual_args[0].0.clone();
             let source_pointer_rustc_type = self.actual_argument_types[0];
-            let target_type = ExpressionType::from(
-                type_visitor::get_target_type(source_pointer_rustc_type).kind(),
-            );
+            let source_rustc_type = type_visitor::get_target_type(source_pointer_rustc_type);
+            let target_type = ExpressionType::from(source_rustc_type.kind());
             let source_thin_pointer_path =
                 Path::get_path_to_thin_pointer(source_pointer_path, source_pointer_rustc_type);
             let source_path = Path::new_deref(source_thin_pointer_path, target_type)
@@ -1235,11 +1228,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
             // Check if the tagged value has a pointer type (e.g., a reference).
             // Emit an error message if so.
-            let source_rustc_type = self
-                .block_visitor
-                .bv
-                .type_visitor
-                .get_path_rustc_type(&source_path, self.block_visitor.bv.current_span);
             if self.block_visitor.bv.check_for_errors && source_rustc_type.is_any_ptr() {
                 let err = self.block_visitor.bv.cv.session.struct_span_err(
                     self.block_visitor.bv.current_span,

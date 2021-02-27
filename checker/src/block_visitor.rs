@@ -1591,25 +1591,24 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             } = &value_path.value
             {
                 if let PathSelector::Deref = selector.as_ref() {
-                    let qualifier_type = self
-                        .bv
-                        .type_visitor
-                        .get_path_rustc_type(qualifier, self.bv.current_span);
-                    if type_visitor::is_slice_pointer(qualifier_type.kind()) {
-                        // de-referencing a slice pointer is normally the same as de-referencing its
-                        // thin pointer, so self.visit_lh_place above assumed that much.
-                        // In this context, however, we want the length of the slice pointer,
-                        // so we need to drop the thin pointer field selector.
-                        if let PathEnum::QualifiedPath {
-                            qualifier,
-                            selector,
-                            ..
-                        } = &qualifier.value
-                        {
-                            checked_assume!(matches!(selector.as_ref(), PathSelector::Field(0)));
-                            value_path = qualifier.clone();
-                        } else {
-                            assume_unreachable!("deref of a slice pointer did not produce ptr.0");
+                    // de-referencing a slice pointer is normally the same as de-referencing its
+                    // thin pointer, so self.visit_lh_place above assumed that much.
+                    // In this context, however, we want the length of the slice pointer,
+                    // so we need to drop the thin pointer field selector.
+                    if let PathEnum::QualifiedPath {
+                        qualifier,
+                        selector,
+                        ..
+                    } = &qualifier.value
+                    {
+                        if matches!(selector.as_ref(), PathSelector::Field(0)) {
+                            let qualifier_type = self
+                                .bv
+                                .type_visitor
+                                .get_path_rustc_type(qualifier, self.bv.current_span);
+                            if type_visitor::is_slice_pointer(qualifier_type.kind()) {
+                                value_path = qualifier.clone();
+                            }
                         }
                     }
                 } else {

@@ -1137,6 +1137,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     let lh_type = self
                         .type_visitor
                         .get_path_rustc_type(&tpath, self.current_span);
+                    if let PathEnum::HeapBlock { .. } = &path.value {
+                        self.type_visitor
+                            .path_ty_cache
+                            .insert(path.clone(), type_visitor::get_target_type(lh_type));
+                    }
                     if type_visitor::is_slice_pointer(lh_type.kind()) {
                         if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                             if matches!(selector.as_ref(), PathSelector::Field(0)) {
