@@ -1646,66 +1646,75 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         return;
                     }
                 };
-                let source_path = self.visit_rh_place(place);
-                let source_type = self.get_operand_rustc_type(operand);
                 if let PointerCast::Unsize = pointer_cast {
-                    // Unsize a pointer/reference value, e.g., `&[T; n]` to`&[T]`.
-                    // If the resulting type is a fat pointer, we might have to upgrade the pointer.
-                    if self.bv.type_visitor.starts_with_slice_pointer(ty.kind()) {
-                        // Note that the source could be a thin or fat pointer.
-                        if !self
-                            .bv
-                            .type_visitor
-                            .starts_with_slice_pointer(source_type.kind())
-                        {
-                            // Need to upgrade the thin pointer to a fat pointer
-                            let (target_thin_pointer_path, _) =
-                                Path::get_path_to_thin_pointer_at_offset_0(
-                                    self.bv.tcx,
-                                    &self.bv.current_environment,
-                                    &path,
-                                    ty,
-                                )
-                                .expect("there to be such path because ty starts with it");
-                            let (source_thin_pointer_path, thin_ptr_type) =
-                                Path::get_path_to_thin_pointer_at_offset_0(
-                                    self.bv.tcx,
-                                    &self.bv.current_environment,
-                                    &source_path,
-                                    source_type,
-                                )
-                                .expect(
-                                    "there to be such a path because source_type can cast to target type",
-                                );
-                            let target_type = type_visitor::get_target_type(thin_ptr_type);
-                            self.bv.copy_or_move_elements(
-                                target_thin_pointer_path.clone(),
-                                source_thin_pointer_path.clone(),
-                                thin_ptr_type,
-                                is_move,
-                            );
-                            let len_selector = Rc::new(PathSelector::Field(1));
-                            let len_value = if let TyKind::Array(_, len) = target_type.kind() {
-                                // We only get here if "-Z mir-opt-level=0" was specified.
-                                // With more optimization the len instruction becomes a constant.
-                                self.visit_constant(None, &len)
-                            } else {
-                                let len_source_path = source_thin_pointer_path
-                                    .add_or_replace_selector(len_selector.clone());
-                                self.bv.lookup_path_and_refine_result(
-                                    len_source_path,
-                                    self.bv.tcx.types.usize,
-                                )
-                            };
-                            let len_target_path =
-                                target_thin_pointer_path.add_or_replace_selector(len_selector);
+                    // Unsize a pointer/reference value, e.g., `&[T; n]` to
+                    // `&[T]`. Note that the source could be a thin or fat pointer.
+                    // This will do things like convert thin pointers to fat
+                    // pointers, or convert structs containing thin pointers to
+                    // structs containing fat pointers, or convert between fat
+                    // pointers. We don't store the details of how the transform is
+                    // done (in fact, we don't know that, because it might depend on
+                    // the precise type parameters). We just store the target
+                    // type. Codegen backends and miri figure out what has to be done
+                    // based on the precise source/target type at hand.
+                    //
+                    // We do this by iterating over all paths in the environment rooted in
+                    // source_path and upgrading thin pointers to fat pointers if the re-rooted
+                    // path to the thin pointer infers to a type that is a slice pointer.
+                    let value_map = self.bv.current_environment.value_map.clone();
+                    let source_path = self.visit_lh_place(place);
+                    for (p, value) in value_map
+                        .iter()
+                        .filter(|(p, _)| source_path == **p || p.is_rooted_by(&source_path))
+                    {
+                        let target_path = p
+                            .replace_root(&source_path, path.clone())
+                            .canonicalize(&self.bv.current_environment);
+                        if value.expression.infer_type() != ExpressionType::ThinPointer {
+                            // just copy
                             self.bv
                                 .current_environment
-                                .update_value_at(len_target_path, len_value);
-                            return;
+                                .update_value_at(target_path, value.clone());
+                        } else {
+                            let target_type = self
+                                .bv
+                                .type_visitor
+                                .get_path_rustc_type(&target_path, self.bv.current_span);
+                            if type_visitor::is_slice_pointer(target_type.kind()) {
+                                // convert the source thin pointer to a fat pointer if the target path is a slice pointer
+                                let thin_pointer_path = Path::new_field(target_path.clone(), 0);
+                                self.bv
+                                    .current_environment
+                                    .update_value_at(thin_pointer_path, value.clone());
+                                let source_type = self
+                                    .bv
+                                    .type_visitor
+                                    .get_path_rustc_type(p, self.bv.current_span);
+                                if let TyKind::Array(_, len) =
+                                    type_visitor::get_target_type(source_type).kind()
+                                {
+                                    let length_path = Path::new_length(target_path);
+                                    let length_value = self.visit_constant(None, &len);
+                                    self.bv
+                                        .current_environment
+                                        .update_value_at(length_path, length_value);
+                                } else {
+                                    assume_unreachable!(
+                                        "non array thin pointer type {:?}",
+                                        source_type
+                                    );
+                                }
+                            } else {
+                                // just copy
+                                self.bv
+                                    .current_environment
+                                    .update_value_at(target_path, value.clone());
+                            }
                         }
                     }
+                    return;
                 }
+                let source_path = self.visit_rh_place(place);
                 self.bv
                     .copy_or_move_elements(path, source_path, ty, is_move);
             }
@@ -2802,27 +2811,20 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     pub fn visit_rh_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let place_path = self.get_path_for_place(place);
         let mut path = place_path.canonicalize(&self.bv.current_environment);
+        let path_ty = self
+            .bv
+            .type_visitor
+            .get_path_rustc_type(&path, self.bv.current_span);
         match &place_path.value {
-            PathEnum::QualifiedPath {
-                qualifier,
-                selector,
-                ..
-            } if **selector == PathSelector::Deref => {
-                let refined_qualifier = qualifier.canonicalize(&self.bv.current_environment);
-                let qualifier_ty = self
-                    .bv
-                    .type_visitor
-                    .get_path_rustc_type(&refined_qualifier, self.bv.current_span);
-                if let TyKind::Ref(_, t, _) = qualifier_ty.kind() {
-                    if let TyKind::Array(..) = t.kind() {
-                        // The place path dereferences a qualifier that type checks as a pointer.
-                        // After refinement we know that the qualifier is a reference to an array.
-                        // This means that the current value of path ended up as the refinement of
-                        // *&p which reduced to p, which is of type array. The point of all this
-                        // aliasing is to get to the first element of the array, so just go there
-                        // directly.
-                        path = Path::new_index(path, Rc::new(0u128.into()));
-                    }
+            PathEnum::QualifiedPath { selector, .. } if **selector == PathSelector::Deref => {
+                if let TyKind::Array(..) = path_ty.kind() {
+                    // The place path dereferences a qualifier and the dereferenced path
+                    // canonicalizes to a path to location typed as an array.
+                    // This means that the current value of path ended up as the canonicalization of
+                    // *&p into p, where p is of type array. The point of all this
+                    // aliasing is to get to the first element of the array, so just go there
+                    // directly.
+                    path = Path::new_index(path, Rc::new(0u128.into()));
                 }
             }
             _ => {}
@@ -2831,7 +2833,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .type_visitor
             .get_rustc_place_type(place, self.bv.current_span);
-
         match &path.value {
             PathEnum::QualifiedPath {
                 qualifier,
