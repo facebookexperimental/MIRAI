@@ -1134,15 +1134,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         precondition!(self.actual_args.len() == 1);
 
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
-            let source_pointer_path = self.actual_args[0].0.clone();
-            let source_pointer_rustc_type = self.actual_argument_types[0];
-            let source_rustc_type = type_visitor::get_target_type(source_pointer_rustc_type);
-            let target_type = ExpressionType::from(source_rustc_type.kind());
-            let source_thin_pointer_path =
-                Path::get_path_to_thin_pointer(source_pointer_path, source_pointer_rustc_type);
-            let source_path = Path::new_deref(source_thin_pointer_path, target_type)
-                .canonicalize(&self.block_visitor.bv.current_environment);
-            trace!("MiraiAddTag: tagging {:?} with {:?}", tag, source_path);
+            let (source_path, source_rustc_type) = self.deref_tag_source();
+            trace!("MiraiAddTag: tagging {:?} with {:?}", source_path, tag);
 
             // Check if the tagged value has a pointer type (e.g., a reference).
             // Emit an error message if so.
@@ -1162,6 +1155,33 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
         // Update exit conditions.
         self.use_entry_condition_as_exit_condition();
+    }
+
+    /// Returns a canonicalized dereferenced path to the first argument, along with the dereferenced
+    /// rustc type. If the dereferenced argument is a slice pointer, or a box, then return the
+    /// thin pointer path to the dereferenced value. In the case of a box, the argument path will
+    /// be a reference to the box, so the dereferenced thin pointer path will be (*p).0.0.
+    #[logfn_inputs(TRACE)]
+    fn deref_tag_source(&mut self) -> (Rc<Path>, Ty<'tcx>) {
+        precondition!(self.actual_args.len() == 1);
+
+        let source_pointer_path = self.actual_args[0].0.clone();
+        let source_pointer_rustc_type = self.actual_argument_types[0];
+        let mut source_rustc_type = type_visitor::get_target_type(source_pointer_rustc_type);
+        let target_type = ExpressionType::from(source_rustc_type.kind());
+        let source_thin_pointer_path = if source_rustc_type.is_box() {
+            source_rustc_type = source_rustc_type.boxed_ty();
+            let box_path = Path::new_deref(source_pointer_path, target_type.clone())
+                .canonicalize(&self.block_visitor.bv.current_environment);
+            Path::new_field(Path::new_field(box_path, 0), 0)
+        } else if type_visitor::is_slice_pointer(source_pointer_rustc_type.kind()) {
+            Path::new_field(source_pointer_path, 0)
+        } else {
+            source_pointer_path
+        };
+        let deref_path = Path::new_deref(source_thin_pointer_path, target_type)
+            .canonicalize(&self.block_visitor.bv.current_environment);
+        (deref_path, source_rustc_type)
     }
 
     /// Adds the first and only value in actual_args to the path condition of the destination.
@@ -1211,14 +1231,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
         let result: Option<Rc<AbstractValue>>;
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
-            let source_pointer_path = self.actual_args[0].0.clone();
-            let source_pointer_rustc_type = self.actual_argument_types[0];
-            let source_rustc_type = type_visitor::get_target_type(source_pointer_rustc_type);
-            let target_type = ExpressionType::from(source_rustc_type.kind());
-            let source_thin_pointer_path =
-                Path::get_path_to_thin_pointer(source_pointer_path, source_pointer_rustc_type);
-            let source_path = Path::new_deref(source_thin_pointer_path, target_type)
-                .canonicalize(&self.block_visitor.bv.current_environment);
+            let (source_path, source_rustc_type) = self.deref_tag_source();
             trace!(
                 "MiraiCheckTag: checking if {:?} has {}been tagged with {:?}",
                 source_path,

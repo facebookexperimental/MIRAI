@@ -2547,6 +2547,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     where
         F: Fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
     {
+        trace!("propagate_tag_to_tag_fields(root_path: {:?})", root_path);
         // Record visited prefixes of paths. We need this information to avoid handling the same prefix for multiple times.
         let mut visited_path_prefixes: HashSet<Rc<Path>> = HashSet::new();
 
