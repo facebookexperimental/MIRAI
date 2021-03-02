@@ -60,7 +60,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     #[logfn_inputs(TRACE)]
     pub fn reset_visitor_state(&mut self) {
         self.generic_arguments = None;
-        self.path_ty_cache = HashMap::default();
+        self.path_ty_cache
+            .retain(|p, _| p.is_rooted_by_non_local_structure());
     }
 
     //todo: what about generators?
@@ -168,10 +169,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 Expression::ConditionalExpression { consequent, .. } => {
                     self.get_path_rustc_type(&Path::get_as_path(consequent.clone()), current_span)
                 }
+                Expression::CompileTimeConstant(c) => c.get_rustc_type(self.tcx),
                 Expression::Reference(path) => {
                     let target_type = self.get_path_rustc_type(path, current_span);
                     self.tcx
-                        .mk_imm_ref(self.tcx.lifetimes.re_static, target_type)
+                        .mk_imm_ref(self.tcx.lifetimes.re_erased, target_type)
                 }
                 Expression::InitialParameterValue { path, .. }
                 | Expression::Variable { path, .. }
@@ -295,7 +297,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 if is_slice_pointer(t.kind()) {
                                     match *ordinal {
                                         0 => {
-                                            return t; // Could be a slice of slice, so close enough, hopefully.
+                                            // Field 0 of a slice pointer is a raw pointer to the slice element type
+                                            return self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                                                ty: type_visitor::get_element_type(t),
+                                                mutbl: rustc_hir::Mutability::Mut,
+                                            });
                                         }
                                         1 => {
                                             return self.tcx.types.usize;
