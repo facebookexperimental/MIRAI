@@ -163,8 +163,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         function_constant_args: &[(Rc<Path>, Rc<AbstractValue>)],
         parameter_types: &[Ty<'tcx>],
     ) -> Summary {
-        if !cfg!(DEBUG) {
-            let mut stdout = std::io::sink();
+        if cfg!(DEBUG) {
+            let mut stdout = std::io::stdout();
             stdout.write_fmt(format_args!("{:?}", self.def_id)).unwrap();
             rustc_mir::util::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
             info!("{:?}", stdout.flush());
@@ -261,7 +261,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
     fn report_timeout(&mut self, elapsed_time_in_seconds: u64) {
         // This body is beyond MIRAI for now
-        if self.cv.options.diag_level != DiagLevel::RELAXED {
+        if self.cv.options.diag_level != DiagLevel::Relaxed {
             let warning = self
                 .cv
                 .session
@@ -287,7 +287,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     #[logfn_inputs(TRACE)]
     pub fn emit_diagnostic(&mut self, mut diagnostic_builder: DiagnosticBuilder<'compilation>) {
         precondition!(self.check_for_errors);
-        if !self.def_id.is_local() && !matches!(self.cv.options.diag_level, DiagLevel::PARANOID) {
+        if !self.def_id.is_local() && !matches!(self.cv.options.diag_level, DiagLevel::Paranoid) {
             // only give diagnostics in code that belongs to the crate being analyzed
             diagnostic_builder.cancel();
             return;
@@ -887,7 +887,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         result_rustc_type: Ty<'tcx>,
         promoted_root: &Rc<Path>,
         local_path: &Rc<Path>,
-        mut ordinal: usize,
+        ordinal: usize,
     ) {
         let target_type = type_visitor::get_target_type(result_rustc_type);
         if ExpressionType::from(target_type.kind()).is_primitive() {
@@ -905,10 +905,17 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             environment.update_value_at(promoted_root.clone(), promoted_value);
         } else if let TyKind::Ref(_, ty, _) = target_type.kind() {
             // Promoting a reference to a reference.
-            ordinal += 99;
-            let value_path: Rc<Path> = Rc::new(PathEnum::PromotedConstant { ordinal }.into());
-            self.promote_reference(environment, ty, &value_path, local_path, ordinal);
-            let promoted_value = AbstractValue::make_from(Expression::Reference(value_path), 1);
+            let eight: Rc<AbstractValue> = self.get_u128_const_val(8);
+            let heap_value = self.get_new_heap_block(eight.clone(), eight, false, target_type);
+            let heap_root = Path::get_as_path(heap_value);
+            let layout_path = Path::new_layout(heap_root.clone());
+            let layout_value = self
+                .current_environment
+                .value_at(&layout_path)
+                .expect("new heap block should have a layout");
+            environment.update_value_at(layout_path, layout_value.clone());
+            self.promote_reference(environment, ty, &heap_root, local_path, ordinal);
+            let promoted_value = AbstractValue::make_from(Expression::Reference(heap_root), 1);
             environment.update_value_at(promoted_root.clone(), promoted_value);
         } else if let TyKind::Str = target_type.kind() {
             // Promoting a string constant

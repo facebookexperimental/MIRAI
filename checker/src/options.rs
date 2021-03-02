@@ -57,22 +57,22 @@ pub enum DiagLevel {
     /// This is transitive: calling an angelic function causes the caller to become angelic itself.
     /// This minimizes false positives but can lead to a lot code not being analyzed
     /// while devirtualization isn't perfect and not all intrinsics have been modeled.
-    RELAXED,
+    Relaxed,
     /// Always emit at least one diagnostic for functions that cannot be fully analyzed because of
     /// time-outs or calls to functions without bodies or foreign function summaries. In this mode
     /// the analysis is sound because every potential issue in analyzed has a related diagnostic,
     /// but it is also angelic because it assumes that argument values provided by code that is not
     /// being analyzed will never cause the program to wrong, i.e. that non analyzed code is "angelic".
-    STRICT,
+    Strict,
     /// Like strict, but issues diagnostics if non analyzed code can provide arguments will cause
     /// the analyzed code to go wrong. I.e. it requires all preconditions to be explicit.
     /// This mode should be used for any library whose callers are not known and there not analyzed.
-    PARANOID,
+    Paranoid,
 }
 
 impl Default for DiagLevel {
     fn default() -> Self {
-        DiagLevel::RELAXED
+        DiagLevel::Relaxed
     }
 }
 
@@ -139,9 +139,9 @@ impl Options {
         }
         if matches.is_present("diag") {
             self.diag_level = match matches.value_of("diag").unwrap() {
-                "relaxed" => DiagLevel::RELAXED,
-                "strict" => DiagLevel::STRICT,
-                "paranoid" => DiagLevel::PARANOID,
+                "relaxed" => DiagLevel::Relaxed,
+                "strict" => DiagLevel::Strict,
+                "paranoid" => DiagLevel::Paranoid,
                 _ => assume_unreachable!(),
             };
         }

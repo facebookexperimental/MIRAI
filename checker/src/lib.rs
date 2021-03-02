@@ -5,7 +5,7 @@
 //
 // In an ideal world there would be a stable well documented set of crates containing a specific
 // version of the Rust compiler along with its sources and debug information. We'd then just get
-// those from crate.io and merely go on our way as just another Rust application. Rust compiler
+// those from crates.io and merely go on our way as just another Rust application. Rust compiler
 // upgrades will be non events for Mirai until it is ready to jump to another release and old
 // versions of Mirai will continue to work just as before.
 //
@@ -17,7 +17,6 @@
 #![feature(box_syntax)]
 #![feature(core_intrinsics)]
 
-extern crate rustc_ast;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_errors;

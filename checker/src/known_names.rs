@@ -101,6 +101,7 @@ pub enum KnownNames {
     StdOpsFunctionFnCall,
     StdOpsFunctionFnMutCallMut,
     StdOpsFunctionFnOnceCallOnce,
+    StdPanickingAssertFailed,
     StdPanickingBeginPanic,
     StdPanickingBeginPanicFmt,
     StdPtrSwapNonOverlapping,
@@ -212,7 +213,6 @@ impl KnownNamesCache {
                 Some(0) => get_path_data_elem_name(current_elem)
                     .map(|n| match n.as_str().deref() {
                         "copy" => KnownNames::StdIntrinsicsCopy,
-                        "copy_nonoverlapping" => KnownNames::StdIntrinsicsCopyNonOverlapping,
                         "write_bytes" => KnownNames::StdIntrinsicsWriteBytes,
                         _ => KnownNames::None,
                     })
@@ -224,6 +224,7 @@ impl KnownNamesCache {
                         "bswap" => KnownNames::StdIntrinsicsBswap,
                         "ceilf32" => KnownNames::StdIntrinsicsCeilf32,
                         "ceilf64" => KnownNames::StdIntrinsicsCeilf64,
+                        "copy_nonoverlapping" => KnownNames::StdIntrinsicsCopyNonOverlapping,
                         "copysignf32" => KnownNames::StdIntrinsicsCopysignf32,
                         "copysignf64" => KnownNames::StdIntrinsicsCopysignf64,
                         "cosf32" => KnownNames::StdIntrinsicsCosf32,
@@ -332,6 +333,7 @@ impl KnownNamesCache {
         let get_known_name_for_panicking_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
+                    "assert_failed" => KnownNames::StdPanickingAssertFailed,
                     "begin_panic" | "panic" => KnownNames::StdPanickingBeginPanic,
                     "begin_panic_fmt" | "panic_fmt" => KnownNames::StdPanickingBeginPanicFmt,
                     _ => KnownNames::None,

@@ -285,6 +285,26 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     },
                                 );
                             }
+                            TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Closure(..)) => {
+                                // todo: this seems to work around a more fundamental bug.
+                                // why would getting a field from a closure not need a deref
+                                // before the field access? I.e. is a reference to a closure
+                                // a sort of fat pointer?
+                                if let TyKind::Closure(def_id, subs) = t.kind() {
+                                    return subs
+                                        .as_closure()
+                                        .upvar_tys()
+                                        .nth(*ordinal)
+                                        .unwrap_or_else(|| {
+                                            info!(
+                                                "closure field not found {:?} {:?}",
+                                                def_id, ordinal
+                                            );
+                                            self.tcx.types.never
+                                        });
+                                }
+                                unreachable!("t.kind is a closure because of the guard");
+                            }
                             TyKind::Tuple(types) => {
                                 if let Some(gen_arg) = types.get(*ordinal as usize) {
                                     return gen_arg.expect_ty();
@@ -392,6 +412,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             }
             _ => {
                 info!("path.value is {:?} at {:?}", path.value, current_span);
+                info!("path_ty_cache {:?}", self.path_ty_cache);
                 self.tcx.types.never
             }
         }
@@ -824,6 +845,7 @@ pub fn get_def_id_from_closure(closure_ty: Ty<'_>) -> Option<DefId> {
 }
 
 /// Returns the element type of an array or slice type.
+#[logfn_inputs(TRACE)]
 pub fn get_element_type(ty: Ty<'_>) -> Ty<'_> {
     match &ty.kind() {
         TyKind::Array(t, _) => *t,
@@ -839,6 +861,7 @@ pub fn get_element_type(ty: Ty<'_>) -> Ty<'_> {
 
 /// Returns the type of value that a pointer of ty points to.
 /// If ty is not a pointer type, just return ty.
+#[logfn_inputs(TRACE)]
 pub fn get_target_type(ty: Ty<'_>) -> Ty<'_> {
     match ty.kind() {
         TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => t,
@@ -847,6 +870,7 @@ pub fn get_target_type(ty: Ty<'_>) -> Ty<'_> {
 }
 
 /// Returns true if the given type is a reference (or raw pointer) that is not a slice pointer
+#[logfn_inputs(TRACE)]
 pub fn is_thin_pointer(ty_kind: &TyKind<'_>) -> bool {
     if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
         !matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
@@ -858,8 +882,11 @@ pub fn is_thin_pointer(ty_kind: &TyKind<'_>) -> bool {
 /// Returns true if the given type is a reference (or raw pointer) to a collection type, in which
 /// case the reference/pointer independently tracks the length of the collection, thus effectively
 /// tracking a slice of the underlying collection.
+#[logfn_inputs(TRACE)]
+#[logfn(TRACE)]
 pub fn is_slice_pointer(ty_kind: &TyKind<'_>) -> bool {
     if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
+        trace!("target type {:?}", target.kind());
         // Pointers to sized arrays are thin pointers.
         matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
     } else {

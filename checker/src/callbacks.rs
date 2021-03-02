@@ -139,21 +139,29 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(file_name: &str) -> bool {
-        file_name.contains("client/swiss-knife/src") // too slow
+        file_name.contains("client/swiss-knife/src") // too slow 
         || file_name.contains("config/src") // Z3 encoding error
         || file_name.contains("config/management/src") // too slow
         || file_name.contains("config/management/genesis/src") // too slow    
         || file_name.contains("config/management/network-address-encryption/src") // Z3 encoding error  
         || file_name.contains("config/management/operational/src") // too slow and also Z3 encoding error    
         || file_name.contains("consensus/safety-rules/src") // Z3 encoding error
+        || file_name.contains("consensus/src") // not implemented     
+        || file_name.contains("crypto/crypto/src") // Z3 encoding error    
         || file_name.contains("json-rpc/src") // Z3 encoding error
         || file_name.contains("language/bytecode-verifier/src") // too slow
         || file_name.contains("language/move-lang/src") // too slow
         || file_name.contains("language/move-model/src") // too slow
         || file_name.contains("language/move-prover/bytecode/src") // too slow 
-        || file_name.contains("language/tools/move-coverage/src") // too slow    
+        || file_name.contains("language/tools/move-coverage/src") // too slow
+        || file_name.contains("language/tools/move-explain/src") // not implemented  
+        || file_name.contains("language/tools/resource-viewer/src") // not implemented    
         || file_name.contains("language/vm/src") // too slow
+        || file_name.contains("network/simple-onchain-discovery/src") // not implemented
+        || file_name.contains("sdk/client/src") // not implemented    
         || file_name.contains("secure/storage/vault/src")  // Z3 encoding error do this first
+        || file_name.contains("storage/backup/backup-cli/src") // not implemented
+        || file_name.contains("storage/diemdb/src") // not implemented
         || file_name.contains("types/src") // too slow
     }
 

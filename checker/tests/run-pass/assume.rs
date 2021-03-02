@@ -24,7 +24,7 @@ pub fn foo1(i: i32) {
 }
 
 pub fn t2() {
-    foo2(2); //~ assertion failed: `(left == right)`
+    foo2(2); //~ assertion failed
              // This gives a diagnostic because foo2 asserts i == 3 which gets promoted to a precondition
 }
 
