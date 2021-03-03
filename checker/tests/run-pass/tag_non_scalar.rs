@@ -55,6 +55,18 @@ pub mod intra_procedure {
                 && has_tag!(&slice[3], SecretTaint)
         );
     }
+
+    pub fn test_box() {
+        let array = [1, 2, 3, 4];
+        let bx = &Box::new(array);
+        add_tag!(bx, SecretTaint);
+        verify!(
+            has_tag!(&bx[0], SecretTaint)
+                && has_tag!(&bx[1], SecretTaint)
+                && has_tag!(&bx[2], SecretTaint)
+                && has_tag!(&bx[3], SecretTaint)
+        );
+    }
 }
 
 pub mod inter_procedure {
@@ -88,6 +100,16 @@ pub mod inter_procedure {
                 && has_tag!(&slice[1], SecretTaint)
                 && has_tag!(&slice[2], SecretTaint)
                 && has_tag!(&slice[3], SecretTaint)
+        );
+    }
+
+    pub fn test_box(bx: Box<[i32; 4]>) {
+        precondition!(has_tag!(&bx, SecretTaint));
+        verify!(
+            has_tag!(&bx[0], SecretTaint)
+                && has_tag!(&bx[1], SecretTaint)
+                && has_tag!(&bx[2], SecretTaint)
+                && has_tag!(&bx[3], SecretTaint)
         );
     }
 }

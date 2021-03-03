@@ -7,7 +7,7 @@ use crate::abstract_value::{self, AbstractValue, AbstractValueTrait};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
-use crate::{k_limits, type_visitor, utils};
+use crate::{k_limits, utils};
 
 use log_derive::*;
 use mirai_annotations::*;
@@ -361,20 +361,6 @@ impl Path {
                 None
             }
             _ => Some(path.clone()),
-        }
-    }
-
-    /// If path is a fat pointer, return the path to the thin pointer that must be used when de-referencing the fat
-    /// pointer. Otherwise just return path.
-    #[logfn_inputs(DEBUG)]
-    #[logfn(DEBUG)]
-    pub fn get_path_to_thin_pointer(path: Rc<Path>, path_rustc_type: Ty<'_>) -> Rc<Path> {
-        if path_rustc_type.is_box() {
-            Path::new_field(Path::new_field(path, 0), 0)
-        } else if type_visitor::is_slice_pointer(path_rustc_type.kind()) {
-            Path::new_field(path, 0)
-        } else {
-            path
         }
     }
 
