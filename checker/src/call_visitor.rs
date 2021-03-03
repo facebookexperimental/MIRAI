@@ -5,11 +5,10 @@
 
 use log_derive::*;
 use mirai_annotations::*;
-use rustc_ast::ast;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, SubstsRef};
-use rustc_middle::ty::{AdtDef, Ty, TyCtxt, TyKind};
+use rustc_middle::ty::{AdtDef, Ty, TyCtxt, TyKind, UintTy};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
@@ -530,7 +529,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.handle_swap_non_overlapping();
                 return true;
             }
-            KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
+            KnownNames::StdPanickingAssertFailed
+            | KnownNames::StdPanickingBeginPanic
+            | KnownNames::StdPanickingBeginPanicFmt => {
                 if self.block_visitor.bv.check_for_errors {
                     self.report_calls_to_special_functions();
                 }
@@ -663,7 +664,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     KnownNames::MiraiVerify,
                 );
             }
-            KnownNames::StdPanickingBeginPanic | KnownNames::StdPanickingBeginPanicFmt => {
+            KnownNames::StdPanickingAssertFailed
+            | KnownNames::StdPanickingBeginPanic
+            | KnownNames::StdPanickingBeginPanicFmt => {
                 assume!(!self.actual_args.is_empty()); // The type checker ensures this.
                 let mut path_cond = self
                     .block_visitor
@@ -695,17 +698,22 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     return;
                 }
 
-                let msg = if matches!(self.callee_known_name, KnownNames::StdPanickingBeginPanic) {
-                    self.coerce_to_string(&Path::get_as_path(self.actual_args[0].1.clone()))
-                } else {
-                    let arguments_struct_path = Path::get_as_path(self.actual_args[0].1.clone());
-                    let pieces_path_fat = Path::new_field(arguments_struct_path, 0)
-                        .canonicalize(&self.block_visitor.bv.current_environment);
-                    let pieces_path_thin = Path::new_field(pieces_path_fat, 0);
-                    let index = Rc::new(0u128.into());
-                    let piece0_path_fat = Path::new_index(pieces_path_thin, index)
-                        .canonicalize(&self.block_visitor.bv.current_environment);
-                    self.coerce_to_string(&piece0_path_fat)
+                let msg = match self.callee_known_name {
+                    KnownNames::StdPanickingAssertFailed => Rc::from("assertion failed"),
+                    KnownNames::StdPanickingBeginPanic => {
+                        self.coerce_to_string(&Path::get_as_path(self.actual_args[0].1.clone()))
+                    }
+                    _ => {
+                        let arguments_struct_path =
+                            Path::get_as_path(self.actual_args[0].1.clone());
+                        let pieces_path_fat = Path::new_field(arguments_struct_path, 0)
+                            .canonicalize(&self.block_visitor.bv.current_environment);
+                        let pieces_path_thin = Path::new_field(pieces_path_fat, 0);
+                        let index = Rc::new(0u128.into());
+                        let piece0_path_fat = Path::new_index(pieces_path_thin, index)
+                            .canonicalize(&self.block_visitor.bv.current_environment);
+                        self.coerce_to_string(&piece0_path_fat)
+                    }
                 };
                 if msg.contains("entered unreachable code")
                     || msg.contains("not yet implemented")
@@ -2834,7 +2842,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let tag_propagation_set_rustc_const;
                 match tag_substs_ref[0].unpack() {
                     GenericArgKind::Const(rustc_const)
-                        if *rustc_const.ty.kind() == TyKind::Uint(ast::UintTy::U128) =>
+                        if *rustc_const.ty.kind() == TyKind::Uint(UintTy::U128) =>
                     {
                         tag_propagation_set_rustc_const = rustc_const
                     }

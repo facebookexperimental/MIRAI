@@ -154,7 +154,7 @@ fn invoke_driver(
 ) -> usize {
     // Read MIRAI options from file content.
     let mut options = Options::default();
-    options.diag_level = DiagLevel::PARANOID;
+    options.diag_level = DiagLevel::Paranoid;
     let mut rustc_args = vec![]; // any arguments after `--` for rustc
     {
         let file_content = read_to_string(&Path::new(&file_name)).unwrap();

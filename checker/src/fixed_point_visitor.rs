@@ -159,7 +159,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E>
         }
         if iteration_count >= k_limits::MAX_FIXPOINT_ITERATIONS {
             if changed {
-                if self.bv.cv.options.diag_level == DiagLevel::PARANOID {
+                if self.bv.cv.options.diag_level == DiagLevel::Paranoid {
                     let span = self.bv.current_span;
                     let warning = self.bv.cv.session.struct_span_warn(
                         span,

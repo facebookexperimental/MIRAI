@@ -680,11 +680,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         // This cuts down on false positives/negatives caused by missing post conditions and side-effects.
         self.bv.assume_function_is_angelic = true;
         match self.bv.cv.options.diag_level {
-            DiagLevel::RELAXED => {
+            DiagLevel::Relaxed => {
                 // In this mode we suppress any diagnostics about issues that might not be true
                 // positives.
             }
-            DiagLevel::STRICT | DiagLevel::PARANOID => {
+            DiagLevel::Strict | DiagLevel::Paranoid => {
                 if self.bv.check_for_errors && self.might_be_reachable() {
                     // Give a diagnostic about this call, and make it the programmer's problem.
                     let warning = self.bv.cv.session.struct_span_warn(
@@ -829,7 +829,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         precondition!(self.bv.check_for_errors);
         // In non paranoid mode we don't want to complain if the condition or reachability depends on
         // a parameter, since it is assumed that an implicit precondition was intended by the author.
-        if !matches!(self.bv.cv.options.diag_level, DiagLevel::PARANOID)
+        if !matches!(self.bv.cv.options.diag_level, DiagLevel::Paranoid)
             && (condition.expression.contains_parameter()
                 || self
                     .bv
@@ -994,7 +994,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             // a parameter, since it is assumed that an implicit precondition was intended by the author
             // unless, of course, the condition is being explicitly verified.
             if function_name == KnownNames::MiraiVerify
-                || matches!(self.bv.cv.options.diag_level, DiagLevel::PARANOID)
+                || matches!(self.bv.cv.options.diag_level, DiagLevel::Paranoid)
                 || (!cond.expression.contains_parameter()
                     && !self
                         .bv
@@ -1185,7 +1185,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     {
                         // In non paranoid mode we don't want to complain if the condition or reachability depends on
                         // a parameter, since it is assumed that an implicit precondition was intended by the author.
-                        if !matches!(self.bv.cv.options.diag_level, DiagLevel::PARANOID)
+                        if !matches!(self.bv.cv.options.diag_level, DiagLevel::Paranoid)
                             && (cond_val.expression.contains_parameter()
                                 || self
                                     .bv
@@ -2030,7 +2030,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         literal: &Const<'tcx>,
     ) -> Rc<AbstractValue> {
         let mut val = literal.val;
-        let ty = literal.ty;
+        let lty = literal.ty;
         if let rustc_middle::ty::ConstKind::Unevaluated(def_ty, substs, promoted) = &literal.val {
             if def_ty.const_param_did.is_some() {
                 val = val.eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
@@ -2048,8 +2048,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     None => self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
                 };
-                self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
-                let val_at_path = self.bv.lookup_path_and_refine_result(path, ty);
+                self.bv.type_visitor.path_ty_cache.insert(path.clone(), lty);
+                let val_at_path = self.bv.lookup_path_and_refine_result(path, lty);
                 if let Expression::Variable { .. } = &val_at_path.expression {
                     // Seems like there is nothing at the path, but...
                     if self.bv.tcx.is_mir_available(def_id) {
@@ -2071,7 +2071,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }
 
         let result;
-        match ty.kind() {
+        match lty.kind() {
             TyKind::Bool
             | TyKind::Char
             | TyKind::Float(..)
@@ -2094,7 +2094,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     );
                 }
                 rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) => {
-                    result = self.get_constant_from_scalar(&ty.kind(), *scalar_int);
+                    result = self.get_constant_from_scalar(&lty.kind(), *scalar_int);
                 }
                 _ => {
                     assume_unreachable!(
@@ -2108,7 +2108,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             | TyKind::Closure(def_id, substs)
             | TyKind::Generator(def_id, substs, ..) => {
                 let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
-                    ty,
+                    lty,
                     &self.bv.type_visitor.generic_argument_map,
                 );
                 let substs = self
@@ -2121,7 +2121,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) =
                     &val
                 {
-                    return self.get_reference_to_slice(ty.kind(), data, *start, *end);
+                    return self.get_reference_to_slice(lty.kind(), data, *start, *end);
                 } else {
                     debug!("unsupported val of type Ref: {:?}", literal);
                     unimplemented!();
@@ -2162,11 +2162,32 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         slice,
                         e_type,
                         None,
-                        type_visitor::get_target_type(ty),
+                        type_visitor::get_target_type(lty),
+                    );
+                }
+                rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
+                    let alloc_len = alloc.len();
+                    let offset_bytes = offset.bytes() as usize;
+                    // The Rust compiler should ensure this.
+                    assume!(alloc_len > offset_bytes);
+                    let num_bytes = alloc_len - offset_bytes;
+                    let bytes = alloc.inspect_with_uninit_and_ptr_outside_interpreter(0..num_bytes);
+                    let e_type = if let TyKind::Slice(elem_type) = t.kind() {
+                        ExpressionType::from(elem_type.kind())
+                    } else {
+                        unreachable!()
+                    };
+                    return self.deconstruct_reference_to_constant_array(
+                        &bytes,
+                        e_type,
+                        None,
+                        type_visitor::get_target_type(lty),
                     );
                 }
                 _ => {
-                    debug!("unsupported val of type Ref: {:?}", literal);
+                    info!("lty {:?}", lty);
+                    info!("val {:?}", val);
+                    info!("unsupported val of type Ref: {:?}", literal);
                     unimplemented!();
                 }
             },
@@ -2188,13 +2209,22 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     );
                     return self.bv.lookup_path_and_refine_result(path, ty);
                 }
-                _ => assume_unreachable!(),
+                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) => {
+                    return Rc::new(
+                        self.get_constant_from_scalar(&lty.kind(), *scalar_int)
+                            .clone()
+                            .into(),
+                    );
+                }
+                _ => {
+                    assume_unreachable!("ref to unexpected val {:?} type {:?}", val, lty);
+                }
             },
             TyKind::Ref(_, ty, rustc_hir::Mutability::Not) => {
                 return self.get_reference_to_constant(&val, ty);
             }
             TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
-                return self.get_enum_variant_as_constant(&val, ty);
+                return self.get_enum_variant_as_constant(&val, lty);
             }
             TyKind::Tuple(..) | TyKind::Adt(..) => {
                 match &val {
@@ -2210,13 +2240,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             Rc::new((scalar_int.size().bytes() as u128).into()),
                             Rc::new(1u128.into()),
                             false,
-                            ty,
+                            lty,
                         );
+                        //todo: if the first field in a struct has a zero size (for example,
+                        // it is a zero length array), then that field must be ignored, and so on.
+                        // In other words, skip over all zero length fields.
                         let path_to_scalar = Path::get_path_to_field_at_offset_0(
                             self.bv.tcx,
                             &self.bv.current_environment,
                             &Path::get_as_path(heap_val.clone()),
-                            ty,
+                            lty,
                         )
                         .unwrap_or_else(|| {
                             unrecoverable!(
@@ -2240,16 +2273,19 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     _ => {
                         debug!("span: {:?}", self.bv.current_span);
-                        debug!("type kind {:?}", ty.kind());
-                        debug!("unimplemented constant {:?}", literal);
+                        debug!("type kind {:?}", lty.kind());
+                        debug!("unimplemented constant {:?}", val);
                         result = &ConstantDomain::Unimplemented;
                     }
                 };
             }
+            TyKind::Array(elem_type, length) => {
+                return self.visit_reference_to_array_constant(&val, lty, elem_type, length);
+            }
             _ => {
                 debug!("span: {:?}", self.bv.current_span);
-                debug!("type kind {:?}", ty.kind());
-                debug!("unimplemented constant {:?}", literal);
+                debug!("type kind {:?}", lty.kind());
+                debug!("unimplemented constant {:?}", val);
                 result = &ConstantDomain::Unimplemented;
             }
         };
@@ -2539,6 +2575,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 &mut self.bv.cv.constant_value_cache.get_i128_for(value)
             }
             TyKind::Uint(..) => &mut self.bv.cv.constant_value_cache.get_u128_for(data),
+            TyKind::RawPtr(..) => &mut self.bv.cv.constant_value_cache.get_u128_for(data),
             _ => assume_unreachable!(),
         }
     }
@@ -2656,6 +2693,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             rustc_target::abi::Size::from_bytes(num_bytes),
                         )
                         .unwrap();
+                    self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len), ty)
+                }
+                rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
+                    let alloc_len = alloc.len();
+                    let offset_bytes = offset.bytes() as usize;
+                    // The Rust compiler should ensure this.
+                    assume!(alloc_len > offset_bytes);
+                    let num_bytes = alloc_len - offset_bytes;
+                    let bytes = alloc.inspect_with_uninit_and_ptr_outside_interpreter(0..num_bytes);
                     self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len), ty)
                 }
                 _ => {

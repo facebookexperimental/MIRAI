@@ -12,8 +12,7 @@ use crate::type_visitor;
 
 use log_derive::*;
 use mirai_annotations::*;
-use rustc_ast::ast;
-use rustc_middle::ty::{Ty, TyCtxt, TyKind};
+use rustc_middle::ty::{FloatTy, IntTy, Ty, TyCtxt, TyKind, UintTy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
@@ -1351,20 +1350,20 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
         match ty_kind {
             TyKind::Bool => ExpressionType::Bool,
             TyKind::Char => ExpressionType::Char,
-            TyKind::Int(ast::IntTy::Isize) => ExpressionType::Isize,
-            TyKind::Int(ast::IntTy::I8) => ExpressionType::I8,
-            TyKind::Int(ast::IntTy::I16) => ExpressionType::I16,
-            TyKind::Int(ast::IntTy::I32) => ExpressionType::I32,
-            TyKind::Int(ast::IntTy::I64) => ExpressionType::I64,
-            TyKind::Int(ast::IntTy::I128) => ExpressionType::I128,
-            TyKind::Uint(ast::UintTy::Usize) => ExpressionType::Usize,
-            TyKind::Uint(ast::UintTy::U8) => ExpressionType::U8,
-            TyKind::Uint(ast::UintTy::U16) => ExpressionType::U16,
-            TyKind::Uint(ast::UintTy::U32) => ExpressionType::U32,
-            TyKind::Uint(ast::UintTy::U64) => ExpressionType::U64,
-            TyKind::Uint(ast::UintTy::U128) => ExpressionType::U128,
-            TyKind::Float(ast::FloatTy::F32) => ExpressionType::F32,
-            TyKind::Float(ast::FloatTy::F64) => ExpressionType::F64,
+            TyKind::Int(IntTy::Isize) => ExpressionType::Isize,
+            TyKind::Int(IntTy::I8) => ExpressionType::I8,
+            TyKind::Int(IntTy::I16) => ExpressionType::I16,
+            TyKind::Int(IntTy::I32) => ExpressionType::I32,
+            TyKind::Int(IntTy::I64) => ExpressionType::I64,
+            TyKind::Int(IntTy::I128) => ExpressionType::I128,
+            TyKind::Uint(UintTy::Usize) => ExpressionType::Usize,
+            TyKind::Uint(UintTy::U8) => ExpressionType::U8,
+            TyKind::Uint(UintTy::U16) => ExpressionType::U16,
+            TyKind::Uint(UintTy::U32) => ExpressionType::U32,
+            TyKind::Uint(UintTy::U64) => ExpressionType::U64,
+            TyKind::Uint(UintTy::U128) => ExpressionType::U128,
+            TyKind::Float(FloatTy::F32) => ExpressionType::F32,
+            TyKind::Float(FloatTy::F64) => ExpressionType::F64,
             TyKind::Dynamic(..)
             | TyKind::Foreign(..)
             | TyKind::FnDef(..)
@@ -1512,20 +1511,20 @@ impl ExpressionType {
         match self {
             Bool => ConstantDomain::U128(255_u128),
             Char => ConstantDomain::U128(std::char::MAX as u128),
-            F32 => ConstantDomain::F32(std::f32::MAX.to_bits()),
-            F64 => ConstantDomain::F64(std::f64::MAX.to_bits()),
-            I8 => ConstantDomain::I128(std::i8::MAX as i128),
-            I16 => ConstantDomain::I128(std::i16::MAX as i128),
-            I32 => ConstantDomain::I128(std::i32::MAX as i128),
-            I64 => ConstantDomain::I128(std::i64::MAX as i128),
-            I128 => ConstantDomain::I128(std::i128::MAX),
-            Isize => ConstantDomain::I128(std::isize::MAX as i128),
-            U8 => ConstantDomain::U128(std::u8::MAX as u128),
-            U16 => ConstantDomain::U128(std::u16::MAX as u128),
-            U32 => ConstantDomain::U128(std::u32::MAX as u128),
-            U64 => ConstantDomain::U128(std::u64::MAX as u128),
-            U128 => ConstantDomain::U128(std::u128::MAX),
-            Usize => ConstantDomain::U128(std::usize::MAX as u128),
+            F32 => ConstantDomain::F32(f32::MAX.to_bits()),
+            F64 => ConstantDomain::F64(f64::MAX.to_bits()),
+            I8 => ConstantDomain::I128(i8::MAX as i128),
+            I16 => ConstantDomain::I128(i16::MAX as i128),
+            I32 => ConstantDomain::I128(i32::MAX as i128),
+            I64 => ConstantDomain::I128(i64::MAX as i128),
+            I128 => ConstantDomain::I128(i128::MAX),
+            Isize => ConstantDomain::I128(isize::MAX as i128),
+            U8 => ConstantDomain::U128(u8::MAX as u128),
+            U16 => ConstantDomain::U128(u16::MAX as u128),
+            U32 => ConstantDomain::U128(u32::MAX as u128),
+            U64 => ConstantDomain::U128(u64::MAX as u128),
+            U128 => ConstantDomain::U128(u128::MAX),
+            Usize => ConstantDomain::U128(usize::MAX as u128),
             _ => ConstantDomain::Bottom,
         }
     }
@@ -1539,20 +1538,20 @@ impl ExpressionType {
         match self {
             Bool => ConstantDomain::U128(0_u128),
             Char => ConstantDomain::U128(0_u128),
-            F32 => ConstantDomain::F32(std::f32::MIN.to_bits()),
-            F64 => ConstantDomain::F64(std::f64::MIN.to_bits()),
-            I8 => ConstantDomain::I128(std::i8::MIN as i128),
-            I16 => ConstantDomain::I128(std::i16::MIN as i128),
-            I32 => ConstantDomain::I128(std::i32::MIN as i128),
-            I64 => ConstantDomain::I128(std::i64::MIN as i128),
-            I128 => ConstantDomain::I128(std::i128::MIN),
-            Isize => ConstantDomain::I128(std::isize::MIN as i128),
-            U8 => ConstantDomain::U128(std::u8::MIN as u128),
-            U16 => ConstantDomain::U128(std::u16::MIN as u128),
-            U32 => ConstantDomain::U128(std::u32::MIN as u128),
-            U64 => ConstantDomain::U128(std::u64::MIN as u128),
-            U128 => ConstantDomain::U128(std::u128::MIN),
-            Usize => ConstantDomain::U128(std::usize::MIN as u128),
+            F32 => ConstantDomain::F32(f32::MIN.to_bits()),
+            F64 => ConstantDomain::F64(f64::MIN.to_bits()),
+            I8 => ConstantDomain::I128(i8::MIN as i128),
+            I16 => ConstantDomain::I128(i16::MIN as i128),
+            I32 => ConstantDomain::I128(i32::MIN as i128),
+            I64 => ConstantDomain::I128(i64::MIN as i128),
+            I128 => ConstantDomain::I128(i128::MIN),
+            Isize => ConstantDomain::I128(isize::MIN as i128),
+            U8 => ConstantDomain::U128(u8::MIN as u128),
+            U16 => ConstantDomain::U128(u16::MIN as u128),
+            U32 => ConstantDomain::U128(u32::MIN as u128),
+            U64 => ConstantDomain::U128(u64::MIN as u128),
+            U128 => ConstantDomain::U128(u128::MIN),
+            Usize => ConstantDomain::U128(usize::MIN as u128),
             _ => ConstantDomain::Bottom,
         }
     }
@@ -1564,11 +1563,11 @@ impl ExpressionType {
     pub fn modulo_constant(&self) -> Rc<ConstantDomain> {
         use self::ExpressionType::*;
         match self {
-            U8 => Rc::new(ConstantDomain::U128((std::u8::MAX) as u128 + 1)),
-            U16 => Rc::new(ConstantDomain::U128((std::u16::MAX) as u128 + 1)),
-            U32 => Rc::new(ConstantDomain::U128((std::u32::MAX) as u128 + 1)),
-            U64 => Rc::new(ConstantDomain::U128((std::u64::MAX) as u128 + 1)),
-            Usize => Rc::new(ConstantDomain::U128((std::usize::MAX) as u128 + 1)),
+            U8 => Rc::new(ConstantDomain::U128((u8::MAX) as u128 + 1)),
+            U16 => Rc::new(ConstantDomain::U128((u16::MAX) as u128 + 1)),
+            U32 => Rc::new(ConstantDomain::U128((u32::MAX) as u128 + 1)),
+            U64 => Rc::new(ConstantDomain::U128((u64::MAX) as u128 + 1)),
+            Usize => Rc::new(ConstantDomain::U128((usize::MAX) as u128 + 1)),
             _ => Rc::new(ConstantDomain::Bottom),
         }
     }
@@ -1580,11 +1579,11 @@ impl ExpressionType {
     pub fn modulo_value(&self) -> Rc<AbstractValue> {
         use self::ExpressionType::*;
         match self {
-            U8 => Rc::new(ConstantDomain::U128((std::u8::MAX) as u128 + 1).into()),
-            U16 => Rc::new(ConstantDomain::U128((std::u16::MAX) as u128 + 1).into()),
-            U32 => Rc::new(ConstantDomain::U128((std::u32::MAX) as u128 + 1).into()),
-            U64 => Rc::new(ConstantDomain::U128((std::u64::MAX) as u128 + 1).into()),
-            Usize => Rc::new(ConstantDomain::U128((std::usize::MAX) as u128 + 1).into()),
+            U8 => Rc::new(ConstantDomain::U128((u8::MAX) as u128 + 1).into()),
+            U16 => Rc::new(ConstantDomain::U128((u16::MAX) as u128 + 1).into()),
+            U32 => Rc::new(ConstantDomain::U128((u32::MAX) as u128 + 1).into()),
+            U64 => Rc::new(ConstantDomain::U128((u64::MAX) as u128 + 1).into()),
+            Usize => Rc::new(ConstantDomain::U128((usize::MAX) as u128 + 1).into()),
             _ => Rc::new(ConstantDomain::Bottom.into()),
         }
     }
