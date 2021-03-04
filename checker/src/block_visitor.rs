@@ -2072,6 +2072,62 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
 
+        // Don't try to parse serialized functions, just use their types
+        // todo: serialized closures and generators do not store enough information in their types.
+        match lty.kind() {
+            TyKind::Closure(def_id, substs)
+            | TyKind::FnDef(def_id, substs)
+            | TyKind::Generator(def_id, substs, ..)
+            | TyKind::Opaque(def_id, substs) => {
+                let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                    lty,
+                    &self.bv.type_visitor.generic_argument_map,
+                );
+                let substs = self
+                    .bv
+                    .type_visitor
+                    .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
+                return Rc::new(
+                    self.visit_function_reference(*def_id, specialized_ty, Some(substs))
+                        .clone()
+                        .into(),
+                );
+            }
+            TyKind::FnPtr(..) => {
+                //todo: figure out how function pointers are serialized
+                debug!("span: {:?}", self.bv.current_span);
+                debug!("type kind {:?}", lty.kind());
+                debug!("unimplemented constant {:?}", val);
+                return Rc::new(ConstantDomain::Unimplemented.into());
+            }
+            _ => {}
+        }
+
+        if let rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) = &val {
+            let alloc_len = alloc.len();
+            let offset_bytes = offset.bytes() as usize;
+            // The Rust compiler should ensure this.
+            assume!(alloc_len > offset_bytes);
+            let num_bytes = alloc_len - offset_bytes;
+            let bytes =
+                alloc.inspect_with_uninit_and_ptr_outside_interpreter(offset_bytes..alloc_len);
+            let heap_val = self.bv.get_new_heap_block(
+                Rc::new((num_bytes as u128).into()),
+                Rc::new(1u128.into()),
+                false,
+                lty,
+            );
+            let bytes_left_to_deserialize =
+                self.deserialize_constant_bytes(Path::get_as_path(heap_val.clone()), bytes, lty);
+            if !bytes_left_to_deserialize.is_empty() {
+                debug!("span: {:?}", self.bv.current_span);
+                debug!("type kind {:?}", lty.kind());
+                debug!("constant value did not serialize correctly {:?}", val);
+            }
+            debug!("env {:?}", self.bv.current_environment);
+            return heap_val;
+        }
+
         let result;
         match lty.kind() {
             TyKind::Bool
@@ -2106,19 +2162,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     );
                 }
             },
-            TyKind::FnDef(def_id, substs)
-            | TyKind::Closure(def_id, substs)
-            | TyKind::Generator(def_id, substs, ..) => {
-                let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
-                    lty,
-                    &self.bv.type_visitor.generic_argument_map,
-                );
-                let substs = self
-                    .bv
-                    .type_visitor
-                    .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
-                result = self.visit_function_reference(*def_id, specialized_ty, Some(substs));
-            }
             TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Str) => {
                 if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) =
                     &val
@@ -2162,25 +2205,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     };
                     return self.deconstruct_reference_to_constant_array(
                         slice,
-                        e_type,
-                        None,
-                        type_visitor::get_target_type(lty),
-                    );
-                }
-                rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
-                    let alloc_len = alloc.len();
-                    let offset_bytes = offset.bytes() as usize;
-                    // The Rust compiler should ensure this.
-                    assume!(alloc_len > offset_bytes);
-                    let num_bytes = alloc_len - offset_bytes;
-                    let bytes = alloc.inspect_with_uninit_and_ptr_outside_interpreter(0..num_bytes);
-                    let e_type = if let TyKind::Slice(elem_type) = t.kind() {
-                        ExpressionType::from(elem_type.kind())
-                    } else {
-                        unreachable!()
-                    };
-                    return self.deconstruct_reference_to_constant_array(
-                        &bytes,
                         e_type,
                         None,
                         type_visitor::get_target_type(lty),
@@ -2279,34 +2303,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .update_value_at(path_to_scalar, scalar_val);
                         return heap_val;
                     }
-                    rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
-                        let alloc_len = alloc.len();
-                        let offset_bytes = offset.bytes() as usize;
-                        // The Rust compiler should ensure this.
-                        assume!(alloc_len > offset_bytes);
-                        let num_bytes = alloc_len - offset_bytes;
-                        let bytes = alloc.inspect_with_uninit_and_ptr_outside_interpreter(
-                            offset_bytes..alloc_len,
-                        );
-                        let heap_val = self.bv.get_new_heap_block(
-                            Rc::new((num_bytes as u128).into()),
-                            Rc::new(1u128.into()),
-                            false,
-                            lty,
-                        );
-                        let bytes_left_to_deserialize = self.deserialize_constant_bytes(
-                            Path::get_as_path(heap_val.clone()),
-                            bytes,
-                            lty,
-                        );
-                        if !bytes_left_to_deserialize.is_empty() {
-                            debug!("span: {:?}", self.bv.current_span);
-                            debug!("type kind {:?}", lty.kind());
-                            debug!("constant value did not serialize correctly {:?}", val);
-                        }
-                        debug!("env {:?}", self.bv.current_environment);
-                        return heap_val;
-                    }
                     _ => {
                         debug!("span: {:?}", self.bv.current_span);
                         debug!("type kind {:?}", lty.kind());
@@ -2344,11 +2340,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .insert(target_path.clone(), ty);
         match ty.kind() {
             TyKind::Adt(def, substs) => {
+                debug!("deserializing {:?} {:?}", def, substs);
                 let mut bytes_left_deserialize = bytes;
                 // todo: if there is more than one variant we need to cast to the right variant
                 for variant in def.variants.iter() {
+                    debug!("deserializing variant {:?}", variant);
                     bytes_left_deserialize = bytes;
+                    debug!("bytes_left_deserialize {:?}", bytes_left_deserialize);
                     for (i, field) in variant.fields.iter().enumerate() {
+                        debug!("deserializing field({}) {:?}", i, field);
                         let field_path = Path::new_field(target_path.clone(), i);
                         let field_ty = field.ty(self.bv.tcx, substs);
                         bytes_left_deserialize = self.deserialize_constant_bytes(
@@ -2361,7 +2361,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 bytes_left_deserialize
             }
             TyKind::Array(elem_type, length) => {
-                self.deserialize_constant_array(target_path, bytes, *length, elem_type)
+                let param_env = self.bv.type_visitor.get_param_env();
+                let len = length
+                    .try_eval_usize(self.bv.tcx, param_env)
+                    .expect("Serialized array should have a constant length")
+                    as usize;
+                self.deserialize_constant_array(target_path, bytes, len, elem_type)
             }
             TyKind::Bool => {
                 let val = if bytes[0] == 0 {
@@ -2487,10 +2492,54 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .update_value_at(target_path, Rc::new(f.into()));
                 &bytes[8..]
             },
+            TyKind::RawPtr(rustc_middle::ty::TypeAndMut { .. }) | TyKind::Ref(..) => {
+                // serialized pointers are not the values pointed to, just some number.
+                // todo: figure out how to deference that number and deserialize the
+                // value to which this pointer refers.
+                self.deserialize_constant_bytes(target_path, bytes, self.bv.tcx.types.usize)
+            }
+            TyKind::Slice(elem_type) => {
+                let elem_size = self.bv.type_visitor.get_type_size(elem_type) as usize;
+                checked_assume!(elem_size > 0); // serializing a slice of zero sized elements makes no sense
+                let num_elems = bytes.len() / elem_size;
+                self.deserialize_constant_array(target_path, bytes, num_elems, elem_type)
+            }
+            TyKind::Str => {
+                let s = std::str::from_utf8(bytes).expect("string should be serialized as utf8");
+                let string_const = &mut self.bv.cv.constant_value_cache.get_string_for(s);
+                let string_val: Rc<AbstractValue> = Rc::new(string_const.clone().into());
+                let len_val: Rc<AbstractValue> =
+                    Rc::new(ConstantDomain::U128(s.len() as u128).into());
+
+                self.bv
+                    .current_environment
+                    .update_value_at(target_path.clone(), string_val);
+
+                let len_path = Path::new_length(target_path);
+                self.bv
+                    .current_environment
+                    .update_value_at(len_path, len_val);
+                &[]
+            }
+            TyKind::Tuple(substs) => {
+                let mut bytes_left_deserialize = bytes;
+                for (i, subst) in substs.iter().enumerate() {
+                    let field_path = Path::new_field(target_path.clone(), i);
+                    let field_ty = subst.expect_ty();
+                    bytes_left_deserialize = self.deserialize_constant_bytes(
+                        field_path,
+                        bytes_left_deserialize,
+                        field_ty,
+                    );
+                }
+                bytes_left_deserialize
+            }
             _ => {
-                // todo: more types
-                debug!("t {:?}", ty.kind());
-                bytes
+                debug!("Type {:?} is not expected to be serializable", ty.kind());
+                self.bv
+                    .current_environment
+                    .update_value_at(target_path, Rc::new(ConstantDomain::Unimplemented.into()));
+                &[]
             }
         }
     }
@@ -2503,13 +2552,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         &mut self,
         target_path: Rc<Path>,
         bytes: &'a [u8],
-        length: &rustc_middle::ty::Const<'tcx>,
+        len: usize,
         elem_ty: Ty<'tcx>,
     ) -> &'a [u8] {
-        let param_env = self.bv.type_visitor.get_param_env();
-        let len = length
-            .try_eval_usize(self.bv.tcx, param_env)
-            .expect("Serialized array should have a constant length") as usize;
         let mut bytes_left_deserialize = bytes;
         for i in 0..len {
             let elem_path =
@@ -2943,15 +2988,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             rustc_target::abi::Size::from_bytes(num_bytes),
                         )
                         .unwrap();
-                    self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len), ty)
-                }
-                rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
-                    let alloc_len = alloc.len();
-                    let offset_bytes = offset.bytes() as usize;
-                    // The Rust compiler should ensure this.
-                    assume!(alloc_len > offset_bytes);
-                    let num_bytes = alloc_len - offset_bytes;
-                    let bytes = alloc.inspect_with_uninit_and_ptr_outside_interpreter(0..num_bytes);
                     self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len), ty)
                 }
                 _ => {
