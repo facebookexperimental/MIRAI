@@ -5,11 +5,12 @@
 //
 // Tests that Cursor::read_to_end havocs the length of its parameter vector.
 
-use mirai_annotations::*;
-use std::io::{Cursor, Read, Result};
+// use mirai_annotations::*;
+// use std::io::{Cursor, Read, Result};
+use std::io::Result;
 
-pub fn t1(buf: &[u8]) -> Result<()> {
-    //todo: speeed this up so that it passes on CI
+pub fn t1(_buf: &[u8]) -> Result<()> {
+    //todo: speed this up so that it passes on CI
     // let mut reader = Cursor::new(buf);
     // let mut v = Vec::with_capacity(1);
     // reader.read_to_end(&mut v)?;
