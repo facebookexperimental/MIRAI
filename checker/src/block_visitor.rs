@@ -29,7 +29,9 @@ use rustc_middle::mir::interpret::{ConstValue, Scalar};
 use rustc_middle::ty::adjustment::PointerCast;
 use rustc_middle::ty::layout::PrimitiveExt;
 use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{Const, ParamConst, ScalarInt, Ty, TyKind, UserTypeAnnotationIndex};
+use rustc_middle::ty::{
+    Const, FloatTy, IntTy, ParamConst, ScalarInt, Ty, TyKind, UintTy, UserTypeAnnotationIndex,
+};
 use rustc_target::abi::{TagEncoding, VariantIdx, Variants};
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -2224,6 +2226,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 return self.get_reference_to_constant(&val, ty);
             }
             TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
+                // todo: this case must fold into the one below.
                 return self.get_enum_variant_as_constant(&val, lty);
             }
             TyKind::Tuple(..) | TyKind::Adt(..) => {
@@ -2233,6 +2236,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     ))) if *scalar_int == ScalarInt::ZST => {
                         return Rc::new(ConstantDomain::Unit.into());
                     }
+                    //todo: the bytes obtained from ConstValue::Scalar, or from ConstValue::Ref
+                    // may have to be copied  (and aggregated) to multiple fields, as with transmute.
+                    // Need to initialize each variant with the same set of bytes
+                    // move this to a separate function.
                     rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(
                         scalar_int,
                     ))) => {
@@ -2242,9 +2249,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             false,
                             lty,
                         );
-                        //todo: if the first field in a struct has a zero size (for example,
-                        // it is a zero length array), then that field must be ignored, and so on.
-                        // In other words, skip over all zero length fields.
                         let path_to_scalar = Path::get_path_to_field_at_offset_0(
                             self.bv.tcx,
                             &self.bv.current_environment,
@@ -2261,6 +2265,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             .bv
                             .type_visitor
                             .get_path_rustc_type(&path_to_scalar, self.bv.current_span);
+
+                        // todo: need a version of get_constant_from_scalar that reads from a byte stream
+                        // and consumes only as many bytes as are needed for the type of the field
+                        // being initialized.
                         let scalar_val: Rc<AbstractValue> = Rc::new(
                             self.get_constant_from_scalar(&scalar_ty.kind(), *scalar_int)
                                 .clone()
@@ -2269,6 +2277,34 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         self.bv
                             .current_environment
                             .update_value_at(path_to_scalar, scalar_val);
+                        return heap_val;
+                    }
+                    rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
+                        let alloc_len = alloc.len();
+                        let offset_bytes = offset.bytes() as usize;
+                        // The Rust compiler should ensure this.
+                        assume!(alloc_len > offset_bytes);
+                        let num_bytes = alloc_len - offset_bytes;
+                        let bytes = alloc.inspect_with_uninit_and_ptr_outside_interpreter(
+                            offset_bytes..alloc_len,
+                        );
+                        let heap_val = self.bv.get_new_heap_block(
+                            Rc::new((num_bytes as u128).into()),
+                            Rc::new(1u128.into()),
+                            false,
+                            lty,
+                        );
+                        let bytes_left_to_deserialize = self.deserialize_constant_bytes(
+                            Path::get_as_path(heap_val.clone()),
+                            bytes,
+                            lty,
+                        );
+                        if !bytes_left_to_deserialize.is_empty() {
+                            debug!("span: {:?}", self.bv.current_span);
+                            debug!("type kind {:?}", lty.kind());
+                            debug!("constant value did not serialize correctly {:?}", val);
+                        }
+                        debug!("env {:?}", self.bv.current_environment);
                         return heap_val;
                     }
                     _ => {
@@ -2290,6 +2326,203 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         };
         Rc::new(result.clone().into())
+    }
+
+    /// Use a prefix of the byte slice as a serialized value of the given type.
+    /// Write the deserialized value to the given path in the current environment.
+    /// Return the unused suffix of the byte slice as the result.
+    #[logfn_inputs(DEBUG)]
+    fn deserialize_constant_bytes<'a>(
+        &mut self,
+        target_path: Rc<Path>,
+        bytes: &'a [u8],
+        ty: Ty<'tcx>,
+    ) -> &'a [u8] {
+        self.bv
+            .type_visitor
+            .path_ty_cache
+            .insert(target_path.clone(), ty);
+        match ty.kind() {
+            TyKind::Adt(def, substs) => {
+                let mut bytes_left_deserialize = bytes;
+                // todo: if there is more than one variant we need to cast to the right variant
+                for variant in def.variants.iter() {
+                    bytes_left_deserialize = bytes;
+                    for (i, field) in variant.fields.iter().enumerate() {
+                        let field_path = Path::new_field(target_path.clone(), i);
+                        let field_ty = field.ty(self.bv.tcx, substs);
+                        bytes_left_deserialize = self.deserialize_constant_bytes(
+                            field_path,
+                            bytes_left_deserialize,
+                            field_ty,
+                        );
+                    }
+                }
+                bytes_left_deserialize
+            }
+            TyKind::Array(elem_type, length) => {
+                self.deserialize_constant_array(target_path, bytes, *length, elem_type)
+            }
+            TyKind::Bool => {
+                let val = if bytes[0] == 0 {
+                    abstract_value::FALSE
+                } else {
+                    abstract_value::TRUE
+                };
+                self.bv
+                    .current_environment
+                    .update_value_at(target_path, Rc::new(val));
+                &bytes[1..]
+            }
+            TyKind::Char => unsafe {
+                let ch_ptr = bytes.as_ptr() as *const char;
+                let ch = self
+                    .bv
+                    .cv
+                    .constant_value_cache
+                    .get_char_for(*ch_ptr)
+                    .clone();
+                self.bv
+                    .current_environment
+                    .update_value_at(target_path, Rc::new(ch.into()));
+                &bytes[4..]
+            },
+            TyKind::Int(IntTy::Isize) => unsafe {
+                let int_ptr = bytes.as_ptr() as *const isize;
+                let i = self.bv.get_i128_const_val((*int_ptr) as i128);
+                self.bv.current_environment.update_value_at(target_path, i);
+                let size = std::mem::size_of::<isize>();
+                &bytes[size..]
+            },
+            TyKind::Int(IntTy::I8) => unsafe {
+                let int_ptr = bytes.as_ptr() as *const i8;
+                let i = self.bv.get_i128_const_val((*int_ptr) as i128);
+                self.bv.current_environment.update_value_at(target_path, i);
+                &bytes[1..]
+            },
+            TyKind::Int(IntTy::I16) => unsafe {
+                let int_ptr = bytes.as_ptr() as *const i16;
+                let i = self.bv.get_i128_const_val((*int_ptr) as i128);
+                self.bv.current_environment.update_value_at(target_path, i);
+                &bytes[2..]
+            },
+            TyKind::Int(IntTy::I32) => unsafe {
+                let int_ptr = bytes.as_ptr() as *const i32;
+                let i = self.bv.get_i128_const_val((*int_ptr) as i128);
+                self.bv.current_environment.update_value_at(target_path, i);
+                &bytes[4..]
+            },
+            TyKind::Int(IntTy::I64) => unsafe {
+                let int_ptr = bytes.as_ptr() as *const i64;
+                let i = self.bv.get_i128_const_val((*int_ptr) as i128);
+                self.bv.current_environment.update_value_at(target_path, i);
+                &bytes[8..]
+            },
+            TyKind::Int(IntTy::I128) => unsafe {
+                let int_ptr = bytes.as_ptr() as *const i128;
+                let i = self.bv.get_i128_const_val(*int_ptr);
+                self.bv.current_environment.update_value_at(target_path, i);
+                &bytes[16..]
+            },
+            TyKind::Uint(UintTy::Usize) => unsafe {
+                let uint_ptr = bytes.as_ptr() as *const usize;
+                let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
+                self.bv.current_environment.update_value_at(target_path, u);
+                let size = std::mem::size_of::<isize>();
+                &bytes[size..]
+            },
+            TyKind::Uint(UintTy::U8) => unsafe {
+                let uint_ptr = bytes.as_ptr() as *const u8;
+                let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
+                self.bv.current_environment.update_value_at(target_path, u);
+                &bytes[1..]
+            },
+            TyKind::Uint(UintTy::U16) => unsafe {
+                let uint_ptr = bytes.as_ptr() as *const u16;
+                let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
+                self.bv.current_environment.update_value_at(target_path, u);
+                &bytes[2..]
+            },
+            TyKind::Uint(UintTy::U32) => unsafe {
+                let uint_ptr = bytes.as_ptr() as *const u32;
+                let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
+                self.bv.current_environment.update_value_at(target_path, u);
+                &bytes[4..]
+            },
+            TyKind::Uint(UintTy::U64) => unsafe {
+                let uint_ptr = bytes.as_ptr() as *const u64;
+                let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
+                self.bv.current_environment.update_value_at(target_path, u);
+                &bytes[8..]
+            },
+            TyKind::Uint(UintTy::U128) => unsafe {
+                let uint_ptr = bytes.as_ptr() as *const u128;
+                let u = self.bv.get_u128_const_val(*uint_ptr);
+                self.bv.current_environment.update_value_at(target_path, u);
+                &bytes[16..]
+            },
+            TyKind::Float(FloatTy::F32) => unsafe {
+                let uint_ptr = bytes.as_ptr() as *const u32;
+                let f = self
+                    .bv
+                    .cv
+                    .constant_value_cache
+                    .get_f32_for(*uint_ptr)
+                    .clone();
+                self.bv
+                    .current_environment
+                    .update_value_at(target_path, Rc::new(f.into()));
+                &bytes[4..]
+            },
+            TyKind::Float(FloatTy::F64) => unsafe {
+                let uint_ptr = bytes.as_ptr() as *const u64;
+                let f = self
+                    .bv
+                    .cv
+                    .constant_value_cache
+                    .get_f64_for(*uint_ptr)
+                    .clone();
+                self.bv
+                    .current_environment
+                    .update_value_at(target_path, Rc::new(f.into()));
+                &bytes[8..]
+            },
+            _ => {
+                // todo: more types
+                debug!("t {:?}", ty.kind());
+                bytes
+            }
+        }
+    }
+
+    /// Use a prefix of the byte slice as a serialized value of the given array type.
+    /// Write the deserialized value to the given path in the current environment.
+    /// Return the unused suffix of the byte slice as the result.
+    #[logfn_inputs(TRACE)]
+    fn deserialize_constant_array<'a>(
+        &mut self,
+        target_path: Rc<Path>,
+        bytes: &'a [u8],
+        length: &rustc_middle::ty::Const<'tcx>,
+        elem_ty: Ty<'tcx>,
+    ) -> &'a [u8] {
+        let param_env = self.bv.type_visitor.get_param_env();
+        let len = length
+            .try_eval_usize(self.bv.tcx, param_env)
+            .expect("Serialized array should have a constant length") as usize;
+        let mut bytes_left_deserialize = bytes;
+        for i in 0..len {
+            let elem_path =
+                Path::new_index(target_path.clone(), self.get_u128_const_val(i as u128));
+            bytes_left_deserialize =
+                self.deserialize_constant_bytes(elem_path, bytes_left_deserialize, elem_ty);
+        }
+        let length_path = Path::new_length(target_path);
+        let length_value = self.get_u128_const_val(len as u128);
+        self.bv
+            .current_environment
+            .update_value_at(length_path, length_value);
+        bytes_left_deserialize
     }
 
     /// Use for constants that are accessed via references
@@ -2670,6 +2903,23 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     let slice = &bytes[*start..*end];
                     self.deconstruct_reference_to_constant_array(slice, e_type, Some(len), ty)
                 }
+                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int)))
+                    if *scalar_int == ScalarInt::ZST =>
+                {
+                    let heap_val = self.bv.get_new_heap_block(
+                        Rc::new(0u128.into()),
+                        Rc::new(1u128.into()),
+                        false,
+                        ty,
+                    );
+                    let target_path = Path::get_as_path(heap_val.clone());
+                    let length_path = Path::new_length(target_path);
+                    let length_value = self.get_u128_const_val(0u128);
+                    self.bv
+                        .current_environment
+                        .update_value_at(length_path, length_value);
+                    AbstractValue::make_reference(Path::get_as_path(heap_val))
+                }
                 rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
                     mir::interpret::Scalar::Ptr(ptr),
                 )) => {
@@ -2705,8 +2955,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len), ty)
                 }
                 _ => {
-                    debug!("unsupported val of type Ref: {:?}", val);
-                    unimplemented!();
+                    unimplemented!("unsupported val of type Ref: {:?}", val);
                 }
             }
         } else {
