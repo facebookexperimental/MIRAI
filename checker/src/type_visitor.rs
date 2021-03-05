@@ -620,6 +620,19 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
+    /// Returns the size (including padding) and alignment, in bytes,  of an instance of the given type.
+    pub fn get_type_size_and_alignment(&self, ty: Ty<'tcx>) -> (u128, u128) {
+        let param_env = self.get_param_env();
+        if let Ok(ty_and_layout) = self.tcx.layout_of(param_env.and(ty)) {
+            (
+                ty_and_layout.layout.size.bytes() as u128,
+                ty_and_layout.align.pref.bytes() as u128,
+            )
+        } else {
+            (0, 8)
+        }
+    }
+
     #[logfn_inputs(TRACE)]
     fn specialize_const(
         &self,
