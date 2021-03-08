@@ -25,7 +25,7 @@ use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::mir::interpret::{ConstValue, Scalar};
+use rustc_middle::mir::interpret::{ConstValue, GlobalAlloc, Scalar};
 use rustc_middle::ty::adjustment::PointerCast;
 use rustc_middle::ty::layout::PrimitiveExt;
 use rustc_middle::ty::subst::SubstsRef;
@@ -2144,6 +2144,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) => {
                 match lty.kind() {
+                    TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
+                        return self.get_enum_variant_as_constant(&val, lty);
+                    }
                     TyKind::Adt(..) | TyKind::Tuple(..) => {
                         if *scalar_int == ScalarInt::ZST {
                             return Rc::new(ConstantDomain::Unit.into());
@@ -2205,6 +2208,66 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         );
                     }
                 }
+            }
+            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(ptr))) => {
+                match self.bv.tcx.get_global_alloc(ptr.alloc_id) {
+                    Some(GlobalAlloc::Memory(alloc)) => {
+                        let alloc_len = alloc.len() as u64;
+                        let offset_bytes = ptr.offset.bytes();
+                        // The Rust compiler should ensure this.
+                        assume!(alloc_len > offset_bytes);
+                        let num_bytes = alloc_len - offset_bytes;
+                        let bytes = alloc
+                            .get_bytes(
+                                &self.bv.tcx,
+                                *ptr,
+                                rustc_target::abi::Size::from_bytes(num_bytes),
+                            )
+                            .unwrap();
+                        match lty.kind() {
+                            TyKind::Array(element_type, length) => {
+                                let e_type = ExpressionType::from(element_type.kind());
+                                let param_env = self.bv.type_visitor.get_param_env();
+                                let len = length
+                                    .try_eval_usize(self.bv.tcx, param_env)
+                                    .expect("Serialized array should have a constant length")
+                                    as u128;
+                                return self.deconstruct_reference_to_constant_array(
+                                    &bytes,
+                                    e_type,
+                                    Some(len),
+                                    lty,
+                                );
+                            }
+                            TyKind::Ref(_, t, _) => {
+                                if let TyKind::Array(element_type, length) = t.kind() {
+                                    let e_type = ExpressionType::from(element_type.kind());
+                                    let param_env = self.bv.type_visitor.get_param_env();
+                                    let len = length
+                                        .try_eval_usize(self.bv.tcx, param_env)
+                                        .expect("Serialized array should have a constant length")
+                                        as u128;
+                                    return self.deconstruct_reference_to_constant_array(
+                                        &bytes,
+                                        e_type,
+                                        Some(len),
+                                        lty,
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Some(GlobalAlloc::Function(_instance)) => {
+                        //todo: figure out what kind of constants are encoded this way. Get a test case.
+                    }
+                    Some(GlobalAlloc::Static(def_id)) => {
+                        return AbstractValue::make_reference(
+                            self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
+                        );
+                    }
+                    None => unreachable!("missing allocation {:?}", ptr.alloc_id),
+                };
             }
             rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
                 assume!(*end > *start); // The Rust compiler should ensure this.
@@ -2268,62 +2331,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             _ => {}
         }
 
-        let result;
-        match lty.kind() {
-            TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Array(..)) => {
-                if let TyKind::Array(elem_type, length) = *t.kind() {
-                    return self
-                        .visit_reference_to_array_constant(&val, literal.ty, elem_type, length);
-                } else {
-                    unreachable!(); // match guard
-                }
-            }
-            TyKind::RawPtr(rustc_middle::ty::TypeAndMut {
-                ty,
-                mutbl: rustc_hir::Mutability::Mut,
-            })
-            | TyKind::Ref(_, ty, rustc_hir::Mutability::Mut) => match &val {
-                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
-                    let summary_cache_key = format!("{:?}", p).into();
-                    let expression_type: ExpressionType = ExpressionType::from(ty.kind());
-                    let path = Rc::new(
-                        PathEnum::StaticVariable {
-                            def_id: None,
-                            summary_cache_key,
-                            expression_type,
-                        }
-                        .into(),
-                    );
-                    return self.bv.lookup_path_and_refine_result(path, ty);
-                }
-                _ => {
-                    assume_unreachable!("ref to unexpected val {:?} type {:?}", val, lty);
-                }
-            },
-            TyKind::Ref(_, ty, rustc_hir::Mutability::Not) => {
-                return self.get_reference_to_constant(&val, ty);
-            }
-            TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
-                // todo: this case must fold into the one below.
-                return self.get_enum_variant_as_constant(&val, lty);
-            }
-            TyKind::Array(elem_type, length) => {
-                return self.visit_reference_to_array_constant(&val, lty, elem_type, length);
-            }
-            _ => {
-                debug!("span: {:?}", self.bv.current_span);
-                debug!("type kind {:?}", lty.kind());
-                debug!("unimplemented constant {:?}", val);
-                result = &ConstantDomain::Unimplemented;
-            }
-        };
-        Rc::new(result.clone().into())
+        debug!("span: {:?}", self.bv.current_span);
+        debug!("type kind {:?}", lty.kind());
+        debug!("unimplemented constant {:?}", val);
+        Rc::new(ConstantDomain::Unimplemented.into())
     }
 
     /// Use a prefix of the byte slice as a serialized value of the given type.
     /// Write the deserialized value to the given path in the current environment.
     /// Return the unused suffix of the byte slice as the result.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn deserialize_constant_bytes<'a>(
         &mut self,
         target_path: Rc<Path>,
@@ -2336,15 +2353,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .insert(target_path.clone(), ty);
         match ty.kind() {
             TyKind::Adt(def, substs) => {
-                debug!("deserializing {:?} {:?}", def, substs);
+                trace!("deserializing {:?} {:?}", def, substs);
                 let mut bytes_left_deserialize = bytes;
                 // todo: if there is more than one variant we need to use union fields
                 for variant in def.variants.iter() {
-                    debug!("deserializing variant {:?}", variant);
+                    trace!("deserializing variant {:?}", variant);
                     bytes_left_deserialize = bytes;
-                    debug!("bytes_left_deserialize {:?}", bytes_left_deserialize);
+                    trace!("bytes_left_deserialize {:?}", bytes_left_deserialize);
                     for (i, field) in variant.fields.iter().enumerate() {
-                        debug!("deserializing field({}) {:?}", i, field);
+                        trace!("deserializing field({}) {:?}", i, field);
                         let field_path = Path::new_field(target_path.clone(), i);
                         let field_ty = field.ty(self.bv.tcx, substs);
                         bytes_left_deserialize = self.deserialize_constant_bytes(
@@ -2569,36 +2586,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .current_environment
             .update_value_at(length_path, length_value);
         bytes_left_deserialize
-    }
-
-    /// Use for constants that are accessed via references
-    #[logfn_inputs(TRACE)]
-    fn get_reference_to_constant(
-        &mut self,
-        val: &rustc_middle::ty::ConstKind<'tcx>,
-        ty: Ty<'tcx>,
-    ) -> Rc<AbstractValue> {
-        match val {
-            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(p))) => {
-                if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
-                    self.bv.tcx.get_global_alloc(p.alloc_id)
-                {
-                    return AbstractValue::make_reference(
-                        self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
-                    );
-                }
-                debug!("span: {:?}", self.bv.current_span);
-                debug!("type kind {:?}", ty.kind());
-                debug!("ptr {:?}", p);
-                assume_unreachable!();
-            }
-            _ => {
-                debug!("span: {:?}", self.bv.current_span);
-                debug!("type kind {:?}", ty.kind());
-                debug!("unimplemented constant {:?}", val);
-                assume_unreachable!();
-            }
-        }
     }
 
     /// Used for enum typed constants. The implementation relies closely on the enum layout optimization
@@ -2853,56 +2840,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             TyKind::Uint(..) => &mut self.bv.cv.constant_value_cache.get_u128_for(data),
             TyKind::RawPtr(..) => &mut self.bv.cv.constant_value_cache.get_u128_for(data),
             _ => assume_unreachable!(),
-        }
-    }
-
-    /// Synthesizes a reference to a constant array.
-    #[logfn_inputs(TRACE)]
-    fn visit_reference_to_array_constant(
-        &mut self,
-        val: &rustc_middle::ty::ConstKind<'tcx>,
-        ty: Ty<'tcx>,
-        elem_type: Ty<'tcx>,
-        length: &rustc_middle::ty::Const<'tcx>,
-    ) -> Rc<AbstractValue> {
-        if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int), ..)) =
-            &length.val
-        {
-            let len = scalar_int.to_bits(scalar_int.size()).unwrap();
-            let e_type = ExpressionType::from(elem_type.kind());
-            match val {
-                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
-                    mir::interpret::Scalar::Ptr(ptr),
-                )) => {
-                    if let Some(rustc_middle::mir::interpret::GlobalAlloc::Static(def_id)) =
-                        self.bv.tcx.get_global_alloc(ptr.alloc_id)
-                    {
-                        return AbstractValue::make_reference(
-                            self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
-                        );
-                    }
-                    let alloc = self.bv.tcx.global_alloc(ptr.alloc_id).unwrap_memory();
-                    let alloc_len = alloc.len() as u64;
-                    let offset_bytes = ptr.offset.bytes();
-                    // The Rust compiler should ensure this.
-                    assume!(alloc_len > offset_bytes);
-                    let num_bytes = alloc_len - offset_bytes;
-                    let bytes = alloc
-                        .get_bytes(
-                            &self.bv.tcx,
-                            *ptr,
-                            rustc_target::abi::Size::from_bytes(num_bytes),
-                        )
-                        .unwrap();
-                    self.deconstruct_reference_to_constant_array(&bytes, e_type, Some(len), ty)
-                }
-                _ => {
-                    unimplemented!("unsupported val of type Ref: {:?}", val);
-                }
-            }
-        } else {
-            debug!("unsupported array length: {:?}", length);
-            unimplemented!();
         }
     }
 
