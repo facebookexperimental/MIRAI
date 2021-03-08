@@ -1759,6 +1759,7 @@ impl Z3Solver {
             Expression::IntrinsicBitVectorUnary { .. } => self.bv_fresh_const(num_bits),
             Expression::Join { path, .. } => self.bv_join(num_bits, path),
             Expression::Neg { operand } => self.bv_neg(num_bits, operand),
+            Expression::Offset { .. } => self.bv_fresh_const(num_bits),
             Expression::Reference(path) => self.bv_reference(num_bits, path),
             Expression::Shl { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvshl)

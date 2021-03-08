@@ -1120,7 +1120,7 @@ impl Expression {
             Expression::Offset { .. } => ThinPointer,
             Expression::Reference(_) => ThinPointer,
             Expression::InitialParameterValue { var_type, .. } => var_type.clone(),
-            Expression::Rem { left, .. } => left.expression.infer_type(),
+            Expression::Rem { right, .. } => right.expression.infer_type(),
             Expression::Shl { left, .. } => left.expression.infer_type(),
             Expression::ShlOverflows { .. } => Bool,
             Expression::Shr { result_type, .. } => result_type.clone(),
