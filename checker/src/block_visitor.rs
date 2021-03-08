@@ -2103,29 +2103,68 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             _ => {}
         }
 
-        if let rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) = &val {
-            let alloc_len = alloc.len();
-            let offset_bytes = offset.bytes() as usize;
-            // The Rust compiler should ensure this.
-            assume!(alloc_len > offset_bytes);
-            let num_bytes = alloc_len - offset_bytes;
-            let bytes =
-                alloc.inspect_with_uninit_and_ptr_outside_interpreter(offset_bytes..alloc_len);
-            let heap_val = self.bv.get_new_heap_block(
-                Rc::new((num_bytes as u128).into()),
-                Rc::new(1u128.into()),
-                false,
-                lty,
-            );
-            let bytes_left_to_deserialize =
-                self.deserialize_constant_bytes(Path::get_as_path(heap_val.clone()), bytes, lty);
-            if !bytes_left_to_deserialize.is_empty() {
-                debug!("span: {:?}", self.bv.current_span);
-                debug!("type kind {:?}", lty.kind());
-                debug!("constant value did not serialize correctly {:?}", val);
+        match &val {
+            rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
+                let alloc_len = alloc.len();
+                let offset_bytes = offset.bytes() as usize;
+                // The Rust compiler should ensure this.
+                assume!(alloc_len > offset_bytes);
+                let num_bytes = alloc_len - offset_bytes;
+                let bytes =
+                    alloc.inspect_with_uninit_and_ptr_outside_interpreter(offset_bytes..alloc_len);
+                let heap_val = self.bv.get_new_heap_block(
+                    Rc::new((num_bytes as u128).into()),
+                    Rc::new(1u128.into()),
+                    false,
+                    lty,
+                );
+                let bytes_left_to_deserialize = self.deserialize_constant_bytes(
+                    Path::get_as_path(heap_val.clone()),
+                    bytes,
+                    lty,
+                );
+                if !bytes_left_to_deserialize.is_empty() {
+                    debug!("span: {:?}", self.bv.current_span);
+                    debug!("type kind {:?}", lty.kind());
+                    debug!("constant value did not serialize correctly {:?}", val);
+                }
+                return heap_val;
             }
-            debug!("env {:?}", self.bv.current_environment);
-            return heap_val;
+            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) => {
+                if *scalar_int == ScalarInt::ZST {
+                    return Rc::new(ConstantDomain::Unit.into());
+                }
+                if let TyKind::Adt(..) | TyKind::Tuple(..) = lty.kind() {
+                    let data = scalar_int.to_bits(scalar_int.size()).unwrap();
+                    let size = scalar_int.size().bytes() as usize;
+                    let byte_array = unsafe { std::mem::transmute::<u128, [u8; 16]>(data) };
+                    let bytes: &[u8] = &byte_array[0..size];
+                    let heap_val = self.bv.get_new_heap_block(
+                        Rc::new((size as u128).into()),
+                        Rc::new(1u128.into()),
+                        false,
+                        lty,
+                    );
+                    let bytes_left_to_deserialize = self.deserialize_constant_bytes(
+                        Path::get_as_path(heap_val.clone()),
+                        bytes,
+                        lty,
+                    );
+                    if !bytes_left_to_deserialize.is_empty() {
+                        debug!("span: {:?}", self.bv.current_span);
+                        debug!("type kind {:?}", lty.kind());
+                        debug!("constant value did not serialize correctly {:?}", val);
+                    }
+                    debug!("env {:?}", self.bv.current_environment);
+                    return heap_val;
+                }
+                return Rc::new(
+                    self.get_constant_from_scalar(&lty.kind(), *scalar_int)
+                        .clone()
+                        .into(),
+                );
+            }
+            _ => {}
         }
 
         let result;
@@ -2150,9 +2189,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         literal,
                         self.bv.current_span
                     );
-                }
-                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) => {
-                    result = self.get_constant_from_scalar(&lty.kind(), *scalar_int);
                 }
                 _ => {
                     assume_unreachable!(
@@ -2235,13 +2271,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     );
                     return self.bv.lookup_path_and_refine_result(path, ty);
                 }
-                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) => {
-                    return Rc::new(
-                        self.get_constant_from_scalar(&lty.kind(), *scalar_int)
-                            .clone()
-                            .into(),
-                    );
-                }
                 _ => {
                     assume_unreachable!("ref to unexpected val {:?} type {:?}", val, lty);
                 }
@@ -2252,64 +2281,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
                 // todo: this case must fold into the one below.
                 return self.get_enum_variant_as_constant(&val, lty);
-            }
-            TyKind::Tuple(..) | TyKind::Adt(..) => {
-                match &val {
-                    rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(
-                        scalar_int,
-                    ))) if *scalar_int == ScalarInt::ZST => {
-                        return Rc::new(ConstantDomain::Unit.into());
-                    }
-                    //todo: the bytes obtained from ConstValue::Scalar, or from ConstValue::Ref
-                    // may have to be copied  (and aggregated) to multiple fields, as with transmute.
-                    // Need to initialize each variant with the same set of bytes
-                    // move this to a separate function.
-                    rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(
-                        scalar_int,
-                    ))) => {
-                        let heap_val = self.bv.get_new_heap_block(
-                            Rc::new((scalar_int.size().bytes() as u128).into()),
-                            Rc::new(1u128.into()),
-                            false,
-                            lty,
-                        );
-                        let path_to_scalar = Path::get_path_to_field_at_offset_0(
-                            self.bv.tcx,
-                            &self.bv.current_environment,
-                            &Path::get_as_path(heap_val.clone()),
-                            lty,
-                        )
-                        .unwrap_or_else(|| {
-                            unrecoverable!(
-                                "expected serialized constant to be correct at {:?}",
-                                self.bv.current_span
-                            )
-                        });
-                        let scalar_ty = self
-                            .bv
-                            .type_visitor
-                            .get_path_rustc_type(&path_to_scalar, self.bv.current_span);
-
-                        // todo: need a version of get_constant_from_scalar that reads from a byte stream
-                        // and consumes only as many bytes as are needed for the type of the field
-                        // being initialized.
-                        let scalar_val: Rc<AbstractValue> = Rc::new(
-                            self.get_constant_from_scalar(&scalar_ty.kind(), *scalar_int)
-                                .clone()
-                                .into(),
-                        );
-                        self.bv
-                            .current_environment
-                            .update_value_at(path_to_scalar, scalar_val);
-                        return heap_val;
-                    }
-                    _ => {
-                        debug!("span: {:?}", self.bv.current_span);
-                        debug!("type kind {:?}", lty.kind());
-                        debug!("unimplemented constant {:?}", val);
-                        result = &ConstantDomain::Unimplemented;
-                    }
-                };
             }
             TyKind::Array(elem_type, length) => {
                 return self.visit_reference_to_array_constant(&val, lty, elem_type, length);
@@ -2342,7 +2313,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             TyKind::Adt(def, substs) => {
                 debug!("deserializing {:?} {:?}", def, substs);
                 let mut bytes_left_deserialize = bytes;
-                // todo: if there is more than one variant we need to cast to the right variant
+                // todo: if there is more than one variant we need to use union fields
                 for variant in def.variants.iter() {
                     debug!("deserializing variant {:?}", variant);
                     bytes_left_deserialize = bytes;
