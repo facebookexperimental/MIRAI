@@ -150,7 +150,6 @@ impl MiraiCallbacks {
         || file_name.contains("language/move-prover/bytecode/src") // too slow 
         || file_name.contains("language/tools/move-coverage/src") // too slow
         || file_name.contains("language/vm/src") // too slow
-        || file_name.contains("sdk/client/src") // assertion failed    
         || file_name.contains("types/src") // too slow
     }
 
