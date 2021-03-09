@@ -2104,6 +2104,18 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }
 
         match &val {
+            rustc_middle::ty::ConstKind::Param(ParamConst { index, .. }) => {
+                if let Some(gen_args) = self.bv.type_visitor.generic_arguments {
+                    if let Some(arg_val) = gen_args.as_ref().get(*index as usize) {
+                        return self.visit_constant(None, arg_val.expect_const());
+                    }
+                }
+                assume_unreachable!(
+                    "reference to unmatched generic constant argument {:?} {:?}",
+                    literal,
+                    self.bv.current_span
+                );
+            }
             rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
                 let alloc_len = alloc.len();
                 let offset_bytes = offset.bytes() as usize;
@@ -2131,83 +2143,133 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 return heap_val;
             }
             rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) => {
-                if *scalar_int == ScalarInt::ZST {
-                    return Rc::new(ConstantDomain::Unit.into());
-                }
-                if let TyKind::Adt(..) | TyKind::Tuple(..) = lty.kind() {
-                    let data = scalar_int.to_bits(scalar_int.size()).unwrap();
-                    let size = scalar_int.size().bytes() as usize;
-                    let byte_array = unsafe { std::mem::transmute::<u128, [u8; 16]>(data) };
-                    let bytes: &[u8] = &byte_array[0..size];
-                    let heap_val = self.bv.get_new_heap_block(
-                        Rc::new((size as u128).into()),
-                        Rc::new(1u128.into()),
-                        false,
-                        lty,
-                    );
-                    let bytes_left_to_deserialize = self.deserialize_constant_bytes(
-                        Path::get_as_path(heap_val.clone()),
-                        bytes,
-                        lty,
-                    );
-                    if !bytes_left_to_deserialize.is_empty() {
-                        debug!("span: {:?}", self.bv.current_span);
-                        debug!("type kind {:?}", lty.kind());
-                        debug!("constant value did not serialize correctly {:?}", val);
+                match lty.kind() {
+                    TyKind::Adt(..) | TyKind::Tuple(..) => {
+                        if *scalar_int == ScalarInt::ZST {
+                            return Rc::new(ConstantDomain::Unit.into());
+                        }
+                        let data = scalar_int.to_bits(scalar_int.size()).unwrap();
+                        let size = scalar_int.size().bytes() as usize;
+                        let byte_array = unsafe { std::mem::transmute::<u128, [u8; 16]>(data) };
+                        let bytes: &[u8] = &byte_array[0..size];
+                        let heap_val = self.bv.get_new_heap_block(
+                            Rc::new((size as u128).into()),
+                            Rc::new(1u128.into()),
+                            false,
+                            lty,
+                        );
+                        let bytes_left_to_deserialize = self.deserialize_constant_bytes(
+                            Path::get_as_path(heap_val.clone()),
+                            bytes,
+                            lty,
+                        );
+                        if !bytes_left_to_deserialize.is_empty() {
+                            debug!("span: {:?}", self.bv.current_span);
+                            debug!("type kind {:?}", lty.kind());
+                            debug!("constant value did not serialize correctly {:?}", val);
+                        }
+                        debug!("env {:?}", self.bv.current_environment);
+                        return heap_val;
                     }
-                    debug!("env {:?}", self.bv.current_environment);
-                    return heap_val;
+                    TyKind::Array(elem_type, length) => {
+                        let elem_type = ExpressionType::from(elem_type.kind());
+                        let param_env = self.bv.type_visitor.get_param_env();
+                        let len = length
+                            .try_eval_usize(self.bv.tcx, param_env)
+                            .expect("Serialized array should have a constant length")
+                            as u128;
+                        if *scalar_int == ScalarInt::ZST {
+                            return self.deconstruct_reference_to_constant_array(
+                                &[],
+                                elem_type,
+                                Some(len),
+                                lty,
+                            );
+                        } else {
+                            let data = scalar_int.to_bits(scalar_int.size()).unwrap();
+                            let size = scalar_int.size().bytes() as usize;
+                            let byte_array = unsafe { std::mem::transmute::<u128, [u8; 16]>(data) };
+                            return self.deconstruct_reference_to_constant_array(
+                                &byte_array[0..size],
+                                elem_type,
+                                Some(len),
+                                lty,
+                            );
+                        };
+                    }
+                    _ => {
+                        return Rc::new(
+                            self.get_constant_from_scalar(&lty.kind(), *scalar_int)
+                                .clone()
+                                .into(),
+                        );
+                    }
                 }
-                return Rc::new(
-                    self.get_constant_from_scalar(&lty.kind(), *scalar_int)
-                        .clone()
-                        .into(),
-                );
+            }
+            rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
+                assume!(*end > *start); // The Rust compiler should ensure this.
+                let slice_len = *end - *start;
+                let bytes = data
+                    .get_bytes(
+                        &self.bv.tcx,
+                        // invent a pointer, only the offset is relevant anyway
+                        mir::interpret::Pointer::new(
+                            mir::interpret::AllocId(0),
+                            rustc_target::abi::Size::from_bytes(*start as u64),
+                        ),
+                        rustc_target::abi::Size::from_bytes(slice_len as u64),
+                    )
+                    .unwrap();
+                let slice = &bytes[*start..*end];
+                match lty.kind() {
+                    TyKind::Array(elem_type, length) => {
+                        let param_env = self.bv.type_visitor.get_param_env();
+                        let len = length
+                            .try_eval_usize(self.bv.tcx, param_env)
+                            .expect("Serialized array should have a constant length")
+                            as u128;
+                        return self.deconstruct_reference_to_constant_array(
+                            slice,
+                            ExpressionType::from(elem_type.kind()),
+                            Some(len),
+                            lty,
+                        );
+                    }
+                    TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Slice(..)) => {
+                        let e_type = if let TyKind::Slice(elem_type) = t.kind() {
+                            ExpressionType::from(elem_type.kind())
+                        } else {
+                            unreachable!() // match guard
+                        };
+                        return self
+                            .deconstruct_reference_to_constant_array(slice, e_type, None, t);
+                    }
+                    TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Str) => {
+                        let s = std::str::from_utf8(slice).expect("non utf8 str");
+                        let string_const = &mut self.bv.cv.constant_value_cache.get_string_for(s);
+                        let string_val: Rc<AbstractValue> = Rc::new(string_const.clone().into());
+                        let len_val: Rc<AbstractValue> =
+                            Rc::new(ConstantDomain::U128(s.len() as u128).into());
+
+                        let str_path = Path::new_computed(string_val.clone());
+                        self.bv
+                            .current_environment
+                            .update_value_at(str_path.clone(), string_val);
+
+                        let len_path = Path::new_length(str_path.clone());
+                        self.bv
+                            .current_environment
+                            .update_value_at(len_path, len_val);
+                        return AbstractValue::make_reference(str_path);
+                    }
+                    _ => {}
+                }
             }
             _ => {}
         }
 
         let result;
         match lty.kind() {
-            TyKind::Bool
-            | TyKind::Char
-            | TyKind::Float(..)
-            | TyKind::Int(..)
-            | TyKind::Uint(..) => match &val {
-                rustc_middle::ty::ConstKind::Param(ParamConst { index, .. }) => {
-                    if let Some(gen_args) = self.bv.type_visitor.generic_arguments {
-                        if let Some(arg_val) = gen_args.as_ref().get(*index as usize) {
-                            return self.visit_constant(None, arg_val.expect_const());
-                        }
-                    } else {
-                        // todo: figure out why gen_args is None for generic types when
-                        // the flag MIRAI_START_FRESH is on.
-                        return abstract_value::BOTTOM.into();
-                    }
-                    assume_unreachable!(
-                        "reference to unmatched generic constant argument {:?} {:?}",
-                        literal,
-                        self.bv.current_span
-                    );
-                }
-                _ => {
-                    assume_unreachable!(
-                        "unexpected kind of literal {:?} {:?}",
-                        literal,
-                        self.bv.current_span
-                    );
-                }
-            },
-            TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Str) => {
-                if let rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) =
-                    &val
-                {
-                    return self.get_reference_to_slice(lty.kind(), data, *start, *end);
-                } else {
-                    debug!("unsupported val of type Ref: {:?}", literal);
-                    unimplemented!();
-                };
-            }
             TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Array(..)) => {
                 if let TyKind::Array(elem_type, length) = *t.kind() {
                     return self
@@ -2216,43 +2278,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     unreachable!(); // match guard
                 }
             }
-            TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Slice(..)) => match &val {
-                rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
-                    // The rust compiler should ensure this.
-                    assume!(*end >= *start);
-                    let slice_len = *end - *start;
-                    let bytes = data
-                        .get_bytes(
-                            &self.bv.tcx,
-                            // invent a pointer, only the offset is relevant anyway
-                            mir::interpret::Pointer::new(
-                                mir::interpret::AllocId(0),
-                                rustc_target::abi::Size::from_bytes(*start as u64),
-                            ),
-                            rustc_target::abi::Size::from_bytes(slice_len as u64),
-                        )
-                        .unwrap();
-
-                    let slice = &bytes[*start..*end];
-                    let e_type = if let TyKind::Slice(elem_type) = t.kind() {
-                        ExpressionType::from(elem_type.kind())
-                    } else {
-                        unreachable!()
-                    };
-                    return self.deconstruct_reference_to_constant_array(
-                        slice,
-                        e_type,
-                        None,
-                        type_visitor::get_target_type(lty),
-                    );
-                }
-                _ => {
-                    info!("lty {:?}", lty);
-                    info!("val {:?}", val);
-                    info!("unsupported val of type Ref: {:?}", literal);
-                    unimplemented!();
-                }
-            },
             TyKind::RawPtr(rustc_middle::ty::TypeAndMut {
                 ty,
                 mutbl: rustc_hir::Mutability::Mut,
@@ -2482,14 +2507,19 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 let len_val: Rc<AbstractValue> =
                     Rc::new(ConstantDomain::U128(s.len() as u128).into());
 
+                let str_path = Path::new_computed(string_val.clone());
                 self.bv
                     .current_environment
-                    .update_value_at(target_path.clone(), string_val);
+                    .update_value_at(str_path.clone(), string_val);
 
-                let len_path = Path::new_length(target_path);
+                let len_path = Path::new_length(str_path.clone());
                 self.bv
                     .current_environment
                     .update_value_at(len_path, len_val);
+
+                self.bv
+                    .current_environment
+                    .update_value_at(target_path, AbstractValue::make_reference(str_path));
                 &[]
             }
             TyKind::Tuple(substs) => {
@@ -2561,9 +2591,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 debug!("type kind {:?}", ty.kind());
                 debug!("ptr {:?}", p);
                 assume_unreachable!();
-            }
-            rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
-                self.get_reference_to_slice(ty.kind(), *data, *start, *end)
             }
             _ => {
                 debug!("span: {:?}", self.bv.current_span);
@@ -2829,63 +2856,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }
     }
 
-    /// Used only for `&[u8]` and `&str`
-    #[logfn_inputs(TRACE)]
-    fn get_reference_to_slice(
-        &mut self,
-        ty: &TyKind<'tcx>,
-        data: &'tcx mir::interpret::Allocation,
-        start: usize,
-        end: usize,
-    ) -> Rc<AbstractValue> {
-        // The rust compiler should ensure this.
-        assume!(end >= start);
-        let slice_len = end - start;
-        let bytes = data
-            .get_bytes(
-                &self.bv.tcx,
-                // invent a pointer, only the offset is relevant anyway
-                mir::interpret::Pointer::new(
-                    mir::interpret::AllocId(0),
-                    rustc_target::abi::Size::from_bytes(start as u64),
-                ),
-                rustc_target::abi::Size::from_bytes(slice_len as u64),
-            )
-            .unwrap();
-        let slice = &bytes[start..end];
-        match ty {
-            TyKind::Ref(_, ty, _) => match ty.kind() {
-                TyKind::Array(elem_type, ..) | TyKind::Slice(elem_type) => self
-                    .deconstruct_reference_to_constant_array(
-                        slice,
-                        elem_type.kind().into(),
-                        None,
-                        ty,
-                    ),
-                TyKind::Str => {
-                    let s = std::str::from_utf8(slice).expect("non utf8 str");
-                    let string_const = &mut self.bv.cv.constant_value_cache.get_string_for(s);
-                    let string_val: Rc<AbstractValue> = Rc::new(string_const.clone().into());
-                    let len_val: Rc<AbstractValue> =
-                        Rc::new(ConstantDomain::U128(s.len() as u128).into());
-
-                    let str_path = Path::new_computed(string_val.clone());
-                    self.bv
-                        .current_environment
-                        .update_value_at(str_path.clone(), string_val);
-
-                    let len_path = Path::new_length(str_path.clone());
-                    self.bv
-                        .current_environment
-                        .update_value_at(len_path, len_val);
-                    AbstractValue::make_reference(str_path)
-                }
-                _ => assume_unreachable!(),
-            },
-            _ => assume_unreachable!(),
-        }
-    }
-
     /// Synthesizes a reference to a constant array.
     #[logfn_inputs(TRACE)]
     fn visit_reference_to_array_constant(
@@ -2901,41 +2871,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             let len = scalar_int.to_bits(scalar_int.size()).unwrap();
             let e_type = ExpressionType::from(elem_type.kind());
             match val {
-                rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
-                    // The Rust compiler should ensure this.
-                    assume!(*end > *start);
-                    let slice_len = *end - *start;
-                    let bytes = data
-                        .get_bytes(
-                            &self.bv.tcx,
-                            // invent a pointer, only the offset is relevant anyway
-                            mir::interpret::Pointer::new(
-                                mir::interpret::AllocId(0),
-                                rustc_target::abi::Size::from_bytes(*start as u64),
-                            ),
-                            rustc_target::abi::Size::from_bytes(slice_len as u64),
-                        )
-                        .unwrap();
-                    let slice = &bytes[*start..*end];
-                    self.deconstruct_reference_to_constant_array(slice, e_type, Some(len), ty)
-                }
-                rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int)))
-                    if *scalar_int == ScalarInt::ZST =>
-                {
-                    let heap_val = self.bv.get_new_heap_block(
-                        Rc::new(0u128.into()),
-                        Rc::new(1u128.into()),
-                        false,
-                        ty,
-                    );
-                    let target_path = Path::get_as_path(heap_val.clone());
-                    let length_path = Path::new_length(target_path);
-                    let length_value = self.get_u128_const_val(0u128);
-                    self.bv
-                        .current_environment
-                        .update_value_at(length_path, length_value);
-                    AbstractValue::make_reference(Path::get_as_path(heap_val))
-                }
                 rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(
                     mir::interpret::Scalar::Ptr(ptr),
                 )) => {
