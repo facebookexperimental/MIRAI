@@ -31,7 +31,7 @@ fn no_summary_analyzed_anyway() {
     }
     let d: &dyn Dynamic = &S {} as &dyn Dynamic; // forget type info of S
 
-    let i = d.f(1); //~ the called function could not be summarized, all bets are off
+    let i = d.f(1); //~ the called function could not be summarized
     verify!(i == 3); // ignored because the previous unresolved call makes every subsequent thing moot
 }
 

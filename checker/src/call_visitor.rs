@@ -111,7 +111,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let elapsed_time = self.block_visitor.bv.start_instant.elapsed();
             let mut summary =
                 body_visitor.visit_body(self.function_constant_args, &self.actual_argument_types);
-            let call_was_angelic = body_visitor.assume_function_is_angelic;
+            let call_was_incomplete = body_visitor.analysis_is_incomplete;
             trace!("summary {:?} {:?}", self.callee_def_id, summary);
             let signature = self.get_function_constant_signature(self.function_constant_args);
             if let Some(func_ref) = &self.callee_func_ref {
@@ -137,7 +137,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .summary_cache
                     .set_summary_for_call_site(func_ref, signature, summary.clone());
             }
-            self.block_visitor.bv.assume_function_is_angelic |= call_was_angelic;
+            self.block_visitor.bv.analysis_is_incomplete |= call_was_incomplete;
             self.block_visitor.bv.start_instant = Instant::now() - elapsed_time;
             return summary;
         }
@@ -1080,7 +1080,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             indirect_call_visitor.destination = self.destination;
             let summary = indirect_call_visitor.get_function_summary();
             if let Some(summary) = summary {
-                if summary.is_computed || summary.is_angelic {
+                if summary.is_computed {
                     indirect_call_visitor.transfer_and_refine_into_current_environment(&summary);
                     return;
                 }
@@ -2408,11 +2408,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             self.destination,
             self.actual_args
         );
-        if function_summary.is_angelic
-            && !self.block_visitor.bv.assume_function_is_angelic
+        if function_summary.is_incomplete
+            && !self.block_visitor.bv.analysis_is_incomplete
             && self.block_visitor.might_be_reachable()
         {
-            self.block_visitor.bv.assume_function_is_angelic = true;
+            self.block_visitor.bv.analysis_is_incomplete = true;
         }
         self.check_preconditions_if_necessary(&function_summary);
         self.transfer_and_refine_normal_return_state(&function_summary);
@@ -2590,7 +2590,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
             let mut pre_environment = self.environment_before_call.clone();
             // Transfer side effects
-            if function_summary.is_computed && !function_summary.is_angelic {
+            if function_summary.is_computed && !function_summary.is_incomplete {
                 // Effects on the heap
                 for (path, value) in function_summary.side_effects.iter() {
                     if path.is_rooted_by_non_local_structure() {

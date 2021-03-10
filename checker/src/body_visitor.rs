@@ -49,8 +49,8 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
 
     pub already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
     pub analyzing_static_var: bool,
-    // True if the current function cannot be analyzed and hence is just assumed to be correct.
-    pub assume_function_is_angelic: bool,
+    // True if the current function cannot be completely analyzed.
+    pub analysis_is_incomplete: bool,
     pub assume_preconditions_of_next_call: bool,
     pub async_fn_summary: Option<Summary>,
     pub check_for_errors: bool,
@@ -108,7 +108,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
             already_reported_errors_for_call_to: HashSet::new(),
             analyzing_static_var: false,
-            assume_function_is_angelic: false,
+            analysis_is_incomplete: false,
             assume_preconditions_of_next_call: false,
             async_fn_summary: None,
             check_for_errors: false,
@@ -136,7 +136,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     #[logfn_inputs(TRACE)]
     fn reset_visitor_state(&mut self) {
         self.already_reported_errors_for_call_to = HashSet::new();
-        self.assume_function_is_angelic = false;
+        self.analysis_is_incomplete = false;
         self.check_for_errors = false;
         self.check_for_unconditional_precondition = false;
         self.current_environment = Environment::default();
@@ -202,20 +202,17 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
         let mut result = Summary {
             is_computed: true,
-            is_angelic: true,
+            is_incomplete: true,
             ..Summary::default()
         };
-        if !fixed_point_visitor.bv.assume_function_is_angelic {
+        if !fixed_point_visitor.bv.analysis_is_incomplete {
             // Now traverse the blocks again, doing checks and emitting diagnostics.
             // terminator_state[bb] is now complete for every basic block bb in the body.
             fixed_point_visitor.bv.check_for_errors(
                 &fixed_point_visitor.block_indices,
                 &mut fixed_point_visitor.terminator_state,
             );
-            let entry = self
-                .active_calls_map
-                .entry(self.def_id)
-                .or_insert_with(|| unreachable!());
+            let entry = self.active_calls_map.entry(self.def_id).or_insert(0);
             if *entry == 1 {
                 self.active_calls_map.remove(&self.def_id);
             } else {
@@ -278,7 +275,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         } else {
             self.active_calls_map.remove(&self.def_id);
         }
-        self.assume_function_is_angelic = true;
+        self.analysis_is_incomplete = true;
     }
 
     /// Adds the given diagnostic builder to the buffer.

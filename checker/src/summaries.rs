@@ -60,13 +60,14 @@ pub struct Summary {
     /// there are no repeated attempts at recomputing the summary.
     pub is_computed: bool,
 
-    /// If true, the summary is "angelic", which is to say it is assumed to have no preconditions
-    /// and to always return, but it also provides no post condition.
-    /// This happens if the computation of the computation of this summary failed for some reason,
-    /// for example no MIR body or a time-out.
-    /// A function that makes use of an angelic summary cannot be fully analyzed and thus becomes
-    /// angelic in turn.
-    pub is_angelic: bool,
+    /// If true, the summary is incomplete, which means that the result and side-effects could be
+    /// over specific because widening did not happen and also that some side-effects may be missing.
+    /// The summary may also fail to mention necessary preconditions or useful post conditions.
+    /// This happens if the computation of this summary failed for some reason, for example
+    /// no MIR body or a time-out.
+    /// A function that makes use of an incomplete summary cannot be fully analyzed and thus becomes
+    /// incomplete in turn.
+    pub is_incomplete: bool,
 
     // Conditions that should hold prior to the call.
     // Callers should substitute parameter values with argument values and simplify the results
@@ -257,7 +258,7 @@ pub fn summarize(
 
     Summary {
         is_computed: true,
-        is_angelic: false,
+        is_incomplete: false,
         preconditions,
         side_effects,
         post_condition: post_condition.clone(),

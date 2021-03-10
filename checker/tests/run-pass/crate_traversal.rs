@@ -75,7 +75,7 @@ fn test4() {
 
 pub fn test5() {
     unsafe {
-        llvm_asm!("NOP") //~ Inline llvm assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.
+        llvm_asm!("NOP") //~ Inline llvm assembly code cannot be analyzed by MIRAI.
     }
 }
 

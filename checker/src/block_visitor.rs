@@ -206,10 +206,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let span = self.bv.current_span;
         let err = self.bv.cv.session.struct_span_warn(
             span,
-            "Inline llvm assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
+            "Inline llvm assembly code cannot be analyzed by MIRAI.",
         );
         self.bv.emit_diagnostic(err);
-        self.bv.assume_function_is_angelic = true;
+        self.bv.analysis_is_incomplete = true;
     }
 
     /// Retag references in the given place, ensuring they got fresh tags.  This is
@@ -539,11 +539,17 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         } else {
             self.report_missing_summary();
             if self.bv.check_for_errors && self.might_be_reachable() {
-                warn!(
-                    "function {} can't be reliably analyzed because it calls an unknown function. {:?}",
-                    utils::summary_key_str(self.bv.tcx, self.bv.def_id),
-                    self.bv.current_span
-                );
+                if self
+                    .bv
+                    .already_reported_errors_for_call_to
+                    .insert(func_to_call)
+                {
+                    warn!(
+                        "function {} can't be reliably analyzed because it calls an unknown function. {:?}",
+                        utils::summary_key_str(self.bv.tcx, self.bv.def_id),
+                        self.bv.current_span
+                    );
+                }
             }
             return;
         }
@@ -609,7 +615,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             return;
         }
         if call_visitor.block_visitor.bv.check_for_errors
-            && (!function_summary.is_computed || function_summary.is_angelic)
+            && (!function_summary.is_computed || function_summary.is_incomplete)
         {
             call_visitor.deal_with_missing_summary();
         }
@@ -679,7 +685,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn report_missing_summary(&mut self) {
         // This cuts down on false positives/negatives caused by missing post conditions and side-effects.
-        self.bv.assume_function_is_angelic = true;
+        self.bv.analysis_is_incomplete = true;
         match self.bv.cv.options.diag_level {
             DiagLevel::Relaxed => {
                 // In this mode we suppress any diagnostics about issues that might not be true
@@ -690,7 +696,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // Give a diagnostic about this call, and make it the programmer's problem.
                     let warning = self.bv.cv.session.struct_span_warn(
                         self.bv.current_span,
-                        "the called function could not be summarized, all bets are off",
+                        "the called function could not be summarized",
                     );
                     self.bv.emit_diagnostic(warning);
                 }
@@ -917,7 +923,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         function_name: KnownNames,
     ) -> Option<Rc<str>> {
         precondition!(self.bv.check_for_errors);
-        if cond.is_bottom() || self.bv.assume_function_is_angelic {
+        if cond.is_bottom() || self.bv.analysis_is_incomplete {
             return None;
         }
         let (cond_as_bool, entry_cond_as_bool) =
@@ -1287,12 +1293,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_inline_asm(&mut self, target: &Option<mir::BasicBlock>) {
         let span = self.bv.current_span;
-        let diagnostic = self.bv.cv.session.struct_span_warn(
-            span,
-            "Inline assembly code cannot be analyzed by MIRAI. Unsoundly ignoring this.",
-        );
+        let diagnostic = self
+            .bv
+            .cv
+            .session
+            .struct_span_warn(span, "Inline assembly code cannot be analyzed by MIRAI.");
         self.bv.emit_diagnostic(diagnostic);
-        self.bv.assume_function_is_angelic = true;
+        self.bv.analysis_is_incomplete = true;
         if let Some(target) = target {
             // Propagate the entry condition to the successor block.
             self.bv
