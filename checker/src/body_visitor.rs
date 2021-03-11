@@ -1153,7 +1153,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     let lh_type = self
                         .type_visitor
                         .get_path_rustc_type(&tpath, self.current_span);
-                    if let PathEnum::HeapBlock { .. } = &path.value {
+                    if !self.type_visitor.path_ty_cache.contains_key(path)
+                        && path.is_rooted_by_non_local_structure()
+                    {
                         self.type_visitor
                             .path_ty_cache
                             .insert(path.clone(), type_visitor::get_target_type(lh_type));

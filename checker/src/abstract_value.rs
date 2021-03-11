@@ -1054,7 +1054,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
-        //todo: if self is a pointer then special case ptr & 1.
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::BitAnd {
             left,
             right,
