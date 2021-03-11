@@ -6,7 +6,7 @@
 
 use mirai_annotations::*;
 
-// MIRAI_FLAGS --test_only --diag=strict
+// MIRAI_FLAGS --test_only --diag=verify
 
 #[test]
 fn some_test() {

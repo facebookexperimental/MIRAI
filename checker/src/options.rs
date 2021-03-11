@@ -29,10 +29,10 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .long_help("Only #[test] methods and their usage are analyzed. This must be used together with the rustc --test option.")) //todo: just set the --test option, dammit
     .arg(Arg::with_name("diag")
         .long("diag")
-        .possible_values(&["relaxed", "strict", "paranoid"])
-        .default_value("relaxed")
+        .possible_values(&["default", "verify", "library", "paranoid"])
+        .default_value("default")
         .help("Level of diagnostics.\n")
-        .long_help("With `relaxed`, false positives will be avoided where possible.\nWith 'strict' optimistic assumptions are made about unanalyzable calls.\nWith `paranoid`, all errors will be reported.\n"))
+        .long_help("With `default`, false positives will be avoided where possible.\nWith 'verify' errors are reported for incompletely analyzed functions.\nWith `paranoid`, all possible errors will be reported.\n"))
     .arg(Arg::with_name("constant_time")
         .long("constant_time")
         .takes_value(true)
@@ -50,29 +50,25 @@ pub struct Options {
 }
 
 /// Represents diag level.
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum DiagLevel {
-    /// When a function can't be fully analyzed, for example because it calls a function
-    /// without a body and no foreign function summary, it is simply assumed to be correct (angelic).
-    /// This is transitive: calling an angelic function causes the caller to become angelic itself.
-    /// This minimizes false positives but can lead to a lot code not being analyzed
-    /// while devirtualization isn't perfect and not all intrinsics have been modeled.
-    Relaxed,
-    /// Always emit at least one diagnostic for functions that cannot be fully analyzed because of
-    /// time-outs or calls to functions without bodies or foreign function summaries. In this mode
-    /// the analysis is sound because every potential issue in analyzed has a related diagnostic,
-    /// but it is also angelic because it assumes that argument values provided by code that is not
-    /// being analyzed will never cause the program to wrong, i.e. that non analyzed code is "angelic".
-    Strict,
-    /// Like strict, but issues diagnostics if non analyzed code can provide arguments will cause
+    /// When a function calls a function without a body and with no foreign function summary, the call assumed to be
+    /// correct and any diagnostics that depend on the result of the call in some way are suppressed.
+    Default,
+    /// Like Default, but emit a diagnostic if there is a call to a function without a body and with no foreign function summary.
+    Verify,
+    /// Like Verify, but issues diagnostics if non analyzed code can provide arguments that will cause
     /// the analyzed code to go wrong. I.e. it requires all preconditions to be explicit.
-    /// This mode should be used for any library whose callers are not known and there not analyzed.
+    /// This mode should be used for any library whose callers are not known and therefore not analyzed.
+    Library,
+    // Like Library, but also carries on analysis of functions after a call to an incompletely
+    // analyzed function has been encountered.
     Paranoid,
 }
 
 impl Default for DiagLevel {
     fn default() -> Self {
-        DiagLevel::Relaxed
+        DiagLevel::Default
     }
 }
 
@@ -139,8 +135,9 @@ impl Options {
         }
         if matches.is_present("diag") {
             self.diag_level = match matches.value_of("diag").unwrap() {
-                "relaxed" => DiagLevel::Relaxed,
-                "strict" => DiagLevel::Strict,
+                "default" => DiagLevel::Default,
+                "verify" => DiagLevel::Verify,
+                "library" => DiagLevel::Library,
                 "paranoid" => DiagLevel::Paranoid,
                 _ => assume_unreachable!(),
             };

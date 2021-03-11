@@ -339,7 +339,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .get_rustc_place_type(place, self.block_visitor.bv.current_span);
             let target_path = self.block_visitor.visit_rh_place(place);
             if !summary.is_computed {
-                self.deal_with_missing_summary();
                 // Now just do a deep copy and carry on.
                 self.block_visitor.bv.copy_or_move_elements(
                     target_path,
@@ -1046,7 +1045,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let function_constant_args = self.block_visitor.get_function_constant_args(&actual_args);
         let callee_func_ref = self.block_visitor.get_func_ref(&callee);
 
-        let function_summary = if let Some(func_ref) = &callee_func_ref {
+        if let Some(func_ref) = &callee_func_ref {
             let func_const = ConstantDomain::Function(func_ref.clone());
             let def_id = func_ref.def_id.expect("defined when used here");
             if !closure_ty.is_closure() && self.block_visitor.bv.tcx.is_closure(def_id) {
@@ -1075,32 +1074,27 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             indirect_call_visitor.actual_args = actual_args;
             indirect_call_visitor.actual_argument_types = actual_argument_types;
             indirect_call_visitor.function_constant_args = &function_constant_args;
-            indirect_call_visitor.callee_fun_val = callee;
+            indirect_call_visitor.callee_fun_val = callee.clone();
             indirect_call_visitor.callee_known_name = KnownNames::None;
             indirect_call_visitor.destination = self.destination;
             let summary = indirect_call_visitor.get_function_summary();
             if let Some(summary) = summary {
                 if summary.is_computed {
                     indirect_call_visitor.transfer_and_refine_into_current_environment(&summary);
-                    return;
                 }
+                if summary.is_incomplete && self.block_visitor.bv.check_for_errors {
+                    let saved_callee_def_id = self.callee_def_id;
+                    self.callee_def_id = def_id;
+                    self.report_incomplete_summary();
+                    self.callee_def_id = saved_callee_def_id;
+                }
+                return;
             }
-            if self.block_visitor.bv.check_for_errors {
-                let saved_callee_def_id = self.callee_def_id;
-                self.callee_def_id = def_id;
-                self.deal_with_missing_summary();
-                self.callee_def_id = saved_callee_def_id;
-            }
-            Summary::default()
-        } else {
-            if self.block_visitor.bv.check_for_errors {
-                debug!("unknown callee {:?}", callee);
-                self.deal_with_missing_summary();
-            }
-            Summary::default()
         };
-
-        self.transfer_and_refine_into_current_environment(&function_summary);
+        if self.block_visitor.bv.check_for_errors {
+            debug!("unknown callee {:?}", callee);
+            self.block_visitor.report_missing_summary();
+        }
     }
 
     /// Replace the call result with an abstract value of the same type as the
@@ -2362,9 +2356,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         self.use_entry_condition_as_exit_condition();
     }
 
-    /// Give diagnostic or mark the call chain as angelic, depending on self.bv.options.diag_level
+    /// Give diagnostic depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
-    pub fn deal_with_missing_summary(&mut self) {
+    pub fn report_incomplete_summary(&mut self) {
         if self.block_visitor.might_be_reachable() {
             self.block_visitor.report_missing_summary();
             let argument_type_hint = if let Some(func) = &self.callee_func_ref {

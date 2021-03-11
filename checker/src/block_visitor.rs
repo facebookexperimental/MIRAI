@@ -538,18 +538,18 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             func_ref_to_call = fr;
         } else {
             self.report_missing_summary();
-            if self.bv.check_for_errors && self.might_be_reachable() {
-                if self
+            if self.bv.check_for_errors
+                && self.might_be_reachable()
+                && self
                     .bv
                     .already_reported_errors_for_call_to
                     .insert(func_to_call)
-                {
-                    warn!(
+            {
+                warn!(
                         "function {} can't be reliably analyzed because it calls an unknown function. {:?}",
                         utils::summary_key_str(self.bv.tcx, self.bv.def_id),
                         self.bv.current_span
                     );
-                }
             }
             return;
         }
@@ -610,16 +610,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let function_summary = call_visitor
             .get_function_summary()
             .unwrap_or_else(Summary::default);
-        if known_name == KnownNames::StdCloneClone {
-            call_visitor.handle_clone(&function_summary);
-            return;
-        }
         if call_visitor.block_visitor.bv.check_for_errors
             && (!function_summary.is_computed || function_summary.is_incomplete)
         {
-            call_visitor.deal_with_missing_summary();
+            call_visitor.report_incomplete_summary();
         }
-        call_visitor.transfer_and_refine_into_current_environment(&function_summary);
+        if known_name == KnownNames::StdCloneClone {
+            call_visitor.handle_clone(&function_summary);
+        } else {
+            call_visitor.transfer_and_refine_into_current_environment(&function_summary);
+        }
     }
 
     #[logfn_inputs(TRACE)]
@@ -684,14 +684,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Give diagnostic, depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     pub fn report_missing_summary(&mut self) {
-        // This cuts down on false positives/negatives caused by missing post conditions and side-effects.
         self.bv.analysis_is_incomplete = true;
         match self.bv.cv.options.diag_level {
-            DiagLevel::Relaxed => {
+            DiagLevel::Default => {
                 // In this mode we suppress any diagnostics about issues that might not be true
                 // positives.
             }
-            DiagLevel::Strict | DiagLevel::Paranoid => {
+            _ => {
                 if self.bv.check_for_errors && self.might_be_reachable() {
                     // Give a diagnostic about this call, and make it the programmer's problem.
                     let warning = self.bv.cv.session.struct_span_warn(
@@ -834,16 +833,18 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         warn: bool,
     ) {
         precondition!(self.bv.check_for_errors);
-        // In non paranoid mode we don't want to complain if the condition or reachability depends on
+        // In non library|paranoid mode we don't want to complain if the condition or reachability depends on
         // a parameter, since it is assumed that an implicit precondition was intended by the author.
-        if !matches!(self.bv.cv.options.diag_level, DiagLevel::Paranoid)
-            && (condition.expression.contains_parameter()
-                || self
-                    .bv
-                    .current_environment
-                    .entry_condition
-                    .expression
-                    .contains_parameter())
+        if !matches!(
+            self.bv.cv.options.diag_level,
+            DiagLevel::Library | DiagLevel::Paranoid
+        ) && (condition.expression.contains_parameter()
+            || self
+                .bv
+                .current_environment
+                .entry_condition
+                .expression
+                .contains_parameter())
         {
             return;
         }
@@ -923,7 +924,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         function_name: KnownNames,
     ) -> Option<Rc<str>> {
         precondition!(self.bv.check_for_errors);
-        if cond.is_bottom() || self.bv.analysis_is_incomplete {
+        if cond.is_bottom()
+            || (self.bv.analysis_is_incomplete
+                && self.bv.cv.options.diag_level != DiagLevel::Paranoid)
+        {
             return None;
         }
         let (cond_as_bool, entry_cond_as_bool) =
@@ -997,11 +1001,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             || cond.expression.contains_local_variable()
             || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
         {
-            // In non paranoid mode we don't want to complain if the condition or reachability depends on
+            // In non library|paranoid mode we don't want to complain if the condition or reachability depends on
             // a parameter, since it is assumed that an implicit precondition was intended by the author
             // unless, of course, the condition is being explicitly verified.
             if function_name == KnownNames::MiraiVerify
-                || matches!(self.bv.cv.options.diag_level, DiagLevel::Paranoid)
+                || matches!(
+                    self.bv.cv.options.diag_level,
+                    DiagLevel::Library | DiagLevel::Paranoid
+                )
                 || (!cond.expression.contains_parameter()
                     && !self
                         .bv
@@ -1190,16 +1197,18 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
                         || cond_val.expression.contains_local_variable()
                     {
-                        // In non paranoid mode we don't want to complain if the condition or reachability depends on
+                        // In non library mode we don't want to complain if the condition or reachability depends on
                         // a parameter, since it is assumed that an implicit precondition was intended by the author.
-                        if !matches!(self.bv.cv.options.diag_level, DiagLevel::Paranoid)
-                            && (cond_val.expression.contains_parameter()
-                                || self
-                                    .bv
-                                    .current_environment
-                                    .entry_condition
-                                    .expression
-                                    .contains_parameter())
+                        if !matches!(
+                            self.bv.cv.options.diag_level,
+                            DiagLevel::Library | DiagLevel::Paranoid
+                        ) && (cond_val.expression.contains_parameter()
+                            || self
+                                .bv
+                                .current_environment
+                                .entry_condition
+                                .expression
+                                .contains_parameter())
                         {
                             return;
                         }
