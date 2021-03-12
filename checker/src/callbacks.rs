@@ -142,7 +142,7 @@ impl MiraiCallbacks {
         if file_name.contains("client/swiss-knife/src") // too slow 
             || file_name.contains("config/management/src") // too slow
             || file_name.contains("config/management/genesis/src") // too slow    
-            || file_name.contains("config/management/operational/src") // too slow    
+            || file_name.contains("config/management/operational/src") // too slow
             || file_name.contains("json-rpc/src") // stack overflow
             || file_name.contains("language/bytecode-verifier/src") // too slow
             || file_name.contains("language/move-lang/src") // too slow
@@ -150,6 +150,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-prover/bytecode/src") // too slow 
             || file_name.contains("language/tools/move-coverage/src") // too slow
             || file_name.contains("language/vm/src") // too slow
+            || file_name.contains("state-sync/src") // Sorts <null> and Int are incompatible
             || file_name.contains("types/src")
         {
             return true;

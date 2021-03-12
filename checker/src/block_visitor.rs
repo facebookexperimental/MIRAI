@@ -537,14 +537,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         if let Some(fr) = func_ref {
             func_ref_to_call = fr;
         } else {
-            self.report_missing_summary();
-            if self.bv.check_for_errors
-                && self.might_be_reachable()
+            if self.might_be_reachable()
                 && self
                     .bv
                     .already_reported_errors_for_call_to
                     .insert(func_to_call)
             {
+                self.report_missing_summary();
                 warn!(
                         "function {} can't be reliably analyzed because it calls an unknown function. {:?}",
                         utils::summary_key_str(self.bv.tcx, self.bv.def_id),
@@ -610,11 +609,26 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let function_summary = call_visitor
             .get_function_summary()
             .unwrap_or_else(Summary::default);
-        if call_visitor.block_visitor.bv.check_for_errors
-            && (!function_summary.is_computed || function_summary.is_incomplete)
+
+        if !function_summary.is_computed {
+            if call_visitor
+                .block_visitor
+                .bv
+                .already_reported_errors_for_call_to
+                .insert(call_visitor.callee_fun_val.clone())
+            {
+                call_visitor.block_visitor.report_missing_summary();
+            }
+        } else if function_summary.is_incomplete
+            && call_visitor
+                .block_visitor
+                .bv
+                .already_reported_errors_for_call_to
+                .insert(call_visitor.callee_fun_val.clone())
         {
             call_visitor.report_incomplete_summary();
         }
+
         if known_name == KnownNames::StdCloneClone {
             call_visitor.handle_clone(&function_summary);
         } else {
@@ -691,11 +705,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // positives.
             }
             _ => {
-                if self.bv.check_for_errors && self.might_be_reachable() {
+                if self.might_be_reachable() {
                     // Give a diagnostic about this call, and make it the programmer's problem.
                     let warning = self.bv.cv.session.struct_span_warn(
                         self.bv.current_span,
-                        "the called function could not be summarized",
+                        "the called function did not resolve to an implementation with a MIR body",
                     );
                     self.bv.emit_diagnostic(warning);
                 }
