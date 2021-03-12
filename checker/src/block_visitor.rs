@@ -36,7 +36,6 @@ use rustc_target::abi::{TagEncoding, VariantIdx, Variants};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::convert::TryInto;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 
@@ -2143,6 +2142,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 return heap_val;
             }
             rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) => {
+                let size = scalar_int.size().bytes() as usize;
+                let data: u128 = if *scalar_int == ScalarInt::ZST {
+                    0
+                } else {
+                    scalar_int.to_bits(scalar_int.size()).unwrap()
+                };
+                let byte_array = unsafe { std::mem::transmute::<u128, [u8; 16]>(data) };
+                let bytes: &[u8] = &byte_array[0..size];
+
                 match lty.kind() {
                     TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
                         return self.get_enum_variant_as_constant(&val, lty);
@@ -2151,10 +2159,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         if *scalar_int == ScalarInt::ZST {
                             return Rc::new(ConstantDomain::Unit.into());
                         }
-                        let data = scalar_int.to_bits(scalar_int.size()).unwrap();
-                        let size = scalar_int.size().bytes() as usize;
-                        let byte_array = unsafe { std::mem::transmute::<u128, [u8; 16]>(data) };
-                        let bytes: &[u8] = &byte_array[0..size];
                         let heap_val = self.bv.get_new_heap_block(
                             Rc::new((size as u128).into()),
                             Rc::new(1u128.into()),
@@ -2175,30 +2179,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         return heap_val;
                     }
                     TyKind::Array(elem_type, length) => {
-                        let elem_type = ExpressionType::from(elem_type.kind());
-                        let param_env = self.bv.type_visitor.get_param_env();
-                        let len = length
-                            .try_eval_usize(self.bv.tcx, param_env)
-                            .expect("Serialized array should have a constant length")
-                            as u128;
-                        if *scalar_int == ScalarInt::ZST {
-                            return self.deconstruct_reference_to_constant_array(
-                                &[],
-                                elem_type,
-                                Some(len),
-                                lty,
-                            );
-                        } else {
-                            let data = scalar_int.to_bits(scalar_int.size()).unwrap();
-                            let size = scalar_int.size().bytes() as usize;
-                            let byte_array = unsafe { std::mem::transmute::<u128, [u8; 16]>(data) };
-                            return self.deconstruct_reference_to_constant_array(
-                                &byte_array[0..size],
-                                elem_type,
-                                Some(len),
-                                lty,
-                            );
-                        };
+                        let length = self.bv.get_array_length(length);
+                        let (array_value, array_path) = self.get_heap_array_and_path(lty, size);
+                        self.deserialize_constant_array(array_path, bytes, length, elem_type);
+                        return array_value;
                     }
                     _ => {
                         return Rc::new(
@@ -2216,43 +2200,36 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         let offset_bytes = ptr.offset.bytes();
                         // The Rust compiler should ensure this.
                         assume!(alloc_len > offset_bytes);
-                        let num_bytes = alloc_len - offset_bytes;
+                        let size = alloc_len - offset_bytes;
                         let bytes = alloc
                             .get_bytes(
                                 &self.bv.tcx,
                                 *ptr,
-                                rustc_target::abi::Size::from_bytes(num_bytes),
+                                rustc_target::abi::Size::from_bytes(size),
                             )
                             .unwrap();
                         match lty.kind() {
-                            TyKind::Array(element_type, length) => {
-                                let e_type = ExpressionType::from(element_type.kind());
-                                let param_env = self.bv.type_visitor.get_param_env();
-                                let len = length
-                                    .try_eval_usize(self.bv.tcx, param_env)
-                                    .expect("Serialized array should have a constant length")
-                                    as u128;
-                                return self.deconstruct_reference_to_constant_array(
-                                    &bytes,
-                                    e_type,
-                                    Some(len),
-                                    lty,
+                            TyKind::Array(elem_type, length) => {
+                                let length = self.bv.get_array_length(length);
+                                let (array_value, array_path) =
+                                    self.get_heap_array_and_path(lty, size as usize);
+                                self.deserialize_constant_array(
+                                    array_path, bytes, length, elem_type,
                                 );
+                                return array_value;
                             }
                             TyKind::Ref(_, t, _) => {
-                                if let TyKind::Array(element_type, length) = t.kind() {
-                                    let e_type = ExpressionType::from(element_type.kind());
-                                    let param_env = self.bv.type_visitor.get_param_env();
-                                    let len = length
-                                        .try_eval_usize(self.bv.tcx, param_env)
-                                        .expect("Serialized array should have a constant length")
-                                        as u128;
-                                    return self.deconstruct_reference_to_constant_array(
-                                        &bytes,
-                                        e_type,
-                                        Some(len),
-                                        lty,
+                                if let TyKind::Array(elem_type, length) = t.kind() {
+                                    let length = self.bv.get_array_length(length);
+                                    let (_, array_path) =
+                                        self.get_heap_array_and_path(lty, size as usize);
+                                    self.deserialize_constant_array(
+                                        array_path.clone(),
+                                        bytes,
+                                        length,
+                                        elem_type,
                                     );
+                                    return AbstractValue::make_reference(array_path);
                                 }
                             }
                             _ => {}
@@ -2271,7 +2248,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
                 assume!(*end > *start); // The Rust compiler should ensure this.
-                let slice_len = *end - *start;
+                let size = *end - *start;
                 let bytes = data
                     .get_bytes(
                         &self.bv.tcx,
@@ -2280,32 +2257,29 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             mir::interpret::AllocId(0),
                             rustc_target::abi::Size::from_bytes(*start as u64),
                         ),
-                        rustc_target::abi::Size::from_bytes(slice_len as u64),
+                        rustc_target::abi::Size::from_bytes(size as u64),
                     )
                     .unwrap();
                 let slice = &bytes[*start..*end];
                 match lty.kind() {
                     TyKind::Array(elem_type, length) => {
-                        let param_env = self.bv.type_visitor.get_param_env();
-                        let len = length
-                            .try_eval_usize(self.bv.tcx, param_env)
-                            .expect("Serialized array should have a constant length")
-                            as u128;
-                        return self.deconstruct_reference_to_constant_array(
-                            slice,
-                            ExpressionType::from(elem_type.kind()),
-                            Some(len),
-                            lty,
-                        );
+                        let length = self.bv.get_array_length(length);
+                        let (array_value, array_path) = self.get_heap_array_and_path(lty, size);
+                        self.deserialize_constant_array(array_path, bytes, length, elem_type);
+                        return array_value;
                     }
                     TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Slice(..)) => {
-                        let e_type = if let TyKind::Slice(elem_type) = t.kind() {
-                            ExpressionType::from(elem_type.kind())
-                        } else {
-                            unreachable!() // match guard
-                        };
-                        return self
-                            .deconstruct_reference_to_constant_array(slice, e_type, None, t);
+                        let elem_type = type_visitor::get_element_type(t);
+                        let bytes_per_elem = self.bv.type_visitor.get_type_size(elem_type) as usize;
+                        let length = size / bytes_per_elem;
+                        let (_, array_path) = self.get_heap_array_and_path(t, size);
+                        self.deserialize_constant_array(
+                            array_path.clone(),
+                            bytes,
+                            length,
+                            elem_type,
+                        );
+                        return AbstractValue::make_reference(array_path);
                     }
                     TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Str) => {
                         let s = std::str::from_utf8(slice).expect("non utf8 str");
@@ -2374,12 +2348,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 bytes_left_deserialize
             }
             TyKind::Array(elem_type, length) => {
-                let param_env = self.bv.type_visitor.get_param_env();
-                let len = length
-                    .try_eval_usize(self.bv.tcx, param_env)
-                    .expect("Serialized array should have a constant length")
-                    as usize;
-                self.deserialize_constant_array(target_path, bytes, len, elem_type)
+                let length = self.bv.get_array_length(length);
+                self.deserialize_constant_array(target_path, bytes, length, elem_type)
             }
             TyKind::Bool => {
                 let val = if bytes[0] == 0 {
@@ -2560,6 +2530,28 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 &[]
             }
         }
+    }
+
+    /// Allocates a new heap block with length and alignment obtained from the given array
+    /// or array slice type.
+    #[logfn_inputs(TRACE)]
+    fn get_heap_array_and_path(
+        &mut self,
+        array_type: Ty<'tcx>,
+        size_in_bytes: usize,
+    ) -> (Rc<AbstractValue>, Rc<Path>) {
+        let element_type = type_visitor::get_element_type(array_type);
+        let (_, elem_alignment) = self
+            .bv
+            .type_visitor
+            .get_type_size_and_alignment(element_type);
+        let alignment = self.get_u128_const_val(elem_alignment);
+        let byte_len_value = self.get_u128_const_val(size_in_bytes as u128);
+        let array_value = self
+            .bv
+            .get_new_heap_block(byte_len_value, alignment, false, array_type);
+        let array_path = Path::get_as_path(array_value.clone());
+        (array_value, array_path)
     }
 
     /// Use a prefix of the byte slice as a serialized value of the given array type.
@@ -2840,110 +2832,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             TyKind::Uint(..) => &mut self.bv.cv.constant_value_cache.get_u128_for(data),
             TyKind::RawPtr(..) => &mut self.bv.cv.constant_value_cache.get_u128_for(data),
             _ => assume_unreachable!(),
-        }
-    }
-
-    /// Deserializes the given bytes into a constant array of the given element type and then
-    /// stores the array elements in the environment with a path for each element, rooted
-    /// in a new heap block that represents the array itself and which is returned
-    /// as the result of this function. The caller should then copy the path tree to the target
-    /// root known to the caller. Since the array is a compile time constant, there is no storage
-    /// that needs to get freed or moved.
-    ///
-    /// The optional length is available as a separate compile time constant in the case of byte string
-    /// constants. It is passed in here to check against the length of the bytes array as a safety check.
-    #[logfn_inputs(TRACE)]
-    fn deconstruct_reference_to_constant_array(
-        &mut self,
-        bytes: &[u8],
-        elem_type: ExpressionType,
-        len: Option<u128>,
-        array_ty: Ty<'tcx>,
-    ) -> Rc<AbstractValue> {
-        let byte_len = bytes.len();
-        let alignment = self.get_u128_const_val((elem_type.bit_length() / 8) as u128);
-        let byte_len_value = self.get_u128_const_val(byte_len as u128);
-        let array_value = self
-            .bv
-            .get_new_heap_block(byte_len_value, alignment, false, array_ty);
-        let array_path = Path::get_as_path(array_value);
-        let mut last_index: u128 = 0;
-        let mut value_map = self.bv.current_environment.value_map.clone();
-        for (i, operand) in self
-            .get_element_values(bytes, elem_type, len)
-            .into_iter()
-            .enumerate()
-        {
-            last_index = i as u128;
-            if i < k_limits::MAX_BYTE_ARRAY_LENGTH {
-                let index_value = self.get_u128_const_val(last_index);
-                let index_path = Path::new_index(array_path.clone(), index_value);
-                value_map.insert_mut(index_path, operand);
-            } else {
-                info!(
-                    "constant array has {} elements, but maximum tracked is {}",
-                    i,
-                    k_limits::MAX_BYTE_ARRAY_LENGTH
-                );
-            }
-        }
-        let length_path = Path::new_length(array_path.clone());
-        let length_value = self.get_u128_const_val(last_index + 1);
-        self.bv.current_environment.value_map = value_map.insert(length_path, length_value);
-        AbstractValue::make_reference(array_path)
-    }
-
-    /// A helper for deconstruct_reference_to_constant_array. See its comments.
-    /// This does the deserialization part, whereas deconstruct_constant_array does the environment
-    /// updates.
-    #[logfn_inputs(TRACE)]
-    fn get_element_values(
-        &mut self,
-        bytes: &[u8],
-        elem_type: ExpressionType,
-        len: Option<u128>,
-    ) -> Vec<Rc<AbstractValue>> {
-        let is_signed_type = elem_type.is_signed_integer();
-        let bytes_per_elem = (elem_type.bit_length() / 8) as usize;
-        if let Some(len) = len {
-            checked_assume_eq!(
-                len * (bytes_per_elem as u128),
-                u128::try_from(bytes.len()).unwrap()
-            );
-        }
-        let chunks = bytes.chunks_exact(bytes_per_elem);
-        if is_signed_type {
-            fn get_signed_element_value(bytes: &[u8]) -> i128 {
-                match bytes.len() {
-                    1 => i128::from(bytes[0] as i8),
-                    2 => i128::from(i16::from_ne_bytes(bytes.try_into().unwrap())),
-                    4 => i128::from(i32::from_ne_bytes(bytes.try_into().unwrap())),
-                    8 => i128::from(i64::from_ne_bytes(bytes.try_into().unwrap())),
-                    16 => i128::from_ne_bytes(bytes.try_into().unwrap()),
-                    _ => assume_unreachable!(),
-                }
-            }
-
-            let signed_numbers = chunks.map(get_signed_element_value);
-            signed_numbers
-                .map(|n| Rc::new(ConstantDomain::I128(n).into()))
-                .collect()
-        } else {
-            fn get_unsigned_element_value(bytes: &[u8]) -> u128 {
-                match bytes.len() {
-                    1 => u128::from(bytes[0]),
-                    2 => u128::from(u16::from_ne_bytes(bytes.try_into().unwrap())),
-                    4 => u128::from(u32::from_ne_bytes(bytes.try_into().unwrap())),
-                    8 => u128::from(u64::from_ne_bytes(bytes.try_into().unwrap())),
-                    16 => u128::from_ne_bytes(bytes.try_into().unwrap()),
-                    _ => assume_unreachable!(),
-                }
-            }
-
-            let unsigned_numbers = chunks.map(get_unsigned_element_value);
-            unsigned_numbers
-                .map(|n| Rc::new(ConstantDomain::U128(n).into()))
-                .collect()
         }
     }
 

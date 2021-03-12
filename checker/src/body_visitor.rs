@@ -29,7 +29,7 @@ use rpds::HashTrieMap;
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::ty::{Ty, TyCtxt, TyKind, UintTy};
+use rustc_middle::ty::{Const, Ty, TyCtxt, TyKind, UintTy};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Formatter, Result};
@@ -1900,23 +1900,27 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         }
 
         // Assigning to a fixed length array is like a pattern
-        if let TyKind::Array(_, len) = root_rustc_type.kind() {
-            let param_env = self.type_visitor.get_param_env();
-            let len = len
-                .try_eval_usize(self.tcx, param_env)
-                .expect("Array to have constant len");
-
+        if let TyKind::Array(_, length) = root_rustc_type.kind() {
+            let length = self.get_array_length(length);
             self.expand_slice(
                 target_path,
                 source_path,
                 root_rustc_type,
                 0,
-                len as u64,
+                length as u64,
                 strong_update,
             );
             return true;
         }
         false
+    }
+
+    /// Evaluates the length value of an Array type and returns its value as usize
+    pub fn get_array_length(&self, length: &'tcx Const<'tcx>) -> usize {
+        let param_env = self.type_visitor.get_param_env();
+        length
+            .try_eval_usize(self.tcx, param_env)
+            .expect("Array length constant to have a known value") as usize
     }
 
     /// If the target path if of the form if c { p1 } else { p2 } then it is an alias for either
