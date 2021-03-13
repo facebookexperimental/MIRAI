@@ -155,8 +155,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     }
 
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
-    /// Returns true if the newly computed summary is different from the summary (if any)
-    /// that is already in the cache.
+    /// Returns the summary.
     #[logfn_inputs(TRACE)]
     pub fn visit_body(
         &mut self,
