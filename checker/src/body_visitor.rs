@@ -163,6 +163,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         function_constant_args: &[(Rc<Path>, Rc<AbstractValue>)],
         parameter_types: &[Ty<'tcx>],
     ) -> Summary {
+        let diag_level = self.cv.options.diag_level;
         if cfg!(DEBUG) {
             let mut stdout = std::io::stdout();
             stdout.write_fmt(format_args!("{:?}", self.def_id)).unwrap();
@@ -205,7 +206,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             is_incomplete: true,
             ..Summary::default()
         };
-        if !fixed_point_visitor.bv.analysis_is_incomplete {
+        if !fixed_point_visitor.bv.analysis_is_incomplete
+            || (elapsed_time_in_seconds < k_limits::MAX_ANALYSIS_TIME_FOR_BODY
+                && diag_level == DiagLevel::Paranoid)
+        {
             // Now traverse the blocks again, doing checks and emitting diagnostics.
             // terminator_state[bb] is now complete for every basic block bb in the body.
             fixed_point_visitor.bv.check_for_errors(
@@ -258,7 +262,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
     fn report_timeout(&mut self, elapsed_time_in_seconds: u64) {
         // This body is beyond MIRAI for now
-        if self.cv.options.diag_level != DiagLevel::Relaxed {
+        if self.cv.options.diag_level != DiagLevel::Default {
             let warning = self
                 .cv
                 .session

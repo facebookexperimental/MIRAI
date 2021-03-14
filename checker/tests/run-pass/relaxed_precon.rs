@@ -6,7 +6,7 @@
 
 // A test that checks relaxed mode preconditions
 
-// MIRAI_FLAGS --diag=relaxed
+// MIRAI_FLAGS --diag=default
 
 use mirai_annotations::*;
 
@@ -15,7 +15,7 @@ fn foo(i: i32) {
 }
 
 pub fn bar(i: i32) {
-    // No diagnostic here since relaxed mode silently promotes the precondition even though
+    // No diagnostic here since default mode silently promotes the precondition even though
     // bar is an analysis root
     foo(i);
 }
