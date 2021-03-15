@@ -59,6 +59,16 @@ impl Debug for AbstractValue {
     }
 }
 
+/// Make a new value from the given expression, using defaults for all other fields.
+const fn make_value(e: Expression) -> AbstractValue {
+    AbstractValue {
+        expression: e,
+        expression_size: 1,
+        interval: RefCell::new(None),
+        tags: RefCell::new(None),
+    }
+}
+
 impl Hash for AbstractValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.expression.hash(state);
@@ -74,63 +84,29 @@ impl PartialEq for AbstractValue {
 
 /// An abstract domain element that all represent the impossible concrete value.
 /// I.e. the corresponding set of possible concrete values is empty.
-pub const BOTTOM: AbstractValue = AbstractValue {
-    expression: Expression::Bottom,
-    expression_size: 1,
-    interval: RefCell::new(None),
-    tags: RefCell::new(None),
-};
+pub const BOTTOM: AbstractValue = make_value(Expression::Bottom);
 
 /// An abstract domain element that all represent the single concrete value, false.
-pub const FALSE: AbstractValue = AbstractValue {
-    expression: Expression::CompileTimeConstant(ConstantDomain::False),
-    expression_size: 1,
-    interval: RefCell::new(None),
-    tags: RefCell::new(None),
-};
+pub const FALSE: AbstractValue = make_value(Expression::CompileTimeConstant(ConstantDomain::False));
 
 /// An abstract domain element that all represents all possible concrete values.
-pub const TOP: AbstractValue = AbstractValue {
-    expression: Expression::Top,
-    expression_size: 1,
-    interval: RefCell::new(None),
-    tags: RefCell::new(None),
-};
+pub const TOP: AbstractValue = make_value(Expression::Top);
 
 /// An abstract domain element that all represent the single concrete value, true.
-pub const TRUE: AbstractValue = AbstractValue {
-    expression: Expression::CompileTimeConstant(ConstantDomain::True),
-    expression_size: 1,
-    interval: RefCell::new(None),
-    tags: RefCell::new(None),
-};
+pub const TRUE: AbstractValue = make_value(Expression::CompileTimeConstant(ConstantDomain::True));
 
 /// An abstract domain element that represents a dummy untagged value.
 /// It is only used as the default value for the tag field of non-scalar values.
-pub const DUMMY_UNTAGGED_VALUE: AbstractValue = AbstractValue {
-    expression: Expression::CompileTimeConstant(ConstantDomain::I128(0)),
-    expression_size: 1,
-    interval: RefCell::new(None),
-    tags: RefCell::new(None),
-};
+pub const DUMMY_UNTAGGED_VALUE: AbstractValue =
+    make_value(Expression::CompileTimeConstant(ConstantDomain::I128(0)));
 
 impl From<bool> for AbstractValue {
     #[logfn_inputs(TRACE)]
     fn from(b: bool) -> AbstractValue {
         if b {
-            AbstractValue {
-                expression: Expression::CompileTimeConstant(ConstantDomain::True),
-                expression_size: 1,
-                interval: RefCell::new(None),
-                tags: RefCell::new(None),
-            }
+            TRUE
         } else {
-            AbstractValue {
-                expression: Expression::CompileTimeConstant(ConstantDomain::False),
-                expression_size: 1,
-                interval: RefCell::new(None),
-                tags: RefCell::new(None),
-            }
+            FALSE
         }
     }
 }
@@ -141,12 +117,7 @@ impl From<ConstantDomain> for AbstractValue {
         if let ConstantDomain::Bottom = &cv {
             BOTTOM
         } else {
-            AbstractValue {
-                expression: Expression::CompileTimeConstant(cv),
-                expression_size: 1,
-                interval: RefCell::new(None),
-                tags: RefCell::new(None),
-            }
+            make_value(Expression::CompileTimeConstant(cv))
         }
     }
 }
@@ -166,12 +137,7 @@ impl From<BoolDomain> for AbstractValue {
 impl From<u128> for AbstractValue {
     #[logfn_inputs(TRACE)]
     fn from(cv: u128) -> AbstractValue {
-        AbstractValue {
-            expression: Expression::CompileTimeConstant(ConstantDomain::U128(cv)),
-            expression_size: 1,
-            interval: RefCell::new(None),
-            tags: RefCell::new(None),
-        }
+        make_value(Expression::CompileTimeConstant(ConstantDomain::U128(cv)))
     }
 }
 
@@ -318,10 +284,8 @@ impl AbstractValue {
             // by eagerly computing and caching any other domains, such as the interval domain.
             let var_type = expression.infer_type();
             let val = Rc::new(AbstractValue {
-                expression,
                 expression_size,
-                interval: RefCell::new(None),
-                tags: RefCell::new(None),
+                ..make_value(expression)
             });
             let interval = val.get_as_interval();
             let tags = val.get_tags();
@@ -336,10 +300,8 @@ impl AbstractValue {
             })
         } else {
             Rc::new(AbstractValue {
-                expression,
                 expression_size,
-                interval: RefCell::new(None),
-                tags: RefCell::new(None),
+                ..make_value(expression)
             })
         }
     }
@@ -358,7 +320,7 @@ impl AbstractValue {
     #[logfn_inputs(TRACE)]
     pub fn make_typed_unknown(var_type: ExpressionType, path: Rc<Path>) -> Rc<AbstractValue> {
         let path = path.remove_initial_value_wrapper();
-        AbstractValue::make_from(Expression::Variable { path, var_type }, 1)
+        Rc::new(make_value(Expression::Variable { path, var_type }))
     }
 
     /// Creates an abstract value about which nothing is known other than its type, address and that
@@ -370,7 +332,10 @@ impl AbstractValue {
         var_type: ExpressionType,
         path: Rc<Path>,
     ) -> Rc<AbstractValue> {
-        AbstractValue::make_from(Expression::InitialParameterValue { path, var_type }, 1)
+        Rc::new(make_value(Expression::InitialParameterValue {
+            path,
+            var_type,
+        }))
     }
 
     /// Creates an abstract value which represents the result of comparing the left operand with
