@@ -22,6 +22,7 @@ use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
 use crate::known_names::KnownNames;
+use crate::options::DiagLevel;
 use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
 use crate::smt_solver::SmtResult;
 use crate::summaries::{Precondition, Summary};
@@ -111,7 +112,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let elapsed_time = self.block_visitor.bv.start_instant.elapsed();
             let mut summary =
                 body_visitor.visit_body(self.function_constant_args, &self.actual_argument_types);
-            let call_was_incomplete = body_visitor.analysis_is_incomplete;
             trace!("summary {:?} {:?}", self.callee_def_id, summary);
             let signature = self.get_function_constant_signature(self.function_constant_args);
             if let Some(func_ref) = &self.callee_func_ref {
@@ -137,7 +137,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .summary_cache
                     .set_summary_for_call_site(func_ref, signature, summary.clone());
             }
-            self.block_visitor.bv.analysis_is_incomplete |= call_was_incomplete;
             self.block_visitor.bv.start_instant = Instant::now() - elapsed_time;
             return summary;
         }
@@ -1082,7 +1081,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 if summary.is_computed {
                     indirect_call_visitor.transfer_and_refine_into_current_environment(&summary);
                 }
-                if summary.is_incomplete && self.block_visitor.bv.check_for_errors {
+                if summary.is_incomplete
+                    && self
+                        .block_visitor
+                        .bv
+                        .already_reported_errors_for_call_to
+                        .insert(callee)
+                {
                     let saved_callee_def_id = self.callee_def_id;
                     self.callee_def_id = def_id;
                     self.report_incomplete_summary();
@@ -1091,7 +1096,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 return;
             }
         };
-        if self.block_visitor.bv.check_for_errors {
+        if self
+            .block_visitor
+            .bv
+            .already_reported_errors_for_call_to
+            .insert(callee.clone())
+        {
             debug!("unknown callee {:?}", callee);
             self.block_visitor.report_missing_summary();
         }
@@ -2359,8 +2369,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// Give diagnostic depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     pub fn report_incomplete_summary(&mut self) {
+        self.block_visitor.bv.analysis_is_incomplete = true;
         if self.block_visitor.might_be_reachable() {
-            self.block_visitor.report_missing_summary();
+            // The the callee is local, there will already be a diagnostic about the incomplete summary.
+            if !self.callee_def_id.is_local()
+                && self.block_visitor.bv.cv.options.diag_level != DiagLevel::Default
+            {
+                let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                    self.block_visitor.bv.current_span,
+                    "the called function could not be completely analyzed",
+                );
+                self.block_visitor.bv.emit_diagnostic(warning);
+            }
             let argument_type_hint = if let Some(func) = &self.callee_func_ref {
                 format!(" (foreign fn argument key: {})", func.argument_type_key)
             } else {
@@ -2370,8 +2390,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             // constant function, perhaps construct a dummy function that is the join of the
             // summaries of the function constants that might flow into the expression.
             //todo: handle parameters that are arrays of functions
-            if self.block_visitor.bv.def_id.is_local() {
-                warn!(
+            if self.block_visitor.bv.def_id.is_local() && !self.callee_def_id.is_local() {
+                info!(
                     "function {} can't be reliably analyzed because it calls function {} which could not be summarized{}.",
                     utils::summary_key_str(self.block_visitor.bv.tcx, self.block_visitor.bv.def_id),
                     utils::summary_key_str(self.block_visitor.bv.tcx, self.callee_def_id),
@@ -2402,12 +2422,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             self.destination,
             self.actual_args
         );
-        if function_summary.is_incomplete
-            && !self.block_visitor.bv.analysis_is_incomplete
-            && self.block_visitor.might_be_reachable()
-        {
-            self.block_visitor.bv.analysis_is_incomplete = true;
-        }
         self.check_preconditions_if_necessary(&function_summary);
         self.transfer_and_refine_normal_return_state(&function_summary);
         self.transfer_and_refine_cleanup_state(&function_summary);

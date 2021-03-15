@@ -287,7 +287,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     /// which is desirable for tools that compare the diagnostics from one run of MIRAI with another.
     #[logfn_inputs(TRACE)]
     pub fn emit_diagnostic(&mut self, mut diagnostic_builder: DiagnosticBuilder<'compilation>) {
-        precondition!(self.check_for_errors);
         if !self.def_id.is_local() && !matches!(self.cv.options.diag_level, DiagLevel::Paranoid) {
             // only give diagnostics in code that belongs to the crate being analyzed
             diagnostic_builder.cancel();
