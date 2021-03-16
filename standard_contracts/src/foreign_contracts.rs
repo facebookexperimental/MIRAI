@@ -3674,6 +3674,7 @@ pub mod std {
     pub mod env {
         default_contract!(_var);
         default_contract!(_var_os);
+        default_contract!(vars_os);
 
         pub mod implement_std_env_VarsOs {
             default_contract!(next);
@@ -3972,6 +3973,13 @@ pub mod std {
         pub mod net {
             pub mod implement_std_sys_common_net_TcpListener {
                 default_contract!(bind);
+            }
+        }
+
+        pub mod os_str_bytes {
+            pub mod implement_std_sys_common_os_str_bytes_Buf {
+                default_contract!(into_string);
+                default_contract!(into_string_lossy);
             }
         }
 

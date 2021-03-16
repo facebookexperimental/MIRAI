@@ -114,12 +114,18 @@ impl Options {
                     println!("{}\n", message);
                     return args.to_vec();
                 }
-                Err(..) => {
+                Err(Error {
+                    kind: ErrorKind::UnknownArgument,
+                    ..
+                }) => {
                     // Just send all of the arguments to rustc.
                     // Note that this means that MIRAI options and rustc options must always
-                    // be separated by --. I.e. any MIRAI options present in arguments list
+                    // be separated by --. I.e. any  MIRAI options present in arguments list
                     // will stay unknown to MIRAI and will make rustc unhappy.
                     return args.to_vec();
+                }
+                Err(e) => {
+                    e.exit();
                 }
             }
         } else {

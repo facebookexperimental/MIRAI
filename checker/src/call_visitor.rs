@@ -140,6 +140,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             self.block_visitor.bv.start_instant = Instant::now() - elapsed_time;
             return summary;
         }
+        if !self.block_visitor.bv.tcx.is_static(self.callee_def_id) {
+            info!("function {:?} has no MIR", self.callee_def_id);
+            if let Some(fr) = &self.callee_func_ref {
+                info!(
+                    "summary key {:?} with signature {:?}",
+                    fr.summary_cache_key, fr.argument_type_key
+                );
+            }
+        }
         Summary::default()
     }
 
@@ -218,7 +227,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         // When the closure has no captured variables, the first argument is just the function pointer.
                         // Sadly, MIR omits this argument (because the call is via a trait), so we have to add it here.
                         self.actual_args
-                            .insert(0, (Path::new_result(), self.callee_fun_val.clone()));
+                            .insert(0, (Path::new_parameter(1), self.callee_fun_val.clone()));
                         self.actual_argument_types.insert(
                             0,
                             tcx.mk_mut_ref(tcx.lifetimes.re_static, specialized_resolved_ty),

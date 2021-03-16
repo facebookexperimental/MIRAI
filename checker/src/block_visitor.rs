@@ -2077,7 +2077,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         let index = promoted.index();
                         Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
                     }
-                    None => self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
+                    None => {
+                        if self.bv.tcx.is_mir_available(def_id) {
+                            self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
+                        } else {
+                            Path::new_static(self.bv.tcx, def_id)
+                        }
+                    }
                 };
                 self.bv.type_visitor.path_ty_cache.insert(path.clone(), lty);
                 let val_at_path = self.bv.lookup_path_and_refine_result(path, lty);
