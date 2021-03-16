@@ -30,7 +30,7 @@ pub struct TypeVisitor<'tcx> {
     pub generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     pub generic_arguments: Option<SubstsRef<'tcx>>,
     pub mir: &'tcx mir::Body<'tcx>,
-    pub path_ty_cache: HashMap<Rc<Path>, Ty<'tcx>>,
+    path_ty_cache: HashMap<Rc<Path>, Ty<'tcx>>,
     pub dummy_untagged_value_type: Ty<'tcx>,
     tcx: TyCtxt<'tcx>,
 }
@@ -91,7 +91,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         qualifier = Path::new_deref(path.clone(), ExpressionType::NonPrimitive)
                     }
                     let closure_field_path = Path::new_field(qualifier, i);
-                    self.path_ty_cache.insert(closure_field_path.clone(), ty);
+                    self.set_path_rustc_type(closure_field_path.clone(), ty);
                     let closure_field_val =
                         AbstractValue::make_typed_unknown(var_type, closure_field_path.clone());
                     first_state
@@ -155,6 +155,17 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             self.def_id
         };
         self.tcx.param_env(env_def_id)
+    }
+
+    /// Returns a shared reference to the path type cache of the visitor
+    pub fn get_path_type_cache(&self) -> &HashMap<Rc<Path>, Ty<'tcx>> {
+        &self.path_ty_cache
+    }
+
+    /// Updates the type cache of the visitor so that looking up the type of path returns ty.
+    #[logfn_inputs(DEBUG)]
+    pub fn set_path_rustc_type(&mut self, path: Rc<Path>, ty: Ty<'tcx>) {
+        self.path_ty_cache.insert(path, ty);
     }
 
     /// This is a hacky and brittle way to navigate the Rust compiler's type system.
