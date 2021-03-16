@@ -2687,7 +2687,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     pub fn add_post_condition_to_exit_conditions(&mut self, function_summary: &Summary) {
         let destination = self.destination;
         if let Some((place, target)) = &destination {
-            let target_path = self.block_visitor.visit_rh_place(place);
+            let target_path = self.block_visitor.visit_lh_place(place);
             let result_path = &Some(target_path);
             let mut exit_condition = self
                 .block_visitor
