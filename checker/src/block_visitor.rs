@@ -28,7 +28,7 @@ use rustc_middle::mir;
 use rustc_middle::mir::interpret::{ConstValue, GlobalAlloc, Scalar};
 use rustc_middle::ty::adjustment::PointerCast;
 use rustc_middle::ty::layout::PrimitiveExt;
-use rustc_middle::ty::subst::SubstsRef;
+use rustc_middle::ty::subst::{GenericArg, SubstsRef};
 use rustc_middle::ty::{
     Const, FloatTy, IntTy, ParamConst, ScalarInt, Ty, TyKind, UintTy, UserTypeAnnotationIndex,
 };
@@ -561,7 +561,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .substs_cache
             .get(&callee_def_id)
             .expect("MIR should ensure this");
-        let callee_generic_arguments = self
+        let mut callee_generic_arguments = self
             .bv
             .type_visitor
             .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
@@ -596,6 +596,27 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             callee_generic_arguments,
             &actual_argument_types,
         );
+        // If the generic arguments include a Self argument, fix that up with the actual type
+        // of the call (this information was not available when the constant defining the called
+        // function was visited, so the cached specialized generic argument list created there
+        // might not be specialized enough.
+        if !actual_argument_types.is_empty() && !utils::are_concrete(callee_generic_arguments) {
+            let fty = self.bv.tcx.type_of(callee_def_id);
+            if let TyKind::FnDef(_, substs) = fty.kind() {
+                for (i, generic_ty_arg) in substs.types().enumerate() {
+                    if let TyKind::Param(t_par) = generic_ty_arg.kind() {
+                        if t_par.name.as_str() == "Self" {
+                            let mut gen_args: Vec<GenericArg<'_>> =
+                                callee_generic_arguments.iter().collect();
+                            gen_args[i] =
+                                type_visitor::get_target_type(actual_argument_types[0]).into();
+                            callee_generic_arguments = self.bv.tcx.intern_substs(&gen_args);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
 
         let known_name = func_ref_to_call.known_name;
         let func_const = ConstantDomain::Function(func_ref_to_call);
@@ -767,6 +788,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         &self.bv.type_visitor.generic_argument_map,
                     );
                 if let TyKind::Opaque(def_id, substs) = specialized_closure_ty.kind() {
+                    let substs = self
+                        .bv
+                        .type_visitor
+                        .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
                     self.bv.cv.substs_cache.insert(*def_id, substs);
                     let closure_ty = self.bv.tcx.type_of(*def_id);
                     let map = self
