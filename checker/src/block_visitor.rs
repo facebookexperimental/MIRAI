@@ -2085,7 +2085,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         }
                     }
                 };
-                self.bv.type_visitor.path_ty_cache.insert(path.clone(), lty);
+                self.bv.type_visitor.set_path_rustc_type(path.clone(), lty);
                 let val_at_path = self.bv.lookup_path_and_refine_result(path, lty);
                 if let Expression::Variable { .. } = &val_at_path.expression {
                     // Seems like there is nothing at the path, but...
@@ -2359,8 +2359,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     ) -> &'a [u8] {
         self.bv
             .type_visitor
-            .path_ty_cache
-            .insert(target_path.clone(), ty);
+            .set_path_rustc_type(target_path.clone(), ty);
         match ty.kind() {
             TyKind::Adt(def, substs) => {
                 trace!("deserializing {:?} {:?}", def, substs);
@@ -2957,8 +2956,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             _ => (),
         };
-        if !self.bv.type_visitor.path_ty_cache.contains_key(&path) {
-            self.bv.type_visitor.path_ty_cache.insert(path.clone(), ty);
+        if !self
+            .bv
+            .type_visitor
+            .get_path_type_cache()
+            .contains_key(&path)
+        {
+            self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
         }
         path
     }
@@ -3066,8 +3070,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
                         self.bv
                             .type_visitor
-                            .path_ty_cache
-                            .insert(deref_path.clone(), ty);
+                            .set_path_rustc_type(deref_path.clone(), ty);
                         result = deref_path;
                         continue;
                     } else {

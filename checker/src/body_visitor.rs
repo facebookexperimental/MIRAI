@@ -1152,12 +1152,13 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     let lh_type = self
                         .type_visitor
                         .get_path_rustc_type(&tpath, self.current_span);
-                    if !self.type_visitor.path_ty_cache.contains_key(path)
+                    if !self.type_visitor.get_path_type_cache().contains_key(path)
                         && path.is_rooted_by_non_local_structure()
                     {
-                        self.type_visitor
-                            .path_ty_cache
-                            .insert(path.clone(), type_visitor::get_target_type(lh_type));
+                        self.type_visitor.set_path_rustc_type(
+                            path.clone(),
+                            type_visitor::get_target_type(lh_type),
+                        );
                     }
                     if type_visitor::is_slice_pointer(lh_type.kind()) {
                         if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
@@ -2271,8 +2272,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .clone();
         let block_path = Path::get_as_path(block.clone());
         self.type_visitor
-            .path_ty_cache
-            .insert(block_path.clone(), ty);
+            .set_path_rustc_type(block_path.clone(), ty);
         let layout_path = Path::new_layout(block_path);
         let layout = AbstractValue::make_from(
             Expression::HeapBlockLayout {
