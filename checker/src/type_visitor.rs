@@ -367,6 +367,29 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     }
                     PathSelector::Downcast(_, ordinal) => {
                         if let TyKind::Adt(def, substs) = t.kind() {
+                            let mut substs =
+                                self.specialize_substs(substs, &self.generic_argument_map);
+                            let mut def = def;
+                            if !def.is_enum() {
+                                // Downcast currently only used for enums with more than one variant
+                                // If t is not an enum, it could be because it is some wrapper
+                                // for an enum such as UnsafeCell, which has been transmuted to
+                                // the actual enum type in unsafe code.
+                                if def.variants.len() != 1
+                                    || substs.len() != 1
+                                    || !substs[0].expect_ty().is_enum()
+                                {
+                                    debug!("Downcast to enum variant, starting from something that is a wrapper {:?} {:?}", t, substs);
+                                    return self.tcx.types.never;
+                                }
+                                if let TyKind::Adt(e_def, e_substs) = substs[0].expect_ty().kind() {
+                                    def = e_def;
+                                    substs = self
+                                        .specialize_substs(e_substs, &self.generic_argument_map);
+                                } else {
+                                    assume_unreachable!("substs[0].expect_ty().is_enum() should make this unreachable");
+                                }
+                            }
                             use rustc_index::vec::Idx;
                             if *ordinal >= def.variants.len() {
                                 debug!(

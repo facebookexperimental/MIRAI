@@ -573,10 +573,22 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .iter()
             .map(|arg| {
                 let arg_ty = self.get_operand_rustc_type(arg);
-                self.bv.type_visitor.specialize_generic_argument_type(
-                    arg_ty,
-                    &self.bv.type_visitor.generic_argument_map,
-                )
+                if utils::is_concrete(arg_ty.kind()) {
+                    arg_ty
+                } else {
+                    let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                        arg_ty,
+                        &self.bv.type_visitor.generic_argument_map,
+                    );
+                    if utils::is_concrete(specialized_ty.kind()) {
+                        specialized_ty
+                    } else {
+                        let path = self.get_operand_path(arg);
+                        self.bv
+                            .type_visitor
+                            .get_path_rustc_type(&path, self.bv.current_span)
+                    }
+                }
             })
             .collect();
         let callee_generic_argument_map = self.bv.type_visitor.get_generic_arguments_map(
@@ -2907,13 +2919,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     pub fn visit_rh_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
         let place_path = self.get_path_for_place(place);
         let mut path = place_path.canonicalize(&self.bv.current_environment);
-        let path_ty = self
+        let mut ty = self
             .bv
             .type_visitor
             .get_path_rustc_type(&path, self.bv.current_span);
+        self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
         match &place_path.value {
             PathEnum::QualifiedPath { selector, .. } if **selector == PathSelector::Deref => {
-                if let TyKind::Array(..) = path_ty.kind() {
+                if let TyKind::Array(elem_type, _) = &ty.kind() {
                     // The place path dereferences a qualifier and the dereferenced path
                     // canonicalizes to a path to location typed as an array.
                     // This means that the current value of path ended up as the canonicalization of
@@ -2921,14 +2934,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // aliasing is to get to the first element of the array, so just go there
                     // directly.
                     path = Path::new_index(path, Rc::new(0u128.into()));
+                    ty = elem_type;
+                    self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
                 }
             }
             _ => {}
         }
-        let ty = self
-            .bv
-            .type_visitor
-            .get_rustc_place_type(place, self.bv.current_span);
         match &path.value {
             PathEnum::QualifiedPath {
                 qualifier,
@@ -2943,12 +2954,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 .dereference(target_type.clone())
                                 .join(right.dereference(target_type), &place_path);
                             path = Path::get_as_path(distributed_deref);
+                            self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
                         }
                         Expression::WidenedJoin { operand, .. } => {
                             let target_type = ExpressionType::from(ty.kind());
                             let distributed_deref =
                                 operand.dereference(target_type).widen(&place_path);
                             path = Path::get_as_path(distributed_deref);
+                            self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
                         }
                         _ => (),
                     }
@@ -2956,14 +2969,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             _ => (),
         };
-        if !self
-            .bv
-            .type_visitor
-            .get_path_type_cache()
-            .contains_key(&path)
-        {
-            self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
-        }
         path
     }
 
