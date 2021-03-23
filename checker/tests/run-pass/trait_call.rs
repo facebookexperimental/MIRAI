@@ -24,6 +24,16 @@ impl Tr for Bar {
     }
 }
 
+struct BarTwo {
+    i: i32,
+}
+
+impl Tr for BarTwo {
+    fn bar(&self) -> i32 {
+        self.i * 2
+    }
+}
+
 struct Foo {
     bx: Box<dyn Tr>,
 }
@@ -40,6 +50,39 @@ pub fn t1() {
 pub fn t2(t: &dyn Tr) {
     let bi = t.bar(); //~ the called function did not resolve to an implementation with a MIR body
     verify!(bi == 3); // ignored because the previous unresolved call makes every subsequent thing moot
+}
+
+pub fn t3() {
+    let bar = Bar { i: 1 };
+    let t = &bar as &dyn Tr;
+    let bi = t3c(t);
+    verify!(bi == 1);
+}
+
+fn t3c(t: &dyn Tr) -> i32 {
+    t.bar()
+}
+
+pub fn t4() {
+    let bar = Bar { i: 1 };
+    let foo = Foo {
+        bx: Box::new(bar) as Box<dyn Tr>,
+    };
+    let bi = t4c(foo);
+    verify!(bi == 1);
+}
+
+pub fn t4a() {
+    let bar = BarTwo { i: 1 };
+    let foo = Foo {
+        bx: Box::new(bar) as Box<dyn Tr>,
+    };
+    let bi = t4c(foo);
+    verify!(bi == 2);
+}
+
+fn t4c(foo: Foo) -> i32 {
+    foo.bx.bar()
 }
 
 pub fn main() {}

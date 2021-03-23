@@ -620,11 +620,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 .bv
                 .cv
                 .summary_cache
-                .get_summary_for_call_site(&func_ref, None);
+                .get_summary_for_call_site(&func_ref, &None, &None);
             if cached_summary.is_computed {
                 cached_summary
             } else {
-                summary = call_visitor.create_and_cache_function_summary(None);
+                summary = call_visitor.create_and_cache_function_summary(&None, &None);
                 &summary
             }
         } else {

@@ -15,12 +15,13 @@ use itertools::Itertools;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
-use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::{Ty, TyCtxt};
 use serde::{Deserialize, Serialize};
 use sled::{Config, Db};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::rc::Rc;
 
@@ -367,6 +368,38 @@ fn extract_reachable_heap_allocations(
     }
 }
 
+#[derive(PartialEq, Eq)]
+pub struct CallSiteKey<'tcx> {
+    func_args: Option<Rc<Vec<Rc<FunctionReference>>>>,
+    type_cache: Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>>,
+}
+
+impl<'tcx> CallSiteKey<'tcx> {
+    pub fn new(
+        func_args: Option<Rc<Vec<Rc<FunctionReference>>>>,
+        type_cache: Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>>,
+    ) -> CallSiteKey<'tcx> {
+        CallSiteKey {
+            func_args,
+            type_cache,
+        }
+    }
+}
+
+impl<'tcx> Hash for CallSiteKey<'tcx> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        if let Some(func_args) = &self.func_args {
+            func_args.hash(state);
+        }
+        if let Some(cache) = &self.type_cache {
+            for (path, ty) in cache.iter() {
+                path.hash(state);
+                ty.kind().hash(state);
+            }
+        }
+    }
+}
+
 /// A persistent map from summary key to Summary, along with a transient cache from DefId to
 /// Summary. The latter is cleared after every outer fixed point loop iteration.
 /// Also tracks which definitions depend on (use) any particular Summary.
@@ -374,7 +407,7 @@ pub struct PersistentSummaryCache<'tcx> {
     db: Db,
     def_id_cache: HashMap<DefId, Summary>,
     typed_cache: HashMap<usize, Summary>,
-    typed_cache_table: HashMap<Vec<Rc<FunctionReference>>, HashMap<usize, Summary>>,
+    typed_cache_table: HashMap<CallSiteKey<'tcx>, HashMap<usize, Summary>>,
     reference_cache: HashMap<Rc<FunctionReference>, Summary>,
     typed_reference_cache: HashMap<Rc<FunctionReference>, Summary>,
     key_cache: HashMap<DefId, Rc<str>>,
@@ -481,35 +514,41 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
     pub fn get_summary_for_call_site(
         &mut self,
         func_ref: &Rc<FunctionReference>,
-        func_args: Option<Vec<Rc<FunctionReference>>>,
+        func_args: &Option<Rc<Vec<Rc<FunctionReference>>>>,
+        initial_type_cache: &Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>>,
     ) -> &Summary {
         match (func_ref.def_id, func_ref.function_id) {
             // Use the ids as keys if they are available, since they make much better keys.
             (Some(def_id), Some(function_id)) => {
-                if let Some(func_args) = func_args {
+                if func_args.is_some() || initial_type_cache.is_some() {
+                    let typed_cache_key =
+                        CallSiteKey::new(func_args.clone(), initial_type_cache.clone());
                     // Need the double lookup in order to allow the recursive call to get_summary_for_function_constant.
                     let summary_is_cached =
-                        if let Some(type_table) = self.typed_cache_table.get(&func_args) {
+                        if let Some(type_table) = self.typed_cache_table.get(&typed_cache_key) {
                             type_table.get(&function_id).is_some()
                         } else {
                             false
                         };
                     return if summary_is_cached {
                         self.typed_cache_table
-                            .get(&func_args)
+                            .get(&typed_cache_key)
                             .unwrap()
                             .get(&function_id)
                             .unwrap()
                     } else {
                         // can't have self borrowed at this point.
-                        let summary = self.get_summary_for_call_site(func_ref, None).clone();
+                        let summary = self
+                            .get_summary_for_call_site(func_ref, &None, &None)
+                            .clone();
                         self.typed_cache_table
-                            .entry(func_args)
+                            .entry(typed_cache_key)
                             .or_insert_with(HashMap::new)
                             .entry(function_id)
                             .or_insert(summary)
                     };
-                };
+                }
+
                 if self.typed_cache.contains_key(&function_id) {
                     let result = self.typed_cache.get(&function_id);
                     result.expect("value disappeared from typed_cache")
@@ -616,13 +655,16 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
     pub fn set_summary_for_call_site(
         &mut self,
         func_ref: &Rc<FunctionReference>,
-        func_args: Option<Vec<Rc<FunctionReference>>>,
+        func_args: &Option<Rc<Vec<Rc<FunctionReference>>>>,
+        initial_type_cache: &Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>>,
         summary: Summary,
     ) {
         if let Some(func_id) = func_ref.function_id {
-            if let Some(func_args) = func_args {
+            if func_args.is_some() || initial_type_cache.is_some() {
+                let typed_cache_key =
+                    CallSiteKey::new(func_args.clone(), initial_type_cache.clone());
                 self.typed_cache_table
-                    .entry(func_args)
+                    .entry(typed_cache_key)
                     .or_insert_with(HashMap::new)
                     .insert(func_id, summary);
             } else {
