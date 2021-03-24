@@ -155,33 +155,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .get_rustc_place_type(place, self.bv.current_span);
         match ty.kind() {
             TyKind::Adt(..) | TyKind::Generator(..) => {
-                if !utils::is_concrete(ty.kind()) {
-                    debug!("failed to specialize type {:?}", ty.kind());
-                    let val = AbstractValue::make_typed_unknown(
-                        ExpressionType::Usize,
-                        target_path.clone(),
-                    );
-                    self.bv
-                        .current_environment
-                        .update_value_at(target_path, val);
-                    return;
-                }
-                let param_env = self.bv.type_visitor.get_param_env();
-                if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
-                    let discr_ty = ty_and_layout.ty.discriminant_ty(self.bv.tcx);
-                    let discr_bits = match ty_and_layout
-                        .ty
-                        .discriminant_for_variant(self.bv.tcx, variant_index)
-                    {
-                        Some(discr) => discr.val,
-                        None => variant_index.as_u32() as u128,
-                    };
-                    let val = self.get_int_const_val(discr_bits, discr_ty);
-                    self.bv
-                        .current_environment
-                        .update_value_at(target_path, val);
-                    return;
-                }
+                let discr_ty = ty.discriminant_ty(self.bv.tcx);
+                let discr_bits = match ty.discriminant_for_variant(self.bv.tcx, variant_index) {
+                    Some(discr) => discr.val,
+                    None => variant_index.as_u32() as u128,
+                };
+                let val = self.get_int_const_val(discr_bits, discr_ty);
+                self.bv
+                    .current_environment
+                    .update_value_at(target_path, val);
             }
             _ => assume_unreachable!("rustc should ensure this"),
         }
