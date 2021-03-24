@@ -38,6 +38,10 @@ struct Foo {
     bx: Box<dyn Tr>,
 }
 
+struct Foo2 {
+    pub opt: Option<Box<dyn Tr>>,
+}
+
 pub fn t1() {
     let bar = Bar { i: 1 };
     let foo = Foo {
@@ -83,6 +87,20 @@ pub fn t4a() {
 
 fn t4c(foo: Foo) -> i32 {
     foo.bx.bar()
+}
+
+impl Clone for Box<dyn Tr> {
+    fn clone(&self) -> Box<dyn Tr> {
+        let bar = Bar { i: 1 };
+        Box::new(bar) as Box<dyn Tr>
+    }
+}
+
+pub fn t5() {
+    let foo2 = Foo2 { opt: None };
+    //todo: find a way avoid the diagnostic for the None case
+    let c = foo2.opt.clone(); //~ the called function did not resolve to an implementation with a MIR body
+    verify!(c.is_none()); // succeeds because of fall back special case that is a member copy
 }
 
 pub fn main() {}

@@ -10,14 +10,17 @@ use crate::known_names::KnownNamesCache;
 use crate::options::{DiagLevel, Options};
 use crate::summaries::PersistentSummaryCache;
 
+use crate::type_visitor::TypeCache;
 use log::info;
 use log_derive::*;
 use rustc_driver::Compilation;
 use rustc_interface::{interface, Queries};
 use rustc_middle::ty::TyCtxt;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::path::PathBuf;
+use std::rc::Rc;
 use tempfile::TempDir;
 
 /// Private state used to implement the callbacks.
@@ -243,6 +246,7 @@ impl MiraiCallbacks {
             summary_cache: PersistentSummaryCache::new(tcx, summary_store_path),
             tcx,
             test_run: self.test_run,
+            type_cache: Rc::new(RefCell::new(TypeCache::new())),
         };
         crate_visitor.analyze_some_bodies();
     }

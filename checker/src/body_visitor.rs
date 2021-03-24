@@ -16,7 +16,7 @@ use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries;
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
-use crate::type_visitor::TypeVisitor;
+use crate::type_visitor::{TypeCache, TypeVisitor};
 use crate::{abstract_value, type_visitor};
 
 use crate::block_visitor::BlockVisitor;
@@ -30,6 +30,7 @@ use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::{Const, Ty, TyCtxt, TyKind, UintTy};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Formatter, Result};
@@ -88,6 +89,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         smt_solver: &'analysis mut dyn SmtSolver<E>,
         buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
         active_calls_map: &'analysis mut HashMap<DefId, u64>,
+        type_cache: Rc<RefCell<TypeCache<'tcx>>>,
     ) -> BodyVisitor<'analysis, 'compilation, 'tcx, E> {
         let function_name = crate_visitor
             .summary_cache
@@ -127,7 +129,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             unwind_condition: None,
             unwind_environment: Environment::default(),
             fresh_variable_offset: 0,
-            type_visitor: TypeVisitor::new(def_id, mir, tcx),
+            type_visitor: TypeVisitor::new(def_id, mir, tcx, type_cache),
         }
     }
 
@@ -717,14 +719,15 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let closure_path = Path::new_field(Path::new_field(qualifier, 0), i);
             // skip(1) above ensures this
             assume!(i < usize::max_value());
-            let path = if i < self.mir.arg_count {
-                Path::new_parameter(i + 1)
-            } else {
-                Path::new_local(i + 1)
-            };
             let specialized_type = self
                 .type_visitor
                 .specialize_generic_argument_type(loc.ty, &self.type_visitor.generic_argument_map);
+            let type_index = self.type_visitor.get_index_for(specialized_type);
+            let path = if i < self.mir.arg_count {
+                Path::new_parameter(i + 1)
+            } else {
+                Path::new_local(i + 1, type_index)
+            };
             let value = self.lookup_path_and_refine_result(path, specialized_type);
             self.current_environment
                 .update_value_at(closure_path, value);
@@ -1080,8 +1083,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
         {
             trace!("effect {:?} {:?}", path, value);
-            let dummy_root = Path::new_local(999_999);
-            let refined_dummy_root = Path::new_local(self.fresh_variable_offset + 999_999);
+            let dummy_root = Path::new_local(999_999, 0);
+            let refined_dummy_root = Path::new_local(self.fresh_variable_offset + 999_999, 0);
             let mut tpath = path
                 .replace_root(source_path, dummy_root)
                 .refine_parameters_and_paths(
@@ -1227,7 +1230,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         //todo: figure out why this happens
                         target_type = rtype.as_rustc_type(self.tcx);
                     }
-                    if let PathEnum::LocalVariable { ordinal } = &path.value {
+                    if let PathEnum::LocalVariable { ordinal, .. } = &path.value {
                         if *ordinal >= self.fresh_variable_offset {
                             // A fresh variable from the callee adds no information that is not
                             // already inherent in the target location.

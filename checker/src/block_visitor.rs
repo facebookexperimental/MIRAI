@@ -176,7 +176,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// End the current live range for the storage of the local.
     #[logfn_inputs(TRACE)]
     fn visit_storage_dead(&mut self, local: mir::Local) {
-        let path = Path::new_local_parameter_or_result(local.as_usize(), self.bv.mir.arg_count);
+        let loc_ty = self.bv.type_visitor.get_loc_ty(local);
+        let type_index = self.bv.type_visitor.get_index_for(loc_ty);
+        let path = Path::new_local_parameter_or_result(
+            local.as_usize(),
+            self.bv.mir.arg_count,
+            type_index,
+        );
         self.bv
             .current_environment
             .update_value_at(path, abstract_value::BOTTOM.into());
@@ -1902,10 +1908,17 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 Rc::new((layout.align.abi.bytes() as u128).into()),
             )
         } else {
+            let type_index = self.bv.type_visitor.get_index_for(self.bv.tcx.types.u128);
             //todo: need expressions that eventually refines into the actual layout size/alignment
             (
-                AbstractValue::make_typed_unknown(ExpressionType::U128, Path::new_local(998)),
-                AbstractValue::make_typed_unknown(ExpressionType::U128, Path::new_local(997)),
+                AbstractValue::make_typed_unknown(
+                    ExpressionType::U128,
+                    Path::new_local(998, type_index),
+                ),
+                AbstractValue::make_typed_unknown(
+                    ExpressionType::U128,
+                    Path::new_local(997, type_index),
+                ),
             )
         };
         let value = match null_op {
@@ -2998,13 +3011,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// can be serialized and used as a cache key.
     #[logfn(TRACE)]
     fn get_path_for_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
-        let base_path: Rc<Path> =
-            Path::new_local_parameter_or_result(place.local.as_usize(), self.bv.mir.arg_count);
+        let ty = self.bv.type_visitor.get_loc_ty(place.local);
+        let type_index = self.bv.type_visitor.get_index_for(ty);
+        let base_path: Rc<Path> = Path::new_local_parameter_or_result(
+            place.local.as_usize(),
+            self.bv.mir.arg_count,
+            type_index,
+        );
         if place.projection.is_empty() {
-            let ty = self
-                .bv
-                .type_visitor
-                .get_rustc_place_type(place, self.bv.current_span);
             match ty.kind() {
                 TyKind::Adt(def, ..) => {
                     let ty_name = self.bv.cv.known_names_cache.get(self.bv.tcx, def.did);
@@ -3055,7 +3069,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             base_path
         } else {
-            let ty = self.bv.type_visitor.get_loc_ty(place.local);
             self.visit_projection(base_path, ty, &place.projection)
         }
     }
@@ -3142,11 +3155,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 PathSelector::Field(field.index())
             }
             mir::ProjectionElem::Index(local) => {
-                let local_path =
-                    Path::new_local_parameter_or_result(local.as_usize(), self.bv.mir.arg_count);
-                let index_value = self
-                    .bv
-                    .lookup_path_and_refine_result(local_path, self.bv.tcx.types.usize);
+                let loc_ty = self.bv.type_visitor.get_loc_ty(*local);
+                let type_index = self.bv.type_visitor.get_index_for(loc_ty);
+                let local_path = Path::new_local_parameter_or_result(
+                    local.as_usize(),
+                    self.bv.mir.arg_count,
+                    type_index,
+                );
+                let index_value = self.bv.lookup_path_and_refine_result(local_path, loc_ty);
                 PathSelector::Index(index_value)
             }
             mir::ProjectionElem::ConstantIndex {
