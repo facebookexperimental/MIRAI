@@ -617,6 +617,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
             }
         }
+        let adt_map = self
+            .bv
+            .type_visitor
+            .get_adt_map(&actual_args, &self.bv.current_environment);
 
         let known_name = func_ref_to_call.known_name;
         let func_const = ConstantDomain::Function(func_ref_to_call);
@@ -635,6 +639,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         call_visitor.destination = *destination;
         call_visitor.callee_fun_val = func_to_call;
         call_visitor.function_constant_args = func_const_args;
+        call_visitor.initial_type_cache = adt_map;
         trace!("calling func {:?}", call_visitor.callee_func_ref);
         if call_visitor.handled_as_special_function_call() {
             return;

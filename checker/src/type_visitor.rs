@@ -6,7 +6,7 @@
 use crate::abstract_value::AbstractValue;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
-use crate::path::{Path, PathEnum, PathSelector};
+use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
 use crate::rustc_middle::ty::DefIdTree;
 use crate::{type_visitor, utils};
 
@@ -163,7 +163,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     }
 
     /// Updates the type cache of the visitor so that looking up the type of path returns ty.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     pub fn set_path_rustc_type(&mut self, path: Rc<Path>, ty: Ty<'tcx>) {
         self.path_ty_cache.insert(path, ty);
     }
@@ -464,6 +464,46 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     ty
                 }
             }
+        }
+    }
+
+    /// Returns a map from path to ADT type for any path rooted in an actual argument
+    /// and known to have a type that is a reference to an ADT. Since the rustc type of the
+    /// corresponding field might be a trait, we prefer to type from the actual argument which
+    /// is more likely to be concrete. By seeding the initial type cache of a called function
+    /// with this information, we can get resolution of trait calls where the receiver is a
+    /// field reachable from a parameter, rather than the parameter itself.
+    #[logfn_inputs(DEBUG)]
+    pub fn get_adt_map(
+        &self,
+        actual_arguments: &[(Rc<Path>, Rc<AbstractValue>)],
+        environment: &Environment,
+    ) -> Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>> {
+        let mut result: HashMap<Rc<Path>, Ty<'tcx>> = HashMap::new();
+        for (i, (arg_path, _)) in actual_arguments.iter().enumerate() {
+            for (p, v) in environment
+                .value_map
+                .iter()
+                .filter(|(p, _)| p.is_rooted_by(arg_path))
+            {
+                if let Expression::Reference(rp) = &v.expression {
+                    if let Some(ty) = self.path_ty_cache.get(rp) {
+                        if ty.is_adt() {
+                            let param_path = p.replace_root(arg_path, Path::new_parameter(i + 1));
+                            let ptr_ty = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                                ty,
+                                mutbl: rustc_hir::Mutability::Not,
+                            });
+                            result.insert(param_path, ptr_ty);
+                        }
+                    }
+                }
+            }
+        }
+        if result.is_empty() {
+            None
+        } else {
+            Some(Rc::new(result))
         }
     }
 

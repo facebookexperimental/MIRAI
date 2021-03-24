@@ -43,6 +43,7 @@ pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
     pub destination: Option<(mir::Place<'tcx>, mir::BasicBlock)>,
     pub environment_before_call: Environment,
     pub function_constant_args: &'call [(Rc<Path>, Rc<AbstractValue>)],
+    pub initial_type_cache: Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>>,
 }
 
 impl<'call, 'block, 'analysis, 'compilation, 'tcx, E> Debug
@@ -80,6 +81,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 destination: None,
                 environment_before_call,
                 function_constant_args: &[],
+                initial_type_cache: None,
             }
         } else {
             unreachable!("caller should supply a constant function")
@@ -91,7 +93,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn create_and_cache_function_summary(
         &mut self,
-        func_args: Option<Vec<Rc<FunctionReference>>>,
+        func_args: &Option<Rc<Vec<Rc<FunctionReference>>>>,
+        initial_type_cache: &Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>>,
     ) -> Summary {
         let func_type = self.block_visitor.bv.tcx.type_of(self.callee_def_id);
         trace!("summarizing {:?}: {:?}", self.callee_def_id, func_type);
@@ -109,11 +112,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             body_visitor.type_visitor.generic_argument_map =
                 self.callee_generic_argument_map.clone();
             body_visitor.analyzing_static_var = self.block_visitor.bv.analyzing_static_var;
+            if let Some(cache) = &self.initial_type_cache {
+                for (p, t) in cache.iter() {
+                    body_visitor.type_visitor.set_path_rustc_type(p.clone(), *t);
+                }
+            }
             let elapsed_time = self.block_visitor.bv.start_instant.elapsed();
             let mut summary =
                 body_visitor.visit_body(self.function_constant_args, &self.actual_argument_types);
             trace!("summary {:?} {:?}", self.callee_def_id, summary);
-            let signature = self.get_function_constant_signature(self.function_constant_args);
             if let Some(func_ref) = &self.callee_func_ref {
                 // If there is already a computed summary in the cache, we are in a recursive loop
                 // and hence have to join the summaries.
@@ -122,7 +129,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .cv
                     .summary_cache
-                    .get_summary_for_call_site(&func_ref, func_args);
+                    .get_summary_for_call_site(&func_ref, func_args, initial_type_cache);
                 if previous_summary.is_computed {
                     summary.join_side_effects(previous_summary)
                 }
@@ -135,7 +142,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .cv
                     .summary_cache
-                    .set_summary_for_call_site(func_ref, signature, summary.clone());
+                    .set_summary_for_call_site(
+                        func_ref,
+                        func_args,
+                        initial_type_cache,
+                        summary.clone(),
+                    );
             }
             self.block_visitor.bv.start_instant = Instant::now() - elapsed_time;
             return summary;
@@ -248,7 +260,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn get_function_constant_signature(
         &mut self,
         func_args: &[(Rc<Path>, Rc<AbstractValue>)],
-    ) -> Option<Vec<Rc<FunctionReference>>> {
+    ) -> Option<Rc<Vec<Rc<FunctionReference>>>> {
         if func_args.is_empty() {
             return None;
         }
@@ -259,7 +271,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if vec.is_empty() {
             return None;
         }
-        Some(vec)
+        Some(Rc::new(vec))
     }
 
     /// Returns a summary of the function to call, obtained from the summary cache.
@@ -273,6 +285,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             // predefined summaries.
 
             let func_args = self.get_function_constant_signature(self.function_constant_args);
+            let initial_type_cache = self.initial_type_cache.clone();
             let call_depth = *self
                 .block_visitor
                 .bv
@@ -284,13 +297,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .cv
                 .summary_cache
-                .get_summary_for_call_site(&func_ref, func_args.clone())
+                .get_summary_for_call_site(&func_ref, &func_args, &initial_type_cache)
                 .clone();
             if result.is_computed || func_ref.def_id.is_none() {
                 return Some(result);
             }
             if call_depth < 3 {
-                let mut summary = self.create_and_cache_function_summary(func_args.clone());
+                let mut summary =
+                    self.create_and_cache_function_summary(&func_args, &initial_type_cache);
                 if call_depth >= 1 {
                     summary.post_condition = None;
 
@@ -302,7 +316,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         .bv
                         .cv
                         .summary_cache
-                        .set_summary_for_call_site(&func_ref, func_args, summary.clone());
+                        .set_summary_for_call_site(
+                            &func_ref,
+                            &func_args,
+                            &self.initial_type_cache,
+                            summary.clone(),
+                        );
                 }
                 return Some(summary);
             } else {
@@ -317,7 +336,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .cv
                     .summary_cache
-                    .set_summary_for_call_site(&func_ref, func_args, summary.clone());
+                    .set_summary_for_call_site(
+                        &func_ref,
+                        &func_args,
+                        &self.initial_type_cache,
+                        summary.clone(),
+                    );
                 return Some(summary);
             }
         }
