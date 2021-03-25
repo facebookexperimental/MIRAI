@@ -413,6 +413,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn handled_as_special_function_call(&mut self) -> bool {
         match self.callee_known_name {
+            KnownNames::StdCloneClone => {
+                checked_assume!(self.actual_argument_types.len() == 1);
+                return self.handled_clone();
+            }
             KnownNames::StdOpsFunctionFnCall
             | KnownNames::StdOpsFunctionFnMutCallMut
             | KnownNames::StdOpsFunctionFnOnceCallOnce
@@ -587,6 +591,49 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             .update_value_at(target_path, result);
                         self.use_entry_condition_as_exit_condition();
                         return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// If the self parameter is &std::Option::None, the call to std::Clone::clone
+    /// can be handled without resolving the trait method to a concrete method.
+    #[logfn_inputs(TRACE)]
+    fn handled_clone(&mut self) -> bool {
+        precondition!(self.actual_argument_types.len() == 1);
+        if let TyKind::Ref(_, t, _) = self.actual_argument_types[0].kind() {
+            if let TyKind::Adt(def, _) = t.kind() {
+                if def.variants.iter().map(|d| d.def_id).next()
+                    == self.block_visitor.bv.tcx.lang_items().option_none_variant()
+                {
+                    let arg0_path = Path::new_discriminant(
+                        Path::new_deref(self.actual_args[0].0.clone(), ExpressionType::Usize)
+                            .canonicalize(&self.block_visitor.bv.current_environment),
+                    );
+                    let arg0_discr_val = self
+                        .block_visitor
+                        .bv
+                        .current_environment
+                        .value_at(&arg0_path)
+                        .cloned();
+                    if let Some(arg0_discr_val) = &arg0_discr_val {
+                        if arg0_discr_val.is_zero() {
+                            if let Some((place, _)) = &self.destination {
+                                let target_path = Path::new_discriminant(
+                                    self.block_visitor.visit_rh_place(place),
+                                );
+                                self.block_visitor
+                                    .bv
+                                    .current_environment
+                                    .update_value_at(target_path, arg0_discr_val.clone());
+                            } else {
+                                assume_unreachable!();
+                            }
+                            self.use_entry_condition_as_exit_condition();
+                            return true;
+                        }
                     }
                 }
             }
