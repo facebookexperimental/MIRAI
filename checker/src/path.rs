@@ -135,7 +135,11 @@ pub enum PathEnum {
     HeapBlock { value: Rc<AbstractValue> },
 
     /// locals [arg_count+1..] are the local variables and compiler temporaries.
-    LocalVariable { ordinal: usize },
+    LocalVariable {
+        ordinal: usize,
+        #[serde(skip)]
+        type_index: usize,
+    },
 
     /// An offset into a memory block
     Offset { value: Rc<AbstractValue> },
@@ -180,7 +184,10 @@ impl Debug for PathEnum {
         match self {
             PathEnum::Computed { value } => value.fmt(f),
             PathEnum::HeapBlock { value } => f.write_fmt(format_args!("<{:?}>", value)),
-            PathEnum::LocalVariable { ordinal } => f.write_fmt(format_args!("local_{}", ordinal)),
+            PathEnum::LocalVariable {
+                ordinal,
+                type_index,
+            } => f.write_fmt(format_args!("local_{}: {}", ordinal, type_index)),
             PathEnum::Offset { value } => f.write_fmt(format_args!("<{:?}>", value)),
             PathEnum::Parameter { ordinal } => f.write_fmt(format_args!("param_{}", ordinal)),
             PathEnum::Result => f.write_str("result"),
@@ -599,8 +606,14 @@ impl Path {
 
     /// Creates a path to the local variable corresponding to the ordinal.
     #[logfn_inputs(TRACE)]
-    pub fn new_local(ordinal: usize) -> Rc<Path> {
-        Rc::new(PathEnum::LocalVariable { ordinal }.into())
+    pub fn new_local(ordinal: usize, type_index: usize) -> Rc<Path> {
+        Rc::new(
+            PathEnum::LocalVariable {
+                ordinal,
+                type_index,
+            }
+            .into(),
+        )
     }
 
     /// Creates a path to the parameter corresponding to the ordinal.
@@ -617,13 +630,17 @@ impl Path {
 
     /// Creates a path to the local variable, parameter or result local, corresponding to the ordinal.
     #[logfn_inputs(TRACE)]
-    pub fn new_local_parameter_or_result(ordinal: usize, argument_count: usize) -> Rc<Path> {
+    pub fn new_local_parameter_or_result(
+        ordinal: usize,
+        argument_count: usize,
+        type_index: usize,
+    ) -> Rc<Path> {
         if ordinal == 0 {
             Self::new_result()
         } else if ordinal <= argument_count {
             Self::new_parameter(ordinal)
         } else {
-            Self::new_local(ordinal)
+            Self::new_local(ordinal, type_index)
         }
     }
 
@@ -770,12 +787,15 @@ impl PathRefinement for Rc<Path> {
                     value.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
                 Path::get_as_path(refined_value)
             }
-            PathEnum::LocalVariable { ordinal } => {
+            PathEnum::LocalVariable {
+                ordinal,
+                type_index,
+            } => {
                 if (*ordinal) != 999_999 {
                     // This is a handy place to put a break point.
                     let _x = *ordinal;
                 }
-                Path::new_local((*ordinal) + fresh)
+                Path::new_local((*ordinal) + fresh, *type_index)
             }
             PathEnum::Offset { value } => Path::get_as_path(
                 value.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
@@ -802,7 +822,7 @@ impl PathRefinement for Rc<Path> {
             PathEnum::Result => {
                 if result.is_none() {
                     warn!("A summary that references its result should have a path for the result");
-                    Path::new_local(fresh)
+                    Path::new_local(fresh, 0)
                 } else {
                     result.as_ref().unwrap().clone()
                 }

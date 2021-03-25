@@ -3725,6 +3725,7 @@ pub mod std {
             }
             pub mod implement_std_ffi_os_str_OsString {
                 default_contract!(eq);
+                default_contract!(into_string);
             }
         }
     }

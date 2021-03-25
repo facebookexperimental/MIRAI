@@ -106,6 +106,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.block_visitor.bv.smt_solver,
                 self.block_visitor.bv.buffered_diagnostics,
                 self.block_visitor.bv.active_calls_map,
+                self.block_visitor.bv.cv.type_cache.clone(),
             );
             body_visitor.type_visitor.actual_argument_types = self.actual_argument_types.clone();
             body_visitor.type_visitor.generic_arguments = self.callee_generic_arguments;
@@ -1730,7 +1731,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let count = self.actual_args[2].1.clone();
         let source_slice = Path::new_slice(source_root.clone(), count.clone());
         let target_slice = Path::new_slice(target_root.clone(), count.clone());
-        let temp_root = Path::new_local(999_999);
+        let temp_root = Path::new_local(999_999, 0);
         let temp_slice = Path::new_slice(temp_root.clone(), count);
         self.block_visitor
             .bv

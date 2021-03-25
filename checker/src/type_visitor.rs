@@ -20,9 +20,54 @@ use rustc_middle::ty::{
     ParamTy, Ty, TyCtxt, TyKind, TypeAndMut,
 };
 use rustc_target::abi::VariantIdx;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
+
+#[derive(Debug)]
+pub struct TypeCache<'tcx> {
+    type_list: Vec<Ty<'tcx>>,
+    type_to_index_map: HashMap<Ty<'tcx>, usize>,
+}
+
+impl<'tcx> Default for type_visitor::TypeCache<'tcx> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'tcx> TypeCache<'tcx> {
+    /// Provides a way to refer to a  rustc_middle::ty::Ty via a handle that does not have
+    /// a life time specifier.
+    pub fn new() -> TypeCache<'tcx> {
+        TypeCache {
+            type_list: Vec::with_capacity(10_000),
+            type_to_index_map: HashMap::with_capacity(10_000),
+        }
+    }
+
+    /// Returns a non zero index that can be used to retrieve ty via get_type.
+    pub fn get_index(&mut self, ty: Ty<'tcx>) -> usize {
+        if let Some(index) = self.type_to_index_map.get(ty) {
+            *index
+        } else {
+            let index = self.type_list.len() + 1;
+            self.type_list.push(ty);
+            self.type_to_index_map.insert(ty, index);
+            index
+        }
+    }
+
+    /// Returns the type that was stored at this index, or None if index is zero
+    /// or greater than the length of the type list.
+    pub fn get_type(&self, index: usize) -> Option<Ty<'tcx>> {
+        if index == 0 {
+            return None;
+        }
+        self.type_list.get(index - 1).cloned()
+    }
+}
 
 pub struct TypeVisitor<'tcx> {
     pub actual_argument_types: Vec<Ty<'tcx>>,
@@ -33,6 +78,7 @@ pub struct TypeVisitor<'tcx> {
     path_ty_cache: HashMap<Rc<Path>, Ty<'tcx>>,
     pub dummy_untagged_value_type: Ty<'tcx>,
     tcx: TyCtxt<'tcx>,
+    type_cache: Rc<RefCell<TypeCache<'tcx>>>,
 }
 
 impl<'analysis, 'tcx> Debug for TypeVisitor<'tcx> {
@@ -42,7 +88,12 @@ impl<'analysis, 'tcx> Debug for TypeVisitor<'tcx> {
 }
 
 impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
-    pub fn new(def_id: DefId, mir: &'tcx mir::Body<'tcx>, tcx: TyCtxt<'tcx>) -> TypeVisitor<'tcx> {
+    pub fn new(
+        def_id: DefId,
+        mir: &'tcx mir::Body<'tcx>,
+        tcx: TyCtxt<'tcx>,
+        cache: Rc<RefCell<TypeCache<'tcx>>>,
+    ) -> TypeVisitor<'tcx> {
         let dummy_untagged_value_type = tcx.types.i8;
         TypeVisitor {
             actual_argument_types: Vec::new(),
@@ -53,6 +104,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             path_ty_cache: HashMap::new(),
             dummy_untagged_value_type,
             tcx,
+            type_cache: cache,
         }
     }
 
@@ -162,6 +214,20 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         &self.path_ty_cache
     }
 
+    pub fn get_index_for(&self, ty: Ty<'tcx>) -> usize {
+        let mut cache = self.type_cache.borrow_mut();
+        cache.get_index(ty)
+    }
+
+    pub fn get_type_from_index(&self, type_index: usize) -> Ty<'tcx> {
+        let cache = self.type_cache.borrow();
+        if let Some(ty) = cache.get_type(type_index) {
+            ty
+        } else {
+            self.tcx.types.never
+        }
+    }
+
     /// Updates the type cache of the visitor so that looking up the type of path returns ty.
     #[logfn_inputs(TRACE)]
     pub fn set_path_rustc_type(&mut self, path: Rc<Path>, ty: Ty<'tcx>) {
@@ -193,19 +259,24 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 }
                 _ => value.expression.infer_type().as_rustc_type(self.tcx),
             },
-            PathEnum::LocalVariable { ordinal } => {
+            PathEnum::LocalVariable {
+                ordinal,
+                type_index,
+            } => {
                 if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
-                    self.specialize_generic_argument_type(
-                        self.mir.local_decls[mir::Local::from(*ordinal)].ty,
-                        &self.generic_argument_map,
-                    )
+                    let t = self.get_type_from_index(*type_index);
+                    if t.is_never() {
+                        self.get_loc_ty(mir::Local::from(*ordinal))
+                    } else {
+                        t
+                    }
                 } else {
                     trace!(
                         "local var path.value is {:?} at {:?}",
                         path.value,
                         current_span
                     );
-                    self.tcx.types.never
+                    self.get_type_from_index(*type_index)
                 }
             }
             PathEnum::HeapBlock { value } | PathEnum::Offset { value } => {

@@ -17,6 +17,7 @@ use crate::tag_domain::Tag;
 use crate::utils;
 use crate::z3_solver::Z3Solver;
 
+use crate::type_visitor::TypeCache;
 use log::*;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::*;
@@ -26,10 +27,12 @@ use rustc_middle::mir;
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::TyCtxt;
 use rustc_session::Session;
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::ops::Deref;
+use std::rc::Rc;
 
 /// A visitor that takes information gathered by the Rust compiler when compiling a particular
 /// crate and then analyses some of the functions in that crate to see if any of the assertions
@@ -50,6 +53,7 @@ pub struct CrateVisitor<'compilation, 'tcx> {
     pub substs_cache: HashMap<DefId, SubstsRef<'tcx>>,
     pub summary_cache: PersistentSummaryCache<'tcx>,
     pub tcx: TyCtxt<'tcx>,
+    pub type_cache: Rc<RefCell<TypeCache<'tcx>>>,
     pub test_run: bool,
 }
 
@@ -155,6 +159,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
             &mut z3_solver,
             &mut diagnostics,
             &mut active_calls_map,
+            self.type_cache.clone(),
         );
         // Analysis local foreign contracts are not summarized and cached on demand, so we need to do it here.
         let summary = body_visitor.visit_body(&[], &[]);
