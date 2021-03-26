@@ -9,6 +9,7 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, SubstsRef};
 use rustc_middle::ty::{AdtDef, Ty, TyCtxt, TyKind, UintTy};
+use rustc_target::abi::VariantIdx;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
@@ -604,36 +605,80 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handled_clone(&mut self) -> bool {
         precondition!(self.actual_argument_types.len() == 1);
         if let TyKind::Ref(_, t, _) = self.actual_argument_types[0].kind() {
-            if let TyKind::Adt(def, _) = t.kind() {
-                if def.variants.iter().map(|d| d.def_id).next()
+            if let TyKind::Adt(def, substs) = t.kind() {
+                let variant_0 = VariantIdx::from_u32(0);
+                if Some(def.variants[variant_0].def_id)
                     == self.block_visitor.bv.tcx.lang_items().option_none_variant()
                 {
-                    let arg0_path = Path::new_discriminant(
-                        Path::new_deref(self.actual_args[0].0.clone(), ExpressionType::Usize)
+                    if let Some((place, _)) = &self.destination {
+                        let target_path_discr =
+                            Path::new_discriminant(self.block_visitor.visit_rh_place(place));
+                        let arg0_discr_path = Path::new_discriminant(
+                            Path::new_deref(
+                                self.actual_args[0].0.clone(),
+                                ExpressionType::NonPrimitive,
+                            )
                             .canonicalize(&self.block_visitor.bv.current_environment),
-                    );
-                    let arg0_discr_val = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .value_at(&arg0_path)
-                        .cloned();
-                    if let Some(arg0_discr_val) = &arg0_discr_val {
-                        if arg0_discr_val.is_zero() {
-                            if let Some((place, _)) = &self.destination {
-                                let target_path = Path::new_discriminant(
-                                    self.block_visitor.visit_rh_place(place),
-                                );
-                                self.block_visitor
-                                    .bv
-                                    .current_environment
-                                    .update_value_at(target_path, arg0_discr_val.clone());
-                            } else {
-                                assume_unreachable!();
+                        );
+                        let discr_ty = t.discriminant_ty(self.block_visitor.bv.tcx);
+                        let discr_0_val = self.block_visitor.get_int_const_val(0, discr_ty);
+                        let discr_val = self
+                            .block_visitor
+                            .bv
+                            .lookup_path_and_refine_result(arg0_discr_path, discr_ty);
+                        let is_zero = discr_val.equals(discr_0_val.clone());
+                        let target_discr_value = match is_zero.as_bool_if_known() {
+                            Some(false) => {
+                                // Have to clone the Some(..) variant, let visit_caller take care of that
+                                return false;
                             }
-                            self.use_entry_condition_as_exit_condition();
-                            return true;
-                        }
+                            Some(true) => {
+                                // Cloning is just copying the discriminant value
+                                discr_0_val
+                            }
+                            None => {
+                                // Might have to clone the Some(..) variant, so can't be handled here,
+                                if self.actual_args[0].0.contains_parameter() {
+                                    // The caller might be able to avoid the diagnostic because it
+                                    // knows the actual argument whereas here we only know the type.
+                                    let specialized_substs =
+                                        self.block_visitor.bv.type_visitor.specialize_substs(
+                                            substs,
+                                            &self.callee_generic_argument_map,
+                                        );
+                                    if !utils::are_concrete(specialized_substs) {
+                                        // The clone method will not resolve, but we don't want visit_caller
+                                        // to issue a diagnostic because is_zero might refine to true
+                                        // further up the call stack. We deal with this by adding a
+                                        // precondition to the current function requiring that the
+                                        // caller (or on its callers) must ensure that is_zero will be true
+                                        // at runtime when this call is issued.
+                                        let precondition = Precondition {
+                                            condition: is_zero,
+                                            message: Rc::from("incomplete analysis of call because of failure to resolve std::Clone::clone method"),
+                                            provenance: None,
+                                            spans: vec![self.block_visitor.bv.current_span.source_callsite()],
+                                        };
+                                        self.block_visitor.bv.preconditions.push(precondition);
+                                        discr_0_val
+                                    } else {
+                                        // let visit_call issue a diagnostic
+                                        return false;
+                                    }
+                                } else {
+                                    // let visit_call resolve the clone method and deal with it
+                                    return false;
+                                }
+                            }
+                        };
+                        self.block_visitor
+                            .bv
+                            .current_environment
+                            .update_value_at(target_path_discr, target_discr_value);
+                        self.use_entry_condition_as_exit_condition();
+                        return true;
+                    } else {
+                        assume_unreachable!();
                     }
                 }
             }
@@ -817,13 +862,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     // get called, so keep the message certain.
                     // Don't, however, complain about panics in the standard contract summaries
                     if std::env::var("MIRAI_START_FRESH").is_err() {
-                        let err = self
+                        let warning = self
                             .block_visitor
                             .bv
                             .cv
                             .session
                             .struct_span_warn(span, msg.as_ref());
-                        self.block_visitor.bv.emit_diagnostic(err);
+                        self.block_visitor.bv.emit_diagnostic(warning);
                     }
                 } else {
                     // We might get to this call, depending on the state at the call site.
@@ -832,13 +877,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         // Dealing with contracts crate
                         if self.block_visitor.bv.function_being_analyzed_is_root() {
                             let msg = msg.replace(" violated", " possibly violated");
-                            let err = self
+                            let warning = self
                                 .block_visitor
                                 .bv
                                 .cv
                                 .session
                                 .struct_span_warn(span, msg.as_ref());
-                            self.block_visitor.bv.emit_diagnostic(err);
+                            self.block_visitor.bv.emit_diagnostic(warning);
                         }
                         return;
                     }
@@ -1231,13 +1276,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             trace!("MiraiAddTag: tagging {:?} with {:?}", source_path, tag);
 
             // Check if the tagged value has a pointer type (e.g., a reference).
-            // Emit an error message if so.
+            // Emit an warning message if so.
             if self.block_visitor.bv.check_for_errors && source_rustc_type.is_any_ptr() {
-                let err = self.block_visitor.bv.cv.session.struct_span_err(
+                let warning = self.block_visitor.bv.cv.session.struct_span_err(
                     self.block_visitor.bv.current_span,
                     "the macro add_tag! expects its argument to be a reference to a non-reference value",
                 );
-                self.block_visitor.bv.emit_diagnostic(err);
+                self.block_visitor.bv.emit_diagnostic(warning);
             }
 
             // Augment the tags associated at the source with a new tag.
@@ -1333,16 +1378,16 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             );
 
             // Check if the tagged value has a pointer type (e.g., a reference).
-            // Emit an error message if so.
+            // Emit a warning message if so.
             if self.block_visitor.bv.check_for_errors && source_rustc_type.is_any_ptr() {
-                let err = self.block_visitor.bv.cv.session.struct_span_err(
+                let warning = self.block_visitor.bv.cv.session.struct_span_warn(
                     self.block_visitor.bv.current_span,
                     format!(
                         "the macro {} expects its first argument to be a reference to a non-reference value",
                         if checking_presence { "has_tag! "} else { "does_not_have_tag!" },
                     ).as_str(),
                 );
-                self.block_visitor.bv.emit_diagnostic(err);
+                self.block_visitor.bv.emit_diagnostic(warning);
             }
 
             // If the value located at source_path has sub-components, extract its tag field.
@@ -2917,11 +2962,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     _ => {
                         if self.block_visitor.bv.check_for_errors {
-                            let err = self.block_visitor.bv.cv.session.struct_span_err(
+                            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
                                 self.block_visitor.bv.current_span,
                                 "the tag type should be a generic type whose first parameter is a constant of type TagPropagationSet",
                             );
-                            self.block_visitor.bv.emit_diagnostic(err);
+                            self.block_visitor.bv.emit_diagnostic(warning);
                         }
                         return None;
                     }
@@ -2937,11 +2982,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     }
                     _ => {
                         if self.block_visitor.bv.check_for_errors {
-                            let err = self.block_visitor.bv.cv.session.struct_span_err(
+                            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
                                 self.block_visitor.bv.current_span,
                                 "the first parameter of the tag type should have type TagPropagationSet"
                             );
-                            self.block_visitor.bv.emit_diagnostic(err);
+                            self.block_visitor.bv.emit_diagnostic(warning);
                         }
                         return None;
                     }
