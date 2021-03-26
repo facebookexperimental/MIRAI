@@ -98,9 +98,18 @@ impl Clone for Box<dyn Tr> {
 
 pub fn t5() {
     let foo2 = Foo2 { opt: None };
-    //todo: find a way avoid the diagnostic for the None case
-    let c = foo2.opt.clone(); //~ the called function did not resolve to an implementation with a MIR body
-    verify!(c.is_none()); // succeeds because of fall back special case that is a member copy
+    let c = foo2.opt.clone();
+    verify!(c.is_none());
+}
+
+pub fn t6() {
+    let foo2 = Foo2 { opt: None };
+    let c = t6c(foo2);
+    verify!(c.is_none());
+}
+
+fn t6c(foo: Foo2) -> Option<Box<dyn Tr>> {
+    foo.opt.clone() //~ the called function did not resolve to an implementation with a MIR body
 }
 
 pub fn main() {}
