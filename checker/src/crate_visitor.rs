@@ -25,7 +25,7 @@ use rustc_errors::{Diagnostic, DiagnosticBuilder};
 use rustc_hir::def_id::{DefId, LOCAL_CRATE};
 use rustc_middle::mir;
 use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::{TyCtxt, Unevaluated};
 use rustc_session::Session;
 use std::cell::RefCell;
 use std::cmp::Ordering;
@@ -208,8 +208,14 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                         mir::Rvalue::Use(mir::Operand::Constant(box ref con)),
                     )) = s.kind
                     {
-                        if let rustc_middle::ty::ConstKind::Unevaluated(def_ty, _, _) =
-                            con.literal.val
+                        if let rustc_middle::ty::ConstKind::Unevaluated(Unevaluated {
+                            def: def_ty,
+                            ..
+                        }) = con
+                            .literal
+                            .const_for_ty()
+                            .expect("expected function literal to have type")
+                            .val
                         {
                             result.push(utils::def_id_display_name(
                                 self.tcx,

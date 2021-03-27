@@ -17,8 +17,7 @@ pub fn plus_one(key: [u8; 32]) {
             // unreachable in the next loop iteration and the diagnostic below will be suppressed.
             bar(i); //~ possible unsatisfied precondition
         } else {
-            buf[i] += 1;
-            break;
+            buf[i] = 1;
         }
     }
 }

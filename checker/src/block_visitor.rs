@@ -30,7 +30,7 @@ use rustc_middle::ty::adjustment::PointerCast;
 use rustc_middle::ty::layout::PrimitiveExt;
 use rustc_middle::ty::subst::{GenericArg, SubstsRef};
 use rustc_middle::ty::{
-    Const, FloatTy, IntTy, ParamConst, ScalarInt, Ty, TyKind, UintTy, UserTypeAnnotationIndex,
+    Const, ConstKind, FloatTy, IntTy, ParamConst, ScalarInt, Ty, TyKind, UintTy, Unevaluated,
 };
 use rustc_target::abi::{TagEncoding, VariantIdx, Variants};
 use std::borrow::Borrow;
@@ -118,6 +118,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
             mir::StatementKind::AscribeUserType(..) => assume_unreachable!(),
             mir::StatementKind::Coverage(..) => (),
+            mir::StatementKind::CopyNonOverlapping(box ref copy_info) => {
+                self.visit_copy_non_overlapping(copy_info)
+            }
             mir::StatementKind::Nop => (),
         }
     }
@@ -139,6 +142,23 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             _ => {}
         }
         self.visit_rvalue(path, rvalue);
+    }
+
+    /// Denotes a call to the intrinsic function copy_overlapping, where `src` and `dst` denotes the
+    /// memory being read from and written to and size indicates how many bytes are being copied over.
+    #[logfn_inputs(TRACE)]
+    fn visit_copy_non_overlapping(&mut self, copy_info: &mir::CopyNonOverlapping<'tcx>) {
+        let source_val = self.visit_operand(&copy_info.src);
+        let source_path =
+            Path::new_deref(Path::get_as_path(source_val), ExpressionType::NonPrimitive);
+        let target_val = self.visit_operand(&copy_info.dst);
+        let target_root =
+            Path::new_deref(Path::get_as_path(target_val), ExpressionType::NonPrimitive);
+        let count = self.visit_operand(&copy_info.count);
+        let target_path = Path::new_slice(target_root, count);
+        let collection_type = self.get_operand_rustc_type(&copy_info.dst);
+        self.bv
+            .copy_or_move_elements(target_path, source_path, collection_type, false);
     }
 
     /// Write the discriminant for a variant to the enum Place.
@@ -1377,7 +1397,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 self.visit_use(path, operand);
             }
             mir::Rvalue::Repeat(operand, count) => {
-                self.visit_repeat(path, operand, *count);
+                self.visit_repeat(path, operand, count);
             }
             mir::Rvalue::Ref(_, _, place) | mir::Rvalue::AddressOf(_, place) => {
                 self.visit_address_of(path, place);
@@ -1395,10 +1415,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 );
                 self.visit_cast(path, *cast_kind, operand, specialized_ty);
             }
-            mir::Rvalue::BinaryOp(bin_op, left_operand, right_operand) => {
+            mir::Rvalue::BinaryOp(bin_op, box (left_operand, right_operand)) => {
                 self.visit_binary_op(path, *bin_op, left_operand, right_operand);
             }
-            mir::Rvalue::CheckedBinaryOp(bin_op, left_operand, right_operand) => {
+            mir::Rvalue::CheckedBinaryOp(bin_op, box (left_operand, right_operand)) => {
                 self.visit_checked_binary_op(path, *bin_op, left_operand, right_operand);
             }
             mir::Rvalue::NullaryOp(null_op, ty) => {
@@ -1431,11 +1451,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 self.visit_used_move(path, place);
             }
             mir::Operand::Constant(constant) => {
-                let mir::Constant {
-                    user_ty, literal, ..
-                } = constant.borrow();
-                let rh_type = literal.ty;
-                let const_value = self.visit_constant(*user_ty, &literal);
+                let mir::Constant { literal, .. } = constant.borrow();
+                let rh_type = literal.ty();
+                let const_value = self.visit_literal(literal);
                 if const_value.expression.infer_type() == ExpressionType::NonPrimitive {
                     // Transfer children into the environment, discard const_value.
                     if let Expression::Reference(rpath) | Expression::Variable { path: rpath, .. } =
@@ -1498,7 +1516,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_repeat(&mut self, path: Rc<Path>, operand: &mir::Operand<'tcx>, count: &Const<'tcx>) {
         let length_path = Path::new_length(path.clone());
-        let length_value = self.visit_constant(None, count);
+        let length_value = self.visit_const(count);
         self.bv
             .current_environment
             .update_value_at(length_path, length_value.clone());
@@ -1649,7 +1667,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let len_value = if let TyKind::Array(_, len) = place_ty.kind() {
             // We only get here if "-Z mir-opt-level=0" was specified.
             // With more optimization the len instruction becomes a constant.
-            self.visit_constant(None, &len)
+            self.visit_const(&len)
         } else {
             let mut value_path = self.visit_lh_place(place);
             if let PathEnum::QualifiedPath {
@@ -1761,7 +1779,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                     type_visitor::get_target_type(source_type).kind()
                                 {
                                     let length_path = Path::new_length(target_path);
-                                    let length_value = self.visit_constant(None, &len);
+                                    let length_value = self.visit_const(&len);
                                     self.bv
                                         .current_environment
                                         .update_value_at(length_path, length_value);
@@ -2017,10 +2035,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 self.visit_used_move(target_path, place);
             }
             mir::Operand::Constant(constant) => {
-                let mir::Constant {
-                    user_ty, literal, ..
-                } = constant.borrow();
-                let const_value = self.visit_constant(*user_ty, &literal);
+                let mir::Constant { literal, .. } = constant.borrow();
+                let const_value = self.visit_literal(literal);
                 self.bv
                     .current_environment
                     .update_value_at(target_path, const_value);
@@ -2047,7 +2063,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .get_rustc_place_type(place, self.bv.current_span),
             mir::Operand::Constant(constant) => {
                 let mir::Constant { literal, .. } = constant.borrow();
-                literal.ty
+                literal.ty()
             }
         }
     }
@@ -2060,10 +2076,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::Operand::Copy(place) => self.visit_copy(place),
             mir::Operand::Move(place) => self.visit_move(place),
             mir::Operand::Constant(constant) => {
-                let mir::Constant {
-                    user_ty, literal, ..
-                } = constant.borrow();
-                self.visit_constant(*user_ty, &literal)
+                let mir::Constant { literal, .. } = constant.borrow();
+                self.visit_literal(literal)
             }
         }
     }
@@ -2097,16 +2111,31 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         self.bv.lookup_path_and_refine_result(path, rust_place_type)
     }
 
+    /// Returns a value that corresponds to the given literal
+    #[logfn_inputs(TRACE)]
+    pub fn visit_literal(&mut self, literal: &mir::ConstantKind<'tcx>) -> Rc<AbstractValue> {
+        if let Some(v) = literal.try_to_value() {
+            self.visit_const_kind(ConstKind::Value(v), literal.ty())
+        } else if let Some(c) = literal.const_for_ty() {
+            self.visit_const(c)
+        } else {
+            unreachable!("try_to_value will only return None when const_for_ty will return Some")
+        }
+    }
+
     /// Synthesizes a constant value. Also used for static variable values.
     #[logfn_inputs(TRACE)]
-    pub fn visit_constant(
-        &mut self,
-        user_ty: Option<UserTypeAnnotationIndex>,
-        literal: &Const<'tcx>,
-    ) -> Rc<AbstractValue> {
-        let mut val = literal.val;
-        let lty = literal.ty;
-        if let rustc_middle::ty::ConstKind::Unevaluated(def_ty, substs, promoted) = &literal.val {
+    pub fn visit_const(&mut self, literal: &Const<'tcx>) -> Rc<AbstractValue> {
+        self.visit_const_kind(literal.val, literal.ty)
+    }
+
+    fn visit_const_kind(&mut self, mut val: ConstKind<'tcx>, lty: Ty<'tcx>) -> Rc<AbstractValue> {
+        if let rustc_middle::ty::ConstKind::Unevaluated(Unevaluated {
+            def: def_ty,
+            substs,
+            promoted,
+        }) = &val
+        {
             if def_ty.const_param_did.is_some() {
                 val = val.eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
             } else {
@@ -2186,12 +2215,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             rustc_middle::ty::ConstKind::Param(ParamConst { index, .. }) => {
                 if let Some(gen_args) = self.bv.type_visitor.generic_arguments {
                     if let Some(arg_val) = gen_args.as_ref().get(*index as usize) {
-                        return self.visit_constant(None, arg_val.expect_const());
+                        return self.visit_const(arg_val.expect_const());
                     }
                 }
                 assume_unreachable!(
                     "reference to unmatched generic constant argument {:?} {:?}",
-                    literal,
+                    val,
                     self.bv.current_span
                 );
             }
@@ -3034,7 +3063,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     }
                 }
                 TyKind::Array(_, len) => {
-                    let len_val = self.visit_constant(None, &len);
+                    let len_val = self.visit_const(&len);
                     let len_path = Path::new_length(base_path.clone());
                     self.bv
                         .current_environment

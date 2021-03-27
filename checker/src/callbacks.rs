@@ -148,6 +148,7 @@ impl MiraiCallbacks {
             || file_name.contains("config/management/operational/src") // too slow
             || file_name.contains("json-rpc/src") // stack overflow
             || file_name.contains("language/bytecode-verifier/src") // too slow
+            || file_name.contains("language/diem-tools/diem-events-fetcher/src") // resolve error
             || file_name.contains("language/move-lang/src") // too slow
             || file_name.contains("language/move-model/src") // too slow
             || file_name.contains("language/move-prover/bytecode/src") // too slow 
@@ -161,7 +162,8 @@ impl MiraiCallbacks {
 
         if self.options.diag_level == DiagLevel::Paranoid {
             return file_name.contains("client/faucet/src") // stack overflow
-                    || file_name.contains("common/debug-interface/src") // stack overflow  
+                    || file_name.contains("common/debug-interface/src") // stack overflow 
+                    || file_name.contains("common/logger/src") // operator is applied to arguments of the wrong sort
                     || file_name.contains("common/logger/derive/src") // too slow
                     || file_name.contains("common/metrics/src") // not implemented: replacing embedded path root     
                     || file_name.contains("common/num-variants/src") // too slow    
@@ -175,7 +177,9 @@ impl MiraiCallbacks {
                     || file_name.contains("consensus/safety-rules/src") // too slow    
                     || file_name.contains("crypto/crypto-derive/src") // too slow 
                     || file_name.contains("diem-node/src") // stack overflow    
-                    || file_name.contains("execution/execution-correctness/src") // stack overflow    
+                    || file_name.contains("execution/execution-correctness/src") // stack overflow
+                    || file_name.contains("language/compiler/src") // Sorts Int and Bool are incompatible
+                    || file_name.contains("language/compiler/ir-to-bytecode/src") // Sorts Int and Bool are incompatible
                     || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // Sorts Bool and Int are incompatible
                     || file_name.contains("language/diem-vm/src") // Not a type     
                     || file_name.contains("language/diem-framework/src") // too slow    

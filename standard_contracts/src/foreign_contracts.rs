@@ -3829,6 +3829,7 @@ pub mod std {
                     }
                 }
 
+                default_contract!(new_const);
                 default_contract!(last_os_error);
 
                 pub fn _new(
