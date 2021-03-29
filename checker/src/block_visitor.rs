@@ -192,11 +192,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_llvm_inline_asm(&mut self, inline_asm: &mir::LlvmInlineAsm<'tcx>) {
         let span = self.bv.current_span;
-        let err = self.bv.cv.session.struct_span_warn(
+        let warning = self.bv.cv.session.struct_span_warn(
             span,
             "Inline llvm assembly code cannot be analyzed by MIRAI.",
         );
-        self.bv.emit_diagnostic(err);
+        self.bv.emit_diagnostic(warning);
         self.bv.analysis_is_incomplete = true;
     }
 
@@ -294,11 +294,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             if let Some(tag_name) = &self.bv.cv.options.constant_time_tag_name {
                 match self.bv.cv.constant_time_tag_cache {
                     None => {
-                        // Check if the unknown-constant-time-tag error has been emitted.
+                        // Check if the unknown-constant-time-tag diagnostic has been emitted.
                         if !self.bv.cv.constant_time_tag_not_found {
                             self.bv.cv.constant_time_tag_not_found = true;
                             let span = self.bv.current_span;
-                            let error = self.bv.cv.session.struct_span_err(
+                            let warning = self.bv.cv.session.struct_span_warn(
                                 span,
                                 format!(
                                     "unknown tag type for constant-time verification: {}",
@@ -306,7 +306,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 )
                                 .as_str(),
                             );
-                            self.bv.emit_diagnostic(error);
+                            self.bv.emit_diagnostic(warning);
                         }
                     }
                     Some(tag) => self.check_tag_existence_on_value(
@@ -605,6 +605,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 }
             }
         }
+        let self_ty_is_fn_ptr = if let Some(ty) = actual_argument_types.get(0) {
+            let self_ty = type_visitor::get_target_type(ty);
+            matches!(self_ty.kind(), TyKind::FnPtr(..))
+        } else {
+            false
+        };
         let adt_map = self
             .bv
             .type_visitor
@@ -637,11 +643,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .unwrap_or_else(Summary::default);
 
         if !function_summary.is_computed {
-            if call_visitor
-                .block_visitor
-                .bv
-                .already_reported_errors_for_call_to
-                .insert(call_visitor.callee_fun_val.clone())
+            if (known_name != KnownNames::StdCloneClone || !self_ty_is_fn_ptr)
+                && call_visitor
+                    .block_visitor
+                    .bv
+                    .already_reported_errors_for_call_to
+                    .insert(call_visitor.callee_fun_val.clone())
             {
                 call_visitor.block_visitor.report_missing_summary();
             }
@@ -906,7 +913,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
         let span = self.bv.current_span;
-        let mut err = self
+        let mut warning = self
             .bv
             .cv
             .session
@@ -914,12 +921,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         for pc_span in precondition.spans.iter() {
             let span_str = self.bv.tcx.sess.source_map().span_to_string(*pc_span);
             if span_str.starts_with("/rustc/") {
-                err.span_note(*pc_span, &format!("related location {}", span_str));
+                warning.span_note(*pc_span, &format!("related location {}", span_str));
             } else {
-                err.span_note(*pc_span, "related location");
+                warning.span_note(*pc_span, "related location");
             };
         }
-        self.bv.emit_diagnostic(err);
+        self.bv.emit_diagnostic(warning);
     }
 
     /// Extend the current post condition by the given `cond`. If none was set before,
@@ -999,8 +1006,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             } else {
                 "possible unsatisfied postcondition"
             };
-            let error = self.bv.cv.session.struct_span_warn(span, msg);
-            self.bv.emit_diagnostic(error);
+            let warning = self.bv.cv.session.struct_span_warn(span, msg);
+            self.bv.emit_diagnostic(warning);
             // Don't add the post condition to the summary
             return None;
         }
@@ -1009,12 +1016,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         if function_name == KnownNames::MiraiVerify && !cond_as_bool.unwrap_or(true) {
             // If the condition is always false, give a style error
             let span = self.bv.current_span.source_callsite();
-            let error = self
+            let warning = self
                 .bv
                 .cv
                 .session
-                .struct_span_err(span, "provably false verification condition");
-            self.bv.emit_diagnostic(error);
+                .struct_span_warn(span, "provably false verification condition");
+            self.bv.emit_diagnostic(warning);
             if entry_cond_as_bool.is_none()
                 && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
             {
@@ -1125,11 +1132,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // The existence of the tag on the value is different from the expectation.
                     // In this case, report an error.
                     let span = self.bv.current_span.source_callsite();
-                    let error = self.bv.cv.session.struct_span_err(
+                    let warning = self.bv.cv.session.struct_span_warn(
                         span,
                         format!("the {} has a {} tag", value_name, tag_name).as_str(),
                     );
-                    self.bv.emit_diagnostic(error);
+                    self.bv.emit_diagnostic(warning);
                 }
 
                 _ => {}
@@ -1228,8 +1235,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         if entry_cond_as_bool.unwrap_or(false) {
                             let error = get_assert_msg_description(msg);
                             let span = self.bv.current_span;
-                            let error = self.bv.cv.session.struct_span_warn(span, error);
-                            self.bv.emit_diagnostic(error);
+                            let warning = self.bv.cv.session.struct_span_warn(span, error);
+                            self.bv.emit_diagnostic(warning);
                             // No need to push a precondition, the caller can never satisfy it.
                             return;
                         }
@@ -1346,12 +1353,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_inline_asm(&mut self, target: &Option<mir::BasicBlock>) {
         let span = self.bv.current_span;
-        let diagnostic = self
+        let warning = self
             .bv
             .cv
             .session
             .struct_span_warn(span, "Inline assembly code cannot be analyzed by MIRAI.");
-        self.bv.emit_diagnostic(diagnostic);
+        self.bv.emit_diagnostic(warning);
         self.bv.analysis_is_incomplete = true;
         if let Some(target) = target {
             // Propagate the entry condition to the successor block.

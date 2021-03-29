@@ -6,7 +6,7 @@
 
 // Checks that calls via traits can be resolved if call site has enough type information
 
-// MIRAI_FLAGS --diag=verify
+// MIRAI_FLAGS --diag=library
 
 use mirai_annotations::*;
 
@@ -38,7 +38,7 @@ struct Foo {
     bx: Box<dyn Tr>,
 }
 
-struct Foo2 {
+pub struct Foo2 {
     pub opt: Option<Box<dyn Tr>>,
 }
 
@@ -108,8 +108,12 @@ pub fn t6() {
     verify!(c.is_none());
 }
 
+pub fn t7(foo: Foo2) {
+    let _c = t6c(foo); //~ possible incomplete analysis of call because of failure to resolve std::Clone::clone method
+}
+
 fn t6c(foo: Foo2) -> Option<Box<dyn Tr>> {
-    foo.opt.clone() //~ the called function did not resolve to an implementation with a MIR body
+    foo.opt.clone() //~ related location
 }
 
 pub fn main() {}

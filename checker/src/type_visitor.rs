@@ -544,7 +544,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// is more likely to be concrete. By seeding the initial type cache of a called function
     /// with this information, we can get resolution of trait calls where the receiver is a
     /// field reachable from a parameter, rather than the parameter itself.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     pub fn get_adt_map(
         &self,
         actual_arguments: &[(Rc<Path>, Rc<AbstractValue>)],
