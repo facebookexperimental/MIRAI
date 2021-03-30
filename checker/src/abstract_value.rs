@@ -699,13 +699,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         return other;
                     }
                     if let Expression::LogicalNot { operand } = &other.expression {
-                        // [(x || y) && (!x)] -> y
+                        // [(x || y) && (!x)] -> y && !x
                         if *x == *operand {
-                            return y.clone();
+                            return y.and(other);
                         }
-                        // [(x || y) && (!y)] -> x
+                        // [(x || y) && (!y)] -> x && !y
                         if *y == *operand {
-                            return x.clone();
+                            return x.and(other);
                         }
                     }
                 }
@@ -740,13 +740,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         return self.clone();
                     }
                     if let Expression::LogicalNot { operand } = &self.expression {
-                        // [(!x) && (x || y)] -> y
+                        // [(!x) && (x || y)] -> !x && y
                         if *x == *operand {
-                            return y.clone();
+                            return self.and(y.clone());
                         }
-                        // [(!y) && (x || y) ] -> x
+                        // [(!y) && (x || y) ] -> !y && x
                         if *y == *operand {
-                            return x.clone();
+                            return self.and(x.clone());
                         }
                     }
                     // [x && (x && y || x && z)] -> x && (y || z)

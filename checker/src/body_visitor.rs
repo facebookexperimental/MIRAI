@@ -1548,6 +1548,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     fn solve_condition(&mut self, cond_val: &Rc<AbstractValue>) -> Option<bool> {
         let ce = &cond_val.expression;
         let cond_smt_expr = self.smt_solver.get_as_smt_predicate(ce);
+        let inv_cond_smt_expr = self.smt_solver.invert_predicate(&cond_smt_expr);
         match self.smt_solver.solve_expression(&cond_smt_expr) {
             SmtResult::Unsatisfiable => {
                 // If we get here, the solver can prove that cond_val is always false.
@@ -1556,9 +1557,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             SmtResult::Satisfiable => {
                 // We could get here with cond_val being true. Or perhaps not.
                 // So lets see if !cond_val is provably false.
-                let not_cond_expr = &cond_val.logical_not().expression;
-                let smt_expr = self.smt_solver.get_as_smt_predicate(not_cond_expr);
-                let smt_result = self.smt_solver.solve_expression(&smt_expr);
+                let smt_result = self.smt_solver.solve_expression(&inv_cond_smt_expr);
                 if smt_result == SmtResult::Unsatisfiable {
                     // The solver can prove that !cond_val is always false.
                     Some(true)
