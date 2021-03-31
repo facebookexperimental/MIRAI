@@ -68,8 +68,6 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub post_condition: Option<Rc<AbstractValue>>,
     pub post_condition_block: Option<mir::BasicBlock>,
     pub preconditions: Vec<Precondition>,
-    pub unwind_condition: Option<Rc<AbstractValue>>,
-    pub unwind_environment: Environment,
     pub fresh_variable_offset: usize,
     pub type_visitor: TypeVisitor<'tcx>,
 }
@@ -126,8 +124,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             post_condition: None,
             post_condition_block: None,
             preconditions: Vec::new(),
-            unwind_condition: None,
-            unwind_environment: Environment::default(),
             fresh_variable_offset: 0,
             type_visitor: TypeVisitor::new(def_id, mir, tcx, type_cache),
         }
@@ -150,8 +146,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         self.post_condition = None;
         self.post_condition_block = None;
         self.preconditions = Vec::new();
-        self.unwind_condition = None;
-        self.unwind_environment = Environment::default();
         self.fresh_variable_offset = 1000;
         self.type_visitor.reset_visitor_state();
     }
@@ -248,8 +242,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     self.exit_environment.as_ref(),
                     &self.preconditions,
                     &self.post_condition,
-                    self.unwind_condition.clone(),
-                    &self.unwind_environment,
                     self.tcx,
                 );
             }

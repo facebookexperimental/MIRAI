@@ -2550,7 +2550,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         );
         self.check_preconditions_if_necessary(&function_summary);
         self.transfer_and_refine_normal_return_state(&function_summary);
-        self.transfer_and_refine_cleanup_state(&function_summary);
         self.add_post_condition_to_exit_conditions(&function_summary);
         trace!("post env {:?}", self.block_visitor.bv.current_environment);
     }
@@ -2812,18 +2811,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .current_environment
                 .entry_condition
                 .clone();
-            if let Some(unwind_condition) = &function_summary.unwind_condition {
-                if exit_condition.as_bool_if_known().unwrap_or(true) {
-                    let unwind_condition = unwind_condition.refine_parameters_and_paths(
-                        &self.actual_args,
-                        &result_path,
-                        &self.environment_before_call,
-                        &self.block_visitor.bv.current_environment,
-                        self.block_visitor.bv.fresh_variable_offset,
-                    );
-                    exit_condition = exit_condition.and(unwind_condition.logical_not());
-                }
-            }
             if exit_condition.as_bool_if_known().unwrap_or(true) {
                 if let Some(post_condition) = &function_summary.post_condition {
                     let refined_post_condition = post_condition.refine_parameters_and_paths(
@@ -2844,41 +2831,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .current_environment
                 .exit_conditions
                 .insert_mut(*target, exit_condition);
-        }
-    }
-
-    /// Handle the case where the called function does not complete normally.
-    /// The paths and expressions of the side-effects are refined in the context of the pre-state
-    /// (the environment before the call executed), while the refined effects are applied to the
-    /// current state.
-    #[logfn_inputs(TRACE)]
-    pub fn transfer_and_refine_cleanup_state(&mut self, function_summary: &Summary) {
-        if let Some(cleanup_target) = self.cleanup {
-            for (i, (target_path, _)) in self.actual_args.iter().enumerate() {
-                let parameter_path = Path::new_parameter(i + 1);
-                self.block_visitor.bv.transfer_and_refine(
-                    &function_summary.unwind_side_effects,
-                    target_path.clone(),
-                    &parameter_path,
-                    &None,
-                    &self.actual_args,
-                    &self.environment_before_call,
-                );
-            }
-            let mut exit_condition = self
-                .block_visitor
-                .bv
-                .current_environment
-                .entry_condition
-                .clone();
-            if let Some(unwind_condition) = &function_summary.unwind_condition {
-                exit_condition = exit_condition.and(unwind_condition.clone());
-            }
-            self.block_visitor
-                .bv
-                .current_environment
-                .exit_conditions
-                .insert_mut(cleanup_target, exit_condition);
         }
     }
 
