@@ -2995,7 +2995,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // Analyze the tag type's first parameter to obtain a compile-time constant.
                 let tag_propagation_set_value = self
                     .block_visitor
-                    .visit_constant(None, tag_propagation_set_rustc_const);
+                    .visit_const(tag_propagation_set_rustc_const);
                 if let Expression::CompileTimeConstant(ConstantDomain::U128(data)) =
                     &tag_propagation_set_value.expression
                 {
