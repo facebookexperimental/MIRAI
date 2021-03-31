@@ -92,21 +92,6 @@ pub struct Summary {
     // under the current path condition.
     // The resulting value should be conjoined to the current path condition.
     pub post_condition: Option<Rc<AbstractValue>>,
-
-    // Condition that if true implies that the call to the function will not complete normally
-    // and thus cause the cleanup block of the call to execute (unwinding).
-    // Callers should substitute parameter values with argument values and simplify the result
-    // under the current path condition. If the simplified value is statically known to be true
-    // then the normal destination of the call should be treated as unreachable.
-    pub unwind_condition: Option<Rc<AbstractValue>>,
-
-    // Modifications the function makes to mutable state external to the function.
-    // Every path will be rooted in a static or in a mutable parameter.
-    // No two paths in this collection will lead to the same place in memory.
-    // Callers should substitute parameter values with argument values and simplify the results
-    // under the current path condition. They should then update their current state to reflect the
-    // side-effects of the call for the unwind control paths, following the call.
-    pub unwind_side_effects: Vec<(Rc<Path>, Rc<AbstractValue>)>,
 }
 
 /// Bundles together the condition of a precondition with the provenance (place where defined) of
@@ -140,12 +125,6 @@ impl Summary {
             return false;
         }
         if !Self::is_subset_of_side_effects(&self.side_effects[0..], &other.side_effects[0..]) {
-            return false;
-        }
-        if !Self::is_subset_of_side_effects(
-            &self.unwind_side_effects[0..],
-            &other.unwind_side_effects[0..],
-        ) {
             return false;
         }
         true
@@ -233,17 +212,13 @@ pub fn summarize(
     exit_environment: Option<&Environment>,
     preconditions: &[Precondition],
     post_condition: &Option<Rc<AbstractValue>>,
-    unwind_condition: Option<Rc<AbstractValue>>,
-    unwind_environment: &Environment,
     tcx: TyCtxt<'_>,
 ) -> Summary {
     trace!(
-        "summarize env {:?} pre {:?} post {:?} unwind cond {:?} unwind env {:?}",
+        "summarize env {:?} pre {:?} post {:?}",
         exit_environment,
         preconditions,
         post_condition,
-        unwind_condition,
-        unwind_environment
     );
     let mut preconditions: Vec<Precondition> = add_provenance(preconditions, tcx);
     let mut side_effects = if let Some(exit_environment) = exit_environment {
@@ -251,11 +226,9 @@ pub fn summarize(
     } else {
         vec![]
     };
-    let mut unwind_side_effects = extract_side_effects(unwind_environment, argument_count);
 
     preconditions.sort();
     side_effects.sort();
-    unwind_side_effects.sort();
 
     Summary {
         is_computed: true,
@@ -263,8 +236,6 @@ pub fn summarize(
         preconditions,
         side_effects,
         post_condition: post_condition.clone(),
-        unwind_condition,
-        unwind_side_effects,
     }
 }
 
