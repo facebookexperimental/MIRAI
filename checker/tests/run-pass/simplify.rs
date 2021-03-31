@@ -17,17 +17,17 @@ pub fn f2(x: bool, y: bool) {
     let z = (x || y) && x;
     verify!(z == x);
     let z = (x || y) && y;
-    verify!(z == y);
+    verify!(z == y); //~ possible false verification condition
 }
 
 pub fn f3(x: bool, y: bool) {
     let z = (x || y) && (!x);
-    verify!(z == y);
+    verify!(z == y && !x); //~ possible false verification condition
 }
 
 pub fn f4(x: bool, y: bool) {
     let z = (x || y) && (!y);
-    verify!(z == x);
+    verify!(z == x && !y); //~ possible false verification condition
 }
 
 pub fn f5(x: bool, y: bool) {
@@ -81,7 +81,7 @@ pub fn f10(x: bool, y: bool, a: i32, b: i32) {
     } else {
         a
     };
-    verify!(z == if y { b } else { a });
+    verify!(z == if y { b } else { a }); //~ possible false verification condition
 }
 
 pub fn f11(x: bool, y: bool, a: i32, b: i32) {
@@ -94,7 +94,7 @@ pub fn f11(x: bool, y: bool, a: i32, b: i32) {
     } else {
         a
     };
-    verify!(z == if x { b } else { a });
+    verify!(z == if x { b } else { a }); //~ possible false verification condition
 }
 
 pub fn main() {}
