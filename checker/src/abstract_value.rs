@@ -3116,9 +3116,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     },
                 ) if x1.eq(x2) && y1.eq(y2) => x1.less_or_equal(y1.clone()),
 
-                // [(x && y) || (x && !y)] -> x
-                // [(x && y1) || (x && y2)] -> (x && (y1 || y2))
-                // [(x && y1) || ((x && x3) && y2)] -> x && (y1 || (x3 && y2))
                 (
                     Expression::And {
                         left: x1,
@@ -3131,13 +3128,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 ) => {
                     if x1 == x2 {
                         if y1.logical_not().eq(y2) {
+                            // [(x && y) || (x && !y)] -> x
                             x1.clone()
                         } else {
+                            // [(x && y1) || (x && y2)] -> x && (y1 || y2)
                             x1.and(y1.or(y2.clone()))
                         }
                     } else if y1 == y2 {
-                        // [(x1 && y) || (x2 && y)] -> (x1 || x2) && y
-                        x1.or(x2.clone()).and(y1.clone())
+                        if x1.logical_not().eq(x2) {
+                            // [(x && y) || (!x && y)] -> y
+                            y1.clone()
+                        } else {
+                            // [(x1 && y) || (x2 && y)] -> (x1 || x2) && y
+                            x1.or(x2.clone()).and(y1.clone())
+                        }
                     } else {
                         if let Expression::And {
                             left: x2,
@@ -3145,6 +3149,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         } = &x2.expression
                         {
                             if x1 == x2 {
+                                // [(x && y1) || ((x && x3) && y2)] -> x && (y1 || (x3 && y2))
                                 return x1.and(y1.or(x3.and(y2.clone())));
                             }
                         }
@@ -3229,6 +3234,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
 
                 // [(x && !y) || !(x || y)] -> !y
+                // [(x && !y) || !(y || x)] -> !y
                 (Expression::And { left: x1, right }, Expression::LogicalNot { operand })
                     if matches!(right.expression, Expression::LogicalNot { .. })
                         && matches!(operand.expression, Expression::Or { .. }) =>
@@ -3241,7 +3247,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         },
                     ) = (&right.expression, &operand.expression)
                     {
-                        if x1.eq(x2) && y1.eq(y2) {
+                        if (x1.eq(x2) && y1.eq(y2)) || (x1.eq(y2) && y1.eq(x2)) {
                             return right.clone();
                         }
                     }
