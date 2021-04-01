@@ -17,7 +17,7 @@ pub fn f2(x: bool, y: bool) {
     let z = (x || y) && x;
     verify!(z == x);
     let z = (x || y) && y;
-    verify!(z == y); //~ possible false verification condition
+    verify!(z == y);
 }
 
 pub fn f3(x: bool, y: bool) {
