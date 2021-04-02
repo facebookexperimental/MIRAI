@@ -212,7 +212,6 @@ impl KnownNamesCache {
             match path_data_elem_as_disambiguator(current_elem) {
                 Some(0) => get_path_data_elem_name(current_elem)
                     .map(|n| match n.as_str().deref() {
-                        "copy" => KnownNames::StdIntrinsicsCopy,
                         "write_bytes" => KnownNames::StdIntrinsicsWriteBytes,
                         _ => KnownNames::None,
                     })
@@ -224,6 +223,7 @@ impl KnownNamesCache {
                         "bswap" => KnownNames::StdIntrinsicsBswap,
                         "ceilf32" => KnownNames::StdIntrinsicsCeilf32,
                         "ceilf64" => KnownNames::StdIntrinsicsCeilf64,
+                        "copy" => KnownNames::StdIntrinsicsCopy,
                         "copy_nonoverlapping" => KnownNames::StdIntrinsicsCopyNonOverlapping,
                         "copysignf32" => KnownNames::StdIntrinsicsCopysignf32,
                         "copysignf64" => KnownNames::StdIntrinsicsCopysignf64,

@@ -17,6 +17,20 @@ pub mod alloc {
         }
     }
 
+    pub mod collections {
+        pub mod btree {
+            pub mod mem {
+                pub mod replace {
+                    pub mod implement {
+                        pub fn drop() {
+                            panic!("implicit drop of panic guard");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub mod fmt {
         default_contract!(format);
     }
@@ -575,8 +589,8 @@ pub mod core {
                 default_contract!(vcvttpd2dq);
                 default_contract!(vcvtpd2dq);
                 default_contract!(vcvttps2dq);
-                // fn vzeroall() {}
-                // fn vzeroupper() {}
+                default_contract!(vzeroall);
+                default_contract!(vzeroupper);
                 default_contract!(vpermilps256);
                 default_contract!(vpermilps);
                 default_contract!(vpermilpd256);
@@ -586,12 +600,21 @@ pub mod core {
                 default_contract!(vperm2f128si256);
                 default_contract!(vbroadcastf128ps256);
                 default_contract!(vbroadcastf128pd256);
-                // fn storeupd256(mem_addr: *mut f64, a: __m256d) {
-                // }
-                // fn storeups256(mem_addr: *mut f32, a: __m256) {
-                // }
-                // fn storeudq256(mem_addr: *mut i8, a: i8x32) {
-                // }
+                fn storeupd256(mem_addr: *mut __m256d, a: __m256d) {
+                    unsafe {
+                        *mem_addr = a;
+                    }
+                }
+                fn storeups256(mem_addr: *mut __m256, a: __m256) {
+                    unsafe {
+                        *mem_addr = a;
+                    }
+                }
+                fn storeudq256(mem_addr: *mut i8x32, a: i8x32) {
+                    unsafe {
+                        *mem_addr = a;
+                    }
+                }
                 default_contract!(maskloadpd256);
                 default_contract!(maskstorepd256);
                 default_contract!(maskloadpd);
@@ -844,12 +867,16 @@ pub mod core {
                 default_contract!(cvttpd2dq);
                 default_contract!(cvttsd2si);
                 default_contract!(cvttps2dq);
-                // fn storeudq(mem_addr: *mut i8, a: __m128i) {
-                //     result!()
-                // }
-                // fn storeupd(mem_addr: *mut i8, a: __m128d) {
-                //     result!()
-                // }
+                fn storeudq(mem_addr: *mut __m128i, a: __m128i) {
+                    unsafe {
+                        *mem_addr = a;
+                    }
+                }
+                fn storeupd(mem_addr: *mut __m128d, a: __m128d) {
+                    unsafe {
+                        *mem_addr = a;
+                    }
+                }
             }
             pub mod sse3 {
                 use core::arch::x86_64::__m128;
@@ -2425,10 +2452,7 @@ pub mod core {
             saturating_sub!(u64, saturating_sub__u64);
             saturating_sub!(u128, saturating_sub__u128);
             saturating_sub!(usize, saturating_sub__usize);
-
-            // pub fn r#try(f: fn(*mut u8), data: *mut u8, local_ptr: *mut u8) -> i32 {
-            //     result!()
-            // }
+            default_contract!(r#try);
             // pub fn nontemporal_store<T>(ptr: *mut T, val: T) {
             //     *ptr = val;
             // }
@@ -2996,6 +3020,7 @@ pub mod core {
         }
 
         pub mod implement {
+            default_contract!(parse);
             default_contract!(trim);
         }
 
@@ -3146,6 +3171,12 @@ pub mod hashbrown {
             default_contract!(rehash_in_place);
             default_contract!(resize);
         }
+
+        pub mod sse2 {
+            pub mod implement {
+                default_contract!(static_empty);
+            }
+        }
     }
 }
 
@@ -3248,6 +3279,10 @@ pub mod parking_lot {
 pub mod proc_macro {
     pub mod implement_proc_macro_Ident {
         default_contract!(to_string);
+    }
+
+    pub mod implement_proc_macro_Span {
+        default_contract!(call_site);
     }
 }
 
@@ -3672,6 +3707,7 @@ pub mod std {
     }
 
     pub mod env {
+        default_contract!(temp_dir);
         default_contract!(_var);
         default_contract!(_var_os);
         default_contract!(vars_os);
@@ -3862,6 +3898,14 @@ pub mod std {
             pub mod implement_std_net_ip_Ipv4Addr {
                 default_contract!(cmp);
                 default_contract!(from);
+                default_contract!(from_inner);
+                default_contract!(partial_cmp);
+            }
+
+            pub mod implement_std_net_ip_Ipv6Addr {
+                default_contract!(cmp);
+                default_contract!(from);
+                default_contract!(from_inner);
                 default_contract!(partial_cmp);
             }
 
@@ -3891,6 +3935,7 @@ pub mod std {
         }
 
         default_contract!(set_hook);
+        default_contract!(take_hook);
     }
 
     pub mod path {
@@ -3968,6 +4013,7 @@ pub mod std {
     pub mod sys_common {
         pub mod mutex {
             pub mod implement_std_sys_common_mutex_MovableMutex {
+                default_contract!(drop);
                 default_contract!(new);
             }
         }
@@ -3982,6 +4028,12 @@ pub mod std {
             pub mod implement_std_sys_common_os_str_bytes_Buf {
                 default_contract!(into_string);
                 default_contract!(into_string_lossy);
+            }
+        }
+
+        pub mod poison {
+            pub mod implement {
+                default_contract!(new);
             }
         }
 
@@ -4028,6 +4080,36 @@ pub mod std {
             default_contract!(duration_since);
             default_contract!(elapsed);
             default_contract!(now);
+        }
+    }
+}
+
+pub mod syn {
+    pub mod attr {
+        pub mod implement {
+            default_contract!(parse_meta);
+        }
+    }
+
+    pub mod error {
+        pub mod implement {
+            default_contract!(to_compile_error);
+        }
+    }
+
+    pub mod lit {
+        pub mod implement {
+            default_contract!(parse);
+        }
+    }
+
+    pub mod parse_macro_input {
+        default_contract!(parse);
+    }
+
+    pub mod spanned {
+        pub mod implement {
+            default_contract!(span);
         }
     }
 }

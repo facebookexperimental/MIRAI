@@ -143,9 +143,13 @@ impl MiraiCallbacks {
 
     fn is_excluded(&self, file_name: &str) -> bool {
         if file_name.contains("client/swiss-knife/src") // too slow 
+            || file_name.contains("common/logger/derive/src") // meta programming
+            || file_name.contains("common/num-variants/src") // meta programming
+            || file_name.contains("common/time-service/src") // collections of call backs
             || file_name.contains("config/management/src") // too slow
             || file_name.contains("config/management/genesis/src") // too slow    
             || file_name.contains("config/management/operational/src") // too slow
+            || file_name.contains("crypto/crypto-derive/src") // too much parsing
             || file_name.contains("json-rpc/src") // stack overflow
             || file_name.contains("language/bytecode-verifier/src") // too slow
             || file_name.contains("language/diem-tools/diem-events-fetcher/src") // resolve error
@@ -154,6 +158,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-prover/bytecode/src") // too slow 
             || file_name.contains("language/tools/move-coverage/src") // too slow
             || file_name.contains("language/vm/src") // too slow
+            || file_name.contains("secure/storage/vault/src") // Sorts Int and <null> are incompatible
             || file_name.contains("state-sync/src") // Sorts <null> and Int are incompatible
             || file_name.contains("types/src")
         {
