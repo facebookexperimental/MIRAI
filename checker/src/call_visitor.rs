@@ -637,7 +637,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             }
                             None => {
                                 // Might have to clone the Some(..) variant, so can't be handled here,
-                                if self.actual_args[0].0.contains_parameter() {
+                                if let Some(promotable_is_zero) =
+                                    is_zero.extract_promotable_conjuncts()
+                                {
                                     // The caller might be able to avoid the diagnostic because it
                                     // knows the actual argument whereas here we only know the type.
                                     let specialized_substs =
@@ -653,7 +655,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                                         // caller (or on its callers) must ensure that is_zero will be true
                                         // at runtime when this call is issued.
                                         let precondition = Precondition {
-                                            condition: is_zero,
+                                            condition: promotable_is_zero,
                                             message: Rc::from("incomplete analysis of call because of failure to resolve std::Clone::clone method"),
                                             provenance: None,
                                             spans: vec![self.block_visitor.bv.current_span.source_callsite()],
@@ -874,13 +876,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     // their assertions should use the mirai_annotations::verify! macro instead.
                     //
                     // We **do** have to push a precondition since this is the probable intent.
-                    let condition = self
+                    if let Some(promotable_entry_condition) = self
                         .block_visitor
                         .bv
                         .current_environment
                         .entry_condition
-                        .logical_not();
-                    if !condition.expression.contains_local_variable() {
+                        .extract_promotable_conjuncts()
+                    {
+                        let condition = promotable_entry_condition.logical_not();
                         let precondition = Precondition {
                             condition,
                             message: msg,
@@ -892,6 +895,24 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             },
                         };
                         self.block_visitor.bv.preconditions.push(precondition);
+                    } else {
+                        // If the assertion cannot be promoted because the caller cannot
+                        // satisfy it (because it contains a reference to local variable),
+                        // then we need to produce a diagnostic after all, but only if this
+                        // a local function (i.e. a function in the crate being analyzed).
+                        if self.block_visitor.bv.def_id.is_local() {
+                            let warning = self
+                                .block_visitor
+                                .bv
+                                .cv
+                                .session
+                                .struct_span_warn(span, msg.as_ref());
+                            self.block_visitor.bv.emit_diagnostic(warning);
+                        } else {
+                            // Since the assertion occurs in code that is being used rather than
+                            // analyzed, we'll assume that the code is correct and the analyzer
+                            // discovered a false positive.
+                        }
                     }
                 }
             }
@@ -934,30 +955,36 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         self.callee_known_name,
                     ) {
                         // The condition may be reachable and false. Promote it to a precondition if possible.
-                        if !non_zero.expression.contains_local_variable()
-                            && self.block_visitor.bv.preconditions.len()
-                                < k_limits::MAX_INFERRED_PRECONDITIONS
-                        {
-                            let condition = self
-                                .block_visitor
+                        match (
+                            self.block_visitor
                                 .bv
                                 .current_environment
                                 .entry_condition
-                                .logical_not()
-                                .or(non_zero.clone());
-                            let precondition = Precondition {
-                                condition,
-                                message: warning,
-                                provenance: None,
-                                spans: vec![self.block_visitor.bv.current_span],
-                            };
-                            self.block_visitor.bv.preconditions.push(precondition);
-                        } else {
-                            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
-                                self.block_visitor.bv.current_span,
-                                warning.as_ref(),
-                            );
-                            self.block_visitor.bv.emit_diagnostic(warning);
+                                .extract_promotable_conjuncts(),
+                            non_zero.extract_promotable_conjuncts(),
+                        ) {
+                            (Some(promotable_entry_condition), Some(promotable_non_zero))
+                                if self.block_visitor.bv.preconditions.len()
+                                    < k_limits::MAX_INFERRED_PRECONDITIONS =>
+                            {
+                                let condition = promotable_entry_condition
+                                    .logical_not()
+                                    .or(promotable_non_zero);
+                                let precondition = Precondition {
+                                    condition,
+                                    message: warning,
+                                    provenance: None,
+                                    spans: vec![self.block_visitor.bv.current_span],
+                                };
+                                self.block_visitor.bv.preconditions.push(precondition);
+                            }
+                            _ => {
+                                let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                                    self.block_visitor.bv.current_span,
+                                    warning.as_ref(),
+                                );
+                                self.block_visitor.bv.emit_diagnostic(warning);
+                            }
                         }
                     }
                 }
@@ -2628,26 +2655,32 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 if seen_precondition {
                     continue;
                 }
-                let promoted_condition = self
+                if let Some(promotable_entry_condition) = self
                     .block_visitor
                     .bv
                     .current_environment
                     .entry_condition
-                    .logical_not()
-                    .or(refined_condition);
-                if !promoted_condition.expression.contains_local_variable() {
-                    let mut stacked_spans = vec![self.block_visitor.bv.current_span];
-                    stacked_spans.append(&mut precondition.spans.clone());
-                    let promoted_precondition = Precondition {
-                        condition: promoted_condition,
-                        message: precondition.message.clone(),
-                        provenance: precondition.provenance.clone(),
-                        spans: stacked_spans,
-                    };
-                    self.block_visitor
-                        .bv
-                        .preconditions
-                        .push(promoted_precondition);
+                    .extract_promotable_conjuncts()
+                {
+                    if let Some(promotable_condition) =
+                        refined_condition.extract_promotable_conjuncts()
+                    {
+                        let promoted_condition = promotable_entry_condition
+                            .logical_not()
+                            .or(promotable_condition);
+                        let mut stacked_spans = vec![self.block_visitor.bv.current_span];
+                        stacked_spans.append(&mut precondition.spans.clone());
+                        let promoted_precondition = Precondition {
+                            condition: promoted_condition,
+                            message: precondition.message.clone(),
+                            provenance: precondition.provenance.clone(),
+                            spans: stacked_spans,
+                        };
+                        self.block_visitor
+                            .bv
+                            .preconditions
+                            .push(promoted_precondition);
+                    }
                 }
                 return;
             }
