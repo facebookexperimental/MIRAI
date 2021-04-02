@@ -545,7 +545,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         if let Some(fr) = func_ref {
             func_ref_to_call = fr;
         } else {
-            if self.might_be_reachable()
+            if self.might_be_reachable().unwrap_or(true)
                 && self
                     .bv
                     .already_reported_errors_for_call_to
@@ -758,7 +758,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // positives.
             }
             _ => {
-                if self.might_be_reachable() {
+                if self.might_be_reachable().unwrap_or(true) {
                     // Give a diagnostic about this call, and make it the programmer's problem.
                     let warning = self.bv.cv.session.struct_span_warn(
                         self.bv.current_span,
@@ -1340,7 +1340,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Only call this when doing actual error checking, since this is expensive.
     #[logfn_inputs(TRACE)]
     #[logfn(TRACE)]
-    pub fn might_be_reachable(&mut self) -> bool {
+    pub fn might_be_reachable(&mut self) -> Option<bool> {
         trace!(
             "entry condition {:?}",
             self.bv.current_environment.entry_condition
@@ -1366,7 +1366,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
             self.bv.smt_solver.backtrack();
         }
-        entry_cond_as_bool.unwrap_or(true)
+        entry_cond_as_bool
     }
 
     /// Execute a piece of inline Assembly.
