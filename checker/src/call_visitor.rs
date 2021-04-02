@@ -25,7 +25,6 @@ use crate::k_limits;
 use crate::known_names::KnownNames;
 use crate::options::DiagLevel;
 use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
-use crate::smt_solver::SmtResult;
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
 use crate::{abstract_value, type_visitor, utils};
@@ -792,36 +791,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             | KnownNames::StdPanickingBeginPanic
             | KnownNames::StdPanickingBeginPanicFmt => {
                 assume!(!self.actual_args.is_empty()); // The type checker ensures this.
-                let mut path_cond = self
-                    .block_visitor
-                    .bv
-                    .current_environment
-                    .entry_condition
-                    .as_bool_if_known();
-                if path_cond.is_none() {
-                    // Try the SMT solver
-                    let path_expr = &self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .entry_condition
-                        .expression;
-                    let path_smt = self
-                        .block_visitor
-                        .bv
-                        .smt_solver
-                        .get_as_smt_predicate(path_expr);
-                    if self.block_visitor.bv.smt_solver.solve_expression(&path_smt)
-                        == SmtResult::Unsatisfiable
-                    {
-                        path_cond = Some(false)
-                    }
-                }
+                let mut path_cond = self.block_visitor.might_be_reachable();
                 if !path_cond.unwrap_or(true) {
                     // We never get to this call, so nothing to report.
                     return;
                 }
-
                 let msg = match self.callee_known_name {
                     KnownNames::StdPanickingAssertFailed => Rc::from("assertion failed"),
                     KnownNames::StdPanickingBeginPanic => {
@@ -2496,7 +2470,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn report_incomplete_summary(&mut self) {
         self.block_visitor.bv.analysis_is_incomplete = true;
-        if self.block_visitor.might_be_reachable() {
+        if self.block_visitor.might_be_reachable().unwrap_or(true) {
             // The the callee is local, there will already be a diagnostic about the incomplete summary.
             if !self.callee_def_id.is_local()
                 && self.block_visitor.bv.cv.options.diag_level != DiagLevel::Default
