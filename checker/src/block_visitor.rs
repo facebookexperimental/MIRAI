@@ -663,6 +663,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .insert(call_visitor.callee_fun_val.clone())
             {
                 call_visitor.block_visitor.report_missing_summary();
+                if known_name != KnownNames::StdCloneClone
+                    && !call_visitor.block_visitor.bv.analysis_is_incomplete
+                {
+                    return;
+                }
             }
         } else if function_summary.is_incomplete
             && call_visitor
@@ -743,14 +748,31 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Give diagnostic, depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     pub fn report_missing_summary(&mut self) {
-        self.bv.analysis_is_incomplete = true;
-        match self.bv.cv.options.diag_level {
-            DiagLevel::Default => {
-                // In this mode we suppress any diagnostics about issues that might not be true
-                // positives.
+        if self.might_be_reachable().unwrap_or(true) {
+            if let Some(promotable_entry_condition) = self
+                .bv
+                .current_environment
+                .entry_condition
+                .extract_promotable_conjuncts()
+            {
+                if promotable_entry_condition.as_bool_if_known().is_none() {
+                    let precondition = Precondition {
+                        condition: promotable_entry_condition.logical_not(),
+                        message: Rc::from("incomplete analysis of call because of failure to resolve an indirect call"),
+                        provenance: None,
+                        spans: vec![self.bv.current_span.source_callsite()],
+                    };
+                    self.bv.preconditions.push(precondition);
+                    return;
+                }
             }
-            _ => {
-                if self.might_be_reachable().unwrap_or(true) {
+            self.bv.analysis_is_incomplete = true;
+            match self.bv.cv.options.diag_level {
+                DiagLevel::Default => {
+                    // In this mode we suppress any diagnostics about issues that might not be true
+                    // positives.
+                }
+                _ => {
                     // Give a diagnostic about this call, and make it the programmer's problem.
                     let warning = self.bv.cv.session.struct_span_warn(
                         self.bv.current_span,
