@@ -237,35 +237,6 @@ impl Path {
         }
     }
 
-    /// Returns true if the path contains a value whose expression contains a parameter.
-    #[logfn_inputs(TRACE)]
-    pub fn contains_parameter(&self) -> bool {
-        match &self.value {
-            PathEnum::Computed { value } => value.expression.contains_parameter(),
-            PathEnum::HeapBlock { .. } => false,
-            PathEnum::LocalVariable { .. } => false,
-            PathEnum::Offset { value } => value.expression.contains_parameter(),
-            PathEnum::Parameter { .. } => true,
-            PathEnum::Result => false,
-            PathEnum::StaticVariable { .. } => true,
-            PathEnum::PhantomData => false,
-            PathEnum::PromotedConstant { .. } => false,
-            PathEnum::QualifiedPath {
-                qualifier,
-                selector,
-                ..
-            } => {
-                qualifier.contains_parameter() || {
-                    if let PathSelector::Index(value) = selector.as_ref() {
-                        value.expression.contains_parameter()
-                    } else {
-                        false
-                    }
-                }
-            }
-        }
-    }
-
     /// Returns true if the path contains a value whose expression contains a widened join.
     #[logfn_inputs(TRACE)]
     pub fn contains_widened_join(&self) -> bool {
@@ -284,7 +255,7 @@ impl Path {
                 selector,
                 ..
             } => {
-                qualifier.contains_parameter() || {
+                qualifier.contains_widened_join() || {
                     if let PathSelector::Index(value) = selector.as_ref() {
                         value.expression.contains_widened_join()
                     } else {

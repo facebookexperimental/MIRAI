@@ -394,28 +394,20 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn visit_return(&mut self) {
         if self.bv.check_for_errors {
             // Done with fixed point, so prepare to summarize.
-            if self.bv.post_condition.is_none()
-                && !self.bv.current_environment.entry_condition.is_top()
-            {
-                let return_guard = self
+            if self.bv.post_condition.is_none() {
+                if let Some(promotable_entry_condition) = self
                     .bv
                     .current_environment
                     .entry_condition
-                    .as_bool_if_known();
-                if return_guard.is_none()
-                    && !self
-                        .bv
-                        .current_environment
-                        .entry_condition
-                        .expression
-                        .contains_local_variable()
+                    .extract_promotable_conjuncts()
                 {
-                    // If no post condition has been explicitly supplied and if the entry condition is interesting
-                    // then make the entry condition a post condition, because the function only returns
-                    // if this condition is true and thus the caller can assume the condition in its
-                    // normal return path.
-                    self.bv.post_condition =
-                        Some(self.bv.current_environment.entry_condition.clone());
+                    if promotable_entry_condition.as_bool_if_known().is_none() {
+                        // If no post condition has been explicitly supplied and if the entry condition is interesting
+                        // then make the entry condition a post condition, because the function only returns
+                        // if this condition is true and thus the caller can assume the condition in its
+                        // normal return path.
+                        self.bv.post_condition = Some(promotable_entry_condition);
+                    }
                 }
             }
             // When the summary is prepared the current environment might be different, so remember this one.
@@ -909,15 +901,22 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         if !matches!(
             self.bv.cv.options.diag_level,
             DiagLevel::Library | DiagLevel::Paranoid
-        ) && (condition.expression.contains_parameter()
-            || self
-                .bv
-                .current_environment
-                .entry_condition
-                .expression
-                .contains_parameter())
-        {
-            return;
+        ) {
+            match (
+                self.bv
+                    .current_environment
+                    .entry_condition
+                    .extract_promotable_conjuncts(),
+                condition.extract_promotable_conjuncts(),
+            ) {
+                (Some(promotable_entry_cond), Some(promotable_condition))
+                    if promotable_entry_cond.as_bool_if_known().is_none()
+                        || promotable_condition.as_bool_if_known().is_none() =>
+                {
+                    return;
+                }
+                _ => {}
+            }
         }
         let mut diagnostic = if warn && !precondition.message.starts_with("possible ") {
             Rc::from(format!("possible {}", precondition.message))
@@ -956,31 +955,29 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn try_extend_post_condition(&mut self, cond: &Rc<AbstractValue>) {
         precondition!(self.bv.check_for_errors);
-        if cond.expression.contains_local_variable() {
-            // The caller won't have a use for this
-            return;
-        }
-        let this_block = self.bv.current_location.block;
-        match (self.bv.post_condition.clone(), self.bv.post_condition_block) {
-            (Some(last_cond), Some(last_block)) => {
-                let dominators = self.bv.mir.dominators();
-                if dominators.is_dominated_by(this_block, last_block) {
-                    // We can extend the last condition as all paths to this condition
-                    // lead over it
-                    self.bv.post_condition = Some(last_cond.and(cond.clone()));
-                    self.bv.post_condition_block = Some(this_block);
-                } else {
-                    let span = self.bv.current_span;
-                    let warning = self.bv.cv.session.struct_span_warn(
-                        span,
-                        "multiple post conditions must be on the same execution path",
-                    );
-                    self.bv.emit_diagnostic(warning);
+        if let Some(promotable_condition) = cond.extract_promotable_conjuncts() {
+            let this_block = self.bv.current_location.block;
+            match (self.bv.post_condition.clone(), self.bv.post_condition_block) {
+                (Some(last_cond), Some(last_block)) => {
+                    let dominators = self.bv.mir.dominators();
+                    if dominators.is_dominated_by(this_block, last_block) {
+                        // We can extend the last condition as all paths to this condition
+                        // lead over it
+                        self.bv.post_condition = Some(last_cond.and(promotable_condition));
+                        self.bv.post_condition_block = Some(this_block);
+                    } else {
+                        let span = self.bv.current_span;
+                        let warning = self.bv.cv.session.struct_span_warn(
+                            span,
+                            "multiple post conditions must be on the same execution path",
+                        );
+                        self.bv.emit_diagnostic(warning);
+                    }
                 }
-            }
-            (_, _) => {
-                self.bv.post_condition = Some(cond.clone());
-                self.bv.post_condition_block = Some(this_block);
+                (_, _) => {
+                    self.bv.post_condition = Some(promotable_condition);
+                    self.bv.post_condition_block = Some(this_block);
+                }
             }
         }
     }
@@ -1032,6 +1029,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             return None;
         }
 
+        let promotable_entry_condition = self
+            .bv
+            .current_environment
+            .entry_condition
+            .extract_promotable_conjuncts();
+
         // If a verification condition is always false, give an error since that is bad style.
         if function_name == KnownNames::MiraiVerify && !cond_as_bool.unwrap_or(true) {
             // If the condition is always false, give a style error
@@ -1045,10 +1048,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             if entry_cond_as_bool.is_none()
                 && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
             {
-                // promote the path as a precondition. I.e. the program is only correct,
-                // albeit badly written, if we never get here.
-                let condition = self.bv.current_environment.entry_condition.logical_not();
-                if !condition.expression.contains_local_variable() {
+                if let Some(promotable_entry_cond) = promotable_entry_condition {
+                    // promote the path as a precondition. I.e. the program is only correct,
+                    // albeit badly written, if we never get here.
+                    let condition = promotable_entry_cond.logical_not();
                     let message = Rc::from(format!("possible {}", message));
                     let precondition = Precondition {
                         condition,
@@ -1067,26 +1070,23 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
         // or if the condition is not promotable or if the condition is being explicitly verified.
-        if function_name == KnownNames::MiraiVerify
-            || self.bv.function_being_analyzed_is_root()
-            || cond.expression.contains_local_variable()
+        let promotable_cond = cond.extract_promotable_conjuncts();
+        if self.bv.function_being_analyzed_is_root()
             || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
+            || promotable_cond.is_none()
+            || promotable_entry_condition.is_none()
+            || function_name == KnownNames::MiraiVerify
         {
             // In non library|paranoid mode we don't want to complain if the condition or reachability depends on
             // a parameter, since it is assumed that an implicit precondition was intended by the author
             // unless, of course, the condition is being explicitly verified.
             if function_name == KnownNames::MiraiVerify
+                || promotable_cond.is_none()
+                || promotable_entry_condition.is_none()
                 || matches!(
                     self.bv.cv.options.diag_level,
                     DiagLevel::Library | DiagLevel::Paranoid
                 )
-                || (!cond.expression.contains_parameter()
-                    && !self
-                        .bv
-                        .current_environment
-                        .entry_condition
-                        .expression
-                        .contains_parameter())
             {
                 let span = self.bv.current_span.source_callsite();
                 let warning = self.bv.cv.session.struct_span_warn(span, warning.as_str());
@@ -1117,6 +1117,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
         // We perform the tag check if the current block is possibly reachable.
         if entry_cond_as_bool.unwrap_or(true) {
+            let promotable_entry_condition = self
+                .bv
+                .current_environment
+                .entry_condition
+                .extract_promotable_conjuncts();
             match tag_check_as_bool {
                 None => {
                     // We cannot decide the result of the tag check.
@@ -1132,7 +1137,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             format!("the {} may have a {} tag", value_name, tag_name).as_str(),
                         );
                         self.bv.emit_diagnostic(warning);
-                    } else if tag_check.expression.contains_local_variable() {
+                    } else if promotable_entry_condition.is_none()
+                        || tag_check.extract_promotable_conjuncts().is_none()
+                    {
                         let span = self.bv.current_span.source_callsite();
                         let warning = self.bv.cv.session.struct_span_warn(
                             span,
@@ -1164,23 +1171,27 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
             // We promote the tag check as a precondition if it is not always true, it does not
             // contain local variables, and we don't reach a k-limit.
-            if !tag_check_as_bool.unwrap_or(false)
-                && !tag_check.expression.contains_local_variable()
-                && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
-            {
-                let condition = self
-                    .bv
-                    .current_environment
-                    .entry_condition
-                    .logical_not()
-                    .or(tag_check);
-                let precondition = Precondition {
-                    condition,
-                    message: Rc::from(format!("the {} may have a {} tag", value_name, tag_name)),
-                    provenance: None,
-                    spans: vec![self.bv.current_span.source_callsite()],
-                };
-                self.bv.preconditions.push(precondition);
+            match (
+                promotable_entry_condition,
+                tag_check.extract_promotable_conjuncts(),
+            ) {
+                (Some(promotable_entry_cond), Some(promotable_tag_check))
+                    if !tag_check_as_bool.unwrap_or(false)
+                        && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS =>
+                {
+                    let condition = promotable_entry_cond.logical_not().or(promotable_tag_check);
+                    let precondition = Precondition {
+                        condition,
+                        message: Rc::from(format!(
+                            "the {} may have a {} tag",
+                            value_name, tag_name
+                        )),
+                        provenance: None,
+                        spans: vec![self.bv.current_span.source_callsite()],
+                    };
+                    self.bv.preconditions.push(precondition);
+                }
+                _ => {}
             }
         }
     }
@@ -1264,25 +1275,18 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
                     // At this point, we don't know that this assert is unreachable and we don't know
                     // that the condition is as expected, so we need to warn about it somewhere.
-                    if self.bv.function_being_analyzed_is_root()
+                    let promotable_cond_val = cond_val.extract_promotable_conjuncts();
+                    let promotable_entry_cond = self
+                        .bv
+                        .current_environment
+                        .entry_condition
+                        .extract_promotable_conjuncts();
+
+                    if promotable_cond_val.is_none()
+                        || promotable_entry_cond.is_none()
                         || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
-                        || cond_val.expression.contains_local_variable()
+                        || self.bv.function_being_analyzed_is_root()
                     {
-                        // In non library mode we don't want to complain if the condition or reachability depends on
-                        // a parameter, since it is assumed that an implicit precondition was intended by the author.
-                        if !matches!(
-                            self.bv.cv.options.diag_level,
-                            DiagLevel::Library | DiagLevel::Paranoid
-                        ) && (cond_val.expression.contains_parameter()
-                            || self
-                                .bv
-                                .current_environment
-                                .entry_condition
-                                .expression
-                                .contains_parameter())
-                        {
-                            return;
-                        }
                         // Can't make this the caller's problem.
                         let warning = format!("possible {}", get_assert_msg_description(msg));
                         let span = self.bv.current_span;
@@ -1298,31 +1302,25 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     self.bv
                         .preconditions
                         .retain(|pc| pc.spans.last() != Some(&sp));
-                    if !cond_val.expression.contains_local_variable()
-                        && self.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
-                    {
-                        let expected_cond = if expected {
-                            cond_val
-                        } else {
-                            cond_val.logical_not()
-                        };
-                        // To make sure that this assertion never fails, we should either never
-                        // get here (!entry_condition) or expected_cond should be true.
-                        let condition = self
-                            .bv
-                            .current_environment
-                            .entry_condition
-                            .logical_not()
-                            .or(expected_cond);
-                        let message = Rc::from(String::from(get_assert_msg_description(msg)));
-                        let precondition = Precondition {
-                            condition,
-                            message,
-                            provenance: None,
-                            spans: vec![self.bv.current_span],
-                        };
-                        self.bv.preconditions.push(precondition);
-                    }
+                    let expected_cond = if expected {
+                        promotable_cond_val.unwrap()
+                    } else {
+                        promotable_cond_val.unwrap().logical_not()
+                    };
+                    // To make sure that this assertion never fails, we should either never
+                    // get here (!entry_condition) or expected_cond should be true.
+                    let condition = promotable_entry_cond
+                        .unwrap()
+                        .logical_not()
+                        .or(expected_cond);
+                    let message = Rc::from(String::from(get_assert_msg_description(msg)));
+                    let precondition = Precondition {
+                        condition,
+                        message,
+                        provenance: None,
+                        spans: vec![self.bv.current_span],
+                    };
+                    self.bv.preconditions.push(precondition);
                 }
             }
         }

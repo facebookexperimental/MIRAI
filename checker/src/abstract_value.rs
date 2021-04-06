@@ -366,9 +366,9 @@ pub trait AbstractValueTrait: Sized {
     fn add_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn add_tag(&self, tag: Tag) -> Self;
     fn and(&self, other: Self) -> Self;
-    fn trim_prefix_conjuncts(&self, target_size: u64) -> Option<Rc<AbstractValue>>;
+    fn trim_prefix_conjuncts(&self, target_size: u64) -> Option<Self>;
     fn as_bool_if_known(&self) -> Option<bool>;
-    fn as_int_if_known(&self) -> Option<Rc<AbstractValue>>;
+    fn as_int_if_known(&self) -> Option<Self>;
     fn bit_and(&self, other: Self) -> Self;
     fn bit_not(&self, target_type: ExpressionType) -> Self;
     fn bit_or(&self, other: Self) -> Self;
@@ -377,8 +377,9 @@ pub trait AbstractValueTrait: Sized {
     fn conditional_expression(&self, consequent: Self, alternate: Self) -> Self;
     fn dereference(&self, target_type: ExpressionType) -> Self;
     fn divide(&self, other: Self) -> Self;
-    fn does_not_have_tag(&self, tag: &Tag) -> Rc<AbstractValue>;
+    fn does_not_have_tag(&self, tag: &Tag) -> Self;
     fn equals(&self, other: Self) -> Self;
+    fn extract_promotable_conjuncts(&self) -> Option<Self>;
     fn greater_or_equal(&self, other: Self) -> Self;
     fn greater_than(&self, other: Self) -> Self;
     fn has_tag(&self, tag: &Tag) -> Rc<AbstractValue>;
@@ -1893,6 +1894,29 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             left,
             right,
         })
+    }
+
+    /// Extracts a subexpression that must be true for the overall expression to be true
+    /// and which contain no references to local variables of the current function.
+    #[logfn_inputs(TRACE)]
+    fn extract_promotable_conjuncts(&self) -> Option<Rc<AbstractValue>> {
+        if let Expression::And { left, right } = &self.expression {
+            if let Some(left_conjunct) = left.extract_promotable_conjuncts() {
+                if let Some(right_conjunct) = right.extract_promotable_conjuncts() {
+                    Some(left.and(right_conjunct))
+                } else {
+                    Some(left_conjunct)
+                }
+            } else {
+                right.extract_promotable_conjuncts()
+            }
+        } else if !self.expression.contains_local_variable()
+            && self.as_bool_if_known().unwrap_or(true)
+        {
+            Some(self.clone())
+        } else {
+            None
+        }
     }
 
     /// Returns an element that is "self >= other".
