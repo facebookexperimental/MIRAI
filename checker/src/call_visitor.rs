@@ -2497,6 +2497,24 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn report_incomplete_summary(&mut self) {
         if self.block_visitor.might_be_reachable().unwrap_or(true) {
+            if let Some(promotable_entry_condition) = self
+                .block_visitor
+                .bv
+                .current_environment
+                .entry_condition
+                .extract_promotable_conjuncts()
+            {
+                if promotable_entry_condition.as_bool_if_known().is_none() {
+                    let precondition = Precondition {
+                        condition: promotable_entry_condition.logical_not(),
+                        message: Rc::from("incomplete analysis of call because of failure to resolve a nested call"),
+                        provenance: None,
+                        spans: vec![self.block_visitor.bv.current_span.source_callsite()],
+                    };
+                    self.block_visitor.bv.preconditions.push(precondition);
+                    return;
+                }
+            }
             self.block_visitor.bv.analysis_is_incomplete = true;
             // If the callee is local, there will already be a diagnostic about the incomplete summary.
             if !self.callee_def_id.is_local()
