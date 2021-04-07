@@ -4905,12 +4905,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if self.is_top() || self.is_bottom() {
                     return self.clone();
                 }
-                unimplemented!(
+                info!(
                     "replacing embedded path root of {:?}, old_root {:?}, new_root {:?}",
-                    self,
-                    old_root,
-                    new_root
+                    self, old_root, new_root
                 );
+                self.clone()
             }
         }
     }

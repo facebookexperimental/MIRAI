@@ -758,7 +758,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 if promotable_entry_condition.as_bool_if_known().is_none() {
                     let precondition = Precondition {
                         condition: promotable_entry_condition.logical_not(),
-                        message: Rc::from("incomplete analysis of call because of failure to resolve an indirect call"),
+                        message: Rc::from("incomplete analysis of call because of a nested call to a function without a MIR body"),
                         provenance: None,
                         spans: vec![self.bv.current_span.source_callsite()],
                     };
