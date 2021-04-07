@@ -2496,9 +2496,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     /// Give diagnostic depending on self.bv.options.diag_level
     #[logfn_inputs(TRACE)]
     pub fn report_incomplete_summary(&mut self) {
-        self.block_visitor.bv.analysis_is_incomplete = true;
         if self.block_visitor.might_be_reachable().unwrap_or(true) {
-            // The the callee is local, there will already be a diagnostic about the incomplete summary.
+            self.block_visitor.bv.analysis_is_incomplete = true;
+            // If the callee is local, there will already be a diagnostic about the incomplete summary.
             if !self.callee_def_id.is_local()
                 && self.block_visitor.bv.cv.options.diag_level != DiagLevel::Default
             {
