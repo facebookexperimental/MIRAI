@@ -181,6 +181,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/tools/move-bytecode-viewer/src") // too slow
             || file_name.contains("language/tools/move-cli/src") // too slow
             || file_name.contains("language/tools/move-coverage/src") // too slow
+            || file_name.contains("language/tools/resource-viewer/src") // too slow
             || file_name.contains("language/tools/vm-genesis/src") // too slow
             || file_name.contains("language/transaction-builder/generator/src") // too slow
             || file_name.contains("language/vm/src") // too slow

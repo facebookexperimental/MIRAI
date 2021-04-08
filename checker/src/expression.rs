@@ -736,7 +736,7 @@ impl Expression {
             Expression::UnknownTagField { path } | Expression::Variable { path, .. } => {
                 path.contains_local_variable()
             }
-            Expression::WidenedJoin { .. } => true,
+            Expression::WidenedJoin { operand, .. } => operand.expression.contains_local_variable(),
         }
     }
 

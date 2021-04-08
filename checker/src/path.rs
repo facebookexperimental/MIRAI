@@ -788,7 +788,11 @@ impl PathRefinement for Rc<Path> {
                     selector.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
                 let refined_qualifier =
                     qualifier.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                Path::new_qualified(refined_qualifier, refined_selector).canonicalize(post_env)
+                if refined_qualifier == *qualifier && refined_selector == *selector {
+                    self.clone()
+                } else {
+                    Path::new_qualified(refined_qualifier, refined_selector).canonicalize(post_env)
+                }
             }
             PathEnum::Result => {
                 if result.is_none() {
