@@ -1261,6 +1261,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
+        // [if 0 == x { false } else { y }] -> x && y
+        if let Expression::Equals { left: z, right: x } = &self.expression {
+            if let Expression::CompileTimeConstant(ConstantDomain::U128(0)) = z.expression {
+                if !consequent.as_bool_if_known().unwrap_or(true) {
+                    return x.and(alternate);
+                }
+            }
+        }
         let consequent_as_bool_if_known = consequent.as_bool_if_known();
         // [if x { true } else { y }] -> x || y
         if consequent_as_bool_if_known.unwrap_or(false) {
