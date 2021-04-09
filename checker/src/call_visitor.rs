@@ -2660,7 +2660,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
 
             // If the current function is not an analysis root, promote the precondition, subject to a k-limit.
-            if !self.block_visitor.bv.function_being_analyzed_is_root()
+            if (!self.block_visitor.bv.function_being_analyzed_is_root()
+                || self.block_visitor.bv.cv.options.diag_level == DiagLevel::Default)
                 && self.block_visitor.bv.preconditions.len() < k_limits::MAX_INFERRED_PRECONDITIONS
             {
                 // Promote the callee precondition to a precondition of the current function.
@@ -2698,9 +2699,27 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             .bv
                             .preconditions
                             .push(promoted_precondition);
+                        continue;
+                    } else if refined_condition.is_top() {
+                        // The caller may not be able to prove !entry_cond || cond because cond may
+                        // be anything, including a local variable, but the caller may still be able
+                        // to prove just !entry_cond
+                        let promoted_condition = promotable_entry_condition.logical_not();
+                        let mut stacked_spans = vec![self.block_visitor.bv.current_span];
+                        stacked_spans.append(&mut precondition.spans.clone());
+                        let promoted_precondition = Precondition {
+                            condition: promoted_condition,
+                            message: precondition.message.clone(),
+                            provenance: precondition.provenance.clone(),
+                            spans: stacked_spans,
+                        };
+                        self.block_visitor
+                            .bv
+                            .preconditions
+                            .push(promoted_precondition);
+                        continue;
                     }
                 }
-                return;
             }
 
             // The precondition cannot be promoted, so the buck stops here.
