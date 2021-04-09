@@ -16,8 +16,8 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc_middle::ty::{
-    Const, ConstKind, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef, FnSig,
-    ParamTy, Ty, TyCtxt, TyKind, TypeAndMut,
+    AdtDef, Const, ConstKind, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef,
+    FnSig, ParamTy, Ty, TyCtxt, TyKind, TypeAndMut,
 };
 use rustc_target::abi::VariantIdx;
 use std::cell::RefCell;
@@ -249,8 +249,12 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 Expression::CompileTimeConstant(c) => c.get_rustc_type(self.tcx),
                 Expression::Reference(path) => {
                     let target_type = self.get_path_rustc_type(path, current_span);
-                    self.tcx
-                        .mk_imm_ref(self.tcx.lifetimes.re_erased, target_type)
+                    if target_type.is_never() {
+                        target_type
+                    } else {
+                        self.tcx
+                            .mk_imm_ref(self.tcx.lifetimes.re_erased, target_type)
+                    }
                 }
                 Expression::InitialParameterValue { path, .. }
                 | Expression::Variable { path, .. }
@@ -344,20 +348,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         }
                         match t.kind() {
                             TyKind::Adt(def, substs) => {
-                                // enum fields have qualifiers that cast onto the right variant.
-                                // In this case, t ends up as a tuple so we won't get here.
-                                // See the TyKind::Tuple and PathSelector::DownCast cases below.
-                                checked_assume!(!def.is_enum());
-                                let variants = &def.variants;
-                                assume!(variants.len() == 1); // only enums have more than one variant
-                                let variant = &variants[variants.last().unwrap()];
-                                if *ordinal < variant.fields.len() {
-                                    let field = &variant.fields[*ordinal];
-                                    let ft = field.ty(self.tcx, substs);
-                                    trace!("field {:?} type is {:?}", ordinal, ft);
-                                    return ft;
-                                }
-                                //todo: assume_unreachable!("field ordinal should always be valid");
+                                return self.get_field_type(def, substs, *ordinal);
                             }
                             TyKind::Closure(def_id, subs) => {
                                 return subs.as_closure().upvar_tys().nth(*ordinal).unwrap_or_else(
@@ -524,6 +515,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     }
 
     /// Returns the target type of a reference type.
+    #[logfn_inputs(TRACE)]
     fn get_dereferenced_type(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
         match ty.kind() {
             TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
@@ -531,11 +523,56 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             _ => {
                 if ty.is_box() {
                     ty.boxed_ty()
+                } else if let TyKind::Adt(def, substs) = ty.kind() {
+                    if def.repr.transparent() {
+                        let variant_0 = VariantIdx::from_u32(0);
+                        let v = &def.variants[variant_0];
+                        if let Some(f) = v.fields.get(0) {
+                            self.get_dereferenced_type(f.ty(self.tcx, substs))
+                        } else {
+                            debug!("failed to dereference {:?}", ty);
+                            self.tcx.types.never
+                        }
+                    } else {
+                        debug!("failed to dereference {:?}", ty);
+                        self.tcx.types.never
+                    }
                 } else {
-                    ty
+                    debug!("failed to dereference {:?}", ty);
+                    self.tcx.types.never
                 }
             }
         }
+    }
+
+    /// Returns the type of the field with the given ordinal.
+    /// Ignores any transparent wrappers during the lookup.
+    #[logfn_inputs(DEBUG)]
+    fn get_field_type(
+        &self,
+        def: &'tcx AdtDef,
+        substs: SubstsRef<'tcx>,
+        ordinal: usize,
+    ) -> Ty<'tcx> {
+        if def.repr.transparent() {
+            let variant_0 = VariantIdx::from_u32(0);
+            let v = &def.variants[variant_0];
+            if let Some(f) = v.fields.get(0) {
+                if let TyKind::Adt(def, substs) = f.ty(self.tcx, substs).kind() {
+                    return self.get_field_type(def, substs, ordinal);
+                }
+            }
+        }
+        for variant in &def.variants {
+            if ordinal < variant.fields.len() {
+                let field = &variant.fields[ordinal];
+                let ft = field.ty(self.tcx, substs);
+                trace!("field {:?} type is {:?}", ordinal, ft);
+                return ft;
+            }
+        }
+        debug!("adt def does not have a field with ordinal {}", ordinal);
+        self.tcx.types.never
     }
 
     /// Returns a map from path to ADT type for any path rooted in an actual argument
@@ -626,6 +663,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
+    /// Returns the specialized type fo the given local variable
+    #[logfn_inputs(TRACE)]
     pub fn get_loc_ty(&self, local: mir::Local) -> Ty<'tcx> {
         let i = local.as_usize();
         if 0 < i && i <= self.mir.arg_count && i <= self.actual_argument_types.len() {

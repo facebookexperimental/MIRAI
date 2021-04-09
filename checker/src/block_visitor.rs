@@ -432,13 +432,28 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         target: mir::BasicBlock,
         unwind: Option<mir::BasicBlock>,
     ) {
-        let ty = self
+        let place_path = self.get_path_for_place(place);
+        let path = place_path.canonicalize(&self.bv.current_environment);
+        let mut ty = self
             .bv
             .type_visitor
-            .get_rustc_place_type(place, self.bv.current_span);
+            .get_path_rustc_type(&path, self.bv.current_span);
+        if ty.is_never() {
+            ty = self
+                .bv
+                .type_visitor
+                .get_rustc_place_type(place, self.bv.current_span);
+            debug!("ty {:?}", ty);
+        }
+        self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
+
         if let TyKind::Adt(def, substs) = ty.kind() {
             if let Some(destructor) = self.bv.tcx.adt_destructor(def.did) {
-                let actual_argument_types = vec![ty];
+                let actual_argument_types = vec![self
+                    .bv
+                    .cv
+                    .tcx
+                    .mk_mut_ref(self.bv.cv.tcx.lifetimes.re_static, ty)];
                 let callee_generic_arguments = self
                     .bv
                     .type_visitor
@@ -454,7 +469,6 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .clone();
                 let func_to_call = Rc::new(func_const.clone().into());
                 let destination = Some((*place, target));
-                let path = self.visit_rh_place(place);
                 let ref_to_path_value = AbstractValue::make_reference(path);
                 let mut call_visitor = CallVisitor::new(
                     self,
@@ -529,6 +543,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         trace!(
             "self.generic_argument_map {:?}",
             self.bv.type_visitor.generic_argument_map
+        );
+        trace!(
+            "actual_argument_types {:?}",
+            self.bv.type_visitor.actual_argument_types
         );
         trace!("env {:?}", self.bv.current_environment);
         let func_to_call = self.visit_operand(func);
@@ -3004,6 +3022,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .type_visitor
             .get_path_rustc_type(&path, self.bv.current_span);
+        if ty.is_never() {
+            ty = self
+                .bv
+                .type_visitor
+                .get_rustc_place_type(place, self.bv.current_span);
+            debug!("ty {:?}", ty);
+        }
         self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
         match &place_path.value {
             PathEnum::QualifiedPath { selector, .. } if **selector == PathSelector::Deref => {
