@@ -3881,6 +3881,7 @@ pub mod std {
         pub mod stdio {
             default_contract!(_eprint);
             default_contract!(_print);
+            default_contract!(set_output_capture);
         }
         pub mod Read {
             default_contract!(read);
@@ -3992,6 +3993,18 @@ pub mod std {
                 default_contract!(notify_one);
             }
         }
+        pub mod mpsc {
+            pub mod blocking {
+                pub mod implement_std_sync_mpsc_blocking_SignalToken {
+                    default_contract!(signal);
+                }
+            }
+            pub mod sync {
+                pub mod implement_std_sync_mpsc_sync_Queue {
+                    default_contract!(dequeue);
+                }
+            }
+        }
     }
 
     pub mod sys {
@@ -4006,6 +4019,13 @@ pub mod std {
 
             pub mod thread_local_dtor {
                 default_contract!(register_dtor);
+            }
+
+            pub mod thread {
+                pub mod implement_std_sys_unix_thread_Thread {
+                    default_contract!(join);
+                    default_contract!(new);
+                }
             }
         }
     }
@@ -4052,7 +4072,11 @@ pub mod std {
 
     pub mod thread {
         default_contract!(current);
+        default_contract!(park);
         default_contract!(yield_now);
+        pub mod implement {
+            default_contract!(new);
+        }
         pub mod implement_std_thread_Thread {
             default_contract!(id);
         }
