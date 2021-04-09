@@ -160,6 +160,7 @@ impl MiraiCallbacks {
             || file_name.contains("config/management/operational/src") // too slow
             || file_name.contains("consensus/src") // Sorts Int and <null> are incompatible 
             || file_name.contains("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
+            || file_name.contains("crypto/crypto/src") // too slow
             || file_name.contains("crypto/crypto-derive/src") // too much parsing
             || file_name.contains("diem-node/src") // Sorts Int and <null> are incompatible    
             || file_name.contains("execution/execution-correctness/src") // Sorts Int and <null> are incompatible
@@ -175,6 +176,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-lang/src") // too slow
             || file_name.contains("language/move-model/src") // too slow
             || file_name.contains("language/move-prover/src") // too slow 
+            || file_name.contains("language/move-prover/abigen/src") // too slow
             || file_name.contains("language/move-prover/boogie-backend/src") // index out of bounds
             || file_name.contains("language/move-prover/docgen/src") // too slow
             || file_name.contains("language/move-prover/bytecode/src") // too slow 

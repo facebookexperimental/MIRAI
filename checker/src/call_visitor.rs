@@ -2674,55 +2674,56 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 if seen_precondition {
                     continue;
                 }
-                if let Some(promotable_entry_condition) = self
-                    .block_visitor
-                    .bv
-                    .current_environment
-                    .entry_condition
-                    .extract_promotable_conjuncts()
-                {
-                    if let Some(promotable_condition) =
-                        refined_condition.extract_promotable_conjuncts()
-                    {
-                        let promoted_condition = promotable_entry_condition
+                let promoted_condition = match (
+                    self.block_visitor
+                        .bv
+                        .current_environment
+                        .entry_condition
+                        .extract_promotable_conjuncts(),
+                    refined_condition.extract_promotable_conjuncts(),
+                ) {
+                    (Some(promotable_entry_condition), Some(promotable_condition)) => {
+                        promotable_entry_condition
                             .logical_not()
-                            .or(promotable_condition);
-                        let mut stacked_spans = vec![self.block_visitor.bv.current_span];
-                        stacked_spans.append(&mut precondition.spans.clone());
-                        let promoted_precondition = Precondition {
-                            condition: promoted_condition,
-                            message: precondition.message.clone(),
-                            provenance: precondition.provenance.clone(),
-                            spans: stacked_spans,
-                        };
-                        self.block_visitor
-                            .bv
-                            .preconditions
-                            .push(promoted_precondition);
-                        continue;
-                    } else if refined_condition.is_top() {
-                        // The caller may not be able to prove !entry_cond || cond because cond may
-                        // be anything, including a local variable, but the caller may still be able
-                        // to prove just !entry_cond
-                        let promoted_condition = promotable_entry_condition.logical_not();
-                        let mut stacked_spans = vec![self.block_visitor.bv.current_span];
-                        stacked_spans.append(&mut precondition.spans.clone());
-                        let promoted_precondition = Precondition {
-                            condition: promoted_condition,
-                            message: precondition.message.clone(),
-                            provenance: precondition.provenance.clone(),
-                            spans: stacked_spans,
-                        };
-                        self.block_visitor
-                            .bv
-                            .preconditions
-                            .push(promoted_precondition);
-                        continue;
+                            .or(promotable_condition)
                     }
+                    (Some(promotable_entry_condition), None) => {
+                        promotable_entry_condition.logical_not()
+                    }
+                    (None, Some(promotable_condition)) => promotable_condition,
+                    _ => Rc::new(abstract_value::FALSE),
+                };
+                if promoted_condition.as_bool_if_known().is_none() {
+                    let mut stacked_spans = vec![self.block_visitor.bv.current_span];
+                    stacked_spans.append(&mut precondition.spans.clone());
+                    let promoted_precondition = Precondition {
+                        condition: promoted_condition,
+                        message: precondition.message.clone(),
+                        provenance: precondition.provenance.clone(),
+                        spans: stacked_spans,
+                    };
+                    self.block_visitor
+                        .bv
+                        .preconditions
+                        .push(promoted_precondition);
+                    continue;
                 }
             }
 
             // The precondition cannot be promoted, so the buck stops here.
+            if precondition
+                .message
+                .starts_with("incomplete analysis of call")
+            {
+                // If the precondition is not satisfied, the summary of the callee is incomplete
+                // and so should be the summary of this method.
+                self.block_visitor.bv.analysis_is_incomplete = true;
+                if self.block_visitor.bv.cv.options.diag_level == DiagLevel::Default {
+                    // Don't give a diagnostic in default mode, since it is hard for casual users
+                    // to do something about missing/incomplete summaries.
+                    continue;
+                }
+            }
             self.issue_diagnostic_for_call(precondition, &refined_condition, warn);
         }
     }
