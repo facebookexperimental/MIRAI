@@ -4079,6 +4079,7 @@ pub mod std {
         }
         pub mod implement_std_thread_Thread {
             default_contract!(id);
+            default_contract!(new);
         }
         pub mod implement_std_thread_ThreadId {
             default_contract!(as_u64);

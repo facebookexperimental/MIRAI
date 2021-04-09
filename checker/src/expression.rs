@@ -8,11 +8,10 @@ use crate::constant_domain::ConstantDomain;
 use crate::known_names::KnownNames;
 use crate::path::Path;
 use crate::tag_domain::Tag;
-use crate::type_visitor;
 
 use log_derive::*;
 use mirai_annotations::*;
-use rustc_middle::ty::{FloatTy, IntTy, Ty, TyCtxt, TyKind, UintTy};
+use rustc_middle::ty::{FloatTy, IntTy, Ty, TyCtxt, TyKind, TypeAndMut, UintTy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
@@ -1275,8 +1274,8 @@ impl<'a> From<&TyKind<'a>> for ExpressionType {
             | TyKind::Generator(..)
             | TyKind::GeneratorWitness(..)
             | TyKind::Opaque(..) => ExpressionType::Function,
-            TyKind::RawPtr(..) | TyKind::Ref(..) => {
-                if type_visitor::is_slice_pointer(ty_kind) {
+            TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
+                if matches!(target.kind(), TyKind::Slice(..) | TyKind::Str) {
                     // Such pointer types are non primitive because they are (pointer, length) tuples.
                     ExpressionType::NonPrimitive
                 } else {
