@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::ConstantDomain;
@@ -17,7 +18,6 @@ use crate::summaries;
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
 use crate::type_visitor::{TypeCache, TypeVisitor};
-use crate::{abstract_value, type_visitor};
 
 use crate::block_visitor::BlockVisitor;
 use crate::call_visitor::CallVisitor;
@@ -417,12 +417,12 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             }
                         }
                         PathSelector::Discriminant => {
-                            let ty = type_visitor::get_target_type(
+                            let ty = self.type_visitor.get_dereferenced_type(
                                 self.type_visitor
                                     .get_path_rustc_type(qualifier, self.current_span),
                             );
                             match ty.kind() {
-                                TyKind::Adt(..) if ty.is_enum() => {}
+                                TyKind::Adt(def, _) if def.is_enum() => {}
                                 TyKind::Generator(..) => {}
                                 _ => {
                                     result = Some(self.get_u128_const_val(0));
@@ -797,7 +797,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let mut result_root: Rc<Path> = Path::new_result();
                 let mut promoted_root: Rc<Path> =
                     Rc::new(PathEnum::PromotedConstant { ordinal }.into());
-                if type_visitor::is_slice_pointer(result_rustc_type.kind()) {
+                if self.type_visitor.is_slice_pointer(result_rustc_type.kind()) {
                     let source_length_path = Path::new_length(result_root.clone());
                     let length_val = self
                         .exit_environment
@@ -883,7 +883,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         local_path: &Rc<Path>,
         ordinal: usize,
     ) {
-        let target_type = type_visitor::get_target_type(result_rustc_type);
+        let target_type = self.type_visitor.get_dereferenced_type(result_rustc_type);
         if ExpressionType::from(target_type.kind()).is_primitive() {
             // Kind of weird, but seems to be generated for debugging support.
             // Move the value into a path, so that we can drop the reference to the soon to be dead local.
@@ -934,7 +934,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let byte_size_value = self.get_u128_const_val(byte_size as u128);
             let elem_size = self
                 .type_visitor
-                .get_type_size(type_visitor::get_element_type(target_type));
+                .get_type_size(self.type_visitor.get_element_type(target_type));
             let alignment: Rc<AbstractValue> = Rc::new(
                 (match elem_size {
                     0 => 1,
@@ -965,7 +965,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
 
             let thin_pointer_to_heap = AbstractValue::make_reference(heap_root);
-            if type_visitor::is_slice_pointer(target_type.kind()) {
+            if self.type_visitor.is_slice_pointer(target_type.kind()) {
                 let promoted_thin_pointer_path = Path::new_field(promoted_root.clone(), 0);
                 environment.update_value_at(promoted_thin_pointer_path, thin_pointer_to_heap);
                 let length_value = self
@@ -1069,7 +1069,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         let target_type = self
             .type_visitor
             .get_path_rustc_type(&target_path, self.current_span);
-        let target_is_thin_pointer = type_visitor::is_thin_pointer(target_type.kind());
+        let target_is_thin_pointer = self.type_visitor.is_thin_pointer(target_type.kind());
         for (path, value) in effects
             .iter()
             .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
@@ -1152,10 +1152,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     {
                         self.type_visitor.set_path_rustc_type(
                             path.clone(),
-                            type_visitor::get_target_type(lh_type),
+                            self.type_visitor.get_dereferenced_type(lh_type),
                         );
                     }
-                    if type_visitor::is_slice_pointer(lh_type.kind()) {
+                    if self.type_visitor.is_slice_pointer(lh_type.kind()) {
                         if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                             if matches!(selector.as_ref(), PathSelector::Field(0)) {
                                 // tpath = qualifier.0 and rvalue = &path, so thin pointer copy
@@ -1255,7 +1255,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                 if let PathSelector::Slice(..) | PathSelector::Index(..) = selector.as_ref() {
                     let source_path = Path::get_as_path(rvalue.clone());
-                    let target_type = type_visitor::get_element_type(
+                    let target_type = self.type_visitor.get_element_type(
                         self.type_visitor
                             .get_path_rustc_type(&target_path, self.current_span),
                     );
@@ -1768,9 +1768,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             source_path,
             root_rustc_type
         );
-        let mut elem_ty = type_visitor::get_element_type(root_rustc_type);
+        let mut elem_ty = self.type_visitor.get_element_type(root_rustc_type);
         if elem_ty == root_rustc_type {
-            elem_ty = type_visitor::get_target_type(root_rustc_type);
+            elem_ty = self.type_visitor.get_dereferenced_type(root_rustc_type);
         }
         let source_val = self.lookup_path_and_refine_result(source_path.clone(), elem_ty);
         if matches!(source_val.expression, Expression::CompileTimeConstant(..)) {
@@ -2518,7 +2518,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) -> (Rc<Path>, Rc<AbstractValue>) {
         precondition!(!root_rustc_type.is_scalar());
 
-        let target_type = type_visitor::get_target_type(root_rustc_type);
+        let target_type = self.type_visitor.get_dereferenced_type(root_rustc_type);
         let tag_field_path = if target_type != root_rustc_type {
             let target_type = ExpressionType::from(target_type.kind());
             Path::new_tag_field(Path::new_deref(qualifier.clone(), target_type))

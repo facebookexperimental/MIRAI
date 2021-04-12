@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::body_visitor::BodyVisitor;
@@ -19,7 +20,6 @@ use crate::smt_solver::SmtResult;
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
 use crate::utils;
-use crate::{abstract_value, type_visitor};
 
 use log_derive::*;
 use mirai_annotations::*;
@@ -445,6 +445,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .get_rustc_place_type(place, self.bv.current_span);
             debug!("ty {:?}", ty);
         }
+        ty = self.bv.type_visitor.remove_transparent_wrappers(ty);
         self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
 
         if let TyKind::Adt(def, substs) = ty.kind() {
@@ -626,8 +627,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         if t_par.name.as_str() == "Self" {
                             let mut gen_args: Vec<GenericArg<'_>> =
                                 callee_generic_arguments.iter().collect();
-                            gen_args[i] =
-                                type_visitor::get_target_type(actual_argument_types[0]).into();
+                            gen_args[i] = self
+                                .bv
+                                .type_visitor
+                                .get_dereferenced_type(actual_argument_types[0])
+                                .into();
                             callee_generic_arguments = self.bv.tcx.intern_substs(&gen_args);
                             break;
                         }
@@ -636,7 +640,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
         let self_ty_is_fn_ptr = if let Some(ty) = actual_argument_types.get(0) {
-            let self_ty = type_visitor::get_target_type(ty);
+            let self_ty = self.bv.type_visitor.get_dereferenced_type(ty);
             matches!(self_ty.kind(), TyKind::FnPtr(..))
         } else {
             false
@@ -1602,7 +1606,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // If the contents at offset 0 from the target of the pointer being dereferenced is
                 // a fat (slice) pointer then the address_of operation results in a copy of the fat pointer.
                 // We check for this by looking at the type of the operation result target.
-                if type_visitor::is_slice_pointer(target_type.kind()) {
+                if self.bv.type_visitor.is_slice_pointer(target_type.kind()) {
                     // If we get here we are effectively copying to a fat pointer without a cast,
                     // so there is no type information to use to come up with the length part of
                     // the fat pointer. This implies that the source value must itself be a fat
@@ -1730,7 +1734,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 .bv
                                 .type_visitor
                                 .get_path_rustc_type(qualifier, self.bv.current_span);
-                            if type_visitor::is_slice_pointer(qualifier_type.kind()) {
+                            if self.bv.type_visitor.is_slice_pointer(qualifier_type.kind()) {
                                 value_path = qualifier.clone();
                             }
                         }
@@ -1803,7 +1807,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 .bv
                                 .type_visitor
                                 .get_path_rustc_type(&target_path, self.bv.current_span);
-                            if type_visitor::is_slice_pointer(target_type.kind()) {
+                            if self.bv.type_visitor.is_slice_pointer(target_type.kind()) {
                                 // convert the source thin pointer to a fat pointer if the target path is a slice pointer
                                 let thin_pointer_path = Path::new_field(target_path.clone(), 0);
                                 self.bv
@@ -1813,8 +1817,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                     .bv
                                     .type_visitor
                                     .get_path_rustc_type(p, self.bv.current_span);
-                                if let TyKind::Array(_, len) =
-                                    type_visitor::get_target_type(source_type).kind()
+                                if let TyKind::Array(_, len) = self
+                                    .bv
+                                    .type_visitor
+                                    .get_dereferenced_type(source_type)
+                                    .kind()
                                 {
                                     let length_path = Path::new_length(target_path);
                                     let length_value = self.visit_const(&len);
@@ -1993,7 +2000,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // and fills in the box pointer. The initialization of the heap block is done
                 // in a subsequent MIR instruction of the form (*box) = box_value. De-referencing
                 // a box structure amounts to de-referencing the pointer in field 0.
-                path = Path::new_field(Path::new_field(path, 0), 0);
+                path = Path::new_field(path, 0);
                 AbstractValue::make_reference(Path::get_as_path(
                     self.bv.get_new_heap_block(len, alignment, false, ty),
                 ))
@@ -2416,7 +2423,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         return array_value;
                     }
                     TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Slice(..)) => {
-                        let elem_type = type_visitor::get_element_type(t);
+                        let elem_type = self.bv.type_visitor.get_element_type(t);
                         let bytes_per_elem = self.bv.type_visitor.get_type_size(elem_type) as usize;
                         let length = size / bytes_per_elem;
                         let (_, array_path) = self.get_heap_array_and_path(t, size);
@@ -2686,7 +2693,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         array_type: Ty<'tcx>,
         size_in_bytes: usize,
     ) -> (Rc<AbstractValue>, Rc<Path>) {
-        let element_type = type_visitor::get_element_type(array_type);
+        let element_type = self.bv.type_visitor.get_element_type(array_type);
         let (_, elem_alignment) = self
             .bv
             .type_visitor
@@ -3169,23 +3176,22 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             let selector = self.visit_projection_elem(ty, elem);
             match elem {
                 mir::ProjectionElem::Deref => {
+                    let type_visitor = &mut self.bv.type_visitor;
                     if ty.is_box() {
                         // Deref the pointer at field 0 of the box
-                        result = Path::new_field(Path::new_field(result, 0), 0);
+                        result = Path::new_field(result, 0);
                         ty = ty.boxed_ty();
-                    } else if type_visitor::is_slice_pointer(ty.kind()) {
+                    } else if type_visitor.is_slice_pointer(ty.kind()) {
                         // Deref the thin pointer part
-                        ty = type_visitor::get_target_type(ty);
+                        ty = type_visitor.get_dereferenced_type(ty);
                         let thin_pointer_path = Path::new_field(result, 0);
                         let deref_path =
                             Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
-                        self.bv
-                            .type_visitor
-                            .set_path_rustc_type(deref_path.clone(), ty);
+                        type_visitor.set_path_rustc_type(deref_path.clone(), ty);
                         result = deref_path;
                         continue;
                     } else {
-                        ty = type_visitor::get_target_type(ty);
+                        ty = type_visitor.get_dereferenced_type(ty);
                     }
                 }
                 mir::ProjectionElem::Field(_, field_ty) => {
@@ -3195,7 +3201,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     );
                 }
                 mir::ProjectionElem::Index(..) | mir::ProjectionElem::ConstantIndex { .. } => {
-                    ty = type_visitor::get_element_type(ty);
+                    ty = self.bv.type_visitor.get_element_type(ty);
                 }
                 mir::ProjectionElem::Downcast(..) => {
                     ty = self.bv.type_visitor.get_type_for_projection_element(
@@ -3216,15 +3222,20 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_projection_elem(
         &mut self,
-        base_ty: Ty<'_>,
+        base_ty: Ty<'tcx>,
         projection_elem: &mir::ProjectionElem<mir::Local, &rustc_middle::ty::TyS<'tcx>>,
     ) -> PathSelector {
         match projection_elem {
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, ..) => {
-                if let TyKind::Adt(adt_def, _) = base_ty.kind() {
-                    if adt_def.is_union() {
-                        let variants = &adt_def.variants;
+                if let TyKind::Adt(def, _) = self
+                    .bv
+                    .type_visitor
+                    .remove_transparent_wrappers(base_ty)
+                    .kind()
+                {
+                    if def.is_union() {
+                        let variants = &def.variants;
                         assume!(variants.len() == 1); // only enums have more than one variant
                         let variant = &variants[variants.last().unwrap()];
                         return PathSelector::UnionField {

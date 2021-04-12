@@ -27,7 +27,7 @@ use crate::options::DiagLevel;
 use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
-use crate::{abstract_value, type_visitor, utils};
+use crate::{abstract_value, utils};
 
 pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
     pub actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)>,
@@ -358,7 +358,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some((place, _)) = &self.destination {
             checked_assume!(self.actual_args.len() == 1);
             let target_type = ExpressionType::from(
-                type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+                self.block_visitor
+                    .bv
+                    .type_visitor
+                    .get_dereferenced_type(self.actual_argument_types[0])
+                    .kind(),
             );
             let source_path = Path::new_deref(
                 Path::get_as_path(self.actual_args[0].1.clone()),
@@ -603,7 +607,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn handled_clone(&mut self) -> bool {
         precondition!(self.actual_argument_types.len() == 1);
-        if let TyKind::Ref(_, t, _) = self.actual_argument_types[0].kind() {
+        if let TyKind::Ref(_, mut t, _) = self.actual_argument_types[0].kind() {
+            t = self
+                .block_visitor
+                .bv
+                .type_visitor
+                .remove_transparent_wrappers(t);
             if let TyKind::Adt(def, substs) = t.kind() {
                 let variant_0 = VariantIdx::from_u32(0);
                 if Some(def.variants[variant_0].def_id)
@@ -1306,14 +1315,23 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
 
         let source_pointer_path = self.actual_args[0].0.clone();
         let source_pointer_rustc_type = self.actual_argument_types[0];
-        let mut source_rustc_type = type_visitor::get_target_type(source_pointer_rustc_type);
+        let mut source_rustc_type = self
+            .block_visitor
+            .bv
+            .type_visitor
+            .get_dereferenced_type(source_pointer_rustc_type);
         let target_type = ExpressionType::from(source_rustc_type.kind());
         let source_thin_pointer_path = if source_rustc_type.is_box() {
             source_rustc_type = source_rustc_type.boxed_ty();
             let box_path = Path::new_deref(source_pointer_path, target_type.clone())
                 .canonicalize(&self.block_visitor.bv.current_environment);
-            Path::new_field(Path::new_field(box_path, 0), 0)
-        } else if type_visitor::is_slice_pointer(source_pointer_rustc_type.kind()) {
+            Path::new_field(box_path, 0)
+        } else if self
+            .block_visitor
+            .bv
+            .type_visitor
+            .is_slice_pointer(source_pointer_rustc_type.kind())
+        {
             Path::new_field(source_pointer_path, 0)
         } else {
             source_pointer_path
@@ -1507,7 +1525,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let mut qualifier = Path::get_as_path(self.actual_args[0].1.clone());
             if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref { .. }) {
                 let target_type = ExpressionType::from(
-                    type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+                    self.block_visitor
+                        .bv
+                        .type_visitor
+                        .get_dereferenced_type(self.actual_argument_types[0])
+                        .kind(),
                 );
                 qualifier = Path::new_deref(qualifier, target_type);
             }
@@ -1663,7 +1685,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let mut qualifier = Path::get_as_path(self.actual_args[0].1.clone());
             if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref { .. }) {
                 let target_type = ExpressionType::from(
-                    type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+                    self.block_visitor
+                        .bv
+                        .type_visitor
+                        .get_dereferenced_type(self.actual_argument_types[0])
+                        .kind(),
                 );
                 qualifier = Path::new_deref(qualifier, target_type);
             }
@@ -1764,7 +1790,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 1);
         if let Some((place, _)) = &self.destination {
             let target_type = ExpressionType::from(
-                type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+                self.block_visitor
+                    .bv
+                    .type_visitor
+                    .get_dereferenced_type(self.actual_argument_types[0])
+                    .kind(),
             );
             let discriminant_path = Path::new_discriminant(Path::new_deref(
                 Path::get_as_path(self.actual_args[0].1.clone()),
@@ -1784,7 +1814,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     checked_assume!(rustc_gen_args.len() == 1);
                     match rustc_gen_args[0].unpack() {
                         GenericArgKind::Type(ty) => match ty.kind() {
-                            TyKind::Adt(..) if ty.is_enum() => {}
+                            TyKind::Adt(def, _) if def.is_enum() => {}
                             TyKind::Generator(..) => {}
                             _ => {
                                 discriminant_value = Rc::new(ConstantDomain::U128(0).into());
@@ -1877,7 +1907,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 4);
         // Get path to the heap block to reallocate
         let target_type = ExpressionType::from(
-            type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+            self.block_visitor
+                .bv
+                .type_visitor
+                .get_dereferenced_type(self.actual_argument_types[0])
+                .kind(),
         );
         let heap_block_path = Path::new_deref(
             Path::get_as_path(self.actual_args[0].1.clone()),
@@ -2021,7 +2055,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_mem_replace(&mut self) {
         checked_assume!(self.actual_args.len() == 2);
         let target_type = ExpressionType::from(
-            type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+            self.block_visitor
+                .bv
+                .type_visitor
+                .get_dereferenced_type(self.actual_argument_types[0])
+                .kind(),
         );
         let dest_path = Path::new_deref(
             Path::get_as_path(self.actual_args[0].1.clone()),
@@ -2098,7 +2136,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_min_align_of_val(&mut self) -> Rc<AbstractValue> {
         let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
         checked_assume!(self.actual_argument_types.len() == 1);
-        let t = type_visitor::get_target_type(self.actual_argument_types[0]);
+        let t = self
+            .block_visitor
+            .bv
+            .type_visitor
+            .get_dereferenced_type(self.actual_argument_types[0]);
         if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(t)) {
             return Rc::new((ty_and_layout.layout.align.abi.bytes() as u128).into());
         }
@@ -2135,8 +2177,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             if let Expression::HeapBlockLayout { length, .. } = &layout_val.expression {
                 return length.clone();
             }
-        } else if type_visitor::is_slice_pointer(t.kind()) {
-            let elem_t = type_visitor::get_element_type(t);
+        } else if self
+            .block_visitor
+            .bv
+            .type_visitor
+            .is_slice_pointer(t.kind())
+        {
+            let elem_t = self.block_visitor.bv.type_visitor.get_element_type(t);
             if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(elem_t)) {
                 if !ty_and_layout.is_unsized() {
                     let elem_size_val: Rc<AbstractValue> =
@@ -2210,7 +2257,19 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 for (i, field) in variant.fields.iter().enumerate() {
                     let field_path = Path::new_field(path.clone(), i);
                     let field_ty = field.ty(tcx, substs);
-                    if let TyKind::Adt(def, substs) = field_ty.kind() {
+                    if let TyKind::Adt(mut def, mut substs) = field_ty.kind() {
+                        while def.repr.transparent() {
+                            let variant_0 = VariantIdx::from_u32(0);
+                            let v = &def.variants[variant_0];
+                            if let Some(f) = v.fields.get(0) {
+                                if let TyKind::Adt(def1, substs1) = f.ty(tcx, substs).kind() {
+                                    def = def1;
+                                    substs = substs1;
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
                         add_leaf_fields_for(field_path, def, substs, tcx, accumulator)
                     } else {
                         accumulator.push((field_path, field_ty))
@@ -2242,7 +2301,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     self.copy_field_bits(source_fields, target_fields);
                 }
                 (_, TyKind::Adt(target_def, target_substs))
-                    if type_visitor::is_thin_pointer(source_rustc_type.kind()) =>
+                    if self
+                        .block_visitor
+                        .bv
+                        .type_visitor
+                        .is_thin_pointer(source_rustc_type.kind()) =>
                 {
                     let source_fields = vec![(source_path, source_rustc_type)];
                     let mut target_fields = Vec::new();
@@ -2256,7 +2319,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     self.copy_field_bits(source_fields, target_fields);
                 }
                 (TyKind::Adt(source_def, source_substs), _)
-                    if type_visitor::is_thin_pointer(target_rustc_type.kind()) =>
+                    if self
+                        .block_visitor
+                        .bv
+                        .type_visitor
+                        .is_thin_pointer(target_rustc_type.kind()) =>
                 {
                     let mut source_fields = Vec::new();
                     add_leaf_fields_for(
@@ -2400,7 +2467,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_write_bytes(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
         let target_type = ExpressionType::from(
-            type_visitor::get_target_type(self.actual_argument_types[0]).kind(),
+            self.block_visitor
+                .bv
+                .type_visitor
+                .get_dereferenced_type(self.actual_argument_types[0])
+                .kind(),
         );
         let dest_path = Path::new_deref(
             Path::get_as_path(self.actual_args[0].1.clone()),

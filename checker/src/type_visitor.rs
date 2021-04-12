@@ -13,6 +13,7 @@ use crate::{type_visitor, utils};
 use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
+use rustc_index::vec::Idx;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc_middle::ty::{
@@ -228,6 +229,53 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
+    /// Returns true if the given type is a reference (or raw pointer) to a collection type, in which
+    /// case the reference/pointer independently tracks the length of the collection, thus effectively
+    /// tracking a slice of the underlying collection.
+    #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
+    pub fn is_slice_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
+        match ty_kind {
+            TyKind::Adt(def, substs) if def.repr.transparent() => {
+                let variant_0 = VariantIdx::from_u32(0);
+                let v = &def.variants[variant_0];
+                if let Some(f) = v.fields.get(0) {
+                    self.is_slice_pointer(f.ty(self.tcx, substs).kind())
+                } else {
+                    debug!("failed to dereference {:?}", ty_kind);
+                    false
+                }
+            }
+            TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
+                trace!("target type {:?}", target.kind());
+                // Pointers to sized arrays are thin pointers.
+                matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns true if the given type is a reference (or raw pointer) that is not a slice pointer
+    #[logfn_inputs(TRACE)]
+    pub fn is_thin_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
+        match ty_kind {
+            TyKind::Adt(def, substs) if def.repr.transparent() => {
+                let variant_0 = VariantIdx::from_u32(0);
+                let v = &def.variants[variant_0];
+                if let Some(f) = v.fields.get(0) {
+                    self.is_thin_pointer(f.ty(self.tcx, substs).kind())
+                } else {
+                    debug!("failed to dereference {:?}", ty_kind);
+                    false
+                }
+            }
+            TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
+                !matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
+            }
+            _ => false,
+        }
+    }
+
     /// Updates the type cache of the visitor so that looking up the type of path returns ty.
     #[logfn_inputs(TRACE)]
     pub fn set_path_rustc_type(&mut self, path: Rc<Path>, ty: Ty<'tcx>) {
@@ -387,12 +435,12 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 }
                             }
                             _ => {
-                                if is_slice_pointer(t.kind()) {
+                                if self.is_slice_pointer(t.kind()) {
                                     match *ordinal {
                                         0 => {
                                             // Field 0 of a slice pointer is a raw pointer to the slice element type
                                             return self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                                                ty: type_visitor::get_element_type(t),
+                                                ty: self.get_element_type(t),
                                                 mutbl: rustc_hir::Mutability::Mut,
                                             });
                                         }
@@ -428,31 +476,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         return self.tcx.types.i32;
                     }
                     PathSelector::Downcast(_, ordinal) => {
+                        t = self.remove_transparent_wrappers(t);
                         if let TyKind::Adt(def, substs) = t.kind() {
-                            let mut substs =
-                                self.specialize_substs(substs, &self.generic_argument_map);
-                            let mut def = def;
-                            if !def.is_enum() {
-                                // Downcast currently only used for enums with more than one variant
-                                // If t is not an enum, it could be because it is some wrapper
-                                // for an enum such as UnsafeCell, which has been transmuted to
-                                // the actual enum type in unsafe code.
-                                if def.variants.len() != 1
-                                    || substs.len() != 1
-                                    || !substs[0].expect_ty().is_enum()
-                                {
-                                    debug!("Downcast to enum variant, starting from something that is a wrapper {:?} {:?}", t, substs);
-                                    return self.tcx.types.never;
-                                }
-                                if let TyKind::Adt(e_def, e_substs) = substs[0].expect_ty().kind() {
-                                    def = e_def;
-                                    substs = self
-                                        .specialize_substs(e_substs, &self.generic_argument_map);
-                                } else {
-                                    assume_unreachable!("substs[0].expect_ty().is_enum() should make this unreachable");
-                                }
-                            }
-                            use rustc_index::vec::Idx;
+                            let substs = self.specialize_substs(substs, &self.generic_argument_map);
                             if *ordinal >= def.variants.len() {
                                 debug!(
                                     "illegally down casting to index {} of {:?} at {:?}",
@@ -467,16 +493,16 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         return self.tcx.types.never;
                     }
                     PathSelector::Index(_) | PathSelector::ConstantIndex { .. } => {
-                        return get_element_type(t);
+                        return self.get_element_type(t);
                     }
                     PathSelector::Layout => {
                         return self.tcx.types.trait_object_dummy_self;
                     }
                     PathSelector::Slice(_) => {
-                        return if type_visitor::is_slice_pointer(t.kind()) {
+                        return if self.is_slice_pointer(t.kind()) {
                             t
                         } else {
-                            let slice_ty = self.tcx.mk_slice(type_visitor::get_element_type(t));
+                            let slice_ty = self.tcx.mk_slice(self.get_element_type(t));
                             self.tcx.mk_mut_ref(self.tcx.lifetimes.re_static, slice_ty)
                         };
                     }
@@ -516,38 +542,39 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
 
     /// Returns the target type of a reference type.
     #[logfn_inputs(TRACE)]
-    fn get_dereferenced_type(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
-        match ty.kind() {
+    pub fn get_dereferenced_type(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
+        match self.remove_transparent_wrappers(ty).kind() {
             TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
             TyKind::Ref(_, t, _) => *t,
             _ => {
                 if ty.is_box() {
                     ty.boxed_ty()
-                } else if let TyKind::Adt(def, substs) = ty.kind() {
-                    if def.repr.transparent() {
-                        let variant_0 = VariantIdx::from_u32(0);
-                        let v = &def.variants[variant_0];
-                        if let Some(f) = v.fields.get(0) {
-                            self.get_dereferenced_type(f.ty(self.tcx, substs))
-                        } else {
-                            debug!("failed to dereference {:?}", ty);
-                            self.tcx.types.never
-                        }
-                    } else {
-                        debug!("failed to dereference {:?}", ty);
-                        self.tcx.types.never
-                    }
                 } else {
-                    debug!("failed to dereference {:?}", ty);
-                    self.tcx.types.never
+                    ty
                 }
             }
         }
     }
 
+    /// Returns the element type of an array or slice type.
+    #[logfn_inputs(TRACE)]
+    pub fn get_element_type(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
+        let ty = self.remove_transparent_wrappers(ty);
+        match &ty.kind() {
+            TyKind::Array(t, _) => *t,
+            TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => match t.kind() {
+                TyKind::Array(t, _) => *t,
+                TyKind::Slice(t) => *t,
+                _ => t,
+            },
+            TyKind::Slice(t) => *t,
+            _ => ty,
+        }
+    }
+
     /// Returns the type of the field with the given ordinal.
     /// Ignores any transparent wrappers during the lookup.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn get_field_type(
         &self,
         def: &'tcx AdtDef,
@@ -759,7 +786,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     match base_ty.kind() {
                         TyKind::Adt(..) => base_ty,
                         TyKind::Array(ty, _) => *ty,
-                        TyKind::Ref(_, ty, _) => get_element_type(*ty),
+                        TyKind::Ref(_, ty, _) => self.get_element_type(*ty),
                         TyKind::Slice(ty) => *ty,
                         _ => {
                             debug!(
@@ -815,6 +842,21 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         } else {
             (0, 8)
         }
+    }
+
+    /// If the given type is a transparent wrapper, return the embedded type (after removing any
+    /// nested transparent wrappers).
+    pub fn remove_transparent_wrappers(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
+        if let TyKind::Adt(def, substs) = ty.kind() {
+            if def.repr.transparent() {
+                let variant_0 = VariantIdx::from_u32(0);
+                let v = &def.variants[variant_0];
+                if let Some(f) = v.fields.get(0) {
+                    return self.remove_transparent_wrappers(f.ty(self.tcx, substs));
+                }
+            }
+        }
+        ty
     }
 
     #[logfn_inputs(TRACE)]
@@ -1019,74 +1061,5 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             .map(|gen_arg| self.specialize_generic_argument(gen_arg, &map))
             .collect();
         self.tcx.intern_substs(&specialized_generic_args)
-    }
-}
-
-//todo: what about generators?
-/// Extracts the def_id of a closure, given the type of a value that is known to be a closure.
-/// Returns None otherwise.
-#[logfn_inputs(TRACE)]
-pub fn get_def_id_from_closure(closure_ty: Ty<'_>) -> Option<DefId> {
-    match closure_ty.kind() {
-        TyKind::Closure(def_id, _) | TyKind::Opaque(def_id, _) => {
-            return Some(*def_id);
-        }
-        TyKind::Ref(_, ty, _) => {
-            if let TyKind::Closure(def_id, _) = ty.kind() {
-                return Some(*def_id);
-            }
-        }
-        _ => {}
-    }
-    None
-}
-
-/// Returns the element type of an array or slice type.
-#[logfn_inputs(TRACE)]
-pub fn get_element_type(ty: Ty<'_>) -> Ty<'_> {
-    match &ty.kind() {
-        TyKind::Array(t, _) => *t,
-        TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => match t.kind() {
-            TyKind::Array(t, _) => *t,
-            TyKind::Slice(t) => *t,
-            _ => t,
-        },
-        TyKind::Slice(t) => *t,
-        _ => ty,
-    }
-}
-
-/// Returns the type of value that a pointer of ty points to.
-/// If ty is not a pointer type, just return ty.
-#[logfn_inputs(TRACE)]
-pub fn get_target_type(ty: Ty<'_>) -> Ty<'_> {
-    match ty.kind() {
-        TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => t,
-        _ => ty,
-    }
-}
-
-/// Returns true if the given type is a reference (or raw pointer) that is not a slice pointer
-#[logfn_inputs(TRACE)]
-pub fn is_thin_pointer(ty_kind: &TyKind<'_>) -> bool {
-    if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
-        !matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
-    } else {
-        false
-    }
-}
-
-/// Returns true if the given type is a reference (or raw pointer) to a collection type, in which
-/// case the reference/pointer independently tracks the length of the collection, thus effectively
-/// tracking a slice of the underlying collection.
-#[logfn_inputs(TRACE)]
-#[logfn(TRACE)]
-pub fn is_slice_pointer(ty_kind: &TyKind<'_>) -> bool {
-    if let TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) = ty_kind {
-        trace!("target type {:?}", target.kind());
-        // Pointers to sized arrays are thin pointers.
-        matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
-    } else {
-        false
     }
 }
