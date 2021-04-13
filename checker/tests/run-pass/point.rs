@@ -4,6 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
+// MIRAI_FLAGS --diag=verify
+
 use mirai_annotations::*;
 
 use std::ops::{Add, AddAssign};
