@@ -1846,6 +1846,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     self.bv.current_environment.value_map =
                         self.bv.current_environment.value_map.remove(&source_path);
                 }
+                self.type_visitor_mut()
+                    .set_path_rustc_type(Path::get_as_path(result.clone()), ty);
                 self.bv.current_environment.update_value_at(path, result);
             }
         }
