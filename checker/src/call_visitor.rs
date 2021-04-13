@@ -27,6 +27,7 @@ use crate::options::DiagLevel;
 use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
+use crate::type_visitor::TypeVisitor;
 use crate::{abstract_value, utils};
 
 pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
@@ -88,6 +89,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         }
     }
 
+    pub fn type_visitor(&self) -> &TypeVisitor<'tcx> {
+        self.block_visitor.bv.type_visitor()
+    }
+
+    pub fn type_visitor_mut(&mut self) -> &mut TypeVisitor<'tcx> {
+        self.block_visitor.bv.type_visitor_mut()
+    }
+
     /// Summarize the referenced function, specialized by its generic arguments and the actual
     /// values of any function parameters. Then cache it.
     #[logfn_inputs(TRACE)]
@@ -108,14 +117,17 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 self.block_visitor.bv.active_calls_map,
                 self.block_visitor.bv.cv.type_cache.clone(),
             );
-            body_visitor.type_visitor.actual_argument_types = self.actual_argument_types.clone();
-            body_visitor.type_visitor.generic_arguments = self.callee_generic_arguments;
-            body_visitor.type_visitor.generic_argument_map =
+            body_visitor.type_visitor_mut().actual_argument_types =
+                self.actual_argument_types.clone();
+            body_visitor.type_visitor_mut().generic_arguments = self.callee_generic_arguments;
+            body_visitor.type_visitor_mut().generic_argument_map =
                 self.callee_generic_argument_map.clone();
             body_visitor.analyzing_static_var = self.block_visitor.bv.analyzing_static_var;
             if let Some(cache) = &self.initial_type_cache {
                 for (p, t) in cache.iter() {
-                    body_visitor.type_visitor.set_path_rustc_type(p.clone(), *t);
+                    body_visitor
+                        .type_visitor_mut()
+                        .set_path_rustc_type(p.clone(), *t);
                 }
             }
             let elapsed_time = self.block_visitor.bv.start_instant.elapsed();
@@ -193,15 +205,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 let resolved_def_id = instance.def.def_id();
                 self.callee_def_id = resolved_def_id;
                 let resolved_ty = self.block_visitor.bv.tcx.type_of(resolved_def_id);
-                let resolved_map = self
-                    .block_visitor
-                    .bv
-                    .type_visitor
-                    .get_generic_arguments_map(resolved_def_id, instance.substs, &[]);
+                let resolved_map = self.type_visitor().get_generic_arguments_map(
+                    resolved_def_id,
+                    instance.substs,
+                    &[],
+                );
                 let specialized_resolved_ty = self
-                    .block_visitor
-                    .bv
-                    .type_visitor
+                    .type_visitor()
                     .specialize_generic_argument_type(resolved_ty, &resolved_map);
                 trace!(
                     "devirtualize resolved def_id {:?}: {:?}",
@@ -224,15 +234,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 };
                 self.callee_fun_val = Rc::new(func_const.into());
                 self.callee_generic_arguments = Some(instance.substs);
-                self.callee_generic_argument_map = self
-                    .block_visitor
-                    .bv
-                    .type_visitor
-                    .get_generic_arguments_map(
-                        resolved_def_id,
-                        instance.substs,
-                        &self.actual_argument_types,
-                    );
+                self.callee_generic_argument_map = self.type_visitor().get_generic_arguments_map(
+                    resolved_def_id,
+                    instance.substs,
+                    &self.actual_argument_types,
+                );
                 let tcx = self.block_visitor.bv.tcx;
                 if specialized_resolved_ty.is_closure() && tcx.is_mir_available(resolved_def_id) {
                     let mir = tcx.optimized_mir(resolved_def_id);
@@ -358,9 +364,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some((place, _)) = &self.destination {
             checked_assume!(self.actual_args.len() == 1);
             let target_type = ExpressionType::from(
-                self.block_visitor
-                    .bv
-                    .type_visitor
+                self.type_visitor()
                     .get_dereferenced_type(self.actual_argument_types[0])
                     .kind(),
             );
@@ -370,9 +374,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             )
             .canonicalize(&self.block_visitor.bv.current_environment);
             let target_type = self
-                .block_visitor
-                .bv
-                .type_visitor
+                .type_visitor()
                 .get_rustc_place_type(place, self.block_visitor.bv.current_span);
             let target_path = self.block_visitor.visit_rh_place(place);
             if !summary.is_computed {
@@ -491,9 +493,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 if let Some((place, _)) = &self.destination {
                     let target_path = self.block_visitor.visit_rh_place(place);
                     let target_rustc_type = self
-                        .block_visitor
-                        .bv
-                        .type_visitor
+                        .type_visitor()
                         .get_rustc_place_type(place, self.block_visitor.bv.current_span);
                     let return_value_path = Path::new_result();
                     let return_value = self
@@ -608,11 +608,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handled_clone(&mut self) -> bool {
         precondition!(self.actual_argument_types.len() == 1);
         if let TyKind::Ref(_, mut t, _) = self.actual_argument_types[0].kind() {
-            t = self
-                .block_visitor
-                .bv
-                .type_visitor
-                .remove_transparent_wrappers(t);
+            t = self.type_visitor().remove_transparent_wrappers(t);
             if let TyKind::Adt(def, substs) = t.kind() {
                 let variant_0 = VariantIdx::from_u32(0);
                 if Some(def.variants[variant_0].def_id)
@@ -651,11 +647,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                                 {
                                     // The caller might be able to avoid the diagnostic because it
                                     // knows the actual argument whereas here we only know the type.
-                                    let specialized_substs =
-                                        self.block_visitor.bv.type_visitor.specialize_substs(
-                                            substs,
-                                            &self.callee_generic_argument_map,
-                                        );
+                                    let specialized_substs = self.type_visitor().specialize_substs(
+                                        substs,
+                                        &self.callee_generic_argument_map,
+                                    );
                                     if !utils::are_concrete(specialized_substs) {
                                         // The clone method will not resolve, but we don't want visit_caller
                                         // to issue a diagnostic because is_zero might refine to true
@@ -1169,11 +1164,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             //todo: could this be a generator?
             if let TyKind::Closure(def_id, substs) = closure_ty.kind() {
-                argument_map = self
-                    .block_visitor
-                    .bv
-                    .type_visitor
-                    .get_generic_arguments_map(*def_id, substs.as_closure().substs, &[]);
+                argument_map = self.type_visitor().get_generic_arguments_map(
+                    *def_id,
+                    substs.as_closure().substs,
+                    &[],
+                );
             }
         }
 
@@ -1190,11 +1185,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             }
             let generic_arguments = self.block_visitor.bv.cv.substs_cache.get(&def_id).cloned();
             if let Some(substs) = generic_arguments {
-                argument_map = self
-                    .block_visitor
-                    .bv
-                    .type_visitor
-                    .get_generic_arguments_map(def_id, substs, &actual_argument_types)
+                argument_map = self.type_visitor().get_generic_arguments_map(
+                    def_id,
+                    substs,
+                    &actual_argument_types,
+                )
             }
             let environment_before_call = self.block_visitor.bv.current_environment.clone();
             let mut block_visitor = BlockVisitor::<E>::new(self.block_visitor.bv);
@@ -1250,9 +1245,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some((place, target)) = &self.destination {
             let path = self.block_visitor.visit_rh_place(place);
             let expression_type = self
-                .block_visitor
-                .bv
-                .type_visitor
+                .type_visitor()
                 .get_place_type(place, self.block_visitor.bv.current_span);
             let abstract_value = AbstractValue::make_typed_unknown(expression_type, path.clone());
             self.block_visitor
@@ -1316,9 +1309,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let source_pointer_path = self.actual_args[0].0.clone();
         let source_pointer_rustc_type = self.actual_argument_types[0];
         let mut source_rustc_type = self
-            .block_visitor
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_dereferenced_type(source_pointer_rustc_type);
         let target_type = ExpressionType::from(source_rustc_type.kind());
         let source_thin_pointer_path = if source_rustc_type.is_box() {
@@ -1327,9 +1318,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .canonicalize(&self.block_visitor.bv.current_environment);
             Path::new_field(box_path, 0)
         } else if self
-            .block_visitor
-            .bv
-            .type_visitor
+            .type_visitor()
             .is_slice_pointer(source_pointer_rustc_type.kind())
         {
             Path::new_field(source_pointer_path, 0)
@@ -1441,9 +1430,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     path_prefix = qualifier;
 
                     let path_prefix_rustc_type = self
-                        .block_visitor
-                        .bv
-                        .type_visitor
+                        .type_visitor()
                         .get_path_rustc_type(&path_prefix, self.block_visitor.bv.current_span);
                     if !path_prefix_rustc_type.is_scalar() {
                         let tag_field_value = self
@@ -1514,9 +1501,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let destination = self.destination;
         if let Some((place, _)) = &destination {
             let target_type = self
-                .block_visitor
-                .bv
-                .type_visitor
+                .type_visitor()
                 .get_rustc_place_type(place, self.block_visitor.bv.current_span);
             checked_assume!(self.actual_args.len() == 3);
 
@@ -1525,9 +1510,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let mut qualifier = Path::get_as_path(self.actual_args[0].1.clone());
             if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref { .. }) {
                 let target_type = ExpressionType::from(
-                    self.block_visitor
-                        .bv
-                        .type_visitor
+                    self.type_visitor()
                         .get_dereferenced_type(self.actual_argument_types[0])
                         .kind(),
                 );
@@ -1685,9 +1668,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let mut qualifier = Path::get_as_path(self.actual_args[0].1.clone());
             if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref { .. }) {
                 let target_type = ExpressionType::from(
-                    self.block_visitor
-                        .bv
-                        .type_visitor
+                    self.type_visitor()
                         .get_dereferenced_type(self.actual_argument_types[0])
                         .kind(),
                 );
@@ -1790,9 +1771,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 1);
         if let Some((place, _)) = &self.destination {
             let target_type = ExpressionType::from(
-                self.block_visitor
-                    .bv
-                    .type_visitor
+                self.type_visitor()
                     .get_dereferenced_type(self.actual_argument_types[0])
                     .kind(),
             );
@@ -1907,9 +1886,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 4);
         // Get path to the heap block to reallocate
         let target_type = ExpressionType::from(
-            self.block_visitor
-                .bv
-                .type_visitor
+            self.type_visitor()
                 .get_dereferenced_type(self.actual_argument_types[0])
                 .kind(),
         );
@@ -1985,9 +1962,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let path0 = Path::new_field(target_path.clone(), 0);
             let path1 = Path::new_field(target_path.clone(), 1);
             let target_type = self
-                .block_visitor
-                .bv
-                .type_visitor
+                .type_visitor()
                 .get_target_path_type(&path0, self.block_visitor.bv.current_span);
             let left = self.actual_args[0].1.clone();
             let right = self.actual_args[1].1.clone();
@@ -2055,9 +2030,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_mem_replace(&mut self) {
         checked_assume!(self.actual_args.len() == 2);
         let target_type = ExpressionType::from(
-            self.block_visitor
-                .bv
-                .type_visitor
+            self.type_visitor()
                 .get_dereferenced_type(self.actual_argument_types[0])
                 .kind(),
         );
@@ -2070,9 +2043,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some((place, _)) = &self.destination {
             let target_path = self.block_visitor.visit_rh_place(place);
             let root_rustc_type = self
-                .block_visitor
-                .bv
-                .type_visitor
+                .type_visitor()
                 .get_rustc_place_type(place, self.block_visitor.bv.current_span);
             // Return the old value of dest_path
             self.block_visitor.bv.copy_or_move_elements(
@@ -2137,9 +2108,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
         checked_assume!(self.actual_argument_types.len() == 1);
         let t = self
-            .block_visitor
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_dereferenced_type(self.actual_argument_types[0]);
         if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(t)) {
             return Rc::new((ty_and_layout.layout.align.abi.bytes() as u128).into());
@@ -2177,13 +2146,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             if let Expression::HeapBlockLayout { length, .. } = &layout_val.expression {
                 return length.clone();
             }
-        } else if self
-            .block_visitor
-            .bv
-            .type_visitor
-            .is_slice_pointer(t.kind())
-        {
-            let elem_t = self.block_visitor.bv.type_visitor.get_element_type(t);
+        } else if self.type_visitor().is_slice_pointer(t.kind()) {
+            let elem_t = self.type_visitor().get_element_type(t);
             if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(elem_t)) {
                 if !ty_and_layout.is_unsized() {
                     let elem_size_val: Rc<AbstractValue> =
@@ -2241,9 +2205,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         if let Some((place, _)) = &self.destination {
             let target_path = self.block_visitor.visit_rh_place(place);
             let target_rustc_type = self
-                .block_visitor
-                .bv
-                .type_visitor
+                .type_visitor()
                 .get_rustc_place_type(place, self.block_visitor.bv.current_span);
 
             fn add_leaf_fields_for<'a>(
@@ -2302,9 +2264,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 (_, TyKind::Adt(target_def, target_substs))
                     if self
-                        .block_visitor
-                        .bv
-                        .type_visitor
+                        .type_visitor()
                         .is_thin_pointer(source_rustc_type.kind()) =>
                 {
                     let source_fields = vec![(source_path, source_rustc_type)];
@@ -2320,9 +2280,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 }
                 (TyKind::Adt(source_def, source_substs), _)
                     if self
-                        .block_visitor
-                        .bv
-                        .type_visitor
+                        .type_visitor()
                         .is_thin_pointer(target_rustc_type.kind()) =>
                 {
                     let mut source_fields = Vec::new();
@@ -2467,9 +2425,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
     fn handle_write_bytes(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
         let target_type = ExpressionType::from(
-            self.block_visitor
-                .bv
-                .type_visitor
+            self.type_visitor()
                 .get_dereferenced_type(self.actual_argument_types[0])
                 .kind(),
         );
@@ -2488,7 +2444,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             .get(0)
             .expect("write_bytes<T>")
             .expect_ty();
-        let mut elem_size = self.block_visitor.bv.type_visitor.get_type_size(elem_type);
+        let mut elem_size = self.type_visitor().get_type_size(elem_type);
         fn repeated_bytes(mut elem_size: u64, byte_value: &Rc<AbstractValue>) -> Rc<AbstractValue> {
             let const_8: Rc<AbstractValue> = Rc::new(8u128.into());
             let mut source_value = byte_value.clone();
@@ -2513,12 +2469,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     for i in 0..(*count as usize) {
                         let dest_field = Path::new_field(dest_path.clone(), i);
                         let field_type = self
-                            .block_visitor
-                            .bv
-                            .type_visitor
+                            .type_visitor()
                             .get_path_rustc_type(&dest_field, self.block_visitor.bv.current_span);
-                        let field_size =
-                            self.block_visitor.bv.type_visitor.get_type_size(field_type);
+                        let field_size = self.type_visitor().get_type_size(field_type);
                         elem_size -= field_size;
                         let field_value = repeated_bytes(field_size, byte_value);
                         self.block_visitor
@@ -2894,9 +2847,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 // We'll assume there were no side effects and no preconditions.
                 let args = self.actual_args.iter().map(|(_, a)| a.clone()).collect();
                 let result_type = self
-                    .block_visitor
-                    .bv
-                    .type_visitor
+                    .type_visitor()
                     .get_place_type(place, self.block_visitor.bv.current_span);
                 let result =
                     self.callee_fun_val

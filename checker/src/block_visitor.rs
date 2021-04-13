@@ -21,6 +21,7 @@ use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
 use crate::utils;
 
+use crate::type_visitor::TypeVisitor;
 use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
@@ -59,6 +60,14 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         body_visitor: &'block mut BodyVisitor<'analysis, 'compilation, 'tcx, E>,
     ) -> BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E> {
         BlockVisitor { bv: body_visitor }
+    }
+
+    pub fn type_visitor(&self) -> &TypeVisitor<'tcx> {
+        self.bv.type_visitor()
+    }
+
+    pub fn type_visitor_mut(&mut self) -> &mut TypeVisitor<'tcx> {
+        self.bv.type_visitor_mut()
     }
 
     /// Visits each statement in order and then visits the terminator.
@@ -170,8 +179,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     ) {
         let target_path = Path::new_discriminant(self.visit_rh_place(place));
         let ty = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
         match ty.kind() {
             TyKind::Adt(..) | TyKind::Generator(..) => {
@@ -196,8 +204,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// End the current live range for the storage of the local.
     #[logfn_inputs(TRACE)]
     fn visit_storage_dead(&mut self, local: mir::Local) {
-        let loc_ty = self.bv.type_visitor.get_loc_ty(local);
-        let type_index = self.bv.type_visitor.get_index_for(loc_ty);
+        let loc_ty = self.type_visitor().get_loc_ty(local);
+        let type_index = self.type_visitor().get_index_for(loc_ty);
         let path = Path::new_local_parameter_or_result(
             local.as_usize(),
             self.bv.mir.arg_count,
@@ -435,18 +443,17 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let place_path = self.get_path_for_place(place);
         let path = place_path.canonicalize(&self.bv.current_environment);
         let mut ty = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_path_rustc_type(&path, self.bv.current_span);
         if ty.is_never() {
             ty = self
-                .bv
-                .type_visitor
+                .type_visitor()
                 .get_rustc_place_type(place, self.bv.current_span);
             debug!("ty {:?}", ty);
         }
-        ty = self.bv.type_visitor.remove_transparent_wrappers(ty);
-        self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
+        ty = self.type_visitor().remove_transparent_wrappers(ty);
+        self.type_visitor_mut()
+            .set_path_rustc_type(path.clone(), ty);
 
         if let TyKind::Adt(def, substs) = ty.kind() {
             if let Some(destructor) = self.bv.tcx.adt_destructor(def.did) {
@@ -456,10 +463,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .tcx
                     .mk_mut_ref(self.bv.cv.tcx.lifetimes.re_static, ty)];
                 let callee_generic_arguments = self
-                    .bv
-                    .type_visitor
-                    .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
-                let callee_generic_argument_map = self.bv.type_visitor.get_generic_arguments_map(
+                    .type_visitor()
+                    .specialize_substs(substs, &self.type_visitor().generic_argument_map);
+                let callee_generic_argument_map = self.type_visitor().get_generic_arguments_map(
                     def.did,
                     callee_generic_arguments,
                     &actual_argument_types,
@@ -543,11 +549,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         trace!("visit_call {:?} {:?}", func, args);
         trace!(
             "self.generic_argument_map {:?}",
-            self.bv.type_visitor.generic_argument_map
+            self.type_visitor().generic_argument_map
         );
         trace!(
             "actual_argument_types {:?}",
-            self.bv.type_visitor.actual_argument_types
+            self.type_visitor().actual_argument_types
         );
         trace!("env {:?}", self.bv.current_environment);
         let func_to_call = self.visit_operand(func);
@@ -581,9 +587,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .get(&callee_def_id)
             .expect("MIR should ensure this");
         let mut callee_generic_arguments = self
-            .bv
-            .type_visitor
-            .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
+            .type_visitor()
+            .specialize_substs(substs, &self.type_visitor().generic_argument_map);
         let actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = args
             .iter()
             .map(|arg| (self.get_operand_path(arg), self.visit_operand(arg)))
@@ -595,22 +600,21 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 if utils::is_concrete(arg_ty.kind()) {
                     arg_ty
                 } else {
-                    let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                    let specialized_ty = self.type_visitor().specialize_generic_argument_type(
                         arg_ty,
-                        &self.bv.type_visitor.generic_argument_map,
+                        &self.type_visitor().generic_argument_map,
                     );
                     if utils::is_concrete(specialized_ty.kind()) {
                         specialized_ty
                     } else {
                         let path = self.get_operand_path(arg);
-                        self.bv
-                            .type_visitor
+                        self.type_visitor()
                             .get_path_rustc_type(&path, self.bv.current_span)
                     }
                 }
             })
             .collect();
-        let callee_generic_argument_map = self.bv.type_visitor.get_generic_arguments_map(
+        let callee_generic_argument_map = self.type_visitor().get_generic_arguments_map(
             callee_def_id,
             callee_generic_arguments,
             &actual_argument_types,
@@ -628,8 +632,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                             let mut gen_args: Vec<GenericArg<'_>> =
                                 callee_generic_arguments.iter().collect();
                             gen_args[i] = self
-                                .bv
-                                .type_visitor
+                                .type_visitor()
                                 .get_dereferenced_type(actual_argument_types[0])
                                 .into();
                             callee_generic_arguments = self.bv.tcx.intern_substs(&gen_args);
@@ -640,14 +643,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             }
         }
         let self_ty_is_fn_ptr = if let Some(ty) = actual_argument_types.get(0) {
-            let self_ty = self.bv.type_visitor.get_dereferenced_type(ty);
+            let self_ty = self.type_visitor().get_dereferenced_type(ty);
             matches!(self_ty.kind(), TyKind::FnPtr(..))
         } else {
             false
         };
         let adt_map = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_adt_map(&actual_args, &self.bv.current_environment);
 
         let known_name = func_ref_to_call.known_name;
@@ -732,8 +734,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                     let mut param_path_root = Path::new_parameter(i + 1);
                                     if matches!(&arg_val.expression, Expression::Reference(..)) {
                                         let deref_type = self
-                                            .bv
-                                            .type_visitor
+                                            .type_visitor()
                                             .get_target_path_type(ipath, self.bv.current_span);
                                         param_path_root =
                                             Path::new_deref(param_path_root, deref_type);
@@ -835,28 +836,24 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 var_type: ExpressionType::ThinPointer,
             } => {
                 let closure_ty = self
-                    .bv
-                    .type_visitor
+                    .type_visitor()
                     .get_path_rustc_type(path, self.bv.current_span);
                 let mut specialized_closure_ty =
-                    self.bv.type_visitor.specialize_generic_argument_type(
+                    self.type_visitor().specialize_generic_argument_type(
                         closure_ty,
-                        &self.bv.type_visitor.generic_argument_map,
+                        &self.type_visitor().generic_argument_map,
                     );
                 if let TyKind::Opaque(def_id, substs) = specialized_closure_ty.kind() {
                     let substs = self
-                        .bv
-                        .type_visitor
-                        .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
+                        .type_visitor()
+                        .specialize_substs(substs, &self.type_visitor().generic_argument_map);
                     self.bv.cv.substs_cache.insert(*def_id, substs);
                     let closure_ty = self.bv.tcx.type_of(*def_id);
                     let map = self
-                        .bv
-                        .type_visitor
+                        .type_visitor()
                         .get_generic_arguments_map(*def_id, substs, &[]);
                     specialized_closure_ty = self
-                        .bv
-                        .type_visitor
+                        .type_visitor()
                         .specialize_generic_argument_type(closure_ty, &map);
                 }
                 match specialized_closure_ty.kind() {
@@ -870,9 +867,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     //todo: what about generators?
                     TyKind::Ref(_, ty, _) => {
                         let specialized_closure_ty =
-                            self.bv.type_visitor.specialize_generic_argument_type(
+                            self.type_visitor().specialize_generic_argument_type(
                                 ty,
-                                &self.bv.type_visitor.generic_argument_map,
+                                &self.type_visitor().generic_argument_map,
                             );
                         if let TyKind::Closure(def_id, substs) | TyKind::FnDef(def_id, substs) =
                             specialized_closure_ty.kind()
@@ -908,7 +905,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// `ty` might not be a 128-bit integer type, so this method extends/truncates the bit
     /// representation accordingly.
     pub fn get_int_const_val(&mut self, mut val: u128, ty: Ty<'tcx>) -> Rc<AbstractValue> {
-        let param_env = self.bv.type_visitor.get_param_env();
+        let param_env = self.type_visitor().get_param_env();
         let is_signed;
         if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
             is_signed = ty_and_layout.abi.is_signed();
@@ -1452,9 +1449,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 self.visit_len(path, place);
             }
             mir::Rvalue::Cast(cast_kind, operand, ty) => {
-                let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                let specialized_ty = self.type_visitor().specialize_generic_argument_type(
                     ty,
-                    &self.bv.type_visitor.generic_argument_map,
+                    &self.type_visitor().generic_argument_map,
                 );
                 self.visit_cast(path, *cast_kind, operand, specialized_ty);
             }
@@ -1465,9 +1462,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 self.visit_checked_binary_op(path, *bin_op, left_operand, right_operand);
             }
             mir::Rvalue::NullaryOp(null_op, ty) => {
-                let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                let specialized_ty = self.type_visitor().specialize_generic_argument_type(
                     ty,
-                    &self.bv.type_visitor.generic_argument_map,
+                    &self.type_visitor().generic_argument_map,
                 );
                 self.visit_nullary_op(path, *null_op, specialized_ty);
             }
@@ -1534,8 +1531,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn visit_used_copy(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
         let rpath = self.visit_rh_place(place);
         let rtype = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
         self.bv
             .copy_or_move_elements(target_path, rpath, rtype, false);
@@ -1548,8 +1544,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn visit_used_move(&mut self, target_path: Rc<Path>, place: &mir::Place<'tcx>) {
         let rpath = self.visit_rh_place(place);
         let rtype = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
         self.bv
             .copy_or_move_elements(target_path, rpath, rtype, true);
@@ -1574,12 +1569,10 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_address_of(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         let target_type = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_path_rustc_type(&path, self.bv.current_span);
         let source_type = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
         let value_path = self.visit_lh_place(place);
         let value = match &value_path.value {
@@ -1607,7 +1600,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 // If the contents at offset 0 from the target of the pointer being dereferenced is
                 // a fat (slice) pointer then the address_of operation results in a copy of the fat pointer.
                 // We check for this by looking at the type of the operation result target.
-                if self.bv.type_visitor.is_slice_pointer(target_type.kind()) {
+                if self.type_visitor().is_slice_pointer(target_type.kind()) {
                     // If we get here we are effectively copying to a fat pointer without a cast,
                     // so there is no type information to use to come up with the length part of
                     // the fat pointer. This implies that the source value must itself be a fat
@@ -1704,8 +1697,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     fn visit_len(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         let place_ty = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
         let len_value = if let TyKind::Array(_, len) = place_ty.kind() {
             // We only get here if "-Z mir-opt-level=0" was specified.
@@ -1732,10 +1724,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     {
                         if matches!(selector.as_ref(), PathSelector::Field(0)) {
                             let qualifier_type = self
-                                .bv
-                                .type_visitor
+                                .type_visitor()
                                 .get_path_rustc_type(qualifier, self.bv.current_span);
-                            if self.bv.type_visitor.is_slice_pointer(qualifier_type.kind()) {
+                            if self.type_visitor().is_slice_pointer(qualifier_type.kind()) {
                                 value_path = qualifier.clone();
                             }
                         }
@@ -1805,22 +1796,19 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 .update_value_at(target_path, value.clone());
                         } else {
                             let target_type = self
-                                .bv
-                                .type_visitor
+                                .type_visitor()
                                 .get_path_rustc_type(&target_path, self.bv.current_span);
-                            if self.bv.type_visitor.is_slice_pointer(target_type.kind()) {
+                            if self.type_visitor().is_slice_pointer(target_type.kind()) {
                                 // convert the source thin pointer to a fat pointer if the target path is a slice pointer
                                 let thin_pointer_path = Path::new_field(target_path.clone(), 0);
                                 self.bv
                                     .current_environment
                                     .update_value_at(thin_pointer_path, value.clone());
                                 let source_type = self
-                                    .bv
-                                    .type_visitor
+                                    .type_visitor()
                                     .get_path_rustc_type(p, self.bv.current_span);
                                 if let TyKind::Array(_, len) = self
-                                    .bv
-                                    .type_visitor
+                                    .type_visitor()
                                     .get_dereferenced_type(source_type)
                                     .kind()
                                 {
@@ -1893,8 +1881,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::BinOp::Shr => {
                 // We assume that path is a temporary used to track the operation result.
                 let target_type = self
-                    .bv
-                    .type_visitor
+                    .type_visitor()
                     .get_target_path_type(&path, self.bv.current_span);
                 left.shr(right, target_type)
             }
@@ -1915,8 +1902,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     ) {
         // We assume that path is a temporary used to track the operation result and its overflow status.
         let target_type = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_first_part_of_target_path_type_tuple(&path, self.bv.current_span);
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
@@ -1971,7 +1957,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         null_op: mir::NullOp,
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
-        let param_env = self.bv.type_visitor.get_param_env();
+        let param_env = self.type_visitor().get_param_env();
         let (len, alignment) = if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
             let layout = ty_and_layout.layout;
             (
@@ -1979,7 +1965,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 Rc::new((layout.align.abi.bytes() as u128).into()),
             )
         } else {
-            let type_index = self.bv.type_visitor.get_index_for(self.bv.tcx.types.u128);
+            let type_index = self.type_visitor().get_index_for(self.bv.tcx.types.u128);
             //todo: need expressions that eventually refines into the actual layout size/alignment
             (
                 AbstractValue::make_typed_unknown(
@@ -2019,8 +2005,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::UnOp::Neg => operand.negate(),
             mir::UnOp::Not => {
                 let result_type = self
-                    .bv
-                    .type_visitor
+                    .type_visitor()
                     .get_target_path_type(&path, self.bv.current_span);
                 if result_type.is_integer() {
                     operand.bit_not(result_type)
@@ -2104,8 +2089,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn get_operand_rustc_type(&mut self, operand: &mir::Operand<'tcx>) -> Ty<'tcx> {
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => self
-                .bv
-                .type_visitor
+                .type_visitor()
                 .get_rustc_place_type(place, self.bv.current_span),
             mir::Operand::Constant(constant) => {
                 let mir::Constant { literal, .. } = constant.borrow();
@@ -2136,8 +2120,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn visit_copy(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
         let path = self.visit_rh_place(place);
         let rust_place_type = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
         self.bv.lookup_path_and_refine_result(path, rust_place_type)
     }
@@ -2151,8 +2134,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     fn visit_move(&mut self, place: &mir::Place<'tcx>) -> Rc<AbstractValue> {
         let path = self.visit_rh_place(place);
         let rust_place_type = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
         self.bv.lookup_path_and_refine_result(path, rust_place_type)
     }
@@ -2183,13 +2165,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         }) = &val
         {
             if def_ty.const_param_did.is_some() {
-                val = val.eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
+                val = val.eval(self.bv.tcx, self.type_visitor().get_param_env());
             } else {
                 let def_id = def_ty.def_id_for_type_of();
                 let substs = self
-                    .bv
-                    .type_visitor
-                    .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
+                    .type_visitor()
+                    .specialize_substs(substs, &self.type_visitor().generic_argument_map);
                 self.bv.cv.substs_cache.insert(def_id, substs);
                 let path = match promoted {
                     Some(promoted) => {
@@ -2204,7 +2185,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         }
                     }
                 };
-                self.bv.type_visitor.set_path_rustc_type(path.clone(), lty);
+                self.type_visitor_mut()
+                    .set_path_rustc_type(path.clone(), lty);
                 let val_at_path = self.bv.lookup_path_and_refine_result(path, lty);
                 if let Expression::Variable { .. } = &val_at_path.expression {
                     // Seems like there is nothing at the path, but...
@@ -2215,7 +2197,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         return val_at_path;
                     }
                     // Seems like a lazily serialized constant. Force evaluation.
-                    val = val.eval(self.bv.tcx, self.bv.type_visitor.get_param_env());
+                    val = val.eval(self.bv.tcx, self.type_visitor().get_param_env());
                     if let rustc_middle::ty::ConstKind::Unevaluated(..) = &val {
                         // val.eval did not manage to evaluate this, go with unknown.
                         return val_at_path;
@@ -2233,14 +2215,13 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             | TyKind::FnDef(def_id, substs)
             | TyKind::Generator(def_id, substs, ..)
             | TyKind::Opaque(def_id, substs) => {
-                let specialized_ty = self.bv.type_visitor.specialize_generic_argument_type(
+                let specialized_ty = self.type_visitor().specialize_generic_argument_type(
                     lty,
-                    &self.bv.type_visitor.generic_argument_map,
+                    &self.type_visitor().generic_argument_map,
                 );
                 let substs = self
-                    .bv
-                    .type_visitor
-                    .specialize_substs(substs, &self.bv.type_visitor.generic_argument_map);
+                    .type_visitor()
+                    .specialize_substs(substs, &self.type_visitor().generic_argument_map);
                 return Rc::new(
                     self.visit_function_reference(*def_id, specialized_ty, Some(substs))
                         .clone()
@@ -2259,7 +2240,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
         match &val {
             rustc_middle::ty::ConstKind::Param(ParamConst { index, .. }) => {
-                if let Some(gen_args) = self.bv.type_visitor.generic_arguments {
+                if let Some(gen_args) = self.type_visitor().generic_arguments {
                     if let Some(arg_val) = gen_args.as_ref().get(*index as usize) {
                         return self.visit_const(arg_val.expect_const());
                     }
@@ -2424,8 +2405,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         return array_value;
                     }
                     TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Slice(..)) => {
-                        let elem_type = self.bv.type_visitor.get_element_type(t);
-                        let bytes_per_elem = self.bv.type_visitor.get_type_size(elem_type) as usize;
+                        let elem_type = self.type_visitor().get_element_type(t);
+                        let bytes_per_elem = self.type_visitor().get_type_size(elem_type) as usize;
                         let length = size / bytes_per_elem;
                         let (_, array_path) = self.get_heap_array_and_path(t, size);
                         self.deserialize_constant_array(
@@ -2476,8 +2457,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         bytes: &'a [u8],
         ty: Ty<'tcx>,
     ) -> &'a [u8] {
-        self.bv
-            .type_visitor
+        self.type_visitor_mut()
             .set_path_rustc_type(target_path.clone(), ty);
         match ty.kind() {
             TyKind::Adt(def, substs) => {
@@ -2636,7 +2616,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 self.deserialize_constant_bytes(target_path, bytes, self.bv.tcx.types.usize)
             }
             TyKind::Slice(elem_type) => {
-                let elem_size = self.bv.type_visitor.get_type_size(elem_type) as usize;
+                let elem_size = self.type_visitor().get_type_size(elem_type) as usize;
                 checked_assume!(elem_size > 0); // serializing a slice of zero sized elements makes no sense
                 let num_elems = bytes.len() / elem_size;
                 self.deserialize_constant_array(target_path, bytes, num_elems, elem_type)
@@ -2694,10 +2674,9 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         array_type: Ty<'tcx>,
         size_in_bytes: usize,
     ) -> (Rc<AbstractValue>, Rc<Path>) {
-        let element_type = self.bv.type_visitor.get_element_type(array_type);
+        let element_type = self.type_visitor().get_element_type(array_type);
         let (_, elem_alignment) = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_type_size_and_alignment(element_type);
         let alignment = self.get_u128_const_val(elem_alignment);
         let byte_len_value = self.get_u128_const_val(size_in_bytes as u128);
@@ -2750,7 +2729,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 return Rc::new(ConstantDomain::U128(0).into());
             }
             let data = scalar_int.to_bits(size).unwrap();
-            let param_env = self.bv.type_visitor.get_param_env();
+            let param_env = self.type_visitor().get_param_env();
             if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
                 // The type of the discriminant tag
                 let discr_ty = ty_and_layout.ty.discriminant_ty(self.bv.tcx);
@@ -3027,17 +3006,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         let place_path = self.get_path_for_place(place);
         let mut path = place_path.canonicalize(&self.bv.current_environment);
         let mut ty = self
-            .bv
-            .type_visitor
+            .type_visitor()
             .get_path_rustc_type(&path, self.bv.current_span);
         if ty.is_never() {
             ty = self
-                .bv
-                .type_visitor
+                .type_visitor()
                 .get_rustc_place_type(place, self.bv.current_span);
             debug!("ty {:?}", ty);
         }
-        self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
+        self.type_visitor_mut()
+            .set_path_rustc_type(path.clone(), ty);
         match &place_path.value {
             PathEnum::QualifiedPath { selector, .. } if **selector == PathSelector::Deref => {
                 if let TyKind::Array(elem_type, _) = &ty.kind() {
@@ -3049,7 +3027,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // directly.
                     path = Path::new_index(path, Rc::new(0u128.into()));
                     ty = elem_type;
-                    self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
+                    self.type_visitor_mut()
+                        .set_path_rustc_type(path.clone(), ty);
                 }
             }
             _ => {}
@@ -3068,14 +3047,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                                 .dereference(target_type.clone())
                                 .join(right.dereference(target_type), &place_path);
                             path = Path::get_as_path(distributed_deref);
-                            self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
+                            self.type_visitor_mut()
+                                .set_path_rustc_type(path.clone(), ty);
                         }
                         Expression::WidenedJoin { operand, .. } => {
                             let target_type = ExpressionType::from(ty.kind());
                             let distributed_deref =
                                 operand.dereference(target_type).widen(&place_path);
                             path = Path::get_as_path(distributed_deref);
-                            self.bv.type_visitor.set_path_rustc_type(path.clone(), ty);
+                            self.type_visitor_mut()
+                                .set_path_rustc_type(path.clone(), ty);
                         }
                         _ => (),
                     }
@@ -3100,8 +3081,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// can be serialized and used as a cache key.
     #[logfn(TRACE)]
     fn get_path_for_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
-        let ty = self.bv.type_visitor.get_loc_ty(place.local);
-        let type_index = self.bv.type_visitor.get_index_for(ty);
+        let ty = self.type_visitor().get_loc_ty(place.local);
+        let type_index = self.type_visitor().get_index_for(ty);
         let base_path: Rc<Path> = Path::new_local_parameter_or_result(
             place.local.as_usize(),
             self.bv.mir.arg_count,
@@ -3177,7 +3158,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             let selector = self.visit_projection_elem(ty, elem);
             match elem {
                 mir::ProjectionElem::Deref => {
-                    let type_visitor = &mut self.bv.type_visitor;
+                    let type_visitor = &mut self.type_visitor_mut();
                     if ty.is_box() {
                         // Deref the pointer at field 0 of the box
                         result = Path::new_field(result, 0);
@@ -3196,16 +3177,16 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     }
                 }
                 mir::ProjectionElem::Field(_, field_ty) => {
-                    ty = self.bv.type_visitor.specialize_generic_argument_type(
+                    ty = self.type_visitor().specialize_generic_argument_type(
                         field_ty,
-                        &self.bv.type_visitor.generic_argument_map,
+                        &self.type_visitor().generic_argument_map,
                     );
                 }
                 mir::ProjectionElem::Index(..) | mir::ProjectionElem::ConstantIndex { .. } => {
-                    ty = self.bv.type_visitor.get_element_type(ty);
+                    ty = self.type_visitor().get_element_type(ty);
                 }
                 mir::ProjectionElem::Downcast(..) => {
-                    ty = self.bv.type_visitor.get_type_for_projection_element(
+                    ty = self.type_visitor().get_type_for_projection_element(
                         self.bv.current_span,
                         ty,
                         &[*elem],
@@ -3230,8 +3211,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, ..) => {
                 if let TyKind::Adt(def, _) = self
-                    .bv
-                    .type_visitor
+                    .type_visitor()
                     .remove_transparent_wrappers(base_ty)
                     .kind()
                 {
@@ -3248,8 +3228,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 PathSelector::Field(field.index())
             }
             mir::ProjectionElem::Index(local) => {
-                let loc_ty = self.bv.type_visitor.get_loc_ty(*local);
-                let type_index = self.bv.type_visitor.get_index_for(loc_ty);
+                let loc_ty = self.type_visitor().get_loc_ty(*local);
+                let type_index = self.type_visitor().get_index_for(loc_ty);
                 let local_path = Path::new_local_parameter_or_result(
                     local.as_usize(),
                     self.bv.mir.arg_count,
