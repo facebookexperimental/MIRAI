@@ -53,16 +53,27 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
                     false
                 }
             }
-            Node::Item(item) => match item.kind {
-                ItemKind::Fn(..) | ItemKind::Const(..) | ItemKind::Static(..) => {
+            Node::Item(item) => match &item.kind {
+                ItemKind::Const(..) | ItemKind::Fn(..) | ItemKind::Static(..) => {
                     item.vis.node.is_pub()
                 }
+                ItemKind::Impl(item) => item.of_trait.is_some(),
                 _ => {
                     debug!("def_id is unsupported item kind {:?}", item.kind);
                     false
                 }
             },
-            Node::ImplItem(item) => item.vis.node.is_pub(),
+            Node::ImplItem(item) => {
+                if item.vis.node.is_pub_restricted() {
+                    false
+                } else if item.vis.node.is_pub() {
+                    true
+                } else if let Some(parent_def_id) = tcx.parent(def_id) {
+                    is_public(parent_def_id, tcx)
+                } else {
+                    false
+                }
+            }
             Node::TraitItem(..) => true,
             Node::AnonConst(..) => false,
             _ => {

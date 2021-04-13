@@ -172,7 +172,9 @@ impl MiraiCallbacks {
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // Sorts Int and Bool are incompatible
             || file_name.contains("language/diem-tools/transaction-replay/src")  // Not a type   
             || file_name.contains("language/diem-tools/writeset-transaction-generator/src") // stack overflow
-            || file_name.contains("language/diem-framework/src") // too slow    
+            || file_name.contains("language/diem-framework/src") // too slow 
+            || file_name.contains("language/diem-tools/diem-validator-interface") // Sorts Int and <null> are incompatible
+            || file_name.contains("language/diem-vm/src") // too slow
             || file_name.contains("language/move-lang/src") // too slow
             || file_name.contains("language/move-model/src") // too slow
             || file_name.contains("language/move-prover/src") // too slow 
@@ -202,7 +204,8 @@ impl MiraiCallbacks {
             || file_name.contains("storage/diemdb/src") // stack overflow
             || file_name.contains("storage/schemadb/src") // too slow
             || file_name.contains("storage/storage-client/src") // too slow
-            || file_name.contains("types/src")
+            || file_name.contains("types/src") // too slow
+            || file_name.contains("vm-validator/src")
         {
             return true;
         }

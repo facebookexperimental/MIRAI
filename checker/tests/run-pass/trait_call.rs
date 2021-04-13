@@ -30,7 +30,7 @@ struct BarTwo {
 
 impl Tr for BarTwo {
     fn bar(&self) -> i32 {
-        self.i * 2
+        self.i * 2 //~ possible attempt to multiply with overflow
     }
 }
 

@@ -1329,7 +1329,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     if promotable_cond_val.is_none()
                         || promotable_entry_cond.is_none()
                         || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
-                        || self.bv.function_being_analyzed_is_root()
+                        || (self.bv.function_being_analyzed_is_root()
+                            && self.bv.cv.options.diag_level >= DiagLevel::Library)
                     {
                         // Can't make this the caller's problem.
                         let warning = format!("possible {}", get_assert_msg_description(msg));
