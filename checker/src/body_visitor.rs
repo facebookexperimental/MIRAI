@@ -69,7 +69,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub post_condition_block: Option<mir::BasicBlock>,
     pub preconditions: Vec<Precondition>,
     pub fresh_variable_offset: usize,
-    pub type_visitor: TypeVisitor<'tcx>,
+    type_visitor: TypeVisitor<'tcx>,
 }
 
 impl<'analysis, 'compilation, 'tcx, E> Debug for BodyVisitor<'analysis, 'compilation, 'tcx, E> {
@@ -147,7 +147,15 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         self.post_condition_block = None;
         self.preconditions = Vec::new();
         self.fresh_variable_offset = 1000;
-        self.type_visitor.reset_visitor_state();
+        self.type_visitor_mut().reset_visitor_state();
+    }
+
+    pub fn type_visitor(&self) -> &TypeVisitor<'tcx> {
+        &self.type_visitor
+    }
+
+    pub fn type_visitor_mut(&mut self) -> &mut TypeVisitor<'tcx> {
+        &mut self.type_visitor
     }
 
     /// Analyze the body and store a summary of its behavior in self.summary_cache.
@@ -177,9 +185,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         // Also add entries for closure fields.
         for (path, val) in function_constant_args.iter() {
             let path_ty = self
-                .type_visitor
+                .type_visitor()
                 .get_path_rustc_type(path, self.current_span);
-            self.type_visitor
+            self.type_visitor_mut()
                 .add_any_closure_fields_for(path_ty, &path, &mut first_state);
             first_state.value_map.insert_mut(path.clone(), val.clone());
         }
@@ -417,8 +425,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                             }
                         }
                         PathSelector::Discriminant => {
-                            let ty = self.type_visitor.get_dereferenced_type(
-                                self.type_visitor
+                            let ty = self.type_visitor().get_dereferenced_type(
+                                self.type_visitor()
                                     .get_path_rustc_type(qualifier, self.current_span),
                             );
                             match ty.kind() {
@@ -578,7 +586,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
             let generic_args = self.cv.substs_cache.get(&def_id).cloned();
             let callee_generic_argument_map = if let Some(generic_args) = generic_args {
-                self.type_visitor
+                self.type_visitor()
                     .get_generic_arguments_map(def_id, generic_args, &[])
             } else {
                 None
@@ -711,10 +719,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             let closure_path = Path::new_field(Path::new_field(qualifier, 0), i);
             // skip(1) above ensures this
             assume!(i < usize::max_value());
-            let specialized_type = self
-                .type_visitor
-                .specialize_generic_argument_type(loc.ty, &self.type_visitor.generic_argument_map);
-            let type_index = self.type_visitor.get_index_for(specialized_type);
+            let specialized_type = self.type_visitor().specialize_generic_argument_type(
+                loc.ty,
+                &self.type_visitor().generic_argument_map,
+            );
+            let type_index = self.type_visitor().get_index_for(specialized_type);
             let path = if i < self.mir.arg_count {
                 Path::new_parameter(i + 1)
             } else {
@@ -789,7 +798,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         let saved_mir = self.mir;
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
             self.mir = constant_mir;
-            self.type_visitor.mir = self.mir;
+            self.type_visitor_mut().mir = self.mir;
             let result_rustc_type = self.mir.local_decls[mir::Local::from(0usize)].ty;
             self.visit_promoted_constants_block();
             if let Some(exit_environment) = &self.exit_environment {
@@ -797,7 +806,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 let mut result_root: Rc<Path> = Path::new_result();
                 let mut promoted_root: Rc<Path> =
                     Rc::new(PathEnum::PromotedConstant { ordinal }.into());
-                if self.type_visitor.is_slice_pointer(result_rustc_type.kind()) {
+                if self
+                    .type_visitor()
+                    .is_slice_pointer(result_rustc_type.kind())
+                {
                     let source_length_path = Path::new_length(result_root.clone());
                     let length_val = self
                         .exit_environment
@@ -866,7 +878,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             self.reset_visitor_state();
         }
         self.mir = saved_mir;
-        self.type_visitor.mir = saved_mir;
+        self.type_visitor_mut().mir = saved_mir;
         environment
     }
 
@@ -883,7 +895,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         local_path: &Rc<Path>,
         ordinal: usize,
     ) {
-        let target_type = self.type_visitor.get_dereferenced_type(result_rustc_type);
+        let target_type = self.type_visitor().get_dereferenced_type(result_rustc_type);
         if ExpressionType::from(target_type.kind()).is_primitive() {
             // Kind of weird, but seems to be generated for debugging support.
             // Move the value into a path, so that we can drop the reference to the soon to be dead local.
@@ -930,11 +942,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         } else {
             // A composite value needs to get to get promoted to the heap
             // in order to propagate it via function summaries.
-            let byte_size = self.type_visitor.get_type_size(target_type);
+            let byte_size = self.type_visitor().get_type_size(target_type);
             let byte_size_value = self.get_u128_const_val(byte_size as u128);
             let elem_size = self
-                .type_visitor
-                .get_type_size(self.type_visitor.get_element_type(target_type));
+                .type_visitor()
+                .get_type_size(self.type_visitor().get_element_type(target_type));
             let alignment: Rc<AbstractValue> = Rc::new(
                 (match elem_size {
                     0 => 1,
@@ -965,7 +977,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             }
 
             let thin_pointer_to_heap = AbstractValue::make_reference(heap_root);
-            if self.type_visitor.is_slice_pointer(target_type.kind()) {
+            if self.type_visitor().is_slice_pointer(target_type.kind()) {
                 let promoted_thin_pointer_path = Path::new_field(promoted_root.clone(), 0);
                 environment.update_value_at(promoted_thin_pointer_path, thin_pointer_to_heap);
                 let length_value = self
@@ -1067,9 +1079,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         pre_environment: &Environment,
     ) {
         let target_type = self
-            .type_visitor
+            .type_visitor()
             .get_path_rustc_type(&target_path, self.current_span);
-        let target_is_thin_pointer = self.type_visitor.is_thin_pointer(target_type.kind());
+        let target_is_thin_pointer = self.type_visitor().is_thin_pointer(target_type.kind());
         for (path, value) in effects
             .iter()
             .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
@@ -1145,17 +1157,16 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 }
                 Expression::Reference(path) => {
                     let lh_type = self
-                        .type_visitor
+                        .type_visitor()
                         .get_path_rustc_type(&tpath, self.current_span);
-                    if !self.type_visitor.get_path_type_cache().contains_key(path)
+                    if !self.type_visitor().get_path_type_cache().contains_key(path)
                         && path.is_rooted_by_non_local_structure()
                     {
-                        self.type_visitor.set_path_rustc_type(
-                            path.clone(),
-                            self.type_visitor.get_dereferenced_type(lh_type),
-                        );
+                        let deref_ty = self.type_visitor().get_dereferenced_type(lh_type);
+                        self.type_visitor_mut()
+                            .set_path_rustc_type(path.clone(), deref_ty);
                     }
-                    if self.type_visitor.is_slice_pointer(lh_type.kind()) {
+                    if self.type_visitor().is_slice_pointer(lh_type.kind()) {
                         if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                             if matches!(selector.as_ref(), PathSelector::Field(0)) {
                                 // tpath = qualifier.0 and rvalue = &path, so thin pointer copy
@@ -1216,7 +1227,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         continue;
                     }
                     let mut target_type = self
-                        .type_visitor
+                        .type_visitor()
                         .get_path_rustc_type(&tpath, self.current_span);
                     if target_type == self.tcx.types.never {
                         //todo: figure out why this happens
@@ -1255,8 +1266,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
                 if let PathSelector::Slice(..) | PathSelector::Index(..) = selector.as_ref() {
                     let source_path = Path::get_as_path(rvalue.clone());
-                    let target_type = self.type_visitor.get_element_type(
-                        self.type_visitor
+                    let target_type = self.type_visitor().get_element_type(
+                        self.type_visitor()
                             .get_path_rustc_type(&target_path, self.current_span),
                     );
                     let previous_value = pre_environment.value_at(&tpath);
@@ -1281,7 +1292,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 {
                     if **selector == PathSelector::TagField {
                         let qualifier_rustc_type = self
-                            .type_visitor
+                            .type_visitor()
                             .get_path_rustc_type(qualifier, self.current_span);
                         self.transfer_and_propagate_tags(&rvalue, qualifier, qualifier_rustc_type);
                         continue;
@@ -1768,9 +1779,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             source_path,
             root_rustc_type
         );
-        let mut elem_ty = self.type_visitor.get_element_type(root_rustc_type);
+        let mut elem_ty = self.type_visitor().get_element_type(root_rustc_type);
         if elem_ty == root_rustc_type {
-            elem_ty = self.type_visitor.get_dereferenced_type(root_rustc_type);
+            elem_ty = self.type_visitor().get_dereferenced_type(root_rustc_type);
         }
         let source_val = self.lookup_path_and_refine_result(source_path.clone(), elem_ty);
         if matches!(source_val.expression, Expression::CompileTimeConstant(..)) {
@@ -1911,7 +1922,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
     /// Evaluates the length value of an Array type and returns its value as usize
     pub fn get_array_length(&self, length: &'tcx Const<'tcx>) -> usize {
-        let param_env = self.type_visitor.get_param_env();
+        let param_env = self.type_visitor().get_param_env();
         length
             .try_eval_usize(self.tcx, param_env)
             .expect("Array length constant to have a known value") as usize
@@ -1990,7 +2001,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             if path.eq(&source_path) {
                 // The source value is not known and we need to take additional precautions:
                 let source_type = self
-                    .type_visitor
+                    .type_visitor()
                     .get_path_rustc_type(&source_path, self.current_span);
                 if matches!(source_type.kind(), TyKind::Array(t, _) if *t == root_rustc_type) {
                     // During path refinement, the original source path was of the intermediate form *&p.
@@ -2265,7 +2276,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_block(is_zeroed), 1))
             .clone();
         let block_path = Path::get_as_path(block.clone());
-        self.type_visitor
+        self.type_visitor_mut()
             .set_path_rustc_type(block_path.clone(), ty);
         let layout_path = Path::new_layout(block_path);
         let layout = AbstractValue::make_from(
@@ -2401,7 +2412,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         // We should update the tag fields of non-scalar values.
                         // The logic is implemented in propagate_tag_to_tag_fields.
                         let path_rustc_type = _self
-                            .type_visitor
+                            .type_visitor()
                             .get_path_rustc_type(&path, _self.current_span);
                         if !path_rustc_type.is_scalar() {
                             return;
@@ -2458,7 +2469,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                         // We should update the tag fields of non-scalar values.
                         // The logic is implemented in propagate_tag_to_tag_fields.
                         let path_rustc_type = _self
-                            .type_visitor
+                            .type_visitor()
                             .get_path_rustc_type(&path, _self.current_span);
                         if !path_rustc_type.is_scalar() {
                             return;
@@ -2518,7 +2529,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     ) -> (Rc<Path>, Rc<AbstractValue>) {
         precondition!(!root_rustc_type.is_scalar());
 
-        let target_type = self.type_visitor.get_dereferenced_type(root_rustc_type);
+        let target_type = self.type_visitor().get_dereferenced_type(root_rustc_type);
         let tag_field_path = if target_type != root_rustc_type {
             let target_type = ExpressionType::from(target_type.kind());
             Path::new_tag_field(Path::new_deref(qualifier.clone(), target_type))
@@ -2528,7 +2539,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
         };
         let mut tag_field_value = self.lookup_path_and_refine_result(
             tag_field_path.clone(),
-            self.type_visitor.dummy_untagged_value_type,
+            self.type_visitor().dummy_untagged_value_type,
         );
 
         // Consider the case where there is no value for the tag field in the environment, i.e.,
@@ -2582,7 +2593,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
 
                 // We get here if path_prefix is rooted by root_path and is not yet visited.
                 let path_prefix_rustc_type = self
-                    .type_visitor
+                    .type_visitor()
                     .get_path_rustc_type(path_prefix, self.current_span);
                 if !path_prefix_rustc_type.is_scalar() {
                     let (tag_field_path, tag_field_value) = self

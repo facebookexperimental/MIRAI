@@ -707,7 +707,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// Returns an ExpressionType value corresponding to the Rustc type of the place.
     #[logfn_inputs(TRACE)]
     pub fn get_place_type(
-        &mut self,
+        &self,
         place: &mir::Place<'tcx>,
         current_span: rustc_span::Span,
     ) -> ExpressionType {
