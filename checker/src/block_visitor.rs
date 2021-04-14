@@ -1662,6 +1662,34 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     return;
                 }
             }
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } if matches!(selector.as_ref(), PathSelector::Field(0)) => {
+                let qty = self
+                    .type_visitor()
+                    .get_path_rustc_type(qualifier, self.bv.current_span);
+                let unwrapped_qty = self.type_visitor().remove_transparent_wrappers(qty);
+                match &qualifier.value {
+                    PathEnum::QualifiedPath {
+                        qualifier,
+                        selector,
+                        ..
+                    } if *selector.as_ref() == PathSelector::Deref => {
+                        if qty != unwrapped_qty {
+                            AbstractValue::make_reference(qualifier.clone())
+                        } else {
+                            AbstractValue::make_reference(
+                                value_path.canonicalize(&self.bv.current_environment),
+                            )
+                        }
+                    }
+                    _ => AbstractValue::make_reference(
+                        value_path.canonicalize(&self.bv.current_environment),
+                    ),
+                }
+            }
             PathEnum::Computed { .. }
             | PathEnum::Offset { .. }
             | PathEnum::QualifiedPath { .. } => {
