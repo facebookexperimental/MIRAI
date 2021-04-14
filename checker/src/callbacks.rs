@@ -143,6 +143,7 @@ impl MiraiCallbacks {
 
     fn is_excluded(&self, file_name: &str) -> bool {
         if file_name.contains("client/assets-proof/src") // Sorts Int and <null> are incompatible
+            || file_name.contains("common/crash-handler/src") // rustc crash
             || file_name.contains("client/faucet/src") // too slow
             || file_name.contains("client/swiss-knife/src") // too slow 
             || file_name.contains("common/debug-interface/src") // !def.is_enum()
@@ -163,7 +164,8 @@ impl MiraiCallbacks {
             || file_name.contains("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
             || file_name.contains("crypto/crypto/src") // too slow
             || file_name.contains("crypto/crypto-derive/src") // too much parsing
-            || file_name.contains("diem-node/src") // Sorts Int and <null> are incompatible    
+            || file_name.contains("diem-node/src") // Sorts Int and <null> are incompatible
+            || file_name.contains("execution/db-bootstrapper/src") // crash
             || file_name.contains("execution/execution-correctness/src") // Sorts Int and <null> are incompatible
             || file_name.contains("json-rpc/src") // stack overflow
             || file_name.contains("language/bytecode-verifier/src") // too slow
@@ -186,9 +188,12 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-prover/bytecode/src") // too slow 
             || file_name.contains("language/move-prover/lab/src") // too slow
             || file_name.contains("language/move-stdlib/src") // Sorts Bool and Int are incompatible
+            || file_name.contains("language/tools/disassembler/src") // crash
+            || file_name.contains("language/tools/genesis-viewer/src") // crash
             || file_name.contains("language/tools/move-bytecode-viewer/src") // too slow
             || file_name.contains("language/tools/move-cli/src") // too slow
             || file_name.contains("language/tools/move-coverage/src") // too slow
+            || file_name.contains("language/tools/move-explain/src") // crash
             || file_name.contains("language/tools/resource-viewer/src") // too slow
             || file_name.contains("language/tools/vm-genesis/src") // too slow
             || file_name.contains("language/transaction-builder/generator/src") // too slow
@@ -200,6 +205,7 @@ impl MiraiCallbacks {
             || file_name.contains("network/simple-onchain-discovery/src") // Sorts Int and <null> are incompatible   
             || file_name.contains("sdk/src") // too slow
             || file_name.contains("sdk/client/src") // Sorts <null> and Int are incompatible
+            || file_name.contains("sdk/transaction-builder/src") // crash
             || file_name.contains("secure/key-manager/src") // too slow   
             || file_name.contains("secure/storage/github/src") // !def.is_enum()
             || file_name.contains("secure/net/src") // too slow
@@ -208,6 +214,8 @@ impl MiraiCallbacks {
             || file_name.contains("secure/storage/src") // !def.is_enum()
             || file_name.contains("storage/backup/backup-cli/src") // unreachable code
             || file_name.contains("storage/diemdb/src") // stack overflow
+            || file_name.contains("storage/diemsum/src") // crash
+            || file_name.contains("storage/inspector/src") // crash
             || file_name.contains("storage/schemadb/src") // too slow
             || file_name.contains("storage/storage-client/src") // too slow
             || file_name.contains("types/src") // too slow

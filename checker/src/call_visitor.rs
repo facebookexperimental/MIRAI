@@ -1967,21 +1967,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let left = self.actual_args[0].1.clone();
             let right = self.actual_args[1].1.clone();
             let modulo = target_type.modulo_value();
+            let (result, overflow_flag) =
+                BlockVisitor::<E>::do_checked_binary_op(bin_op, target_type.clone(), left, right);
             let (modulo_result, overflow_flag) = if !modulo.is_bottom() {
-                let (result, overflow_flag) = BlockVisitor::<E>::do_checked_binary_op(
-                    bin_op,
-                    target_type.clone(),
-                    left,
-                    right,
-                );
                 (result.remainder(target_type.modulo_value()), overflow_flag)
             } else {
-                let (result, overflow_flag) = BlockVisitor::<E>::do_checked_binary_op(
-                    bin_op,
-                    target_type.clone(),
-                    left,
-                    right,
-                );
                 // todo: figure out an expression that represents the truncated overflow of a
                 // signed operation.
                 let unknown_typed_value =
