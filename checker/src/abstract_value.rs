@@ -1797,6 +1797,32 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             (Expression::CompileTimeConstant(ConstantDomain::False), _) => {
                 return other.logical_not();
             }
+            // [(x as *t) == (y as *t)] -> x == y if known at compile time
+            (
+                Expression::Cast {
+                    operand: x,
+                    target_type: tt1,
+                },
+                Expression::Cast {
+                    operand: y,
+                    target_type: tt2,
+                },
+            ) if *tt1 == ExpressionType::ThinPointer && *tt2 == ExpressionType::ThinPointer => {
+                let operands_are_equal = x.equals(y.clone());
+                if operands_are_equal.is_compile_time_constant() {
+                    return operands_are_equal;
+                }
+            }
+            // [&x == (0 as *T)] -> false
+            (
+                Expression::Reference(_),
+                Expression::Cast {
+                    operand,
+                    target_type,
+                },
+            ) if *target_type == ExpressionType::ThinPointer && operand.is_zero() => {
+                return Rc::new(FALSE);
+            }
             // [c3 == (c ? v1: v2)] -> !c if v1 != c3 && v2 == c3
             // [c3 == (c ? v1: v2)] -> c if v1 == c3 && v2 != c3
             // [c3 == (c ? v1: v2)] -> true if v1 == c3 && v2 == c3
@@ -1878,6 +1904,21 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
             ) if *z == *self => {
                 return x.logical_not().or(y.equals(z.clone()));
+            }
+            // [(if x { y } else { z }) == a]  -> [if x { y == a } else { z == a }]
+            (
+                Expression::ConditionalExpression {
+                    condition: x,
+                    consequent: y,
+                    alternate: z,
+                },
+                _,
+            ) => {
+                if self.expression_size + other.expression_size * 2 < k_limits::MAX_EXPRESSION_SIZE
+                {
+                    return x
+                        .conditional_expression(y.equals(other.clone()), z.equals(other.clone()));
+                }
             }
             // [c1 == (c2 * x)] -> x == c1 / c2
             (Expression::CompileTimeConstant(..), Expression::Mul { left: c2, right: x })
@@ -2521,6 +2562,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             {
                 debug_checked_assume!(!c2.is_zero()); // otherwise constant folding would have reduced the Mul
                 return x.greater_or_equal(self.divide(c2.clone()));
+            }
+            // [(x & c1) < c2] -> true if c1 == c2 - 1 and c2 is a power of two
+            (
+                Expression::BitAnd {
+                    left: _x,
+                    right: c1,
+                },
+                Expression::CompileTimeConstant(ConstantDomain::U128(c2)),
+            ) if c1.is_compile_time_constant() && c2.is_power_of_two() => {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(c1)) = &c1.expression {
+                    if *c1 == *c2 - 1 {
+                        return Rc::new(TRUE);
+                    }
+                }
             }
             _ => {}
         }

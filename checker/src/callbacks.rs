@@ -142,7 +142,8 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(&self, file_name: &str) -> bool {
-        if file_name.contains("client/faucet/src") // too slow
+        if file_name.contains("client/assets-proof/src") // Sorts Int and <null> are incompatible
+            || file_name.contains("client/faucet/src") // too slow
             || file_name.contains("client/swiss-knife/src") // too slow 
             || file_name.contains("common/debug-interface/src") // !def.is_enum()
             || file_name.contains("common/logger/src") // !def.is_enum()
@@ -179,9 +180,12 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-model/src") // too slow
             || file_name.contains("language/move-prover/src") // too slow 
             || file_name.contains("language/move-prover/abigen/src") // too slow
+            || file_name.contains("language/move-prover/boogie-backend-exp/src") // too slow
             || file_name.contains("language/move-prover/boogie-backend/src") // index out of bounds
             || file_name.contains("language/move-prover/docgen/src") // too slow
             || file_name.contains("language/move-prover/bytecode/src") // too slow 
+            || file_name.contains("language/move-prover/lab/src") // too slow
+            || file_name.contains("language/move-stdlib/src") // Sorts Bool and Int are incompatible
             || file_name.contains("language/tools/move-bytecode-viewer/src") // too slow
             || file_name.contains("language/tools/move-cli/src") // too slow
             || file_name.contains("language/tools/move-coverage/src") // too slow
@@ -193,6 +197,7 @@ impl MiraiCallbacks {
             || file_name.contains("network/src") // too slow
             || file_name.contains("network/builder/src") // Sorts Int and <null> are incompatible
             || file_name.contains("network/simple-onchain-discovery/src") // Sorts Int and <null> are incompatible   
+            || file_name.contains("sdk/src") // too slow
             || file_name.contains("sdk/client/src") // Sorts <null> and Int are incompatible
             || file_name.contains("secure/key-manager/src") // too slow   
             || file_name.contains("secure/storage/github/src") // !def.is_enum()
