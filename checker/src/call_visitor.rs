@@ -643,7 +643,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             None => {
                                 // Might have to clone the Some(..) variant, so can't be handled here,
                                 if let Some(promotable_is_zero) =
-                                    is_zero.extract_promotable_conjuncts()
+                                    is_zero.extract_promotable_disjuncts()
                                 {
                                     // The caller might be able to avoid the diagnostic because it
                                     // knows the actual argument whereas here we only know the type.
@@ -965,7 +965,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                                 .current_environment
                                 .entry_condition
                                 .extract_promotable_conjuncts(),
-                            non_zero.extract_promotable_conjuncts(),
+                            non_zero.extract_promotable_disjuncts(),
                         ) {
                             (Some(promotable_entry_condition), Some(promotable_non_zero))
                                 if self.block_visitor.bv.preconditions.len()
@@ -2704,7 +2704,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         .current_environment
                         .entry_condition
                         .extract_promotable_conjuncts(),
-                    refined_condition.extract_promotable_conjuncts(),
+                    refined_condition.extract_promotable_disjuncts(),
                 ) {
                     (Some(promotable_entry_condition), Some(promotable_condition)) => {
                         promotable_entry_condition

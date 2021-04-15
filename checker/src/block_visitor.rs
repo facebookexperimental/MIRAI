@@ -948,7 +948,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .current_environment
                     .entry_condition
                     .extract_promotable_conjuncts(),
-                condition.extract_promotable_conjuncts(),
+                condition.extract_promotable_disjuncts(),
             ) {
                 (Some(promotable_entry_cond), Some(promotable_condition))
                     if promotable_entry_cond.as_bool_if_known().is_none()
@@ -1111,7 +1111,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
         // or if the condition is not promotable or if the condition is being explicitly verified.
-        let promotable_cond = cond.extract_promotable_conjuncts();
+        let promotable_cond = cond.extract_promotable_disjuncts();
         if self.bv.function_being_analyzed_is_root()
             || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
             || promotable_cond.is_none()
@@ -1179,7 +1179,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         );
                         self.bv.emit_diagnostic(warning);
                     } else if promotable_entry_condition.is_none()
-                        || tag_check.extract_promotable_conjuncts().is_none()
+                        || tag_check.extract_promotable_disjuncts().is_none()
                     {
                         let span = self.bv.current_span.source_callsite();
                         let warning = self.bv.cv.session.struct_span_warn(
@@ -1214,7 +1214,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             // contain local variables, and we don't reach a k-limit.
             match (
                 promotable_entry_condition,
-                tag_check.extract_promotable_conjuncts(),
+                tag_check.extract_promotable_disjuncts(),
             ) {
                 (Some(promotable_entry_cond), Some(promotable_tag_check))
                     if !tag_check_as_bool.unwrap_or(false)
@@ -1316,7 +1316,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
                     // At this point, we don't know that this assert is unreachable and we don't know
                     // that the condition is as expected, so we need to warn about it somewhere.
-                    let promotable_cond_val = cond_val.extract_promotable_conjuncts();
+                    let promotable_cond_val = cond_val.extract_promotable_disjuncts();
                     let promotable_entry_cond = self
                         .bv
                         .current_environment
