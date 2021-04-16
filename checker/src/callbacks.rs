@@ -173,6 +173,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/compiler/src") // Sorts Int and Bool are incompatible
             || file_name.contains("language/compiler/ir-to-bytecode/src") // Sorts Int and Bool are incompatible
             || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // Sorts Int and Bool are incompatible
+            || file_name.contains("consensus/src") // too slow
             || file_name.contains("language/diem-tools/transaction-replay/src")  // Not a type   
             || file_name.contains("language/diem-tools/writeset-transaction-generator/src") // stack overflow
             || file_name.contains("language/diem-framework/src") // too slow 
@@ -184,8 +185,9 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-prover/abigen/src") // too slow
             || file_name.contains("language/move-prover/boogie-backend-exp/src") // too slow
             || file_name.contains("language/move-prover/boogie-backend/src") // index out of bounds
-            || file_name.contains("language/move-prover/docgen/src") // too slow
             || file_name.contains("language/move-prover/bytecode/src") // too slow 
+            || file_name.contains("language/move-prover/docgen/src") // too slow
+            || file_name.contains("move-prover/errmapgen/src") // too slow
             || file_name.contains("language/move-prover/lab/src") // too slow
             || file_name.contains("language/move-stdlib/src") // Sorts Bool and Int are incompatible
             || file_name.contains("language/tools/disassembler/src") // crash

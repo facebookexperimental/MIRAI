@@ -1741,6 +1741,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn divide(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         match (&self.expression, &other.expression) {
+            (_, Expression::CompileTimeConstant(ConstantDomain::U128(c1))) if *c1 == 1 => {
+                return self.clone();
+            }
             // [(x * y) / x] -> y
             // [(x * y) / y] -> x
             (Expression::Mul { left: x, right: y }, _) => {
@@ -2865,7 +2868,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        if matches!(&other.expression, Expression::CompileTimeConstant(..)) {
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
             // Normalize multiply expressions so that if only one of the operands is a constant, it is
             // always the left operand.
             return other.mul_overflows(self.clone(), target_type);
@@ -3928,6 +3931,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match &self.expression {
             Expression::Top => interval_domain::BOTTOM,
             Expression::Add { left, right } => left.get_as_interval().add(&right.get_as_interval()),
+            Expression::Cast {
+                operand,
+                target_type,
+            } => operand
+                .get_as_interval()
+                .intersect(&IntervalDomain::from(target_type.clone())),
             Expression::CompileTimeConstant(ConstantDomain::I128(val)) => (*val).into(),
             Expression::CompileTimeConstant(ConstantDomain::U128(val)) => (*val).into(),
             Expression::ConditionalExpression {
@@ -3937,6 +3946,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => consequent
                 .get_as_interval()
                 .widen(&alternate.get_as_interval()),
+            Expression::IntrinsicBitVectorUnary {
+                name, bit_length, ..
+            } => match name {
+                KnownNames::StdIntrinsicsCtlz
+                | KnownNames::StdIntrinsicsCtlzNonzero
+                | KnownNames::StdIntrinsicsCtpop
+                | KnownNames::StdIntrinsicsCttz
+                | KnownNames::StdIntrinsicsCttzNonzero => {
+                    let min_value: IntervalDomain = IntervalDomain::from(0u128);
+                    let max_value = IntervalDomain::from(*bit_length as u128);
+                    min_value.widen(&max_value)
+                }
+                _ => interval_domain::BOTTOM,
+            },
             Expression::Join { left, right, .. } => {
                 left.get_as_interval().widen(&right.get_as_interval())
             }
