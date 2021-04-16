@@ -1642,25 +1642,17 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     // debugged, assume that qualifier corresponds to a fat pointer and that
                     // copy_or_move_elements will populate the target path with the necessary information.
                     // If that information is not actually there, this results in a conservative over approximation.
-                    self.bv.copy_or_move_elements(
-                        path,
-                        qualifier.canonicalize(&self.bv.current_environment),
-                        target_type,
-                        false,
-                    );
-                    return;
-                } else {
-                    // If the target is not a fat pointer, it must be a thin pointer since an
-                    // address of operator can hardly result in anything else. So, in this case,
-                    // &*source_thin_ptr should just be a non canonical alias for source_thin_ptr.
-                    self.bv.copy_or_move_elements(
-                        path,
-                        qualifier.canonicalize(&self.bv.current_environment),
-                        target_type,
-                        false,
-                    );
-                    return;
                 }
+                // If the target is not a fat pointer, it must be a thin pointer since an
+                // address of operator can hardly result in anything else. So, in this case,
+                // &*source_thin_ptr should just be a non canonical alias for source_thin_ptr.
+                self.bv.copy_or_move_elements(
+                    path,
+                    qualifier.canonicalize(&self.bv.current_environment),
+                    target_type,
+                    false,
+                );
+                return;
             }
             PathEnum::QualifiedPath {
                 qualifier,

@@ -670,10 +670,8 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                     );
                 }
             }
-            self.analyzing_static_var = saved_analyzing_static_var;
-        } else {
-            self.analyzing_static_var = saved_analyzing_static_var;
         }
+        self.analyzing_static_var = saved_analyzing_static_var;
     }
 
     /// self.async_fn_summary is a summary of the closure that results from rewriting
