@@ -40,56 +40,56 @@ pub fn test_i128() {
     let val1: i128 = result!();
     let val2: i128 = result!();
     let result = core::cmp::max(val1, val2);
-    verify!(result <= std::i128::MAX);
+    verify!(result <= i128::MAX);
 }
 
 pub fn test_isize() {
     let val1: isize = result!();
     let val2: isize = result!();
     let result = core::cmp::max(val1, val2);
-    verify!(result <= std::isize::MAX);
+    verify!(result <= isize::MAX);
 }
 
 pub fn test_u8() {
     let val1: u8 = result!();
     let val2: u8 = result!();
     let result = core::cmp::max(val1, val2);
-    verify!(result <= std::u8::MAX);
+    verify!(result <= u8::MAX);
 }
 
 pub fn test_u16() {
     let val1: u16 = result!();
     let val2: u16 = result!();
     let result = core::cmp::max(val1, val2);
-    verify!(result <= std::u16::MAX);
+    verify!(result <= u16::MAX);
 }
 
 pub fn test_u32() {
     let val1: u32 = result!();
     let val2: u32 = result!();
     let result = core::cmp::max(val1, val2);
-    verify!(result <= std::u32::MAX);
+    verify!(result <= u32::MAX);
 }
 
 pub fn test_u64() {
     let val1: u64 = result!();
     let val2: u64 = result!();
     let result = core::cmp::max(val1, val2);
-    verify!(result <= std::u64::MAX);
+    verify!(result <= u64::MAX);
 }
 
 pub fn test_u128() {
     let val1: u128 = result!();
     let val2: u128 = result!();
     let result = core::cmp::max(val1, val2);
-    verify!(result <= std::u128::MAX);
+    verify!(result <= u128::MAX);
 }
 
 pub fn test_usize() {
     let val1: usize = result!();
     let val2: usize = result!();
     let result = core::cmp::max(val1, val2);
-    verify!(result <= std::usize::MAX);
+    verify!(result <= usize::MAX);
 }
 
 pub fn main() {}

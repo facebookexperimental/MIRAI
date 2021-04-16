@@ -12,8 +12,8 @@ use std::cmp;
 use std::convert::TryFrom;
 
 /// An element of the Interval domain is a range of i128 numbers denoted by a lower bound and
-/// upper bound. A lower bound of std::i128::MIN denotes -infinity and an upper bound of
-/// std::i128::MAX denotes +infinity.
+/// upper bound. A lower bound of i128::MIN denotes -infinity and an upper bound of
+/// i128::MAX denotes +infinity.
 /// Interval domain elements are constructed on demand from AbstractDomain expressions.
 /// They are most useful for checking if an array index is within bounds.
 #[derive(Serialize, Deserialize, Clone, Eq, PartialOrd, PartialEq, Hash, Ord)]
@@ -26,9 +26,9 @@ impl std::fmt::Debug for IntervalDomain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match (self.lower_bound, self.upper_bound) {
             (1, 0) => f.write_str("[bottom]"),
-            (std::i128::MIN, std::i128::MAX) => f.write_str("[..]"),
-            (std::i128::MIN, _) => f.write_fmt(format_args!("[..{}]", self.upper_bound)),
-            (_, std::i128::MAX) => f.write_fmt(format_args!("[{}..]", self.lower_bound)),
+            (i128::MIN, i128::MAX) => f.write_str("[..]"),
+            (i128::MIN, _) => f.write_fmt(format_args!("[..{}]", self.upper_bound)),
+            (_, i128::MAX) => f.write_fmt(format_args!("[{}..]", self.lower_bound)),
             _ => f.write_fmt(format_args!("[{}..{}]", self.lower_bound, self.upper_bound)),
         }
     }
@@ -40,8 +40,8 @@ pub const BOTTOM: IntervalDomain = IntervalDomain {
 };
 
 pub const TOP: IntervalDomain = IntervalDomain {
-    lower_bound: std::i128::MIN,
-    upper_bound: std::i128::MAX,
+    lower_bound: i128::MIN,
+    upper_bound: i128::MAX,
 };
 
 impl From<i128> for IntervalDomain {
@@ -61,8 +61,8 @@ impl From<u128> for IntervalDomain {
             i.into()
         } else {
             IntervalDomain {
-                lower_bound: std::i128::MAX,
-                upper_bound: std::i128::MAX,
+                lower_bound: i128::MAX,
+                upper_bound: i128::MAX,
             }
         }
     }
@@ -135,32 +135,27 @@ impl IntervalDomain {
         };
         match target_type {
             I8 => {
-                self.lower_bound >= i128::from(std::i8::MIN)
-                    && self.upper_bound <= i128::from(std::i8::MAX)
+                self.lower_bound >= i128::from(i8::MIN) && self.upper_bound <= i128::from(i8::MAX)
             }
             I16 => {
-                self.lower_bound >= i128::from(std::i16::MIN)
-                    && self.upper_bound <= i128::from(std::i16::MAX)
+                self.lower_bound >= i128::from(i16::MIN) && self.upper_bound <= i128::from(i16::MAX)
             }
             I32 => {
-                self.lower_bound >= i128::from(std::i32::MIN)
-                    && self.upper_bound <= i128::from(std::i32::MAX)
+                self.lower_bound >= i128::from(i32::MIN) && self.upper_bound <= i128::from(i32::MAX)
             }
             I64 => {
-                self.lower_bound >= i128::from(std::i64::MIN)
-                    && self.upper_bound <= i128::from(std::i64::MAX)
+                self.lower_bound >= i128::from(i64::MIN) && self.upper_bound <= i128::from(i64::MAX)
             }
-            I128 => self.lower_bound > std::i128::MIN && self.upper_bound < std::i128::MAX,
+            I128 => self.lower_bound > i128::MIN && self.upper_bound < i128::MAX,
             Isize => {
-                self.lower_bound >= (std::isize::MIN as i128)
-                    && self.upper_bound <= (std::isize::MAX as i128)
+                self.lower_bound >= (isize::MIN as i128) && self.upper_bound <= (isize::MAX as i128)
             }
-            U8 => self.lower_bound >= 0 && self.upper_bound <= i128::from(std::u8::MAX),
-            U16 => self.lower_bound >= 0 && self.upper_bound <= i128::from(std::u16::MAX),
-            U32 => self.lower_bound >= 0 && self.upper_bound <= i128::from(std::u32::MAX),
-            U64 => self.lower_bound >= 0 && self.upper_bound <= i128::from(std::u64::MAX),
-            U128 => self.lower_bound >= 0 && self.upper_bound < std::i128::MAX,
-            Usize => self.lower_bound >= 0 && self.upper_bound <= (std::usize::MAX as i128),
+            U8 => self.lower_bound >= 0 && self.upper_bound <= i128::from(u8::MAX),
+            U16 => self.lower_bound >= 0 && self.upper_bound <= i128::from(u16::MAX),
+            U32 => self.lower_bound >= 0 && self.upper_bound <= i128::from(u32::MAX),
+            U64 => self.lower_bound >= 0 && self.upper_bound <= i128::from(u64::MAX),
+            U128 => self.lower_bound >= 0 && self.upper_bound < i128::MAX,
+            Usize => self.lower_bound >= 0 && self.upper_bound <= (usize::MAX as i128),
             _ => false,
         }
     }
@@ -179,7 +174,7 @@ impl IntervalDomain {
             I64 | U64 => self.lower_bound >= 0 && self.upper_bound < 64,
             I128 | U128 => self.lower_bound >= 0 && self.upper_bound < 128,
             Isize | Usize => {
-                self.lower_bound >= 0 && self.upper_bound < i128::from(std::usize::MAX.count_ones())
+                self.lower_bound >= 0 && self.upper_bound < i128::from(usize::MAX.count_ones())
             }
             _ => false,
         }
@@ -188,7 +183,7 @@ impl IntervalDomain {
     // All concrete integer values belong to this interval, so we know nothing.
     #[logfn_inputs(TRACE)]
     pub fn is_top(&self) -> bool {
-        self.lower_bound == std::i128::MIN && self.upper_bound == std::i128::MAX
+        self.lower_bound == i128::MIN && self.upper_bound == i128::MAX
     }
 
     // [x...y] <= [a...b] = y <= a
@@ -280,8 +275,8 @@ impl IntervalDomain {
             return TOP.clone();
         }
         IntervalDomain {
-            lower_bound: self.upper_bound.checked_neg().unwrap_or(std::i128::MAX),
-            upper_bound: self.lower_bound.checked_neg().unwrap_or(std::i128::MAX),
+            lower_bound: self.upper_bound.checked_neg().unwrap_or(i128::MAX),
+            upper_bound: self.lower_bound.checked_neg().unwrap_or(i128::MAX),
         }
     }
 
