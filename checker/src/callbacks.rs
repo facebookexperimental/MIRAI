@@ -196,6 +196,7 @@ impl MiraiCallbacks {
             || file_name.contains("mempool/src") //  !def.is_enum()
             || file_name.contains("network/src") // too slow
             || file_name.contains("network/builder/src") // Sorts Int and <null> are incompatible
+            || file_name.contains("network/netcore/src") // crash
             || file_name.contains("network/simple-onchain-discovery/src") // Sorts Int and <null> are incompatible   
             || file_name.contains("sdk/src") // too slow
             || file_name.contains("sdk/client/src") // Sorts <null> and Int are incompatible
