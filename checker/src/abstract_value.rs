@@ -3378,6 +3378,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
 
+                // [(x || (y && !z)) || (y && z)))] -> x || y
+                (
+                    Expression::Or {
+                        left: x,
+                        right: ynz,
+                    },
+                    Expression::And {
+                        left: y2,
+                        right: z2,
+                    },
+                ) => {
+                    if let Expression::And {
+                        left: y1,
+                        right: nz,
+                    } = &ynz.expression
+                    {
+                        if let Expression::LogicalNot { operand: z1 } = &nz.expression {
+                            if y1.eq(y2) && z1.eq(z2) {
+                                return x.and(y1.clone());
+                            }
+                        }
+                    }
+                }
+
                 // [x || !(x || y)] -> x || !y
                 (_, Expression::LogicalNot { operand }) => match &operand.expression {
                     Expression::Or { left: x2, right: y } if *self == *x2 => {
