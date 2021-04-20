@@ -3008,11 +3008,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     #[allow(clippy::cognitive_complexity)]
     fn or(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        fn unsimplified(x: &Rc<AbstractValue>, y: Rc<AbstractValue>) -> Rc<AbstractValue> {
-            AbstractValue::make_binary(x.clone(), y, |left, right| Expression::Or { left, right })
-        }
         fn is_contained_in(x: &Rc<AbstractValue>, y: &Rc<AbstractValue>) -> bool {
-            if *x == *y {
+            if x.eq(y) {
                 return true;
             }
             if let Expression::Or { left, right } = &y.expression {
@@ -3092,11 +3089,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             match (&self.expression, &other.expression) {
                 // [!x || x] -> true
                 (Expression::LogicalNot { ref operand }, _) if (**operand).eq(&other) => {
-                    Rc::new(TRUE)
+                    return Rc::new(TRUE);
                 }
                 // [x || !x] -> true
                 (_, Expression::LogicalNot { ref operand }) if (**operand).eq(&self) => {
-                    Rc::new(TRUE)
+                    return Rc::new(TRUE);
                 }
 
                 // [(x == y) || (x != y)] -> true if x is not a floating point
@@ -3113,7 +3110,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && y1.eq(y2)
                     && !x1.expression.infer_type().is_floating_point_number() =>
                 {
-                    Rc::new(TRUE)
+                    return Rc::new(TRUE);
                 }
 
                 // [x >= y || x < y] -> true if x is not a floating point
@@ -3130,7 +3127,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && y1.eq(y2)
                     && !x1.expression.infer_type().is_floating_point_number() =>
                 {
-                    Rc::new(TRUE)
+                    return Rc::new(TRUE);
                 }
                 // [x < y || x >= y] -> true if x is not a floating point
                 (
@@ -3146,7 +3143,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && y1.eq(y2)
                     && !x1.expression.infer_type().is_floating_point_number() =>
                 {
-                    Rc::new(TRUE)
+                    return Rc::new(TRUE);
                 }
                 // [x <= y || x > y] -> true if x is not a floating point
                 (
@@ -3162,7 +3159,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && y1.eq(y2)
                     && !x1.expression.infer_type().is_floating_point_number() =>
                 {
-                    Rc::new(TRUE)
+                    return Rc::new(TRUE);
                 }
                 // [x > y || x <= y] -> true if x is not a floating point
                 (
@@ -3178,7 +3175,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && y1.eq(y2)
                     && !x1.expression.infer_type().is_floating_point_number() =>
                 {
-                    Rc::new(TRUE)
+                    return Rc::new(TRUE);
                 }
 
                 // [x > y || x == y] -> x >= y
@@ -3191,7 +3188,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         left: x2,
                         right: y2,
                     },
-                ) if x1.eq(x2) && y1.eq(y2) => x1.greater_or_equal(y1.clone()),
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return x1.greater_or_equal(y1.clone());
+                }
                 // [x == y || x > y] -> x >= y
                 (
                     Expression::Equals {
@@ -3202,7 +3201,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         left: x2,
                         right: y2,
                     },
-                ) if x1.eq(x2) && y1.eq(y2) => x1.greater_or_equal(y1.clone()),
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return x1.greater_or_equal(y1.clone());
+                }
 
                 // [x < y || x == y] -> x <= y
                 (
@@ -3214,7 +3215,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         left: x2,
                         right: y2,
                     },
-                ) if x1.eq(x2) && y1.eq(y2) => x1.less_or_equal(y1.clone()),
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return x1.less_or_equal(y1.clone());
+                }
                 // [x == y || x <==> y] -> x <= y
                 (
                     Expression::Equals {
@@ -3225,8 +3228,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         left: x2,
                         right: y2,
                     },
-                ) if x1.eq(x2) && y1.eq(y2) => x1.less_or_equal(y1.clone()),
-
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return x1.less_or_equal(y1.clone());
+                }
                 (
                     Expression::And {
                         left: x1,
@@ -3237,34 +3241,31 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         right: y2,
                     },
                 ) => {
-                    if x1 == x2 {
-                        if y1.logical_not().eq(y2) {
+                    if x1.eq(x2) {
+                        return if y1.logical_not().eq(y2) {
                             // [(x && y) || (x && !y)] -> x
                             x1.clone()
                         } else {
                             // [(x && y1) || (x && y2)] -> x && (y1 || y2)
                             x1.and(y1.or(y2.clone()))
-                        }
-                    } else if y1 == y2 {
-                        if x1.logical_not().eq(x2) {
+                        };
+                    } else if y1.eq(y2) {
+                        return if x1.logical_not().eq(x2) {
                             // [(x && y) || (!x && y)] -> y
                             y1.clone()
                         } else {
                             // [(x1 && y) || (x2 && y)] -> (x1 || x2) && y
                             x1.or(x2.clone()).and(y1.clone())
+                        };
+                    } else if let Expression::And {
+                        left: x2,
+                        right: x3,
+                    } = &x2.expression
+                    {
+                        if x1.eq(x2) {
+                            // [(x && y1) || ((x && x3) && y2)] -> x && (y1 || (x3 && y2))
+                            return x1.and(y1.or(x3.and(y2.clone())));
                         }
-                    } else {
-                        if let Expression::And {
-                            left: x2,
-                            right: x3,
-                        } = &x2.expression
-                        {
-                            if x1 == x2 {
-                                // [(x && y1) || ((x && x3) && y2)] -> x && (y1 || (x3 && y2))
-                                return x1.and(y1.or(x3.and(y2.clone())));
-                            }
-                        }
-                        unsimplified(self, other)
                     }
                 }
 
@@ -3292,7 +3293,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                             return not_c.or(e_eq_0).or(e_eq_1);
                         }
                     }
-                    unsimplified(self, other)
                 }
 
                 // [1 == ((c ? e : 1)) || (0 == (c ? e : 1))] -> !c || 0 == e || 1 == e
@@ -3319,29 +3319,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                             return not_c.or(e_eq_0).or(e_eq_1);
                         }
                     }
-                    unsimplified(self, other)
                 }
 
                 // [(x && y) || x] -> x
                 // [(x && y) || y] -> y
-                (Expression::And { left: x, right: y }, _) if *x == other || *y == other => other,
+                (Expression::And { left: x, right: y }, _) if *x == other || *y == other => {
+                    return other;
+                }
 
                 // [x || (x && y)] -> x
                 // [y || (x && y)] -> y
                 (_, Expression::And { left: x, right: y }) if *x == *self || *y == *self => {
-                    self.clone()
+                    return self.clone();
                 }
 
                 // [x || (!x && z)] -> x || z
                 (_, Expression::And { left: y, right: z }) if self.inverse_implies(y) => {
-                    self.or(z.clone())
+                    return self.or(z.clone());
                 }
 
                 // [(x && y) || (!x || !y)] -> true
                 (Expression::And { left: x, right: y }, Expression::Or { left, right })
                     if x.inverse_implies(left) && y.inverse_implies(right) =>
                 {
-                    Rc::new(TRUE)
+                    return Rc::new(TRUE);
                 }
 
                 // [(x && !y) || !(x || y)] -> !y
@@ -3362,29 +3363,27 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                             return right.clone();
                         }
                     }
-                    unsimplified(self, other)
                 }
-
                 (Expression::And { left, right }, _) => {
                     match (&left.expression, &right.expression) {
                         // [(x && !y) || y] -> (x || y)
                         (_, Expression::LogicalNot { operand: y }) if *y == other => {
-                            left.or(y.clone())
+                            return left.or(y.clone());
                         }
                         // [(!x && y) || x] -> (x || y)
                         (Expression::LogicalNot { operand: x }, _) if *x == other => {
-                            x.or(right.clone())
+                            return x.or(right.clone());
                         }
-                        _ => unsimplified(self, other),
+                        _ => {}
                     }
                 }
 
                 // [x || !(x || y)] -> x || !y
                 (_, Expression::LogicalNot { operand }) => match &operand.expression {
                     Expression::Or { left: x2, right: y } if *self == *x2 => {
-                        self.or(y.logical_not())
+                        return self.or(y.logical_not());
                     }
-                    _ => unsimplified(self, other),
+                    _ => {}
                 },
 
                 // [!x || (x && y ? false : z)] -> !x || (!y && z)
@@ -3401,11 +3400,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                             return self.or(y.logical_not().and(z.clone()));
                         }
                     }
-                    unsimplified(self, other)
                 }
-
-                _ => unsimplified(self, other),
+                _ => {}
             }
+            AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Or {
+                left,
+                right,
+            })
         }
     }
 
