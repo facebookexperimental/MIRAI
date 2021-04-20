@@ -765,6 +765,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 _ => (),
             }
             match (&self.expression, &other.expression) {
+                // [(a && (b || x )) && (x || y)] -> a && (x || (b && y)
+                (Expression::And { left: a, right: bx }, Expression::Or { left: x2, right: y }) => {
+                    if let Expression::Or { left: b, right: x1 } = &bx.expression {
+                        if x1.eq(x2) {
+                            return a.and(x1.or(b.and(y.clone())));
+                        }
+                    }
+                }
                 // [(c ? a : b) && (c ? x : y)] -> c ? (a && x) : (b && y)
                 (
                     Expression::ConditionalExpression {
@@ -798,6 +806,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
 
+                // [(x || y) && (!y && z)] -> x && !y && z
+                (Expression::Or { left: x, right: y1 }, Expression::And { left: ny, right: z }) => {
+                    if let Expression::LogicalNot { operand: y2 } = &ny.expression {
+                        if y1.eq(y2) {
+                            return x.and(ny.and(z.clone()));
+                        }
+                    }
+                }
                 // [(x || (y && z)) && y] -> [(x && y) || (y && z && y)] -> (x && y) || (y && z)
                 (Expression::Or { left: x, right: yz }, y) => {
                     if let Expression::And { left: y1, right: z } = &yz.expression {
