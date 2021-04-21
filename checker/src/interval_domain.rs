@@ -68,6 +68,31 @@ impl From<u128> for IntervalDomain {
     }
 }
 
+impl From<ExpressionType> for IntervalDomain {
+    #[logfn_inputs(TRACE)]
+    fn from(t: ExpressionType) -> IntervalDomain {
+        let (lower_bound, upper_bound) = match t {
+            I8 => (i128::from(i8::MIN), i128::from(i8::MAX)),
+            I16 => (i128::from(i16::MIN), i128::from(i16::MAX)),
+            I32 => (i128::from(i32::MIN), i128::from(i32::MAX)),
+            I64 => (i128::from(i64::MIN), i128::from(i64::MAX)),
+            I128 => (i128::MIN, i128::MAX),
+            Isize => ((isize::MIN as i128), (isize::MAX as i128)),
+            U8 => (0, i128::from(u8::MAX)),
+            U16 => (0, i128::from(u16::MAX)),
+            U32 => (0, i128::from(u32::MAX)),
+            U64 => (0, i128::from(u64::MAX)),
+            U128 => (0, i128::MAX),
+            Usize => (0, (usize::MAX as i128)),
+            _ => return BOTTOM.clone(),
+        };
+        IntervalDomain {
+            lower_bound,
+            upper_bound,
+        }
+    }
+}
+
 impl IntervalDomain {
     //[x...y] + [a...b] = [x+a...y+b]
     #[logfn_inputs(TRACE)]
@@ -177,6 +202,24 @@ impl IntervalDomain {
                 self.lower_bound >= 0 && self.upper_bound < i128::from(usize::MAX.count_ones())
             }
             _ => false,
+        }
+    }
+
+    // [x...y] intersect [a...b] = [max(x,a)...min(y,b)],
+    #[logfn_inputs(TRACE)]
+    pub fn intersect(&self, other: &Self) -> Self {
+        if self.is_bottom() || other.is_bottom() {
+            return BOTTOM.clone();
+        }
+        if self.is_top() {
+            return other.clone();
+        }
+        if other.is_top() {
+            return self.clone();
+        }
+        IntervalDomain {
+            lower_bound: cmp::max(self.lower_bound, other.lower_bound),
+            upper_bound: cmp::min(self.upper_bound, other.upper_bound),
         }
     }
 
