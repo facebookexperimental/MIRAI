@@ -926,6 +926,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 ) if x1.eq(x2) && y1.eq(y2) => {
                     return x1.less_than(y1.clone());
                 }
+                // [(x && (0 == y)) && (y && z)] -> false
+                (
+                    Expression::And {
+                        left: _x,
+                        right: yz,
+                    },
+                    Expression::And {
+                        left: y2,
+                        right: _z,
+                    },
+                ) => {
+                    if let Expression::Equals { left, right: y1 } = &yz.expression {
+                        if left.is_zero() && y1.eq(y2) {
+                            return Rc::new(FALSE);
+                        }
+                    }
+                }
                 _ => (),
             }
 
