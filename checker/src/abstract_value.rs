@@ -1288,18 +1288,27 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return operand.conditional_expression(alternate, consequent);
         }
         // [if 0 == x { y } else { true }] -> x || y
+        // [if 0 == x { false } else { y }] -> x && y
         if let Expression::Equals { left: z, right: x } = &self.expression {
             if let Expression::CompileTimeConstant(ConstantDomain::U128(0)) = z.expression {
                 if alternate.as_bool_if_known().unwrap_or(false) {
                     return x.or(consequent);
                 }
-            }
-        }
-        // [if 0 == x { false } else { y }] -> x && y
-        if let Expression::Equals { left: z, right: x } = &self.expression {
-            if let Expression::CompileTimeConstant(ConstantDomain::U128(0)) = z.expression {
                 if !consequent.as_bool_if_known().unwrap_or(true) {
                     return x.and(alternate);
+                }
+            }
+        }
+        // [if 0 != x { x } else { 0 } ] -> x
+        // [if 0 != x { 0 } else { x } ] -> x
+        if let Expression::Ne { left: z, right: x } = &self.expression {
+            if let Expression::CompileTimeConstant(ConstantDomain::U128(0)) = z.expression {
+                if consequent.eq(x) {
+                    if alternate.is_zero() {
+                        return consequent;
+                    }
+                } else if alternate.eq(x) && consequent.is_zero() {
+                    return alternate;
                 }
             }
         }
