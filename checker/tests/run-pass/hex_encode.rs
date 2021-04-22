@@ -19,7 +19,6 @@ pub fn hex_encode(src: &[u8], dst: &mut [u8]) {
         let (hi, lo) = byte2hex(*byte);
         assume!(out.len() == 2);
         out[0] = hi;
-        assume!(out.len() == 2); // comment this out and it fails
         out[1] = lo;
     }
 }

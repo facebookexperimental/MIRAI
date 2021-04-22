@@ -1345,11 +1345,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .entry_condition
                 .clone()
         } else {
+            // Give the assumed condition priority over the existing conjuncts when the and expression
+            // size overflows.
+            let assumed_condition =
+                AbstractValue::make_from(assumed_condition.expression.clone(), 0);
             self.block_visitor
                 .bv
                 .current_environment
                 .entry_condition
-                .and(assumed_condition.clone())
+                .and(assumed_condition)
         };
         if let Some((_, target)) = &self.destination {
             self.block_visitor
