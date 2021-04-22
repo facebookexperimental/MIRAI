@@ -946,7 +946,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 _ => (),
             }
 
-            let other = if self_bool.is_none() {
+            // Refine other expression, except if it is known, or it is an assumed condition
+            // (the latter having an expression size zero so that they get retained when
+            // conjuncts are pruned away because of an expression overflow).
+            let other = if self_bool.is_none() && other.expression_size > 0 {
                 other.refine_with(self, 7)
             } else {
                 other
