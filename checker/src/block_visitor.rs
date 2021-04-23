@@ -1443,7 +1443,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 self.visit_address_of(path, place);
             }
             mir::Rvalue::ThreadLocalRef(def_id) => {
-                self.visit_thread_local_ref(*def_id);
+                self.visit_thread_local_ref(path, *def_id);
             }
             mir::Rvalue::Len(place) => {
                 self.visit_len(path, place);
@@ -1708,9 +1708,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     /// Accessing a thread local static. This is inherently a runtime operation, even if llvm
     /// treats it as an access to a static. This `Rvalue` yields a reference to the thread local
     /// static.
-    fn visit_thread_local_ref(&mut self, def_id: DefId) -> Rc<AbstractValue> {
-        let static_var = Path::new_static(self.bv.tcx, def_id);
-        AbstractValue::make_reference(static_var)
+    fn visit_thread_local_ref(&mut self, path: Rc<Path>, def_id: DefId) {
+        let static_var = if self.bv.tcx.is_mir_available(def_id) {
+            self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
+        } else {
+            Path::new_static(self.bv.tcx, def_id)
+        };
+        self.bv
+            .current_environment
+            .update_value_at(path, AbstractValue::make_reference(static_var));
     }
 
     /// path = length of a [X] or [X;n] value.
@@ -3203,6 +3209,15 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         field_ty,
                         &self.type_visitor().generic_argument_map,
                     );
+                    if matches!(selector, PathSelector::Field(0)) {
+                        if let TyKind::Adt(def, ..) = base_ty.kind() {
+                            debug!("def {:?}", def);
+                            if def.repr.transparent() {
+                                // don't add the field access
+                                continue;
+                            }
+                        }
+                    }
                 }
                 mir::ProjectionElem::Index(..) | mir::ProjectionElem::ConstantIndex { .. } => {
                     ty = self.type_visitor().get_element_type(ty);

@@ -4084,11 +4084,6 @@ pub mod std {
         pub mod implement_std_thread_ThreadId {
             default_contract!(as_u64);
         }
-        pub mod local {
-            pub mod implement_std_thread_local_LocalKey_generic_par_T {
-                default_contract!(try_with);
-            }
-        }
     }
 
     pub mod time {

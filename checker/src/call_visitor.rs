@@ -2211,21 +2211,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             ) {
                 let variant = def.variants.iter().next().expect("at least one variant");
                 for (i, field) in variant.fields.iter().enumerate() {
-                    let field_path = Path::new_field(path.clone(), i);
+                    let field_path = if i == 0 && def.repr.transparent() {
+                        path.clone()
+                    } else {
+                        Path::new_field(path.clone(), i)
+                    };
                     let field_ty = field.ty(tcx, substs);
-                    if let TyKind::Adt(mut def, mut substs) = field_ty.kind() {
-                        while def.repr.transparent() {
-                            let variant_0 = VariantIdx::from_u32(0);
-                            let v = &def.variants[variant_0];
-                            if let Some(f) = v.fields.get(0) {
-                                if let TyKind::Adt(def1, substs1) = f.ty(tcx, substs).kind() {
-                                    def = def1;
-                                    substs = substs1;
-                                    continue;
-                                }
-                            }
-                            break;
-                        }
+                    if let TyKind::Adt(def, substs) = field_ty.kind() {
                         add_leaf_fields_for(field_path, def, substs, tcx, accumulator)
                     } else {
                         accumulator.push((field_path, field_ty))
@@ -2804,10 +2796,25 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             &self.block_visitor.bv.current_environment,
                             self.block_visitor.bv.fresh_variable_offset,
                         );
-                        self.block_visitor
-                            .bv
-                            .current_environment
-                            .update_value_at(rpath.clone(), rvalue.clone());
+                        if rvalue.expression.infer_type() == ExpressionType::NonPrimitive {
+                            let source_path = Path::get_as_path(rvalue.clone());
+                            let source_type =
+                                self.block_visitor.bv.type_visitor().get_path_rustc_type(
+                                    &source_path,
+                                    self.block_visitor.bv.current_span,
+                                );
+                            self.block_visitor.bv.copy_or_move_elements(
+                                rpath.clone(),
+                                source_path,
+                                source_type,
+                                false,
+                            );
+                        } else {
+                            self.block_visitor
+                                .bv
+                                .current_environment
+                                .update_value_at(rpath.clone(), rvalue.clone());
+                        }
                         pre_environment.update_value_at(rpath, rvalue);
                     }
                     check_for_early_return!(self.block_visitor.bv);
