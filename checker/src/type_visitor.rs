@@ -123,7 +123,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// there is no convenient way to look up their types later on. I.e. unlike ordinary parameters
     /// whose types can be looked up in mir.local_decls, these extra parameters need their
     /// types extracted from the closure type definitions via the tricky logic below.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     pub fn add_any_closure_fields_for(
         &mut self,
         mut path_ty: Ty<'tcx>,
