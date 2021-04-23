@@ -179,6 +179,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/diem-framework/src") // too slow 
             || file_name.contains("language/diem-tools/diem-validator-interface") // Sorts Int and <null> are incompatible
             || file_name.contains("language/diem-vm/src") // too slow
+            || file_name.contains("language/move-binary-format/src") // too slow
             || file_name.contains("language/move-lang/src") // too slow
             || file_name.contains("language/move-model/src") // too slow
             || file_name.contains("language/move-prover/src") // too slow 
