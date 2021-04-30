@@ -14,6 +14,7 @@ use std::collections::HashMap;
 pub enum KnownNames {
     /// This is not a known name
     None,
+    AllocRawVecMinNonZeroCap,
     MiraiAbstractValue,
     MiraiAddTag,
     MiraiAssume,
@@ -377,6 +378,19 @@ impl KnownNamesCache {
                 _ => KnownNames::None,
             };
 
+        let get_known_name_for_raw_vec_namespace =
+            |mut def_path_data_iter: Iter<'_>| match path_data_elem_as_disambiguator(
+                def_path_data_iter.next(),
+            ) {
+                Some(1) => get_path_data_elem_name(def_path_data_iter.next())
+                    .map(|n| match n.as_str().deref() {
+                        "MIN_NON_ZERO_CAP" => KnownNames::AllocRawVecMinNonZeroCap,
+                        _ => KnownNames::None,
+                    })
+                    .unwrap_or(KnownNames::None),
+                _ => KnownNames::None,
+            };
+
         let get_known_name_for_slice_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
@@ -433,6 +447,7 @@ impl KnownNamesCache {
                     "mirai_result" => KnownNames::MiraiResult,
                     "mirai_set_model_field" => KnownNames::MiraiSetModelField,
                     "mirai_verify" => KnownNames::MiraiVerify,
+                    "raw_vec" => get_known_name_for_raw_vec_namespace(def_path_data_iter),
                     "slice" => get_known_name_for_slice_namespace(def_path_data_iter),
                     "sync" => get_known_name_for_sync_namespace(def_path_data_iter),
                     _ => KnownNames::None,
