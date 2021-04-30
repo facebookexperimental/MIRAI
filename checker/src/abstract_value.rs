@@ -1923,6 +1923,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     return operand.clone();
                 }
             }
+            // [0 == c * x] -> 0 == x
+            (Expression::CompileTimeConstant(z), Expression::Mul { left: c, right: x })
+                if z.is_zero() && c.is_compile_time_constant() =>
+            {
+                return self.equals(x.clone());
+            }
             // [0 == x] -> !x when x is a Boolean. Canonicalize it to the latter.
             // [1 == x] -> x when x is a Boolean. Canonicalize it to the latter.
             (Expression::CompileTimeConstant(ConstantDomain::U128(val)), x) => {
@@ -2810,18 +2816,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     // [c1 * (c2 * y)] -> (c1 * c2) * y
                     Expression::Mul { left: x, right: y } if x.is_compile_time_constant() => {
                         return self.multiply(x.clone()).multiply(y.clone());
-                    }
-                    // [c * cast(x, t)] -> cast((c * x), t)
-                    Expression::Cast {
-                        operand: x,
-                        target_type,
-                    } => {
-                        let unsimplified_size =
-                            self.expression_size.saturating_add(other.expression_size);
-                        let cx = self.multiply(x.clone());
-                        if !cx.is_bottom() && cx.expression_size <= unsimplified_size {
-                            return cx.cast(target_type.clone());
-                        }
                     }
                     _ => {}
                 },
