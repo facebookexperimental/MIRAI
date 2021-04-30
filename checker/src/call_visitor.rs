@@ -1946,7 +1946,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 2);
         let base_val = self.actual_args[0].1.clone();
         let offset_val = self.actual_args[1].1.clone();
-        let offset_scale = self.handle_size_of();
+        let offset_scale = self.handle_size_of().cast(ExpressionType::Isize);
         let offset_in_bytes = offset_val.multiply(offset_scale);
         base_val.offset(offset_in_bytes)
     }
@@ -2007,7 +2007,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
         checked_assume!(self.actual_args.len() == 2);
         let base_val = self.actual_args[0].1.clone();
         let offset_val = self.actual_args[1].1.clone();
-        let offset_scale = self.handle_size_of();
+        let offset_scale = self.handle_size_of().cast(ExpressionType::Isize);
         let offset_in_bytes = offset_val.multiply(offset_scale);
         let result = base_val.offset(offset_in_bytes);
         if self.block_visitor.bv.check_for_errors
