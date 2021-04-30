@@ -2208,6 +2208,26 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     None => {
                         if self.bv.tcx.is_mir_available(def_id) {
                             self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
+                        } else if self.bv.cv.known_names_cache.get(self.bv.tcx, def_id)
+                            == KnownNames::AllocRawVecMinNonZeroCap
+                        {
+                            let param_env = self.bv.tcx.param_env(def_id);
+                            if let Ok(ty_and_layout) =
+                                self.bv.tcx.layout_of(param_env.and(substs.type_at(0)))
+                            {
+                                if !ty_and_layout.is_unsized() {
+                                    let size_of_t = ty_and_layout.layout.size.bytes();
+                                    let min_non_zero_cap: u128 = if size_of_t == 1 {
+                                        8
+                                    } else if size_of_t <= 1024 {
+                                        4
+                                    } else {
+                                        1
+                                    };
+                                    return Rc::new((min_non_zero_cap).into());
+                                }
+                            }
+                            Path::new_static(self.bv.tcx, def_id)
                         } else {
                             Path::new_static(self.bv.tcx, def_id)
                         }
