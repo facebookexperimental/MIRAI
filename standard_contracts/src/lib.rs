@@ -8,6 +8,7 @@
 #![feature(backtrace)]
 #![feature(core_intrinsics)]
 #![feature(discriminant_kind)]
+#![feature(exclusive_range_pattern)]
 #![feature(hashmap_internals)]
 #![feature(pattern)]
 #![feature(toowned_clone_into)]

@@ -28,6 +28,34 @@ pub mod alloc {
                     }
                 }
             }
+            pub mod node {
+                pub enum LeftOrRight<T> {
+                    Left(T),
+                    Right(T),
+                }
+
+                const B: usize = 6;
+                pub const CAPACITY: usize = 2 * B - 1;
+                pub const MIN_LEN_AFTER_SPLIT: usize = B - 1;
+                const KV_IDX_CENTER: usize = B - 1;
+                const EDGE_IDX_LEFT_OF_CENTER: usize = B - 1;
+                const EDGE_IDX_RIGHT_OF_CENTER: usize = B;
+
+                fn splitpoint(edge_idx: usize) -> (usize, LeftOrRight<usize>) {
+                    precondition!(edge_idx <= CAPACITY);
+                    match edge_idx {
+                        0..EDGE_IDX_LEFT_OF_CENTER => {
+                            (KV_IDX_CENTER - 1, LeftOrRight::Left(edge_idx))
+                        }
+                        EDGE_IDX_LEFT_OF_CENTER => (KV_IDX_CENTER, LeftOrRight::Left(edge_idx)),
+                        EDGE_IDX_RIGHT_OF_CENTER => (KV_IDX_CENTER, LeftOrRight::Right(0)),
+                        _ => (
+                            KV_IDX_CENTER + 1,
+                            LeftOrRight::Right(edge_idx - (KV_IDX_CENTER + 1 + 1)),
+                        ),
+                    }
+                }
+            }
         }
     }
 
