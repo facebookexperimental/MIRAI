@@ -398,6 +398,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             TyKind::Adt(def, substs) => {
                                 return self.get_field_type(def, substs, *ordinal);
                             }
+                            TyKind::Array(..) => {
+                                if *ordinal == 1 {
+                                    return self.tcx.types.isize;
+                                }
+                            }
                             TyKind::Closure(def_id, subs) => {
                                 return subs.as_closure().upvar_tys().nth(*ordinal).unwrap_or_else(
                                     || {

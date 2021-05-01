@@ -1874,6 +1874,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ) if *target_type == ExpressionType::ThinPointer && operand.is_zero() => {
                 return Rc::new(FALSE);
             }
+            // [offset(&x, n) == (0 as *T)] -> false
+            (
+                Expression::Offset { left, .. },
+                Expression::Cast {
+                    operand,
+                    target_type,
+                },
+            ) if matches!(left.expression, Expression::Reference(_))
+                && *target_type == ExpressionType::ThinPointer
+                && operand.is_zero() =>
+            {
+                return Rc::new(FALSE);
+            }
             // [c3 == (c ? v1 : v2)] -> !c if v1 != c3 && v2 == c3
             // [c3 == (c ? v1 : v2)] -> c if v1 == c3 && v2 != c3
             // [c3 == (c ? v1 : v2)] -> true if v1 == c3 && v2 == c3
