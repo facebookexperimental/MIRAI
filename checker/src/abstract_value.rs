@@ -48,6 +48,10 @@ pub struct AbstractValue {
     /// Cached interval domain element computed on demand by get_as_interval.
     #[serde(skip)]
     interval: RefCell<Option<Rc<IntervalDomain>>>,
+    #[serde(skip)]
+    /// Cached optional bool that if present and true, indicates that this value is a pointer
+    /// or reference that is known at compile time to be non null.
+    is_non_null: RefCell<Option<bool>>,
     /// Cached tag domain element computed on demand by get_tags.
     #[serde(skip)]
     tags: RefCell<Option<Rc<TagDomain>>>,
@@ -65,6 +69,7 @@ const fn make_value(e: Expression) -> AbstractValue {
         expression: e,
         expression_size: 1,
         interval: RefCell::new(None),
+        is_non_null: RefCell::new(None),
         tags: RefCell::new(None),
     }
 }
@@ -287,16 +292,17 @@ impl AbstractValue {
                 expression_size,
                 ..make_value(expression)
             });
-            let interval = val.get_as_interval();
-            let tags = val.get_tags();
+            let interval = val.get_cached_interval();
+            let tags = val.get_cached_tags();
             Rc::new(AbstractValue {
                 expression: Expression::Variable {
                     path: Path::new_computed(TOP.into()),
                     var_type,
                 },
                 expression_size: 1,
-                interval: RefCell::new(Some(Rc::new(interval))),
-                tags: RefCell::new(Some(Rc::new(tags))),
+                interval: RefCell::new(Some(interval)),
+                is_non_null: RefCell::new(Some(val.is_non_null())),
+                tags: RefCell::new(Some(tags)),
             })
         } else {
             Rc::new(AbstractValue {
@@ -394,6 +400,7 @@ pub trait AbstractValueTrait: Sized {
     fn is_bottom(&self) -> bool;
     fn is_compile_time_constant(&self) -> bool;
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
+    fn is_non_null(&self) -> bool;
     fn is_top(&self) -> bool;
     fn is_unit(&self) -> bool;
     fn is_zero(&self) -> bool;
@@ -439,6 +446,7 @@ pub trait AbstractValueTrait: Sized {
     ) -> Self;
     fn get_cached_interval(&self) -> Rc<IntervalDomain>;
     fn get_as_interval(&self) -> IntervalDomain;
+    fn get_is_non_null(&self) -> bool;
     fn get_cached_tags(&self) -> Rc<TagDomain>;
     fn get_tags(&self) -> TagDomain;
     fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>>;
@@ -814,11 +822,55 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         }
                     }
                 }
+                // [(x || !y) && !(x || y)] -> !x && !y
+                (
+                    Expression::Or {
+                        left: x1,
+                        right: ny,
+                    },
+                    Expression::LogicalNot { operand: xy },
+                ) if matches!(xy.expression, Expression::Or { .. }) => {
+                    if let Expression::LogicalNot { operand: y1 } = &ny.expression {
+                        if let Expression::Or {
+                            left: x2,
+                            right: y2,
+                        } = &xy.expression
+                        {
+                            if x1.eq(x2) && y1.eq(y2) {
+                                return x1.logical_not().and(ny.clone());
+                            }
+                        }
+                    }
+                }
                 // [(x || (y && z)) && y] -> [(x && y) || (y && z && y)] -> (x && y) || (y && z)
-                (Expression::Or { left: x, right: yz }, y) => {
+                // [(x || !y) && (x || y)] -> x
+                // [(x || y) && (x || !y)] -> x
+                (
+                    Expression::Or {
+                        left: x1,
+                        right: yz,
+                    },
+                    y,
+                ) => {
                     if let Expression::And { left: y1, right: z } = &yz.expression {
                         if y1.expression == *y {
-                            return x.and(y1.clone()).or(y1.and(z.clone()));
+                            return x1.and(y1.clone()).or(y1.and(z.clone()));
+                        }
+                    }
+                    if let Expression::Or {
+                        left: x2,
+                        right: y2,
+                    } = y
+                    {
+                        if let Expression::LogicalNot { operand: y1 } = &yz.expression {
+                            if x1.eq(x2) && y1.eq(y2) {
+                                return x1.clone();
+                            }
+                        }
+                        if let Expression::LogicalNot { operand: y2a } = &y2.expression {
+                            if x1.eq(x2) && yz.eq(y2a) {
+                                return x1.clone();
+                            }
                         }
                     }
                 }
@@ -969,7 +1021,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let Some(trimmed) = self
                     .trim_prefix_conjuncts(k_limits::MAX_EXPRESSION_SIZE - other.expression_size)
                 {
-                    debug!("and expression prefix trimmed");
+                    debug!("and expression prefix trimmed, self: {:?}", self);
                     trimmed_self = trimmed;
                 } else {
                     return other;
@@ -1864,26 +1916,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     return operands_are_equal;
                 }
             }
-            // [&x == (0 as *T)] -> false
+            // [not null == (0 as *T)] -> false
             (
-                Expression::Reference(_),
+                _,
                 Expression::Cast {
                     operand,
                     target_type,
                 },
-            ) if *target_type == ExpressionType::ThinPointer && operand.is_zero() => {
-                return Rc::new(FALSE);
-            }
-            // [offset(&x, n) == (0 as *T)] -> false
-            (
-                Expression::Offset { left, .. },
-                Expression::Cast {
-                    operand,
-                    target_type,
-                },
-            ) if matches!(left.expression, Expression::Reference(_))
-                && *target_type == ExpressionType::ThinPointer
-                && operand.is_zero() =>
+            ) if *target_type == ExpressionType::ThinPointer
+                && operand.is_zero()
+                && self.is_non_null() =>
             {
                 return Rc::new(FALSE);
             }
@@ -2394,6 +2436,21 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Variable { path, .. } => path.is_rooted_by_zeroed_heap_block(),
             _ => false,
         }
+    }
+
+    /// True if its known at compile time that this value is a pointer or reference that is never null.
+    /// If this function returns false, it does not mean that it is known that the value is null.
+    #[logfn_inputs(TRACE)]
+    fn is_non_null(&self) -> bool {
+        {
+            let mut cached_non_null = self.is_non_null.borrow_mut();
+            let non_null_opt = cached_non_null.as_ref();
+            if let Some(is_non_null) = non_null_opt {
+                return *is_non_null;
+            }
+            *cached_non_null = Some(self.get_is_non_null());
+        }
+        self.is_non_null()
     }
 
     /// True if all possible concrete values are elements of the set corresponding to this domain.
@@ -3128,10 +3185,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return self.clone();
             }
 
-            // [self || (x && y)] -> self || y if !self => x
-            if let Expression::And { left, right: y } = &other.expression {
+            // [self || (x && z)] -> self || z if !self => x
+            if let Expression::And { left, right: z } = &other.expression {
                 if self.inverse_implies(left) {
-                    return self.or(y.clone());
+                    return self.or(z.clone());
+                }
+                // [x || (!(x || y ) && z)] -> x || (!y && z)
+                if let Expression::LogicalNot { operand: xy } = &left.expression {
+                    if let Expression::Or {
+                        left: x2,
+                        right: y2,
+                    } = &xy.expression
+                    {
+                        if self.eq(x2) {
+                            return self.or(y2.logical_not().and(z.clone()));
+                        }
+                    }
                 }
             }
 
@@ -3322,6 +3391,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
                 // [x < y || x <= y] -> x <= y
                 // [x < y || x == y] -> x <= y
+                // [y == x || x < y] -> x <= y
                 (
                     Expression::LessThan {
                         left: x1,
@@ -3341,8 +3411,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         left: x2,
                         right: y2,
                     },
+                )
+                | (
+                    Expression::Equals {
+                        left: y1,
+                        right: x1,
+                    },
+                    Expression::LessThan {
+                        left: x2,
+                        right: y2,
+                    },
                 ) if x1.eq(x2) && y1.eq(y2) => {
-                    return other.clone();
+                    return x1.less_or_equal(y2.clone());
                 }
                 // [x < y || x <= y] -> x <= y
                 (
@@ -3458,6 +3538,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                             return not_c.or(e_eq_0).or(e_eq_1);
                         }
                     }
+                }
+
+                // [( x ? false : y ) || x] -> x || y
+                (
+                    Expression::ConditionalExpression {
+                        condition: x,
+                        consequent: f,
+                        alternate: y,
+                    },
+                    _,
+                ) if x.eq(&other) && !f.as_bool_if_known().unwrap_or(true) => {
+                    return x.or(y.clone());
                 }
 
                 // [(x && y) || x] -> x
@@ -4028,6 +4120,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return recursive_op(self, left.clone()).join(recursive_op(self, right.clone()), &path);
         }
         operation(self.clone(), other)
+    }
+
+    /// Determines if the expression is known at compile time to always be a non-null pointer.
+    #[logfn_inputs(DEBUG)]
+    fn get_is_non_null(&self) -> bool {
+        match &self.expression {
+            Expression::ConditionalExpression {
+                consequent,
+                alternate,
+                ..
+            } => consequent.is_non_null() && alternate.is_non_null(),
+            Expression::Join { left, right, .. } => left.is_non_null() && right.is_non_null(),
+            Expression::Offset { left, .. } => left.is_non_null(),
+            Expression::Reference(..) => true,
+            Expression::WidenedJoin { operand, .. } => operand.is_non_null(),
+            _ => false,
+        }
     }
 
     /// Gets or constructs an interval that is cached.
