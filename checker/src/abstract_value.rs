@@ -1969,6 +1969,37 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             {
                 return Rc::new(FALSE);
             }
+            // [(widened == val)] -> if !interval(widened).intersect(interval(val)) { false } else { unknown == val }
+            (Expression::WidenedJoin { path, .. }, _) => {
+                let widened_interval = self.get_cached_interval();
+                let val_interval = other.get_cached_interval();
+                if !widened_interval.is_bottom()
+                    && !val_interval.is_bottom()
+                    && widened_interval.intersect(&val_interval).is_bottom()
+                {
+                    return Rc::new(FALSE);
+                } else {
+                    return AbstractValue::make_typed_unknown(ExpressionType::Bool, path.clone())
+                        .equals(other);
+                }
+            }
+            // [(val == widened)] -> if !interval(widened).intersect(interval(val)) { false } else { val == unknown }
+            (_, Expression::WidenedJoin { path, .. }) => {
+                let val_interval = self.get_cached_interval();
+                let widened_interval = other.get_cached_interval();
+                if !widened_interval.is_bottom()
+                    && !val_interval.is_bottom()
+                    && widened_interval.intersect(&val_interval).is_bottom()
+                {
+                    return Rc::new(FALSE);
+                } else {
+                    return self.equals(AbstractValue::make_typed_unknown(
+                        ExpressionType::Bool,
+                        path.clone(),
+                    ));
+                }
+            }
+
             // [c3 == (c ? v1 : v2)] -> !c if v1 != c3 && v2 == c3
             // [c3 == (c ? v1 : v2)] -> c if v1 == c3 && v2 != c3
             // [c3 == (c ? v1 : v2)] -> true if v1 == c3 && v2 == c3
@@ -3645,6 +3676,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     if x.inverse_implies(left) && y.inverse_implies(right) =>
                 {
                     return Rc::new(TRUE);
+                }
+
+                // [widened bool || x] -> unknown bool || x
+                (Expression::WidenedJoin { path, .. }, _) => {
+                    return AbstractValue::make_typed_unknown(ExpressionType::Bool, path.clone())
+                        .or(other);
+                }
+                // [x || widened bool] -> x || unknown bool
+                (_, Expression::WidenedJoin { path, .. }) => {
+                    return self.or(AbstractValue::make_typed_unknown(
+                        ExpressionType::Bool,
+                        path.clone(),
+                    ));
                 }
 
                 // [(x && !y) || !(x || y)] -> !y
