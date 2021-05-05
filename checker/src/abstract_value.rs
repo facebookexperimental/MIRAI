@@ -1020,6 +1020,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 ) if x1.eq(x2) && y1.eq(y2) => {
                     return x1.less_than(y1.clone());
                 }
+                // [(x <= y) && (x >= y)] -> x == y
+                (
+                    Expression::LessOrEqual {
+                        left: x1,
+                        right: y1,
+                    },
+                    Expression::GreaterOrEqual {
+                        left: x2,
+                        right: y2,
+                    },
+                ) if x1.eq(x2) && y1.eq(y2) => {
+                    return x1.equals(y1.clone());
+                }
                 _ => (),
             }
 
@@ -2596,19 +2609,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
-            // [&x[o1] join &x[o2]] -> &x[o1 join o2]
-            (
-                Expression::Offset {
-                    left: x1,
-                    right: o1,
-                },
-                Expression::Offset {
-                    left: x2,
-                    right: o2,
-                },
-            ) if x1.eq(x2) => {
-                return x1.offset(o1.join(o2.clone(), path));
-            }
             _ => {}
         }
         let expression_size = self.expression_size.saturating_add(other.expression_size);
@@ -4061,17 +4061,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // This is a conservative answer. False does not imply other.subset(self).
                 self.subset(&consequent) || self.subset(&alternate)
             }
-            // &x[o1] subset &x[o2] if o1 subset o2
-            (
-                Expression::Offset {
-                    left: x1,
-                    right: o1,
-                },
-                Expression::Offset {
-                    left: x2,
-                    right: o2,
-                },
-            ) if x1.eq(x2) => o1.subset(o2),
             // x subset widen { z } if x subset z
             (_, Expression::WidenedJoin { operand, .. }) => self.subset(&operand),
             // (left join right) is a subset of x if both left and right are subsets of x.
@@ -5621,7 +5610,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
                 self.expression_size.saturating_add(1),
             ),
-            Expression::Offset { left, right } => left.offset(right.widen(path)),
             _ => self.clone(),
         }
     }
