@@ -63,15 +63,15 @@ that is not part of Diem. There also performance problems that arise from inhere
 code analysis.
 
 If you would like to use MIRAI to analyze your code, you should not expect things to work perfectly out of the box.
-Try out MIRAI anyway, and let the MIRA team know how things went and if they can help you in some way.
+Try out MIRAI anyway, and let the MIRAI team know how things went and if they can help you in some way.
 
 ## How to use MIRAI
 
 You'll need to build and install MIRAI as described [here](https://github.com/facebookexperimental/MIRAI#using-mirai).
-That done, you just build your project as normal (but set `RUSTFLAGS="-Z always_encode_mir"`) and then touch the lib.rs
-file of your project and build again as above, but also setting `RUSTC_WRAPPER=mirai`.
+That done, you just build your project as normal (but start clean and set `RUSTFLAGS="-Z always_encode_mir"`) and then
+touch the lib.rs file of your project and build again while also setting `RUSTC_WRAPPER=mirai`.
 
-Using the MIRAI wrapper rather than just plain old Rustc will statically analyze all of the code reachable from entry
+Using the MIRAI wrapper rather than just plain old Rustc will statically analyze all the code reachable from entry
 points in your project. If any of these code paths can lead to an abrupt termination, you'll see Rustc-like diagnostics.
 
 ## Entry points

@@ -15,8 +15,6 @@ cargo fmt --all
 cargo audit
 cargo clippy -- -D warnings
 # Build
-cd checker; cargo rustc --lib -- -D rust-2018-idioms
-cd ..
 cargo build
 
 # build the mirai-standard-contracts crate
