@@ -120,7 +120,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
         } else if self.options.test_only {
             // Extract test functions from the main test runner.
             if let Some((entry_def_id, _)) = self.tcx.entry_fn(LOCAL_CRATE) {
-                let fns = self.extract_test_fns(entry_def_id.to_def_id());
+                let fns = self.extract_test_fns(entry_def_id);
                 if fns.is_empty() {
                     info!("Could not extract any tests from main entry point");
                 } else {

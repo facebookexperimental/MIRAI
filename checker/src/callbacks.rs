@@ -188,6 +188,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-prover/boogie-backend/src") // index out of bounds
             || file_name.contains("language/move-prover/bytecode/src") // too slow 
             || file_name.contains("language/move-prover/docgen/src") // too slow
+            || file_name.contains("language/move-prover/interpreter/src") // resolve error
             || file_name.contains("move-prover/errmapgen/src") // too slow
             || file_name.contains("language/move-prover/lab/src") // too slow
             || file_name.contains("language/move-stdlib/src") // Sorts Bool and Int are incompatible
@@ -197,6 +198,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/tools/move-cli/src") // too slow
             || file_name.contains("language/tools/move-coverage/src") // too slow
             || file_name.contains("language/tools/move-explain/src") // crash
+            || file_name.contains("language/tools/move-unit-test/src") // crash
             || file_name.contains("language/tools/resource-viewer/src") // too slow
             || file_name.contains("language/tools/vm-genesis/src") // too slow
             || file_name.contains("language/transaction-builder/generator/src") // too slow
