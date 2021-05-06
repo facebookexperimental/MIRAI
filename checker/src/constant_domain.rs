@@ -653,6 +653,10 @@ impl ConstantDomain {
         matches!(self, ConstantDomain::Bottom)
     }
 
+    pub fn is_true(&self) -> bool {
+        matches!(self, ConstantDomain::True)
+    }
+
     /// True if this value is the constant 0 of some numeric type.
     #[logfn_inputs(TRACE)]
     pub fn is_zero(&self) -> bool {
