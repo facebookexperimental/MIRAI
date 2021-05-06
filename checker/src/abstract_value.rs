@@ -994,6 +994,21 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 ) if x1.eq(x2) && y1.eq(y2) => {
                     return x1.less_than(y1.clone());
                 }
+                // [(x <= y) && (x < z)] -> x < z if z <= y
+                (
+                    Expression::LessOrEqual { left: x1, right: y },
+                    Expression::LessThan { left: x2, right: z },
+                ) if x1.eq(x2) => {
+                    if let (
+                        Expression::CompileTimeConstant(c1),
+                        Expression::CompileTimeConstant(c2),
+                    ) = (&y.expression, &z.expression)
+                    {
+                        if c2.less_or_equal(c1).is_true() {
+                            return other.clone();
+                        }
+                    }
+                }
                 // [(x != y) && (x >= y)] -> x > y
                 (
                     Expression::Ne {
@@ -1032,6 +1047,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     },
                 ) if x1.eq(x2) && y1.eq(y2) => {
                     return x1.equals(y1.clone());
+                }
+                // [(x && (y >= z)) && (z != y)] -> x && (y > z)
+                (
+                    Expression::And { left: x, right: yz },
+                    Expression::Ne {
+                        left: z1,
+                        right: y1,
+                    },
+                ) => {
+                    if let Expression::GreaterOrEqual {
+                        left: y2,
+                        right: z2,
+                    } = &yz.expression
+                    {
+                        if y1.eq(y2) && z1.eq(z2) {
+                            return x.and(y1.greater_than(z1.clone()));
+                        }
+                    }
                 }
                 _ => (),
             }
@@ -2261,6 +2294,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(result.into());
         }
+        // [0 > x] -> false if x is unsigned
+        if self.is_zero() && other.expression.infer_type().is_unsigned_integer() {
+            return Rc::new(FALSE);
+        }
         match (&self.expression, &other.expression) {
             // [(c ? v1 : v2) > c3] -> c ? (v1 > c3) : (v2 > c3)
             (
@@ -3457,6 +3494,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     return x1.greater_or_equal(y1.clone());
                 }
 
+                // [(x == y) || (y > z)] -> y > z if z < x
+                (
+                    Expression::Equals { left: x, right: y1 },
+                    Expression::GreaterThan { left: y2, right: z },
+                ) if y1.eq(y2) => {
+                    if let (
+                        Expression::CompileTimeConstant(cx),
+                        Expression::CompileTimeConstant(cz),
+                    ) = (&x.expression, &z.expression)
+                    {
+                        if cz.less_than(cx).is_true() {
+                            return other.clone();
+                        }
+                    }
+                }
+
                 // [x < y || x == y] -> x <= y
                 // [x <= y || x == y] -> x <= y
                 (
@@ -3744,6 +3797,28 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                             if y1.eq(y2) && z1.eq(z2) {
                                 return x.and(y1.clone());
                             }
+                        }
+                    }
+                }
+
+                // [(x || (y < z)) || (z == y)] -> x || (y <= z)
+                (
+                    Expression::Or {
+                        left: x,
+                        right: yltz,
+                    },
+                    Expression::Equals {
+                        left: z1,
+                        right: y1,
+                    },
+                ) => {
+                    if let Expression::LessThan {
+                        left: y2,
+                        right: z2,
+                    } = &yltz.expression
+                    {
+                        if y1.eq(y2) && z1.eq(z2) {
+                            return x.or(y1.less_or_equal(z1.clone()));
                         }
                     }
                 }
