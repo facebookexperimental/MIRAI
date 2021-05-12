@@ -283,7 +283,8 @@ impl Z3Solver {
             Expression::Neg { operand } => self.general_negation(operand),
             Expression::Offset { .. } => unsafe {
                 let sort = self.get_sort_for(&expression.infer_type());
-                z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort)
+                let sym = self.get_symbol_for(expression);
+                z3_sys::Z3_mk_const(self.z3_context, sym, sort)
             },
             Expression::Or { left, right } => {
                 self.general_boolean_op(left, right, z3_sys::Z3_mk_or)
@@ -309,7 +310,9 @@ impl Z3Solver {
                 default,
             } => self.general_switch(discriminator, cases, default, |e| self.get_as_z3_ast(e)),
             Expression::TaggedExpression { operand, .. } => self.get_as_z3_ast(&operand.expression),
-            Expression::Top | Expression::Bottom => self.general_fresh_const(),
+            Expression::Top | Expression::Bottom => unsafe {
+                z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.any_sort)
+            },
             Expression::UninterpretedCall {
                 result_type: var_type,
                 path,
@@ -337,8 +340,9 @@ impl Z3Solver {
             | Expression::UnknownTagField { path } => self.general_join(expression, path),
             _ => unsafe {
                 debug!("uninterpreted expression: {:?}", expression);
+                let sym = self.get_symbol_for(expression);
                 let sort = self.get_sort_for(&expression.infer_type());
-                z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort)
+                z3_sys::Z3_mk_const(self.z3_context, sym, sort)
             },
         }
     }
@@ -518,9 +522,8 @@ impl Z3Solver {
 
     #[logfn_inputs(TRACE)]
     fn general_reference(&self, path: &Rc<Path>) -> z3_sys::Z3_ast {
-        let path_str = CString::new(format!("&{:?}", path)).unwrap();
         unsafe {
-            let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
+            let path_symbol = self.get_symbol_for(path);
             z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.any_sort)
         }
     }
@@ -585,16 +588,9 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn general_fresh_const(&self) -> z3_sys::Z3_ast {
-        //todo: why a bool_sort?
-        unsafe { z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.bool_sort) }
-    }
-
-    #[logfn_inputs(TRACE)]
     fn general_variable(&self, path: &Rc<Path>, var_type: &ExpressionType) -> z3_sys::Z3_ast {
-        let path_str = CString::new(format!("{:?}", path)).unwrap();
         unsafe {
-            let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
+            let path_symbol = self.get_symbol_for(path);
             let sort = self.get_sort_for(var_type);
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
             if var_type.is_integer() {
@@ -616,9 +612,8 @@ impl Z3Solver {
 
     #[logfn_inputs(TRACE)]
     fn general_join(&self, expression: &Expression, path: &Rc<Path>) -> z3_sys::Z3_ast {
-        let path_str = CString::new(format!("{:?}", path)).unwrap();
         unsafe {
-            let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
+            let path_symbol = self.get_symbol_for(path);
             let sort = self.get_sort_for(&expression.infer_type());
             z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
         }
@@ -646,14 +641,10 @@ impl Z3Solver {
             | Expression::Variable { path, .. } => {
                 // A variable is an unknown value of a place in memory.
                 // Therefore, returns an unknown tag check via the logical predicate has_tag(path, tag).
-                let path_str = CString::new(format!("{:?} for tagging", path)).unwrap();
-                let tag_str = CString::new(format!("{:?}", tag)).unwrap();
                 unsafe {
-                    let path_symbol =
-                        z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
+                    let path_symbol = self.get_symbol_for(path);
                     let path_arg = z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.any_sort);
-                    let tag_symbol =
-                        z3_sys::Z3_mk_string_symbol(self.z3_context, tag_str.into_raw());
+                    let tag_symbol = self.get_symbol_for(tag);
                     let tag_arg = z3_sys::Z3_mk_const(self.z3_context, tag_symbol, self.any_sort);
                     return z3_sys::Z3_mk_app(
                         self.z3_context,
@@ -690,14 +681,14 @@ impl Z3Solver {
                 }
             }
 
-            Expression::Join { left, right, .. } => {
+            Expression::Join { left, right, path } => {
                 // Whether the join expression has tag or not is computed by
                 // ite(unknown condition, (left has tag), (right has tag)).
                 let left_check = self.general_has_tag(&left.expression, tag);
                 let right_check = self.general_has_tag(&right.expression, tag);
                 unsafe {
-                    let condition_ast =
-                        z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.bool_sort);
+                    let sym = self.get_symbol_for(path);
+                    let condition_ast = z3_sys::Z3_mk_const(self.z3_context, sym, self.bool_sort);
                     return z3_sys::Z3_mk_ite(
                         self.z3_context,
                         condition_ast,
@@ -840,9 +831,12 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn get_symbol_for(&self, path: &Rc<Path>) -> z3_sys::Z3_symbol {
-        let path_str = CString::new(format!("{:?}", path)).unwrap();
-        unsafe { z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw()) }
+    fn get_symbol_for<T>(&self, value: T) -> z3_sys::Z3_symbol
+    where
+        T: Debug,
+    {
+        let sym_str = CString::new(format!("{:?}", value)).unwrap();
+        unsafe { z3_sys::Z3_mk_string_symbol(self.z3_context, sym_str.into_raw()) }
     }
 
     #[logfn_inputs(TRACE)]
@@ -866,10 +860,9 @@ impl Z3Solver {
         operand: &Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
-        let path_str = CString::new(format!("{:?}", path)).unwrap();
         let sort = self.get_sort_for(&target_type);
         unsafe {
-            let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
+            let path_symbol = self.get_symbol_for(path);
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
             if target_type.is_integer() {
                 let interval = operand.widen(&path).get_as_interval();
@@ -931,8 +924,8 @@ impl Z3Solver {
             },
             ConstantDomain::True => unsafe { z3_sys::Z3_mk_true(self.z3_context) },
             _ => unsafe {
-                //info!("fresh constant for {:?}", const_domain);
-                z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.any_sort)
+                let sym = self.get_symbol_for(const_domain);
+                z3_sys::Z3_mk_const(self.z3_context, sym, self.any_sort)
             },
         }
     }
@@ -1020,27 +1013,27 @@ impl Z3Solver {
             } => self.numeric_conditional(condition, consequent, alternate),
             Expression::IntrinsicBinary { .. } => unsafe {
                 let expresssion_type = expression.infer_type();
+                let sym = self.get_symbol_for(expression);
                 let sort = self.get_sort_for(&expresssion_type);
                 //todo: use the name to select an appropriate Z3 function
                 (
                     expresssion_type.is_floating_point_number(),
-                    z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort),
+                    z3_sys::Z3_mk_const(self.z3_context, sym, sort),
                 )
             },
             Expression::IntrinsicBitVectorUnary { .. } => unsafe {
                 //todo: use the name to select an appropriate Z3 bitvector function
+                let sym = self.get_symbol_for(expression);
                 (
                     false,
-                    z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.int_sort),
+                    z3_sys::Z3_mk_const(self.z3_context, sym, self.int_sort),
                 )
             },
             Expression::IntrinsicFloatingPointUnary { .. } => unsafe {
-                let sort = self.get_sort_for(&expression.infer_type());
                 //todo: use the name to select an appropriate Z3 floating point function
-                (
-                    true,
-                    z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort),
-                )
+                let sym = self.get_symbol_for(expression);
+                let sort = self.get_sort_for(&expression.infer_type());
+                (true, z3_sys::Z3_mk_const(self.z3_context, sym, sort))
             },
             Expression::Neg { operand } => self.numeric_neg(operand),
             Expression::Offset { .. } => unsafe {
@@ -1051,11 +1044,9 @@ impl Z3Solver {
                     t => t,
                 };
                 let is_float = expr_type.is_floating_point_number();
+                let sym = self.get_symbol_for(expression);
                 let sort = self.get_sort_for(&expr_type);
-                (
-                    is_float,
-                    z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort),
-                )
+                (is_float, z3_sys::Z3_mk_const(self.z3_context, sym, sort))
             },
             Expression::Reference(path) => self.numeric_reference(path),
             Expression::Shl { left, right } => self.numeric_shl(left, right),
@@ -1074,17 +1065,19 @@ impl Z3Solver {
                 self.get_as_numeric_z3_ast(&operand.expression)
             }
             Expression::Transmute { target_type, .. } => unsafe {
-                if target_type.is_floating_point_number() {
-                    let sort = self.get_sort_for(target_type);
-                    (
-                        true,
-                        z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort),
-                    )
-                } else {
-                    self.numeric_fresh_const()
-                }
+                let sym = self.get_symbol_for(expression);
+                let sort = self.get_sort_for(target_type);
+                (
+                    target_type.is_floating_point_number(),
+                    z3_sys::Z3_mk_const(self.z3_context, sym, sort),
+                )
             },
-            Expression::Top | Expression::Bottom => self.numeric_fresh_const(),
+            Expression::Top | Expression::Bottom => unsafe {
+                (
+                    false,
+                    z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.int_sort),
+                )
+            },
             Expression::UninterpretedCall {
                 result_type: var_type,
                 path,
@@ -1232,9 +1225,8 @@ impl Z3Solver {
 
     #[logfn_inputs(TRACE)]
     fn numeric_join(&self, expression: &Expression, path: &Rc<Path>) -> (bool, z3_sys::Z3_ast) {
-        let path_str = CString::new(format!("{:?}", path)).unwrap();
         unsafe {
-            let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
+            let path_symbol = self.get_symbol_for(path);
             let mut var_type = &expression.infer_type();
             if !(var_type.is_integer() || var_type.is_floating_point_number()) {
                 var_type = &ExpressionType::I128
@@ -1292,9 +1284,8 @@ impl Z3Solver {
         expression: &Expression,
         target_type: &ExpressionType,
     ) -> (bool, z3_sys::Z3_ast) {
-        let path_str = CString::new(format!("{:?}", expression)).unwrap();
         unsafe {
-            let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
+            let path_symbol = self.get_symbol_for(expression);
             match target_type {
                 ExpressionType::F32 => (
                     true,
@@ -1440,10 +1431,17 @@ impl Z3Solver {
             ConstantDomain::True => unsafe {
                 (false, z3_sys::Z3_mk_int(self.z3_context, 1, self.int_sort))
             },
-            _ => {
-                //TRACE!("fresh constant for {:?}", const_domain);
-                self.numeric_fresh_const()
-            }
+            _ => unsafe {
+                debug!(
+                    "non numeric constant in numeric context: {:?}",
+                    const_domain
+                );
+                let sym = self.get_symbol_for(const_domain);
+                (
+                    false,
+                    z3_sys::Z3_mk_const(self.z3_context, sym, self.int_sort),
+                )
+            },
         }
     }
 
@@ -1532,16 +1530,6 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn numeric_fresh_const(&self) -> (bool, z3_sys::Z3_ast) {
-        unsafe {
-            (
-                false,
-                z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.int_sort),
-            )
-        }
-    }
-
-    #[logfn_inputs(TRACE)]
     fn numeric_variable(
         &self,
         expression: &Expression,
@@ -1619,14 +1607,10 @@ impl Z3Solver {
                     )
                 }
             }
-            Expression::Reference(path) => {
-                let path_str = CString::new(format!("&{:?}", path)).unwrap();
-                unsafe {
-                    let path_symbol =
-                        z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
-                    z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.bool_sort)
-                }
-            }
+            Expression::Reference(path) => unsafe {
+                let path_symbol = self.get_symbol_for(path);
+                z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.bool_sort)
+            },
             Expression::Top | Expression::Bottom => unsafe {
                 z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.bool_sort)
             },
@@ -1640,10 +1624,8 @@ impl Z3Solver {
                 if *var_type != ExpressionType::Bool {
                     debug!("path {:?}, type {:?}", path, var_type);
                 }
-                let path_str = CString::new(format!("{:?}", path)).unwrap();
                 unsafe {
-                    let path_symbol =
-                        z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
+                    let path_symbol = self.get_symbol_for(path);
                     z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.bool_sort)
                 }
             }
@@ -1672,7 +1654,7 @@ impl Z3Solver {
         match expression {
             Expression::HeapBlock { .. } => {
                 let path = Path::get_as_path(AbstractValue::make_from(expression.clone(), 1));
-                self.bv_variable(&path, &expression.infer_type(), num_bits)
+                self.bv_variable(&path, num_bits)
             }
             Expression::Add { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvadd)
@@ -1756,10 +1738,19 @@ impl Z3Solver {
                 consequent,
                 alternate,
             } => self.bv_conditional(num_bits, condition, consequent, alternate),
-            Expression::IntrinsicBitVectorUnary { .. } => self.bv_fresh_const(num_bits),
+            Expression::IntrinsicBitVectorUnary { .. } => unsafe {
+                //todo: use the name to select an appropriate Z3 bitvector function
+                let sym = self.get_symbol_for(expression);
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                z3_sys::Z3_mk_const(self.z3_context, sym, sort)
+            },
             Expression::Join { path, .. } => self.bv_join(num_bits, path),
             Expression::Neg { operand } => self.bv_neg(num_bits, operand),
-            Expression::Offset { .. } => self.bv_fresh_const(num_bits),
+            Expression::Offset { .. } => unsafe {
+                let sym = self.get_symbol_for(expression);
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                z3_sys::Z3_mk_const(self.z3_context, sym, sort)
+            },
             Expression::Reference(path) => self.bv_reference(num_bits, path),
             Expression::Shl { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvshl)
@@ -1769,15 +1760,14 @@ impl Z3Solver {
                 right,
                 result_type,
             } => self.bv_shr_by(num_bits, left, right, result_type),
-            Expression::Top | Expression::Bottom => self.bv_fresh_const(num_bits),
-            Expression::UninterpretedCall {
-                result_type: var_type,
-                path,
-                ..
-            }
-            | Expression::InitialParameterValue { path, var_type }
-            | Expression::Variable { path, var_type } => self.bv_variable(path, var_type, num_bits),
-            Expression::WidenedJoin { path, operand } => self.bv_widen(path, operand, num_bits),
+            Expression::Top | Expression::Bottom => unsafe {
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort)
+            },
+            Expression::UninterpretedCall { path, .. }
+            | Expression::InitialParameterValue { path, .. }
+            | Expression::Variable { path, .. } => self.bv_variable(path, num_bits),
+            Expression::WidenedJoin { path, .. } => self.bv_widen(path, num_bits),
             _ => self.get_as_z3_ast(expression),
         }
     }
@@ -1914,8 +1904,9 @@ impl Z3Solver {
                 z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },
             _ => unsafe {
+                let sym = self.get_symbol_for(const_domain);
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
-                z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort)
+                z3_sys::Z3_mk_const(self.z3_context, sym, sort)
             },
         }
     }
@@ -2003,42 +1994,16 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn bv_fresh_const(&self, num_bits: u32) -> z3_sys::Z3_ast {
+    fn bv_variable(&self, path: &Rc<Path>, num_bits: u32) -> z3_sys::Z3_ast {
         unsafe {
+            let path_symbol = self.get_symbol_for(path);
             let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
-            z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort)
+            z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
         }
     }
 
     #[logfn_inputs(TRACE)]
-    fn bv_variable(
-        &self,
-        path: &Rc<Path>,
-        var_type: &ExpressionType,
-        num_bits: u32,
-    ) -> z3_sys::Z3_ast {
-        use self::ExpressionType::*;
-        let path_str = CString::new(format!("{:?}", path)).unwrap();
-        unsafe {
-            let path_symbol = z3_sys::Z3_mk_string_symbol(self.z3_context, path_str.into_raw());
-            match var_type {
-                Bool | Char | F32 | F64 | I8 | I16 | I32 | I64 | I128 | Isize | U8 | U16 | U32
-                | U64 | U128 | Usize | Function | ThinPointer => {
-                    let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
-                    z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
-                }
-                NonPrimitive | Unit => self.bv_fresh_const(num_bits),
-            }
-        }
-    }
-
-    #[logfn_inputs(TRACE)]
-    fn bv_widen(
-        &self,
-        path: &Rc<Path>,
-        operand: &Rc<AbstractValue>,
-        num_bits: u32,
-    ) -> z3_sys::Z3_ast {
-        self.bv_variable(path, &operand.expression.infer_type(), num_bits)
+    fn bv_widen(&self, path: &Rc<Path>, num_bits: u32) -> z3_sys::Z3_ast {
+        self.bv_variable(path, num_bits)
     }
 }
