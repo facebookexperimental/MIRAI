@@ -8,14 +8,18 @@
 
 // MIRAI_FLAGS --diag=verify
 
+#[cfg(not(windows))]
 use std::cell::UnsafeCell;
+#[cfg(not(windows))]
 use std::rc::Rc;
 
+#[cfg(not(windows))]
 pub struct BlockRng {
     pub results: &'static [u32],
     pub index: usize,
 }
 
+#[cfg(not(windows))]
 pub struct ThreadRng {
     rng: Rc<UnsafeCell<BlockRng>>,
 }

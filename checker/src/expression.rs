@@ -641,7 +641,7 @@ impl Expression {
     /// Returns true if any part of the expression is a local variable.
     /// Use this to weed out inferred preconditions that cannot be satisfied by the caller.
     #[logfn_inputs(TRACE)]
-    pub fn contains_local_variable(&self) -> bool {
+    pub fn contains_local_variable(&self, is_post_condition: bool) -> bool {
         match &self {
             Expression::Add { left, right }
             | Expression::AddOverflows { left, right, .. }
@@ -668,15 +668,17 @@ impl Expression {
             | Expression::ShrOverflows { left, right, .. }
             | Expression::Sub { left, right }
             | Expression::SubOverflows { left, right, .. } => {
-                left.expression.contains_local_variable()
-                    || right.expression.contains_local_variable()
+                left.expression.contains_local_variable(is_post_condition)
+                    || right.expression.contains_local_variable(is_post_condition)
             }
             Expression::BitNot { operand, .. }
             | Expression::Cast { operand, .. }
             | Expression::IntrinsicBitVectorUnary { operand, .. }
             | Expression::IntrinsicFloatingPointUnary { operand, .. }
             | Expression::TaggedExpression { operand, .. }
-            | Expression::Transmute { operand, .. } => operand.expression.contains_local_variable(),
+            | Expression::Transmute { operand, .. } => operand
+                .expression
+                .contains_local_variable(is_post_condition),
             Expression::Bottom => true,
 
             Expression::CompileTimeConstant(..) => false,
@@ -685,57 +687,78 @@ impl Expression {
                 consequent,
                 alternate,
             } => {
-                condition.expression.contains_local_variable()
-                    || consequent.expression.contains_local_variable()
-                    || alternate.expression.contains_local_variable()
+                condition
+                    .expression
+                    .contains_local_variable(is_post_condition)
+                    || consequent
+                        .expression
+                        .contains_local_variable(is_post_condition)
+                    || alternate
+                        .expression
+                        .contains_local_variable(is_post_condition)
             }
             Expression::HeapBlock { .. } => true,
             Expression::HeapBlockLayout {
                 length, alignment, ..
             } => {
-                length.expression.contains_local_variable()
-                    || alignment.expression.contains_local_variable()
+                length.expression.contains_local_variable(is_post_condition)
+                    || alignment
+                        .expression
+                        .contains_local_variable(is_post_condition)
             }
-            Expression::Join { left, right, .. } => {
-                left.expression.contains_local_variable()
-                    || right.expression.contains_local_variable()
+            Expression::Join { left, right, path } => {
+                left.expression.contains_local_variable(is_post_condition)
+                    || right.expression.contains_local_variable(is_post_condition)
+                    || path.contains_local_variable(is_post_condition)
             }
             Expression::Memcmp {
                 left,
                 right,
                 length,
             } => {
-                left.expression.contains_local_variable()
-                    || right.expression.contains_local_variable()
-                    || length.expression.contains_local_variable()
+                left.expression.contains_local_variable(is_post_condition)
+                    || right.expression.contains_local_variable(is_post_condition)
+                    || length.expression.contains_local_variable(is_post_condition)
             }
             Expression::Neg { operand }
             | Expression::LogicalNot { operand }
-            | Expression::UnknownTagCheck { operand, .. } => {
-                operand.expression.contains_local_variable()
-            }
-            Expression::Reference(path) => path.contains_local_variable(),
+            | Expression::UnknownTagCheck { operand, .. } => operand
+                .expression
+                .contains_local_variable(is_post_condition),
+            Expression::Reference(path) => path.contains_local_variable(is_post_condition),
             Expression::InitialParameterValue { .. } => false,
             Expression::Switch {
                 discriminator,
                 cases,
                 default,
             } => {
-                discriminator.expression.contains_local_variable()
-                    || default.expression.contains_local_variable()
+                discriminator
+                    .expression
+                    .contains_local_variable(is_post_condition)
+                    || default
+                        .expression
+                        .contains_local_variable(is_post_condition)
                     || cases
                         .iter()
-                        .any(|(_, v)| v.expression.contains_local_variable())
+                        .any(|(_, v)| v.expression.contains_local_variable(is_post_condition))
             }
             Expression::Top => true,
             Expression::UninterpretedCall { .. } => true,
             Expression::UnknownModelField { path, default } => {
-                path.contains_local_variable() || default.expression.contains_local_variable()
+                path.contains_local_variable(is_post_condition)
+                    || default
+                        .expression
+                        .contains_local_variable(is_post_condition)
             }
             Expression::UnknownTagField { path } | Expression::Variable { path, .. } => {
-                path.contains_local_variable()
+                path.contains_local_variable(is_post_condition)
             }
-            Expression::WidenedJoin { operand, .. } => operand.expression.contains_local_variable(),
+            Expression::WidenedJoin { operand, path } => {
+                operand
+                    .expression
+                    .contains_local_variable(is_post_condition)
+                    || path.contains_local_variable(is_post_condition)
+            }
         }
     }
 

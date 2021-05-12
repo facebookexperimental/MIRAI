@@ -998,6 +998,24 @@ pub mod core {
 
         pub struct Result {}
 
+        pub mod builders {
+            pub mod implement_core_fmt_builders_DebugStruct {
+                default_contract!(field);
+                default_contract!(finish);
+            }
+
+            pub mod implement_core_fmt_builders_DebugTuple {
+                default_contract!(finish);
+            }
+        }
+
+        pub mod implement_core_fmt_Formatter {
+            default_contract!(debug_struct);
+            default_contract!(debug_tuple);
+            default_contract!(write_fmt);
+            default_contract!(write_str);
+        }
+
         pub mod rt {
             pub mod v1 {
                 pub struct Argument {}
@@ -3190,9 +3208,7 @@ pub mod crossbeam_epoch {
 pub mod hashbrown {
     pub mod raw {
         pub mod implement {
-            // pub fn alloc_err<T>() -> T {
-            //     result!()
-            // }
+            default_contract!(alloc_err);
             default_contract!(capacity_overflow);
         }
         pub mod implement_hashbrown_raw_RawTable_generic_par_T {
@@ -3905,6 +3921,9 @@ pub mod std {
                     }
                 }
             }
+        }
+        pub mod implement {
+            default_contract!(drop);
         }
         pub mod stdio {
             default_contract!(_eprint);

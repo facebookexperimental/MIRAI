@@ -385,8 +385,8 @@ pub trait AbstractValueTrait: Sized {
     fn divide(&self, other: Self) -> Self;
     fn does_not_have_tag(&self, tag: &Tag) -> Self;
     fn equals(&self, other: Self) -> Self;
-    fn extract_promotable_conjuncts(&self) -> Option<Self>;
-    fn extract_promotable_disjuncts(&self) -> Option<Self>;
+    fn extract_promotable_conjuncts(&self, is_post_condition: bool) -> Option<Self>;
+    fn extract_promotable_disjuncts(&self, is_post_condition: bool) -> Option<Self>;
     fn greater_or_equal(&self, other: Self) -> Self;
     fn greater_than(&self, other: Self) -> Self;
     fn has_tag(&self, tag: &Tag) -> Rc<AbstractValue>;
@@ -2166,18 +2166,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Extracts a subexpression that must be true for the overall expression to be true
     /// and which contain no references to local variables of the current function.
     #[logfn_inputs(TRACE)]
-    fn extract_promotable_conjuncts(&self) -> Option<Rc<AbstractValue>> {
+    fn extract_promotable_conjuncts(&self, is_post_condition: bool) -> Option<Rc<AbstractValue>> {
         if let Expression::And { left, right } = &self.expression {
-            if let Some(left_conjunct) = left.extract_promotable_conjuncts() {
-                if let Some(right_conjunct) = right.extract_promotable_conjuncts() {
+            if let Some(left_conjunct) = left.extract_promotable_conjuncts(is_post_condition) {
+                if let Some(right_conjunct) = right.extract_promotable_conjuncts(is_post_condition)
+                {
                     Some(left.and(right_conjunct))
                 } else {
                     Some(left_conjunct)
                 }
             } else {
-                right.extract_promotable_conjuncts()
+                right.extract_promotable_conjuncts(is_post_condition)
             }
-        } else if !self.expression.contains_local_variable()
+        } else if !self.expression.contains_local_variable(is_post_condition)
             && self.as_bool_if_known().unwrap_or(true)
         {
             Some(self.clone())
@@ -2189,18 +2190,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Extracts a subexpression that will make the overall expression true if it is true
     /// and which contain no references to local variables of the current function.
     #[logfn_inputs(TRACE)]
-    fn extract_promotable_disjuncts(&self) -> Option<Rc<AbstractValue>> {
+    fn extract_promotable_disjuncts(&self, is_post_condition: bool) -> Option<Rc<AbstractValue>> {
         if let Expression::Or { left, right } = &self.expression {
-            if let Some(left_disjunct) = left.extract_promotable_disjuncts() {
-                if let Some(right_conjunct) = right.extract_promotable_disjuncts() {
+            if let Some(left_disjunct) = left.extract_promotable_disjuncts(is_post_condition) {
+                if let Some(right_conjunct) = right.extract_promotable_disjuncts(is_post_condition)
+                {
                     Some(left.or(right_conjunct))
                 } else {
                     Some(left_disjunct)
                 }
             } else {
-                right.extract_promotable_disjuncts()
+                right.extract_promotable_disjuncts(is_post_condition)
             }
-        } else if !self.expression.contains_local_variable()
+        } else if !self.expression.contains_local_variable(is_post_condition)
             && self.as_bool_if_known().unwrap_or(true)
         {
             Some(self.clone())
