@@ -210,14 +210,19 @@ impl Debug for PathEnum {
 impl Path {
     /// Returns true if the path contains a value whose expression contains a local variable.
     #[logfn_inputs(TRACE)]
-    pub fn contains_local_variable(&self) -> bool {
+    pub fn contains_local_variable(&self, is_post_condition: bool) -> bool {
         match &self.value {
-            PathEnum::Computed { value } => value.expression.contains_local_variable(),
+            PathEnum::Computed { value } => {
+                value.expression.contains_local_variable(is_post_condition)
+            }
             PathEnum::HeapBlock { .. } => true,
             PathEnum::LocalVariable { .. } => true,
-            PathEnum::Offset { value } => value.expression.contains_local_variable(),
+            PathEnum::Offset { value } => {
+                value.expression.contains_local_variable(is_post_condition)
+            }
             PathEnum::Parameter { .. } => false,
-            PathEnum::Result => false,
+            // In a post condition, a function result does not count as a local variable of the function
+            PathEnum::Result => !is_post_condition,
             PathEnum::StaticVariable { .. } => false,
             PathEnum::PhantomData => false,
             PathEnum::PromotedConstant { .. } => true,
@@ -226,9 +231,9 @@ impl Path {
                 selector,
                 ..
             } => {
-                qualifier.contains_local_variable() || {
+                qualifier.contains_local_variable(is_post_condition) || {
                     if let PathSelector::Index(value) = selector.as_ref() {
-                        value.expression.contains_local_variable()
+                        value.expression.contains_local_variable(is_post_condition)
                     } else {
                         false
                     }
@@ -743,8 +748,9 @@ impl PathRefinement for Rc<Path> {
             }
             PathEnum::Result => {
                 if result.is_none() {
-                    warn!("A summary that references its result should have a path for the result");
-                    Path::new_local(fresh, 0)
+                    unreachable!(
+                        "A summary that references its result should have a path for the result"
+                    );
                 } else {
                     result.as_ref().unwrap().clone()
                 }

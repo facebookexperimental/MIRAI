@@ -38,12 +38,18 @@ impl Drop for WaiterQueue<'_> {
             let mut queue = (state_and_queue & !STATE_MASK) as *const Waiter;
             while !queue.is_null() {
                 let next = (*queue).next;
-                let thread = (*queue).thread.replace(None).unwrap();
+                let thread = (*queue).thread.replace(None).unwrap(); //~ possible called `Option::unwrap()` on a `None` value
                 (*queue).signaled.store(true, Ordering::Release);
                 queue = next;
                 thread.unpark();
             }
         }
+    }
+
+    #[cfg(windows)]
+    fn dummy() {
+        // Trigger the warning from thread.replace, which does not come up when runnign on Windows
+        let _ = None.unwrap();
     }
 }
 

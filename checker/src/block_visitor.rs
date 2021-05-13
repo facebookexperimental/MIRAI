@@ -407,7 +407,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                     .bv
                     .current_environment
                     .entry_condition
-                    .extract_promotable_conjuncts()
+                    .extract_promotable_conjuncts(true)
                 {
                     if promotable_entry_condition.as_bool_if_known().is_none() {
                         // If no post condition has been explicitly supplied and if the entry condition is interesting
@@ -776,7 +776,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .current_environment
                 .entry_condition
-                .extract_promotable_conjuncts()
+                .extract_promotable_conjuncts(false)
             {
                 if promotable_entry_condition.as_bool_if_known().is_none() {
                     let precondition = Precondition {
@@ -947,8 +947,8 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 self.bv
                     .current_environment
                     .entry_condition
-                    .extract_promotable_conjuncts(),
-                condition.extract_promotable_disjuncts(),
+                    .extract_promotable_conjuncts(false),
+                condition.extract_promotable_disjuncts(false),
             ) {
                 (Some(promotable_entry_cond), Some(promotable_condition))
                     if promotable_entry_cond.as_bool_if_known().is_none()
@@ -996,7 +996,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
     #[logfn_inputs(TRACE)]
     pub fn try_extend_post_condition(&mut self, cond: &Rc<AbstractValue>) {
         precondition!(self.bv.check_for_errors);
-        if let Some(promotable_condition) = cond.extract_promotable_conjuncts() {
+        if let Some(promotable_condition) = cond.extract_promotable_conjuncts(true) {
             let this_block = self.bv.current_location.block;
             match (self.bv.post_condition.clone(), self.bv.post_condition_block) {
                 (Some(last_cond), Some(last_block)) => {
@@ -1074,7 +1074,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             .bv
             .current_environment
             .entry_condition
-            .extract_promotable_conjuncts();
+            .extract_promotable_conjuncts(false);
 
         // If a verification condition is always false, give an error since that is bad style.
         if function_name == KnownNames::MiraiVerify && !cond_as_bool.unwrap_or(true) {
@@ -1111,7 +1111,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
         // or if the condition is not promotable or if the condition is being explicitly verified.
-        let promotable_cond = cond.extract_promotable_disjuncts();
+        let promotable_cond = cond.extract_promotable_disjuncts(false);
         if self.bv.function_being_analyzed_is_root()
             || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
             || promotable_cond.is_none()
@@ -1162,7 +1162,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .current_environment
                 .entry_condition
-                .extract_promotable_conjuncts();
+                .extract_promotable_conjuncts(false);
             match tag_check_as_bool {
                 None => {
                     // We cannot decide the result of the tag check.
@@ -1179,7 +1179,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         );
                         self.bv.emit_diagnostic(warning);
                     } else if promotable_entry_condition.is_none()
-                        || tag_check.extract_promotable_disjuncts().is_none()
+                        || tag_check.extract_promotable_disjuncts(false).is_none()
                     {
                         let span = self.bv.current_span.source_callsite();
                         let warning = self.bv.cv.session.struct_span_warn(
@@ -1214,7 +1214,7 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             // contain local variables, and we don't reach a k-limit.
             match (
                 promotable_entry_condition,
-                tag_check.extract_promotable_disjuncts(),
+                tag_check.extract_promotable_disjuncts(false),
             ) {
                 (Some(promotable_entry_cond), Some(promotable_tag_check))
                     if !tag_check_as_bool.unwrap_or(false)
@@ -1316,12 +1316,12 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
 
                     // At this point, we don't know that this assert is unreachable and we don't know
                     // that the condition is as expected, so we need to warn about it somewhere.
-                    let promotable_cond_val = cond_val.extract_promotable_disjuncts();
+                    let promotable_cond_val = cond_val.extract_promotable_disjuncts(false);
                     let promotable_entry_cond = self
                         .bv
                         .current_environment
                         .entry_condition
-                        .extract_promotable_conjuncts();
+                        .extract_promotable_conjuncts(false);
 
                     if promotable_cond_val.is_none()
                         || promotable_entry_cond.is_none()

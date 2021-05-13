@@ -643,7 +643,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                             None => {
                                 // Might have to clone the Some(..) variant, so can't be handled here,
                                 if let Some(promotable_is_zero) =
-                                    is_zero.extract_promotable_disjuncts()
+                                    is_zero.extract_promotable_disjuncts(false)
                                 {
                                     // The caller might be able to avoid the diagnostic because it
                                     // knows the actual argument whereas here we only know the type.
@@ -885,7 +885,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         .bv
                         .current_environment
                         .entry_condition
-                        .extract_promotable_conjuncts()
+                        .extract_promotable_conjuncts(false)
                     {
                         let condition = promotable_entry_condition.logical_not();
                         let precondition = Precondition {
@@ -964,8 +964,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                                 .bv
                                 .current_environment
                                 .entry_condition
-                                .extract_promotable_conjuncts(),
-                            non_zero.extract_promotable_disjuncts(),
+                                .extract_promotable_conjuncts(false),
+                            non_zero.extract_promotable_disjuncts(false),
                         ) {
                             (Some(promotable_entry_condition), Some(promotable_non_zero))
                                 if self.block_visitor.bv.preconditions.len()
@@ -2512,7 +2512,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 .bv
                 .current_environment
                 .entry_condition
-                .extract_promotable_conjuncts()
+                .extract_promotable_conjuncts(false)
             {
                 if promotable_entry_condition.as_bool_if_known().is_none() {
                     let precondition = Precondition {
@@ -2689,8 +2689,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                         .bv
                         .current_environment
                         .entry_condition
-                        .extract_promotable_conjuncts(),
-                    refined_condition.extract_promotable_disjuncts(),
+                        .extract_promotable_conjuncts(false),
+                    refined_condition.extract_promotable_disjuncts(false),
                 ) {
                     (Some(promotable_entry_condition), Some(promotable_condition)) => {
                         promotable_entry_condition
