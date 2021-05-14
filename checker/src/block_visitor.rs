@@ -3233,8 +3233,17 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
                         if let TyKind::Adt(def, ..) = base_ty.kind() {
                             debug!("def {:?}", def);
                             if def.repr.transparent() {
-                                // don't add the field access
-                                continue;
+                                if let TyKind::Adt(def, ..) = ty.kind() {
+                                    if def.repr.transparent() {
+                                        debug!("source def {:?}", def);
+                                    } else {
+                                        // don't add the field access
+                                        continue;
+                                    }
+                                } else {
+                                    // don't add the field access
+                                    continue;
+                                }
                             }
                         }
                     }
