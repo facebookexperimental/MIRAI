@@ -311,15 +311,9 @@ impl Environment {
         let value_map1 = &self.value_map;
         let value_map2 = &other.value_map;
         for (path, val1) in value_map1.iter().filter(|(_, v)| !v.is_bottom()) {
-            match value_map2.get(path) {
-                Some(val2) => {
-                    if !(val1.subset(val2)) {
-                        trace!("self at {:?} is {:?} other is {:?}", path, val1, val2);
-                        return false;
-                    }
-                }
-                None => {
-                    trace!("self at {:?} is {:?} other is None", path, val1);
+            if let Some(val2) = value_map2.get(path) {
+                if !(val1.subset(val2)) {
+                    trace!("self at {:?} is {:?} other is {:?}", path, val1, val2);
                     return false;
                 }
             }
