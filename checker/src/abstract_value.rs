@@ -773,6 +773,25 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 _ => (),
             }
             match (&self.expression, &other.expression) {
+                // [(a && (b != x)) && (c < x)] -> a && (c < x) if c >= b
+                (
+                    Expression::And {
+                        left: a1,
+                        right: bx,
+                    },
+                    Expression::LessThan { left: c, right: x2 },
+                ) => {
+                    if let Expression::Ne { left: b, right: x1 } = &bx.expression {
+                        if x1.eq(x2)
+                            && c.greater_or_equal(b.clone())
+                                .as_bool_if_known()
+                                .unwrap_or(false)
+                        {
+                            return a1.and(other);
+                        }
+                    }
+                }
+
                 // [(a && (x || b)) && (a && b)] -> a && b
                 // [(a && (0 == x)) && (x && b)] -> false
                 (
@@ -2088,13 +2107,29 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             {
                 return self.equals(x.clone());
             }
+            // [0 == (0 % x)] -> true
+            (Expression::CompileTimeConstant(z), Expression::Rem { left: c, .. })
+                if z.is_zero() && c.is_zero() =>
+            {
+                return Rc::new(TRUE);
+            }
+
+            // [0 == (1 << x)] -> false (we can assume no overflows occur)
+            (
+                Expression::CompileTimeConstant(ConstantDomain::U128(0)),
+                Expression::Shl { left, .. },
+            ) => {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(1)) = left.expression {
+                    return Rc::new(FALSE);
+                }
+            }
             // [0 == x] -> !x when x is a Boolean. Canonicalize it to the latter.
             // [1 == x] -> x when x is a Boolean. Canonicalize it to the latter.
             (Expression::CompileTimeConstant(ConstantDomain::U128(val)), x) => {
                 if x.infer_type() == ExpressionType::Bool {
                     if *val == 0 {
                         return other.logical_not();
-                    } else if *val == 1 {
+                    } else {
                         return other.clone();
                     }
                 }
@@ -2138,7 +2173,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         .conditional_expression(y.equals(other.clone()), z.equals(other.clone()));
                 }
             }
-            // [c1 == (c2 * x)] -> x == c1 / c2
+            // [c1 == (c2 * x)] -> (c1 / c2) == x
             (Expression::CompileTimeConstant(..), Expression::Mul { left: c2, right: x })
                 if c2.is_compile_time_constant() && self.expression.infer_type().is_integer() =>
             {
@@ -2290,6 +2325,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(v1.greater_than(v2).into());
         };
+        // [x > c] -> c < x
+        if other.is_compile_time_constant() {
+            return other.less_than(self.clone());
+        }
         if let Some(result) = self
             .get_cached_interval()
             .greater_than(other.get_cached_interval().as_ref())
@@ -2801,6 +2840,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(v1.less_than(v2).into());
         };
+        // [x < c] -> c > x
+        if other.is_compile_time_constant() {
+            return other.greater_than(self.clone());
+        }
         if let Some(result) = self
             .get_cached_interval()
             .less_than(other.get_cached_interval().as_ref())
@@ -3165,30 +3208,29 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             (Expression::CompileTimeConstant(ConstantDomain::False), _) => {
                 return other.clone();
             }
-
+            // [0 != (1 << x)] -> true (we can assume no overflows occur)
+            (
+                Expression::CompileTimeConstant(ConstantDomain::U128(0)),
+                Expression::Shl { left, .. },
+            ) => {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(1)) = left.expression {
+                    return Rc::new(TRUE);
+                }
+            }
             // [0 != y] -> y when y is a Boolean. Canonicalize it to the latter.
-            (Expression::CompileTimeConstant(ConstantDomain::U128(val)), y)
-                if *val == 0 && y.infer_type() == ExpressionType::Bool =>
+            (Expression::CompileTimeConstant(ConstantDomain::U128(0)), y)
+                if y.infer_type() == ExpressionType::Bool =>
             {
                 return other.clone();
             }
-            // [(c1 * x) == c2] -> x == c2 / c1
-            (Expression::Mul { left: c1, right: x }, _)
-                if c1.is_compile_time_constant()
-                    && other.is_compile_time_constant()
-                    && other.expression.infer_type().is_integer() =>
-            {
-                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
-                return x.equals(c1.divide(other.clone()));
-            }
-            // [c1 == (c2 * x)] -> x == c1 / c2
+            // [c1 != (c2 * x)] -> ( c1 / c2) != x
             (_, Expression::Mul { left: c2, right: x })
                 if self.is_compile_time_constant()
                     && c2.is_compile_time_constant()
                     && self.expression.infer_type().is_integer() =>
             {
                 debug_checked_assume!(!c2.is_zero()); // otherwise constant folding would have reduced the Mul
-                return x.equals(self.divide(c2.clone()));
+                return self.divide(c2.clone()).not_equals(x.clone());
             }
 
             // [c3 != (c ? v1 : v2)] -> !c if v1 == c3 && v2 != c3
