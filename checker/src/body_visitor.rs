@@ -23,6 +23,7 @@ use crate::block_visitor::BlockVisitor;
 use crate::call_visitor::CallVisitor;
 use crate::crate_visitor::CrateVisitor;
 use crate::fixed_point_visitor::FixedPointVisitor;
+use crate::z3_solver::Z3Solver;
 use log_derive::*;
 use mirai_annotations::*;
 use rpds::HashTrieMap;
@@ -39,12 +40,11 @@ use std::rc::Rc;
 use std::time::Instant;
 
 /// Holds the state for the function body visitor.
-pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
+pub struct BodyVisitor<'analysis, 'compilation, 'tcx> {
     pub cv: &'analysis mut CrateVisitor<'compilation, 'tcx>,
     pub tcx: TyCtxt<'tcx>,
     pub def_id: DefId,
     pub mir: &'tcx mir::Body<'tcx>,
-    pub smt_solver: &'analysis mut dyn SmtSolver<E>,
     pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
     pub active_calls_map: &'analysis mut HashMap<DefId, u64>,
 
@@ -69,10 +69,11 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx, E> {
     pub post_condition_block: Option<mir::BasicBlock>,
     pub preconditions: Vec<Precondition>,
     pub fresh_variable_offset: usize,
+    pub smt_solver: Z3Solver,
     type_visitor: TypeVisitor<'tcx>,
 }
 
-impl<'analysis, 'compilation, 'tcx, E> Debug for BodyVisitor<'analysis, 'compilation, 'tcx, E> {
+impl<'analysis, 'compilation, 'tcx> Debug for BodyVisitor<'analysis, 'compilation, 'tcx> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "BodyVisitor".fmt(f)
     }
@@ -80,15 +81,14 @@ impl<'analysis, 'compilation, 'tcx, E> Debug for BodyVisitor<'analysis, 'compila
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
 /// so that we can test a call to every default implementation of the MirVisitor trait.
-impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx, E> {
+impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     pub fn new(
         crate_visitor: &'analysis mut CrateVisitor<'compilation, 'tcx>,
         def_id: DefId,
-        smt_solver: &'analysis mut dyn SmtSolver<E>,
         buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
         active_calls_map: &'analysis mut HashMap<DefId, u64>,
         type_cache: Rc<RefCell<TypeCache<'tcx>>>,
-    ) -> BodyVisitor<'analysis, 'compilation, 'tcx, E> {
+    ) -> BodyVisitor<'analysis, 'compilation, 'tcx> {
         let function_name = crate_visitor
             .summary_cache
             .get_summary_key_for(def_id)
@@ -102,7 +102,6 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             tcx,
             def_id,
             mir,
-            smt_solver,
             buffered_diagnostics,
             active_calls_map,
 
@@ -125,6 +124,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             post_condition_block: None,
             preconditions: Vec::new(),
             fresh_variable_offset: 0,
+            smt_solver: Z3Solver::default(),
             type_visitor: TypeVisitor::new(def_id, mir, tcx, type_cache),
         }
     }
@@ -605,7 +605,7 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 )
                 .clone();
             block_visitor = BlockVisitor::new(self);
-            let mut call_visitor = CallVisitor::<E>::new(
+            let mut call_visitor = CallVisitor::new(
                 &mut block_visitor,
                 def_id,
                 generic_args,

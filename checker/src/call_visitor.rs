@@ -30,10 +30,10 @@ use crate::tag_domain::Tag;
 use crate::type_visitor::TypeVisitor;
 use crate::{abstract_value, utils};
 
-pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
+pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx> {
     pub actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)>,
     pub actual_argument_types: Vec<Ty<'tcx>>,
-    pub block_visitor: &'call mut BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E>,
+    pub block_visitor: &'call mut BlockVisitor<'block, 'analysis, 'compilation, 'tcx>,
     pub callee_def_id: DefId,
     pub callee_func_ref: Option<Rc<FunctionReference>>,
     pub callee_fun_val: Rc<AbstractValue>,
@@ -47,25 +47,25 @@ pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
     pub initial_type_cache: Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>>,
 }
 
-impl<'call, 'block, 'analysis, 'compilation, 'tcx, E> Debug
-    for CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E>
+impl<'call, 'block, 'analysis, 'compilation, 'tcx> Debug
+    for CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "CallVisitor".fmt(f)
     }
 }
 
-impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
-    CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E>
+impl<'call, 'block, 'analysis, 'compilation, 'tcx>
+    CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx>
 {
     pub(crate) fn new(
-        block_visitor: &'call mut BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E>,
+        block_visitor: &'call mut BlockVisitor<'block, 'analysis, 'compilation, 'tcx>,
         callee_def_id: DefId,
         callee_generic_arguments: Option<SubstsRef<'tcx>>,
         callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
         environment_before_call: Environment,
         func_const: ConstantDomain,
-    ) -> CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx, E> {
+    ) -> CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx> {
         if let ConstantDomain::Function(func_ref) = &func_const {
             let callee_known_name = func_ref.known_name;
             CallVisitor {
@@ -112,7 +112,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let mut body_visitor = BodyVisitor::new(
                 self.block_visitor.bv.cv,
                 self.callee_def_id,
-                self.block_visitor.bv.smt_solver,
                 self.block_visitor.bv.buffered_diagnostics,
                 self.block_visitor.bv.active_calls_map,
                 self.block_visitor.bv.cv.type_cache.clone(),
@@ -532,7 +531,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                     .expect("a fun ref");
                 let generator_def_id = generator_fun_ref.def_id.expect("a def id");
                 let environment_before_call = self.block_visitor.bv.current_environment.clone();
-                let mut block_visitor = BlockVisitor::<E>::new(self.block_visitor.bv);
+                let mut block_visitor = BlockVisitor::new(self.block_visitor.bv);
                 let mut generator_call_visitor = CallVisitor::new(
                     &mut block_visitor,
                     generator_def_id,
@@ -1192,7 +1191,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
                 )
             }
             let environment_before_call = self.block_visitor.bv.current_environment.clone();
-            let mut block_visitor = BlockVisitor::<E>::new(self.block_visitor.bv);
+            let mut block_visitor = BlockVisitor::new(self.block_visitor.bv);
             let mut indirect_call_visitor = CallVisitor::new(
                 &mut block_visitor,
                 def_id,
@@ -1972,7 +1971,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx, E>
             let right = self.actual_args[1].1.clone();
             let modulo = target_type.modulo_value();
             let (result, overflow_flag) =
-                BlockVisitor::<E>::do_checked_binary_op(bin_op, target_type.clone(), left, right);
+                BlockVisitor::do_checked_binary_op(bin_op, target_type.clone(), left, right);
             let (modulo_result, overflow_flag) = if !modulo.is_bottom() {
                 (result.remainder(target_type.modulo_value()), overflow_flag)
             } else {

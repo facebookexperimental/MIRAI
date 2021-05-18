@@ -19,8 +19,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 
-pub struct FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx, E> {
-    pub bv: &'fixed mut BodyVisitor<'analysis, 'compilation, 'tcx, E>,
+pub struct FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx> {
+    pub bv: &'fixed mut BodyVisitor<'analysis, 'compilation, 'tcx>,
     already_visited: HashTrieSet<mir::BasicBlock>,
     pub block_indices: Vec<mir::BasicBlock>,
     loop_anchors: HashSet<mir::BasicBlock>,
@@ -30,8 +30,8 @@ pub struct FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx, E> {
     pub terminator_state: HashMap<mir::BasicBlock, Environment>,
 }
 
-impl<'fixed, 'analysis, 'compilation, 'tcx, E> Debug
-    for FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx, E>
+impl<'fixed, 'analysis, 'compilation, 'tcx> Debug
+    for FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "FixedPoint".fmt(f)
@@ -40,13 +40,13 @@ impl<'fixed, 'analysis, 'compilation, 'tcx, E> Debug
 
 /// A visitor that simply traverses enough of the MIR associated with a particular code body
 /// so that we can test a call to every default implementation of the MirVisitor trait.
-impl<'fixed, 'analysis, 'compilation, 'tcx, E>
-    FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx, E>
+impl<'fixed, 'analysis, 'compilation, 'tcx>
+    FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx>
 {
     #[logfn_inputs(TRACE)]
     pub fn new(
-        body_visitor: &'fixed mut BodyVisitor<'analysis, 'compilation, 'tcx, E>,
-    ) -> FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx, E> {
+        body_visitor: &'fixed mut BodyVisitor<'analysis, 'compilation, 'tcx>,
+    ) -> FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx> {
         let dominators = body_visitor.mir.dominators();
         let (block_indices, loop_anchors) = get_sorted_block_indices(body_visitor.mir, &dominators);
         // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
