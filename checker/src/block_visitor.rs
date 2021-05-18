@@ -1394,11 +1394,11 @@ impl<'block, 'analysis, 'compilation, 'tcx, E>
             // The abstract domains are unable to decide if the entry condition is always true or
             // always false.
             // See if the SMT solver can prove that the entry condition is always false.
+            self.bv.smt_solver.set_backtrack_position();
             let smt_expr = {
                 let ec = &self.bv.current_environment.entry_condition.expression;
                 self.bv.smt_solver.get_as_smt_predicate(ec)
             };
-            self.bv.smt_solver.set_backtrack_position();
             self.bv.smt_solver.assert(&smt_expr);
             if self.bv.smt_solver.solve() == SmtResult::Unsatisfiable {
                 // The solver can prove that the entry condition is always false.

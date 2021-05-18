@@ -1525,11 +1525,11 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
             // The abstract domains are unable to decide if the entry condition is always true.
             // (If it could decide that the condition is always false, we wouldn't be here.)
             // See if the SMT solver can prove that the entry condition is always true.
+            self.smt_solver.set_backtrack_position();
             let smt_expr = {
                 let ec = &self.current_environment.entry_condition.expression;
                 self.smt_solver.get_as_smt_predicate(ec)
             };
-            self.smt_solver.set_backtrack_position();
             self.smt_solver.assert(&smt_expr);
             let smt_result = self.smt_solver.solve();
             if smt_result == SmtResult::Unsatisfiable {
@@ -1548,9 +1548,10 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
     #[logfn_inputs(TRACE)]
     fn solve_condition(&mut self, cond_val: &Rc<AbstractValue>) -> Option<bool> {
         let ce = &cond_val.expression;
+        self.smt_solver.set_backtrack_position();
         let cond_smt_expr = self.smt_solver.get_as_smt_predicate(ce);
         let inv_cond_smt_expr = self.smt_solver.invert_predicate(&cond_smt_expr);
-        match self.smt_solver.solve_expression(&cond_smt_expr) {
+        let result = match self.smt_solver.solve_expression(&cond_smt_expr) {
             SmtResult::Unsatisfiable => {
                 // If we get here, the solver can prove that cond_val is always false.
                 Some(false)
@@ -1567,7 +1568,9 @@ impl<'analysis, 'compilation, 'tcx, E> BodyVisitor<'analysis, 'compilation, 'tcx
                 }
             }
             _ => None,
-        }
+        };
+        self.smt_solver.backtrack();
+        result
     }
 
     /// Copies/moves all paths rooted in source_path to corresponding paths rooted in target_path.
