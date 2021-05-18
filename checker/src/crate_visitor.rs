@@ -15,7 +15,6 @@ use crate::options::Options;
 use crate::summaries::PersistentSummaryCache;
 use crate::tag_domain::Tag;
 use crate::utils;
-use crate::z3_solver::Z3Solver;
 
 use crate::type_visitor::TypeCache;
 use log::*;
@@ -152,11 +151,9 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     fn analyze_body(&mut self, def_id: DefId) {
         let mut diagnostics: Vec<DiagnosticBuilder<'compilation>> = Vec::new();
         let mut active_calls_map: HashMap<DefId, u64> = HashMap::new();
-        let mut z3_solver = Z3Solver::default();
         let mut body_visitor = BodyVisitor::new(
             self,
             def_id,
-            &mut z3_solver,
             &mut diagnostics,
             &mut active_calls_map,
             self.type_cache.clone(),

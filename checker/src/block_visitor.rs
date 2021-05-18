@@ -16,7 +16,7 @@ use crate::known_names::KnownNames;
 use crate::options::DiagLevel;
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
-use crate::smt_solver::SmtResult;
+use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
 use crate::utils;
@@ -41,24 +41,22 @@ use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 
 /// Holds the state for the basic block visitor
-pub struct BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E> {
-    pub bv: &'block mut BodyVisitor<'analysis, 'compilation, 'tcx, E>,
+pub struct BlockVisitor<'block, 'analysis, 'compilation, 'tcx> {
+    pub bv: &'block mut BodyVisitor<'analysis, 'compilation, 'tcx>,
 }
 
-impl<'block, 'analysis, 'compilation, 'tcx, E> Debug
-    for BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E>
+impl<'block, 'analysis, 'compilation, 'tcx> Debug
+    for BlockVisitor<'block, 'analysis, 'compilation, 'tcx>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "BlockVisitor".fmt(f)
     }
 }
 
-impl<'block, 'analysis, 'compilation, 'tcx, E>
-    BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E>
-{
+impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'compilation, 'tcx> {
     pub fn new(
-        body_visitor: &'block mut BodyVisitor<'analysis, 'compilation, 'tcx, E>,
-    ) -> BlockVisitor<'block, 'analysis, 'compilation, 'tcx, E> {
+        body_visitor: &'block mut BodyVisitor<'analysis, 'compilation, 'tcx>,
+    ) -> BlockVisitor<'block, 'analysis, 'compilation, 'tcx> {
         BlockVisitor { bv: body_visitor }
     }
 
