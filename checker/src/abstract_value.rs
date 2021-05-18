@@ -2206,7 +2206,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             if let Some(left_conjunct) = left.extract_promotable_conjuncts(is_post_condition) {
                 if let Some(right_conjunct) = right.extract_promotable_conjuncts(is_post_condition)
                 {
-                    Some(left.and(right_conjunct))
+                    Some(left_conjunct.and(right_conjunct))
                 } else {
                     Some(left_conjunct)
                 }
@@ -2226,23 +2226,39 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// and which contain no references to local variables of the current function.
     #[logfn_inputs(TRACE)]
     fn extract_promotable_disjuncts(&self, is_post_condition: bool) -> Option<Rc<AbstractValue>> {
-        if let Expression::Or { left, right } = &self.expression {
-            if let Some(left_disjunct) = left.extract_promotable_disjuncts(is_post_condition) {
-                if let Some(right_conjunct) = right.extract_promotable_disjuncts(is_post_condition)
-                {
-                    Some(left.or(right_conjunct))
-                } else {
-                    Some(left_disjunct)
+        match &self.expression {
+            Expression::And { left, right } => {
+                if let Some(left_disjunct) = left.extract_promotable_disjuncts(is_post_condition) {
+                    if let Some(right_disjunct) =
+                        right.extract_promotable_disjuncts(is_post_condition)
+                    {
+                        return Some(left_disjunct.and(right_disjunct));
+                    }
                 }
-            } else {
-                right.extract_promotable_disjuncts(is_post_condition)
+                None
             }
-        } else if !self.expression.contains_local_variable(is_post_condition)
-            && self.as_bool_if_known().unwrap_or(true)
-        {
-            Some(self.clone())
-        } else {
-            None
+            Expression::Or { left, right } => {
+                if let Some(left_disjunct) = left.extract_promotable_disjuncts(is_post_condition) {
+                    if let Some(right_conjunct) =
+                        right.extract_promotable_disjuncts(is_post_condition)
+                    {
+                        Some(left_disjunct.or(right_conjunct))
+                    } else {
+                        Some(left_disjunct)
+                    }
+                } else {
+                    right.extract_promotable_disjuncts(is_post_condition)
+                }
+            }
+            _ => {
+                if !self.expression.contains_local_variable(is_post_condition)
+                    && self.as_bool_if_known().unwrap_or(true)
+                {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
         }
     }
 
