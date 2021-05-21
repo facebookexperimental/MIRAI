@@ -2193,7 +2193,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             if def_ty.const_param_did.is_some() {
                 val = val.eval(self.bv.tcx, self.type_visitor().get_param_env());
             } else {
-                let def_id = def_ty.def_id_for_type_of();
+                let mut def_id = def_ty.def_id_for_type_of();
                 let substs = self
                     .type_visitor()
                     .specialize_substs(substs, &self.type_visitor().generic_argument_map);
@@ -2204,6 +2204,19 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
                     }
                     None => {
+                        if !substs.is_empty() {
+                            let param_env = rustc_middle::ty::ParamEnv::reveal_all();
+                            trace!("devirtualize resolving def_id {:?}: {:?}", def_id, def_ty);
+                            trace!("substs {:?}", substs);
+                            if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
+                                self.bv.tcx,
+                                param_env,
+                                def_id,
+                                substs,
+                            ) {
+                                def_id = instance.def.def_id();
+                            }
+                        }
                         if self.bv.tcx.is_mir_available(def_id) {
                             self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
                         } else if self.bv.cv.known_names_cache.get(self.bv.tcx, def_id)
@@ -2227,6 +2240,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             }
                             Path::new_static(self.bv.tcx, def_id)
                         } else {
+                            trace!("static def_id with no MIR {:?}", def_id);
                             Path::new_static(self.bv.tcx, def_id)
                         }
                     }
