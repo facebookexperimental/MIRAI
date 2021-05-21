@@ -34,6 +34,16 @@ pub mod alloc {
                     Right(T),
                 }
 
+                pub mod marker {
+                    pub mod BorrowType {
+                        fn PERMITS_TRAVERSAL() -> bool {
+                            true
+                        }
+                        fn PERMITS_TRAVERSAL__alloc_collections_btree_node_marker_Owned() -> bool {
+                            false
+                        }
+                    }
+                }
                 const B: usize = 6;
                 pub const CAPACITY: usize = 2 * B - 1;
                 pub const MIN_LEN_AFTER_SPLIT: usize = B - 1;
@@ -66,6 +76,22 @@ pub mod alloc {
     pub mod raw_vec {
         pub fn capacity_overflow() {
             assume_unreachable!("capacity overflow");
+        }
+
+        pub mod implement {
+            use std::ptr::Unique;
+
+            pub struct RawVec<T> {
+                ptr: Unique<T>,
+                cap: usize,
+            }
+
+            pub fn NEW<T>() -> RawVec<T> {
+                RawVec {
+                    ptr: Unique::dangling(),
+                    cap: 0,
+                }
+            }
         }
     }
 
@@ -2635,6 +2661,24 @@ pub mod core {
             default_contract!(from_str);
             default_contract!(from_str_radix);
 
+            pub fn MAX() -> isize {
+                if cfg!(any(
+                    target_arch = "x86",
+                    tagret_arch = "mips",
+                    tagret_arch = "powerpc",
+                    tagret_arch = "arm"
+                )) {
+                    2147483647
+                } else if cfg!(any(
+                    target_arch = "x86_64",
+                    tagret_arch = "powerpc64",
+                    tagret_arch = "aarch64"
+                )) {
+                    9223372036854775807
+                } else {
+                    panic!("Unsupported architecture");
+                }
+            }
             pub fn max_value() -> isize {
                 if cfg!(any(
                     target_arch = "x86",
@@ -2649,6 +2693,24 @@ pub mod core {
                     tagret_arch = "aarch64"
                 )) {
                     9223372036854775807
+                } else {
+                    panic!("Unsupported architecture");
+                }
+            }
+            pub fn MIN() -> isize {
+                if cfg!(any(
+                    target_arch = "x86",
+                    tagret_arch = "mips",
+                    tagret_arch = "powerpc",
+                    tagret_arch = "arm"
+                )) {
+                    -2147483648
+                } else if cfg!(any(
+                    target_arch = "x86_64",
+                    tagret_arch = "powerpc64",
+                    tagret_arch = "aarch64"
+                )) {
+                    -9223372036854775808
                 } else {
                     panic!("Unsupported architecture");
                 }
@@ -2677,8 +2739,14 @@ pub mod core {
             default_contract!(from_str);
             default_contract!(from_str_radix);
 
+            pub fn MAX() -> i8 {
+                127
+            }
             pub fn max_value() -> i8 {
                 127
+            }
+            pub fn MIN() -> i8 {
+                -128
             }
             pub fn min_value() -> i8 {
                 -128
@@ -2689,8 +2757,14 @@ pub mod core {
             default_contract!(from_str);
             default_contract!(from_str_radix);
 
+            pub fn MAX() -> i16 {
+                32767
+            }
             pub fn max_value() -> i16 {
                 32767
+            }
+            pub fn MIN() -> i16 {
+                -32768
             }
             pub fn min_value() -> i16 {
                 -32768
@@ -2701,8 +2775,14 @@ pub mod core {
             default_contract!(from_str);
             default_contract!(from_str_radix);
 
+            pub fn MAX() -> i32 {
+                2147483647
+            }
             pub fn max_value() -> i32 {
                 2147483647
+            }
+            pub fn MIN() -> i32 {
+                -2147483648
             }
             pub fn min_value() -> i32 {
                 -2147483648
@@ -2713,8 +2793,14 @@ pub mod core {
             default_contract!(from_str);
             default_contract!(from_str_radix);
 
+            pub fn MAX() -> i64 {
+                9223372036854775807
+            }
             pub fn max_value() -> i64 {
                 9223372036854775807
+            }
+            pub fn MIN() -> i64 {
+                -9223372036854775808
             }
             pub fn min_value() -> i64 {
                 -9223372036854775808
@@ -2725,8 +2811,14 @@ pub mod core {
             default_contract!(from_str);
             default_contract!(from_str_radix);
 
+            pub fn MAX() -> i128 {
+                170141183460469231731687303715884105727
+            }
             pub fn max_value() -> i128 {
                 170141183460469231731687303715884105727
+            }
+            pub fn MIN() -> i128 {
+                -170141183460469231731687303715884105728
             }
             pub fn min_value() -> i128 {
                 -170141183460469231731687303715884105728
@@ -2764,6 +2856,24 @@ pub mod core {
                 }
             }
 
+            pub fn MAX() -> usize {
+                if cfg!(any(
+                    target_arch = "x86",
+                    tagret_arch = "mips",
+                    tagret_arch = "powerpc",
+                    tagret_arch = "arm"
+                )) {
+                    4294967295
+                } else if cfg!(any(
+                    target_arch = "x86_64",
+                    tagret_arch = "powerpc64",
+                    tagret_arch = "aarch64"
+                )) {
+                    18446744073709551615
+                } else {
+                    panic!("Unsupported architecture");
+                }
+            }
             pub fn max_value() -> usize {
                 if cfg!(any(
                     target_arch = "x86",
@@ -2781,6 +2891,9 @@ pub mod core {
                 } else {
                     panic!("Unsupported architecture");
                 }
+            }
+            pub fn MIN() -> usize {
+                0
             }
             pub fn min_value() -> usize {
                 0
@@ -2814,6 +2927,13 @@ pub mod core {
                     || n == 1 << 6
                     || n == 1 << 7
             }
+
+            pub fn MAX() -> u8 {
+                255
+            }
+            pub fn MIN() -> u8 {
+                0
+            }
         }
 
         pub mod implement_u16 {
@@ -2839,8 +2959,14 @@ pub mod core {
                     || n == 1 << 15
             }
 
+            pub fn MAX() -> u16 {
+                65535
+            }
             pub fn max_value() -> u16 {
                 65535
+            }
+            pub fn MIN() -> u16 {
+                0
             }
             pub fn min_value() -> u16 {
                 0
@@ -2851,8 +2977,14 @@ pub mod core {
             default_contract!(from_str);
             default_contract!(from_str_radix);
 
+            pub fn MAX() -> u32 {
+                4294967295
+            }
             pub fn max_value() -> u32 {
                 4294967295
+            }
+            pub fn MIN() -> u32 {
+                0
             }
             pub fn min_value() -> u32 {
                 0
@@ -2863,8 +2995,14 @@ pub mod core {
             default_contract!(from_str);
             default_contract!(from_str_radix);
 
+            pub fn MAX() -> u64 {
+                18446744073709551615
+            }
             pub fn max_value() -> u64 {
                 18446744073709551615
+            }
+            pub fn MIN() -> u64 {
+                0
             }
             pub fn min_value() -> u64 {
                 0
@@ -2875,8 +3013,14 @@ pub mod core {
             default_contract!(from_str);
             default_contract!(from_str_radix);
 
+            pub fn MAX() -> u128 {
+                340282366920938463463374607431768211455
+            }
             pub fn max_value() -> u128 {
                 340282366920938463463374607431768211455
+            }
+            pub fn MIN() -> u128 {
+                0
             }
             pub fn min_value() -> u128 {
                 0
@@ -3207,6 +3351,13 @@ pub mod crossbeam_epoch {
 
 pub mod hashbrown {
     pub mod raw {
+        fn DELETED() -> u8 {
+            0b1000_0000
+        }
+        fn EMPTY() -> u8 {
+            0b1111_1111
+        }
+
         pub mod implement {
             default_contract!(alloc_err);
             default_contract!(capacity_overflow);
@@ -3217,8 +3368,32 @@ pub mod hashbrown {
         }
 
         pub mod sse2 {
+            fn BITMASK_MASK() -> u16 {
+                0xffff
+            }
+            fn BITMASK_STRIDE() -> usize {
+                1
+            }
             pub mod implement {
                 default_contract!(static_empty);
+                #[cfg(any(
+                    target_arch = "x86",
+                    target_arch = "mips",
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
+                ))]
+                fn WIDTH() -> usize {
+                    4
+                }
+                #[cfg(any(
+                    target_arch = "x86_64",
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
+                ))]
+                fn WIDTH() -> usize {
+                    8
+                }
             }
         }
     }
