@@ -4052,6 +4052,21 @@ pub mod std {
                 }
             }
         }
+        pub mod poison {
+            pub mod implement {
+                use std::sync::atomic::AtomicBool;
+
+                pub struct Flag {
+                    failed: AtomicBool,
+                }
+
+                pub fn new() -> Flag {
+                    Flag {
+                        failed: AtomicBool::new(false),
+                    }
+                }
+            }
+        }
     }
 
     pub mod sys {
