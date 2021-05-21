@@ -21,20 +21,20 @@ When there are no compile errors,
 no lint errors and no test failures, you can proceed to the next step and run MIRAI. For example:
 ```
 touch src/lib.rs
-RUSTC_WRAPPER=mirai cargo build
+RUSTFLAGS="-Z always_encode_mir" RUSTC_WRAPPER=mirai cargo build
 ```
 
 The touch command (which needs to reference a real file in your project) forces Cargo to re-run rustc and to not assume
 that its cached error messages are still correct.
 
-This will likely produce a lot of warnings, which you can then fix by adding annotations declared in this
+This will likely produce some warnings, which you can then fix by adding annotations declared in this
 [crate](https://crates.io/crates/mirai-annotations). Keep re-touching and running cargo build as above until
 there are no more warnings.
 
 At this stage your code will be better documented and more readable. Perhaps you'll also have found and fixed a few bugs.
 
-You can use the environment variable `MIRAI_FLAGS` to provide command line options to MIRAI. The value is a string
-which can contain any of the following flags:
+You can use the environment variable `MIRAI_FLAGS` to get cargo to provide command line options to MIRAI. The value is a
+string which can contain any of the following flags:
 
 - `--test_only`: instructs MIRAI to analyze only test methods in your crate. You must also provide the `--tests`
   option to the `cargo build` command to include those tests actually into your build.
@@ -72,14 +72,6 @@ for instructions on how to build, run and debug MIRAI.
 ## Road map
 * Stabilize MIRAI and get rid of crashing bugs.
 * Summaries for intrinsics and standard library functions without MIR.
-* Loop discovery
-* Explicit loop invariants
-* Loop invariant inference
-* Model (ghost) variables
-* Quantifiers
-* Publish MIRAI to crates.io
-* Support linting interfaces
-* Tutorials and worked examples
 
 ## Join the MIRAI community
 <!-- * Website:
