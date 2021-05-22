@@ -12,6 +12,7 @@
 #![feature(hashmap_internals)]
 #![feature(pattern)]
 #![feature(toowned_clone_into)]
+#![feature(ptr_internals)]
 
 #[macro_use]
 extern crate mirai_annotations;

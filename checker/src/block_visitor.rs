@@ -2215,6 +2215,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 substs,
                             ) {
                                 def_id = instance.def.def_id();
+                                trace!("resolved it to {:?}", def_id);
                             }
                         }
                         if self.bv.tcx.is_mir_available(def_id) {
@@ -2240,8 +2241,22 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             }
                             Path::new_static(self.bv.tcx, def_id)
                         } else {
-                            trace!("static def_id with no MIR {:?}", def_id);
-                            Path::new_static(self.bv.tcx, def_id)
+                            let cache_key = utils::summary_key_str(self.bv.tcx, def_id);
+                            let summary = self
+                                .bv
+                                .cv
+                                .summary_cache
+                                .get_persistent_summary_for(&cache_key);
+                            if summary.is_computed {
+                                self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
+                            } else {
+                                info!("static def_id with no MIR {:?} {:?}", def_id, cache_key);
+                                info!(
+                                    "type key {:?}",
+                                    utils::argument_types_key_str(self.bv.tcx, Some(substs))
+                                );
+                                Path::new_static(self.bv.tcx, def_id)
+                            }
                         }
                     }
                 };
