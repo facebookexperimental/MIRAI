@@ -2022,7 +2022,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(FALSE);
             }
             // [(widened == val)] -> if !interval(widened).intersect(interval(val)) { false } else { unknown == val }
-            (Expression::WidenedJoin { path, .. }, _) => {
+            (Expression::WidenedJoin { path, operand }, _) => {
                 let widened_interval = self.get_cached_interval();
                 let val_interval = other.get_cached_interval();
                 if !widened_interval.is_bottom()
@@ -2030,13 +2030,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && widened_interval.intersect(&val_interval).is_bottom()
                 {
                     return Rc::new(FALSE);
-                } else {
-                    return AbstractValue::make_typed_unknown(ExpressionType::Bool, path.clone())
-                        .equals(other);
+                } else if operand.expression.contains_local_variable(true) {
+                    return AbstractValue::make_typed_unknown(
+                        other.expression.infer_type(),
+                        path.clone(),
+                    )
+                    .equals(other);
                 }
             }
             // [(val == widened)] -> if !interval(widened).intersect(interval(val)) { false } else { val == unknown }
-            (_, Expression::WidenedJoin { path, .. }) => {
+            (_, Expression::WidenedJoin { path, operand }) => {
                 let val_interval = self.get_cached_interval();
                 let widened_interval = other.get_cached_interval();
                 if !widened_interval.is_bottom()
@@ -2044,9 +2047,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && widened_interval.intersect(&val_interval).is_bottom()
                 {
                     return Rc::new(FALSE);
-                } else {
+                } else if operand.expression.contains_local_variable(true) {
                     return self.equals(AbstractValue::make_typed_unknown(
-                        ExpressionType::Bool,
+                        self.expression.infer_type(),
                         path.clone(),
                     ));
                 }
