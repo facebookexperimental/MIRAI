@@ -706,10 +706,9 @@ impl Expression {
                         .expression
                         .contains_local_variable(is_post_condition)
             }
-            Expression::Join { left, right, path } => {
+            Expression::Join { left, right, .. } => {
                 left.expression.contains_local_variable(is_post_condition)
                     || right.expression.contains_local_variable(is_post_condition)
-                    || path.contains_local_variable(is_post_condition)
             }
             Expression::Memcmp {
                 left,
@@ -753,12 +752,9 @@ impl Expression {
             Expression::UnknownTagField { path } | Expression::Variable { path, .. } => {
                 path.contains_local_variable(is_post_condition)
             }
-            Expression::WidenedJoin { operand, path } => {
-                operand
-                    .expression
-                    .contains_local_variable(is_post_condition)
-                    || path.contains_local_variable(is_post_condition)
-            }
+            Expression::WidenedJoin { operand, .. } => operand
+                .expression
+                .contains_local_variable(is_post_condition),
         }
     }
 

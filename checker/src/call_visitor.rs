@@ -2616,10 +2616,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     #[logfn_inputs(TRACE)]
     fn check_function_preconditions(&mut self, function_summary: &Summary) {
         verify!(self.block_visitor.bv.check_for_errors);
+        // A precondition can refer to the result if the precondition prevents the result expression
+        // from overflowing.
+        let result = self
+            .destination
+            .map(|(r, _)| self.block_visitor.visit_rh_place(&r));
         for precondition in &function_summary.preconditions {
             let mut refined_condition = precondition.condition.refine_parameters_and_paths(
                 &self.actual_args,
-                &None,
+                &result,
                 &self.environment_before_call,
                 &self.block_visitor.bv.current_environment,
                 self.block_visitor.bv.fresh_variable_offset,
