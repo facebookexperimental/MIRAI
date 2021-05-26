@@ -34,6 +34,10 @@ pub mod alloc {
                     Right(T),
                 }
 
+                pub mod implement_alloc_collections_btree_node_Handle_alloc_collections_btree_node_NodeRef_alloc_collections_btree_node_marker_Mut_generic_par_K_generic_par_V_alloc_collections_btree_node_marker_Leaf_alloc_collections_btree_node_marker_Edge {
+                    default_contract!(insert);
+                }
+
                 pub mod marker {
                     pub mod BorrowType {
                         fn PERMITS_TRAVERSAL() -> bool {
