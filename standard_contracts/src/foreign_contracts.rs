@@ -178,6 +178,15 @@ pub mod alloc {
     }
 }
 
+pub mod bcs {
+    pub fn MAX_SEQUENCE_LENGTH() -> usize {
+        (1 << 31) - 1
+    }
+    pub fn MAX_CONTAINER_DEPTH() -> usize {
+        500
+    }
+}
+
 pub mod core {
     pub mod alloc {
         pub mod Allocator {
@@ -246,6 +255,28 @@ pub mod core {
 
         pub mod implement_core_char_ToLowercase {
             default_contract!(next);
+        }
+
+        pub fn TAG_CONT() -> u8 {
+            0b1000_0000
+        }
+        pub fn TAG_TWO_B() -> u8 {
+            0b1100_0000
+        }
+        pub fn TAG_THREE_B() -> u8 {
+            0b1110_0000
+        }
+        pub fn TAG_FOUR_B() -> u8 {
+            0b1111_0000
+        }
+        pub fn MAX_ONE_B() -> u32 {
+            0x80
+        }
+        pub fn MAX_TWO_B() -> u32 {
+            0x800
+        }
+        pub fn MAX_THREE_B() -> u32 {
+            0x10000
         }
     }
 
@@ -3041,6 +3072,17 @@ pub mod core {
             }
         }
 
+        pub mod control_flow {
+            pub mod implement_core_ops_control_flow_ControlFlow_generic_par_B_tuple_0 {
+                pub fn BREAK() -> core::ops::ControlFlow<()> {
+                    core::ops::ControlFlow::Break(())
+                }
+                pub fn CONTINUE() -> core::ops::ControlFlow<()> {
+                    core::ops::ControlFlow::Continue(())
+                }
+            }
+        }
+
         pub mod index {
             pub mod Index {
                 pub fn index__alloc_vec_Vec_u8_usize(_self: usize, slice: &[u8]) -> &u8 {
@@ -3166,6 +3208,14 @@ pub mod core {
             }
         }
 
+        pub mod iter {
+            pub mod implement_core_slice_iter_Iter_generic_par_T {
+                pub fn MAY_HAVE_SIDE_EFFECT() -> bool {
+                    false
+                }
+            }
+        }
+
         pub mod index {
             pub fn slice_end_index_len_fail(index: usize, len: usize) {
                 panic!(
@@ -3244,6 +3294,15 @@ pub mod core {
 
         pub fn slice_error_fail(s: &str, begin: usize, end: usize) -> ! {
             panic!("byte index is not a char boundary");
+        }
+
+        pub mod validations {
+            pub fn CONT_MASK() -> u8 {
+                0b0011_1111
+            }
+            pub fn TAG_CONT_U8() -> u8 {
+                0b1000_0000
+            }
         }
     }
 
@@ -3371,6 +3430,22 @@ pub mod hashbrown {
             default_contract!(resize);
         }
 
+        pub mod inner {
+            pub mod sse2 {
+                pub mod implement {
+                    fn WIDTH() -> usize {
+                        16
+                    }
+                }
+                fn BITMASK_MASK() -> u16 {
+                    0xffff
+                }
+                fn BITMASK_STRIDE() -> usize {
+                    1
+                }
+            }
+        }
+
         pub mod sse2 {
             fn BITMASK_MASK() -> u16 {
                 0xffff
@@ -3480,6 +3555,30 @@ pub mod measureme {
         pub mod implement {
             default_contract!(nanos_since_start);
             default_contract!(record_raw_event);
+        }
+    }
+}
+
+pub mod once_cell {
+    pub mod imp {
+        pub fn INCOMPLETE() -> usize {
+            0x0
+        }
+
+        pub fn POISONED() -> usize {
+            0x1
+        }
+
+        pub fn RUNNING() -> usize {
+            0x2
+        }
+
+        pub fn COMPLETE() -> usize {
+            0x3
+        }
+
+        pub fn STATE_MASK() -> usize {
+            0x3
         }
     }
 }
@@ -3605,6 +3704,19 @@ pub mod regex_syntax {
                 default_contract!(parse_hex_digits);
                 default_contract!(parse_hex_brace);
                 default_contract!(parse_unicode_class);
+            }
+        }
+    }
+}
+
+pub mod ref_cast {
+    pub mod layout {
+        pub mod LayoutUnsized {
+            pub fn ALIGN() -> usize {
+                usize::MAX
+            }
+            pub fn SIZE() -> usize {
+                usize::MAX
             }
         }
     }
@@ -3868,6 +3980,34 @@ pub mod rustc_span {
     pub mod symbol {
         pub mod implement_rustc_span_symbol_Symbol {
             default_contract!(as_str);
+        }
+    }
+}
+
+pub mod serde {
+    pub mod de {
+        pub mod utf8 {
+            pub fn TAG_CONT() -> u8 {
+                0b1000_0000
+            }
+            pub fn TAG_TWO_B() -> u8 {
+                0b1100_0000
+            }
+            pub fn TAG_THREE_B() -> u8 {
+                0b1110_0000
+            }
+            pub fn TAG_FOUR_B() -> u8 {
+                0b1111_0000
+            }
+            pub fn MAX_ONE_B() -> u32 {
+                0x80
+            }
+            pub fn MAX_TWO_B() -> u32 {
+                0x800
+            }
+            pub fn MAX_THREE_B() -> u32 {
+                0x10000
+            }
         }
     }
 }
