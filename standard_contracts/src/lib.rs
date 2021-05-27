@@ -13,6 +13,7 @@
 #![feature(pattern)]
 #![feature(toowned_clone_into)]
 #![feature(ptr_internals)]
+#![feature(control_flow_enum)]
 
 #[macro_use]
 extern crate mirai_annotations;
