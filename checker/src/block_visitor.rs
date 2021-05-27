@@ -2248,13 +2248,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 .summary_cache
                                 .get_persistent_summary_for(&cache_key);
                             if summary.is_computed {
-                                self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
+                                let path =
+                                    self.bv.import_static(Path::new_static(self.bv.tcx, def_id));
+                                self.type_visitor_mut()
+                                    .set_path_rustc_type(path.clone(), lty);
+                                return self.bv.lookup_path_and_refine_result(path, lty);
                             } else {
-                                info!("static def_id with no MIR {:?} {:?}", def_id, cache_key);
-                                info!(
-                                    "type key {:?}",
-                                    utils::argument_types_key_str(self.bv.tcx, Some(substs))
-                                );
                                 Path::new_static(self.bv.tcx, def_id)
                             }
                         }
@@ -2275,6 +2274,15 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     val = val.eval(self.bv.tcx, self.type_visitor().get_param_env());
                     if let rustc_middle::ty::ConstKind::Unevaluated(..) = &val {
                         // val.eval did not manage to evaluate this, go with unknown.
+                        info!(
+                            "static def_id with no MIR {:?} {:?}",
+                            def_id,
+                            utils::summary_key_str(self.bv.tcx, def_id)
+                        );
+                        info!(
+                            "type key {:?}",
+                            utils::argument_types_key_str(self.bv.tcx, Some(substs))
+                        );
                         return val_at_path;
                     }
                 } else {

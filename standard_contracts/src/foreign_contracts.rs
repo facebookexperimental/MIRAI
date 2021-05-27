@@ -3081,6 +3081,14 @@ pub mod core {
                     core::ops::ControlFlow::Continue(())
                 }
             }
+            pub mod implement_core_ops_control_flow_ControlFlow_tuple_0_generic_par_C {
+                pub fn BREAK() -> core::ops::ControlFlow<()> {
+                    core::ops::ControlFlow::Break(())
+                }
+                pub fn CONTINUE() -> core::ops::ControlFlow<()> {
+                    core::ops::ControlFlow::Continue(())
+                }
+            }
         }
 
         pub mod index {
