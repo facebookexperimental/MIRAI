@@ -813,9 +813,16 @@ impl PathRefinement for Rc<Path> {
                         if let PathEnum::QualifiedPath { selector: qs, .. } = &path.value {
                             if *qs.as_ref() == PathSelector::Deref {
                                 // old(q.deref).s => old(q.deref.s)
+                                // todo: this is a brittle hack. Perhaps the best fix is to just not do this canonicalization.
+                                let var_type =
+                                    if matches!(selector.as_ref(), PathSelector::Discriminant) {
+                                        ExpressionType::Usize
+                                    } else {
+                                        ExpressionType::ThinPointer
+                                    };
                                 return Path::new_computed(
                                     AbstractValue::make_initial_parameter_value(
-                                        ExpressionType::ThinPointer,
+                                        var_type,
                                         Path::new_qualified(path.clone(), selector.clone()),
                                     ),
                                 );
