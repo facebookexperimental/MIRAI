@@ -897,6 +897,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         gen_arg_type: Ty<'tcx>,
         map: &Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     ) -> Ty<'tcx> {
+        if map.is_none() {
+            return gen_arg_type;
+        }
         match gen_arg_type.kind() {
             TyKind::Adt(def, substs) => self.tcx.mk_adt(def, self.specialize_substs(substs, map)),
             TyKind::Array(elem_ty, len) => {
@@ -948,39 +951,33 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 self.tcx.mk_fn_ptr(specialized_fn_sig)
             }
             TyKind::Dynamic(predicates, region) => {
-                let specialized_predicates =
+                let specialized_predicates = predicates.iter().map(
+                    |bound_pred: rustc_middle::ty::Binder<'_, ExistentialPredicate<'tcx>>| {
+                        bound_pred.map_bound(|pred| match pred {
+                            ExistentialPredicate::Trait(ExistentialTraitRef { def_id, substs }) => {
+                                ExistentialPredicate::Trait(ExistentialTraitRef {
+                                    def_id,
+                                    substs: self.specialize_substs(substs, map),
+                                })
+                            }
+                            ExistentialPredicate::Projection(ExistentialProjection {
+                                item_def_id,
+                                substs,
+                                ty,
+                            }) => ExistentialPredicate::Projection(ExistentialProjection {
+                                item_def_id,
+                                substs: self.specialize_substs(substs, map),
+                                ty: self.specialize_generic_argument_type(ty, map),
+                            }),
+                            ExistentialPredicate::AutoTrait(_) => pred,
+                        })
+                    },
+                );
+                self.tcx.mk_dynamic(
                     self.tcx
-                        .mk_poly_existential_predicates(predicates.iter().map(
-                            |pred: rustc_middle::ty::Binder<'_, ExistentialPredicate<'tcx>>| {
-                                rustc_middle::ty::Binder::bind(
-                                    match pred.skip_binder() {
-                                        ExistentialPredicate::Trait(ExistentialTraitRef {
-                                            def_id,
-                                            substs,
-                                        }) => ExistentialPredicate::Trait(ExistentialTraitRef {
-                                            def_id,
-                                            substs: self.specialize_substs(substs, map),
-                                        }),
-                                        ExistentialPredicate::Projection(
-                                            ExistentialProjection {
-                                                item_def_id,
-                                                substs,
-                                                ty,
-                                            },
-                                        ) => ExistentialPredicate::Projection(
-                                            ExistentialProjection {
-                                                item_def_id,
-                                                substs: self.specialize_substs(substs, map),
-                                                ty: self.specialize_generic_argument_type(ty, map),
-                                            },
-                                        ),
-                                        ExistentialPredicate::AutoTrait(_) => pred.skip_binder(),
-                                    },
-                                    self.tcx,
-                                )
-                            },
-                        ));
-                self.tcx.mk_dynamic(specialized_predicates, region)
+                        .mk_poly_existential_predicates(specialized_predicates),
+                    region,
+                )
             }
             TyKind::Closure(def_id, substs) => self
                 .tcx

@@ -163,7 +163,7 @@ impl MiraiCallbacks {
             || file_name.contains("consensus/src") // Sorts Int and <null> are incompatible 
             || file_name.contains("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
             || file_name.contains("crypto/crypto/src") // too slow
-            || file_name.contains("crypto/crypto-derive/src") // too much parsing
+            || file_name.contains("crypto/crypto-derive/src") // too slow
             || file_name.contains("diem-node/src") // Sorts Int and <null> are incompatible
             || file_name.contains("execution/db-bootstrapper/src") // crash
             || file_name.contains("execution/execution-correctness/src") // Sorts Int and <null> are incompatible
