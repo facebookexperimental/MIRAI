@@ -897,6 +897,48 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         gen_arg_type: Ty<'tcx>,
         map: &Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     ) -> Ty<'tcx> {
+        // The projection of an associated type. For example,
+        // `<T as Trait<..>>::N`.
+        if let TyKind::Projection(projection) = gen_arg_type.kind() {
+            let specialized_substs = self.specialize_substs(projection.substs, map);
+            let item_def_id = projection.item_def_id;
+            return if utils::are_concrete(specialized_substs) {
+                let param_env = self
+                    .tcx
+                    .param_env(self.tcx.associated_item(item_def_id).container.id());
+                if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
+                    self.tcx,
+                    param_env,
+                    item_def_id,
+                    specialized_substs,
+                ) {
+                    let item_def_id = instance.def.def_id();
+                    let item_type = self.tcx.type_of(item_def_id);
+                    let map = self.get_generic_arguments_map(item_def_id, instance.substs, &[]);
+                    if item_type == gen_arg_type && map.is_none() {
+                        // Can happen if the projection just adds a life time
+                        item_type
+                    } else {
+                        self.specialize_generic_argument_type(item_type, &map)
+                    }
+                } else {
+                    if specialized_substs.len() == 1
+                        && self.tcx.parent(item_def_id)
+                            == self.tcx.lang_items().discriminant_kind_trait()
+                    {
+                        let enum_arg = specialized_substs[0];
+                        if let GenericArgKind::Type(enum_ty) = enum_arg.unpack() {
+                            return enum_ty.discriminant_ty(self.tcx);
+                        }
+                    }
+                    debug!("could not resolve an associated type with concrete type arguments");
+                    gen_arg_type
+                }
+            } else {
+                self.tcx
+                    .mk_projection(projection.item_def_id, specialized_substs)
+            };
+        }
         if map.is_none() {
             return gen_arg_type;
         }
@@ -1002,48 +1044,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     .iter()
                     .map(|gen_arg| gen_arg.expect_ty()),
             ),
-            // The projection of an associated type. For example,
-            // `<T as Trait<..>>::N`.
-            TyKind::Projection(projection) => {
-                let specialized_substs = self.specialize_substs(projection.substs, map);
-                let item_def_id = projection.item_def_id;
-                if utils::are_concrete(specialized_substs) {
-                    let param_env = self
-                        .tcx
-                        .param_env(self.tcx.associated_item(item_def_id).container.id());
-                    if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
-                        self.tcx,
-                        param_env,
-                        item_def_id,
-                        specialized_substs,
-                    ) {
-                        let item_def_id = instance.def.def_id();
-                        let item_type = self.tcx.type_of(item_def_id);
-                        let map = self.get_generic_arguments_map(item_def_id, instance.substs, &[]);
-                        if item_type == gen_arg_type && map.is_none() {
-                            // Can happen if the projection just adds a life time
-                            item_type
-                        } else {
-                            self.specialize_generic_argument_type(item_type, &map)
-                        }
-                    } else {
-                        if specialized_substs.len() == 1
-                            && self.tcx.parent(item_def_id)
-                                == self.tcx.lang_items().discriminant_kind_trait()
-                        {
-                            let enum_arg = specialized_substs[0];
-                            if let GenericArgKind::Type(enum_ty) = enum_arg.unpack() {
-                                return enum_ty.discriminant_ty(self.tcx);
-                            }
-                        }
-                        debug!("could not resolve an associated type with concrete type arguments");
-                        gen_arg_type
-                    }
-                } else {
-                    self.tcx
-                        .mk_projection(projection.item_def_id, specialized_substs)
-                }
-            }
             TyKind::Opaque(def_id, substs) => self
                 .tcx
                 .mk_opaque(*def_id, self.specialize_substs(substs, map)),
