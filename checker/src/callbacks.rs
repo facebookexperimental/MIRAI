@@ -146,22 +146,17 @@ impl MiraiCallbacks {
             || file_name.contains("common/crash-handler/src") // rustc crash
             || file_name.contains("client/faucet/src") // too slow
             || file_name.contains("client/swiss-knife/src") // too slow 
-            || file_name.contains("common/debug-interface/src") // !def.is_enum()
-            || file_name.contains("common/logger/src") // !def.is_enum()
-            || file_name.contains("common/logger/derive/src") // meta programming
             || file_name.contains("common/metrics/src") // too slow
-            || file_name.contains("common/num-variants/src") // meta programming
+            || file_name.contains("common/num-variants/src") // too slow (meta programming)
             || file_name.contains("common/rate-limiter/src") // too slow
             || file_name.contains("common/time-service/src") // collections of call backs
-            || file_name.contains("common/trace/src") // Sorts Int and <null> are incompatible
             || file_name.contains("config/src") // Sorts Int and <null> are incompatible
             || file_name.contains("config/seed-peer-generator/src") //  Sorts Int and <null> are incompatible
             || file_name.contains("config/management/src") // too slow
             || file_name.contains("config/management/genesis/src") // too slow    
             || file_name.contains("config/management/network-address-encryption/src") // Sorts Int and <null> are incompatible
             || file_name.contains("config/management/operational/src") // too slow
-            || file_name.contains("consensus/src") // Sorts Int and <null> are incompatible 
-            || file_name.contains("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
+            || file_name.contains("consensus/safety-rules/src") // too slow
             || file_name.contains("crypto/crypto/src") // too slow
             || file_name.contains("crypto/crypto-derive/src") // too slow
             || file_name.contains("diem-node/src") // Sorts Int and <null> are incompatible
@@ -170,9 +165,8 @@ impl MiraiCallbacks {
             || file_name.contains("json-rpc/src") // stack overflow
             || file_name.contains("language/bytecode-verifier/src") // too slow
             || file_name.contains("language/diem-tools/diem-events-fetcher/src") // resolve error
-            || file_name.contains("language/compiler/src") // Sorts Int and Bool are incompatible
-            || file_name.contains("language/compiler/ir-to-bytecode/src") // Sorts Int and Bool are incompatible
-            || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // Sorts Int and Bool are incompatible
+            || file_name.contains("language/compiler/src") // too slow
+            || file_name.contains("language/compiler/ir-to-bytecode/src") // too slow
             || file_name.contains("consensus/src") // too slow
             || file_name.contains("language/diem-tools/transaction-replay/src")  // Not a type   
             || file_name.contains("language/diem-tools/writeset-transaction-generator/src") // stack overflow
@@ -191,7 +185,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-prover/interpreter/src") // resolve error
             || file_name.contains("move-prover/errmapgen/src") // too slow
             || file_name.contains("language/move-prover/lab/src") // too slow
-            || file_name.contains("language/move-stdlib/src") // Sorts Bool and Int are incompatible
+            || file_name.contains("language/move-stdlib/src") // too slow
             || file_name.contains("language/tools/disassembler/src") // crash
             || file_name.contains("language/tools/genesis-viewer/src") // crash
             || file_name.contains("language/tools/move-bytecode-viewer/src") // too slow
@@ -209,7 +203,7 @@ impl MiraiCallbacks {
             || file_name.contains("network/netcore/src") // crash
             || file_name.contains("network/simple-onchain-discovery/src") // Sorts Int and <null> are incompatible   
             || file_name.contains("sdk/src") // too slow
-            || file_name.contains("sdk/client/src") // Sorts <null> and Int are incompatible
+            || file_name.contains("sdk/client/src") // too slow
             || file_name.contains("sdk/transaction-builder/src") // crash
             || file_name.contains("secure/key-manager/src") // too slow   
             || file_name.contains("secure/storage/github/src") // !def.is_enum()

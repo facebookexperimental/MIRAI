@@ -4330,6 +4330,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 default
             };
         }
+        if self.expression == Expression::Top {
+            // No type or path information for the discriminator means we know nothing.
+            return AbstractValue::make_typed_unknown(
+                default.expression.infer_type(),
+                Path::new_computed(Rc::new(TOP)),
+            );
+        }
 
         if let Expression::Switch {
             discriminator,
