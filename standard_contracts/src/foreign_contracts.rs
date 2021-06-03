@@ -110,6 +110,16 @@ pub mod alloc {
     }
 
     pub mod string {
+        pub mod implement {
+            use std::borrow::Cow;
+
+            pub fn from_utf8_lossy() -> Cow<'static, str> {
+                result!()
+            }
+        }
+        pub mod implement_alloc_string_Drain {
+            default_contract!(drop);
+        }
         pub mod implement_alloc_string_String {
             pub fn clone<T: Copy>(_self: T) -> T {
                 //todo: provide mirai helper that does a deep clone
@@ -169,6 +179,11 @@ pub mod alloc {
             pub mod remove {
                 fn assert_failed(index: usize, len: usize) -> ! {
                     panic!("removal index (is {}) should be < len (is {})", index, len);
+                }
+            }
+            pub mod split_off {
+                fn assert_failed(at: usize, len: usize) -> ! {
+                    panic!("`at` split index (is {}) should be <= len (is {})", at, len);
                 }
             }
         }

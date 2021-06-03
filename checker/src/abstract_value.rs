@@ -698,6 +698,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return self.clone();
             }
             match &self.expression {
+                Expression::And { left: x, right: yz } => {
+                    if let Expression::Or { left: y, right: z } = &yz.expression {
+                        // [(x && (y || z)) && z] -> x && z
+                        // [(x && (y || z)) && y] -> x && y
+                        if y.eq(&other) || z.eq(&other) {
+                            return x.and(other);
+                        }
+                    }
+                }
+
                 Expression::LogicalNot { operand } if *operand == other => {
                     // [!x && x] -> false
                     return Rc::new(FALSE);
@@ -1697,6 +1707,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 "conditional with mismatched types  {:?}: {:?}     {:?}: {:?}",
                 consequent_type, consequent, alternate_type, alternate
             );
+            return Rc::new(TOP);
         }
         let mut condition = self.clone();
         if expression_size > k_limits::MAX_EXPRESSION_SIZE {
@@ -1727,6 +1738,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
+        }
+        if consequent.expression == Expression::Top {
+            return consequent;
+        }
+        if alternate.expression == Expression::Top {
+            return alternate;
         }
         AbstractValue::make_from(
             ConditionalExpression {
@@ -2707,11 +2724,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return x.join(y.join(other, path), path);
             }
             // [x join (if c { x } else { y })] -> x join y
+            // [x join (if c { y } else { x })] -> x join y
             (
                 _,
                 Expression::ConditionalExpression {
                     consequent: x,
                     alternate: y,
+                    ..
+                },
+            )
+            | (
+                _,
+                Expression::ConditionalExpression {
+                    consequent: y,
+                    alternate: x,
                     ..
                 },
             ) if self.eq(x) => {
@@ -3806,7 +3832,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         path.clone(),
                     ));
                 }
-
                 // [(x && !y) || !(x || y)] -> !y
                 // [(x && !y) || !(y || x)] -> !y
                 (Expression::And { left: x1, right }, Expression::LogicalNot { operand })
@@ -3823,6 +3848,29 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     {
                         if (x1.eq(x2) && y1.eq(y2)) || (x1.eq(y2) && y1.eq(x2)) {
                             return right.clone();
+                        }
+                    }
+                }
+                // [(!x && y) || !(x || y)] -> !x
+                (
+                    Expression::And {
+                        left: nx,
+                        right: y1,
+                    },
+                    Expression::LogicalNot { operand },
+                ) if matches!(nx.expression, Expression::LogicalNot { .. })
+                    && matches!(operand.expression, Expression::Or { .. }) =>
+                {
+                    if let (
+                        Expression::LogicalNot { operand: x1 },
+                        Expression::Or {
+                            left: x2,
+                            right: y2,
+                        },
+                    ) = (&nx.expression, &operand.expression)
+                    {
+                        if x1.eq(x2) && y1.eq(y2) {
+                            return nx.clone();
                         }
                     }
                 }
