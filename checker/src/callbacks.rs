@@ -142,136 +142,79 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(&self, file_name: &str) -> bool {
-        if file_name.contains("client/assets-proof/src") // Sorts Int and <null> are incompatible
-            || file_name.contains("common/crash-handler/src") // rustc crash
-            || file_name.contains("client/faucet/src") // too slow
-            || file_name.contains("client/swiss-knife/src") // too slow 
-            || file_name.contains("common/metrics/src") // too slow
-            || file_name.contains("common/num-variants/src") // too slow (meta programming)
-            || file_name.contains("common/rate-limiter/src") // too slow
-            || file_name.contains("common/time-service/src") // collections of call backs
-            || file_name.contains("config/src") // Sorts Int and <null> are incompatible
-            || file_name.contains("config/seed-peer-generator/src") //  Sorts Int and <null> are incompatible
-            || file_name.contains("config/management/src") // too slow
-            || file_name.contains("config/management/genesis/src") // too slow    
-            || file_name.contains("config/management/network-address-encryption/src") // Sorts Int and <null> are incompatible
-            || file_name.contains("config/management/operational/src") // too slow
-            || file_name.contains("consensus/safety-rules/src") // too slow
-            || file_name.contains("crypto/crypto/src") // too slow
-            || file_name.contains("crypto/crypto-derive/src") // too slow
-            || file_name.contains("diem-node/src") // Sorts Int and <null> are incompatible
-            || file_name.contains("execution/db-bootstrapper/src") // crash
-            || file_name.contains("execution/execution-correctness/src") // Sorts Int and <null> are incompatible
-            || file_name.contains("json-rpc/src") // stack overflow
-            || file_name.contains("language/bytecode-verifier/src") // too slow
-            || file_name.contains("language/diem-tools/diem-events-fetcher/src") // resolve error
-            || file_name.contains("language/compiler/src") // too slow
-            || file_name.contains("language/compiler/ir-to-bytecode/src") // too slow
-            || file_name.contains("consensus/src") // too slow
-            || file_name.contains("language/diem-tools/transaction-replay/src")  // Not a type   
-            || file_name.contains("language/diem-tools/writeset-transaction-generator/src") // stack overflow
-            || file_name.contains("language/diem-framework/src") // too slow 
-            || file_name.contains("language/diem-tools/diem-validator-interface") // Sorts Int and <null> are incompatible
-            || file_name.contains("language/diem-vm/src") // too slow
-            || file_name.contains("language/move-lang/src") // too slow
-            || file_name.contains("language/move-model/src") // too slow
-            || file_name.contains("language/move-prover/src") // too slow 
-            || file_name.contains("language/move-prover/abigen/src") // too slow
-            || file_name.contains("language/move-prover/boogie-backend-exp/src") // too slow
-            || file_name.contains("language/move-prover/boogie-backend/src") // index out of bounds
-            || file_name.contains("language/move-prover/bytecode/src") // too slow 
-            || file_name.contains("language/move-prover/docgen/src") // too slow
-            || file_name.contains("language/move-prover/interpreter/src") // resolve error
-            || file_name.contains("move-prover/errmapgen/src") // too slow
-            || file_name.contains("language/move-prover/lab/src") // too slow
-            || file_name.contains("language/move-stdlib/src") // too slow
-            || file_name.contains("language/tools/disassembler/src") // crash
-            || file_name.contains("language/tools/genesis-viewer/src") // crash
-            || file_name.contains("language/tools/move-bytecode-viewer/src") // too slow
-            || file_name.contains("language/tools/move-cli/src") // too slow
-            || file_name.contains("language/tools/move-coverage/src") // too slow
-            || file_name.contains("language/tools/move-explain/src") // crash
-            || file_name.contains("language/tools/move-unit-test/src") // crash
-            || file_name.contains("language/tools/resource-viewer/src") // too slow
-            || file_name.contains("language/tools/vm-genesis/src") // too slow
-            || file_name.contains("language/transaction-builder/generator/src") // too slow
-            || file_name.contains("language/vm/src") // too slow
-            || file_name.contains("mempool/src") //  !def.is_enum()
-            || file_name.contains("network/src") // too slow
-            || file_name.contains("network/builder/src") // Sorts Int and <null> are incompatible
-            || file_name.contains("network/netcore/src") // crash
-            || file_name.contains("network/simple-onchain-discovery/src") // Sorts Int and <null> are incompatible   
-            || file_name.contains("sdk/src") // too slow
-            || file_name.contains("sdk/client/src") // too slow
-            || file_name.contains("sdk/transaction-builder/src") // crash
-            || file_name.contains("secure/key-manager/src") // too slow   
-            || file_name.contains("secure/storage/github/src") // !def.is_enum()
-            || file_name.contains("secure/net/src") // too slow
-            || file_name.contains("secure/storage/vault/src") // Sorts Int and <null> are incompatible
-            || file_name.contains("state-sync/src") // Sorts <null> and Int are incompatible
-            || file_name.contains("secure/storage/src") // !def.is_enum()
-            || file_name.contains("storage/backup/backup-cli/src") // unreachable code
-            || file_name.contains("storage/diemdb/src") // stack overflow
-            || file_name.contains("storage/diemsum/src") // crash
-            || file_name.contains("storage/inspector/src") // crash
-            || file_name.contains("storage/schemadb/src") // too slow
-            || file_name.contains("storage/storage-client/src") // too slow
-            || file_name.contains("types/src") // too slow
-            || file_name.contains("vm-validator/src")
+        // Exclude crates that contain code that causes MIRAI to crash
+        if file_name.contains("language/diem-tools/diem-events-fetcher/src") // could not fully normalize
+        || file_name.contains("language/diem-tools/transaction-replay/src")
+        // Not a type
         {
             return true;
         }
 
-        if self.options.diag_level == DiagLevel::Paranoid {
-            return file_name.contains("client/faucet/src") // stack overflow
-                    || file_name.contains("common/debug-interface/src") // stack overflow 
-                    || file_name.contains("common/logger/src") // operator is applied to arguments of the wrong sort
-                    || file_name.contains("common/logger/derive/src") // too slow
-                    || file_name.contains("common/metrics/src") // not implemented: replacing embedded path root     
-                    || file_name.contains("common/num-variants/src") // too slow    
-                    || file_name.contains("common/proptest-helpers/src") // checker/src/body_visitor.rs:1196:38 
-                    || file_name.contains("common/rate-limiter/src") // too slow
-                    || file_name.contains("common/trace/src") // stack overflow
-                    || file_name.contains("config/src") // stack overflow
-                    || file_name.contains("config/seed-peer-generator/src") // stack overflow    
-                    || file_name.contains("config/management/network-address-encryption/src") // stack overflow    
-                    || file_name.contains("consensus/src") // too slow    
-                    || file_name.contains("consensus/safety-rules/src") // too slow    
-                    || file_name.contains("crypto/crypto-derive/src") // too slow 
-                    || file_name.contains("diem-node/src") // stack overflow    
-                    || file_name.contains("execution/execution-correctness/src") // stack overflow
-                    || file_name.contains("language/compiler/src") // Sorts Int and Bool are incompatible
-                    || file_name.contains("language/compiler/ir-to-bytecode/src") // Sorts Int and Bool are incompatible
-                    || file_name.contains("language/compiler/ir-to-bytecode/syntax/src") // Sorts Bool and Int are incompatible
-                    || file_name.contains("language/diem-vm/src") // Not a type     
-                    || file_name.contains("language/diem-framework/src") // too slow    
-                    || file_name.contains("language/diem-tools/diem-events-fetcher/src") // stack overflow
-                    || file_name.contains("language/diem-tools/writeset-transaction-generator/src") // stack overflow
-                    || file_name.contains("language/diem-tools/transaction-replay/src")  // Not a type   
-                    || file_name.contains("language/move-prover/src") // too slow    
-                    || file_name.contains("language/move-prover/boogie-backend/src") // stack overflow    
-                    || file_name.contains("language/move-prover/docgen/src") // too slow
-                    || file_name.contains("language/tools/genesis-viewer/src") // too slow    
-                    || file_name.contains("language/tools/move-bytecode-viewer/src") // too slow    
-                    || file_name.contains("language/tools/move-cli/src") // too slow    
-                    || file_name.contains("language/tools/vm-genesis/src") // too slow    
-                    || file_name.contains("language/transaction-builder/generator/src") // not implemented: replacing embedded path root      
-                    || file_name.contains("mempool/src") // too slow
-                    || file_name.contains("network/src") // too slow
-                    || file_name.contains("network/builder/src") // stack overflow     
-                    || file_name.contains("network/simple-onchain-discovery/src") // stack overflow    
-                    || file_name.contains("sdk/client/src") // Sorts <null> and Int are incompatible    
-                    || file_name.contains("secure/net/src") // too slow
-                    || file_name.contains("secure/key-manager/src") // stack overflow   
-                    || file_name.contains("secure/storage/src") // stack overflow    
-                    || file_name.contains("secure/storage/github/src") // thread 'rustc' has overflowed its stack
-                    || file_name.contains("secure/storage/vault/src") // stack overflow
-                    || file_name.contains("state-sync/src") // too slow    
-                    || file_name.contains("storage/backup/backup-cli/src") // stack overflow    
-                    || file_name.contains("storage/backup/backup-service/src") // stack overflow    
-                    || file_name.contains("storage/diemdb/src") // stack overflow    
-                    || file_name.contains("storage/schemadb/src") // stack overflow 
-                    || file_name.contains("storage/storage-client/src"); // too slow
+        // Exclude crates that currently slow down testing too much
+        if self.options.diag_level == DiagLevel::Default
+            && (file_name.contains("client/faucet/src")
+                || file_name.contains("client/swiss-knife/src")
+                || file_name.contains("common/metrics/src")
+                || file_name.contains("common/num-variants/src")
+                || file_name.contains("common/rate-limiter/src")
+                || file_name.contains("config/src")
+                || file_name.contains("config/management/src")
+                || file_name.contains("config/management/genesis/src")
+                || file_name.contains("config/management/network-address-encryption/src")
+                || file_name.contains("config/management/operational/src")
+                || file_name.contains("config/seed-peer-generator/src")
+                || file_name.contains("consensus/safety-rules/src")
+                || file_name.contains("consensus/src")
+                || file_name.contains("crypto/crypto/src")
+                || file_name.contains("crypto/crypto-derive/src")
+                || file_name.contains("diem-node/src")
+                || file_name.contains("execution/execution-correctness/src")
+                || file_name.contains("json-rpc/src")
+                || file_name.contains("language/bytecode-verifier/src")
+                || file_name.contains("language/compiler/src")
+                || file_name.contains("language/compiler/ir-to-bytecode/src")
+                || file_name.contains("language/diem-framework/src")
+                || file_name.contains("language/diem-tools/diem-validator-interface")
+                || file_name.contains("language/diem-tools/writeset-transaction-generator/src")
+                || file_name.contains("language/diem-vm/src")
+                || file_name.contains("language/move-lang/src")
+                || file_name.contains("language/move-model/src")
+                || file_name.contains("language/move-prover/src")
+                || file_name.contains("language/move-prover/abigen/src")
+                || file_name.contains("language/move-prover/boogie-backend/src")
+                || file_name.contains("language/move-prover/boogie-backend-exp/src")
+                || file_name.contains("language/move-prover/bytecode/src")
+                || file_name.contains("language/move-prover/docgen/src")
+                || file_name.contains("language/move-prover/interpreter/src")
+                || file_name.contains("move-prover/errmapgen/src")
+                || file_name.contains("language/move-prover/lab/src")
+                || file_name.contains("language/move-stdlib/src")
+                || file_name.contains("language/tools/move-bytecode-viewer/src")
+                || file_name.contains("language/tools/move-cli/src")
+                || file_name.contains("language/tools/move-coverage/src")
+                || file_name.contains("language/tools/move-unit-test/src")
+                || file_name.contains("language/tools/resource-viewer/src")
+                || file_name.contains("language/tools/vm-genesis/src")
+                || file_name.contains("language/transaction-builder/generator/src")
+                || file_name.contains("mempool/src")
+                || file_name.contains("network/src")
+                || file_name.contains("network/builder/src")
+                || file_name.contains("network/simple-onchain-discovery/src")
+                || file_name.contains("sdk/src")
+                || file_name.contains("sdk/client/src")
+                || file_name.contains("secure/key-manager/src")
+                || file_name.contains("secure/net/src")
+                || file_name.contains("secure/storage/src")
+                || file_name.contains("secure/storage/vault/src")
+                || file_name.contains("state-sync/src")
+                || file_name.contains("storage/backup/backup-cli/src")
+                || file_name.contains("storage/diemdb/src")
+                || file_name.contains("storage/schemadb/src")
+                || file_name.contains("storage/storage-client/src")
+                || file_name.contains("types/src")
+                || file_name.contains("vm-validator/src"))
+        {
+            return true;
         }
         false
     }
