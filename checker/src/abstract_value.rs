@@ -2085,23 +2085,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     ..
                 },
             ) if !v1.is_top() && !v2.is_top() => {
-                let v2_eq_self = v2.equals(self.clone()).as_bool_if_known().unwrap_or(false);
+                let self_eq_v2 = self.equals(v2.clone()).as_bool_if_known().unwrap_or(false);
                 if v1
                     .not_equals(self.clone())
                     .as_bool_if_known()
                     .unwrap_or(false)
-                    && v2_eq_self
+                    && self_eq_v2
                 {
                     return c.logical_not();
                 }
-                if v1.equals(self.clone()).as_bool_if_known().unwrap_or(false) {
-                    if v2
-                        .not_equals(self.clone())
+                if self.equals(v1.clone()).as_bool_if_known().unwrap_or(false) {
+                    if self
+                        .not_equals(v2.clone())
                         .as_bool_if_known()
                         .unwrap_or(false)
                     {
                         return c.clone();
-                    } else if v2_eq_self {
+                    } else if self_eq_v2 {
                         return Rc::new(TRUE);
                     }
                 }
@@ -2110,7 +2110,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if x == y && !x.infer_type().is_floating_point_number() {
                     return Rc::new(TRUE);
                 }
-                return c.conditional_expression(self.equals(v1.clone()), self.equals(v2.clone()));
+                if v1.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10
+                    && v2.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10
+                {
+                    return c
+                        .conditional_expression(self.equals(v1.clone()), self.equals(v2.clone()));
+                }
             }
             // [0 == !x] -> x when x is Boolean. Canonicalize it to the latter.
             (

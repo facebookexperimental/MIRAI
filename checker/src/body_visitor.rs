@@ -220,7 +220,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 &mut fixed_point_visitor.terminator_state,
             );
             let entry = self.active_calls_map.entry(self.def_id).or_insert(0);
-            if *entry == 1 {
+            if *entry <= 1 {
                 self.active_calls_map.remove(&self.def_id);
             } else {
                 *entry -= 1;
