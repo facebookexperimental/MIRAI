@@ -92,7 +92,7 @@ pub mod alloc {
 
             pub fn NEW<T>() -> RawVec<T> {
                 RawVec {
-                    ptr: Unique::dangling(),
+                    ptr: unsafe { Unique::new_unchecked(4 as *mut T) },
                     cap: 0,
                 }
             }
