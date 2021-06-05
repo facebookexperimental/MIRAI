@@ -836,14 +836,10 @@ impl PathRefinement for Rc<Path> {
                             if *selector.as_ref() == PathSelector::Deref {
                                 return p.clone();
                             }
-                            // offset(&p, 0) becomes &p in a qualifier
-                            let p_ref = Path::new_computed(left.clone());
-                            return Path::new_qualified(p_ref, selector.clone());
                         }
-                        return Path::new_qualified(
-                            Path::get_as_path(value.clone()),
-                            selector.clone(),
-                        );
+                        // offset(p, 0) becomes p in a qualifier
+                        let p = Path::get_as_path(value.clone());
+                        return Path::new_qualified(p, selector.clone());
                     }
                     // *&p is equivalent to p and (&p).q is equivalent to p.q, etc.
                     Expression::Reference(p) => {
