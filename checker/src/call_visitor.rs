@@ -181,6 +181,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// computing it if necessary.
     #[logfn_inputs(TRACE)]
     fn try_to_devirtualize(&mut self) {
+        if self
+            .block_visitor
+            .bv
+            .tcx
+            .is_mir_available(self.callee_def_id)
+            && !utils::is_trait_method(self.callee_def_id, self.block_visitor.bv.tcx)
+        {
+            return;
+        }
         if let Some(gen_args) = self.callee_generic_arguments {
             if !utils::are_concrete(gen_args) {
                 trace!("non concrete generic args {:?}", gen_args);

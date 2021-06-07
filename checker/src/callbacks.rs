@@ -143,8 +143,7 @@ impl MiraiCallbacks {
 
     fn is_excluded(&self, file_name: &str) -> bool {
         // Exclude crates that contain code that causes MIRAI to crash
-        if file_name.contains("language/diem-tools/diem-events-fetcher/src") // could not fully normalize
-        || file_name.contains("language/diem-tools/transaction-replay/src")
+        if file_name.contains("language/diem-tools/transaction-replay/src")
         // Not a type
         {
             return true;
@@ -152,7 +151,8 @@ impl MiraiCallbacks {
 
         // Exclude crates that currently slow down testing too much
         if self.options.diag_level == DiagLevel::Default
-            && (file_name.contains("client/faucet/src")
+            && (file_name.contains("client/assets-proof/src")
+                || file_name.contains("client/faucet/src")
                 || file_name.contains("client/swiss-knife/src")
                 || file_name.contains("common/metrics/src")
                 || file_name.contains("common/num-variants/src")
@@ -193,6 +193,7 @@ impl MiraiCallbacks {
                 || file_name.contains("language/tools/move-cli/src")
                 || file_name.contains("language/tools/move-coverage/src")
                 || file_name.contains("language/tools/move-unit-test/src")
+                || file_name.contains("language/tools/read-write-set/src")
                 || file_name.contains("language/tools/resource-viewer/src")
                 || file_name.contains("language/tools/vm-genesis/src")
                 || file_name.contains("language/transaction-builder/generator/src")
