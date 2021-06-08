@@ -37,4 +37,4 @@ jobs:
       - name: Upload coverage data to codecov.io
         uses: codecov/codecov-action@v1
         with:
-          path-to-lcov: "lcov.info"
+          files: "lcov.info"
