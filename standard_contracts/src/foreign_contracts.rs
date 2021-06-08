@@ -2306,12 +2306,13 @@ pub mod core {
             // pub fn pref_align_of<T>() -> usize {
             //     result!()
             // }
-            // pub fn type_name<T: ?Sized>() -> &'static str {
-            //     result!()
-            // }
-            // pub fn type_id<T: ?Sized + 'static>() -> u64 {
-            //     result!()
-            // }
+            //todo: implement these inside MIRAI
+            pub fn type_name<T: ?Sized>() -> &'static str {
+                result!()
+            }
+            pub fn type_id<T: ?Sized + 'static>() -> u64 {
+                result!()
+            }
             pub fn panic_if_uninhabited<T>() {
                 // Compiler bootstrapping support. Nothing to do here when analyzing.
             }

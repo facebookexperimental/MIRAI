@@ -205,6 +205,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
         let blocks = self.block_indices.clone();
         let old_state = self.out_state.clone();
         for bb in blocks {
+            check_for_early_break!(self.bv);
             if !self.already_visited.contains(&bb)
                 && self.dominators.is_dominated_by(bb, loop_anchor)
             {

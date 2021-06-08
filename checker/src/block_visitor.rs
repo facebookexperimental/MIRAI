@@ -91,6 +91,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             terminator_state.insert(bb, self.bv.current_environment.clone());
         } else {
+            check_for_early_return!(self.bv);
             location.statement_index = terminator_index;
         }
 
