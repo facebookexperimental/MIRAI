@@ -186,6 +186,14 @@ pub mod alloc {
                     panic!("`at` split index (is {}) should be <= len (is {})", at, len);
                 }
             }
+            pub mod swap_remove {
+                fn assert_failed(index: usize, len: usize) -> ! {
+                    panic!(
+                        "swap_remove index (is {}) should be < len (is {})",
+                        index, len
+                    );
+                }
+            }
         }
         pub mod SpecExtend {
             pub fn spec_extend() {}

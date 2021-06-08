@@ -86,6 +86,16 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
     }
 }
 
+/// Returns true if the function identified by def_id is defined as part of a trait.
+#[logfn(TRACE)]
+pub fn is_trait_method(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
+    if let Some(parent) = tcx.parent(def_id) {
+        tcx.is_trait(parent)
+    } else {
+        false
+    }
+}
+
 /// Returns a string that is a valid identifier, made up from the concatenation of
 /// the string representations of the given list of generic argument types.
 #[logfn(TRACE)]
