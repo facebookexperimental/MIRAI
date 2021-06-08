@@ -770,6 +770,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     ) {
         self.check_for_errors = true;
         for bb in block_indices.iter() {
+            check_for_early_break!(self);
             let t_state = (&terminator_state[bb]).clone();
             self.current_environment = t_state;
             self.visit_basic_block(*bb, terminator_state);
