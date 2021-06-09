@@ -741,9 +741,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
                 // [x && c == y] -> c == y if refining x with c == y produces true
                 Expression::Equals { left: c, .. }
-                    if c.is_compile_time_constant()
+                    if self.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10
+                        && c.is_compile_time_constant()
                         && self
-                            .refine_with(&other, 0)
+                            .refine_with(&other, 35)
                             .as_bool_if_known()
                             .unwrap_or(false) =>
                 {
@@ -1101,8 +1102,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // Refine other expression, except if it is known, or it is an assumed condition
             // (the latter having an expression size zero so that they get retained when
             // conjuncts are pruned away because of an expression overflow).
-            let other = if self_bool.is_none() && other.expression_size > 0 {
-                other.refine_with(self, 7)
+            let other = if self_bool.is_none()
+                && other.expression_size > 0
+                && other.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10
+            {
+                other.refine_with(self, 35)
             } else {
                 other
             };
@@ -1538,10 +1542,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
         if !matches!(self.expression, Expression::Or { .. }) {
             if consequent.expression_size <= k_limits::MAX_EXPRESSION_SIZE / 10 {
-                consequent = consequent.refine_with(self, 0);
+                consequent = consequent.refine_with(self, 35);
             }
             if alternate.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10 {
-                alternate = alternate.refine_with(&not_self, 0);
+                alternate = alternate.refine_with(&not_self, 35);
             } else if let Expression::ConditionalExpression {
                 condition: c,
                 consequent: x,
@@ -5250,9 +5254,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         checked_precondition!(path_condition.as_bool_if_known().is_none());
         if depth >= k_limits::MAX_REFINE_DEPTH {
             debug!("max refine depth exceeded during refine_with");
-            //todo: perhaps this should go away.
-            // right now it deals with the situation where some large expressions have sizes
-            // that are not accurately tracked. These really should get fixed.
             return self.clone();
         }
         // In this context path_condition is true
