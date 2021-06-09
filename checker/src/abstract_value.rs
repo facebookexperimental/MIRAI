@@ -1739,10 +1739,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        if consequent.expression == Expression::Top {
+        if consequent.is_top() {
             return consequent;
         }
-        if alternate.expression == Expression::Top {
+        if alternate.is_top() {
             return alternate;
         }
         AbstractValue::make_from(
@@ -2596,17 +2596,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// True if the set of concrete values that correspond to this domain is empty.
     #[logfn_inputs(TRACE)]
     fn is_bottom(&self) -> bool {
-        match &self.expression {
-            Expression::Bottom => true,
-            Expression::Variable { path, .. } => {
-                if let PathEnum::Computed { value } = &path.value {
-                    value.is_bottom()
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        }
+        matches!(&self.expression, Expression::Bottom)
     }
 
     /// True if this value is a compile time constant.
@@ -2646,17 +2636,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// True if all possible concrete values are elements of the set corresponding to this domain.
     #[logfn_inputs(TRACE)]
     fn is_top(&self) -> bool {
-        match &self.expression {
-            Expression::Top => true,
-            Expression::Variable { path, .. } => {
-                if let PathEnum::Computed { value } = &path.value {
-                    value.is_top()
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        }
+        matches!(&self.expression, Expression::Top)
     }
 
     /// True if this value is an empty tuple, which is the sole value of the unit type.
@@ -4335,7 +4315,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 default
             };
         }
-        if self.expression == Expression::Top {
+        if self.is_top() {
             // No type or path information for the discriminator means we know nothing.
             return AbstractValue::make_typed_unknown(
                 default.expression.infer_type(),
