@@ -142,9 +142,27 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(&self, file_name: &str) -> bool {
-        // Exclude crates that contain code that causes MIRAI to crash
-        if file_name.contains("language/diem-tools/transaction-replay/src")
-        // Not a type
+        // Exclude crates that contain code that causes MIRAI to crash or not terminate within 2 hours
+        if file_name.contains("client/faucet/src") // non termination
+            || file_name.contains("config/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
+            || file_name.contains("config/management/operational/src") // crash
+            || file_name.contains("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
+            || file_name.contains("language/diem-vm/src") // Sorts Bool and Int are incompatible
+            || file_name.contains("language/move-lang/src") // non termination
+            || file_name.contains("language/move-model/src") // non termination
+            || file_name.contains("language/move-prover/boogie-backend/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
+            || file_name.contains("language/move-prover/bytecode/src") // non termination
+            || file_name.contains("language/move-prover/interpreter/src") // index out of bounds: the len is 0 but the index is 0
+            || file_name.contains("language/tools/move-bytecode-viewer/src") // out of memory
+            || file_name.contains("language/tools/move-coverage/src") // out of memory
+            || file_name.contains("language/transaction-builder/generator/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
+            || file_name.contains("network/src") // could not fully normalize 
+            || file_name.contains("network/builder/src") // could not fully normalize
+            || file_name.contains("sdk/client/src") // non termination
+            || file_name.contains("storage/backup/backup-cli/src") // out of memory
+            || file_name.contains("storage/diemdb/src") // expect reference target to have a value
+            || file_name.contains("types/src")
+        //Sorts Int and <null> are incompatible
         {
             return true;
         }
@@ -152,7 +170,6 @@ impl MiraiCallbacks {
         // Exclude crates that currently slow down testing too much
         if self.options.diag_level == DiagLevel::Default
             && (file_name.contains("client/assets-proof/src")
-                || file_name.contains("client/faucet/src")
                 || file_name.contains("client/swiss-knife/src")
                 || file_name.contains("common/metrics/src")
                 || file_name.contains("common/num-variants/src")
@@ -161,27 +178,24 @@ impl MiraiCallbacks {
                 || file_name.contains("config/management/src")
                 || file_name.contains("config/management/genesis/src")
                 || file_name.contains("config/management/network-address-encryption/src")
-                || file_name.contains("config/management/operational/src")
                 || file_name.contains("config/seed-peer-generator/src")
                 || file_name.contains("consensus/safety-rules/src")
                 || file_name.contains("consensus/src")
                 || file_name.contains("crypto/crypto/src")
                 || file_name.contains("crypto/crypto-derive/src")
                 || file_name.contains("diem-node/src")
-                || file_name.contains("execution/execution-correctness/src")
                 || file_name.contains("json-rpc/src")
                 || file_name.contains("language/bytecode-verifier/src")
                 || file_name.contains("language/compiler/src")
                 || file_name.contains("language/compiler/ir-to-bytecode/src")
                 || file_name.contains("language/diem-framework/src")
+                || file_name.contains("language/diem-framework/releases/src")
                 || file_name.contains("language/diem-tools/diem-validator-interface")
+                || file_name.contains("language/diem-tools/transaction-replay/src")
                 || file_name.contains("language/diem-tools/writeset-transaction-generator/src")
                 || file_name.contains("language/diem-vm/src")
-                || file_name.contains("language/move-lang/src")
-                || file_name.contains("language/move-model/src")
                 || file_name.contains("language/move-prover/src")
                 || file_name.contains("language/move-prover/abigen/src")
-                || file_name.contains("language/move-prover/boogie-backend/src")
                 || file_name.contains("language/move-prover/boogie-backend-exp/src")
                 || file_name.contains("language/move-prover/bytecode/src")
                 || file_name.contains("language/move-prover/docgen/src")
@@ -189,27 +203,20 @@ impl MiraiCallbacks {
                 || file_name.contains("move-prover/errmapgen/src")
                 || file_name.contains("language/move-prover/lab/src")
                 || file_name.contains("language/move-stdlib/src")
-                || file_name.contains("language/tools/move-bytecode-viewer/src")
                 || file_name.contains("language/tools/move-cli/src")
-                || file_name.contains("language/tools/move-coverage/src")
                 || file_name.contains("language/tools/move-unit-test/src")
                 || file_name.contains("language/tools/read-write-set/src")
                 || file_name.contains("language/tools/resource-viewer/src")
                 || file_name.contains("language/tools/vm-genesis/src")
-                || file_name.contains("language/transaction-builder/generator/src")
                 || file_name.contains("mempool/src")
-                || file_name.contains("network/src")
                 || file_name.contains("network/builder/src")
                 || file_name.contains("network/simple-onchain-discovery/src")
                 || file_name.contains("sdk/src")
-                || file_name.contains("sdk/client/src")
                 || file_name.contains("secure/key-manager/src")
                 || file_name.contains("secure/net/src")
                 || file_name.contains("secure/storage/src")
                 || file_name.contains("secure/storage/vault/src")
                 || file_name.contains("state-sync/src")
-                || file_name.contains("storage/backup/backup-cli/src")
-                || file_name.contains("storage/diemdb/src")
                 || file_name.contains("storage/schemadb/src")
                 || file_name.contains("storage/storage-client/src")
                 || file_name.contains("types/src")
