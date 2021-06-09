@@ -1099,6 +1099,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 )
                 .replace_root(&refined_dummy_root, target_path.clone());
             trace!("parameter refined tpath {:?}", tpath);
+            check_for_early_return!(self);
             match &tpath.value {
                 PathEnum::PhantomData => {
                     // No need to track this data
