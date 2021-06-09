@@ -1211,6 +1211,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
+        // [x & x] -> x
+        if self.eq(&other) {
+            return other;
+        }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::BitAnd {
             left,
             right,
@@ -1246,6 +1250,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
+        // [x | x] -> x
+        if self.eq(&other) {
+            return other;
+        }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::BitOr {
             left,
             right,
@@ -1263,6 +1271,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
+        if self.eq(&other) {
+            return Rc::new(0u128.into());
+        }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::BitXor {
             left,
             right,
@@ -4012,6 +4023,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
+        if other.is_zero() {
+            return self.clone();
+        }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Shl {
             left,
             right,
@@ -4060,6 +4074,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(result.into());
             }
         };
+        if other.is_zero() {
+            return self.clone();
+        }
         AbstractValue::make_typed_binary(
             self.clone(),
             other,
