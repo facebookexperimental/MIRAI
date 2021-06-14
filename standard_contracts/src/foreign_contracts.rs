@@ -1089,6 +1089,7 @@ pub mod core {
             }
 
             pub mod implement_core_fmt_builders_DebugTuple {
+                default_contract!(field);
                 default_contract!(finish);
             }
         }
