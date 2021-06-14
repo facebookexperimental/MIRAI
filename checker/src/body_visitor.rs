@@ -1233,6 +1233,14 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         //todo: figure out why this happens
                         target_type = rtype.as_rustc_type(self.tcx);
                     }
+                    // If the copy does an upcast we have to track the type of
+                    // the source value and use it to override the type system
+                    // when resolving methods using the target value as self.
+                    let source_type = self
+                        .type_visitor
+                        .get_path_rustc_type(&path, self.current_span);
+                    self.type_visitor
+                        .set_path_rustc_type(tpath.clone(), source_type);
                     if let PathEnum::LocalVariable { ordinal, .. } = &path.value {
                         if *ordinal >= self.fresh_variable_offset {
                             // A fresh variable from the callee adds no information that is not
