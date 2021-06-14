@@ -416,7 +416,6 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
         | TyKind::Closure(_, gen_args)
         | TyKind::FnDef(_, gen_args)
         | TyKind::Generator(_, gen_args, _)
-        | TyKind::Opaque(_, gen_args)
         | TyKind::Projection(ProjectionTy {
             substs: gen_args, ..
         })
@@ -425,6 +424,7 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
         | TyKind::Dynamic(..)
         | TyKind::Error(..)
         | TyKind::Infer(..)
+        | TyKind::Opaque(..)
         | TyKind::Param(..) => false,
         TyKind::Ref(_, ty, _) => is_concrete(ty.kind()),
         _ => true,
