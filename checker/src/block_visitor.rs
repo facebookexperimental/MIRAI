@@ -1532,6 +1532,22 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let rtype = self
             .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
+        let target_type = self
+            .type_visitor()
+            .get_path_rustc_type(&target_path, self.bv.current_span);
+        if !utils::is_concrete(target_type.kind()) {
+            let source_type = self
+                .type_visitor()
+                .get_path_rustc_type(&rpath, self.bv.current_span);
+            if utils::is_concrete(source_type.kind()) {
+                debug!(
+                    "changing {:?} from {:?} to {:?}",
+                    target_path, target_type, source_type
+                );
+                self.type_visitor_mut()
+                    .set_path_rustc_type(target_path.clone(), source_type);
+            }
+        }
         self.bv
             .copy_or_move_elements(target_path, rpath, rtype, false);
     }
@@ -1545,6 +1561,22 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let rtype = self
             .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
+        let target_type = self
+            .type_visitor()
+            .get_path_rustc_type(&target_path, self.bv.current_span);
+        if !utils::is_concrete(target_type.kind()) {
+            let source_type = self
+                .type_visitor()
+                .get_path_rustc_type(&rpath, self.bv.current_span);
+            if utils::is_concrete(source_type.kind()) {
+                debug!(
+                    "changing {:?} from {:?} to {:?}",
+                    target_path, target_type, source_type
+                );
+                self.type_visitor_mut()
+                    .set_path_rustc_type(target_path.clone(), source_type);
+            }
+        }
         self.bv
             .copy_or_move_elements(target_path, rpath, rtype, true);
     }
