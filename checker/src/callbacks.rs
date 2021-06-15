@@ -143,7 +143,8 @@ impl MiraiCallbacks {
 
     fn is_excluded(&self, file_name: &str) -> bool {
         // Exclude crates that contain code that causes MIRAI to crash or not terminate within 2 hours
-        if file_name.contains("client/faucet/src") // non termination
+        if file_name.contains("client/assets-proof/src") // Sort mismatch at argument #2 for function (declare-fun + (Int Int) Int) supplied sort is <null>
+            || file_name.contains("client/faucet/src") // non termination
             || file_name.contains("config/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
             || file_name.contains("config/management/operational/src") // crash
             || file_name.contains("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
@@ -169,8 +170,7 @@ impl MiraiCallbacks {
 
         // Exclude crates that currently slow down testing too much
         if self.options.diag_level == DiagLevel::Default
-            && (file_name.contains("client/assets-proof/src")
-                || file_name.contains("client/swiss-knife/src")
+            && (file_name.contains("client/swiss-knife/src")
                 || file_name.contains("common/metrics/src")
                 || file_name.contains("common/num-variants/src")
                 || file_name.contains("common/rate-limiter/src")

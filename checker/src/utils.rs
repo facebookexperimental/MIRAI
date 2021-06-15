@@ -424,6 +424,7 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
         | TyKind::Dynamic(..)
         | TyKind::Error(..)
         | TyKind::Infer(..)
+        | TyKind::Never
         | TyKind::Opaque(..)
         | TyKind::Param(..) => false,
         TyKind::Ref(_, ty, _) => is_concrete(ty.kind()),
