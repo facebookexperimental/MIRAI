@@ -92,6 +92,12 @@ pub struct Summary {
     // under the current path condition.
     // The resulting value should be conjoined to the current path condition.
     pub post_condition: Option<Rc<AbstractValue>>,
+
+    /// The type table index for the Rust type of the actual return value.
+    /// Used to make type tracking more precise when the body returns a value of concrete type
+    /// but the return type specification is abstract.
+    #[serde(skip)]
+    pub return_type_index: usize,
 }
 
 /// Bundles together the condition of a precondition with the provenance (place where defined) of
@@ -212,6 +218,7 @@ pub fn summarize(
     exit_environment: Option<&Environment>,
     preconditions: &[Precondition],
     post_condition: &Option<Rc<AbstractValue>>,
+    return_type_index: usize,
     tcx: TyCtxt<'_>,
 ) -> Summary {
     trace!(
@@ -236,6 +243,7 @@ pub fn summarize(
         preconditions,
         side_effects,
         post_condition: post_condition.clone(),
+        return_type_index,
     }
 }
 

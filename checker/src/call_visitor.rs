@@ -2787,6 +2787,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             // Assign function result to place
             let target_path = self.block_visitor.visit_rh_place(place);
             let result_path = &Some(target_path.clone());
+            // If the summary has a concrete type for the return result, use that type rather
+            // than the possibly abstract type of the target path.
+            let result_type = self
+                .type_visitor()
+                .get_type_from_index(function_summary.return_type_index);
+            if utils::is_concrete(result_type.kind()) {
+                self.type_visitor_mut()
+                    .set_path_rustc_type(target_path.clone(), result_type);
+            }
             let return_value_path = Path::new_result();
 
             let mut pre_environment = self.environment_before_call.clone();
