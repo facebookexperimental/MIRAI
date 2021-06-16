@@ -5253,7 +5253,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         //do not use false path conditions to refine things
         checked_precondition!(path_condition.as_bool_if_known().is_none());
         if depth >= k_limits::MAX_REFINE_DEPTH {
-            debug!("max refine depth exceeded during refine_with");
+            trace!("max refine depth exceeded during refine_with");
             return self.clone();
         }
         // In this context path_condition is true
