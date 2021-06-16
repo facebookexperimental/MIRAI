@@ -245,10 +245,17 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     }
                 }
 
-                let return_type = self.type_visitor().specialize_generic_argument_type(
-                    self.mir.return_ty(),
-                    &self.type_visitor().generic_argument_map,
-                );
+                let return_type = if matches!(self.cv.options.diag_level, DiagLevel::Paranoid) {
+                    //todo: in the future either ensure that this is unnecessary for soundness
+                    //or do this for DiagLevel::Verify as well.
+                    self.type_visitor().specialize_generic_argument_type(
+                        self.mir.return_ty(),
+                        &self.type_visitor().generic_argument_map,
+                    )
+                } else {
+                    self.type_visitor()
+                        .get_path_rustc_type(&Path::new_result(), self.current_span)
+                };
                 let return_type_index = self.type_visitor().get_index_for(return_type);
 
                 result = summaries::summarize(
