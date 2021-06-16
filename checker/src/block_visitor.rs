@@ -3265,6 +3265,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         field_ty,
                         &self.type_visitor().generic_argument_map,
                     );
+                    if let TyKind::Adt(def, ..) = ty.kind() {
+                        let ty_name = self.bv.cv.known_names_cache.get(self.bv.tcx, def.did);
+                        if ty_name == KnownNames::StdMarkerPhantomData {
+                            return Rc::new(PathEnum::PhantomData.into());
+                        }
+                    }
                     if matches!(selector, PathSelector::Field(0)) {
                         if let TyKind::Adt(def, ..) = base_ty.kind() {
                             debug!("def {:?}", def);
