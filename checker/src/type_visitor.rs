@@ -249,7 +249,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
                 trace!("target type {:?}", target.kind());
                 // Pointers to sized arrays are thin pointers.
-                matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
+                let t = self.remove_transparent_wrappers(target);
+                matches!(t.kind(), TyKind::Slice(..) | TyKind::Str)
             }
             _ => false,
         }

@@ -26,7 +26,7 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .short("t")
         .takes_value(false)
         .help("Focus analysis on #[test] methods.")
-        .long_help("Only #[test] methods and their usage are analyzed. This must be used together with the rustc --test option.")) //todo: just set the --test option, dammit
+        .long_help("Only #[test] methods and their usage are analyzed. This must be used together with the rustc --test option.")) 
     .arg(Arg::with_name("diag")
         .long("diag")
         .possible_values(&["default", "verify", "library", "paranoid"])
