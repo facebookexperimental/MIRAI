@@ -191,10 +191,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             return;
         }
         if let Some(gen_args) = self.callee_generic_arguments {
-            if !utils::are_concrete(gen_args) {
-                trace!("non concrete generic args {:?}", gen_args);
-                return;
-            }
             // The parameter environment of the caller provides a resolution context for the callee.
             let param_env = rustc_middle::ty::ParamEnv::reveal_all();
             trace!(

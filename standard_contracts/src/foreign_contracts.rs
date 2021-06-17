@@ -2642,6 +2642,13 @@ pub mod core {
 
     pub mod iter {
         pub mod adapters {
+            pub mod map {
+                pub mod implement_core_iter_adapters_map_Map_generic_par_I_generic_par_F {
+                    fn MAY_HAVE_SIDE_EFFECT() -> bool {
+                        true
+                    }
+                }
+            }
             pub mod map_fold {
                 default_contract!(closure);
             }
