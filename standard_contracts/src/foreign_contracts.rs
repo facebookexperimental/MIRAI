@@ -2653,6 +2653,11 @@ pub mod core {
                 default_contract!(closure);
             }
             pub mod zip {
+                pub mod implement_core_iter_adapters_zip_Zip_generic_par_A_generic_par_B {
+                    fn MAY_HAVE_SIDE_EFFECT() -> bool {
+                        true
+                    }
+                }
                 pub mod ZipImpl {
                     pub struct Zip<A, B> {
                         a: A,
