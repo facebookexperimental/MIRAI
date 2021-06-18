@@ -1839,6 +1839,16 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     // path to the thin pointer infers to a type that is a slice pointer.
                     let value_map = self.bv.current_environment.value_map.clone();
                     let source_path = self.visit_lh_place(place);
+                    if !utils::is_concrete(ty.kind()) {
+                        let source_type = self
+                            .type_visitor()
+                            .get_path_rustc_type(&source_path, self.bv.current_span);
+                        if utils::is_concrete(source_type.kind()) {
+                            debug!("changing {:?} from {:?} to {:?}", path, ty, source_type);
+                            self.type_visitor_mut()
+                                .set_path_rustc_type(path.clone(), source_type);
+                        }
+                    }
                     for (p, value) in value_map
                         .iter()
                         .filter(|(p, _)| source_path == **p || p.is_rooted_by(&source_path))
