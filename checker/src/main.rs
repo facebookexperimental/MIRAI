@@ -81,50 +81,61 @@ fn main() {
         // Add back the binary name
         rustc_command_line_arguments.insert(0, args[0].clone());
 
-        // Add rustc arguments supplied via the MIRAI_FLAGS environment variable
-        rustc_command_line_arguments.extend(rustc_args);
-
-        let sysroot: String = "--sysroot".into();
-        if !rustc_command_line_arguments
+        let print: String = "--print=".into();
+        if rustc_command_line_arguments
             .iter()
-            .any(|arg| arg.starts_with(&sysroot))
+            .any(|arg| arg.starts_with(&print))
         {
-            // Tell compiler where to find the std library and so on.
-            // The compiler relies on the standard rustc driver to tell it, so we have to do likewise.
-            rustc_command_line_arguments.push(sysroot);
-            rustc_command_line_arguments.push(utils::find_sysroot());
-        }
+            // If a --print option is given on the command line we wont get called to analyze
+            // anything. We also don't want to the caller to know that MIRAI adds configuration
+            // parameters to the command line, lest the caller be cargo and it panics because
+            // the output from --print=cfg is not what it expects.
+        } else {
+            // Add rustc arguments supplied via the MIRAI_FLAGS environment variable
+            rustc_command_line_arguments.extend(rustc_args);
 
-        let always_encode_mir: String = "always-encode-mir".into();
-        if !rustc_command_line_arguments
-            .iter()
-            .any(|arg| arg.ends_with(&always_encode_mir))
-        {
-            // Tell compiler to emit MIR into crate for every function with a body.
-            rustc_command_line_arguments.push("-Z".into());
-            rustc_command_line_arguments.push(always_encode_mir);
-        }
-
-        if options.test_only {
-            let prefix: String = "mirai_annotations=".into();
-            let postfix: String = ".rmeta".into();
-
-            if let Some((_, s)) = rustc_command_line_arguments
-                .iter_mut()
-                .find_position(|arg| arg.starts_with(&prefix))
-            {
-                if s.ends_with(&postfix) {
-                    *s = s.replace(&postfix, ".rlib");
-                }
-            }
-
-            let test: String = "--test".into();
+            let sysroot: String = "--sysroot".into();
             if !rustc_command_line_arguments
                 .iter()
-                .any(|arg| arg.ends_with(&test))
+                .any(|arg| arg.starts_with(&sysroot))
             {
-                // Tell compiler to compile test code
-                rustc_command_line_arguments.push(test);
+                // Tell compiler where to find the std library and so on.
+                // The compiler relies on the standard rustc driver to tell it, so we have to do likewise.
+                rustc_command_line_arguments.push(sysroot);
+                rustc_command_line_arguments.push(utils::find_sysroot());
+            }
+
+            let always_encode_mir: String = "always-encode-mir".into();
+            if !rustc_command_line_arguments
+                .iter()
+                .any(|arg| arg.ends_with(&always_encode_mir))
+            {
+                // Tell compiler to emit MIR into crate for every function with a body.
+                rustc_command_line_arguments.push("-Z".into());
+                rustc_command_line_arguments.push(always_encode_mir);
+            }
+
+            if options.test_only {
+                let prefix: String = "mirai_annotations=".into();
+                let postfix: String = ".rmeta".into();
+
+                if let Some((_, s)) = rustc_command_line_arguments
+                    .iter_mut()
+                    .find_position(|arg| arg.starts_with(&prefix))
+                {
+                    if s.ends_with(&postfix) {
+                        *s = s.replace(&postfix, ".rlib");
+                    }
+                }
+
+                let test: String = "--test".into();
+                if !rustc_command_line_arguments
+                    .iter()
+                    .any(|arg| arg.ends_with(&test))
+                {
+                    // Tell compiler to compile test code
+                    rustc_command_line_arguments.push(test);
+                }
             }
         }
 
