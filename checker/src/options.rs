@@ -136,9 +136,6 @@ impl Options {
         if matches.is_present("single_func") {
             self.single_func = matches.value_of("single_func").map(|s| s.to_string());
         }
-        if matches.is_present("test_only") {
-            self.test_only = true;
-        }
         if matches.is_present("diag") {
             self.diag_level = match matches.value_of("diag").unwrap() {
                 "default" => DiagLevel::Default,
@@ -147,6 +144,12 @@ impl Options {
                 "paranoid" => DiagLevel::Paranoid,
                 _ => assume_unreachable!(),
             };
+        }
+        if matches.is_present("test_only") {
+            self.test_only = true;
+            if self.diag_level != DiagLevel::Paranoid {
+                self.diag_level = DiagLevel::Library;
+            }
         }
         if matches.is_present("constant_time") {
             self.constant_time_tag_name = matches.value_of("constant_time").map(|s| s.to_owned());
