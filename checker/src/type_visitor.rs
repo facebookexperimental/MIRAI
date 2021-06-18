@@ -399,9 +399,19 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             TyKind::Adt(def, substs) => {
                                 return self.get_field_type(def, substs, *ordinal);
                             }
-                            TyKind::Array(..) => {
-                                if *ordinal == 1 {
-                                    return self.tcx.types.isize;
+                            TyKind::Array(elem_ty, ..) => {
+                                match *ordinal {
+                                    0 => {
+                                        // Field 0 of a sized array is a raw pointer to the array element type
+                                        return self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                                            ty: elem_ty,
+                                            mutbl: rustc_hir::Mutability::Not,
+                                        });
+                                    }
+                                    1 => {
+                                        return self.tcx.types.usize;
+                                    }
+                                    _ => {}
                                 }
                             }
                             TyKind::Closure(def_id, subs) => {

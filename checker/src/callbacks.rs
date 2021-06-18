@@ -147,16 +147,21 @@ impl MiraiCallbacks {
             || file_name.contains("client/faucet/src") // non termination
             || file_name.contains("config/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
             || file_name.contains("config/management/operational/src") // crash
+            || file_name.contains("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
             || file_name.contains("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
             || file_name.contains("language/diem-vm/src") // Sorts Bool and Int are incompatible
             || file_name.contains("language/move-lang/src") // non termination
             || file_name.contains("language/move-model/src") // non termination
+            || file_name.contains("language/move-prover/src") // Sorts Int and <null> are incompatible
             || file_name.contains("language/move-prover/boogie-backend/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
             || file_name.contains("language/move-prover/bytecode/src") // non termination
             || file_name.contains("language/move-prover/interpreter/src") // index out of bounds: the len is 0 but the index is 0
+            || file_name.contains("language/move-stdlib/src") // stack overflow
             || file_name.contains("language/tools/move-bytecode-viewer/src") // out of memory
             || file_name.contains("language/tools/move-coverage/src") // out of memory
+            || file_name.contains("language/tools/read-write-set/src")  // non termination
             || file_name.contains("language/transaction-builder/generator/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
+            || file_name.contains("mempool/src") // out of memory
             || file_name.contains("network/src") // could not fully normalize 
             || file_name.contains("network/builder/src") // could not fully normalize
             || file_name.contains("sdk/client/src") // non termination
@@ -179,7 +184,6 @@ impl MiraiCallbacks {
                 || file_name.contains("config/management/genesis/src")
                 || file_name.contains("config/management/network-address-encryption/src")
                 || file_name.contains("config/seed-peer-generator/src")
-                || file_name.contains("consensus/safety-rules/src")
                 || file_name.contains("consensus/src")
                 || file_name.contains("crypto/crypto/src")
                 || file_name.contains("crypto/crypto-derive/src")
@@ -194,7 +198,6 @@ impl MiraiCallbacks {
                 || file_name.contains("language/diem-tools/transaction-replay/src")
                 || file_name.contains("language/diem-tools/writeset-transaction-generator/src")
                 || file_name.contains("language/diem-vm/src")
-                || file_name.contains("language/move-prover/src")
                 || file_name.contains("language/move-prover/abigen/src")
                 || file_name.contains("language/move-prover/boogie-backend-exp/src")
                 || file_name.contains("language/move-prover/bytecode/src")
@@ -202,13 +205,10 @@ impl MiraiCallbacks {
                 || file_name.contains("language/move-prover/interpreter/src")
                 || file_name.contains("move-prover/errmapgen/src")
                 || file_name.contains("language/move-prover/lab/src")
-                || file_name.contains("language/move-stdlib/src")
                 || file_name.contains("language/tools/move-cli/src")
                 || file_name.contains("language/tools/move-unit-test/src")
-                || file_name.contains("language/tools/read-write-set/src")
                 || file_name.contains("language/tools/resource-viewer/src")
                 || file_name.contains("language/tools/vm-genesis/src")
-                || file_name.contains("mempool/src")
                 || file_name.contains("network/builder/src")
                 || file_name.contains("network/simple-onchain-discovery/src")
                 || file_name.contains("sdk/src")
