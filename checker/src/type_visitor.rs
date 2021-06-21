@@ -442,6 +442,21 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 }
                                 unreachable!("t.kind is a closure because of the guard");
                             }
+                            TyKind::Str => {
+                                match *ordinal {
+                                    0 => {
+                                        // Field 0 of a str is a raw pointer to char
+                                        return self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                                            ty: self.tcx.types.char,
+                                            mutbl: rustc_hir::Mutability::Not,
+                                        });
+                                    }
+                                    1 => {
+                                        return self.tcx.types.usize;
+                                    }
+                                    _ => {}
+                                }
+                            }
                             TyKind::Tuple(types) => {
                                 if let Some(gen_arg) = types.get(*ordinal as usize) {
                                     return gen_arg.expect_ty();
