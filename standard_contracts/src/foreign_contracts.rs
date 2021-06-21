@@ -117,6 +117,11 @@ pub mod alloc {
                 result!()
             }
         }
+        pub mod implement_alloc_boxed_Box_str_alloc_alloc_Global {
+            fn from(s: String) -> Box<str> {
+                s.into_boxed_str()
+            }
+        }
         pub mod implement_alloc_string_Drain {
             default_contract!(drop);
         }

@@ -1296,7 +1296,7 @@ impl Z3Solver {
                     z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.f64_sort),
                 ),
                 _ => {
-                    if target_type.is_integer() {
+                    if target_type.is_integer() || *target_type == ExpressionType::Char {
                         let exp_type = expression.infer_type();
                         if exp_type == *target_type {
                             self.get_as_numeric_z3_ast(expression)
