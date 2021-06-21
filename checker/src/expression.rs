@@ -1485,6 +1485,7 @@ impl ExpressionType {
     pub fn modulo_constant(&self) -> Rc<ConstantDomain> {
         use self::ExpressionType::*;
         match self {
+            Char => Rc::new(ConstantDomain::U128((char::MAX) as u128 + 1)),
             U8 => Rc::new(ConstantDomain::U128((u8::MAX) as u128 + 1)),
             U16 => Rc::new(ConstantDomain::U128((u16::MAX) as u128 + 1)),
             U32 => Rc::new(ConstantDomain::U128((u32::MAX) as u128 + 1)),
@@ -1501,6 +1502,7 @@ impl ExpressionType {
     pub fn modulo_value(&self) -> Rc<AbstractValue> {
         use self::ExpressionType::*;
         match self {
+            Char => Rc::new(ConstantDomain::U128((char::MAX) as u128 + 1).into()),
             U8 => Rc::new(ConstantDomain::U128((u8::MAX) as u128 + 1).into()),
             U16 => Rc::new(ConstantDomain::U128((u16::MAX) as u128 + 1).into()),
             U32 => Rc::new(ConstantDomain::U128((u32::MAX) as u128 + 1).into()),
