@@ -10,6 +10,7 @@ use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
 use crate::rustc_middle::ty::DefIdTree;
 use crate::{type_visitor, utils};
 
+use crate::constant_domain::ConstantDomain;
 use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
@@ -295,7 +296,14 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 Expression::ConditionalExpression { consequent, .. } => {
                     self.get_path_rustc_type(&Path::get_as_path(consequent.clone()), current_span)
                 }
-                Expression::CompileTimeConstant(c) => c.get_rustc_type(self.tcx),
+                Expression::CompileTimeConstant(c) => {
+                    if let ConstantDomain::Function(fr) = c {
+                        if let Some(def_id) = fr.def_id {
+                            return self.tcx.type_of(def_id);
+                        }
+                    }
+                    c.get_rustc_type(self.tcx)
+                }
                 Expression::Reference(path) => {
                     let target_type = self.get_path_rustc_type(path, current_span);
                     if target_type.is_never() {
@@ -507,6 +515,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         return self.tcx.types.i32;
                     }
                     PathSelector::Downcast(_, ordinal) => {
+                        if let TyKind::Ref(_, ty, _) = t.kind() {
+                            t = ty;
+                        }
                         t = self.remove_transparent_wrappers(t);
                         if let TyKind::Adt(def, substs) = t.kind() {
                             let substs = self.specialize_substs(substs, &self.generic_argument_map);
