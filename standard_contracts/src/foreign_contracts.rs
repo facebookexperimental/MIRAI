@@ -119,7 +119,8 @@ pub mod alloc {
         }
         pub mod implement_alloc_boxed_Box_str_alloc_alloc_Global {
             fn from(s: String) -> Box<str> {
-                s.into_boxed_str()
+                //s.into_boxed_str()
+                result!()
             }
         }
         pub mod implement_alloc_string_Drain {
@@ -3264,6 +3265,11 @@ pub mod core {
                     false
                 }
             }
+            pub mod implement_core_slice_iter_IterMut_generic_par_T {
+                pub fn MAY_HAVE_SIDE_EFFECT() -> bool {
+                    false
+                }
+            }
         }
 
         pub mod index {
@@ -3605,6 +3611,128 @@ pub mod measureme {
         pub mod implement {
             default_contract!(nanos_since_start);
             default_contract!(record_raw_event);
+        }
+    }
+}
+
+pub mod move_binary_format {
+    pub mod file_format {
+        pub enum IndexKind {
+            ModuleHandle,
+            StructHandle,
+            FunctionHandle,
+            FieldHandle,
+            FriendDeclaration,
+            FunctionInstantiation,
+            FieldInstantiation,
+            StructDefinition,
+            StructDefInstantiation,
+            FunctionDefinition,
+            FieldDefinition,
+            Signature,
+            Identifier,
+            AddressIdentifier,
+            ConstantPool,
+            LocalPool,
+            CodeDefinition,
+            TypeParameter,
+            MemberCount,
+        }
+
+        pub mod implement_move_binary_format_file_format_AddressIdentifierIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::AddressIdentifier
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_ConstantPoolIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::ConstantPool
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_FieldHandleIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::FieldHandle
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_FieldInstantiationIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::FieldInstantiation
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_FunctionHandleIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::FunctionHandle
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_FunctionInstantiationIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::FunctionInstantiation
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_IdentifierIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::Identifier
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_ModuleHandleIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::ModuleHandle
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_SignatureIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::Signature
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_StructDefinitionIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::StructDefinition
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_StructHandleIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::StructHandle
+            }
+        }
+
+        pub mod implement_move_binary_format_file_format_StructDefInstantiationIndex {
+            use crate::foreign_contracts::move_binary_format::file_format::IndexKind;
+
+            fn KIND() -> IndexKind {
+                IndexKind::StructDefInstantiation
+            }
         }
     }
 }
@@ -4531,6 +4659,14 @@ pub mod std {
             default_contract!(duration_since);
             default_contract!(elapsed);
             default_contract!(now);
+        }
+    }
+}
+
+pub mod std_detect {
+    pub mod detect {
+        pub mod cache {
+            default_contract!(detect_and_initialize);
         }
     }
 }
