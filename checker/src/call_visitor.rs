@@ -2788,7 +2788,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             let result_type = self
                 .type_visitor()
                 .get_type_from_index(function_summary.return_type_index);
-            if utils::is_concrete(result_type.kind()) {
+            if !result_type.is_never() {
                 self.type_visitor_mut()
                     .set_path_rustc_type(target_path.clone(), result_type);
             }
