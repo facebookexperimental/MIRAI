@@ -163,7 +163,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     #[logfn_inputs(TRACE)]
     pub fn visit_body(
         &mut self,
-        function_constant_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        function_constant_args: &[(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)],
         parameter_types: &[Ty<'tcx>],
     ) -> Summary {
         let diag_level = self.cv.options.diag_level;
@@ -183,10 +183,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
 
         // Add parameter values that are function constants.
         // Also add entries for closure fields.
-        for (path, val) in function_constant_args.iter() {
-            let path_ty = self
-                .type_visitor()
-                .get_path_rustc_type(path, self.current_span);
+        for (path, path_ty, val) in function_constant_args.iter() {
             self.type_visitor_mut()
                 .add_any_closure_fields_for(path_ty, &path, &mut first_state);
             first_state.value_map.insert_mut(path.clone(), val.clone());
@@ -238,7 +235,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 if !function_constant_args.is_empty() {
                     if let Some(mut env) = self.exit_environment.clone() {
                         // Remove function constants so that they do not show up as side-effects.
-                        for (p, _) in function_constant_args {
+                        for (p, _, _) in function_constant_args {
                             env.value_map.remove_mut(p);
                         }
                         self.exit_environment = Some(env);

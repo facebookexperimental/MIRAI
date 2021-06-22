@@ -713,7 +713,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     pub fn get_function_constant_args(
         &self,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
-    ) -> Vec<(Rc<Path>, Rc<AbstractValue>)> {
+    ) -> Vec<(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)> {
         let mut result = vec![];
         for (path, value) in self.bv.current_environment.value_map.iter() {
             if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &value.expression
@@ -722,7 +722,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     if (*path) == *arg_path || path.is_rooted_by(arg_path) {
                         let param_path_root = Path::new_parameter(i + 1);
                         let param_path = path.replace_root(arg_path, param_path_root);
-                        result.push((param_path, value.clone()));
+                        let ty = self
+                            .type_visitor()
+                            .get_path_rustc_type(&path, self.bv.current_span);
+                        result.push((param_path, ty, value.clone()));
                         break;
                     } else {
                         match &arg_val.expression {
@@ -739,7 +742,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                             Path::new_deref(param_path_root, deref_type);
                                     }
                                     let param_path = path.replace_root(ipath, param_path_root);
-                                    result.push((param_path, value.clone()));
+                                    let ty = self
+                                        .type_visitor()
+                                        .get_path_rustc_type(&path, self.bv.current_span);
+                                    result.push((param_path, ty, value.clone()));
                                     break;
                                 }
                             }
@@ -759,7 +765,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         &value.expression
                     {
                         let param_path = Path::new_parameter(i + 1);
-                        result.push((param_path, value.clone()));
+                        let ty = self
+                            .type_visitor()
+                            .get_path_rustc_type(&path, self.bv.current_span);
+                        result.push((param_path, ty, value.clone()));
                     }
                 }
             }

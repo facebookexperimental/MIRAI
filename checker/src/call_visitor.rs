@@ -43,7 +43,7 @@ pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx> {
     pub cleanup: Option<mir::BasicBlock>,
     pub destination: Option<(mir::Place<'tcx>, mir::BasicBlock)>,
     pub environment_before_call: Environment,
-    pub function_constant_args: &'call [(Rc<Path>, Rc<AbstractValue>)],
+    pub function_constant_args: &'call [(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)],
     pub initial_type_cache: Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>>,
 }
 
@@ -270,14 +270,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     #[logfn_inputs(TRACE)]
     fn get_function_constant_signature(
         &mut self,
-        func_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        func_args: &[(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)],
     ) -> Option<Rc<Vec<Rc<FunctionReference>>>> {
         if func_args.is_empty() {
             return None;
         }
         let vec: Vec<Rc<FunctionReference>> = func_args
             .iter()
-            .filter_map(|(_, v)| self.block_visitor.get_func_ref(v))
+            .filter_map(|(_, _, v)| self.block_visitor.get_func_ref(v))
             .collect();
         if vec.is_empty() {
             return None;
