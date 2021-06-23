@@ -157,6 +157,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-prover/bytecode/src") // non termination
             || file_name.contains("language/move-prover/interpreter/src") // index out of bounds: the len is 0 but the index is 0
             || file_name.contains("language/move-stdlib/src") // stack overflow
+            || file_name.contains("language/move-prover/lab/src")  // stack overflow
             || file_name.contains("language/tools/move-bytecode-viewer/src") // out of memory
             || file_name.contains("language/tools/move-coverage/src") // out of memory
             || file_name.contains("language/tools/read-write-set/src")  // non termination
@@ -204,7 +205,6 @@ impl MiraiCallbacks {
                 || file_name.contains("language/move-prover/docgen/src")
                 || file_name.contains("language/move-prover/interpreter/src")
                 || file_name.contains("move-prover/errmapgen/src")
-                || file_name.contains("language/move-prover/lab/src")
                 || file_name.contains("language/tools/move-cli/src")
                 || file_name.contains("language/tools/move-unit-test/src")
                 || file_name.contains("language/tools/resource-viewer/src")
