@@ -653,7 +653,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
 
         let known_name = func_ref_to_call.known_name;
         let func_const = ConstantDomain::Function(func_ref_to_call);
-        let func_const_args = &self.get_function_constant_args(&actual_args);
+        let func_const_args =
+            &self.get_function_constant_args(&actual_args, &actual_argument_types);
         let mut call_visitor = CallVisitor::new(
             self,
             callee_def_id,
@@ -713,19 +714,26 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     pub fn get_function_constant_args(
         &self,
         actual_args: &[(Rc<Path>, Rc<AbstractValue>)],
+        actual_arg_types: &[Ty<'tcx>],
     ) -> Vec<(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)> {
         let mut result = vec![];
         for (path, value) in self.bv.current_environment.value_map.iter() {
             if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &value.expression
             {
                 for (i, (arg_path, arg_val)) in actual_args.iter().enumerate() {
-                    if (*path) == *arg_path || path.is_rooted_by(arg_path) {
+                    let is_arg_path = (*path) == *arg_path;
+                    if is_arg_path || path.is_rooted_by(arg_path) {
                         let param_path_root = Path::new_parameter(i + 1);
                         let param_path = path.replace_root(arg_path, param_path_root);
-                        let ty = self
-                            .type_visitor()
-                            .get_path_rustc_type(&path, self.bv.current_span);
-                        result.push((param_path, ty, value.clone()));
+                        let ty = if is_arg_path {
+                            actual_arg_types[i]
+                        } else {
+                            self.type_visitor()
+                                .get_path_rustc_type(&path, self.bv.current_span)
+                        };
+                        if !ty.is_never() {
+                            result.push((param_path, ty, value.clone()));
+                        }
                         break;
                     } else {
                         match &arg_val.expression {
@@ -765,9 +773,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         &value.expression
                     {
                         let param_path = Path::new_parameter(i + 1);
-                        let ty = self
-                            .type_visitor()
-                            .get_path_rustc_type(&path, self.bv.current_span);
+                        let ty = actual_arg_types[i];
                         result.push((param_path, ty, value.clone()));
                     }
                 }
