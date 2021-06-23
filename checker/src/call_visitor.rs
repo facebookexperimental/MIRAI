@@ -1176,7 +1176,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             }
         }
 
-        let function_constant_args = self.block_visitor.get_function_constant_args(&actual_args);
+        let function_constant_args = self
+            .block_visitor
+            .get_function_constant_args(&actual_args, &actual_argument_types);
         let callee_func_ref = self.block_visitor.get_func_ref(&callee);
 
         if let Some(func_ref) = &callee_func_ref {
