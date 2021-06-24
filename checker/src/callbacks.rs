@@ -147,6 +147,7 @@ impl MiraiCallbacks {
             || file_name.contains("client/faucet/src") // non termination
             || file_name.contains("config/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
             || file_name.contains("config/management/operational/src") // crash
+            || file_name.contains("consensus/src") // Sorts Int and <null> are incompatible
             || file_name.contains("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
             || file_name.contains("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
             || file_name.contains("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
@@ -189,7 +190,6 @@ impl MiraiCallbacks {
                 || file_name.contains("config/management/genesis/src")
                 || file_name.contains("config/management/network-address-encryption/src")
                 || file_name.contains("config/seed-peer-generator/src")
-                || file_name.contains("consensus/src")
                 || file_name.contains("crypto/crypto/src")
                 || file_name.contains("crypto/crypto-derive/src")
                 || file_name.contains("diem-node/src")

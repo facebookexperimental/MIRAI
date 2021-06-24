@@ -617,7 +617,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// Returns the type of the field with the given ordinal.
     /// Ignores any transparent wrappers during the lookup.
     #[logfn_inputs(TRACE)]
-    fn get_field_type(
+    pub fn get_field_type(
         &self,
         def: &'tcx AdtDef,
         substs: SubstsRef<'tcx>,

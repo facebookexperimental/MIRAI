@@ -30,7 +30,8 @@ use rpds::HashTrieMap;
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::ty::{Const, Ty, TyCtxt, TyKind, UintTy};
+use rustc_middle::ty::subst::SubstsRef;
+use rustc_middle::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, UintTy};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -1633,17 +1634,25 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         } = &target_path.value
         {
             if let PathSelector::UnionField { num_cases, .. } = selector.as_ref() {
-                for i in 0..*num_cases {
-                    let target_path = Path::new_union_field(qualifier.clone(), i, *num_cases);
-                    self.non_patterned_copy_or_move_elements(
-                        target_path,
-                        source_path.clone(),
-                        root_rustc_type,
-                        move_elements,
-                        |_self, path, _, new_value| {
-                            _self.current_environment.update_value_at(path, new_value);
-                        },
-                    );
+                let union_type = self
+                    .type_visitor()
+                    .get_path_rustc_type(qualifier, self.current_span);
+                if let TyKind::Adt(def, substs) = union_type.kind() {
+                    let substs = self
+                        .type_visitor
+                        .specialize_substs(substs, &self.type_visitor().generic_argument_map);
+                    for (i, field) in def.all_fields().enumerate() {
+                        let target_type = field.ty(self.tcx, substs);
+                        let target_path = Path::new_union_field(qualifier.clone(), i, *num_cases);
+                        self.copy_and_transmute(
+                            source_path.clone(),
+                            root_rustc_type,
+                            target_path,
+                            target_type,
+                        );
+                    }
+                } else {
+                    unreachable!("the qualifier path of a union field is not a union");
                 }
                 return;
             }
@@ -1710,6 +1719,233 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 )
             },
         );
+    }
+
+    /// Copy the heap model at source_path to a heap model at target_path.
+    /// If the type of value at source_path is different from that at target_path, the value is transmuted.
+    #[logfn_inputs(DEBUG)]
+    pub fn copy_and_transmute(
+        &mut self,
+        source_path: Rc<Path>,
+        source_rustc_type: Ty<'tcx>,
+        target_path: Rc<Path>,
+        target_rustc_type: Ty<'tcx>,
+    ) {
+        fn add_leaf_fields_for<'a>(
+            path: Rc<Path>,
+            def: &'a AdtDef,
+            substs: SubstsRef<'a>,
+            tcx: TyCtxt<'a>,
+            accumulator: &mut Vec<(Rc<Path>, Ty<'a>)>,
+        ) {
+            if !def.variants.is_empty() {
+                let variant = def.variants.iter().next().expect("at least one variant");
+                for (i, field) in variant.fields.iter().enumerate() {
+                    let field_path = if i == 0 && def.repr.transparent() {
+                        path.clone()
+                    } else {
+                        Path::new_field(path.clone(), i)
+                    };
+                    let field_ty = field.ty(tcx, substs);
+                    if let TyKind::Adt(def, substs) = field_ty.kind() {
+                        add_leaf_fields_for(field_path, def, substs, tcx, accumulator)
+                    } else {
+                        accumulator.push((field_path, field_ty))
+                    }
+                }
+            }
+        }
+
+        let mut source_fields = Vec::new();
+        match source_rustc_type.kind() {
+            TyKind::Adt(source_def, source_substs) => {
+                add_leaf_fields_for(
+                    source_path.clone(),
+                    source_def,
+                    source_substs,
+                    self.tcx,
+                    &mut source_fields,
+                );
+            }
+            TyKind::Array(ty, length) => {
+                let length = self.get_array_length(length);
+                for i in 0..length {
+                    source_fields.push((
+                        Path::new_index(source_path.clone(), Rc::new((i as u128).into())),
+                        *ty,
+                    ));
+                }
+            }
+            TyKind::Tuple(substs) => {
+                let specialized_substs = self
+                    .type_visitor()
+                    .specialize_substs(substs, &self.type_visitor().generic_argument_map);
+                for (i, ty) in specialized_substs.types().enumerate() {
+                    let field = Path::new_field(source_path.clone(), i);
+                    source_fields.push((field, ty));
+                }
+            }
+            _ => {
+                if !self
+                    .type_visitor()
+                    .is_slice_pointer(source_rustc_type.kind())
+                {
+                    source_fields.push((source_path.clone(), source_rustc_type));
+                }
+            }
+        }
+        let mut target_fields = Vec::new();
+        match target_rustc_type.kind() {
+            TyKind::Adt(target_def, target_substs) => {
+                add_leaf_fields_for(
+                    target_path.clone(),
+                    target_def,
+                    target_substs,
+                    self.tcx,
+                    &mut target_fields,
+                );
+            }
+            TyKind::Array(ty, length) => {
+                let length = self.get_array_length(length);
+                let len_val = Rc::new((length as u128).into());
+                self.current_environment
+                    .update_value_at(Path::new_length(target_path.clone()), len_val);
+                for i in 0..length {
+                    target_fields.push((
+                        Path::new_index(target_path.clone(), Rc::new((i as u128).into())),
+                        *ty,
+                    ));
+                }
+            }
+            TyKind::Tuple(substs) => {
+                let specialized_substs = self
+                    .type_visitor()
+                    .specialize_substs(substs, &self.type_visitor().generic_argument_map);
+                for (i, ty) in specialized_substs.types().enumerate() {
+                    let field = Path::new_field(target_path.clone(), i);
+                    target_fields.push((field, ty));
+                }
+            }
+            _ => {
+                if !self
+                    .type_visitor()
+                    .is_slice_pointer(target_rustc_type.kind())
+                {
+                    target_fields.push((target_path.clone(), target_rustc_type))
+                }
+            }
+        }
+        if !source_fields.is_empty() && !target_fields.is_empty() {
+            self.copy_field_bits(source_fields, target_fields);
+        } else {
+            self.non_patterned_copy_or_move_elements(
+                target_path,
+                source_path,
+                target_rustc_type,
+                false,
+                |_self, path, _, new_value| {
+                    _self.current_environment.update_value_at(path, new_value);
+                },
+            );
+        }
+    }
+
+    /// Assign abstract values to the target fields that are consistent with the concrete values
+    /// that will arise at runtime if the sequential (packed) bytes of the source fields are copied to the
+    /// target fields on a little endian machine.
+    #[logfn_inputs(DEBUG)]
+    fn copy_field_bits(
+        &mut self,
+        source_fields: Vec<(Rc<Path>, Ty<'tcx>)>,
+        target_fields: Vec<(Rc<Path>, Ty<'tcx>)>,
+    ) {
+        let source_len = source_fields.len();
+        let mut source_field_index = 0;
+        let mut copied_source_bits = 0;
+        for (target_path, target_type) in target_fields.into_iter() {
+            if source_field_index >= source_len {
+                let warning = self.cv.session.struct_span_warn(
+                    self.current_span,
+                    "The union is not fully initialized by this assignment",
+                );
+                self.emit_diagnostic(warning);
+                break;
+            }
+            let (source_path, source_type) = &source_fields[source_field_index];
+            let source_path = source_path.canonicalize(&self.current_environment);
+            let mut val = self.lookup_path_and_refine_result(source_path.clone(), source_type);
+            if copied_source_bits > 0 {
+                // discard the lower order bits from val since they have already been copied to a previous target field
+                val = val.unsigned_shift_right(copied_source_bits);
+            }
+            let source_bits = ExpressionType::from(source_type.kind()).bit_length();
+            let target_expression_type = ExpressionType::from(target_type.kind());
+            let mut target_bits_to_write = target_expression_type.bit_length();
+            if source_bits == target_bits_to_write
+                && copied_source_bits == 0
+                && target_expression_type == val.expression.infer_type()
+            {
+                self.current_environment.update_value_at(target_path, val);
+                source_field_index += 1;
+            } else if source_bits - copied_source_bits >= target_bits_to_write {
+                // target field can be completely assigned from bits of source field value
+                if source_bits - copied_source_bits > target_bits_to_write {
+                    // discard higher order bits since they wont fit into the target field
+                    val = val.unsigned_modulo(target_bits_to_write);
+                }
+                self.current_environment
+                    .update_value_at(target_path, val.transmute(target_expression_type));
+                copied_source_bits += target_bits_to_write;
+                if copied_source_bits == source_bits {
+                    source_field_index += 1;
+                    copied_source_bits = 0;
+                }
+            } else {
+                // target field needs bits from multiple source fields
+                let mut written_target_bits = source_bits - copied_source_bits;
+                target_bits_to_write -= written_target_bits;
+                val = val.unsigned_modulo(written_target_bits);
+                loop {
+                    // Get another field
+                    source_field_index += 1;
+                    if source_field_index >= source_len {
+                        let warning = self.cv.session.struct_span_warn(
+                            self.current_span,
+                            "The union is not fully initialized by this assignment",
+                        );
+                        self.emit_diagnostic(warning);
+                        break;
+                    }
+                    let (source_path, source_type) = &source_fields[source_field_index];
+                    let source_path = source_path.canonicalize(&self.current_environment);
+                    let source_bits = ExpressionType::from(source_type.kind()).bit_length();
+                    let mut next_val =
+                        self.lookup_path_and_refine_result(source_path.clone(), source_type);
+                    // discard higher order bits that wont fit into the target field
+                    next_val = next_val.unsigned_modulo(target_bits_to_write);
+                    // shift next value to the left, making space for val in the lower order bits
+                    next_val = next_val.unsigned_shift_left(written_target_bits);
+                    // update val to include next_val (in its higher order bits, thanks to the shift left above)
+                    val = next_val.addition(val);
+                    if source_bits >= target_bits_to_write {
+                        // We are done with this target field
+                        self.current_environment.update_value_at(
+                            target_path.clone(),
+                            val.transmute(target_expression_type.clone()),
+                        );
+                        if source_bits == target_bits_to_write {
+                            copied_source_bits = 0;
+                            source_field_index += 1;
+                        } else {
+                            copied_source_bits = target_bits_to_write;
+                        }
+                        break;
+                    }
+                    target_bits_to_write -= source_bits;
+                    written_target_bits += source_bits;
+                }
+            }
+        }
     }
 
     /// If source_path is a qualified path with a path selector that is a pattern of some sort
