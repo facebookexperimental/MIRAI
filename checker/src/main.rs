@@ -46,11 +46,7 @@ fn main() {
 
     // Get any options specified via the MIRAI_FLAGS environment variable
     let mut options = Options::default();
-    let rustc_args = if env::var("MIRAI_FLAGS").is_ok() {
-        options.parse_from_str(&env::var("MIRAI_FLAGS").ok().unwrap())
-    } else {
-        vec![]
-    };
+    let rustc_args = options.parse_from_str(&env::var("MIRAI_FLAGS").unwrap_or_default());
     info!("MIRAI options from environment: {:?}", options);
 
     // Let arguments supplied on the command line override the environment variable.

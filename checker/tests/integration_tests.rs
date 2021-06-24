@@ -154,14 +154,15 @@ fn invoke_driver(
 ) -> usize {
     // Read MIRAI options from file content.
     let mut options = Options::default();
-    options.diag_level = DiagLevel::Paranoid;
+    options.parse_from_str(""); // get defaults
+    options.diag_level = DiagLevel::Paranoid; // override default
     options.max_analysis_time_for_body = 40;
     let mut rustc_args = vec![]; // any arguments after `--` for rustc
     {
         let file_content = read_to_string(&Path::new(&file_name)).unwrap();
         let options_re = Regex::new(r"(?m)^\s*//\s*MIRAI_FLAGS\s(?P<flags>.*)$").unwrap();
         if let Some(captures) = options_re.captures(&file_content) {
-            rustc_args = options.parse_from_str(&captures["flags"]);
+            rustc_args = options.parse_from_str(&captures["flags"]); // override based on test source
         }
     }
 
