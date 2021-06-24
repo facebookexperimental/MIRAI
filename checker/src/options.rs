@@ -38,6 +38,12 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .takes_value(true)
         .help("Enable verification of constant-time security.")
         .long_help("Name is a top-level crate type"))
+    .arg(Arg::with_name("body_analysis_timeout")
+        .long("body_analysis_timeout")
+        .takes_value(true)
+        .default_value("40")
+        .help("The maximum number of seconds that MIRAI will spend analyzing a function body.")
+        .long_help("The default is 40 seconds."))
 }
 
 /// Represents options passed to MIRAI.
@@ -47,6 +53,7 @@ pub struct Options {
     pub test_only: bool,
     pub diag_level: DiagLevel,
     pub constant_time_tag_name: Option<String>,
+    pub max_analysis_time_for_body: u64,
 }
 
 /// Represents diag level.
@@ -153,6 +160,18 @@ impl Options {
         }
         if matches.is_present("constant_time") {
             self.constant_time_tag_name = matches.value_of("constant_time").map(|s| s.to_owned());
+        }
+        if matches.is_present("body_analysis_timeout") {
+            self.max_analysis_time_for_body = match matches.value_of("body_analysis_timeout") {
+                Some(s) => match s.parse::<u64>() {
+                    Ok(v) => v,
+                    Err(_) => early_error(
+                        ErrorOutputType::default(),
+                        &"--body_analysis_timeout expects an integer",
+                    ),
+                },
+                None => assume_unreachable!(),
+            }
         }
         args[rustc_args_start..].to_vec()
     }

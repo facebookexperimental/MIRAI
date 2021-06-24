@@ -167,6 +167,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         parameter_types: &[Ty<'tcx>],
     ) -> Summary {
         let diag_level = self.cv.options.diag_level;
+        let max_analysis_time_for_body = self.cv.options.max_analysis_time_for_body;
         if cfg!(DEBUG) {
             let mut stdout = std::io::stdout();
             stdout.write_fmt(format_args!("{:?}", self.def_id)).unwrap();
@@ -196,7 +197,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         fixed_point_visitor.visit_blocks();
 
         let elapsed_time_in_seconds = fixed_point_visitor.bv.start_instant.elapsed().as_secs();
-        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+        if elapsed_time_in_seconds >= max_analysis_time_for_body {
             fixed_point_visitor
                 .bv
                 .report_timeout(elapsed_time_in_seconds);
@@ -207,7 +208,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             ..Summary::default()
         };
         if !fixed_point_visitor.bv.analysis_is_incomplete
-            || (elapsed_time_in_seconds < k_limits::MAX_ANALYSIS_TIME_FOR_BODY
+            || (elapsed_time_in_seconds < max_analysis_time_for_body
                 && diag_level == DiagLevel::Paranoid)
         {
             // Now traverse the blocks again, doing checks and emitting diagnostics.
@@ -223,7 +224,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 *entry -= 1;
             }
             let elapsed_time_in_seconds = self.start_instant.elapsed().as_secs();
-            if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+            if elapsed_time_in_seconds >= max_analysis_time_for_body {
                 self.report_timeout(elapsed_time_in_seconds);
             } else {
                 // Now create a summary of the body that can be in-lined into call sites.
