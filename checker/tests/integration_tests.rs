@@ -155,6 +155,7 @@ fn invoke_driver(
     // Read MIRAI options from file content.
     let mut options = Options::default();
     options.diag_level = DiagLevel::Paranoid;
+    options.max_analysis_time_for_body = 40;
     let mut rustc_args = vec![]; // any arguments after `--` for rustc
     {
         let file_content = read_to_string(&Path::new(&file_name)).unwrap();

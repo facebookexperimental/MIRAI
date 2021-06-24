@@ -43,6 +43,7 @@ string which can contain any of the following flags:
    functions that may contain such errors. With `library` it will require explicit preconditions.
    With `paranoid` it will flag any issue that may be an error.
 - `--single_func <name>`: the name of a specific function you want to analyze.
+- `--body_analysis_timeout <seconds>`: the maximum number of seconds to spend analyzing a function body.
 - `--`: any arguments after this marker are passed on to rustc.
 
 You can get some insight into the inner workings of MIRAI by setting the verbosity level of log output to one of 

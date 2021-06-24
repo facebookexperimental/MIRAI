@@ -34,7 +34,7 @@ extern crate log;
 
 /// If the currently analyzed function has been marked as angelic because was discovered
 /// to do something that cannot be analyzed, or if the time taken to analyze the current
-/// function exceeded k_limits::MAX_ANALYSIS_TIME_FOR_BODY, break out of the current loop.
+/// function exceeded options.max_analysis_time_for_body, break out of the current loop.
 /// When a timeout happens, currently analyzed function is marked as angelic.
 macro_rules! check_for_early_break {
     ($sel:expr) => {
@@ -42,7 +42,7 @@ macro_rules! check_for_early_break {
             break;
         }
         let elapsed_time_in_seconds = $sel.start_instant.elapsed().as_secs();
-        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+        if elapsed_time_in_seconds >= $sel.cv.options.max_analysis_time_for_body {
             $sel.analysis_is_incomplete = true;
             break;
         }
@@ -51,7 +51,7 @@ macro_rules! check_for_early_break {
 
 /// If the currently analyzed function has been marked as angelic because was discovered
 /// to do something that cannot be analyzed, or if the time taken to analyze the current
-/// function exceeded k_limits::MAX_ANALYSIS_TIME_FOR_BODY, return to the caller.
+/// function exceeded options.max_analysis_time_for_body, return to the caller.
 /// When a timeout happens, currently analyzed function is marked as angelic.
 macro_rules! check_for_early_return {
     ($sel:expr) => {
@@ -59,7 +59,7 @@ macro_rules! check_for_early_return {
             return;
         }
         let elapsed_time_in_seconds = $sel.start_instant.elapsed().as_secs();
-        if elapsed_time_in_seconds >= k_limits::MAX_ANALYSIS_TIME_FOR_BODY {
+        if elapsed_time_in_seconds >= $sel.cv.options.max_analysis_time_for_body {
             $sel.analysis_is_incomplete = true;
             return;
         }
