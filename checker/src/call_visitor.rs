@@ -141,7 +141,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     .bv
                     .cv
                     .summary_cache
-                    .get_summary_for_call_site(&func_ref, func_args, initial_type_cache);
+                    .get_summary_for_call_site(func_ref, func_args, initial_type_cache);
                 if previous_summary.is_computed {
                     summary.join_side_effects(previous_summary)
                 }
@@ -308,7 +308,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 .bv
                 .cv
                 .summary_cache
-                .get_summary_for_call_site(&func_ref, &func_args, &initial_type_cache)
+                .get_summary_for_call_site(func_ref, &func_args, &initial_type_cache)
                 .clone();
             if result.is_computed || func_ref.def_id.is_none() {
                 return Some(result);
@@ -328,7 +328,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         .cv
                         .summary_cache
                         .set_summary_for_call_site(
-                            &func_ref,
+                            func_ref,
                             &func_args,
                             &self.initial_type_cache,
                             summary.clone(),
@@ -348,7 +348,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     .cv
                     .summary_cache
                     .set_summary_for_call_site(
-                        &func_ref,
+                        func_ref,
                         &func_args,
                         &self.initial_type_cache,
                         summary.clone(),
@@ -780,10 +780,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         )
                         .is_none()
                     {
-                        self.block_visitor.try_extend_post_condition(&cond);
+                        self.block_visitor.try_extend_post_condition(cond);
                     }
                 } else {
-                    self.block_visitor.try_extend_post_condition(&cond);
+                    self.block_visitor.try_extend_post_condition(cond);
                 }
             }
             KnownNames::MiraiVerify => {
@@ -1441,13 +1441,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
 
                     let path_prefix_rustc_type = self
                         .type_visitor()
-                        .get_path_rustc_type(&path_prefix, self.block_visitor.bv.current_span);
+                        .get_path_rustc_type(path_prefix, self.block_visitor.bv.current_span);
                     if !path_prefix_rustc_type.is_scalar() {
                         let tag_field_value = self
                             .block_visitor
                             .bv
                             .extract_tag_field_of_non_scalar_value_at(
-                                &path_prefix,
+                                path_prefix,
                                 path_prefix_rustc_type,
                             )
                             .1;
@@ -2387,9 +2387,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             self.destination,
             self.actual_args
         );
-        self.check_preconditions_if_necessary(&function_summary);
-        self.transfer_and_refine_normal_return_state(&function_summary);
-        self.add_post_condition_to_exit_conditions(&function_summary);
+        self.check_preconditions_if_necessary(function_summary);
+        self.transfer_and_refine_normal_return_state(function_summary);
+        self.add_post_condition_to_exit_conditions(function_summary);
         trace!("post env {:?}", self.block_visitor.bv.current_environment);
     }
 
@@ -2707,7 +2707,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 if let Some(post_condition) = &function_summary.post_condition {
                     let refined_post_condition = post_condition.refine_parameters_and_paths(
                         &self.actual_args,
-                        &result_path,
+                        result_path,
                         &self.environment_before_call,
                         &self.block_visitor.bv.current_environment,
                         self.block_visitor.bv.fresh_variable_offset,

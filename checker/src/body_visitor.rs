@@ -187,7 +187,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         // Also add entries for closure fields.
         for (path, path_ty, val) in function_constant_args.iter() {
             self.type_visitor_mut()
-                .add_any_closure_fields_for(path_ty, &path, &mut first_state);
+                .add_any_closure_fields_for(path_ty, path, &mut first_state);
             first_state.value_map.insert_mut(path.clone(), val.clone());
         }
         first_state.exit_conditions = HashTrieMap::default();
@@ -311,7 +311,11 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         use rustc_span::hygiene::{ExpnData, ExpnKind, MacroKind};
         if let [span] = &diagnostic_builder.span.primary_spans() {
             if let Some(ExpnData {
-                kind: ExpnKind::Macro(MacroKind::Derive, ..),
+                kind:
+                    ExpnKind::Macro {
+                        kind: MacroKind::Derive,
+                        ..
+                    },
                 ..
             }) = span.source_callee()
             {
@@ -1251,7 +1255,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     // when resolving methods using the target value as self.
                     let source_type = self
                         .type_visitor
-                        .get_path_rustc_type(&path, self.current_span);
+                        .get_path_rustc_type(path, self.current_span);
                     self.type_visitor
                         .set_path_rustc_type(tpath.clone(), source_type);
                     if let PathEnum::LocalVariable { ordinal, .. } = &path.value {
@@ -1376,7 +1380,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         .current_environment
                         .value_map
                         .iter()
-                        .filter(|(p, _)| (**p) == *qualifier || p.is_rooted_by(&qualifier))
+                        .filter(|(p, _)| (**p) == *qualifier || p.is_rooted_by(qualifier))
                     {
                         purged_map = purged_map.remove(path);
                     }
@@ -2308,7 +2312,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 } else {
                     trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
-                let old_value = value_map.get(&qualified_path).unwrap_or(&value);
+                let old_value = value_map.get(&qualified_path).unwrap_or(value);
                 update(self, qualified_path, old_value.clone(), value.clone());
                 no_children = false;
             }
@@ -2447,7 +2451,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             ..
         } = &path.value
         {
-            if qualifier.eq(&root) {
+            if qualifier.eq(root) {
                 if let PathSelector::Index(index_value) = &**selector {
                     return Some(index_value.clone());
                 }

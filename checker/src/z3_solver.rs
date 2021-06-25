@@ -228,7 +228,7 @@ impl Z3Solver {
             Expression::Cast {
                 operand,
                 target_type,
-            } => self.general_cast(&operand, target_type),
+            } => self.general_cast(operand, target_type),
             Expression::CompileTimeConstant(const_domain) => self.get_constant_as_ast(const_domain),
             Expression::ConditionalExpression {
                 condition,
@@ -319,7 +319,7 @@ impl Z3Solver {
                 ..
             }
             | Expression::InitialParameterValue { path, var_type }
-            | Expression::Variable { path, var_type } => self.general_variable(path, &var_type),
+            | Expression::Variable { path, var_type } => self.general_variable(path, var_type),
             Expression::UnknownTagCheck {
                 operand,
                 tag,
@@ -865,7 +865,7 @@ impl Z3Solver {
             let path_symbol = self.get_symbol_for(path);
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
             if target_type.is_integer() {
-                let interval = operand.widen(&path).get_as_interval();
+                let interval = operand.widen(path).get_as_interval();
                 if !interval.is_bottom() {
                     if let Some(lower_bound) = interval.lower_bound() {
                         let lb = self.get_constant_as_ast(&ConstantDomain::I128(lower_bound));
@@ -965,7 +965,7 @@ impl Z3Solver {
             }
             Expression::Join { path, .. }
             | Expression::UnknownModelField { path, .. }
-            | Expression::UnknownTagField { path } => self.numeric_join(&expression, path),
+            | Expression::UnknownTagField { path } => self.numeric_join(expression, path),
             Expression::Mul { left, right } => {
                 self.numeric_binary_var_arg(left, right, z3_sys::Z3_mk_fpa_mul, z3_sys::Z3_mk_mul)
             }
@@ -1334,7 +1334,7 @@ impl Z3Solver {
                             }
 
                             self.transmute_to_signed_if_necessary(
-                                &target_type,
+                                target_type,
                                 modulo_ast,
                                 unsigned_ast,
                             )
@@ -1361,7 +1361,7 @@ impl Z3Solver {
                             }
 
                             self.transmute_to_signed_if_necessary(
-                                &target_type,
+                                target_type,
                                 modulo_ast,
                                 unsigned_ast,
                             )

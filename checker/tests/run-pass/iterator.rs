@@ -6,6 +6,7 @@
 // A test that uses ranges mutated via iterators in a loop.
 
 #![feature(unchecked_math)]
+#![feature(step_trait)]
 
 use mirai_annotations::*;
 

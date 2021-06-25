@@ -4,7 +4,7 @@ os:
   - windows
 language: rust
 rust:
-- nightly-2021-05-06
+- nightly-2021-06-25
 
 install:
 # install rustc-dev

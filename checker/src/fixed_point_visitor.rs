@@ -371,7 +371,7 @@ fn get_sorted_block_indices(
         add_predecessors_then_root_block(
             mir,
             bb,
-            &dominators,
+            dominators,
             &mut loop_anchors,
             &mut block_indices,
             &mut already_added,
