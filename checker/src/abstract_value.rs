@@ -5711,6 +5711,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn unsigned_modulo(&self, num_bits: u8) -> Rc<AbstractValue> {
         if let Expression::CompileTimeConstant(c) = &self.expression {
             Rc::new(c.unsigned_modulo(num_bits).into())
+        } else if num_bits == 128 {
+            self.try_to_retype_as(&ExpressionType::U128)
         } else {
             let power_of_two = Rc::new(ConstantDomain::U128(1 << num_bits).into());
             let unsigned = self.try_to_retype_as(&ExpressionType::U128);
