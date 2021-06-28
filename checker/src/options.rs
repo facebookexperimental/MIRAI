@@ -167,7 +167,7 @@ impl Options {
                     Ok(v) => v,
                     Err(_) => early_error(
                         ErrorOutputType::default(),
-                        &"--body_analysis_timeout expects an integer",
+                        "--body_analysis_timeout expects an integer",
                     ),
                 },
                 None => assume_unreachable!(),

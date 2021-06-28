@@ -72,7 +72,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     /// Called before creating the compiler instance
     #[logfn(TRACE)]
     fn config(&mut self, config: &mut interface::Config) {
-        self.file_name = config.input.source_name().to_string();
+        self.file_name = config.input.source_name().prefer_remapped().to_string();
         info!("Processing input file: {}", self.file_name);
         if self.options.test_only {
             if config.opts.test {
@@ -150,6 +150,7 @@ impl MiraiCallbacks {
             || file_name.contains("consensus/src") // Sorts Int and <null> are incompatible
             || file_name.contains("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
             || file_name.contains("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
+            || file_name.contains("json-rpc/src") // expected a type, but found another kind
             || file_name.contains("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
             || file_name.contains("language/diem-tools/writeset-transaction-generator/src") // stack overflow
             || file_name.contains("language/diem-vm/src") // Sorts Bool and Int are incompatible
@@ -162,6 +163,7 @@ impl MiraiCallbacks {
             || file_name.contains("language/move-stdlib/src") // stack overflow
             || file_name.contains("language/move-prover/lab/src")  // stack overflow
             || file_name.contains("language/tools/move-bytecode-viewer/src") // out of memory
+            || file_name.contains("language/tools/move-cli/src") // non termination
             || file_name.contains("language/tools/move-coverage/src") // out of memory
             || file_name.contains("language/tools/move-unit-test/src") // non termination
             || file_name.contains("language/tools/read-write-set/src")  // non termination
@@ -193,7 +195,6 @@ impl MiraiCallbacks {
                 || file_name.contains("crypto/crypto/src")
                 || file_name.contains("crypto/crypto-derive/src")
                 || file_name.contains("diem-node/src")
-                || file_name.contains("json-rpc/src")
                 || file_name.contains("language/bytecode-verifier/src")
                 || file_name.contains("language/compiler/src")
                 || file_name.contains("language/compiler/ir-to-bytecode/src")
@@ -206,11 +207,12 @@ impl MiraiCallbacks {
                 || file_name.contains("language/move-prover/bytecode/src")
                 || file_name.contains("language/move-prover/docgen/src")
                 || file_name.contains("language/move-prover/interpreter/src")
+                || file_name.contains("language/move-prover/interpreter/crypto/src")
                 || file_name.contains("move-prover/errmapgen/src")
-                || file_name.contains("language/tools/move-cli/src")
                 || file_name.contains("language/tools/resource-viewer/src")
                 || file_name.contains("language/tools/vm-genesis/src")
                 || file_name.contains("network/builder/src")
+                || file_name.contains("network/discovery/src")
                 || file_name.contains("network/simple-onchain-discovery/src")
                 || file_name.contains("sdk/src")
                 || file_name.contains("secure/key-manager/src")

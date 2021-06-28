@@ -24,7 +24,7 @@ impl ExpectedErrors {
     /// Each message becomes an element of ExpectedErrors.messages.
     #[logfn_inputs(TRACE)]
     pub fn new(path: &str) -> ExpectedErrors {
-        let exp = load_errors(&PathBuf::from_str(&path).unwrap());
+        let exp = load_errors(&PathBuf::from_str(path).unwrap());
         ExpectedErrors {
             expected_messages: exp,
         }
@@ -86,7 +86,7 @@ fn load_errors(testfile: &Path) -> Vec<String> {
     let tag = "//~";
     rdr.lines()
         .enumerate()
-        .filter_map(|(_line_num, line)| parse_expected(&line.unwrap(), &tag))
+        .filter_map(|(_line_num, line)| parse_expected(&line.unwrap(), tag))
         .collect()
 }
 

@@ -7,7 +7,6 @@
 // A test that checks that a fat pointer can be tracked over a union with a thin pointer.
 
 #![feature(untagged_unions)]
-#![feature(const_fn)]
 #![feature(const_fn_union)]
 
 use mirai_annotations::*;

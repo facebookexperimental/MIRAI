@@ -766,7 +766,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     ) -> Ty<'tcx> {
         let result = {
             let base_type = self.get_loc_ty(place.local);
-            self.get_type_for_projection_element(current_span, base_type, &place.projection)
+            self.get_type_for_projection_element(current_span, base_type, place.projection)
         };
         match result.kind() {
             TyKind::Param(t_par) => {
@@ -1086,7 +1086,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 .mk_opaque(*def_id, self.specialize_substs(substs, map)),
             TyKind::Param(ParamTy { name, .. }) => {
                 if let Some(map) = map {
-                    if let Some(gen_arg) = map.get(&name) {
+                    if let Some(gen_arg) = map.get(name) {
                         return gen_arg.expect_ty();
                     }
                 }
@@ -1104,7 +1104,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     ) -> SubstsRef<'tcx> {
         let specialized_generic_args: Vec<GenericArg<'_>> = substs
             .iter()
-            .map(|gen_arg| self.specialize_generic_argument(gen_arg, &map))
+            .map(|gen_arg| self.specialize_generic_argument(gen_arg, map))
             .collect();
         self.tcx.intern_substs(&specialized_generic_args)
     }

@@ -21,7 +21,7 @@ use log::*;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::*;
 use rustc_errors::{Diagnostic, DiagnosticBuilder};
-use rustc_hir::def_id::{DefId, LOCAL_CRATE};
+use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{TyCtxt, Unevaluated};
@@ -118,7 +118,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
             Some(vec![func_name.clone()])
         } else if self.options.test_only {
             // Extract test functions from the main test runner.
-            if let Some((entry_def_id, _)) = self.tcx.entry_fn(LOCAL_CRATE) {
+            if let Some((entry_def_id, _)) = self.tcx.entry_fn(()) {
                 let fns = self.extract_test_fns(entry_def_id);
                 if fns.is_empty() {
                     info!("Could not extract any tests from main entry point");
@@ -249,9 +249,9 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
             ) -> Ordering {
                 let xd: &Diagnostic = x.deref();
                 let yd: &Diagnostic = y.deref();
-                if xd.span.primary_spans().lt(&yd.span.primary_spans()) {
+                if xd.span.primary_spans().lt(yd.span.primary_spans()) {
                     Ordering::Less
-                } else if xd.span.primary_spans().gt(&yd.span.primary_spans()) {
+                } else if xd.span.primary_spans().gt(yd.span.primary_spans()) {
                     Ordering::Greater
                 } else {
                     Ordering::Equal

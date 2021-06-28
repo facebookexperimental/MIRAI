@@ -6,12 +6,10 @@
 
 // A test that visits the Place::Promoted case in Visitor::visit_place
 
-#![feature(const_fn)]
-
 const FLOAT1_AS_I32: i32 = 1065353216;
 
 pub fn main() {
     match &FLOAT1_AS_I32 {
-        x => *x
+        x => *x,
     };
 }

@@ -1305,7 +1305,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ),
             Expression::Join { left, right, path } => left
                 .cast(target_type.clone())
-                .join(right.cast(target_type), &path),
+                .join(right.cast(target_type), path),
             Expression::Switch {
                 discriminator,
                 cases,
@@ -1810,7 +1810,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .divide(right.try_to_retype_as(target_type)),
             Expression::Join { path, left, right } => left
                 .try_to_retype_as(target_type)
-                .join(right.try_to_retype_as(target_type), &path),
+                .join(right.try_to_retype_as(target_type), path),
             Expression::Mul { left, right } => left
                 .try_to_retype_as(target_type)
                 .multiply(right.try_to_retype_as(target_type)),
@@ -3396,7 +3396,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
             // [x || !x] -> true
             if let Expression::LogicalNot { operand } = &other.expression {
-                if is_contained_in(operand, &self) {
+                if is_contained_in(operand, self) {
                     return Rc::new(TRUE);
                 }
             } else if is_contained_in(&self.logical_not(), &other) {
@@ -3448,7 +3448,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     return Rc::new(TRUE);
                 }
                 // [x || !x] -> true
-                (_, Expression::LogicalNot { ref operand }) if (**operand).eq(&self) => {
+                (_, Expression::LogicalNot { ref operand }) if (**operand).eq(self) => {
                     return Rc::new(TRUE);
                 }
 
@@ -4295,10 +4295,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
             ) => {
                 // This is a conservative answer. False does not imply other.subset(self).
-                self.subset(&consequent) || self.subset(&alternate)
+                self.subset(consequent) || self.subset(alternate)
             }
             // x subset widen { z } if x subset z
-            (_, Expression::WidenedJoin { operand, .. }) => self.subset(&operand),
+            (_, Expression::WidenedJoin { operand, .. }) => self.subset(operand),
             // (left join right) is a subset of x if both left and right are subsets of x.
             (Expression::Join { left, right, .. }, _) => {
                 // This is a conservative answer. False does not imply other.subset(self).
@@ -4307,7 +4307,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // x is a subset of (left join right) if x is a subset of either left or right.
             (_, Expression::Join { left, right, .. }) => {
                 // This is a conservative answer. False does not imply other.subset(self).
-                self.subset(&left) || self.subset(&right)
+                self.subset(left) || self.subset(right)
             }
             _ => false,
         }
@@ -4428,10 +4428,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             );
         };
         if let Join { left, right, path } = &self.expression {
-            return recursive_op(left, other.clone()).join(recursive_op(right, other), &path);
+            return recursive_op(left, other.clone()).join(recursive_op(right, other), path);
         }
         if let Join { left, right, path } = &other.expression {
-            return recursive_op(self, left.clone()).join(recursive_op(self, right.clone()), &path);
+            return recursive_op(self, left.clone()).join(recursive_op(self, right.clone()), path);
         }
         operation(self.clone(), other)
     }
@@ -4989,7 +4989,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 let arr1 = refined_left.try_resolve_as_byte_array(post_env);
                 let arr2 = refined_right.try_resolve_as_byte_array(post_env);
                 if let (Some(arr1), Some(arr2)) = (&arr1, &arr2) {
-                    return Rc::new(ConstantDomain::I128(arr1.cmp(&arr2) as i32 as i128).into());
+                    return Rc::new(ConstantDomain::I128(arr1.cmp(arr2) as i32 as i128).into());
                 }
 
                 let str1 = refined_left.try_resolve_as_ref_to_str(post_env);
@@ -5329,9 +5329,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // two refinements and the expensive and constructor, if they succeed.
                 // If they mostly fail, they will cost more than they save. It is not
                 // clear at this point if they are a win, but they are kept for the sake of precision.
-                if path_condition.implies(&condition) {
+                if path_condition.implies(condition) {
                     consequent.refine_with(path_condition, depth + 1)
-                } else if path_condition.implies_not(&condition) {
+                } else if path_condition.implies_not(condition) {
                     alternate.refine_with(path_condition, depth + 1)
                 } else {
                     let refined_condition = condition.refine_with(path_condition, depth + 1);
@@ -5387,7 +5387,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .intrinsic_floating_point_unary(*name),
             Expression::Join { left, right, path } => left
                 .refine_with(path_condition, depth + 1)
-                .join(right.refine_with(path_condition, depth + 1), &path),
+                .join(right.refine_with(path_condition, depth + 1), path),
             Expression::LessOrEqual { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .less_or_equal(right.refine_with(path_condition, depth + 1)),
@@ -5429,15 +5429,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // refining the right expression whenever possible, even at the expense of
                 // more checks here. If the performance of implies and implies_not should become
                 // significantly worse than it is now, this could become a performance bottle neck.
-                if path_condition.implies(&left) || path_condition.implies(&right) {
+                if path_condition.implies(left) || path_condition.implies(right) {
                     Rc::new(TRUE)
-                } else if path_condition.implies_not(&left) {
-                    if path_condition.implies_not(&right) {
+                } else if path_condition.implies_not(left) {
+                    if path_condition.implies_not(right) {
                         Rc::new(FALSE)
                     } else {
                         right.refine_with(path_condition, depth + 1)
                     }
-                } else if path_condition.implies_not(&right) {
+                } else if path_condition.implies_not(right) {
                     left.refine_with(path_condition, depth + 1)
                 } else {
                     left.refine_with(path_condition, depth + 1)
@@ -5543,16 +5543,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::UnknownTagField { .. } => self.clone(),
             Expression::Variable { var_type, .. } => {
                 if *var_type == ExpressionType::Bool {
-                    if path_condition.implies(&self) {
+                    if path_condition.implies(self) {
                         return Rc::new(TRUE);
-                    } else if path_condition.implies_not(&self) {
+                    } else if path_condition.implies_not(self) {
                         return Rc::new(FALSE);
                     }
                 }
                 self.clone()
             }
             Expression::WidenedJoin { path, operand } => {
-                operand.refine_with(path_condition, depth + 1).widen(&path)
+                operand.refine_with(path_condition, depth + 1).widen(path)
             }
         }
     }

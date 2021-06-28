@@ -769,7 +769,7 @@ impl PathRefinement for Rc<Path> {
     /// PathSelector::Slice.
     #[logfn_inputs(TRACE)]
     fn canonicalize(&self, environment: &Environment) -> Rc<Path> {
-        if let Some(val) = environment.value_at(&self) {
+        if let Some(val) = environment.value_at(self) {
             // If self binds to value &p then self and path &p are equivalent paths.
             // Since self is derived from p, we use path &p as the canonical form.
             // If we used self instead, then what would we do if we encounter another

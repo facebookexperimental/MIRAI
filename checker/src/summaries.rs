@@ -260,7 +260,10 @@ fn add_provenance(preconditions: &[Precondition], tcx: TyCtxt<'_>) -> Vec<Precon
                 let last_span = precondition.spans.last();
                 let span = last_span.unwrap().source_callsite();
                 precond.provenance = Some(Rc::from(
-                    tcx.sess.source_map().span_to_string(span).as_str(),
+                    tcx.sess
+                        .source_map()
+                        .span_to_diagnostic_string(span)
+                        .as_str(),
                 ));
             }
             precond

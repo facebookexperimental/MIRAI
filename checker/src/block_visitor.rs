@@ -26,7 +26,7 @@ use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::mir::interpret::{ConstValue, GlobalAlloc, Scalar};
+use rustc_middle::mir::interpret::{alloc_range, ConstValue, GlobalAlloc, Scalar};
 use rustc_middle::ty::adjustment::PointerCast;
 use rustc_middle::ty::layout::PrimitiveExt;
 use rustc_middle::ty::subst::{GenericArg, SubstsRef};
@@ -729,7 +729,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             actual_arg_types[i]
                         } else {
                             self.type_visitor()
-                                .get_path_rustc_type(&path, self.bv.current_span)
+                                .get_path_rustc_type(path, self.bv.current_span)
                         };
                         if !ty.is_never() {
                             result.push((param_path, ty, value.clone()));
@@ -752,7 +752,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                     let param_path = path.replace_root(ipath, param_path_root);
                                     let ty = self
                                         .type_visitor()
-                                        .get_path_rustc_type(&path, self.bv.current_span);
+                                        .get_path_rustc_type(path, self.bv.current_span);
                                     result.push((param_path, ty, value.clone()));
                                     break;
                                 }
@@ -993,7 +993,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .session
             .struct_span_warn(span, diagnostic.as_ref());
         for pc_span in precondition.spans.iter() {
-            let span_str = self.bv.tcx.sess.source_map().span_to_string(*pc_span);
+            let span_str = self
+                .bv
+                .tcx
+                .sess
+                .source_map()
+                .span_to_diagnostic_string(*pc_span);
             if span_str.starts_with("/rustc/") {
                 warning.span_note(*pc_span, &format!("related location {}", span_str));
             } else {
@@ -1774,8 +1779,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let len_value = if let TyKind::Array(_, len) = place_ty.kind() {
             // We only get here if "-Z mir-opt-level=0" was specified.
             // With more optimization the len instruction becomes a constant.
-            self.visit_const(&len)
+            self.visit_const(len)
         } else {
+            // In this case place type must be a slice.
             let mut value_path = self.visit_lh_place(place);
             if let PathEnum::QualifiedPath {
                 qualifier,
@@ -1784,8 +1790,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             } = &value_path.value
             {
                 if let PathSelector::Deref = selector.as_ref() {
-                    // de-referencing a slice pointer is normally the same as de-referencing its
-                    // thin pointer, so self.visit_lh_place above assumed that much.
+                    // De-referencing a slice pointer is normally the same as de-referencing its
+                    // thin pointer, so self.visit_lh_place above assumed that much and will have
+                    // added in a field 0 selector before the deref.
                     // In this context, however, we want the length of the slice pointer,
                     // so we need to drop the thin pointer field selector.
                     if let PathEnum::QualifiedPath {
@@ -1795,19 +1802,15 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     } = &qualifier.value
                     {
                         if matches!(selector.as_ref(), PathSelector::Field(0)) {
-                            let qualifier_type = self
-                                .type_visitor()
-                                .get_path_rustc_type(qualifier, self.bv.current_span);
-                            if self.type_visitor().is_slice_pointer(qualifier_type.kind()) {
-                                value_path = qualifier.clone();
-                            }
+                            value_path = qualifier.clone();
                         }
                     }
                 } else {
                     assume_unreachable!("{:?}", selector);
                 }
             }
-            let length_path = Path::new_length(value_path);
+            let length_path =
+                Path::new_length(value_path).canonicalize(&self.bv.current_environment);
             self.bv
                 .lookup_path_and_refine_result(length_path, self.bv.tcx.types.usize)
         };
@@ -1895,7 +1898,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                     .kind()
                                 {
                                     let length_path = Path::new_length(target_path);
-                                    let length_value = self.visit_const(&len);
+                                    let length_value = self.visit_const(len);
                                     self.bv
                                         .current_environment
                                         .update_value_at(length_path, length_value);
@@ -2463,7 +2466,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     }
                     _ => {
                         return Rc::new(
-                            self.get_constant_from_scalar(&lty.kind(), *scalar_int)
+                            self.get_constant_from_scalar(lty.kind(), *scalar_int)
                                 .clone()
                                 .into(),
                         );
@@ -2481,8 +2484,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         let bytes = alloc
                             .get_bytes(
                                 &self.bv.tcx,
-                                *ptr,
-                                rustc_target::abi::Size::from_bytes(size),
+                                alloc_range(ptr.offset, rustc_target::abi::Size::from_bytes(size)),
                             )
                             .unwrap();
                         match lty.kind() {
@@ -2529,12 +2531,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 let bytes = data
                     .get_bytes(
                         &self.bv.tcx,
-                        // invent a pointer, only the offset is relevant anyway
-                        mir::interpret::Pointer::new(
-                            mir::interpret::AllocId(0),
+                        alloc_range(
                             rustc_target::abi::Size::from_bytes(*start as u64),
+                            rustc_target::abi::Size::from_bytes(size as u64),
                         ),
-                        rustc_target::abi::Size::from_bytes(size as u64),
                     )
                     .unwrap();
                 let slice = &bytes[*start..*end];
@@ -3238,7 +3238,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     }
                 }
                 TyKind::Array(_, len) => {
-                    let len_val = self.visit_const(&len);
+                    let len_val = self.visit_const(len);
                     let len_path = Path::new_length(base_path.clone());
                     self.bv
                         .current_environment
@@ -3280,7 +3280,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             base_path
         } else {
-            self.visit_projection(base_path, ty, &place.projection)
+            self.visit_projection(base_path, ty, place.projection)
         }
     }
 
