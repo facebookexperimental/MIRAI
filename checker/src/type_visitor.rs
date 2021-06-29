@@ -407,7 +407,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             TyKind::Adt(def, substs) => {
                                 return self.get_field_type(def, substs, *ordinal);
                             }
-                            TyKind::Array(elem_ty, ..) => {
+                            TyKind::Array(elem_ty, ..) | TyKind::Slice(elem_ty) => {
                                 match *ordinal {
                                     0 => {
                                         // Field 0 of a sized array is a raw pointer to the array element type
@@ -959,12 +959,15 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         self.specialize_generic_argument_type(item_type, &map)
                     }
                 } else {
-                    if specialized_substs.len() == 1
-                        && self.tcx.parent(item_def_id)
-                            == self.tcx.lang_items().discriminant_kind_trait()
-                    {
-                        let enum_arg = specialized_substs[0];
-                        if let GenericArgKind::Type(enum_ty) = enum_arg.unpack() {
+                    let projection_trait = self.tcx.parent(item_def_id);
+                    if projection_trait == self.tcx.lang_items().pointee_trait() {
+                        assume!(!specialized_substs.is_empty());
+                        if let GenericArgKind::Type(ty) = specialized_substs[0].unpack() {
+                            return ty.ptr_metadata_ty(self.tcx);
+                        }
+                    } else if projection_trait == self.tcx.lang_items().discriminant_kind_trait() {
+                        assume!(!specialized_substs.is_empty());
+                        if let GenericArgKind::Type(enum_ty) = specialized_substs[0].unpack() {
                             return enum_ty.discriminant_ty(self.tcx);
                         }
                     }
