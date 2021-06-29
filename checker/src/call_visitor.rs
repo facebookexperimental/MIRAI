@@ -2379,18 +2379,17 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// preconditions and add the post conditions to the exit condition guarding the post call target block.
     #[logfn_inputs(TRACE)]
     pub fn transfer_and_refine_into_current_environment(&mut self, function_summary: &Summary) {
-        trace!("def_id {:?}", self.callee_def_id);
-        trace!("summary {:?}", function_summary);
-        trace!("pre env {:?}", self.block_visitor.bv.current_environment);
-        trace!(
+        debug!("def_id {:?}", self.callee_def_id);
+        debug!("summary {:?}", function_summary);
+        debug!("pre env {:?}", self.block_visitor.bv.current_environment);
+        debug!(
             "target {:?} arguments {:?}",
-            self.destination,
-            self.actual_args
+            self.destination, self.actual_args
         );
         self.check_preconditions_if_necessary(function_summary);
         self.transfer_and_refine_normal_return_state(function_summary);
         self.add_post_condition_to_exit_conditions(function_summary);
-        trace!("post env {:?}", self.block_visitor.bv.current_environment);
+        debug!("post env {:?}", self.block_visitor.bv.current_environment);
     }
 
     /// If we are checking for errors and have not assumed the preconditions of the called function

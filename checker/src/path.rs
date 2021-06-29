@@ -833,7 +833,7 @@ impl PathRefinement for Rc<Path> {
                     Expression::Offset { left, right } if right.is_zero() => {
                         if let Expression::Reference(p) = &left.expression {
                             // *offset(&p, 0) becomes p
-                            if *selector.as_ref() == PathSelector::Deref {
+                            if **selector == PathSelector::Deref {
                                 return p.clone();
                             }
                         }

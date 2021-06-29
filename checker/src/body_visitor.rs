@@ -1831,10 +1831,34 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
             }
             _ => {
-                if !self
+                if self
                     .type_visitor()
                     .is_slice_pointer(target_rustc_type.kind())
                 {
+                    if self.type_visitor.is_slice_pointer(source_rustc_type.kind())
+                        && !self
+                            .type_visitor
+                            .is_string_pointer(source_rustc_type.kind())
+                    {
+                        let pointer_path = Path::new_field(source_path.clone(), 0);
+                        let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                            ty: self.type_visitor.get_element_type(source_rustc_type),
+                            mutbl: rustc_hir::Mutability::Not,
+                        });
+                        source_fields.push((pointer_path, pointer_type));
+                        let len_path = Path::new_length(source_path.clone());
+                        source_fields.push((len_path, self.tcx.types.usize));
+
+                        let pointer_path = Path::new_field(target_path.clone(), 0);
+                        let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                            ty: self.type_visitor.get_element_type(target_rustc_type),
+                            mutbl: rustc_hir::Mutability::Not,
+                        });
+                        target_fields.push((pointer_path, pointer_type));
+                        let len_path = Path::new_length(target_path.clone());
+                        target_fields.push((len_path, self.tcx.types.usize));
+                    }
+                } else {
                     target_fields.push((target_path.clone(), target_rustc_type))
                 }
             }
