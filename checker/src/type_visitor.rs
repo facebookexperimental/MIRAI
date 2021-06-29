@@ -257,6 +257,16 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
+    /// Returns true if the given type is a reference to the string type.
+    #[logfn_inputs(TRACE)]
+    pub fn is_string_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
+        if let TyKind::Ref(_, target, _) = ty_kind {
+            matches!(target.kind(), TyKind::Str)
+        } else {
+            false
+        }
+    }
+
     /// Returns true if the given type is a reference (or raw pointer) that is not a slice pointer
     #[logfn_inputs(TRACE)]
     pub fn is_thin_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
@@ -608,10 +618,12 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 match self.remove_transparent_wrappers(t).kind() {
                     TyKind::Array(t, _) => *t,
                     TyKind::Slice(t) => *t,
+                    TyKind::Str => self.tcx.types.char,
                     _ => t,
                 }
             }
             TyKind::Slice(t) => *t,
+            TyKind::Str => self.tcx.types.char,
             _ => ty,
         }
     }
