@@ -187,7 +187,7 @@ impl Debug for PathEnum {
             PathEnum::LocalVariable {
                 ordinal,
                 type_index,
-            } => f.write_fmt(format_args!("local_{}: {}", ordinal, type_index)),
+            } => f.write_fmt(format_args!("local_{}({})", ordinal, type_index)),
             PathEnum::Offset { value } => f.write_fmt(format_args!("<{:?}>", value)),
             PathEnum::Parameter { ordinal } => f.write_fmt(format_args!("param_{}", ordinal)),
             PathEnum::Result => f.write_str("result"),

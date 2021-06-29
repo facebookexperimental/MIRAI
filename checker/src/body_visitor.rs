@@ -1882,6 +1882,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 // discard the lower order bits from val since they have already been copied to a previous target field
                 val = val.unsigned_shift_right(copied_source_bits);
             }
+            let source_expression_type = ExpressionType::from(source_type.kind());
             let source_bits = ExpressionType::from(source_type.kind()).bit_length();
             let target_expression_type = ExpressionType::from(target_type.kind());
             let mut target_bits_to_write = target_expression_type.bit_length();
@@ -1897,8 +1898,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     // discard higher order bits since they wont fit into the target field
                     val = val.unsigned_modulo(target_bits_to_write);
                 }
-                self.current_environment
-                    .update_value_at(target_path, val.transmute(target_expression_type));
+                if source_expression_type != target_expression_type {
+                    val = val.transmute(target_expression_type);
+                }
+                self.current_environment.update_value_at(target_path, val);
                 copied_source_bits += target_bits_to_write;
                 if copied_source_bits == source_bits {
                     source_field_index += 1;
