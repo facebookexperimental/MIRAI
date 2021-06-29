@@ -230,7 +230,14 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     #[logfn_inputs(TRACE)]
     fn emit_or_check_diagnostics(&mut self) {
         self.session.diagnostic().reset_err_count();
-        if self.test_run {
+        if self.options.statistics {
+            let mut num_diags = 0;
+            self.diagnostics_for.values_mut().flatten().for_each(|db| {
+                db.cancel();
+                num_diags += 1;
+            });
+            print!("{}, analyzed, {}", self.file_name, num_diags);
+        } else if self.test_run {
             let mut expected_errors = expected_errors::ExpectedErrors::new(self.file_name);
             let mut diags = vec![];
             self.diagnostics_for.values_mut().flatten().for_each(|db| {
