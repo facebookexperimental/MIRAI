@@ -604,11 +604,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         let ty = self.remove_transparent_wrappers(ty);
         match &ty.kind() {
             TyKind::Array(t, _) => *t,
-            TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => match t.kind() {
-                TyKind::Array(t, _) => *t,
-                TyKind::Slice(t) => *t,
-                _ => t,
-            },
+            TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => {
+                match self.remove_transparent_wrappers(t).kind() {
+                    TyKind::Array(t, _) => *t,
+                    TyKind::Slice(t) => *t,
+                    _ => t,
+                }
+            }
             TyKind::Slice(t) => *t,
             _ => ty,
         }
