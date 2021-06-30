@@ -234,9 +234,15 @@ impl MiraiCallbacks {
     fn analyze_with_mirai<'tcx>(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
         if self.options.test_only {
             if Self::is_test_excluded(&self.file_name) {
+                if self.options.statistics {
+                    println!("{}, not analyzed, 0", self.file_name);
+                }
                 return;
             }
         } else if self.is_excluded(&self.file_name) {
+            if self.options.statistics {
+                println!("{}, not analyzed, 0", self.file_name);
+            }
             return;
         }
 

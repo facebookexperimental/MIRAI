@@ -44,6 +44,12 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .default_value("40")
         .help("The maximum number of seconds that MIRAI will spend analyzing a function body.")
         .long_help("The default is 40 seconds."))
+    .arg(Arg::with_name("statistics")
+        .long("statistics")
+        .short("stats")
+        .takes_value(false)
+        .help("Just print out whether crates were analyzed, etc.")
+        .long_help("Just print out whether crates were analyzed and how many diagnostics were produced for each crate."))
 }
 
 /// Represents options passed to MIRAI.
@@ -54,6 +60,7 @@ pub struct Options {
     pub diag_level: DiagLevel,
     pub constant_time_tag_name: Option<String>,
     pub max_analysis_time_for_body: u64,
+    pub statistics: bool,
 }
 
 /// Represents diag level.
@@ -172,6 +179,9 @@ impl Options {
                 },
                 None => assume_unreachable!(),
             }
+        }
+        if matches.is_present("statistics") {
+            self.statistics = true;
         }
         args[rustc_args_start..].to_vec()
     }
