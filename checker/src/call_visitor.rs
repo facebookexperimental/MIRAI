@@ -371,6 +371,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 self.type_visitor()
                     .get_dereferenced_type(self.actual_argument_types[0])
                     .kind(),
+                self.block_visitor.bv.tcx,
             );
             let source_path = Path::new_deref(
                 Path::get_as_path(self.actual_args[0].1.clone()),
@@ -947,7 +948,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             | KnownNames::StdIntrinsicsCtpop
             | KnownNames::StdIntrinsicsCttz => {
                 checked_assume!(self.actual_args.len() == 1);
-                let arg_type: ExpressionType = self.actual_argument_types[0].kind().into();
+                let arg_type = ExpressionType::from(
+                    self.actual_argument_types[0].kind(),
+                    self.block_visitor.bv.tcx,
+                );
                 let bit_length = arg_type.bit_length();
                 self.actual_args[0]
                     .1
@@ -996,7 +1000,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         }
                     }
                 }
-                let arg_type: ExpressionType = self.actual_argument_types[0].kind().into();
+                let arg_type = ExpressionType::from(
+                    self.actual_argument_types[0].kind(),
+                    self.block_visitor.bv.tcx,
+                );
                 let bit_length = arg_type.bit_length();
                 self.actual_args[0]
                     .1
@@ -1317,7 +1324,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         let mut source_rustc_type = self
             .type_visitor()
             .get_dereferenced_type(source_pointer_rustc_type);
-        let target_type = ExpressionType::from(source_rustc_type.kind());
+        let target_type = ExpressionType::from(source_rustc_type.kind(), self.block_visitor.bv.tcx);
         let source_thin_pointer_path = if source_rustc_type.is_box() {
             source_rustc_type = source_rustc_type.boxed_ty();
             let box_path = Path::new_deref(source_pointer_path, target_type.clone())
@@ -1523,6 +1530,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     self.type_visitor()
                         .get_dereferenced_type(self.actual_argument_types[0])
                         .kind(),
+                    self.block_visitor.bv.tcx,
                 );
                 qualifier = Path::new_deref(qualifier, target_type);
             }
@@ -1681,6 +1689,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     self.type_visitor()
                         .get_dereferenced_type(self.actual_argument_types[0])
                         .kind(),
+                    self.block_visitor.bv.tcx,
                 );
                 qualifier = Path::new_deref(qualifier, target_type);
             }
@@ -1784,6 +1793,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 self.type_visitor()
                     .get_dereferenced_type(self.actual_argument_types[0])
                     .kind(),
+                self.block_visitor.bv.tcx,
             );
             let discriminant_path = Path::new_discriminant(Path::new_deref(
                 Path::get_as_path(self.actual_args[0].1.clone()),
@@ -1899,6 +1909,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             self.type_visitor()
                 .get_dereferenced_type(self.actual_argument_types[0])
                 .kind(),
+            self.block_visitor.bv.tcx,
         );
         let heap_block_path = Path::new_deref(
             Path::get_as_path(self.actual_args[0].1.clone()),
@@ -2033,6 +2044,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             self.type_visitor()
                 .get_dereferenced_type(self.actual_argument_types[0])
                 .kind(),
+            self.block_visitor.bv.tcx,
         );
         let dest_path = Path::new_deref(
             Path::get_as_path(self.actual_args[0].1.clone()),
@@ -2224,6 +2236,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             self.type_visitor()
                 .get_dereferenced_type(self.actual_argument_types[0])
                 .kind(),
+            self.block_visitor.bv.tcx,
         );
         let dest_path = Path::new_deref(
             Path::get_as_path(self.actual_args[0].1.clone()),

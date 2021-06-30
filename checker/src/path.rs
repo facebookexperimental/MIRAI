@@ -514,7 +514,7 @@ impl Path {
             PathEnum::StaticVariable {
                 def_id: Some(def_id),
                 summary_cache_key: name,
-                expression_type: ExpressionType::from(ty.kind()),
+                expression_type: ExpressionType::from(ty.kind(), tcx),
             }
             .into(),
         )

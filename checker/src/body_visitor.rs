@@ -369,7 +369,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         path: Rc<Path>,
         result_rustc_type: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
-        let result_type: ExpressionType = result_rustc_type.kind().into();
+        let result_type = ExpressionType::from(result_rustc_type.kind(), self.tcx);
         match &path.value {
             PathEnum::Computed { value } | PathEnum::Offset { value } => {
                 return value.clone();
@@ -912,7 +912,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         ordinal: usize,
     ) {
         let target_type = self.type_visitor().get_dereferenced_type(result_rustc_type);
-        if ExpressionType::from(target_type.kind()).is_primitive() {
+        if ExpressionType::from(target_type.kind(), self.tcx).is_primitive() {
             // Kind of weird, but seems to be generated for debugging support.
             // Move the value into a path, so that we can drop the reference to the soon to be dead local.
             let target_value = self
@@ -1906,9 +1906,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 // discard the lower order bits from val since they have already been copied to a previous target field
                 val = val.unsigned_shift_right(copied_source_bits);
             }
-            let source_expression_type = ExpressionType::from(source_type.kind());
-            let source_bits = ExpressionType::from(source_type.kind()).bit_length();
-            let target_expression_type = ExpressionType::from(target_type.kind());
+            let source_expression_type = ExpressionType::from(source_type.kind(), self.tcx);
+            let source_bits = ExpressionType::from(source_type.kind(), self.tcx).bit_length();
+            let target_expression_type = ExpressionType::from(target_type.kind(), self.tcx);
             let mut target_bits_to_write = target_expression_type.bit_length();
             if source_bits == target_bits_to_write
                 && copied_source_bits == 0
@@ -1949,7 +1949,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     }
                     let (source_path, source_type) = &source_fields[source_field_index];
                     let source_path = source_path.canonicalize(&self.current_environment);
-                    let source_bits = ExpressionType::from(source_type.kind()).bit_length();
+                    let source_bits =
+                        ExpressionType::from(source_type.kind(), self.tcx).bit_length();
                     let mut next_val =
                         self.lookup_path_and_refine_result(source_path.clone(), source_type);
                     // discard higher order bits that wont fit into the target field
@@ -2352,7 +2353,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
             }
         }
-        let target_type: ExpressionType = (root_rustc_type.kind()).into();
+        let target_type = ExpressionType::from(root_rustc_type.kind(), self.tcx);
         if target_type != ExpressionType::NonPrimitive
             || no_children
             || root_rustc_type.is_closure()
@@ -2821,7 +2822,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
 
         let target_type = self.type_visitor().get_dereferenced_type(root_rustc_type);
         let tag_field_path = if target_type != root_rustc_type {
-            let target_type = ExpressionType::from(target_type.kind());
+            let target_type = ExpressionType::from(target_type.kind(), self.tcx);
             Path::new_tag_field(Path::new_deref(qualifier.clone(), target_type))
                 .canonicalize(&self.current_environment)
         } else {
