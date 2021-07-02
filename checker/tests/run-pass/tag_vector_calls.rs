@@ -25,7 +25,7 @@ pub mod propagation_for_vector_calls {
     }
 
     pub fn test1() {
-        let mut bar: Vec<Foo> = vec!();
+        let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar, SecretTaint);
         call1(bar);
@@ -37,7 +37,7 @@ pub mod propagation_for_vector_calls {
     }
 
     pub fn test2() {
-        let mut bar: Vec<Foo> = vec!();
+        let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar, SecretTaint);
         call2(bar);
@@ -48,7 +48,7 @@ pub mod propagation_for_vector_calls {
     }
 
     pub fn test3() {
-        let mut bar: Vec<Foo> = vec!();
+        let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar[0], SecretTaint);
         call3(bar);
@@ -60,7 +60,7 @@ pub mod propagation_for_vector_calls {
     }
 
     pub fn test4() {
-        let mut bar: Vec<Foo> = vec!();
+        let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar[0], SecretTaint);
         call4(bar);
@@ -71,7 +71,7 @@ pub mod propagation_for_vector_calls {
     }
 
     pub fn test5() {
-        let mut bar: Vec<Foo> = vec!();
+        let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar[0].content, SecretTaint);
         call5(bar);
@@ -83,19 +83,18 @@ pub mod propagation_for_vector_calls {
     }
 
     pub fn test6() {
-        let mut bar: Vec<Foo> = vec!();
+        let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar[0].content, SecretTaint);
-        call6(bar); //~related location
+        call6(bar);
     }
 
     fn call6(bar: Vec<Foo>) {
-        // TODO: This precondition should be satisfied
-        precondition!(has_tag!(&bar[0].content, SecretTaint)); //~possible unsatisfied precondition
+        precondition!(has_tag!(&bar[0].content, SecretTaint));
     }
 
     pub fn test7() {
-        let mut bar: Vec<Foo> = vec!();
+        let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar, SecretTaint);
         call7(bar);
@@ -107,7 +106,7 @@ pub mod propagation_for_vector_calls {
     }
 
     pub fn test8() {
-        let mut bar: Vec<Foo> = vec!();
+        let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar, SecretTaint);
         call8(bar);
@@ -118,7 +117,7 @@ pub mod propagation_for_vector_calls {
     }
 
     pub fn test9() {
-        let mut bar: Vec<Foo> = vec!();
+        let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar, SecretTaint);
         call9(bar);
@@ -130,7 +129,7 @@ pub mod propagation_for_vector_calls {
     }
 
     pub fn test10() {
-        let mut bar: Vec<Foo> = vec!();
+        let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar, SecretTaint);
         call10(bar);

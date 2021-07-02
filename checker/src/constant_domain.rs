@@ -114,7 +114,10 @@ impl ConstantDomain {
         let summary_cache_key = summary_cache.get_summary_key_for(def_id).to_owned();
         let argument_type_key = utils::argument_types_key_str(tcx, generic_args);
         let generic_arguments = if let Some(generic_args) = generic_args {
-            generic_args.types().map(|t| t.kind().into()).collect()
+            generic_args
+                .types()
+                .map(|t| ExpressionType::from(t.kind(), tcx))
+                .collect()
         } else {
             vec![]
         };

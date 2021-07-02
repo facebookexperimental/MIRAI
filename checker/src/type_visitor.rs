@@ -139,7 +139,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         match path_ty.kind() {
             TyKind::Closure(_, substs) => {
                 for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
-                    let var_type: ExpressionType = ty.kind().into();
+                    let var_type = ExpressionType::from(ty.kind(), self.tcx);
                     let mut qualifier = path.clone();
                     if is_ref {
                         qualifier = Path::new_deref(path.clone(), ExpressionType::NonPrimitive)
@@ -186,7 +186,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         current_span: rustc_span::Span,
     ) -> ExpressionType {
         match self.get_path_rustc_type(path, current_span).kind() {
-            TyKind::Tuple(types) => types[0].expect_ty().kind().into(),
+            TyKind::Tuple(types) => ExpressionType::from(types[0].expect_ty().kind(), self.tcx),
             _ => assume_unreachable!(),
         }
     }
@@ -198,7 +198,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         path: &Rc<Path>,
         current_span: rustc_span::Span,
     ) -> ExpressionType {
-        self.get_path_rustc_type(path, current_span).kind().into()
+        ExpressionType::from(
+            self.get_path_rustc_type(path, current_span).kind(),
+            self.tcx,
+        )
     }
 
     /// Returns a parameter environment for the current function.
@@ -767,7 +770,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         place: &mir::Place<'tcx>,
         current_span: rustc_span::Span,
     ) -> ExpressionType {
-        self.get_rustc_place_type(place, current_span).kind().into()
+        ExpressionType::from(
+            self.get_rustc_place_type(place, current_span).kind(),
+            self.tcx,
+        )
     }
 
     /// Returns the rustc Ty of the given place in memory.
@@ -907,7 +913,16 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             if def.repr.transparent() {
                 let variant_0 = VariantIdx::from_u32(0);
                 let v = &def.variants[variant_0];
-                if let Some(f) = v.fields.get(0) {
+                let param_env = self.tcx.param_env(v.def_id);
+                let non_zst_field = v.fields.iter().find(|field| {
+                    let field_ty = self.tcx.type_of(field.did);
+                    let is_zst = self
+                        .tcx
+                        .layout_of(param_env.and(field_ty))
+                        .map_or(false, |layout| layout.is_zst());
+                    !is_zst
+                });
+                if let Some(f) = non_zst_field {
                     return self.remove_transparent_wrappers(f.ty(self.tcx, substs));
                 }
             }

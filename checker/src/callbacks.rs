@@ -150,9 +150,11 @@ impl MiraiCallbacks {
             || file_name.starts_with("consensus/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("consensus/consensus-types/src") // Sorts Int and <null> are incompatible
+            || file_name.starts_with("execution/db-bootstrapper/src") // out of memory
             || file_name.starts_with("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
             || file_name.starts_with("json-rpc/src") // expected a type, but found another kind
             || file_name.starts_with("json-rpc/types/src") // stack overflow
+            || file_name.starts_with("language/diem-tools/diem-events-fetcher/src") // crash
             || file_name.starts_with("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
             || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src") // stack overflow
             || file_name.starts_with("language/diem-vm/src") // Sorts Bool and Int are incompatible
@@ -164,6 +166,8 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-prover/interpreter/src") // index out of bounds: the len is 0 but the index is 0
             || file_name.starts_with("language/move-stdlib/src") // stack overflow
             || file_name.starts_with("language/move-prover/lab/src")  // stack overflow
+            || file_name.starts_with("language/tools/disassembler/src") // out of memory
+            || file_name.starts_with("language/tools/genesis-viewer/src/main.rs") // out of memory
             || file_name.starts_with("language/tools/move-bytecode-viewer/src") // out of memory
             || file_name.starts_with("language/tools/move-cli/src") // non termination
             || file_name.starts_with("language/tools/move-coverage/src") // out of memory
@@ -177,6 +181,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("state-sync/src") // Z3 encoding
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemdb/src") // expect reference target to have a value
+            || file_name.starts_with("storage/diemsum/src") // out of memory
             || file_name.starts_with("types/src")
         //Sorts Int and <null> are incompatible
         {
@@ -211,6 +216,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/move-prover/interpreter/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
                 || file_name.starts_with("move-prover/errmapgen/src")
+                || file_name.starts_with("language/tools/move-explain/src")
                 || file_name.starts_with("language/tools/resource-viewer/src")
                 || file_name.starts_with("language/tools/vm-genesis/src")
                 || file_name.starts_with("network/builder/src")
@@ -220,6 +226,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("secure/key-manager/src")
                 || file_name.starts_with("secure/net/src")
                 || file_name.starts_with("secure/storage/src")
+                || file_name.starts_with("storage/inspector/src/")
                 || file_name.starts_with("secure/storage/vault/src")
                 || file_name.starts_with("storage/schemadb/src")
                 || file_name.starts_with("storage/storage-client/src")

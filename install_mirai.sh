@@ -11,5 +11,6 @@ set -e
 
 #install mirai into cargo
 cargo uninstall -q mirai || true
+touch checker/src/lib.rs
 cargo install --path ./checker
 

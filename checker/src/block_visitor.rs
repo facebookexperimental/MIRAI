@@ -1923,16 +1923,18 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .copy_or_move_elements(path, source_path, ty, is_move);
             }
             mir::CastKind::Misc => {
-                let result = self
-                    .visit_operand(operand)
-                    .cast(ExpressionType::from(ty.kind()));
+                let source_value = self.visit_operand(operand);
+                let source_type = self.get_operand_rustc_type(operand);
+                let result = source_value.cast(ExpressionType::from(ty.kind(), self.bv.tcx));
                 if let mir::Operand::Move(place) = operand {
                     let source_path = self.visit_rh_place(place);
                     self.bv.current_environment.value_map =
                         self.bv.current_environment.value_map.remove(&source_path);
                 }
-                self.type_visitor_mut()
-                    .set_path_rustc_type(Path::get_as_path(result.clone()), ty);
+                if result != source_value || (source_type.is_trait() && !ty.is_trait()) {
+                    self.type_visitor_mut()
+                        .set_path_rustc_type(Path::get_as_path(result.clone()), ty);
+                }
                 self.bv.current_environment.update_value_at(path, result);
             }
         }
@@ -3183,7 +3185,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 if let PathEnum::Computed { value } = &qualifier.value {
                     match &value.expression {
                         Expression::Join { left, right, .. } => {
-                            let target_type = ExpressionType::from(ty.kind());
+                            let target_type = ExpressionType::from(ty.kind(), self.bv.tcx);
                             let distributed_deref = left
                                 .dereference(target_type.clone())
                                 .join(right.dereference(target_type), &place_path);
@@ -3192,7 +3194,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 .set_path_rustc_type(path.clone(), ty);
                         }
                         Expression::WidenedJoin { operand, .. } => {
-                            let target_type = ExpressionType::from(ty.kind());
+                            let target_type = ExpressionType::from(ty.kind(), self.bv.tcx);
                             let distributed_deref =
                                 operand.dereference(target_type).widen(&place_path);
                             path = Path::get_as_path(distributed_deref);
@@ -3293,6 +3295,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         base_ty: Ty<'tcx>,
         projection: &[mir::PlaceElem<'tcx>],
     ) -> Rc<Path> {
+        let tcx = self.bv.tcx;
         let mut result = base_path;
         let mut ty: Ty<'_> = base_ty;
         for elem in projection.iter() {
@@ -3308,8 +3311,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // Deref the thin pointer part
                         ty = type_visitor.get_dereferenced_type(ty);
                         let thin_pointer_path = Path::new_field(result, 0);
-                        let deref_path =
-                            Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
+                        let deref_path = Path::new_deref(
+                            thin_pointer_path,
+                            ExpressionType::from(ty.kind(), tcx),
+                        );
                         type_visitor.set_path_rustc_type(deref_path.clone(), ty);
                         result = deref_path;
                         continue;
@@ -3323,7 +3328,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         &self.type_visitor().generic_argument_map,
                     );
                     if let TyKind::Adt(def, ..) = ty.kind() {
-                        let ty_name = self.bv.cv.known_names_cache.get(self.bv.tcx, def.did);
+                        let ty_name = self.bv.cv.known_names_cache.get(tcx, def.did);
                         if ty_name == KnownNames::StdMarkerPhantomData {
                             return Rc::new(PathEnum::PhantomData.into());
                         }
