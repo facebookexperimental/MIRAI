@@ -49,8 +49,7 @@ pub mod propagation_for_vectors {
         let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar, SecretTaint);
-        // TODO: TagPropagation::SubComponent should apply to vectors
-        verify!(has_tag!(&bar[0], SecretTaint)); //~provably false verification condition
+        verify!(has_tag!(&bar[0], SecretTaint));
     }
 
     pub fn test5() {
@@ -65,14 +64,13 @@ pub mod propagation_for_vectors {
     }
 
     pub fn test6() {
-        // Iteration should not affect tag propagation on vector elements
         let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar[0], SecretTaint);
         for foo in bar.iter() {
             println!("{}", foo.content);
         }
-        verify!(has_tag!(&bar[0], SecretTaint)); //~provably false verification condition
+        verify!(has_tag!(&bar[0], SecretTaint));
     }
 
     pub fn test7() {

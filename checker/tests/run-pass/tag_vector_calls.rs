@@ -32,7 +32,7 @@ pub mod propagation_for_vector_calls {
     }
 
     fn call1(bar: Vec<Foo>) {
-        // TODO: This should pass
+        // A failed verify! does not promote to a precondition.
         verify!(has_tag!(&bar, SecretTaint)); //~possible false verification condition
     }
 
@@ -55,7 +55,7 @@ pub mod propagation_for_vector_calls {
     }
 
     fn call3(bar: Vec<Foo>) {
-        // TODO: This should pass
+        // A failed verify! does not promote to a precondition.
         verify!(has_tag!(&bar[0], SecretTaint)); //~possible false verification condition
     }
 
@@ -78,7 +78,7 @@ pub mod propagation_for_vector_calls {
     }
 
     fn call5(bar: Vec<Foo>) {
-        // TODO: This should pass
+        // A failed verify! does not promote to a precondition.
         verify!(has_tag!(&bar[0].content, SecretTaint)); //~possible false verification condition
     }
 
@@ -101,7 +101,7 @@ pub mod propagation_for_vector_calls {
     }
 
     fn call7(bar: Vec<Foo>) {
-        // TODO: This should pass due to SubComponent tag propagation
+        // A failed verify! does not promote to a precondition.
         verify!(has_tag!(&bar[0], SecretTaint)); //~possible false verification condition
     }
 
@@ -124,7 +124,7 @@ pub mod propagation_for_vector_calls {
     }
 
     fn call9(bar: Vec<Foo>) {
-        // TODO: This should pass due to SubComponent tag propagation
+        // A failed verify! does not promote to a precondition.
         verify!(has_tag!(&bar[0].content, SecretTaint)); //~possible false verification condition
     }
 

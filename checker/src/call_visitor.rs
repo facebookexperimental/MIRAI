@@ -1433,15 +1433,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             let mut check_result =
                 AbstractValue::make_tag_check(tag_field_value, tag, checking_presence);
 
-            // If the tag can be propagated through sub-components, and source_path is rooted by a function parameter,
-            // we need to check the tag on the values that can contain source_path as a sub-component. Note that if
-            // source_path is rooted by a local variable, MIRAI has already propagated the tag to source_path when the
-            // tag was added to the value that contains source_path as a sub-component.
-            // Operationally, source_path is a qualified path and we check if any of its prefix has the tag (when checking_presence = true),
-            // or if all of its prefixes does not have the tag (when checking_presence = false).
-            if tag.is_propagated_by(TagPropagation::SubComponent)
-                && source_path.is_rooted_by_parameter()
-            {
+            // If the tag can be propagated through sub-components we need to check the tag on the
+            // values that can contain source_path as a sub-component.
+            // Operationally, source_path is a qualified path and we check if any of its prefixes
+            // has the tag (when checking_presence = true), or if all of its prefixes does not have
+            // the tag (when checking_presence = false).
+            if tag.is_propagated_by(TagPropagation::SubComponent) {
                 let mut path_prefix = &source_path;
                 while let PathEnum::QualifiedPath { qualifier, .. } = &path_prefix.value {
                     path_prefix = qualifier;
