@@ -154,6 +154,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
             || file_name.starts_with("json-rpc/src") // expected a type, but found another kind
             || file_name.starts_with("json-rpc/types/src") // stack overflow
+            || file_name.starts_with("language/compiler/src") // out of memory
             || file_name.starts_with("language/diem-tools/diem-events-fetcher/src") // crash
             || file_name.starts_with("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
             || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src") // stack overflow
@@ -173,6 +174,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/tools/move-coverage/src") // out of memory
             || file_name.starts_with("language/tools/move-unit-test/src") // non termination
             || file_name.starts_with("language/tools/read-write-set/src")  // non termination
+            || file_name.starts_with("language/tools/resource-viewer/src") // out of memory
             || file_name.starts_with("language/transaction-builder/generator/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
             || file_name.starts_with("mempool/src") // out of memory
             || file_name.starts_with("network/src") // could not fully normalize 
@@ -203,7 +205,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("crypto/crypto-derive/src")
                 || file_name.starts_with("diem-node/src")
                 || file_name.starts_with("language/bytecode-verifier/src")
-                || file_name.starts_with("language/compiler/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/diem-framework/src")
                 || file_name.starts_with("language/diem-framework/releases/src")
@@ -217,7 +218,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
                 || file_name.starts_with("move-prover/errmapgen/src")
                 || file_name.starts_with("language/tools/move-explain/src")
-                || file_name.starts_with("language/tools/resource-viewer/src")
                 || file_name.starts_with("language/tools/vm-genesis/src")
                 || file_name.starts_with("network/builder/src")
                 || file_name.starts_with("network/discovery/src")

@@ -1418,15 +1418,17 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             // If the value located at source_path has sub-components, extract its tag field.
             // Otherwise, the source value is a scalar, i.e., tags are associated with it directly,
             // so we use the value itself as the tag field value.
-            let tag_field_value = if !source_rustc_type.is_scalar() {
+            let (tag_field_path, tag_field_value) = if !source_rustc_type.is_scalar() {
                 self.block_visitor
                     .bv
                     .extract_tag_field_of_non_scalar_value_at(&source_path, source_rustc_type)
-                    .1
             } else {
-                self.block_visitor
-                    .bv
-                    .lookup_path_and_refine_result(source_path.clone(), source_rustc_type)
+                (
+                    source_path.clone(),
+                    self.block_visitor
+                        .bv
+                        .lookup_path_and_refine_result(source_path, source_rustc_type),
+                )
             };
 
             // Decide the result of has_tag! or does_not_have_tag!.
@@ -1439,7 +1441,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             // has the tag (when checking_presence = true), or if all of its prefixes does not have
             // the tag (when checking_presence = false).
             if tag.is_propagated_by(TagPropagation::SubComponent) {
-                let mut path_prefix = &source_path;
+                let mut path_prefix = &tag_field_path;
                 while let PathEnum::QualifiedPath { qualifier, .. } = &path_prefix.value {
                     path_prefix = qualifier;
 
