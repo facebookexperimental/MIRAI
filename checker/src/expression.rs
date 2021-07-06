@@ -394,7 +394,7 @@ pub enum Expression {
         default: Rc<AbstractValue>,
     },
 
-    /// Like unknown model fields, this variant records an unkown result of `has_tag!` or
+    /// Like unknown model fields, this variant records an unknown result of `has_tag!` or
     /// `does_not_have_tag!` on `operand`.
     UnknownTagCheck {
         operand: Rc<AbstractValue>,

@@ -1427,7 +1427,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     source_path.clone(),
                     self.block_visitor
                         .bv
-                        .lookup_path_and_refine_result(source_path, source_rustc_type),
+                        .lookup_path_and_refine_result(source_path.clone(), source_rustc_type),
                 )
             };
 
@@ -1484,6 +1484,45 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             if !check_result.as_bool_if_known().unwrap_or(true) {
                                 break;
                             }
+                        }
+                    }
+                }
+            }
+
+            if tag.is_propagated_by(TagPropagation::SuperComponent) {
+                for (_, value) in self
+                    .block_visitor
+                    .bv
+                    .current_environment
+                    .value_map
+                    .iter()
+                    .filter(|(p, _)| p.is_rooted_by(&source_path))
+                {
+                    if checking_presence {
+                        // We are checking presence of a tag. It is equivalent to *any* prefix having the tag.
+                        // Thus we use a logical or.
+                        check_result = check_result.or(AbstractValue::make_tag_check(
+                            value.clone(),
+                            tag,
+                            checking_presence,
+                        ));
+
+                        // Exits the loop if check_result is already true.
+                        if check_result.as_bool_if_known().unwrap_or(false) {
+                            break;
+                        }
+                    } else {
+                        // We are checking absence of a tag. It is equivalent to *all* prefixes not having the tag.
+                        // Thus we use a logical and.
+                        check_result = check_result.and(AbstractValue::make_tag_check(
+                            value.clone(),
+                            tag,
+                            checking_presence,
+                        ));
+
+                        // Exits the loop if check_result is already false.
+                        if !check_result.as_bool_if_known().unwrap_or(true) {
+                            break;
                         }
                     }
                 }

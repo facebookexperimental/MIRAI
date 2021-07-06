@@ -38,6 +38,7 @@ Additionally we also have:
 This crate also provides macros for describing and constraining abstract state that only has meaning to MIRAI. These are:
 * abstract_value!
 * add_tag!
+* does_not_have_tag!  
 * get_model_field!
 * has_tag!  
 * result!

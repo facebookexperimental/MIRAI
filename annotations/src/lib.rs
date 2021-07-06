@@ -29,6 +29,8 @@ macro_rules! abstract_value {
 pub type TagPropagationSet = u128;
 
 /// An enum type of controllable operations for MIRAI tag types.
+/// In general, the result of the operation corresponding to an enum value will
+/// get tagged with all of the tags of the operands.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum TagPropagation {
     Add,
@@ -62,8 +64,11 @@ pub enum TagPropagation {
     Shr,
     ShrOverflows,
     Sub,
+    /// Tagging a structured value also tags all of the component values.
     SubComponent,
     SubOverflows,
+    /// Tagging a value also tags any structured value that includes it.
+    SuperComponent,
     Transmute,
     UninterpretedCall,
 }
@@ -111,6 +116,7 @@ pub const TAG_PROPAGATION_ALL: TagPropagationSet = tag_propagation_set!(
     TagPropagation::Sub,
     TagPropagation::SubComponent,
     TagPropagation::SubOverflows,
+    TagPropagation::SuperComponent,
     TagPropagation::UninterpretedCall
 );
 
