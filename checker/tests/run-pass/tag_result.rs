@@ -30,9 +30,9 @@ pub fn test2() {
     let x: Result<i32, ()> = Ok(42);
     add_tag!(&x, SecretTaint);
     let y = x.or(Err(()));
-    verify!(does_not_have_tag!(&y, SecretTaint)); // tag does not flow to y
+    verify!(has_tag!(&y, SecretTaint)); // tag flows from x to y via TagPropagation::SuperComponent
     if let Ok(z) = y {
-        verify!(has_tag!(&z, SecretTaint)); // but it does flow to y.Ok
+        verify!(has_tag!(&z, SecretTaint));
     }
 }
 

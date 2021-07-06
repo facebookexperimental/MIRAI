@@ -146,6 +146,7 @@ impl MiraiCallbacks {
         if file_name.starts_with("client/assets-proof/src") // Sort mismatch at argument #2 for function (declare-fun + (Int Int) Int) supplied sort is <null>
             || file_name.starts_with("client/faucet/src") // non termination
             || file_name.starts_with("config/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
+            || file_name.starts_with("config/management/src") // crash
             || file_name.starts_with("config/management/operational/src") // crash
             || file_name.starts_with("consensus/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
@@ -197,7 +198,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("common/num-variants/src")
                 || file_name.starts_with("common/rate-limiter/src")
                 || file_name.starts_with("config/src")
-                || file_name.starts_with("config/management/src")
                 || file_name.starts_with("config/management/genesis/src")
                 || file_name.starts_with("config/management/network-address-encryption/src")
                 || file_name.starts_with("config/seed-peer-generator/src")
