@@ -20,56 +20,65 @@ pub mod propagation_on_empty_struct {
 
     type SecretTaint = SecretTaintKind<SECRET_TAINT>;
 
-    pub struct Foo { }
+    pub struct Foo {}
 
     pub fn test1() {
-        let foo = Foo { };
+        let foo = Foo {};
         add_tag!(&foo, SecretTaint);
         verify!(has_tag!(&foo, SecretTaint));
     }
 
     pub fn test2() {
-        let foo = Foo { };
+        let foo = Foo {};
         add_tag!(&foo, SecretTaint);
         call2(foo);
     }
 
     fn call2(foo: Foo) {
-        // TODO: This should pass
+        // Cannot verify this without a precondition
         verify!(has_tag!(&foo, SecretTaint)); //~possible false verification condition
     }
 
     pub fn test3() {
-        let foo = Foo { };
+        let foo = Foo {};
         add_tag!(&foo, SecretTaint);
-        call3(foo); //~related location
+        // Sadly, the next call is compiled by Rust with an argument that constructs a new empty struct.
+        // Thus the tag added above is not present on the actual argument and the precondition fails.
+        call3(foo); //~unsatisfied precondition
+    }
+
+    pub fn test3_constant() {
+        // Marking FOO to be a constant makes sure that the Rust compiler does not make up a new
+        // constant for the call.
+        const FOO: Foo = Foo {};
+        add_tag!(&FOO, SecretTaint);
+        call3(FOO);
     }
 
     fn call3(foo: Foo) {
-        // TODO: This should pass
-        precondition!(has_tag!(&foo, SecretTaint)); //~unsatisfied precondition
+        precondition!(has_tag!(&foo, SecretTaint)); //~related location
     }
 
     pub fn test4() {
-        let foo = Foo { };
+        let foo = Foo {};
         add_tag!(&foo, SecretTaint);
         call4(&foo);
     }
 
     fn call4(foo: &Foo) {
-        // TODO: This should pass
+        // Cannot verify this without a precondition
         verify!(has_tag!(foo, SecretTaint)); //~possible false verification condition
     }
 
     pub fn test5() {
-        let foo = Foo { };
+        let foo = Foo {};
         add_tag!(&foo, SecretTaint);
         call5(&foo);
     }
 
     fn call5(foo: &Foo) {
         precondition!(has_tag!(foo, SecretTaint));
-    }   
+    }
 }
 
 pub fn main() {}
