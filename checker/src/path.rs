@@ -775,10 +775,7 @@ impl PathRefinement for Rc<Path> {
             // If we used self instead, then what would we do if we encounter another
             // path that also binds to value &p?
             if val.expression.infer_type() == ExpressionType::ThinPointer {
-                if matches!(
-                    &val.expression,
-                    Expression::HeapBlock { .. } | Expression::Offset { .. }
-                ) {
+                if matches!(&val.expression, Expression::Offset { .. }) {
                     return Path::get_as_path(val.clone());
                 }
                 return Path::new_computed(val.clone());
