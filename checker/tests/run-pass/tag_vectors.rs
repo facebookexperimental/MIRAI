@@ -16,7 +16,8 @@ pub mod propagation_for_vectors {
 
     struct SecretTaintKind<const MASK: TagPropagationSet> {}
 
-    const SECRET_TAINT: TagPropagationSet = tag_propagation_set!(TagPropagation::SubComponent);
+    const SECRET_TAINT: TagPropagationSet =
+        tag_propagation_set!(TagPropagation::SubComponent, TagPropagation::SuperComponent);
 
     type SecretTaint = SecretTaintKind<SECRET_TAINT>;
 
@@ -78,10 +79,9 @@ pub mod propagation_for_vectors {
         bar.push(Foo { content: 0 });
         for foo in bar.iter() {
             add_tag!(foo, SecretTaint);
-            println!("{}", foo.content);
         }
-        // TODO: It should be possible to add tags during iteration
-        verify!(has_tag!(&bar[0], SecretTaint)); //~provably false verification condition
+        //todo: fix tracking of tags in heap when iterators are involved
+        verify!(has_tag!(&bar[0], SecretTaint)); //~ provably false verification condition
     }
 
     pub fn test8() {
@@ -89,12 +89,21 @@ pub mod propagation_for_vectors {
         bar.push(Foo { content: 0 });
         for foo in bar.iter() {
             add_tag!(foo, SecretTaint);
-            println!("{}", foo.content);
         }
-        // TODO: It should be possible to check tags during iteration
+        //todo: fix tracking of tags in heap when iterators are involved
         for foo in bar.iter() {
-            verify!(has_tag!(foo, SecretTaint)); //~provably false verification condition
-            println!("{}", foo.content);
+            verify!(has_tag!(foo, SecretTaint)); //~ provably false verification condition
+        }
+    }
+
+    pub fn test9() {
+        let mut bar: Vec<Foo> = vec![];
+        bar.push(Foo { content: 0 });
+        for i in 0..bar.len() {
+            add_tag!(&bar[i], SecretTaint);
+        }
+        for i in 0..bar.len() {
+            verify!(has_tag!(&bar[i], SecretTaint));
         }
     }
 }
