@@ -934,7 +934,7 @@ impl Expression {
             Expression::BitAnd { left, .. } => left.expression.infer_type(),
             Expression::BitNot { result_type, .. } => result_type.clone(),
             Expression::BitOr { left, .. } => left.expression.infer_type(),
-            Expression::HeapBlock { .. } => ThinPointer,
+            Expression::HeapBlock { .. } => NonPrimitive,
             Expression::HeapBlockLayout { .. } => NonPrimitive,
             Expression::IntrinsicBinary { left, name, .. } => match name {
                 KnownNames::StdIntrinsicsCopysignf32
