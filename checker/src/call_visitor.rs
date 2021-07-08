@@ -1490,19 +1490,30 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             }
 
             if tag.is_propagated_by(TagPropagation::SuperComponent) {
-                for (_, value) in self
-                    .block_visitor
-                    .bv
-                    .current_environment
-                    .value_map
+                let value_map = self.block_visitor.bv.current_environment.value_map.clone();
+                for (_, value) in value_map
                     .iter()
                     .filter(|(p, _)| p.is_rooted_by(&source_path))
                 {
+                    let mut value = value.clone();
+                    if let Expression::Reference(p) = &value.expression {
+                        if let PathEnum::HeapBlock { .. } = &p.value {
+                            let layout_field = Path::new_layout(p.clone());
+                            let (_, tag_field_value) = self
+                                .block_visitor
+                                .bv
+                                .extract_tag_field_of_non_scalar_value_at(
+                                    &layout_field,
+                                    self.block_visitor.bv.tcx.types.trait_object_dummy_self,
+                                );
+                            value = tag_field_value.clone();
+                        }
+                    }
                     if checking_presence {
                         // We are checking presence of a tag. It is equivalent to *any* prefix having the tag.
                         // Thus we use a logical or.
                         check_result = check_result.or(AbstractValue::make_tag_check(
-                            value.clone(),
+                            value,
                             tag,
                             checking_presence,
                         ));
@@ -1515,7 +1526,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         // We are checking absence of a tag. It is equivalent to *all* prefixes not having the tag.
                         // Thus we use a logical and.
                         check_result = check_result.and(AbstractValue::make_tag_check(
-                            value.clone(),
+                            value,
                             tag,
                             checking_presence,
                         ));
