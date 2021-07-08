@@ -22,7 +22,7 @@ pub mod propagation_for_vectors {
     type SecretTaint = SecretTaintKind<SECRET_TAINT>;
 
     pub struct Foo {
-        content: i32,
+        pub content: i32,
     }
 
     pub fn test1() {
@@ -80,6 +80,7 @@ pub mod propagation_for_vectors {
         for foo in bar.iter() {
             add_tag!(foo, SecretTaint);
         }
+        verify!(has_tag!(&bar, SecretTaint));
         verify!(has_tag!(&bar[0], SecretTaint));
     }
 
