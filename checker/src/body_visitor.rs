@@ -1122,9 +1122,25 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     // No need to track this data
                     return;
                 }
-                PathEnum::Computed { .. }
-                | PathEnum::Offset { .. }
-                | PathEnum::QualifiedPath { .. } => tpath = tpath.canonicalize(pre_environment),
+                PathEnum::Computed { .. } | PathEnum::Offset { .. } => {
+                    tpath = tpath.canonicalize(pre_environment)
+                }
+                PathEnum::QualifiedPath { selector, .. }
+                    if matches!(
+                        selector.as_ref(),
+                        PathSelector::Deref | PathSelector::Layout
+                    ) =>
+                {
+                    tpath = tpath.canonicalize(pre_environment)
+                }
+                PathEnum::QualifiedPath {
+                    qualifier,
+                    selector,
+                    ..
+                } => {
+                    let c_qualifier = qualifier.canonicalize(pre_environment);
+                    tpath = Path::new_qualified(c_qualifier, selector.clone());
+                }
                 _ => {}
             }
             let mut rvalue = value.refine_parameters_and_paths(
