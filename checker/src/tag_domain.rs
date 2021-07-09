@@ -5,7 +5,7 @@
 
 use crate::bool_domain::BoolDomain;
 
-use log_derive::logfn_inputs;
+use log_derive::*;
 use mirai_annotations::*;
 use rpds::{rbt_map, RedBlackTreeMap};
 use rustc_hir::def_id::{CrateNum, DefId, DefIndex};
