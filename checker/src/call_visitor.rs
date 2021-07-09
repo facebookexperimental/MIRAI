@@ -1415,21 +1415,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 self.block_visitor.bv.emit_diagnostic(warning);
             }
 
-            // If the value located at source_path has sub-components, extract its tag field.
-            // Otherwise, the source value is a scalar, i.e., tags are associated with it directly,
-            // so we use the value itself as the tag field value.
-            let (tag_field_path, tag_field_value) = if !source_rustc_type.is_scalar() {
-                self.block_visitor
-                    .bv
-                    .extract_tag_field_of_non_scalar_value_at(&source_path, source_rustc_type)
-            } else {
-                (
-                    source_path.clone(),
-                    self.block_visitor
-                        .bv
-                        .lookup_path_and_refine_result(source_path.clone(), source_rustc_type),
-                )
-            };
+            // Get the value to check for the presence or absence of the tag
+            let (tag_field_path, tag_field_value) = self.get_possibly_tagged_value(
+                tag,
+                checking_presence,
+                source_path.clone(),
+                source_rustc_type,
+            );
 
             // Decide the result of has_tag! or does_not_have_tag!.
             let mut check_result =
@@ -1558,6 +1550,216 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             assume_unreachable!("expected the function call has a destination");
         }
         self.use_entry_condition_as_exit_condition();
+    }
+
+    /// Get the possibly tagged value associated with source_path.
+    /// It the value at source path is a scalar value, it will just be that value.
+    /// If the value at source path is a structured value, it will be the value of its $tag field.
+    /// If the value at source path is a structure value that does not have a $tag field, but
+    /// the tag propagates to super components, it will be the tag field of a component of the
+    /// structure, if there is one.
+    #[logfn_inputs(TRACE)]
+    fn get_possibly_tagged_value(
+        &mut self,
+        tag: Tag,
+        checking_presence: bool,
+        source_path: Rc<Path>,
+        source_rustc_type: Ty<'tcx>,
+    ) -> (Rc<Path>, Rc<AbstractValue>) {
+        if tag.is_propagated_by(TagPropagation::SuperComponent) {
+            match &source_path.value {
+                PathEnum::Computed { value } => match &value.expression {
+                    Expression::ConditionalExpression {
+                        condition,
+                        consequent,
+                        alternate,
+                    } => {
+                        let consequent_tag_value = self
+                            .get_possibly_tagged_value(
+                                tag,
+                                checking_presence,
+                                Path::new_computed(consequent.clone()),
+                                source_rustc_type,
+                            )
+                            .1;
+                        let alternate_tag_value = self
+                            .get_possibly_tagged_value(
+                                tag,
+                                checking_presence,
+                                Path::new_computed(alternate.clone()),
+                                source_rustc_type,
+                            )
+                            .1;
+                        return (
+                            source_path.clone(),
+                            condition
+                                .conditional_expression(consequent_tag_value, alternate_tag_value),
+                        );
+                    }
+                    Expression::Join { left, right, path } => {
+                        let left_tag_value = self
+                            .get_possibly_tagged_value(
+                                tag,
+                                checking_presence,
+                                Path::new_computed(left.clone()),
+                                source_rustc_type,
+                            )
+                            .1;
+                        let right_tag_value = self
+                            .get_possibly_tagged_value(
+                                tag,
+                                checking_presence,
+                                Path::new_computed(right.clone()),
+                                source_rustc_type,
+                            )
+                            .1;
+                        let tag_path = Path::new_tag_field(path.clone());
+                        return (
+                            source_path.clone(),
+                            left_tag_value.join(right_tag_value, &tag_path),
+                        );
+                    }
+                    Expression::Offset { left, .. } => {
+                        let left_tag_value = self
+                            .get_possibly_tagged_value(
+                                tag,
+                                checking_presence,
+                                Path::new_computed(left.clone()),
+                                source_rustc_type,
+                            )
+                            .1;
+                        return (source_path.clone(), left_tag_value);
+                    }
+                    Expression::Reference(path)
+                    | Expression::Variable { path, .. }
+                    | Expression::InitialParameterValue { path, .. } => {
+                        return self.get_possibly_tagged_value(
+                            tag,
+                            checking_presence,
+                            path.clone(),
+                            source_rustc_type,
+                        );
+                    }
+                    Expression::WidenedJoin { operand, path } => {
+                        let operand_tag_value = self
+                            .get_possibly_tagged_value(
+                                tag,
+                                checking_presence,
+                                Path::new_computed(operand.clone()),
+                                source_rustc_type,
+                            )
+                            .1;
+                        let tag_path = Path::new_tag_field(path.clone());
+                        return (tag_path.clone(), operand_tag_value.widen(&tag_path));
+                    }
+                    _ => {}
+                },
+                PathEnum::HeapBlock { .. } => {
+                    let layout_field = Path::new_layout(source_path.clone());
+                    let (_, tag_field_value) = self
+                        .block_visitor
+                        .bv
+                        .extract_tag_field_of_non_scalar_value_at(
+                            &layout_field,
+                            self.block_visitor.bv.tcx.types.trait_object_dummy_self,
+                        );
+                    return (layout_field, tag_field_value);
+                }
+                PathEnum::Offset { value, .. } => {
+                    if let Expression::Offset { left, .. } = &value.expression {
+                        return self.get_possibly_tagged_value(
+                            tag,
+                            checking_presence,
+                            Path::new_computed(left.clone()),
+                            source_rustc_type,
+                        );
+                    }
+                }
+                PathEnum::QualifiedPath {
+                    qualifier,
+                    selector,
+                    ..
+                } if **selector == PathSelector::Deref => {
+                    let val_at = self
+                        .block_visitor
+                        .bv
+                        .current_environment
+                        .value_at(qualifier)
+                        .cloned();
+                    return if let Some(value) = val_at {
+                        match &value.expression {
+                            Expression::Variable { path, .. }
+                            | Expression::InitialParameterValue { path, .. } => {
+                                let ty = self
+                                    .type_visitor()
+                                    .get_path_rustc_type(path, self.block_visitor.bv.current_span);
+                                self.get_possibly_tagged_value(
+                                    tag,
+                                    checking_presence,
+                                    path.clone(),
+                                    ty,
+                                )
+                            }
+                            Expression::Offset { left, .. } => {
+                                let target_type = ExpressionType::from(
+                                    source_rustc_type.kind(),
+                                    self.block_visitor.bv.tcx,
+                                );
+                                let deref_value = left.dereference(target_type);
+                                self.get_possibly_tagged_value(
+                                    tag,
+                                    checking_presence,
+                                    Path::new_computed(deref_value),
+                                    source_rustc_type,
+                                )
+                            }
+                            _ => {
+                                let target_type = ExpressionType::from(
+                                    source_rustc_type.kind(),
+                                    self.block_visitor.bv.tcx,
+                                );
+                                let deref_value = value.dereference(target_type);
+                                self.get_possibly_tagged_value(
+                                    tag,
+                                    checking_presence,
+                                    Path::new_computed(deref_value),
+                                    source_rustc_type,
+                                )
+                            }
+                        }
+                    } else {
+                        let ty = self
+                            .type_visitor()
+                            .get_path_rustc_type(qualifier, self.block_visitor.bv.current_span);
+                        self.get_possibly_tagged_value(
+                            tag,
+                            checking_presence,
+                            qualifier.clone(),
+                            ty,
+                        )
+                    };
+                }
+                _ => {
+                    debug!("path val {:?}", source_path.value);
+                }
+            }
+        }
+
+        // If the value located at source_path has sub-components, extract its tag field.
+        // Otherwise, the source value is a scalar, i.e., tags are associated with it directly,
+        // so we use the value itself as the tag field value.
+        if !source_rustc_type.is_scalar() {
+            self.block_visitor
+                .bv
+                .extract_tag_field_of_non_scalar_value_at(&source_path, source_rustc_type)
+        } else {
+            (
+                source_path.clone(),
+                self.block_visitor
+                    .bv
+                    .lookup_path_and_refine_result(source_path.clone(), source_rustc_type),
+            )
+        }
     }
 
     /// Update the state so that the call result is the value of the model field (or the default

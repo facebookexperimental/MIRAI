@@ -90,9 +90,8 @@ pub mod propagation_for_vectors {
         for foo in bar.iter() {
             add_tag!(foo, SecretTaint);
         }
-        //todo: fix tracking of tags in heap when iterators are involved
         for foo in bar.iter() {
-            verify!(has_tag!(foo, SecretTaint)); //~ provably false verification condition
+            verify!(has_tag!(foo, SecretTaint));
         }
     }
 
