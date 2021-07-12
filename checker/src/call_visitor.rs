@@ -1757,7 +1757,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 source_path.clone(),
                 self.block_visitor
                     .bv
-                    .lookup_path_and_refine_result(source_path.clone(), source_rustc_type),
+                    .lookup_path_and_refine_result(source_path, source_rustc_type),
             )
         }
     }

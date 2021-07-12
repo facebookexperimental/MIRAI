@@ -459,20 +459,21 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
 
         let directory_path = Path::new(summary_store_directory_str);
         let store_path = directory_path.join(".summary_store.sled");
-        if !store_path.exists() || env::var("MIRAI_SHARE_PERSISTENT_STORE").is_err() {
-            let tar_path = directory_path.join(".summary_store.tar");
-            if let Ok(mut f) = File::create(tar_path.clone()) {
-                if env::var("MIRAI_START_FRESH").is_err() {
-                    info!("creating a non default new summary store");
-                    {
-                        let bytes = include_bytes!("../../binaries/summary_store.tar");
-                        f.write_all(bytes).unwrap();
-                    }
-                }
+        if env::var("MIRAI_START_FRESH").is_ok() {
+            std::fs::remove_dir_all(directory_path).unwrap();
+            std::fs::create_dir_all(directory_path).unwrap();
+        } else if env::var("MIRAI_SHARE_PERSISTENT_STORE").is_err() {
+            info!("creating a new summary store from the embedded tar file");
+            {
+                let tar_path = directory_path.join(".summary_store.tar");
+                let mut tar_file = File::create(tar_path.clone()).unwrap();
+                let bytes = include_bytes!("../../binaries/summary_store.tar");
+                tar_file.write_all(bytes).unwrap();
+                let tar_file = File::open(tar_path).unwrap();
+                let mut ar = Archive::new(tar_file);
+                ar.unpack(directory_path).unwrap();
             }
-            let mut ar = Archive::new(File::open(tar_path).unwrap());
-            ar.unpack(directory_path).unwrap();
-        };
+        }
         store_path
     }
 
