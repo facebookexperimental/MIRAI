@@ -145,6 +145,7 @@ impl MiraiCallbacks {
         // Exclude crates that contain code that causes MIRAI to crash or not terminate within 2 hours
         if file_name.starts_with("client/assets-proof/src") // Sort mismatch at argument #2 for function (declare-fun + (Int Int) Int) supplied sort is <null>
             || file_name.starts_with("client/faucet/src") // non termination
+            || file_name.starts_with("common/bitvec/src") // stack overflow
             || file_name.starts_with("config/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
             || file_name.starts_with("config/management/src") // crash
             || file_name.starts_with("config/management/operational/src") // crash

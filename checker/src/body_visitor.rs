@@ -925,7 +925,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             let value_path = Path::get_as_path(target_value.clone());
             let promoted_value = AbstractValue::make_from(Expression::Reference(value_path), 1);
             environment.update_value_at(promoted_root.clone(), promoted_value);
-        } else if let TyKind::Ref(_, ty, _) = target_type.kind() {
+        } else if let TyKind::Ref(..) = target_type.kind() {
             // Promoting a reference to a reference.
             let eight: Rc<AbstractValue> = self.get_u128_const_val(8);
             let heap_value = self.get_new_heap_block(eight.clone(), eight, false, target_type);
@@ -936,7 +936,16 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .value_at(&layout_path)
                 .expect("new heap block should have a layout");
             environment.update_value_at(layout_path, layout_value.clone());
-            self.promote_reference(environment, ty, &heap_root, local_path, ordinal);
+            let exit_env_map = self.exit_environment.as_ref().unwrap().value_map.clone();
+            let target_value = exit_env_map
+                .get(local_path)
+                .expect("expect reference target to have a value");
+            environment.update_value_at(heap_root.clone(), target_value.clone());
+            if let Expression::Reference(path) = &target_value.expression {
+                if let PathEnum::LocalVariable { ordinal, .. } = &path.value {
+                    self.promote_reference(environment, target_type, &heap_root, path, *ordinal);
+                }
+            }
             let promoted_value = AbstractValue::make_from(Expression::Reference(heap_root), 1);
             environment.update_value_at(promoted_root.clone(), promoted_value);
         } else if let TyKind::Str = target_type.kind() {
