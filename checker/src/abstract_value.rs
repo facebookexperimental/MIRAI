@@ -712,8 +712,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                             return x.and(other);
                         }
                     }
+                    if let Expression::And { right: ny, .. } = &x.expression {
+                        // [(x && !y) && y] -> false
+                        if let Expression::LogicalNot { operand: y } = &ny.expression {
+                            if y.eq(yz) {
+                                return Rc::new(FALSE);
+                            }
+                        }
+                    }
                 }
-
                 Expression::LogicalNot { operand } if *operand == other => {
                     // [!x && x] -> false
                     return Rc::new(FALSE);
