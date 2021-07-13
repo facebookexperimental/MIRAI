@@ -153,6 +153,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("consensus/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("consensus/consensus-types/src") // Sorts Int and <null> are incompatible
+            || file_name.starts_with("crypto/crypto/src") // stack overflow
             || file_name.starts_with("execution/db-bootstrapper/src") // out of memory
             || file_name.starts_with("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
             || file_name.starts_with("json-rpc/src") // expected a type, but found another kind
@@ -204,7 +205,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("config/management/genesis/src")
                 || file_name.starts_with("config/management/network-address-encryption/src")
                 || file_name.starts_with("config/seed-peer-generator/src")
-                || file_name.starts_with("crypto/crypto/src")
                 || file_name.starts_with("crypto/crypto-derive/src")
                 || file_name.starts_with("diem-node/src")
                 || file_name.starts_with("language/bytecode-verifier/src")
