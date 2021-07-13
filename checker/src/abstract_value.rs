@@ -572,6 +572,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
+        if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
+            return AbstractValue::make_typed_unknown(
+                ExpressionType::Bool,
+                Path::new_computed(TOP.into()),
+            );
+        }
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -3149,6 +3155,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
+        if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
+            return AbstractValue::make_typed_unknown(
+                ExpressionType::Bool,
+                Path::new_computed(TOP.into()),
+            );
+        }
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -4043,6 +4055,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
+        if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
+            return AbstractValue::make_typed_unknown(
+                ExpressionType::Bool,
+                Path::new_computed(TOP.into()),
+            );
+        }
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -4100,6 +4118,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
+        if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
+            return AbstractValue::make_typed_unknown(
+                ExpressionType::Bool,
+                Path::new_computed(TOP.into()),
+            );
+        }
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -4228,6 +4252,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
+        if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
+            return AbstractValue::make_typed_unknown(
+                ExpressionType::Bool,
+                Path::new_computed(TOP.into()),
+            );
+        }
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
@@ -5224,9 +5254,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
                 }
             }
-            Expression::WidenedJoin { path, operand, .. } => operand
-                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
-                .widen(&path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
+            Expression::WidenedJoin { path, operand } => {
+                let refined_operand =
+                    operand.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                if matches!(refined_operand.expression, Expression::WidenedJoin { .. }) {
+                    refined_operand.widen(
+                        &path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    )
+                } else {
+                    AbstractValue::make_typed_unknown(operand.expression.infer_type(), path.clone())
+                }
+            }
         }
     }
 
