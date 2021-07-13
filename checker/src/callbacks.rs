@@ -146,6 +146,7 @@ impl MiraiCallbacks {
         if file_name.starts_with("client/assets-proof/src") // Sort mismatch at argument #2 for function (declare-fun + (Int Int) Int) supplied sort is <null>
             || file_name.starts_with("client/faucet/src") // non termination
             || file_name.starts_with("common/bitvec/src") // stack overflow
+            || file_name.starts_with("common/debug-interface/src") // stack overflow
             || file_name.starts_with("config/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
             || file_name.starts_with("config/management/src") // crash
             || file_name.starts_with("config/management/operational/src") // crash
@@ -182,6 +183,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("network/src") // could not fully normalize 
             || file_name.starts_with("network/builder/src") // could not fully normalize
             || file_name.starts_with("sdk/client/src") // non termination
+            || file_name.starts_with("secure/storage/github/src") // stack overflow
             || file_name.starts_with("state-sync/src") // Z3 encoding
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemdb/src") // expect reference target to have a value
