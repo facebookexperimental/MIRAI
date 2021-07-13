@@ -90,9 +90,9 @@ dependencies = [
 
 [[package]]
 name = "contracts"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3416a1f2714ed256355952da25596bcedc330b3e9da147879b024a746ada437e"
+checksum = "6c863a5297f9afbcdd2d8b5721f7cf9945a0f8e97365bb0a5dd80a43d0eed31d"
 dependencies = [
  "proc-macro2",
  "quote",
