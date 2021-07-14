@@ -4907,12 +4907,26 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 condition,
                 consequent,
                 alternate,
-            } => condition
-                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
-                .conditional_expression(
-                    consequent.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    alternate.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                ),
+            } => {
+                let cond =
+                    condition.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
+                if let Some(c) = cond.as_bool_if_known() {
+                    if c {
+                        consequent
+                            .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                    } else {
+                        alternate
+                            .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                    }
+                } else {
+                    cond.conditional_expression(
+                        consequent
+                            .refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                        alternate
+                            .refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
+                    )
+                }
+            }
             Expression::Div { left, right } => left
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .divide(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
