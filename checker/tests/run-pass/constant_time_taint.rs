@@ -67,11 +67,9 @@ pub fn test5(v: &[i32; 4]) {
     let mut i = 0;
     while i < 4 {
         if i % 2 != 0 {
-            // todo: improve the precision of lookup_weak_value
             if v[i] > 0 {
             } else {
             }
-            //~ the branch condition may have a ConstantTimeTaintKind tag
         }
         i = i + 1;
     }
@@ -83,8 +81,17 @@ fn work_on_non_secret(non_secret: i32) {
     }
 }
 
-pub fn main() {
+pub fn test6() {
     let non_secret = 99991;
     verify!(does_not_have_tag!(&non_secret, ConstantTimeTaint));
     work_on_non_secret(non_secret);
 }
+
+pub fn test7(mut message: Vec<u8>) {
+    precondition!(does_not_have_tag!(&message, ConstantTimeTaint));
+    for m in 0..message.len() - 1 {
+        message[m] = message[m] + 1;
+    }
+}
+
+pub fn main() {}

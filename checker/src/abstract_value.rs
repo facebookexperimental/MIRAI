@@ -259,18 +259,350 @@ impl AbstractValue {
             operand.does_not_have_tag(&tag)
         };
         if check_value.is_top() {
-            // Cannot refine this tag check. Return again an unknown tag check.
-            let expression_size = operand.expression_size.saturating_add(1);
-            AbstractValue::make_from(
-                Expression::UnknownTagCheck {
-                    operand,
-                    tag,
-                    checking_presence,
-                },
-                expression_size,
-            )
+            // Cannot refine this tag check to a known value. Return an unknown tag check.
+            if checking_presence {
+                operand.make_presence_check(tag)
+            } else {
+                operand.make_absence_check(tag)
+            }
         } else {
             check_value
+        }
+    }
+
+    #[logfn_inputs(DEBUG)]
+    #[logfn(DEBUG)]
+    fn make_presence_check(&self, tag: Tag) -> Rc<AbstractValue> {
+        let exp_tag_prop_opt = self.expression.get_tag_propagation();
+
+        // First deal with expressions that do not propagate tags or have special propagation behavior.
+        match &self.expression {
+            Expression::Top => {
+                return Rc::new(self.clone());
+            }
+
+            Expression::Bottom
+            | Expression::CompileTimeConstant { .. }
+            | Expression::HeapBlock { .. }
+            | Expression::HeapBlockLayout { .. }
+            | Expression::UnknownTagCheck { .. } => {
+                return Rc::new(FALSE);
+            }
+
+            Expression::InitialParameterValue { .. }
+            | Expression::UnknownModelField { .. }
+            | Expression::UnknownTagField { .. }
+            | Expression::Variable { .. } => {
+                let expression_size = self.expression_size.saturating_add(1);
+                return AbstractValue::make_from(
+                    Expression::UnknownTagCheck {
+                        operand: Rc::new(self.clone()),
+                        tag,
+                        checking_presence: true,
+                    },
+                    expression_size,
+                );
+            }
+
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                return condition
+                    .make_presence_check(tag)
+                    .or(condition.conditional_expression(
+                        consequent.make_presence_check(tag),
+                        alternate.make_presence_check(tag),
+                    ));
+            }
+
+            Expression::Join { left, right, path } => {
+                return left
+                    .make_presence_check(tag)
+                    .join(right.make_presence_check(tag), path);
+            }
+
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                // For each tag A, whether the switch expression has tag A or not is
+                // (discriminator has tag A) or ((case_0 has tag A) join .. join (case_n has tag A) join (default has tag A)).
+                let mut tags_from_cases = default.make_presence_check(tag);
+                for case in cases {
+                    tags_from_cases = tags_from_cases.or(case.1.make_presence_check(tag))
+                }
+                return discriminator.make_presence_check(tag).or(tags_from_cases);
+            }
+
+            Expression::TaggedExpression { operand, tag: t } => {
+                return if tag == *t {
+                    Rc::new(TRUE)
+                } else {
+                    operand.make_presence_check(tag)
+                }
+            }
+
+            Expression::WidenedJoin { operand, .. } => return operand.make_presence_check(tag),
+
+            _ => {
+                verify!(exp_tag_prop_opt.is_some());
+            }
+        }
+
+        let exp_tag_prop = exp_tag_prop_opt.unwrap();
+
+        // Then deal with expressions that have standard propagation behavior, i.e., taking tags
+        // from children nodes.
+        match &self.expression {
+            Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
+            | Expression::Ne { left, right }
+            | Expression::Or { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
+            | Expression::Shr { left, right, .. }
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => {
+                if tag.is_propagated_by(exp_tag_prop) {
+                    left.make_presence_check(tag)
+                        .or(right.make_presence_check(tag))
+                } else {
+                    Rc::new(FALSE)
+                }
+            }
+
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::LogicalNot { operand, .. }
+            | Expression::Neg { operand, .. }
+            | Expression::Transmute { operand, .. } => {
+                if tag.is_propagated_by(exp_tag_prop) {
+                    operand.make_presence_check(tag)
+                } else {
+                    Rc::new(FALSE)
+                }
+            }
+
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                if tag.is_propagated_by(exp_tag_prop) {
+                    left.make_presence_check(tag)
+                        .or(right.make_presence_check(tag))
+                        .or(length.make_presence_check(tag))
+                } else {
+                    Rc::new(FALSE)
+                }
+            }
+
+            Expression::UninterpretedCall {
+                callee, arguments, ..
+            } => {
+                if tag.is_propagated_by(exp_tag_prop) {
+                    let mut check = callee.make_presence_check(tag);
+                    for argument in arguments {
+                        check = check.or(argument.make_presence_check(tag))
+                    }
+                    check
+                } else {
+                    Rc::new(FALSE)
+                }
+            }
+
+            _ => {
+                verify_unreachable!();
+            }
+        }
+    }
+
+    #[logfn_inputs(DEBUG)]
+    #[logfn(DEBUG)]
+    fn make_absence_check(&self, tag: Tag) -> Rc<AbstractValue> {
+        let exp_tag_prop_opt = self.expression.get_tag_propagation();
+
+        // First deal with expressions that do not propagate tags or have special propagation behavior.
+        match &self.expression {
+            Expression::Top => {
+                return Rc::new(self.clone());
+            }
+
+            Expression::Bottom
+            | Expression::CompileTimeConstant { .. }
+            | Expression::HeapBlock { .. }
+            | Expression::HeapBlockLayout { .. }
+            | Expression::UnknownTagCheck { .. } => {
+                return Rc::new(TRUE);
+            }
+
+            Expression::InitialParameterValue { .. }
+            | Expression::UnknownModelField { .. }
+            | Expression::UnknownTagField { .. }
+            | Expression::Variable { .. } => {
+                let expression_size = self.expression_size.saturating_add(1);
+                return AbstractValue::make_from(
+                    Expression::UnknownTagCheck {
+                        operand: Rc::new(self.clone()),
+                        tag,
+                        checking_presence: false,
+                    },
+                    expression_size,
+                );
+            }
+
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                return condition
+                    .make_absence_check(tag)
+                    .and(condition.conditional_expression(
+                        consequent.make_absence_check(tag),
+                        alternate.make_absence_check(tag),
+                    ));
+            }
+
+            Expression::Join { left, right, path } => {
+                return left
+                    .make_absence_check(tag)
+                    .join(right.make_absence_check(tag), path);
+            }
+
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                // For each tag A, whether the switch expression has tag A or not is
+                // (discriminator has tag A) or ((case_0 has tag A) join .. join (case_n has tag A) join (default has tag A)).
+                let mut tags_from_cases = default.make_absence_check(tag);
+                for case in cases {
+                    tags_from_cases = tags_from_cases.and(case.1.make_absence_check(tag))
+                }
+                return discriminator.make_absence_check(tag).and(tags_from_cases);
+            }
+
+            Expression::TaggedExpression { operand, tag: t } => {
+                return if tag == *t {
+                    Rc::new(FALSE)
+                } else {
+                    operand.make_absence_check(tag)
+                }
+            }
+
+            Expression::WidenedJoin { operand, .. } => return operand.make_absence_check(tag),
+
+            _ => {
+                verify!(exp_tag_prop_opt.is_some());
+            }
+        }
+
+        let exp_tag_prop = exp_tag_prop_opt.unwrap();
+
+        // Then deal with expressions that have standard propagation behavior, i.e., taking tags
+        // from children nodes.
+        match &self.expression {
+            Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
+            | Expression::Ne { left, right }
+            | Expression::Or { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
+            | Expression::Shr { left, right, .. }
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => {
+                if tag.is_propagated_by(exp_tag_prop) {
+                    left.make_absence_check(tag)
+                        .and(right.make_absence_check(tag))
+                } else {
+                    Rc::new(TRUE)
+                }
+            }
+
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::LogicalNot { operand, .. }
+            | Expression::Neg { operand, .. }
+            | Expression::Transmute { operand, .. } => {
+                if tag.is_propagated_by(exp_tag_prop) {
+                    operand.make_absence_check(tag)
+                } else {
+                    Rc::new(TRUE)
+                }
+            }
+
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                if tag.is_propagated_by(exp_tag_prop) {
+                    left.make_absence_check(tag)
+                        .and(right.make_absence_check(tag))
+                        .and(length.make_absence_check(tag))
+                } else {
+                    Rc::new(TRUE)
+                }
+            }
+
+            Expression::UninterpretedCall {
+                callee, arguments, ..
+            } => {
+                if tag.is_propagated_by(exp_tag_prop) {
+                    let mut check = callee.make_absence_check(tag);
+                    for argument in arguments {
+                        check = check.and(argument.make_absence_check(tag))
+                    }
+                    check
+                } else {
+                    Rc::new(TRUE)
+                }
+            }
+
+            _ => {
+                verify_unreachable!();
+            }
         }
     }
 

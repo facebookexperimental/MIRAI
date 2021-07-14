@@ -1167,11 +1167,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         value_name: &str,
         tag: Tag,
         tag_name: &str,
-        expecting_presence: bool,
+        checking_presence: bool,
     ) {
         precondition!(self.bv.check_for_errors);
 
-        let tag_check = AbstractValue::make_tag_check(value.clone(), tag, expecting_presence);
+        let tag_check = AbstractValue::make_tag_check(value.clone(), tag, checking_presence);
         let (tag_check_as_bool, entry_cond_as_bool) =
             self.bv.check_condition_value_and_reachability(&tag_check);
 
@@ -1184,6 +1184,44 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 .extract_promotable_conjuncts(false);
             match tag_check_as_bool {
                 None => {
+                    if tag.is_propagated_by(TagPropagation::SubComponent) {
+                        // The path condition may determine the existence of the tag on a
+                        // super component of value, in which case we can decide the check
+                        // after all. We do this by looking if value is an unknown value
+                        // with a path, and then by looking at prefixes of the path.
+                        if let Expression::UnknownTagCheck { operand, .. } = &tag_check.expression {
+                            if let Expression::InitialParameterValue { path, .. }
+                            | Expression::Variable { path, .. } = &operand.expression
+                            {
+                                let mut path_prefix = path;
+                                while let PathEnum::QualifiedPath { qualifier, .. } =
+                                    &path_prefix.value
+                                {
+                                    path_prefix = qualifier;
+
+                                    let path_prefix_rustc_type = self
+                                        .type_visitor()
+                                        .get_path_rustc_type(path_prefix, self.bv.current_span);
+                                    let tag_field_value = self
+                                        .bv
+                                        .extract_tag_field_of_non_scalar_value_at(
+                                            path_prefix,
+                                            path_prefix_rustc_type,
+                                        )
+                                        .1;
+                                    let check = AbstractValue::make_tag_check(
+                                        tag_field_value,
+                                        tag,
+                                        checking_presence,
+                                    );
+                                    if self.bv.current_environment.entry_condition.implies(&check) {
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // We cannot decide the result of the tag check.
                     // In this case, report a warning if we don't know all of the callers, we
                     // reach a k-limit, or the tag check contains a local variable so that we
