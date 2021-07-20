@@ -148,8 +148,11 @@ impl MiraiCallbacks {
             || file_name.starts_with("common/bitvec/src") // stack overflow
             || file_name.starts_with("common/debug-interface/src") // stack overflow
             || file_name.starts_with("config/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
+            || file_name.starts_with("config/management/genesis/src") // stack overflow
             || file_name.starts_with("config/management/src") // crash
+            || file_name.starts_with("config/management/network-address-encryption/src") // stack overflow
             || file_name.starts_with("config/management/operational/src") // crash
+            || file_name.starts_with("config/seed-peer-generator/src") // stack overflow
             || file_name.starts_with("consensus/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("consensus/consensus-types/src") // Sorts Int and <null> are incompatible
@@ -160,6 +163,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("json-rpc/types/src") // stack overflow
             || file_name.starts_with("language/compiler/src") // out of memory
             || file_name.starts_with("language/diem-tools/diem-events-fetcher/src") // crash
+            || file_name.starts_with("language/diem-tools/diem-validator-interface") // stack overflow
             || file_name.starts_with("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
             || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src") // stack overflow
             || file_name.starts_with("language/diem-vm/src") // Sorts Bool and Int are incompatible
@@ -183,14 +187,18 @@ impl MiraiCallbacks {
             || file_name.starts_with("mempool/src") // out of memory
             || file_name.starts_with("network/src") // could not fully normalize 
             || file_name.starts_with("network/builder/src") // could not fully normalize
+            || file_name.starts_with("network/discovery/src")  // stack overflow
             || file_name.starts_with("sdk/client/src") // non termination
+            || file_name.starts_with("secure/key-manager/src") // stack overflow
             || file_name.starts_with("secure/storage/github/src") // stack overflow
+            || file_name.starts_with("secure/storage/vault/src") // stack overflow
+            || file_name.starts_with("secure/storage/src") // stack overflow
             || file_name.starts_with("state-sync/src") // Z3 encoding
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemdb/src") // expect reference target to have a value
             || file_name.starts_with("storage/diemsum/src") // out of memory
-            || file_name.starts_with("types/src")
-        //Sorts Int and <null> are incompatible
+            || file_name.starts_with("types/src") //Sorts Int and <null> are incompatible
+            || file_name.starts_with("vm-validator/src")
         {
             return true;
         }
@@ -202,16 +210,12 @@ impl MiraiCallbacks {
                 || file_name.starts_with("common/num-variants/src")
                 || file_name.starts_with("common/rate-limiter/src")
                 || file_name.starts_with("config/src")
-                || file_name.starts_with("config/management/genesis/src")
-                || file_name.starts_with("config/management/network-address-encryption/src")
-                || file_name.starts_with("config/seed-peer-generator/src")
                 || file_name.starts_with("crypto/crypto-derive/src")
                 || file_name.starts_with("diem-node/src")
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/diem-framework/src")
                 || file_name.starts_with("language/diem-framework/releases/src")
-                || file_name.starts_with("language/diem-tools/diem-validator-interface")
                 || file_name.starts_with("language/diem-vm/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
                 || file_name.starts_with("language/move-prover/boogie-backend-exp/src")
@@ -223,18 +227,13 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/tools/move-explain/src")
                 || file_name.starts_with("language/tools/vm-genesis/src")
                 || file_name.starts_with("network/builder/src")
-                || file_name.starts_with("network/discovery/src")
                 || file_name.starts_with("network/simple-onchain-discovery/src")
                 || file_name.starts_with("sdk/src")
-                || file_name.starts_with("secure/key-manager/src")
                 || file_name.starts_with("secure/net/src")
-                || file_name.starts_with("secure/storage/src")
                 || file_name.starts_with("storage/inspector/src/")
-                || file_name.starts_with("secure/storage/vault/src")
                 || file_name.starts_with("storage/schemadb/src")
                 || file_name.starts_with("storage/storage-client/src")
-                || file_name.starts_with("types/src")
-                || file_name.starts_with("vm-validator/src"))
+                || file_name.starts_with("types/src"))
         {
             return true;
         }
