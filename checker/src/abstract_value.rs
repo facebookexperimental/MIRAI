@@ -1062,6 +1062,40 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     return Rc::new(FALSE);
                 }
                 Expression::Or { left: x, right: y } => {
+                    // [((c == x) || y) && (c != x)] -> y
+                    if let (
+                        Expression::Equals {
+                            left: c1,
+                            right: x1,
+                        },
+                        Expression::Ne {
+                            left: c2,
+                            right: x2,
+                        },
+                    ) = (&x.expression, &other.expression)
+                    {
+                        if c1.eq(c2) && x1.eq(x2) {
+                            return y.clone();
+                        }
+                    }
+
+                    // [(x || (c == y)) && (c != y)] -> x
+                    if let (
+                        Expression::Equals {
+                            left: c1,
+                            right: x1,
+                        },
+                        Expression::Ne {
+                            left: c2,
+                            right: x2,
+                        },
+                    ) = (&y.expression, &other.expression)
+                    {
+                        if c1.eq(c2) && x1.eq(x2) {
+                            return x.clone();
+                        }
+                    }
+
                     // [(x || y) && x] -> x
                     // [(x || y) && y] -> y
                     if other.implies(x) || other.implies(y) {
@@ -1459,6 +1493,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } else {
                 other
             };
+            if let Some(false) = other.as_bool_if_known() {
+                return other;
+            }
             if other.expression_size >= k_limits::MAX_EXPRESSION_SIZE {
                 return other;
             }
@@ -4262,7 +4299,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
 
-                // [(x || (y && !z)) || (y && z)))] -> x || y
                 (
                     Expression::Or {
                         left: x,
@@ -4273,6 +4309,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         right: z2,
                     },
                 ) => {
+                    // [(x || (y && !z)) || (y && z)))] -> x || y
                     if let Expression::And {
                         left: y1,
                         right: nz,
@@ -4280,7 +4317,27 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     {
                         if let Expression::LogicalNot { operand: z1 } = &nz.expression {
                             if y1.eq(y2) && z1.eq(z2) {
-                                return x.and(y1.clone());
+                                return x.or(y1.clone());
+                            }
+                        }
+                    }
+
+                    // [((x || (y && !z)) || a) || (y && z)] -> (x || y) || a
+                    if let Expression::Or {
+                        left: x1,
+                        right: ynz1,
+                    } = &x.expression
+                    {
+                        let a = ynz;
+                        if let Expression::And {
+                            left: y1,
+                            right: nz,
+                        } = &ynz1.expression
+                        {
+                            if let Expression::LogicalNot { operand: z1 } = &nz.expression {
+                                if y1.eq(y2) && z1.eq(z2) {
+                                    return x1.or(y1.clone()).or(a.clone());
+                                }
                             }
                         }
                     }
