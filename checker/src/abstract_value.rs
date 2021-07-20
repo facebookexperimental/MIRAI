@@ -1043,9 +1043,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         if y.eq(&other) || z.eq(&other) {
                             return x.and(other);
                         }
-                        // [(x && (y || z)) && !y] -> (x && z) && !y
+                        // [(x && (y || z)) && !a] -> (x && z) && !a if y => a
                         if let Expression::LogicalNot { operand: y2 } = &other.expression {
-                            if y.eq(y2) {
+                            if y.implies(y2) {
                                 return x.and(z.clone()).and(other);
                             }
                         }
@@ -2835,6 +2835,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         // y && x => x
         if let Expression::And { left, right } = &self.expression {
             return left.implies(other) || right.implies(other);
+        }
+
+        // x => x || y
+        // x => y || x
+        if let Expression::Or { left, right } = &other.expression {
+            return self.implies(left) || self.implies(right);
         }
         false
     }
