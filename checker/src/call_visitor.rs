@@ -854,6 +854,16 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             .session
                             .struct_span_warn(span, msg.as_ref());
                         self.block_visitor.bv.emit_diagnostic(warning);
+                    } else {
+                        // If we see an unconditional panic inside a standard contract summary,
+                        // make it into an unsatisfiable precondition.
+                        let precondition = Precondition {
+                            condition: Rc::new(abstract_value::FALSE),
+                            message: msg,
+                            provenance: None,
+                            spans: vec![],
+                        };
+                        self.block_visitor.bv.preconditions.push(precondition);
                     }
                 } else {
                     // We might get to this call, depending on the state at the call site.
