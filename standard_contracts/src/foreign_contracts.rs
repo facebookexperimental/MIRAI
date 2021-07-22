@@ -2694,7 +2694,7 @@ pub mod core {
 
         pub mod result {
             pub fn unwrap_failed() {
-                panic!("unwrap failed")
+                panic!("result unwrap failed")
             }
         }
     }
@@ -3237,7 +3237,7 @@ pub mod core {
 
     pub mod result {
         fn unwrap_failed() -> ! {
-            panic!("unwrap failed")
+            panic!("result unwrap failed")
         }
     }
 
