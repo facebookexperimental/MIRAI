@@ -770,11 +770,17 @@ impl PathRefinement for Rc<Path> {
     #[logfn_inputs(TRACE)]
     fn canonicalize(&self, environment: &Environment) -> Rc<Path> {
         if let Some(val) = environment.value_at(self) {
+            let mut not_dummy = true;
+            if let Expression::InitialParameterValue { path, .. } = &val.expression {
+                if self.eq(path) {
+                    not_dummy = false;
+                }
+            }
             // If self binds to value &p then self and path &p are equivalent paths.
             // Since self is derived from p, we use path &p as the canonical form.
             // If we used self instead, then what would we do if we encounter another
             // path that also binds to value &p?
-            if val.expression.infer_type() == ExpressionType::ThinPointer {
+            if not_dummy && val.expression.infer_type() == ExpressionType::ThinPointer {
                 if matches!(&val.expression, Expression::Offset { .. }) {
                     return Path::get_as_path(val.clone());
                 }
