@@ -294,6 +294,36 @@ impl Path {
         }
     }
 
+    /// Returns the ordinal of the parameter at the root of this path, if there is one.
+    #[logfn_inputs(TRACE)]
+    pub fn get_parameter_root_ordinal(&self) -> Option<usize> {
+        match &self.value {
+            PathEnum::Computed { value } => {
+                if let Expression::InitialParameterValue { path, .. }
+                | Expression::Reference(path)
+                | Expression::Variable { path, .. } = &value.expression
+                {
+                    return path.get_parameter_root_ordinal();
+                }
+                None
+            }
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, .. } = &value.expression {
+                    if let Expression::InitialParameterValue { path, .. }
+                    | Expression::Reference(path)
+                    | Expression::Variable { path, .. } = &left.expression
+                    {
+                        return path.get_parameter_root_ordinal();
+                    }
+                }
+                None
+            }
+            PathEnum::QualifiedPath { qualifier, .. } => qualifier.get_parameter_root_ordinal(),
+            PathEnum::Parameter { ordinal } => Some(*ordinal),
+            _ => None,
+        }
+    }
+
     /// True if path qualifies root, or another qualified path rooted by root.
     #[logfn_inputs(TRACE)]
     pub fn is_rooted_by(&self, root: &Rc<Path>) -> bool {
@@ -770,6 +800,16 @@ impl PathRefinement for Rc<Path> {
     #[logfn_inputs(TRACE)]
     fn canonicalize(&self, environment: &Environment) -> Rc<Path> {
         if let Some(val) = environment.value_at(self) {
+            // If self binds to value &p then self and path &p are equivalent paths.
+            // Since many paths can bind to &p and p is canonical (by construction of &p).
+            // we replace self with &p.
+
+            // This reasoning is extended to any expression that has type ExpressionType::ThinPointer.
+            // With one exception: we guard against the case where self may bind to old(self).
+            // This can happen when self is rooted in a parameter and has been accessed before
+            // being assigned to. After any assignment, self and old(self) are not aliases so
+            // they need to stay distinct, not least because otherwise the first assignment
+            // to self will actually update old(self).
             let mut not_dummy = true;
             if let Expression::InitialParameterValue { path, .. } = &val.expression {
                 if self.eq(path) {
@@ -787,8 +827,11 @@ impl PathRefinement for Rc<Path> {
                 return Path::new_computed(val.clone());
             }
         };
+
         // If self is a qualified path, then recursive canonicalization of the qualifier may
-        // cause substitutions (as above), that would result in a non canonical qualified path.
+        // cause substitutions (as above) and that could result in a non canonical qualified path
+        // if *p becomes *&q. We thus need some additional logic to canonicalize the overall
+        // path once the qualifier has been canonicalized.
         if let PathEnum::QualifiedPath {
             qualifier,
             selector,
@@ -809,28 +852,7 @@ impl PathRefinement for Rc<Path> {
             if let Some(value) = qualifier_as_value {
                 match &value.expression {
                     // old(q).s => q.s
-                    //todo: this is true if q the param root, since that is the
-                    // address of the parameter, which is the same in the pre and post state,
-                    // but is it true in other cases?
                     Expression::InitialParameterValue { path, .. } => {
-                        if let PathEnum::QualifiedPath { selector: qs, .. } = &path.value {
-                            if *qs.as_ref() == PathSelector::Deref {
-                                // old(q.deref).s => old(q.deref.s)
-                                // todo: this is a brittle hack. Perhaps the best fix is to just not do this canonicalization.
-                                let var_type =
-                                    if matches!(selector.as_ref(), PathSelector::Discriminant) {
-                                        ExpressionType::Usize
-                                    } else {
-                                        ExpressionType::ThinPointer
-                                    };
-                                return Path::new_computed(
-                                    AbstractValue::make_initial_parameter_value(
-                                        var_type,
-                                        Path::new_qualified(path.clone(), selector.clone()),
-                                    ),
-                                );
-                            }
-                        }
                         return Path::new_qualified(path.clone(), selector.clone());
                     }
                     Expression::Offset { left, right } if right.is_zero() => {
