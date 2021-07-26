@@ -348,7 +348,7 @@ impl AbstractValue {
             Expression::WidenedJoin { operand, .. } => return operand.make_presence_check(tag),
 
             _ => {
-                verify!(exp_tag_prop_opt.is_some());
+                checked_assume!(exp_tag_prop_opt.is_some());
             }
         }
 
@@ -516,7 +516,7 @@ impl AbstractValue {
             Expression::WidenedJoin { operand, .. } => return operand.make_absence_check(tag),
 
             _ => {
-                verify!(exp_tag_prop_opt.is_some());
+                checked_assume!(exp_tag_prop_opt.is_some());
             }
         }
 
@@ -4906,13 +4906,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn get_cached_interval(&self) -> Rc<IntervalDomain> {
         {
-            let mut cached_interval = self.interval.borrow_mut();
-            let interval_opt = cached_interval.as_ref();
-            if let Some(interval) = interval_opt {
-                return interval.clone();
+            {
+                let cached_interval = self.interval.borrow();
+                let interval_opt = cached_interval.as_ref();
+                if let Some(interval) = interval_opt {
+                    return interval.clone();
+                }
             }
             let interval = self.get_as_interval();
-            *cached_interval = Some(Rc::new(interval));
+            {
+                let mut cached_interval = self.interval.borrow_mut();
+                *cached_interval = Some(Rc::new(interval));
+            }
         }
         self.get_cached_interval()
     }
