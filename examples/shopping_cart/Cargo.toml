@@ -9,4 +9,4 @@ name = "shopping_cart"
 
 [dependencies]
 mirai-annotations = { path = "../../annotations" }
-contracts = {version = "0.6.0", features = ["mirai_assertions"]}
+contracts = {version = "0.6.2", features = ["mirai_assertions"]}

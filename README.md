@@ -51,13 +51,7 @@ You can get some insight into the inner workings of MIRAI by setting the verbosi
 
 ## Using MIRAI together with the Rust design by contracts crate
 
-Preliminary support for MIRAI is available in the [design by contracts crate](https://gitlab.com/karroffel/contracts). There
-is currently no official release containing this support on crates.io, so you must directly refer to the gitlab
-repo using a dependency like below in your Cargo.toml:
-```toml
-contracts = { git = "https://gitlab.com/karroffel/contracts.git", branch = "master", features = [ "mirai_assertions" ]}
-```
-
+Support for MIRAI is available in the [design by contracts crate](https://gitlab.com/karroffel/contracts).
 See the [shopping cart example](https://github.com/facebookexperimental/MIRAI/blob/master/examples/shopping_cart/src/main.rs) for usage.
 
 ## Developing MIRAI
