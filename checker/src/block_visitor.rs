@@ -871,14 +871,15 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         .specialize_generic_argument_type(closure_ty, &map);
                 }
                 match specialized_closure_ty.kind() {
-                    TyKind::Closure(def_id, substs) | TyKind::FnDef(def_id, substs) => {
+                    TyKind::Closure(def_id, substs)
+                    | TyKind::Generator(def_id, substs, _)
+                    | TyKind::FnDef(def_id, substs) => {
                         return extract_func_ref(self.visit_function_reference(
                             *def_id,
                             specialized_closure_ty,
                             Some(substs),
                         ));
                     }
-                    //todo: what about generators?
                     TyKind::Ref(_, ty, _) => {
                         let specialized_closure_ty =
                             self.type_visitor().specialize_generic_argument_type(
@@ -3293,8 +3294,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         .update_value_at(base_path.clone(), func_val);
                 }
                 TyKind::Opaque(def_id, ..) => {
-                    //todo: what about generators?
-                    if let TyKind::Closure(def_id, generic_args) =
+                    if let TyKind::Closure(def_id, generic_args)
+                    | TyKind::Generator(def_id, generic_args, _) =
                         self.bv.tcx.type_of(*def_id).kind()
                     {
                         let func_const =

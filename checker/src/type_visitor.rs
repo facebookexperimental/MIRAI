@@ -118,7 +118,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             .retain(|p, _| p.is_rooted_by_non_local_structure());
     }
 
-    //todo: what about generators?
     /// Parameters that are closures bring enclosed variables with them that are effectively
     /// additional parameters. We pre-populate the environment with entries for these because
     /// there is no convenient way to look up their types later on. I.e. unlike ordinary parameters
@@ -151,6 +150,22 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     first_state
                         .value_map
                         .insert_mut(closure_field_path, closure_field_val);
+                }
+            }
+            TyKind::Generator(_, substs, _) => {
+                for (i, ty) in substs.as_generator().prefix_tys().enumerate() {
+                    let var_type = ExpressionType::from(ty.kind(), self.tcx);
+                    let mut qualifier = path.clone();
+                    if is_ref {
+                        qualifier = Path::new_deref(path.clone(), ExpressionType::NonPrimitive)
+                    }
+                    let generator_field_path = Path::new_field(qualifier, i);
+                    self.set_path_rustc_type(generator_field_path.clone(), ty);
+                    let generator_field_val =
+                        AbstractValue::make_typed_unknown(var_type, generator_field_path.clone());
+                    first_state
+                        .value_map
+                        .insert_mut(generator_field_path, generator_field_val);
                 }
             }
             TyKind::Opaque(def_id, substs) => {
@@ -442,6 +457,15 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                         self.tcx.types.never
                                     },
                                 );
+                            }
+                            TyKind::Generator(def_id, substs, _) => {
+                                let mut tuple_types =
+                                    substs.as_generator().state_tys(*def_id, self.tcx);
+                                if let Some(field_tys) = tuple_types.nth(*ordinal) {
+                                    return self.tcx.mk_tup(field_tys);
+                                }
+                                info!("generator field not found {:?} {:?}", def_id, ordinal);
+                                return self.tcx.types.never;
                             }
                             TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Closure(..)) => {
                                 // todo: this seems to work around a more fundamental bug.
@@ -791,8 +815,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         match result.kind() {
             TyKind::Param(t_par) => {
                 if let Some(generic_args) = self.generic_arguments {
-                    if let Some(gen_arg) = generic_args.as_ref().get(t_par.index as usize) {
-                        return gen_arg.expect_ty();
+                    if let Some(ty) = generic_args.types().nth(t_par.index as usize) {
+                        return ty;
                     }
                     if t_par.name.as_str() == "Self" && !self.actual_argument_types.is_empty() {
                         return self.actual_argument_types[0];
@@ -875,6 +899,17 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         let variant = &def.variants[*ordinal];
                         let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
                         return self.tcx.mk_tup(field_tys);
+                    } else if let TyKind::Generator(def_id, substs, ..) = base_ty.kind() {
+                        let mut tuple_types = substs.as_generator().state_tys(*def_id, self.tcx);
+                        if let Some(field_tys) = tuple_types.nth(ordinal.index()) {
+                            return self.tcx.mk_tup(field_tys);
+                        }
+                        debug!(
+                            "illegally down casting to index {} of {:?} at {:?}",
+                            ordinal.index(),
+                            base_ty,
+                            current_span
+                        );
                     } else {
                         info!("unexpected type for downcast {:?}", base_ty);
                     }
