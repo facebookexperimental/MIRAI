@@ -3362,6 +3362,14 @@ pub mod core {
         }
     }
 
+    pub mod task {
+        pub mod wake {
+            pub mod implement_core_task_wake_Waker {
+                default_contract!(wake);
+            }
+        }
+    }
+
     pub mod time {
         pub mod implement_core_time_Duration {
             default_contract!(mul);
@@ -4647,6 +4655,7 @@ pub mod std {
 
     pub mod time {
         pub mod implement {
+            default_contract!(checked_add);
             default_contract!(duration);
             default_contract!(elapsed);
             default_contract!(now);
