@@ -5385,6 +5385,35 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 1,
             ),
             Expression::InitialParameterValue { path, var_type } => {
+                // If the root of path is itself an initial parameter value that is passed by value,
+                // the refined value must also be an initial parameter value.
+                // To ensure this we shield the root from refinement.
+                let param_root_ordinal = path.get_parameter_root_ordinal();
+                if let Some(ordinal) = param_root_ordinal {
+                    if let Some((_, arg_value)) = args.get(ordinal - 1) {
+                        if let Expression::InitialParameterValue { path: arg_path, .. } =
+                            &arg_value.expression
+                        {
+                            if let PathEnum::QualifiedPath { selector, .. } = &arg_path.value {
+                                if **selector == PathSelector::Deref {
+                                    let dummy_root = Path::new_local(999_999, 0);
+                                    let refined_dummy_root = Path::new_local(fresh + 999_999, 0);
+                                    let param_root = Path::new_parameter(ordinal);
+                                    let refined_path = path
+                                        .replace_root(&param_root, dummy_root)
+                                        .refine_parameters_and_paths(
+                                            args, result, pre_env, post_env, fresh,
+                                        )
+                                        .replace_root(&refined_dummy_root, arg_path.clone());
+                                    return AbstractValue::make_initial_parameter_value(
+                                        var_type.clone(),
+                                        refined_path,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, pre_env, fresh);
                 if let PathEnum::Computed { value } | PathEnum::Offset { value } =

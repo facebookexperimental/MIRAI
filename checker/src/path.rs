@@ -851,13 +851,9 @@ impl PathRefinement for Rc<Path> {
 
             if let Some(value) = qualifier_as_value {
                 match &value.expression {
+                    // old(q).s => q.s
                     Expression::InitialParameterValue { path, .. } => {
-                        return if matches!(path.value, PathEnum::Parameter { .. }) {
-                            // old(p).s => p.s if there has been no assignment to p
-                            Path::new_qualified(path.clone(), selector.clone())
-                        } else {
-                            Path::new_qualified(Path::new_computed(value.clone()), selector.clone())
-                        };
+                        return Path::new_qualified(path.clone(), selector.clone());
                     }
                     Expression::Offset { left, right } if right.is_zero() => {
                         if let Expression::Reference(p) = &left.expression {
