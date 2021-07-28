@@ -1183,7 +1183,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 );
                 actual_argument_types.insert(0, closure_ref_ty);
             }
-            //todo: could this be a generator?
             if let TyKind::Closure(def_id, substs) = closure_ty.kind() {
                 argument_map = self.type_visitor().get_generic_arguments_map(
                     *def_id,

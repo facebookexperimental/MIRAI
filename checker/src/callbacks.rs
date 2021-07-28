@@ -167,6 +167,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
             || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src") // stack overflow
             || file_name.starts_with("language/diem-vm/src") // Sorts Bool and Int are incompatible
+            || file_name.starts_with("language/move-vm/types/src") // Unexpected representation of upvar types
             || file_name.starts_with("language/move-lang/src") // non termination
             || file_name.starts_with("language/move-model/src") // non termination
             || file_name.starts_with("language/move-prover/src") // Sorts Int and <null> are incompatible
