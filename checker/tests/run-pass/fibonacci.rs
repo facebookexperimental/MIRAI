@@ -12,11 +12,11 @@ fn fib(x: u64) -> u64 {
     match x {
         0 => 0,
         1 => 1,
-        _ => fib(x - 1) + fib(x - 2), //~ possible attempt to add with overflow
+        _ => fib(x - 1) + fib(x - 2), //~ related location
     }
 }
 
 pub fn main() {
-    let x = fib(6);
+    let x = fib(6); //~ possible attempt to add with overflow
     verify!(x == 8); //~ possible false verification condition
 }
