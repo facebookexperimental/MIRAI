@@ -7,7 +7,6 @@
 // A test that checks that a value is tracked through a union.
 
 #![feature(allow_internal_unstable)]
-#![feature(const_fn_union)]
 
 use mirai_annotations::*;
 

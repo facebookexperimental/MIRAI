@@ -2514,18 +2514,21 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     }
                 }
             }
-            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(ptr))) => {
-                match self.bv.tcx.get_global_alloc(ptr.alloc_id) {
+            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(ptr, _))) => {
+                match self.bv.tcx.get_global_alloc(ptr.provenance) {
                     Some(GlobalAlloc::Memory(alloc)) => {
                         let alloc_len = alloc.len() as u64;
-                        let offset_bytes = ptr.offset.bytes();
+                        let offset_bytes = ptr.into_parts().1.bytes();
                         // The Rust compiler should ensure this.
                         assume!(alloc_len > offset_bytes);
                         let size = alloc_len - offset_bytes;
                         let bytes = alloc
                             .get_bytes(
                                 &self.bv.tcx,
-                                alloc_range(ptr.offset, rustc_target::abi::Size::from_bytes(size)),
+                                alloc_range(
+                                    ptr.into_parts().1,
+                                    rustc_target::abi::Size::from_bytes(size),
+                                ),
                             )
                             .unwrap();
                         match lty.kind() {
@@ -2563,7 +2566,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
                         );
                     }
-                    None => unreachable!("missing allocation {:?}", ptr.alloc_id),
+                    None => unreachable!("missing allocation {:?}", ptr.provenance),
                 };
             }
             rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {

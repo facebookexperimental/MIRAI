@@ -311,11 +311,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         use rustc_span::hygiene::{ExpnData, ExpnKind, MacroKind};
         if let [span] = &diagnostic_builder.span.primary_spans() {
             if let Some(ExpnData {
-                kind:
-                    ExpnKind::Macro {
-                        kind: MacroKind::Derive,
-                        ..
-                    },
+                kind: ExpnKind::Macro(MacroKind::Derive, _),
                 ..
             }) = span.source_callee()
             {
