@@ -5729,14 +5729,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
             Expression::WidenedJoin { path, operand } => {
+                let refined_path =
+                    path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
                 let refined_operand =
                     operand.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                if matches!(refined_operand.expression, Expression::WidenedJoin { .. }) {
-                    refined_operand.widen(
-                        &path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    )
+                if matches!(refined_operand.expression, Expression::Join { .. }) {
+                    refined_operand.widen(&refined_path)
                 } else {
-                    AbstractValue::make_typed_unknown(operand.expression.infer_type(), path.clone())
+                    AbstractValue::make_typed_unknown(
+                        refined_operand.expression.infer_type(),
+                        refined_path,
+                    )
                 }
             }
         }

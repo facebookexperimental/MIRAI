@@ -11,7 +11,7 @@ fn fact(n: u8) -> u128 {
         1
     } else {
         let n1fac = fact(n - 1);
-        (n as u128) * n1fac //~ possible attempt to multiply with overflow
+        (n as u128) * n1fac
     }
 }
 
