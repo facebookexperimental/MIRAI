@@ -651,6 +651,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         };
         if summary.is_computed && !summary.side_effects.is_empty() {
             let side_effects = summary.side_effects.clone();
+            checked_assume!(self.fresh_variable_offset <= usize::MAX - 1_000_000); // expect to diverge before a call chain gets this deep
             self.fresh_variable_offset += 1_000_000;
             // Effects on the path
             let environment = self.current_environment.clone();
