@@ -3597,6 +3597,8 @@ pub mod libc {
                 0
             }
 
+            default_contract!(tcgetattr);
+            default_contract!(tcsetattr);
             default_contract!(sysconf);
         }
 
@@ -3606,6 +3608,8 @@ pub mod libc {
                     &-1
                 }
             }
+
+            default_contract!(ioctl);
         }
     }
 }
