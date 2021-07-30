@@ -83,6 +83,7 @@ pub enum KnownNames {
     StdIntrinsicsPowf64,
     StdIntrinsicsPowif32,
     StdIntrinsicsPowif64,
+    StdIntrinsicsRawEq,
     StdIntrinsicsRintf32,
     StdIntrinsicsRintf64,
     StdIntrinsicsRoundf32,
@@ -213,6 +214,8 @@ impl KnownNamesCache {
             match path_data_elem_as_disambiguator(current_elem) {
                 Some(0) => get_path_data_elem_name(current_elem)
                     .map(|n| match n.as_str().deref() {
+                        "copy" => KnownNames::StdIntrinsicsCopy,
+                        "copy_nonoverlapping" => KnownNames::StdIntrinsicsCopyNonOverlapping,
                         "write_bytes" => KnownNames::StdIntrinsicsWriteBytes,
                         _ => KnownNames::None,
                     })
@@ -224,8 +227,6 @@ impl KnownNamesCache {
                         "bswap" => KnownNames::StdIntrinsicsBswap,
                         "ceilf32" => KnownNames::StdIntrinsicsCeilf32,
                         "ceilf64" => KnownNames::StdIntrinsicsCeilf64,
-                        "copy" => KnownNames::StdIntrinsicsCopy,
-                        "copy_nonoverlapping" => KnownNames::StdIntrinsicsCopyNonOverlapping,
                         "copysignf32" => KnownNames::StdIntrinsicsCopysignf32,
                         "copysignf64" => KnownNames::StdIntrinsicsCopysignf64,
                         "cosf32" => KnownNames::StdIntrinsicsCosf32,
@@ -268,6 +269,7 @@ impl KnownNamesCache {
                         "powf64" => KnownNames::StdIntrinsicsPowf64,
                         "powif32" => KnownNames::StdIntrinsicsPowif32,
                         "powif64" => KnownNames::StdIntrinsicsPowif64,
+                        "raw_eq" => KnownNames::StdIntrinsicsRawEq,
                         "rintf32" => KnownNames::StdIntrinsicsRintf32,
                         "rintf64" => KnownNames::StdIntrinsicsRintf64,
                         "roundf32" => KnownNames::StdIntrinsicsRintf32,

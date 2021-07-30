@@ -1077,6 +1077,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             KnownNames::StdIntrinsicsMinAlignOfVal => self.handle_min_align_of_val(),
             KnownNames::StdIntrinsicsMulWithOverflow => self.handle_checked_binary_operation(),
             KnownNames::StdIntrinsicsOffset => self.handle_offset(),
+            KnownNames::StdIntrinsicsRawEq => self.handle_raw_eq(),
             KnownNames::StdIntrinsicsSizeOf => self.handle_size_of(),
             KnownNames::StdIntrinsicsSizeOfVal => self.handle_size_of_val(),
             KnownNames::StdSliceCmpMemcmp => self.handle_memcmp(),
@@ -2358,6 +2359,16 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 .0,
         );
         AbstractValue::make_typed_unknown(ExpressionType::U128, path)
+    }
+
+    /// Determines whether the raw bytes of the two values are equal.
+    fn handle_raw_eq(&mut self) -> Rc<AbstractValue> {
+        checked_assume!(self.actual_args.len() == 2);
+        let left_val = self.actual_args[0].1.clone();
+        let right_val = self.actual_args[1].1.clone();
+        let len_val = self.handle_size_of();
+        let zero = Rc::new(ConstantDomain::U128(0).into());
+        AbstractValue::make_memcmp(left_val, right_val, len_val).equals(zero)
     }
 
     /// Calls implementation provided memcmp.

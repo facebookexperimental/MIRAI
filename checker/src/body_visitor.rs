@@ -2038,6 +2038,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                             ..
                         } = len_value.as_ref()
                         {
+                            if u128::from(offset) > *len {
+                                // todo: give a diagnostic?
+                                return false; // pattern is invalid
+                            }
                             (*len) - u128::from(offset)
                         } else {
                             // can't expand the pattern because the length is not known at this point
@@ -2059,6 +2063,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     } = len_value.as_ref()
                     {
                         let to = if from_end {
+                            if u128::from(to) > *len {
+                                // todo: give a diagnostic?
+                                return false; // pattern is invalid
+                            }
                             u64::try_from(*len).unwrap() - to
                         } else {
                             to
