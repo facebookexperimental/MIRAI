@@ -145,6 +145,7 @@ impl MiraiCallbacks {
         // Exclude crates that contain code that causes MIRAI to crash or not terminate within 2 hours
         if file_name.starts_with("client/assets-proof/src") // Sort mismatch at argument #2 for function (declare-fun + (Int Int) Int) supplied sort is <null>
             || file_name.starts_with("client/faucet/src") // non termination
+            || file_name.starts_with("client/swiss-knife/src") // out of memory
             || file_name.starts_with("common/bitvec/src") // stack overflow
             || file_name.starts_with("common/debug-interface/src") // stack overflow
             || file_name.starts_with("config/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
@@ -206,8 +207,7 @@ impl MiraiCallbacks {
 
         // Exclude crates that currently slow down testing too much
         if self.options.diag_level == DiagLevel::Default
-            && (file_name.starts_with("client/swiss-knife/src")
-                || file_name.starts_with("common/metrics/src")
+            && (file_name.starts_with("common/metrics/src")
                 || file_name.starts_with("common/num-variants/src")
                 || file_name.starts_with("common/rate-limiter/src")
                 || file_name.starts_with("config/src")

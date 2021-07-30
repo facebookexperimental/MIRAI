@@ -4764,7 +4764,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Constructs a switch value.
     #[logfn_inputs(TRACE)]
-    #[logfn(TRACE)]
     fn switch(
         &self,
         mut cases: Vec<(Rc<AbstractValue>, Rc<AbstractValue>)>,
