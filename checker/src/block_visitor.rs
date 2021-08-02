@@ -19,9 +19,9 @@ use crate::path::{Path, PathEnum, PathSelector};
 use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
+use crate::type_visitor::TypeVisitor;
 use crate::utils;
 
-use crate::type_visitor::TypeVisitor;
 use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
@@ -450,7 +450,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 .get_rustc_place_type(place, self.bv.current_span);
             debug!("ty {:?}", ty);
         }
-        ty = self.type_visitor().remove_transparent_wrappers(ty);
         self.type_visitor_mut()
             .set_path_rustc_type(path.clone(), ty);
 
@@ -1671,31 +1670,32 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 selector,
                 ..
             } if *selector.as_ref() == PathSelector::Deref => {
-                if source_type.is_box() {
-                    if self.type_visitor().is_slice_pointer(target_type.kind()) {
-                        // The target type is a slice pointer, so the thing inside the box must be
-                        // an array slice (or a string). In the heap model, we store a thin pointer
-                        // to the slice/string in field 0 of the box and we store the length in
-                        // field 1 (which does not actually exist in the definition of the Box struct).
-                        let ptr_val = AbstractValue::make_typed_unknown(
-                            ExpressionType::ThinPointer,
-                            Path::new_field(
-                                qualifier.canonicalize(&self.bv.current_environment),
-                                0,
-                            ),
-                        );
-                        let ptr_len = AbstractValue::make_typed_unknown(
-                            ExpressionType::Usize,
-                            Path::new_length(qualifier.clone()),
-                        );
-                        self.bv
-                            .current_environment
-                            .update_value_at(Path::new_field(path.clone(), 0), ptr_val);
-                        self.bv
-                            .current_environment
-                            .update_value_at(Path::new_length(path.clone()), ptr_len);
-                        return;
-                    };
+                if source_type.is_box() && self.type_visitor().is_slice_pointer(target_type.kind())
+                {
+                    // The target type is a slice pointer, so the thing inside the box must be
+                    // an array slice (or a string). In the heap model, we store a thin pointer
+                    // to the slice/string in field 0 of the box and we store the length in
+                    // field 1 (which does not actually exist in the definition of the Box struct).
+                    let deref_ty = self.type_visitor().get_dereferenced_type(target_type);
+                    let thin_ptr_ty = self.bv.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                        ty: deref_ty,
+                        mutbl: rustc_hir::Mutability::Not,
+                    });
+                    let ptr_val = self.bv.lookup_path_and_refine_result(
+                        Path::new_field(qualifier.canonicalize(&self.bv.current_environment), 0),
+                        thin_ptr_ty,
+                    );
+                    let ptr_len = self.bv.lookup_path_and_refine_result(
+                        Path::new_length(qualifier.clone()),
+                        self.bv.tcx.types.usize,
+                    );
+                    self.bv
+                        .current_environment
+                        .update_value_at(Path::new_field(path.clone(), 0), ptr_val);
+                    self.bv
+                        .current_environment
+                        .update_value_at(Path::new_length(path.clone()), ptr_len);
+                    return;
                 }
 
                 // We are taking a reference to the result of a deref. This is a bit awkward.
@@ -1942,9 +1942,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 self.bv
                                     .current_environment
                                     .update_value_at(thin_pointer_path, value.clone());
-                                let source_type = self
-                                    .type_visitor()
-                                    .get_path_rustc_type(p, self.bv.current_span);
+                                let source_type = self.type_visitor().remove_transparent_wrappers(
+                                    self.type_visitor()
+                                        .get_path_rustc_type(p, self.bv.current_span),
+                                );
                                 if let TyKind::Array(_, len) = self
                                     .type_visitor()
                                     .get_dereferenced_type(source_type)
@@ -3363,8 +3364,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // Deref the pointer at field 0 of the box
                         result = Path::new_field(result, 0);
                         ty = ty.boxed_ty();
-                    } else if type_visitor.is_slice_pointer(ty.kind()) {
-                        // Deref the thin pointer part
+                    } else if type_visitor.is_slice_pointer_no_unwrap(ty.kind()) {
+                        // Deref the thin pointer part of the slice pointer
                         ty = type_visitor.get_dereferenced_type(ty);
                         let thin_pointer_path = Path::new_field(result, 0);
                         let deref_path = Path::new_deref(
