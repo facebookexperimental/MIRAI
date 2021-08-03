@@ -1672,16 +1672,30 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 ..
             } if *selector.as_ref() == PathSelector::Deref => {
                 if source_type.is_box() {
-                    // taking the address of the thing in the box, which is, of course, a pointer.
-                    // Special case this because we want that pointer, not a pointer to the pointer
-                    // Use copy_or_move_elements because the pointer could be fat.
-                    self.bv.copy_or_move_elements(
-                        path,
-                        qualifier.canonicalize(&self.bv.current_environment),
-                        target_type,
-                        false,
-                    );
-                    return;
+                    if self.type_visitor().is_slice_pointer(target_type.kind()) {
+                        // The target type is a slice pointer, so the thing inside the box must be
+                        // an array slice (or a string). In the heap model, we store a thin pointer
+                        // to the slice/string in field 0 of the box and we store the length in
+                        // field 1 (which does not actually exist in the definition of the Box struct).
+                        let ptr_val = AbstractValue::make_typed_unknown(
+                            ExpressionType::ThinPointer,
+                            Path::new_field(
+                                qualifier.canonicalize(&self.bv.current_environment),
+                                0,
+                            ),
+                        );
+                        let ptr_len = AbstractValue::make_typed_unknown(
+                            ExpressionType::Usize,
+                            Path::new_length(qualifier.clone()),
+                        );
+                        self.bv
+                            .current_environment
+                            .update_value_at(Path::new_field(path.clone(), 0), ptr_val);
+                        self.bv
+                            .current_environment
+                            .update_value_at(Path::new_length(path.clone()), ptr_len);
+                        return;
+                    };
                 }
 
                 // We are taking a reference to the result of a deref. This is a bit awkward.

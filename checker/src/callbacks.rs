@@ -200,6 +200,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemdb/src") // expect reference target to have a value
             || file_name.starts_with("storage/diemsum/src") // out of memory
+            || file_name.starts_with("storage/inspector/src/") // out of memory
             || file_name.starts_with("types/src") //Sorts Int and <null> are incompatible
             || file_name.starts_with("vm-validator/src")
         {
@@ -231,7 +232,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("network/simple-onchain-discovery/src")
                 || file_name.starts_with("sdk/src")
                 || file_name.starts_with("secure/net/src")
-                || file_name.starts_with("storage/inspector/src/")
                 || file_name.starts_with("storage/schemadb/src")
                 || file_name.starts_with("storage/storage-client/src")
                 || file_name.starts_with("types/src"))
