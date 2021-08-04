@@ -158,6 +158,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("consensus/consensus-types/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("crypto/crypto/src") // stack overflow
+            || file_name.starts_with("crypto/crypto-derive/src") // out of memory
             || file_name.starts_with("diem-node/src") // out of memory
             || file_name.starts_with("execution/db-bootstrapper/src") // out of memory
             || file_name.starts_with("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
@@ -183,6 +184,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/tools/move-bytecode-viewer/src") // out of memory
             || file_name.starts_with("language/tools/move-cli/src") // non termination
             || file_name.starts_with("language/tools/move-coverage/src") // out of memory
+            || file_name.starts_with("language/tools/move-explain/src") // out of memory
             || file_name.starts_with("language/tools/move-unit-test/src") // non termination
             || file_name.starts_with("language/tools/read-write-set/src")  // non termination
             || file_name.starts_with("language/tools/resource-viewer/src") // out of memory
@@ -213,7 +215,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("common/num-variants/src")
                 || file_name.starts_with("common/rate-limiter/src")
                 || file_name.starts_with("config/src")
-                || file_name.starts_with("crypto/crypto-derive/src")
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/diem-framework/src")
@@ -224,7 +225,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/move-prover/bytecode/src")
                 || file_name.starts_with("language/move-prover/docgen/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
-                || file_name.starts_with("language/tools/move-explain/src")
                 || file_name.starts_with("language/tools/vm-genesis/src")
                 || file_name.starts_with("language/tools/move-bytecode-utils/src")
                 || file_name.starts_with("move-prover/errmapgen/src")

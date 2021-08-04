@@ -275,6 +275,21 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
+    /// Returns true if the given type is a reference (or raw pointer) to a collection type, in which
+    /// case the reference/pointer independently tracks the length of the collection, thus effectively
+    /// tracking a slice of the underlying collection.
+    #[logfn_inputs(TRACE)]
+    pub fn is_slice_pointer_no_unwrap(&self, ty_kind: &TyKind<'tcx>) -> bool {
+        match ty_kind {
+            TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
+                trace!("target type {:?}", target.kind());
+                // Pointers to sized arrays are thin pointers.
+                matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
+            }
+            _ => false,
+        }
+    }
+
     /// Returns true if the given type is a reference to the string type.
     #[logfn_inputs(TRACE)]
     pub fn is_string_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
@@ -552,23 +567,29 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         return self.tcx.types.i32;
                     }
                     PathSelector::Downcast(_, ordinal) => {
-                        if let TyKind::Ref(_, ty, _) = t.kind() {
-                            t = ty;
-                        }
-                        t = self.remove_transparent_wrappers(t);
-                        if let TyKind::Adt(def, substs) = t.kind() {
-                            let substs = self.specialize_substs(substs, &self.generic_argument_map);
-                            if *ordinal >= def.variants.len() {
-                                debug!(
-                                    "illegally down casting to index {} of {:?} at {:?}",
-                                    *ordinal, t, current_span
-                                );
-                                return self.tcx.types.never;
+                        // Down casting to an enum variant
+                        while type_visitor::is_transparent_wrapper(t)
+                            || matches!(t.kind(), TyKind::Adt(..))
+                        {
+                            if let TyKind::Adt(def, substs) = t.kind() {
+                                let substs =
+                                    self.specialize_substs(substs, &self.generic_argument_map);
+                                if *ordinal < def.variants.len() {
+                                    let variant = &def.variants[VariantIdx::new(*ordinal)];
+                                    let field_tys =
+                                        variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
+                                    return self.tcx.mk_tup(field_tys);
+                                }
+                                if !type_visitor::is_transparent_wrapper(t) {
+                                    break;
+                                }
                             }
-                            let variant = &def.variants[VariantIdx::new(*ordinal)];
-                            let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
-                            return self.tcx.mk_tup(field_tys);
+                            t = self.remove_transparent_wrapper(t);
                         }
+                        info!(
+                            "illegally down casting to index {} of {:?} at {:?}",
+                            *ordinal, t, current_span
+                        );
                         return self.tcx.types.never;
                     }
                     PathSelector::Index(_) | PathSelector::ConstantIndex { .. } => {
@@ -638,17 +659,14 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// Returns the element type of an array or slice type.
     #[logfn_inputs(TRACE)]
     pub fn get_element_type(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
-        let ty = self.remove_transparent_wrappers(ty);
         match &ty.kind() {
             TyKind::Array(t, _) => *t,
-            TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => {
-                match self.remove_transparent_wrappers(t).kind() {
-                    TyKind::Array(t, _) => *t,
-                    TyKind::Slice(t) => *t,
-                    TyKind::Str => self.tcx.types.char,
-                    _ => t,
-                }
-            }
+            TyKind::RawPtr(TypeAndMut { ty: t, .. }) | TyKind::Ref(_, t, _) => match t.kind() {
+                TyKind::Array(t, _) => *t,
+                TyKind::Slice(t) => *t,
+                TyKind::Str => self.tcx.types.char,
+                _ => t,
+            },
             TyKind::Slice(t) => *t,
             TyKind::Str => self.tcx.types.char,
             _ => ty,
@@ -664,15 +682,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         substs: SubstsRef<'tcx>,
         ordinal: usize,
     ) -> Ty<'tcx> {
-        if def.repr.transparent() {
-            let variant_0 = VariantIdx::from_u32(0);
-            let v = &def.variants[variant_0];
-            if let Some(f) = v.fields.get(0) {
-                if let TyKind::Adt(def, substs) = f.ty(self.tcx, substs).kind() {
-                    return self.get_field_type(def, substs, ordinal);
-                }
-            }
-        }
         for variant in &def.variants {
             if ordinal < variant.fields.len() {
                 let field = &variant.fields[ordinal];
@@ -941,6 +950,28 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
+    pub fn remove_transparent_wrapper(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
+        if let TyKind::Adt(def, substs) = ty.kind() {
+            if def.repr.transparent() {
+                let variant_0 = VariantIdx::from_u32(0);
+                let v = &def.variants[variant_0];
+                let param_env = self.tcx.param_env(v.def_id);
+                let non_zst_field = v.fields.iter().find(|field| {
+                    let field_ty = self.tcx.type_of(field.did);
+                    let is_zst = self
+                        .tcx
+                        .layout_of(param_env.and(field_ty))
+                        .map_or(false, |layout| layout.is_zst());
+                    !is_zst
+                });
+                if let Some(f) = non_zst_field {
+                    return f.ty(self.tcx, substs);
+                }
+            }
+        }
+        ty
+    }
+
     /// If the given type is a transparent wrapper, return the embedded type (after removing any
     /// nested transparent wrappers).
     pub fn remove_transparent_wrappers(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
@@ -1175,4 +1206,12 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             .collect();
         self.tcx.intern_substs(&specialized_generic_args)
     }
+}
+
+pub fn is_transparent_wrapper(ty: Ty) -> bool {
+    return if let TyKind::Adt(def, _) = ty.kind() {
+        def.repr.transparent()
+    } else {
+        false
+    };
 }
