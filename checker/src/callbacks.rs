@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 #![allow(clippy::borrowed_box)]
 
+use crate::call_graph::CallGraph;
 use crate::constant_domain::ConstantValueCache;
 use crate::crate_visitor::CrateVisitor;
 use crate::known_names::KnownNamesCache;
@@ -285,7 +286,9 @@ impl MiraiCallbacks {
             tcx,
             test_run: self.test_run,
             type_cache: Rc::new(RefCell::new(TypeCache::new())),
+            call_graph: CallGraph::new(),
         };
         crate_visitor.analyze_some_bodies();
+        crate_visitor.call_graph.to_dot();
     }
 }

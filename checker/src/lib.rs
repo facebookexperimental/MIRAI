@@ -70,6 +70,7 @@ pub mod abstract_value;
 pub mod block_visitor;
 pub mod body_visitor;
 pub mod bool_domain;
+pub mod call_graph;
 pub mod call_visitor;
 pub mod callbacks;
 pub mod constant_domain;

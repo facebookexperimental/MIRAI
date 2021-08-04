@@ -288,6 +288,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     #[logfn_inputs(TRACE)]
     pub fn get_function_summary(&mut self) -> Option<Summary> {
         self.try_to_devirtualize();
+        for ty in self.actual_argument_types.iter() {
+            self.block_visitor.bv.cv.call_graph.add_edge(
+                self.callee_def_id,
+                self.block_visitor.bv.def_id,
+                format!("{:?}", ty),
+            );
+        }
         if let Some(func_ref) = &self.callee_func_ref.clone() {
             // If the actual arguments include any function constants, collect them together
             // and pass them to get_summary_for_function_constant so that their signatures

@@ -8,6 +8,7 @@
 // 'analysis is the life time of the analyze_with_mirai call back that is invoked with the type context.
 
 use crate::body_visitor::BodyVisitor;
+use crate::call_graph::CallGraph;
 use crate::constant_domain::ConstantValueCache;
 use crate::expected_errors;
 use crate::known_names::KnownNamesCache;
@@ -54,6 +55,7 @@ pub struct CrateVisitor<'compilation, 'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub type_cache: Rc<RefCell<TypeCache<'tcx>>>,
     pub test_run: bool,
+    pub call_graph: CallGraph,
 }
 
 impl<'compilation, 'tcx> Debug for CrateVisitor<'compilation, 'tcx> {
@@ -105,6 +107,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
             } else {
                 info!("analyzing function {}", name);
             }
+            self.call_graph.add_croot(def_id);
             self.analyze_body(def_id);
         }
         self.emit_or_check_diagnostics();
