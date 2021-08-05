@@ -130,8 +130,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 }
             }
             let elapsed_time = self.block_visitor.bv.start_instant.elapsed();
-            let mut summary =
-                body_visitor.visit_body(self.function_constant_args, &self.actual_argument_types);
+            let mut summary = body_visitor.visit_body(self.function_constant_args);
             trace!("summary {:?} {:?}", self.callee_def_id, summary);
             if let Some(func_ref) = &self.callee_func_ref {
                 // If there is already a computed summary in the cache, we are in a recursive loop
