@@ -248,18 +248,17 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
-    /// Returns true if the given type is a reference (or raw pointer) to a collection type, in which
-    /// case the reference/pointer independently tracks the length of the collection, thus effectively
-    /// tracking a slice of the underlying collection.
+    /// Returns true if the given type is a reference (or raw pointer) to a slice type, where
+    /// both or either the reference and slice type can be wrapped with a transparent wrapper type.
     #[logfn_inputs(TRACE)]
     #[logfn(TRACE)]
-    pub fn is_slice_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
+    pub fn is_slice_pointer_or_wraps_one(&self, ty_kind: &TyKind<'tcx>) -> bool {
         match ty_kind {
             TyKind::Adt(def, substs) if def.repr.transparent() => {
                 let variant_0 = VariantIdx::from_u32(0);
                 let v = &def.variants[variant_0];
                 if let Some(f) = v.fields.get(0) {
-                    self.is_slice_pointer(f.ty(self.tcx, substs).kind())
+                    self.is_slice_pointer_or_wraps_one(f.ty(self.tcx, substs).kind())
                 } else {
                     debug!("failed to dereference {:?}", ty_kind);
                     false
@@ -279,7 +278,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// case the reference/pointer independently tracks the length of the collection, thus effectively
     /// tracking a slice of the underlying collection.
     #[logfn_inputs(TRACE)]
-    pub fn is_slice_pointer_no_unwrap(&self, ty_kind: &TyKind<'tcx>) -> bool {
+    pub fn is_slice_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
         match ty_kind {
             TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
                 trace!("target type {:?}", target.kind());
@@ -599,9 +598,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         return self.tcx.types.trait_object_dummy_self;
                     }
                     PathSelector::Slice(_) => {
-                        return if self.is_slice_pointer(t.kind()) {
-                            t
-                        } else {
+                        return {
                             let slice_ty = self.tcx.mk_slice(self.get_element_type(t));
                             self.tcx.mk_mut_ref(self.tcx.lifetimes.re_static, slice_ty)
                         };
