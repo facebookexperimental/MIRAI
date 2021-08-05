@@ -2429,8 +2429,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             if let Expression::HeapBlockLayout { length, .. } = &layout_val.expression {
                 return length.clone();
             }
-        } else if self.type_visitor().is_slice_pointer(t.kind()) {
-            let elem_t = self.type_visitor().get_element_type(t);
+        } else if self.type_visitor().is_slice_pointer_or_wraps_one(t.kind()) {
+            let elem_t = self
+                .type_visitor()
+                .get_element_type(self.type_visitor().remove_transparent_wrappers(t));
             if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(elem_t)) {
                 if !ty_and_layout.is_unsized() {
                     let elem_size_val: Rc<AbstractValue> =

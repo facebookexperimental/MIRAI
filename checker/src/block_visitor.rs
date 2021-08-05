@@ -1936,7 +1936,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             let target_type = self
                                 .type_visitor()
                                 .get_path_rustc_type(&target_path, self.bv.current_span);
-                            if self.type_visitor().is_slice_pointer(target_type.kind()) {
+                            if self
+                                .type_visitor()
+                                .is_slice_pointer_or_wraps_one(target_type.kind())
+                            {
                                 // convert the source thin pointer to a fat pointer if the target path is a slice pointer
                                 let thin_pointer_path = Path::new_field(target_path.clone(), 0);
                                 self.bv
@@ -3364,7 +3367,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // Deref the pointer at field 0 of the box
                         result = Path::new_field(result, 0);
                         ty = ty.boxed_ty();
-                    } else if type_visitor.is_slice_pointer_no_unwrap(ty.kind()) {
+                    } else if type_visitor.is_slice_pointer(ty.kind()) {
                         // Deref the thin pointer part of the slice pointer
                         ty = type_visitor.get_dereferenced_type(ty);
                         let thin_pointer_path = Path::new_field(result, 0);

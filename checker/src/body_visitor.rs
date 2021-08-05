@@ -1206,13 +1206,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                             .set_path_rustc_type(path.clone(), deref_ty);
                     }
                     if self.type_visitor().is_slice_pointer(lh_type.kind()) {
-                        if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
-                            if matches!(selector.as_ref(), PathSelector::Field(0)) {
-                                // tpath = qualifier.0 and rvalue = &path, so thin pointer copy
-                                self.current_environment.update_value_at(tpath, rvalue);
-                                continue;
-                            }
-                        }
                         // transferring a (pointer, length) tuple.
                         self.copy_or_move_elements(tpath.clone(), path.clone(), lh_type, false);
                         continue;
