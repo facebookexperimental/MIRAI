@@ -3,9 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::abstract_value;
-use crate::abstract_value::AbstractValue;
-use crate::abstract_value::AbstractValueTrait;
+use crate::abstract_value::{self, AbstractValue, AbstractValueTrait};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
@@ -17,7 +15,7 @@ use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries;
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
-use crate::type_visitor::{TypeCache, TypeVisitor};
+use crate::type_visitor::{self, TypeCache, TypeVisitor};
 
 use crate::block_visitor::BlockVisitor;
 use crate::call_visitor::CallVisitor;
@@ -1794,6 +1792,44 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     ));
                 }
             }
+            TyKind::Ref(region, mut ty, mutbl) if type_visitor::is_transparent_wrapper(ty) => {
+                let mut s_path = Path::new_deref(
+                    source_path.clone(),
+                    ExpressionType::from(ty.kind(), self.tcx),
+                )
+                .canonicalize(&self.current_environment);
+                while type_visitor::is_transparent_wrapper(ty) {
+                    s_path = Path::new_field(s_path, 0);
+                    ty = self.type_visitor().remove_transparent_wrapper(ty);
+                }
+                let source_rustc_type = self
+                    .tcx
+                    .mk_ref(region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                let s_ref_val = AbstractValue::make_reference(s_path);
+                let source_path = Path::new_computed(s_ref_val);
+                if !self
+                    .type_visitor()
+                    .is_slice_pointer(source_rustc_type.kind())
+                {
+                    source_fields.push((source_path, source_rustc_type));
+                } else if self.type_visitor.is_slice_pointer(target_rustc_type.kind())
+                    && !self
+                        .type_visitor
+                        .is_string_pointer(source_rustc_type.kind())
+                {
+                    let pointer_path = Path::new_field(source_path.clone(), 0);
+                    let pointer_type = self
+                        .tcx
+                        .mk_ptr(rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                    source_fields.push((pointer_path, pointer_type));
+                    let len_path = Path::new_length(source_path);
+                    source_fields.push((len_path, self.tcx.types.usize));
+                } else {
+                    // todo: when this results in source_fields and target_fields being
+                    // empty, things seem to work. It is not clear what happens in other
+                    // cases. Write a comprehensive test that looks at all cases.
+                }
+            }
             TyKind::Tuple(substs) => {
                 let specialized_substs = self
                     .type_visitor()
@@ -1809,6 +1845,23 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     .is_slice_pointer(source_rustc_type.kind())
                 {
                     source_fields.push((source_path.clone(), source_rustc_type));
+                } else if self.type_visitor.is_slice_pointer(target_rustc_type.kind())
+                    && !self
+                        .type_visitor
+                        .is_string_pointer(source_rustc_type.kind())
+                {
+                    let pointer_path = Path::new_field(source_path.clone(), 0);
+                    let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                        ty: self.type_visitor.get_element_type(source_rustc_type),
+                        mutbl: rustc_hir::Mutability::Not,
+                    });
+                    source_fields.push((pointer_path, pointer_type));
+                    let len_path = Path::new_length(source_path.clone());
+                    source_fields.push((len_path, self.tcx.types.usize));
+                } else {
+                    // todo: when this results in source_fields and target_fields being
+                    // empty, things seem to work. It is not clear what happens in other
+                    // cases. Write a comprehensive test that looks at all cases.
                 }
             }
         }
@@ -1835,6 +1888,44 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     ));
                 }
             }
+            TyKind::Ref(region, mut ty, mutbl) if type_visitor::is_transparent_wrapper(ty) => {
+                let mut t_path = Path::new_deref(
+                    target_path.clone(),
+                    ExpressionType::from(ty.kind(), self.tcx),
+                )
+                .canonicalize(&self.current_environment);
+                while type_visitor::is_transparent_wrapper(ty) {
+                    t_path = Path::new_field(t_path, 0);
+                    ty = self.type_visitor().remove_transparent_wrapper(ty);
+                }
+                let source_rustc_type = self
+                    .tcx
+                    .mk_ref(region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                let t_ref_val = AbstractValue::make_reference(t_path);
+                let target_path = Path::new_computed(t_ref_val);
+                if !self
+                    .type_visitor()
+                    .is_slice_pointer(target_rustc_type.kind())
+                {
+                    target_fields.push((target_path, target_rustc_type))
+                } else if self.type_visitor.is_slice_pointer(source_rustc_type.kind())
+                    && !self
+                        .type_visitor
+                        .is_string_pointer(source_rustc_type.kind())
+                {
+                    let pointer_path = Path::new_field(target_path.clone(), 0);
+                    let pointer_type = self
+                        .tcx
+                        .mk_ptr(rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                    target_fields.push((pointer_path, pointer_type));
+                    let len_path = Path::new_length(target_path);
+                    target_fields.push((len_path, self.tcx.types.usize));
+                } else {
+                    // todo: when this results in source_fields and target_fields being
+                    // empty, things seem to work. It is not clear what happens in other
+                    // cases. Write a comprehensive test that looks at all cases.
+                }
+            }
             TyKind::Tuple(substs) => {
                 let specialized_substs = self
                     .type_visitor()
@@ -1845,35 +1936,28 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
             }
             _ => {
-                if self
+                if !self
                     .type_visitor()
                     .is_slice_pointer(target_rustc_type.kind())
                 {
-                    if self.type_visitor.is_slice_pointer(source_rustc_type.kind())
-                        && !self
-                            .type_visitor
-                            .is_string_pointer(source_rustc_type.kind())
-                    {
-                        let pointer_path = Path::new_field(source_path.clone(), 0);
-                        let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                            ty: self.type_visitor.get_element_type(source_rustc_type),
-                            mutbl: rustc_hir::Mutability::Not,
-                        });
-                        source_fields.push((pointer_path, pointer_type));
-                        let len_path = Path::new_length(source_path.clone());
-                        source_fields.push((len_path, self.tcx.types.usize));
-
-                        let pointer_path = Path::new_field(target_path.clone(), 0);
-                        let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                            ty: self.type_visitor.get_element_type(target_rustc_type),
-                            mutbl: rustc_hir::Mutability::Not,
-                        });
-                        target_fields.push((pointer_path, pointer_type));
-                        let len_path = Path::new_length(target_path.clone());
-                        target_fields.push((len_path, self.tcx.types.usize));
-                    }
-                } else {
                     target_fields.push((target_path.clone(), target_rustc_type))
+                } else if self.type_visitor.is_slice_pointer(source_rustc_type.kind())
+                    && !self
+                        .type_visitor
+                        .is_string_pointer(source_rustc_type.kind())
+                {
+                    let pointer_path = Path::new_field(target_path.clone(), 0);
+                    let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                        ty: self.type_visitor.get_element_type(target_rustc_type),
+                        mutbl: rustc_hir::Mutability::Not,
+                    });
+                    target_fields.push((pointer_path, pointer_type));
+                    let len_path = Path::new_length(target_path.clone());
+                    target_fields.push((len_path, self.tcx.types.usize));
+                } else {
+                    // todo: when this results in source_fields and target_fields being
+                    // empty, things seem to work. It is not clear what happens in other
+                    // cases. Write a comprehensive test that looks at all cases.
                 }
             }
         }
