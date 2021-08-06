@@ -165,7 +165,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     pub fn visit_body(
         &mut self,
         function_constant_args: &[(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)],
-        parameter_types: &[Ty<'tcx>],
     ) -> Summary {
         let diag_level = self.cv.options.diag_level;
         let max_analysis_time_for_body = self.cv.options.max_analysis_time_for_body;

@@ -181,6 +181,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-prover/lab/src")  // stack overflow
             || file_name.starts_with("language/tools/disassembler/src") // out of memory
             || file_name.starts_with("language/tools/genesis-viewer/src/main.rs") // out of memory
+            || file_name.starts_with("language/tools/move-bytecode-utils/src") // non termination
             || file_name.starts_with("language/tools/move-bytecode-viewer/src") // out of memory
             || file_name.starts_with("language/tools/move-cli/src") // non termination
             || file_name.starts_with("language/tools/move-coverage/src") // out of memory
@@ -189,6 +190,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/tools/read-write-set/src")  // non termination
             || file_name.starts_with("language/tools/resource-viewer/src") // out of memory
             || file_name.starts_with("language/transaction-builder/generator/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
+            || file_name.starts_with("language/tools/vm-genesis/src") // Unexpected representation of upvar types
             || file_name.starts_with("mempool/src") // out of memory
             || file_name.starts_with("network/src") // could not fully normalize 
             || file_name.starts_with("network/builder/src") // could not fully normalize
@@ -225,8 +227,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/move-prover/bytecode/src")
                 || file_name.starts_with("language/move-prover/docgen/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
-                || file_name.starts_with("language/tools/vm-genesis/src")
-                || file_name.starts_with("language/tools/move-bytecode-utils/src")
                 || file_name.starts_with("move-prover/errmapgen/src")
                 || file_name.starts_with("network/builder/src")
                 || file_name.starts_with("network/simple-onchain-discovery/src")
