@@ -290,8 +290,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         self.try_to_devirtualize();
         for ty in self.actual_argument_types.iter() {
             self.block_visitor.bv.cv.call_graph.add_edge(
-                self.callee_def_id,
                 self.block_visitor.bv.def_id,
+                self.callee_def_id,
                 format!("{:?}", ty),
             );
         }
