@@ -116,7 +116,7 @@ impl ConstantDomain {
         let generic_arguments = if let Some(generic_args) = generic_args {
             generic_args
                 .types()
-                .map(|t| ExpressionType::from(t.kind(), tcx))
+                .map(|t| ExpressionType::from(t.kind()))
                 .collect()
         } else {
             vec![]

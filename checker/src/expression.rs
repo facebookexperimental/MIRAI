@@ -12,7 +12,6 @@ use crate::tag_domain::Tag;
 use log_derive::*;
 use mirai_annotations::*;
 use rustc_middle::ty::{FloatTy, IntTy, Ty, TyCtxt, TyKind, TypeAndMut, UintTy};
-use rustc_target::abi::VariantIdx;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
@@ -1268,29 +1267,9 @@ impl From<&ConstantDomain> for ExpressionType {
 }
 
 impl ExpressionType {
-    pub fn from<'a>(ty_kind: &TyKind<'a>, tcx: TyCtxt<'a>) -> ExpressionType {
+    pub fn from(ty_kind: &TyKind) -> ExpressionType {
         match ty_kind {
-            TyKind::Adt(def, substs) => {
-                if def.repr.transparent() {
-                    let variant_0 = VariantIdx::from_u32(0);
-                    let v = &def.variants[variant_0];
-                    let param_env = tcx.param_env(v.def_id);
-                    let non_zst_field = v.fields.iter().find(|field| {
-                        let field_ty = tcx.type_of(field.did);
-                        let is_zst = tcx
-                            .layout_of(param_env.and(field_ty))
-                            .map_or(false, |layout| layout.is_zst());
-                        !is_zst
-                    });
-                    if let Some(f) = non_zst_field {
-                        ExpressionType::from(f.ty(tcx, substs).kind(), tcx)
-                    } else {
-                        ExpressionType::NonPrimitive
-                    }
-                } else {
-                    ExpressionType::NonPrimitive
-                }
-            }
+            TyKind::Adt(..) => ExpressionType::NonPrimitive,
             TyKind::Bool => ExpressionType::Bool,
             TyKind::Char => ExpressionType::Char,
             TyKind::Int(IntTy::Isize) => ExpressionType::Isize,
