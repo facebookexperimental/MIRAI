@@ -1739,7 +1739,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
 
     /// Copy the heap model at source_path to a heap model at target_path.
     /// If the type of value at source_path is different from that at target_path, the value is transmuted.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     pub fn copy_and_transmute(
         &mut self,
         source_path: Rc<Path>,
