@@ -1,7 +1,7 @@
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DefaultIx, EdgeIndex, NodeIndex};
 use petgraph::visit::Bfs;
-use petgraph::Graph;
+use petgraph::{Graph, Direction};
 use rustc_hir::def_id::DefId;
 use std::collections::{HashMap, HashSet};
 
@@ -121,6 +121,9 @@ pub struct CallGraph {
     nodes: HashMap<DefId, CallGraphNode>,
     // Mapping from graph edge indexes to edge data
     edges: HashMap<EdgeIndex<DefaultIx>, CallGraphEdge>,
+    // Bi-directional mapping of type number to type string
+    rtype_to_index: HashMap<String, u32>,
+    index_to_rtype: HashMap<u32, String>,
 }
 
 impl Default for CallGraph {
@@ -135,6 +138,8 @@ impl CallGraph {
             graph: Graph::<DefId, u32>::new(),
             nodes: HashMap::<DefId, CallGraphNode>::new(),
             edges: HashMap::<EdgeIndex<DefaultIx>, CallGraphEdge>::new(),
+            rtype_to_index: HashMap::<String, u32>::new(),
+            index_to_rtype: HashMap::<u32, String>::new(),
         }
     }
 
@@ -143,6 +148,8 @@ impl CallGraph {
             graph,
             nodes: self.nodes.clone(),
             edges: self.edges.clone(),
+            rtype_to_index: self.rtype_to_index.clone(),
+            index_to_rtype: self.index_to_rtype.clone(),
         }
     }
 
@@ -178,9 +185,15 @@ impl CallGraph {
             .nodes
             .get(&callee_id)
             .expect("The node must exist at this point.");
+        if !self.rtype_to_index.contains_key(&rtype) {
+            let rtype_id = self.rtype_to_index.len() as u32;
+            self.rtype_to_index.insert(rtype.to_owned(), rtype_id);
+            self.index_to_rtype.insert(rtype_id, rtype.to_owned());
+        }
+        let rtype_id = *self.rtype_to_index.get(&rtype).expect("Should exist");
         let graph_edge =
             self.graph
-                .add_edge(caller_node.graph_node, callee_node.graph_node, edge_id);
+                .add_edge(caller_node.graph_node, callee_node.graph_node, rtype_id);
         let edge = CallGraphEdge::new(
             edge_id,
             caller_node.index,
@@ -220,11 +233,8 @@ impl CallGraph {
         self.update(graph)
     }
 
-    fn reachable_from(&self, name: &str) -> CallGraph {
+    fn reachable_from(&self, start_node: NodeIndex<DefaultIx>) -> HashSet::<NodeIndex<DefaultIx>> {
         let mut reachable = HashSet::<NodeIndex<DefaultIx>>::new();
-        let start_node = self
-            .get_node_by_name(name)
-            .expect("Valid start node required");
         let mut bfs = Bfs::new(&self.graph, start_node);
         let mut croot: Option<NodeIndex<DefaultIx>> = None;
         while let Some(nx) = bfs.next(&self.graph) {
@@ -238,6 +248,14 @@ impl CallGraph {
                 reachable.insert(nx);
             }
         }
+        reachable
+    }
+
+    fn filter_reachable(&self, name: &str) -> CallGraph {
+        let start_node = self
+            .get_node_by_name(name)
+            .expect("Valid start node required");
+        let reachable = self.reachable_from(start_node);
         let graph = self.graph.filter_map(
             |node_idx, node| {
                 if reachable.contains(&node_idx) {
@@ -251,10 +269,73 @@ impl CallGraph {
         self.update(graph)
     }
 
+    fn condense_edge_set(&self, excluded: &HashMap<NodeIndex<DefaultIx>, (Vec<(NodeIndex<DefaultIx>, u32)>, Vec<(NodeIndex<DefaultIx>, u32)>)>) -> HashSet<(NodeIndex<DefaultIx>, NodeIndex<DefaultIx>, u32)> {
+        let mut condensed_edges = HashSet::<(NodeIndex<DefaultIx>, NodeIndex<DefaultIx>, u32)>::new();
+        for (_, (in_nodes, out_nodes)) in excluded.iter() {
+            for (in_node_idx, in_rtype) in in_nodes.iter() {
+                if !excluded.contains_key(&in_node_idx) {
+                    for (out_node_idx, _) in out_nodes.iter() {
+                        if !excluded.contains_key(&out_node_idx) {
+                            condensed_edges.insert((*in_node_idx, *out_node_idx, *in_rtype));
+                        }
+                    }
+                }
+            }
+        }
+        condensed_edges
+    }
+
+    fn fold_excluded(&self) -> CallGraph {
+        // 1. Find all excluded nodes and edges
+        let mut excluded = HashMap::<NodeIndex<DefaultIx>, (Vec<(NodeIndex<DefaultIx>, u32)>, Vec<(NodeIndex<DefaultIx>, u32)>)>::new();
+        let mut graph = self.graph.filter_map(
+            |node_idx, node| {  
+                if self.nodes.get(&node).expect("Should exist").is_excluded() {
+                    excluded.insert(node_idx, (Vec::<(NodeIndex<DefaultIx>, u32)>::new(), Vec::<(NodeIndex<DefaultIx>, u32)>::new()));
+                }
+                Some(node.to_owned())
+            },
+            |_, edge| {
+                Some(edge.to_owned())
+            }
+        );
+        graph.filter_map(
+            |_, node| {  
+                Some(node.to_owned())
+            },
+            |edge_idx, edge| {
+                let (start_idx, end_idx) = self.graph.edge_endpoints(edge_idx).expect("Should exist");
+                if excluded.contains_key(&end_idx) {
+                    excluded.get_mut(&end_idx).expect("Exists").0.push((start_idx, *edge));
+                }
+                if excluded.contains_key(&start_idx) {
+                    excluded.get_mut(&start_idx).expect("Exists").1.push((end_idx, *edge));
+                }
+                Some(edge.to_owned())
+            }
+        );
+        // 2. Condense edges and insert
+        for (in_idx, out_idx, rtype) in self.condense_edge_set(&excluded).iter() {
+            graph.add_edge(*in_idx, *out_idx, *rtype);
+        }
+        // 3. Remove excluded nodes and edges
+        graph = graph.filter_map(
+            |node_idx, node| {  
+                if excluded.contains_key(&node_idx) {
+                    None 
+                } else {
+                    Some(node.to_owned())
+                }
+            },
+            |_, edge| Some(edge.to_owned())
+        );
+        self.update(graph)
+    }
+
     fn filter_excluded(&self) -> CallGraph {
         let graph = self.graph.filter_map(
-            |_, node| {
-                if !self.nodes.get(node).expect("Should exist").is_excluded() {
+            |_, node| {  
+                if !self.nodes.get(&node).expect("Should exist").is_excluded() {
                     Some(node.to_owned())
                 } else {
                     None
@@ -265,13 +346,38 @@ impl CallGraph {
         self.update(graph)
     }
 
+    fn filter_no_edges(&self) -> CallGraph {
+        let graph = self.graph.filter_map(
+            |node_idx, node| {
+                let has_in_edges = self.graph.edges_directed(node_idx, Direction::Incoming).next().is_some();
+                let has_out_edges = self.graph.edges_directed(node_idx, Direction::Outgoing).next().is_some();
+                if has_in_edges || has_out_edges {
+                    Some(node.to_owned())
+                } else {
+                    None
+                }
+            },
+            |_, edge| Some(edge.to_owned()),
+        );
+        self.update(graph)
+    }
+
+    fn shortened_node_names(&self) -> Graph<String, ()> {
+        self.graph.filter_map(
+            |_, node| Some(self.nodes.get(node).expect("Should exist").name.to_owned()),
+            |_, _| Some(()),
+        )
+    }
+
     pub fn to_dot(&self) {
-        let call_graph = self.reachable_from("verify_impl");
-        let call_graph2 = call_graph.filter_excluded();
+        let call_graph = self.deduplicate_edges();
+        let call_graph2 = call_graph.filter_reachable("verify_impl");
+        let call_graph3 = call_graph2.fold_excluded();
+        let call_graph4 = call_graph3.filter_no_edges();
         println!(
             "{:?}",
             Dot::with_config(
-                &call_graph2.deduplicate_edges().graph,
+                &call_graph4.shortened_node_names(),
                 &[Config::EdgeNoLabel]
             )
         );
