@@ -130,6 +130,8 @@ pub struct CallGraph {
     // Bi-directional mapping of type number to type string
     rtype_to_index: HashMap<String, u32>,
     index_to_rtype: HashMap<u32, String>,
+    // Dominance information
+    dominance: HashSet<(DefId, DefId)>,
 }
 
 impl Default for CallGraph {
@@ -146,6 +148,7 @@ impl CallGraph {
             edges: HashMap::<EdgeIdx, CallGraphEdge>::new(),
             rtype_to_index: HashMap::<String, u32>::new(),
             index_to_rtype: HashMap::<u32, String>::new(),
+            dominance: HashSet::<(DefId, DefId)>::new(),
         }
     }
 
@@ -156,6 +159,7 @@ impl CallGraph {
             edges: self.edges.clone(),
             rtype_to_index: self.rtype_to_index.clone(),
             index_to_rtype: self.index_to_rtype.clone(),
+            dominance: self.dominance.clone(),
         }
     }
 
@@ -173,6 +177,10 @@ impl CallGraph {
             let root = CallGraphNode::new_root(node_id, defid, graph_node);
             self.nodes.insert(defid, root);
         }
+    }
+
+    pub fn add_dom(&mut self, defid1: DefId, defid2: DefId) {
+        self.dominance.insert((defid1, defid2));
     }
 
     pub fn add_edge(&mut self, caller_id: DefId, callee_id: DefId, rtype: String) {
@@ -403,7 +411,14 @@ impl CallGraph {
         )
     }
 
+    fn output_dominance(&self) {
+        for (defid1, defid2) in self.dominance.iter() {
+            println!("Dom({:?}, {:?})", defid1, defid2);
+        }
+    }
+
     pub fn to_dot(&self) {
+        self.output_dominance();
         let call_graph1 = self.filter_reachable("verify_impl");
         let call_graph2 = call_graph1.fold_excluded();
         let call_graph3 = call_graph2.filter_no_edges();
