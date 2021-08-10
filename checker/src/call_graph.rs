@@ -1,14 +1,14 @@
 use petgraph::dot::{Config, Dot};
-use petgraph::graph::{DefaultIx, EdgeIndex, NodeIndex};
+use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::visit::Bfs;
 use petgraph::{Direction, Graph};
 use rustc_hir::def_id::DefId;
 use std::collections::{HashMap, HashSet, VecDeque};
 
+type RTypeIdx = u32;
 type NodeIdx = NodeIndex<DefaultIx>;
-type EdgeIdx = EdgeIndex<DefaultIx>;
-type HalfRawEdge = (NodeIdx, u32);
-type RawEdge = (NodeIdx, NodeIdx, u32);
+type HalfRawEdge = (NodeIdx, RTypeIdx);
+type RawEdge = (NodeIdx, NodeIdx, RTypeIdx);
 type MidpointExcludedMap = HashMap<NodeIdx, (HashSet<HalfRawEdge>, HashSet<HalfRawEdge>)>;
 
 const EXCLUDED_CRATES: &[&str] = &[
@@ -32,33 +32,24 @@ enum NodeType {
 
 #[derive(Debug, Clone)]
 struct CallGraphNode {
-    // A Node has a DefId and type.
+    // A Node has a name and type.
     // Nodes are uniquely identified by their DefId.
-    index: u32,
-    defid: DefId,
     name: String,
     ntype: NodeType,
-    graph_node: NodeIdx,
 }
 
 impl CallGraphNode {
-    pub fn new_croot(index: u32, defid: DefId, graph_node: NodeIdx) -> CallGraphNode {
+    pub fn new_croot(defid: DefId) -> CallGraphNode {
         CallGraphNode {
-            index,
-            defid,
             name: CallGraphNode::format_name(defid),
             ntype: NodeType::CRoot,
-            graph_node,
         }
     }
 
-    pub fn new_root(index: u32, defid: DefId, graph_node: NodeIdx) -> CallGraphNode {
+    pub fn new_root(defid: DefId) -> CallGraphNode {
         CallGraphNode {
-            index,
-            defid,
             name: CallGraphNode::format_name(defid),
             ntype: NodeType::Root,
-            graph_node,
         }
     }
 
@@ -84,52 +75,28 @@ impl CallGraphNode {
     }
 }
 
-#[derive(Debug, Eq, Clone)]
+#[derive(Debug, Clone)]
 struct CallGraphEdge {
     // An Edge connects two nodes.
-    // Edges are uniquely identified by their index. They
-    // have a caller_id, callee_id, and an associated Rust type.
-    index: u32,
-    caller_id: u32,
-    callee_id: u32,
-    rtype: String,
-    graph_edge: EdgeIdx,
-}
-
-impl PartialEq for CallGraphEdge {
-    fn eq(&self, other: &Self) -> bool {
-        self.index == other.index
-    }
+    // Edges have an associated Rust type.
+    rtype_id: RTypeIdx,
 }
 
 impl CallGraphEdge {
-    pub fn new(
-        index: u32,
-        caller_id: u32,
-        callee_id: u32,
-        rtype: String,
-        graph_edge: EdgeIdx,
-    ) -> CallGraphEdge {
+    pub fn new(rtype_id: RTypeIdx) -> CallGraphEdge {
         CallGraphEdge {
-            index,
-            caller_id,
-            callee_id,
-            rtype,
-            graph_edge,
+            rtype_id,
         }
     }
 }
 
 pub struct CallGraph {
     // The graph structure capturing calls between nodes
-    graph: Graph<DefId, u32>,
+    graph: Graph<CallGraphNode, CallGraphEdge>,
     // A map from DefId to node information
-    nodes: HashMap<DefId, CallGraphNode>,
-    // Mapping from graph edge indexes to edge data
-    edges: HashMap<EdgeIdx, CallGraphEdge>,
-    // Bi-directional mapping of type number to type string
-    rtype_to_index: HashMap<String, u32>,
-    index_to_rtype: HashMap<u32, String>,
+    nodes: HashMap<DefId, NodeIdx>,
+    // A map from type identifier to type string
+    rtypes: HashMap<String, RTypeIdx>,
     // Dominance information
     dominance: HashMap<NodeIdx, HashSet<NodeIdx>>,
 }
@@ -143,39 +110,33 @@ impl Default for CallGraph {
 impl CallGraph {
     pub fn new() -> CallGraph {
         CallGraph {
-            graph: Graph::<DefId, u32>::new(),
-            nodes: HashMap::<DefId, CallGraphNode>::new(),
-            edges: HashMap::<EdgeIdx, CallGraphEdge>::new(),
-            rtype_to_index: HashMap::<String, u32>::new(),
-            index_to_rtype: HashMap::<u32, String>::new(),
+            graph: Graph::<CallGraphNode, CallGraphEdge>::new(),
+            nodes: HashMap::<DefId, NodeIdx>::new(),
+            rtypes: HashMap::<String, RTypeIdx>::new(),
             dominance: HashMap::<NodeIdx, HashSet<NodeIdx>>::new(),
         }
     }
 
-    fn update(&self, graph: Graph<DefId, u32>) -> CallGraph {
+    fn update(&self, graph: Graph::<CallGraphNode, CallGraphEdge>) -> CallGraph {
         CallGraph {
             graph,
             nodes: self.nodes.clone(),
-            edges: self.edges.clone(),
-            rtype_to_index: self.rtype_to_index.clone(),
-            index_to_rtype: self.index_to_rtype.clone(),
+            rtypes: self.rtypes.clone(),
             dominance: self.dominance.clone(),
         }
     }
 
     pub fn add_croot(&mut self, defid: DefId) {
-        let node_id = self.nodes.len() as u32;
-        let graph_node = self.graph.add_node(defid);
-        let croot = CallGraphNode::new_croot(node_id, defid, graph_node);
-        self.nodes.insert(defid, croot);
+        let croot = CallGraphNode::new_croot(defid);
+        let node_idx = self.graph.add_node(croot);
+        self.nodes.insert(defid, node_idx);
     }
 
     pub fn add_root(&mut self, defid: DefId) {
         if !self.nodes.contains_key(&defid) {
-            let node_id = self.nodes.len() as u32;
-            let graph_node = self.graph.add_node(defid);
-            let root = CallGraphNode::new_root(node_id, defid, graph_node);
-            self.nodes.insert(defid, root);
+            let croot = CallGraphNode::new_root(defid);
+            let node_idx = self.graph.add_node(croot);
+            self.nodes.insert(defid, node_idx);
         }
     }
 
@@ -186,16 +147,24 @@ impl CallGraph {
         if !self.nodes.contains_key(&defid2) {
             self.add_root(defid2);
         }
-        let node_idx1 = self.nodes.get(&defid1).expect("Exists").graph_node;
-        let node_idx2 = self.nodes.get(&defid2).expect("Exists").graph_node;
+        let node_idx1 = self.nodes.get(&defid1).expect("Exists");
+        let node_idx2 = self.nodes.get(&defid2).expect("Exists");
         if !self.dominance.contains_key(&node_idx1) {
-            self.dominance.insert(node_idx1, HashSet::<NodeIdx>::new());
+            self.dominance.insert(*node_idx1, HashSet::<NodeIdx>::new());
         }
-        self.dominance.get_mut(&node_idx1).expect("Exists").insert(node_idx2);
+        self.dominance.get_mut(&node_idx1).expect("Exists").insert(*node_idx2);
+    }
+
+    fn get_rtype_id(&mut self, rtype: String) -> RTypeIdx {
+        if !self.rtypes.contains_key(&rtype) {
+            let rtype_id = self.rtypes.len() as RTypeIdx;
+            self.rtypes.insert(rtype.to_owned(), rtype_id);
+        }
+        *self.rtypes.get(&rtype).expect("Exists")
     }
 
     pub fn add_edge(&mut self, caller_id: DefId, callee_id: DefId, rtype: String) {
-        let edge_id = self.edges.len() as u32;
+        let rtype_id = self.get_rtype_id(rtype);
         if !self.nodes.contains_key(&caller_id) {
             self.add_root(caller_id);
         }
@@ -210,31 +179,14 @@ impl CallGraph {
             .nodes
             .get(&callee_id)
             .expect("The node must exist at this point.");
-        if !self.rtype_to_index.contains_key(&rtype) {
-            let rtype_id = self.rtype_to_index.len() as u32;
-            self.rtype_to_index.insert(rtype.to_owned(), rtype_id);
-            self.index_to_rtype.insert(rtype_id, rtype.to_owned());
-        }
-        let rtype_id = *self.rtype_to_index.get(&rtype).expect("Should exist");
-        let graph_edge =
-            self.graph
-                .add_edge(caller_node.graph_node, callee_node.graph_node, rtype_id);
-        let edge = CallGraphEdge::new(
-            edge_id,
-            caller_node.index,
-            callee_node.index,
-            rtype,
-            graph_edge,
-        );
-        self.edges.insert(graph_edge, edge);
+        self.graph.add_edge(*caller_node, *callee_node, CallGraphEdge::new(rtype_id));
     }
 
     fn get_node_by_name(&self, name: &str) -> Option<NodeIdx> {
-        for nx in self.graph.node_indices() {
-            let defid = self.graph.node_weight(nx).expect("Should exist");
-            let node = self.nodes.get(defid).expect("Should exist");
+        for node_idx in self.graph.node_indices() {
+            let node = self.graph.node_weight(node_idx).expect("Should exist");
             if node.name.contains(name) {
-                return Some(nx);
+                return Some(node_idx);
             }
         }
         None
@@ -245,7 +197,7 @@ impl CallGraph {
         let graph = self.graph.filter_map(
             |_, node| Some(node.to_owned()),
             |edge_idx, edge| {
-                let endpoints = self.graph.edge_endpoints(edge_idx).expect("Should exist");
+                let endpoints = self.graph.edge_endpoints(edge_idx).expect("Exists");
                 if edges.contains(&endpoints) {
                     None
                 } else {
@@ -261,15 +213,15 @@ impl CallGraph {
         let mut reachable = HashSet::<NodeIdx>::new();
         let mut bfs = Bfs::new(&self.graph, start_node);
         let mut croot: Option<NodeIdx> = None;
-        while let Some(nx) = bfs.next(&self.graph) {
-            let defid = self.graph.node_weight(nx).expect("Should exist");
-            if self.nodes.get(defid).expect("Should exist").is_croot() {
+        while let Some(node_idx) = bfs.next(&self.graph) {
+            let node = self.graph.node_weight(node_idx).expect("Exists");
+            if node.is_croot() {
                 if croot.is_none() {
-                    croot = Some(nx);
-                    reachable.insert(nx);
+                    croot = Some(node_idx);
+                    reachable.insert(node_idx);
                 }
             } else {
-                reachable.insert(nx);
+                reachable.insert(node_idx);
             }
         }
         reachable
@@ -340,7 +292,7 @@ impl CallGraph {
         // 1. Find all excluded nodes
         let mut graph = self.graph.filter_map(
             |node_idx, node| {
-                if self.nodes.get(node).expect("Should exist").is_excluded() {
+                if node.is_excluded() {
                     excluded.insert(
                         node_idx,
                         (HashSet::<HalfRawEdge>::new(), HashSet::<HalfRawEdge>::new()),
@@ -361,21 +313,22 @@ impl CallGraph {
                         .get_mut(&end_idx)
                         .expect("Exists")
                         .0
-                        .insert((start_idx, *edge));
+                        .insert((start_idx, edge.rtype_id));
                 }
                 if excluded.contains_key(&start_idx) {
                     excluded
                         .get_mut(&start_idx)
                         .expect("Exists")
                         .1
-                        .insert((end_idx, *edge));
+                        .insert((end_idx, edge.rtype_id));
                 }
                 Some(edge.to_owned())
             },
         );
         // 3. Condense edges and insert
-        for (in_idx, out_idx, rtype) in self.condense_edge_set(&excluded).iter() {
-            graph.add_edge(*in_idx, *out_idx, *rtype);
+        for (in_idx, out_idx, rtype_id) in self.condense_edge_set(&excluded).iter() {
+            let edge = CallGraphEdge::new(*rtype_id);
+            graph.add_edge(*in_idx, *out_idx, edge);
         }
         // 4. Remove excluded nodes and edges
         graph = graph.filter_map(
@@ -417,15 +370,9 @@ impl CallGraph {
 
     fn shortened_node_names(&self) -> Graph<String, ()> {
         self.graph.filter_map(
-            |_, node| Some(self.nodes.get(node).expect("Should exist").name.to_owned()),
+            |_, node| Some(node.name.to_owned()),
             |_, _| Some(()),
         )
-    }
-
-    fn output_dominance(&self) {
-        for (defid1, defid2) in self.dominance.iter() {
-            println!("Dom({:?}, {:?})", defid1, defid2);
-        }
     }
 
     fn output_datalog(&self) {
@@ -440,19 +387,23 @@ impl CallGraph {
                     }
                 }
             },
-            |edge_idx, rtype_id| {
+            |edge_idx, edge| {
                 let (start_idx, end_idx) = self.graph.edge_endpoints(edge_idx).expect("Exists");
                 println!("Edge({}, {}, {});", ctr, start_idx.index(), end_idx.index());
-                println!("EdgeType({}, {});", ctr, rtype_id);
-                used_rtypes.insert(*rtype_id);
+                println!("EdgeType({}, {});", ctr, edge.rtype_id);
+                used_rtypes.insert(edge.rtype_id);
                 ctr += 1;
             }
         );
         println!("commit;");
         println!("dump NotCheckedByTypeAt;");
         println!("{{");
+        let mut index_to_rtype = HashMap::<RTypeIdx, String>::new();
+        for (rtype, rtype_id) in self.rtypes.iter() {
+            index_to_rtype.insert(*rtype_id, rtype.to_owned());
+        }
         for rtype_id in used_rtypes.iter() {
-            if let Some(rtype_str) = self.index_to_rtype.get(&rtype_id) {
+            if let Some(rtype_str) = index_to_rtype.get(&rtype_id) {
                 println!("\t\"{}\": {}", rtype_id, rtype_str);
             }
         }
