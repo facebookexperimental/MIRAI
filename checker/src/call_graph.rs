@@ -131,7 +131,7 @@ pub struct CallGraph {
     rtype_to_index: HashMap<String, u32>,
     index_to_rtype: HashMap<u32, String>,
     // Dominance information
-    dominance: HashSet<(DefId, DefId)>,
+    dominance: HashMap<NodeIdx, HashSet<NodeIdx>>,
 }
 
 impl Default for CallGraph {
@@ -148,7 +148,7 @@ impl CallGraph {
             edges: HashMap::<EdgeIdx, CallGraphEdge>::new(),
             rtype_to_index: HashMap::<String, u32>::new(),
             index_to_rtype: HashMap::<u32, String>::new(),
-            dominance: HashSet::<(DefId, DefId)>::new(),
+            dominance: HashMap::<NodeIdx, HashSet<NodeIdx>>::new(),
         }
     }
 
@@ -180,7 +180,18 @@ impl CallGraph {
     }
 
     pub fn add_dom(&mut self, defid1: DefId, defid2: DefId) {
-        self.dominance.insert((defid1, defid2));
+        if !self.nodes.contains_key(&defid1) {
+            self.add_root(defid1);
+        }
+        if !self.nodes.contains_key(&defid2) {
+            self.add_root(defid2);
+        }
+        let node_idx1 = self.nodes.get(&defid1).expect("Exists").graph_node;
+        let node_idx2 = self.nodes.get(&defid2).expect("Exists").graph_node;
+        if !self.dominance.contains_key(&node_idx1) {
+            self.dominance.insert(node_idx1, HashSet::<NodeIdx>::new());
+        }
+        self.dominance.get_mut(&node_idx1).expect("Exists").insert(node_idx2);
     }
 
     pub fn add_edge(&mut self, caller_id: DefId, callee_id: DefId, rtype: String) {
@@ -417,12 +428,43 @@ impl CallGraph {
         }
     }
 
+    fn output_datalog(&self) {
+        let mut ctr = 0;
+        println!("start;");
+        let mut used_rtypes = HashSet::<u32>::new();
+        self.graph.map(
+            |node_idx1, _| {
+                if self.dominance.contains_key(&node_idx1) {
+                    for node_idx2 in self.dominance.get(&node_idx1).expect("Exists") {
+                        println!("Dom({}, {});", node_idx1.index(), node_idx2.index());
+                    }
+                }
+            },
+            |edge_idx, rtype_id| {
+                let (start_idx, end_idx) = self.graph.edge_endpoints(edge_idx).expect("Exists");
+                println!("Edge({}, {}, {});", ctr, start_idx.index(), end_idx.index());
+                println!("EdgeType({}, {});", ctr, rtype_id);
+                used_rtypes.insert(*rtype_id);
+                ctr += 1;
+            }
+        );
+        println!("commit;");
+        println!("dump NotCheckedByTypeAt;");
+        println!("{{");
+        for rtype_id in used_rtypes.iter() {
+            if let Some(rtype_str) = self.index_to_rtype.get(&rtype_id) {
+                println!("\t\"{}\": {}", rtype_id, rtype_str);
+            }
+        }
+        println!("}}");
+    }
+
     pub fn to_dot(&self) {
-        self.output_dominance();
         let call_graph1 = self.filter_reachable("verify_impl");
         let call_graph2 = call_graph1.fold_excluded();
         let call_graph3 = call_graph2.filter_no_edges();
         let call_graph4 = call_graph3.filter_reachable("verify_impl");
+        call_graph4.output_datalog();
         println!(
             "{:?}",
             Dot::with_config(
