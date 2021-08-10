@@ -75,6 +75,97 @@ impl CallGraphNode {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum TypeRelationKind {
+    Eq,
+    Sub,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct TypeRelation {
+    kind: TypeRelationKind,
+    rtype1: String,
+    rtype2: String,
+}
+
+impl TypeRelation {
+    fn new_eq(t1: String, t2: String) -> TypeRelation {
+        TypeRelation {
+            kind: TypeRelationKind::Eq,
+            rtype1: t1,
+            rtype2: t2,
+        }
+    }
+
+    fn new_sub(t1: String, t2: String) -> TypeRelation {
+        TypeRelation {
+            kind: TypeRelationKind::Sub,
+            rtype1: t1,
+            rtype2: t2,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RType {
+    id: RTypeIdx,
+    name: String,
+    type_relations: HashSet<TypeRelation>,
+}
+
+impl RType {
+    fn new(id: RTypeIdx, name: String) -> RType {
+        RType {
+            id,
+            name: name.to_owned(),
+            type_relations: RType::derive_type_relations(&name),
+        }
+    }
+
+    fn derive_type_relations(name: &str) -> HashSet<TypeRelation> {
+        /*
+        Derive equality and subtyping relationships from the following heuristics:
+            Option<t> == t
+            &t == t
+            mut t == t
+            [t] > t
+        */
+        let mut relations = HashSet::<TypeRelation>::new();
+        let mut base_type = name.to_owned();
+        if base_type.contains("&std::option::Option<") {
+            let base_type_new = base_type
+                .replace("&std::option::Option<", "")
+                .replace(">", "");
+            relations.insert(TypeRelation::new_eq(
+                base_type.to_owned(),
+                base_type_new.to_owned(),
+            ));
+            base_type = base_type_new;
+        }
+        if base_type.contains('[') && base_type.contains(']') {
+            let base_type_new = base_type.replace("[", "").replace("]", "");
+            relations.insert(TypeRelation::new_sub(
+                base_type.to_owned(),
+                base_type_new.to_owned(),
+            ));
+            base_type = base_type_new;
+        }
+        if base_type.contains("mut") {
+            let base_type_new = base_type.replace("mut ", "");
+            relations.insert(TypeRelation::new_eq(
+                base_type.to_owned(),
+                base_type_new.to_owned(),
+            ));
+            base_type = base_type_new;
+        }
+        if base_type.contains('&') {
+            let base_type_new = base_type.replace("&", "");
+            relations.insert(TypeRelation::new_eq(base_type, base_type_new));
+        }
+        relations
+    }
+}
+
 #[derive(Debug, Clone)]
 struct CallGraphEdge {
     // An Edge connects two nodes.
@@ -84,9 +175,7 @@ struct CallGraphEdge {
 
 impl CallGraphEdge {
     pub fn new(rtype_id: RTypeIdx) -> CallGraphEdge {
-        CallGraphEdge {
-            rtype_id,
-        }
+        CallGraphEdge { rtype_id }
     }
 }
 
@@ -96,7 +185,7 @@ pub struct CallGraph {
     // A map from DefId to node information
     nodes: HashMap<DefId, NodeIdx>,
     // A map from type identifier to type string
-    rtypes: HashMap<String, RTypeIdx>,
+    rtypes: HashMap<String, RType>,
     // Dominance information
     dominance: HashMap<NodeIdx, HashSet<NodeIdx>>,
 }
@@ -112,12 +201,12 @@ impl CallGraph {
         CallGraph {
             graph: Graph::<CallGraphNode, CallGraphEdge>::new(),
             nodes: HashMap::<DefId, NodeIdx>::new(),
-            rtypes: HashMap::<String, RTypeIdx>::new(),
+            rtypes: HashMap::<String, RType>::new(),
             dominance: HashMap::<NodeIdx, HashSet<NodeIdx>>::new(),
         }
     }
 
-    fn update(&self, graph: Graph::<CallGraphNode, CallGraphEdge>) -> CallGraph {
+    fn update(&self, graph: Graph<CallGraphNode, CallGraphEdge>) -> CallGraph {
         CallGraph {
             graph,
             nodes: self.nodes.clone(),
@@ -149,22 +238,28 @@ impl CallGraph {
         }
         let node_idx1 = self.nodes.get(&defid1).expect("Exists");
         let node_idx2 = self.nodes.get(&defid2).expect("Exists");
-        if !self.dominance.contains_key(&node_idx1) {
+        if !self.dominance.contains_key(node_idx1) {
             self.dominance.insert(*node_idx1, HashSet::<NodeIdx>::new());
         }
-        self.dominance.get_mut(&node_idx1).expect("Exists").insert(*node_idx2);
+        self.dominance
+            .get_mut(node_idx1)
+            .expect("Exists")
+            .insert(*node_idx2);
     }
 
-    fn get_rtype_id(&mut self, rtype: String) -> RTypeIdx {
-        if !self.rtypes.contains_key(&rtype) {
+    fn add_rtype(&mut self, rtype_str: String) -> RTypeIdx {
+        if !self.rtypes.contains_key(&rtype_str) {
             let rtype_id = self.rtypes.len() as RTypeIdx;
-            self.rtypes.insert(rtype.to_owned(), rtype_id);
+            self.rtypes.insert(
+                rtype_str.to_owned(),
+                RType::new(rtype_id, rtype_str.to_owned()),
+            );
         }
-        *self.rtypes.get(&rtype).expect("Exists")
+        self.rtypes.get(&rtype_str).expect("Exists").id
     }
 
-    pub fn add_edge(&mut self, caller_id: DefId, callee_id: DefId, rtype: String) {
-        let rtype_id = self.get_rtype_id(rtype);
+    pub fn add_edge(&mut self, caller_id: DefId, callee_id: DefId, rtype_str: String) {
+        let rtype_id = self.add_rtype(rtype_str);
         if !self.nodes.contains_key(&caller_id) {
             self.add_root(caller_id);
         }
@@ -179,7 +274,8 @@ impl CallGraph {
             .nodes
             .get(&callee_id)
             .expect("The node must exist at this point.");
-        self.graph.add_edge(*caller_node, *callee_node, CallGraphEdge::new(rtype_id));
+        self.graph
+            .add_edge(*caller_node, *callee_node, CallGraphEdge::new(rtype_id));
     }
 
     fn get_node_by_name(&self, name: &str) -> Option<NodeIdx> {
@@ -369,16 +465,14 @@ impl CallGraph {
     }
 
     fn shortened_node_names(&self) -> Graph<String, ()> {
-        self.graph.filter_map(
-            |_, node| Some(node.name.to_owned()),
-            |_, _| Some(()),
-        )
+        self.graph
+            .filter_map(|_, node| Some(node.name.to_owned()), |_, _| Some(()))
     }
 
     fn output_datalog(&self) {
         let mut ctr = 0;
         println!("start;");
-        let mut used_rtypes = HashSet::<u32>::new();
+        let mut used_rtypes = HashSet::<RTypeIdx>::new();
         self.graph.map(
             |node_idx1, _| {
                 if self.dominance.contains_key(&node_idx1) {
@@ -393,19 +487,33 @@ impl CallGraph {
                 println!("EdgeType({}, {});", ctr, edge.rtype_id);
                 used_rtypes.insert(edge.rtype_id);
                 ctr += 1;
-            }
+            },
         );
+        let mut index_to_rtype = HashMap::<RTypeIdx, &RType>::new();
+        for (_, rtype) in self.rtypes.iter() {
+            if used_rtypes.contains(&rtype.id) {
+                index_to_rtype.insert(rtype.id, rtype);
+            }
+        }
+        let mut type_relations = HashSet::<TypeRelation>::new();
+        for (_, rtype) in index_to_rtype.iter() {
+            type_relations.extend(rtype.type_relations.to_owned());
+        }
+        for type_relation in type_relations.iter() {
+            if let Some(rtype1) = self.rtypes.get(&type_relation.rtype1) {
+                if let Some(rtype2) = self.rtypes.get(&type_relation.rtype2) {
+                    match type_relation.kind {
+                        TypeRelationKind::Eq => println!("TypeEq({}, {})", rtype1.id, rtype2.id),
+                        TypeRelationKind::Sub => println!("TypeSub({}, {})", rtype2.id, rtype2.id),
+                    }
+                }
+            }
+        }
         println!("commit;");
         println!("dump NotCheckedByTypeAt;");
         println!("{{");
-        let mut index_to_rtype = HashMap::<RTypeIdx, String>::new();
-        for (rtype, rtype_id) in self.rtypes.iter() {
-            index_to_rtype.insert(*rtype_id, rtype.to_owned());
-        }
-        for rtype_id in used_rtypes.iter() {
-            if let Some(rtype_str) = index_to_rtype.get(&rtype_id) {
-                println!("\t\"{}\": {}", rtype_id, rtype_str);
-            }
+        for (rtype_id, rtype) in index_to_rtype.iter() {
+            println!("\t\"{}\": \"{}\"", rtype_id, rtype.name);
         }
         println!("}}");
     }

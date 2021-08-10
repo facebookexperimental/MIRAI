@@ -278,10 +278,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             for (location2, callee_defid2) in self.block_to_call.iter() {
                 let bb1 = location1.block;
                 let bb2 = location2.block;
-                if bb1 != bb2 {
-                    if dominators.is_dominated_by(bb2, bb1) {
-                        self.cv.call_graph.add_dom(*callee_defid1, *callee_defid2);
-                    }
+                if bb1 != bb2 && dominators.is_dominated_by(bb2, bb1) {
+                    self.cv.call_graph.add_dom(*callee_defid1, *callee_defid2);
                 }
             }
         }
