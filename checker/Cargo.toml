@@ -40,6 +40,7 @@ tempfile = "*"
 z3-sys = "0.6.3"
 regex = "*"
 petgraph = "*"
+serde_json = "*"
 
 [dev-dependencies]
 walkdir = "*"

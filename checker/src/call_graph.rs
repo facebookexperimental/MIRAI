@@ -3,7 +3,11 @@ use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::visit::Bfs;
 use petgraph::{Direction, Graph};
 use rustc_hir::def_id::DefId;
+use serde::{Deserialize, Serialize};
+use serde_json;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs;
+use std::path::Path;
 
 type RTypeIdx = u32;
 type NodeIdx = NodeIndex<DefaultIx>;
@@ -11,15 +15,36 @@ type HalfRawEdge = (NodeIdx, RTypeIdx);
 type RawEdge = (NodeIdx, NodeIdx, RTypeIdx);
 type MidpointExcludedMap = HashMap<NodeIdx, (HashSet<HalfRawEdge>, HashSet<HalfRawEdge>)>;
 
-const EXCLUDED_CRATES: &[&str] = &[
-    "std",
-    "core",
-    "alloc",
-    "mirai_annotations",
-    "anyhow",
-    "bcs",
-    "ref_cast",
-];
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum CallGraphReduction {
+    Slice(String),
+    Fold,
+    Deduplicate,
+    Clean,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CallGraphConfig {
+    dot_output_path: Option<String>,
+    ddlog_output_path: Option<String>,
+    type_map_output_path: Option<String>,
+    type_relations_path: Option<String>,
+    reductions: Vec<CallGraphReduction>,
+    included_crates: Vec<String>,
+}
+
+impl Default for CallGraphConfig {
+    fn default() -> CallGraphConfig {
+        CallGraphConfig {
+            dot_output_path: None,
+            ddlog_output_path: None,
+            type_map_output_path: None,
+            type_relations_path: None,
+            reductions: Vec::<CallGraphReduction>::new(),
+            included_crates: Vec::<String>::new(),
+        }
+    }
+}
 
 // The type of a call graph node
 #[derive(Debug, Clone, PartialEq)]
@@ -59,15 +84,15 @@ impl CallGraphNode {
         tmp2.replace(")", "")
     }
 
-    pub fn is_excluded(&self) -> bool {
-        let mut is_std = false;
-        for crate_name in EXCLUDED_CRATES.iter() {
+    pub fn is_excluded(&self, included_crates: &[String]) -> bool {
+        let mut excluded = true;
+        for crate_name in included_crates.iter() {
             if self.name.contains(crate_name) {
-                is_std = true;
+                excluded = false;
                 break;
             }
         }
-        is_std
+        excluded
     }
 
     pub fn is_croot(&self) -> bool {
@@ -75,13 +100,13 @@ impl CallGraphNode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 enum TypeRelationKind {
     Eq,
     Sub,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct TypeRelation {
     kind: TypeRelationKind,
     rtype1: String,
@@ -180,6 +205,8 @@ impl CallGraphEdge {
 }
 
 pub struct CallGraph {
+    // Configuration for the call graph
+    config: CallGraphConfig,
     // The graph structure capturing calls between nodes
     graph: Graph<CallGraphNode, CallGraphEdge>,
     // A map from DefId to node information
@@ -190,15 +217,14 @@ pub struct CallGraph {
     dominance: HashMap<NodeIdx, HashSet<NodeIdx>>,
 }
 
-impl Default for CallGraph {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl CallGraph {
-    pub fn new() -> CallGraph {
+    pub fn new(path_to_config: Option<String>) -> CallGraph {
+        let config = match path_to_config {
+            Some(path) => CallGraph::parse_config(Path::new(&path)),
+            None => CallGraphConfig::default(),
+        };
         CallGraph {
+            config,
             graph: Graph::<CallGraphNode, CallGraphEdge>::new(),
             nodes: HashMap::<DefId, NodeIdx>::new(),
             rtypes: HashMap::<String, RType>::new(),
@@ -206,9 +232,27 @@ impl CallGraph {
         }
     }
 
+    fn parse_config(path_to_config: &Path) -> CallGraphConfig {
+        let config_str = fs::read_to_string(path_to_config).expect("Should work");
+        let config: CallGraphConfig =
+            serde_json::from_str(&config_str).expect("Should deserialize");
+        config
+    }
+
     fn update(&self, graph: Graph<CallGraphNode, CallGraphEdge>) -> CallGraph {
         CallGraph {
+            config: self.config.clone(),
             graph,
+            nodes: self.nodes.clone(),
+            rtypes: self.rtypes.clone(),
+            dominance: self.dominance.clone(),
+        }
+    }
+
+    fn clone(&self) -> CallGraph {
+        CallGraph {
+            config: self.config.clone(),
+            graph: self.graph.clone(),
             nodes: self.nodes.clone(),
             rtypes: self.rtypes.clone(),
             dominance: self.dominance.clone(),
@@ -388,7 +432,7 @@ impl CallGraph {
         // 1. Find all excluded nodes
         let mut graph = self.graph.filter_map(
             |node_idx, node| {
-                if node.is_excluded() {
+                if node.is_excluded(&self.config.included_crates) {
                     excluded.insert(
                         node_idx,
                         (HashSet::<HalfRawEdge>::new(), HashSet::<HalfRawEdge>::new()),
@@ -469,22 +513,53 @@ impl CallGraph {
             .filter_map(|_, node| Some(node.name.to_owned()), |_, _| Some(()))
     }
 
-    fn output_datalog(&self) {
+    fn reduce_graph(&self, call_graph: CallGraph, reductions: &[CallGraphReduction]) -> CallGraph {
+        reductions
+            .iter()
+            .fold(call_graph, |graph, reduction| match reduction {
+                CallGraphReduction::Slice(crate_name) => graph.filter_reachable(crate_name),
+                CallGraphReduction::Fold => graph.fold_excluded(),
+                CallGraphReduction::Deduplicate => graph.deduplicate_edges(),
+                CallGraphReduction::Clean => graph.filter_no_edges(),
+            })
+    }
+
+    fn to_datalog(
+        &self,
+        ddlog_path: &Path,
+        type_map_path: &Path,
+        type_relations_path: Option<&Path>,
+    ) {
+        let mut output = "start;\n".to_string();
         let mut ctr = 0;
-        println!("start;");
         let mut used_rtypes = HashSet::<RTypeIdx>::new();
         self.graph.map(
             |node_idx1, _| {
                 if self.dominance.contains_key(&node_idx1) {
                     for node_idx2 in self.dominance.get(&node_idx1).expect("Exists") {
-                        println!("Dom({}, {});", node_idx1.index(), node_idx2.index());
+                        output.push_str(
+                            format!("Dom({}, {});\n", node_idx1.index(), node_idx2.index())
+                                .as_str(),
+                        );
                     }
                 }
             },
+            |_, _| (),
+        );
+        self.graph.map(
+            |_, _| (),
             |edge_idx, edge| {
                 let (start_idx, end_idx) = self.graph.edge_endpoints(edge_idx).expect("Exists");
-                println!("Edge({}, {}, {});", ctr, start_idx.index(), end_idx.index());
-                println!("EdgeType({}, {});", ctr, edge.rtype_id);
+                output.push_str(
+                    format!(
+                        "Edge({}, {}, {});\n",
+                        ctr,
+                        start_idx.index(),
+                        end_idx.index()
+                    )
+                    .as_str(),
+                );
+                output.push_str(format!("EdgeType({}, {});\n", ctr, edge.rtype_id).as_str());
                 used_rtypes.insert(edge.rtype_id);
                 ctr += 1;
             },
@@ -496,6 +571,25 @@ impl CallGraph {
             }
         }
         let mut type_relations = HashSet::<TypeRelation>::new();
+        // Insert input type relations from file
+        match type_relations_path {
+            Some(path) => {
+                #[derive(Serialize, Deserialize)]
+                struct TypeRelationsRaw {
+                    relations: Vec<TypeRelation>,
+                }
+                let input_type_relations_str = fs::read_to_string(path).expect("Should work");
+                let input_type_relations_raw: TypeRelationsRaw =
+                    serde_json::from_str(&input_type_relations_str)
+                        .expect("Failed to deserialize type relations");
+                let mut input_type_relations = HashSet::<TypeRelation>::new();
+                for relation in input_type_relations_raw.relations.iter() {
+                    input_type_relations.insert(relation.to_owned());
+                }
+                type_relations.extend(input_type_relations);
+            }
+            None => (),
+        }
         for (_, rtype) in index_to_rtype.iter() {
             type_relations.extend(rtype.type_relations.to_owned());
         }
@@ -503,33 +597,57 @@ impl CallGraph {
             if let Some(rtype1) = self.rtypes.get(&type_relation.rtype1) {
                 if let Some(rtype2) = self.rtypes.get(&type_relation.rtype2) {
                     match type_relation.kind {
-                        TypeRelationKind::Eq => println!("TypeEq({}, {})", rtype1.id, rtype2.id),
-                        TypeRelationKind::Sub => println!("TypeSub({}, {})", rtype2.id, rtype2.id),
+                        TypeRelationKind::Eq => output
+                            .push_str(format!("TypeEq({}, {})\n", rtype1.id, rtype2.id).as_str()),
+                        TypeRelationKind::Sub => output
+                            .push_str(format!("TypeSub({}, {})\n", rtype2.id, rtype2.id).as_str()),
                     }
                 }
             }
         }
-        println!("commit;");
-        println!("dump NotCheckedByTypeAt;");
-        println!("{{");
-        for (rtype_id, rtype) in index_to_rtype.iter() {
-            println!("\t\"{}\": \"{}\"", rtype_id, rtype.name);
+        output.push_str("commit;\n");
+        fs::write(ddlog_path, output).expect("Failed to write ddlog output");
+
+        let mut type_map_output = "{\n".to_string();
+        for (i, (rtype_id, rtype)) in index_to_rtype.iter().enumerate() {
+            type_map_output.push_str(format!("\t\"{}\": \"{}\"", rtype_id, rtype.name).as_str());
+            if i == index_to_rtype.len() - 1 {
+                type_map_output.push('\n');
+            } else {
+                type_map_output.push_str(",\n");
+            }
         }
-        println!("}}");
+        type_map_output.push('}');
+        fs::write(type_map_path, type_map_output).expect("Failed to write type map output");
     }
 
-    pub fn to_dot(&self) {
-        let call_graph1 = self.filter_reachable("verify_impl");
-        let call_graph2 = call_graph1.fold_excluded();
-        let call_graph3 = call_graph2.filter_no_edges();
-        let call_graph4 = call_graph3.filter_reachable("verify_impl");
-        call_graph4.output_datalog();
-        println!(
+    fn to_dot(&self, dot_path: &Path) {
+        let output = format!(
             "{:?}",
-            Dot::with_config(
-                &call_graph4.deduplicate_edges().shortened_node_names(),
-                &[Config::EdgeNoLabel]
-            )
+            Dot::with_config(&self.shortened_node_names(), &[Config::EdgeNoLabel])
         );
+        fs::write(dot_path, output).expect("Failed to write dot file output");
+    }
+
+    pub fn output(&self) {
+        let call_graph = self.reduce_graph(self.clone(), &self.config.reductions);
+        match &self.config.ddlog_output_path {
+            Some(ddlog_path) => match &self.config.type_map_output_path {
+                Some(type_map_path) => call_graph.to_datalog(
+                    Path::new(&ddlog_path),
+                    Path::new(&type_map_path),
+                    self.config
+                        .type_relations_path
+                        .as_ref()
+                        .map(|v| Path::new(v)),
+                ),
+                None => (),
+            },
+            None => (),
+        };
+        match &self.config.dot_output_path {
+            Some(dot_path) => call_graph.to_dot(Path::new(&dot_path)),
+            None => (),
+        };
     }
 }
