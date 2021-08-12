@@ -1681,12 +1681,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         ty: deref_ty,
                         mutbl: rustc_hir::Mutability::Not,
                     });
+                    let box_path = qualifier.canonicalize(&self.bv.current_environment);
                     let ptr_val = self.bv.lookup_path_and_refine_result(
-                        Path::new_field(qualifier.canonicalize(&self.bv.current_environment), 0),
+                        Path::new_field(box_path.clone(), 0),
                         thin_ptr_ty,
                     );
                     let ptr_len = self.bv.lookup_path_and_refine_result(
-                        Path::new_length(qualifier.clone()),
+                        Path::new_length(box_path),
                         self.bv.tcx.types.usize,
                     );
                     self.bv
