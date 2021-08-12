@@ -2418,7 +2418,23 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
             }
         }
-        let val_type = value.expression.infer_type();
+        if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
+            // The value is a string literal. See if the target will treat it as &[u8].
+            if let TyKind::Ref(_, ty, _) = root_rustc_type.kind() {
+                if let TyKind::Slice(elem_ty) = ty.kind() {
+                    if let TyKind::Uint(UintTy::U8) = elem_ty.kind() {
+                        self.expand_aliased_string_literals_if_appropriate(
+                            &target_path,
+                            &value,
+                            s,
+                            update,
+                        );
+                        return;
+                    }
+                }
+            }
+        }
+        let target_type = ExpressionType::from(root_rustc_type.kind(), self.tcx);
         let mut no_children = true;
         // If a non primitive parameter is just returned from a function, for example,
         // there will be no entries rooted with target_path in the final environment.
@@ -2426,7 +2442,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         // in the final environment are used construct the summary. We work around this
         // by creating an entry for the non primitive (unknown) value. The caller will
         // be saddled with removing it. This case corresponds to no_children being true.
-        if val_type == ExpressionType::NonPrimitive || val_type == ExpressionType::Function {
+        if target_type == ExpressionType::NonPrimitive || target_type == ExpressionType::Function {
             // First look at paths that are rooted in rpath.
             let value_map = self.current_environment.value_map.clone();
             for (path, value) in value_map
@@ -2459,7 +2475,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
             }
         }
-        let target_type = ExpressionType::from(root_rustc_type.kind(), self.tcx);
         if target_type != ExpressionType::NonPrimitive
             || no_children
             || root_rustc_type.is_closure()
@@ -2475,22 +2490,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             //     self.current_environment.value_map.remove(&source_path);
             } else {
                 trace!("copying {:?} to {:?}", value, target_path);
-            }
-            if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) = &value.expression {
-                // The value is a string literal. See if the target will treat it as &[u8].
-                if let TyKind::Ref(_, ty, _) = root_rustc_type.kind() {
-                    if let TyKind::Slice(elem_ty) = ty.kind() {
-                        if let TyKind::Uint(UintTy::U8) = elem_ty.kind() {
-                            self.expand_aliased_string_literals_if_appropriate(
-                                &target_path,
-                                &value,
-                                s,
-                                update,
-                            );
-                            return;
-                        }
-                    }
-                }
             }
             update(self, target_path, old_value, value);
         }
