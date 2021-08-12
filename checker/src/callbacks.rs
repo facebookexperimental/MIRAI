@@ -195,6 +195,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("network/src") // could not fully normalize 
             || file_name.starts_with("network/builder/src") // could not fully normalize
             || file_name.starts_with("network/discovery/src")  // stack overflow
+            || file_name.starts_with("network/netcore/src") // operator is applied to arguments of the wrong sort
             || file_name.starts_with("sdk/client/src") // non termination
             || file_name.starts_with("secure/key-manager/src") // stack overflow
             || file_name.starts_with("secure/storage/github/src") // stack overflow

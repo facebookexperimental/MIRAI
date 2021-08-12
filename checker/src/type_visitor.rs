@@ -138,7 +138,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         match path_ty.kind() {
             TyKind::Closure(_, substs) => {
                 for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
-                    let var_type = ExpressionType::from(ty.kind(), self.tcx);
+                    let var_type = ExpressionType::from(ty.kind());
                     let mut qualifier = path.clone();
                     if is_ref {
                         qualifier = Path::new_deref(path.clone(), ExpressionType::NonPrimitive)
@@ -154,7 +154,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             }
             TyKind::Generator(_, substs, _) => {
                 for (i, ty) in substs.as_generator().prefix_tys().enumerate() {
-                    let var_type = ExpressionType::from(ty.kind(), self.tcx);
+                    let var_type = ExpressionType::from(ty.kind());
                     let mut qualifier = path.clone();
                     if is_ref {
                         qualifier = Path::new_deref(path.clone(), ExpressionType::NonPrimitive)
@@ -201,7 +201,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         current_span: rustc_span::Span,
     ) -> ExpressionType {
         match self.get_path_rustc_type(path, current_span).kind() {
-            TyKind::Tuple(types) => ExpressionType::from(types[0].expect_ty().kind(), self.tcx),
+            TyKind::Tuple(types) => ExpressionType::from(types[0].expect_ty().kind()),
             _ => assume_unreachable!(),
         }
     }
@@ -213,10 +213,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         path: &Rc<Path>,
         current_span: rustc_span::Span,
     ) -> ExpressionType {
-        ExpressionType::from(
-            self.get_path_rustc_type(path, current_span).kind(),
-            self.tcx,
-        )
+        ExpressionType::from(self.get_path_rustc_type(path, current_span).kind())
     }
 
     /// Returns a parameter environment for the current function.
@@ -800,10 +797,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         place: &mir::Place<'tcx>,
         current_span: rustc_span::Span,
     ) -> ExpressionType {
-        ExpressionType::from(
-            self.get_rustc_place_type(place, current_span).kind(),
-            self.tcx,
-        )
+        ExpressionType::from(self.get_rustc_place_type(place, current_span).kind())
     }
 
     /// Returns the rustc Ty of the given place in memory.

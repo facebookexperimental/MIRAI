@@ -1982,7 +1982,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::CastKind::Misc => {
                 let source_value = self.visit_operand(operand);
                 let source_type = self.get_operand_rustc_type(operand);
-                let result = source_value.cast(ExpressionType::from(ty.kind(), self.bv.tcx));
+                let result = source_value.cast(ExpressionType::from(ty.kind()));
                 if let mir::Operand::Move(place) = operand {
                     let source_path = self.visit_rh_place(place);
                     self.bv.current_environment.value_map =
@@ -3245,7 +3245,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 if let PathEnum::Computed { value } = &qualifier.value {
                     match &value.expression {
                         Expression::Join { left, right, .. } => {
-                            let target_type = ExpressionType::from(ty.kind(), self.bv.tcx);
+                            let target_type = ExpressionType::from(ty.kind());
                             let distributed_deref = left
                                 .dereference(target_type.clone())
                                 .join(right.dereference(target_type), &place_path);
@@ -3254,7 +3254,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 .set_path_rustc_type(path.clone(), ty);
                         }
                         Expression::WidenedJoin { operand, .. } => {
-                            let target_type = ExpressionType::from(ty.kind(), self.bv.tcx);
+                            let target_type = ExpressionType::from(ty.kind());
                             let distributed_deref =
                                 operand.dereference(target_type).widen(&place_path);
                             path = Path::get_as_path(distributed_deref);
@@ -3371,10 +3371,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // Deref the thin pointer part of the slice pointer
                         ty = type_visitor.get_dereferenced_type(ty);
                         let thin_pointer_path = Path::new_field(result, 0);
-                        let deref_path = Path::new_deref(
-                            thin_pointer_path,
-                            ExpressionType::from(ty.kind(), tcx),
-                        );
+                        let deref_path =
+                            Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
                         type_visitor.set_path_rustc_type(deref_path.clone(), ty);
                         result = deref_path;
                         continue;
