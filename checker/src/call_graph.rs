@@ -1,4 +1,3 @@
-use mirai_annotations::*;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::visit::Bfs;
@@ -316,10 +315,10 @@ impl CallGraph {
 
     /// Add a new root node to the calll graph.
     pub fn add_root(&mut self, defid: DefId) {
-        if !self.nodes.contains_key(&defid) {
+        if let Entry::Vacant(e) = self.nodes.entry(defid) {
             let croot = CallGraphNode::new_root(defid);
             let node_idx = self.graph.add_node(croot);
-            self.nodes.insert(defid, node_idx);
+            e.insert(node_idx);
         }
     }
 
@@ -342,7 +341,7 @@ impl CallGraph {
         let node_idx2 = self.get_or_insert_node(defid2);
         self.dominance
             .entry(node_idx1)
-            .or_insert(HashSet::<NodeIdx>::new())
+            .or_insert_with(HashSet::<NodeIdx>::new)
             .insert(node_idx2);
     }
 
@@ -351,7 +350,7 @@ impl CallGraph {
         let new_rtype_id = self.rtypes.len() as RTypeIdx;
         match self.rtypes.entry(rtype_str.to_owned()) {
             Entry::Occupied(rtype) => rtype.get().id,
-            Entry::Vacant(v) => v.insert(RType::new(new_rtype_id, rtype_str.to_owned())).id,
+            Entry::Vacant(v) => v.insert(RType::new(new_rtype_id, rtype_str)).id,
         }
     }
 
@@ -369,9 +368,10 @@ impl CallGraph {
     /// a substring within the node's name. The first such node is returned, if any.
     fn get_node_by_name(&self, name: &str) -> Option<NodeIdx> {
         for node_idx in self.graph.node_indices() {
-            let node = self.graph.node_weight(node_idx).expect("Should exist");
-            if node.name.contains(name) {
-                return Some(node_idx);
+            if let Some(node) = self.graph.node_weight(node_idx) {
+                if node.name.contains(name) {
+                    return Some(node_idx);
+                }
             }
         }
         None
@@ -387,23 +387,22 @@ impl CallGraph {
         let graph = self.graph.filter_map(
             |_, node| Some(node.to_owned()),
             |edge_idx, edge| {
-                // The edge must exist in the graph because we mapped over the graph's edges.
-                assume!(self.graph.edge_endpoints(edge_idx).is_some());
-                let endpoints = self.graph.edge_endpoints(edge_idx).unwrap();
-                if edges.contains(&endpoints) {
-                    None
-                } else {
-                    edges.insert(endpoints);
-                    Some(edge.to_owned())
-                }
+                self.graph.edge_endpoints(edge_idx).and_then(|endpoints| {
+                    if edges.contains(&endpoints) {
+                        None
+                    } else {
+                        edges.insert(endpoints);
+                        Some(edge.to_owned())
+                    }
+                })
             },
         );
         self.update(graph)
     }
 
     /// Returns the set of nodes (Node indexes, which uniquely identify nodes)
-    /// That are reachable from the given start node. 
-    /// 
+    /// That are reachable from the given start node.
+    ///
     /// The underlying algorithm used to perform graph traveral is a BFS,
     /// however, only one crate root is included from the traversal.
     fn reachable_from(&self, start_node: NodeIdx) -> HashSet<NodeIdx> {
@@ -411,39 +410,48 @@ impl CallGraph {
         let mut bfs = Bfs::new(&self.graph, start_node);
         let mut croot: Option<NodeIdx> = None;
         while let Some(node_idx) = bfs.next(&self.graph) {
-            // The node must exist at this point since we just retrieved it from the graph.
-            assume!(self.graph.node_weight(node_idx).is_some());
-            let node = self.graph.node_weight(node_idx).unwrap();
-            if node.is_croot() {
-                if croot.is_none() {
-                    croot = Some(node_idx);
+            if let Some(node) = self.graph.node_weight(node_idx) {
+                if node.is_croot() {
+                    if croot.is_none() {
+                        croot = Some(node_idx);
+                        reachable.insert(node_idx);
+                    }
+                } else {
                     reachable.insert(node_idx);
                 }
-            } else {
-                reachable.insert(node_idx);
             }
         }
         reachable
     }
 
+    /// Filter out all nodes from the graph that are not reachable
+    /// via start node identifiable by `name`.
     fn filter_reachable(&self, name: &str) -> CallGraph {
-        let start_node = self
-            .get_node_by_name(name)
-            .expect("Valid start node required");
-        let reachable = self.reachable_from(start_node);
-        let graph = self.graph.filter_map(
-            |node_idx, node| {
-                if reachable.contains(&node_idx) {
-                    Some(node.to_owned())
-                } else {
-                    None
-                }
-            },
-            |_, edge| Some(edge.to_owned()),
-        );
-        self.update(graph)
+        if let Some(start_node) = self.get_node_by_name(name) {
+            let reachable = self.reachable_from(start_node);
+            let graph = self.graph.filter_map(
+                |node_idx, node| {
+                    if reachable.contains(&node_idx) {
+                        Some(node.to_owned())
+                    } else {
+                        None
+                    }
+                },
+                |_, edge| Some(edge.to_owned()),
+            );
+            self.update(graph)
+        } else {
+            panic!(
+                "Failed to filter graph; could not find start node: {}",
+                name
+            );
+        }
     }
 
+    /// Helper function for folding excluded nodes.
+    ///
+    /// Computes the set of reachable nodes reachable
+    /// via one or more excluded nodes.
     fn reachable_raw_edges(
         &self,
         excluded: &MidpointExcludedMap,
@@ -455,8 +463,8 @@ impl CallGraph {
             queue.push_back(edge.0);
         }
         while let Some(node_idx) = queue.pop_front() {
-            if excluded.contains_key(&node_idx) {
-                for node in excluded.get(&node_idx).unwrap().1.iter() {
+            if let Some(entry) = excluded.get(&node_idx) {
+                for node in entry.1.iter() {
                     if !reachable.contains(node) {
                         reachable.insert(*node);
                         if excluded.contains_key(&node.0) {
@@ -469,6 +477,10 @@ impl CallGraph {
         reachable
     }
 
+    /// Helper function for folding excluded nodes.
+    ///
+    /// Condenses a set of edges (in the form of a midpoint-excluded map, which tracks in and out
+    /// edges for every excluded node) to all edges that do not have an excluded endpoint.
     fn condense_edge_set(&self, excluded: &MidpointExcludedMap) -> HashSet<RawEdge> {
         let mut condensed_edges = HashSet::<RawEdge>::new();
         for (_, (in_nodes, out_nodes)) in excluded.iter() {
@@ -486,6 +498,13 @@ impl CallGraph {
         condensed_edges
     }
 
+    /// Fold the graph to remove excluded nodes and edges.
+    ///
+    /// An excluded node satisfies `node.is_excluded()` (it is not one of crates specfied
+    /// by CallGraphConfig::included_crates).
+    /// An excluded edge is an edge with at least one excluded endpoint.
+    ///
+    /// The outgoing edges of an excluded node are joined to the node's non-excluded parents.
     fn fold_excluded(&self) -> CallGraph {
         let mut excluded = MidpointExcludedMap::new();
         // 1. Find all excluded nodes
@@ -505,23 +524,17 @@ impl CallGraph {
         graph = graph.filter_map(
             |_, node| Some(node.to_owned()),
             |edge_idx, edge| {
-                let (start_idx, end_idx) =
-                    self.graph.edge_endpoints(edge_idx).expect("Should exist");
-                if excluded.contains_key(&end_idx) {
-                    excluded
-                        .get_mut(&end_idx)
-                        .expect("Exists")
-                        .0
-                        .insert((start_idx, edge.rtype_id));
-                }
-                if excluded.contains_key(&start_idx) {
-                    excluded
-                        .get_mut(&start_idx)
-                        .expect("Exists")
-                        .1
-                        .insert((end_idx, edge.rtype_id));
-                }
-                Some(edge.to_owned())
+                self.graph
+                    .edge_endpoints(edge_idx)
+                    .map(|(start_idx, end_idx)| {
+                        excluded
+                            .get_mut(&end_idx)
+                            .map(|entry| entry.0.insert((start_idx, edge.rtype_id)));
+                        excluded
+                            .get_mut(&start_idx)
+                            .map(|entry| entry.1.insert((end_idx, edge.rtype_id)));
+                        edge.to_owned()
+                    })
             },
         );
         // 3. Condense edges and insert
@@ -543,6 +556,8 @@ impl CallGraph {
         self.update(graph)
     }
 
+    /// Filter out nodes from that graph that have no incoming
+    /// or outgoing edges (unconnected from the rest of the graph).
     fn filter_no_edges(&self) -> CallGraph {
         let graph = self.graph.filter_map(
             |node_idx, node| {
@@ -567,11 +582,15 @@ impl CallGraph {
         self.update(graph)
     }
 
+    /// Produce a representation of the graph that uses
+    /// the (shorter) `node.name`, which is derived from the node's DefId,
+    /// rather than the full DefId itself.
     fn shortened_node_names(&self) -> Graph<String, ()> {
         self.graph
             .filter_map(|_, node| Some(node.name.to_owned()), |_, _| Some(()))
     }
 
+    /// Perform a specified sequence of reductions on the call graph.
     fn reduce_graph(&self, call_graph: CallGraph, reductions: &[CallGraphReduction]) -> CallGraph {
         reductions
             .iter()
@@ -583,6 +602,46 @@ impl CallGraph {
             })
     }
 
+    fn gather_type_relations(
+        &self,
+        index_to_rtype: &HashMap<RTypeIdx, &RType>,
+        type_relations_path: Option<&Path>,
+    ) -> HashSet<TypeRelation> {
+        let mut type_relations = HashSet::<TypeRelation>::new();
+        // Insert input type relations from file
+        if let Some(path) = type_relations_path {
+            #[derive(Serialize, Deserialize)]
+            struct TypeRelationsRaw {
+                relations: Vec<TypeRelation>,
+            }
+            let input_type_relations_raw: TypeRelationsRaw = match fs::read_to_string(path)
+                .map_err(|e| e.to_string())
+                .and_then(|input_type_relations_str| {
+                    serde_json::from_str(&input_type_relations_str).map_err(|e| e.to_string())
+                }) {
+                Ok(relations) => relations,
+                Err(e) => panic!("Failed to read input type relations: {:?}", e),
+            };
+            let mut input_type_relations = HashSet::<TypeRelation>::new();
+            for relation in input_type_relations_raw.relations.iter() {
+                input_type_relations.insert(relation.to_owned());
+            }
+            type_relations.extend(input_type_relations);
+        }
+        for (_, rtype) in index_to_rtype.iter() {
+            type_relations.extend(rtype.type_relations.to_owned());
+        }
+        type_relations
+    }
+
+    /// Convert the call graph to a datalog representation.
+    ///
+    /// Properties of the graph are converted into datalog input relations.
+    /// - `Dom(n1, n2)`: `n1` dominates `n2`.
+    /// - `Edge(id, n1, n2)`: There is a call edge from `n1` to `n2`.
+    /// - `EdgeType(id, rtype_id)`: The edge has the type `rtype_id`.
+    /// - `EqType(rtype_id1, rtype_id2)`: The type `rtype_id1` is equivalent to `rtype_id2`.
+    /// - `Member(rtype_id1, rtype_id2)`: The type `rtype_id2` is a member of `rtype_id1`.
     fn to_datalog(
         &self,
         ddlog_path: &Path,
@@ -592,10 +651,11 @@ impl CallGraph {
         let mut output = "start;\n".to_string();
         let mut ctr = 0;
         let mut used_rtypes = HashSet::<RTypeIdx>::new();
+        // Output dominance relations
         self.graph.map(
             |node_idx1, _| {
-                if self.dominance.contains_key(&node_idx1) {
-                    for node_idx2 in self.dominance.get(&node_idx1).expect("Exists") {
+                if let Some(nodes) = self.dominance.get(&node_idx1) {
+                    for node_idx2 in nodes.iter() {
                         output.push_str(
                             format!("Dom({}, {});\n", node_idx1.index(), node_idx2.index())
                                 .as_str(),
@@ -605,54 +665,37 @@ impl CallGraph {
             },
             |_, _| (),
         );
+        // Output edge and edge type relations
         self.graph.map(
             |_, _| (),
             |edge_idx, edge| {
-                let (start_idx, end_idx) = self.graph.edge_endpoints(edge_idx).expect("Exists");
-                output.push_str(
-                    format!(
-                        "Edge({}, {}, {});\n",
-                        ctr,
-                        start_idx.index(),
-                        end_idx.index()
-                    )
-                    .as_str(),
-                );
-                output.push_str(format!("EdgeType({}, {});\n", ctr, edge.rtype_id).as_str());
-                used_rtypes.insert(edge.rtype_id);
-                ctr += 1;
+                if let Some((start_idx, end_idx)) = self.graph.edge_endpoints(edge_idx) {
+                    output.push_str(
+                        format!(
+                            "Edge({}, {}, {});\n",
+                            ctr,
+                            start_idx.index(),
+                            end_idx.index()
+                        )
+                        .as_str(),
+                    );
+                    output.push_str(format!("EdgeType({}, {});\n", ctr, edge.rtype_id).as_str());
+                    used_rtypes.insert(edge.rtype_id);
+                    ctr += 1;
+                }
             },
         );
+        // Output type relations
         let mut index_to_rtype = HashMap::<RTypeIdx, &RType>::new();
         for (_, rtype) in self.rtypes.iter() {
             if used_rtypes.contains(&rtype.id) {
                 index_to_rtype.insert(rtype.id, rtype);
             }
         }
-        let mut type_relations = HashSet::<TypeRelation>::new();
-        // Insert input type relations from file
-        match type_relations_path {
-            Some(path) => {
-                #[derive(Serialize, Deserialize)]
-                struct TypeRelationsRaw {
-                    relations: Vec<TypeRelation>,
-                }
-                let input_type_relations_str = fs::read_to_string(path).expect("Should work");
-                let input_type_relations_raw: TypeRelationsRaw =
-                    serde_json::from_str(&input_type_relations_str)
-                        .expect("Failed to deserialize type relations");
-                let mut input_type_relations = HashSet::<TypeRelation>::new();
-                for relation in input_type_relations_raw.relations.iter() {
-                    input_type_relations.insert(relation.to_owned());
-                }
-                type_relations.extend(input_type_relations);
-            }
-            None => (),
-        }
-        for (_, rtype) in index_to_rtype.iter() {
-            type_relations.extend(rtype.type_relations.to_owned());
-        }
-        for type_relation in type_relations.iter() {
+        for type_relation in self
+            .gather_type_relations(&index_to_rtype, type_relations_path)
+            .iter()
+        {
             if let Some(rtype1) = self.rtypes.get(&type_relation.rtype1) {
                 if let Some(rtype2) = self.rtypes.get(&type_relation.rtype2) {
                     match type_relation.kind {
@@ -665,8 +708,11 @@ impl CallGraph {
             }
         }
         output.push_str("commit;\n");
-        fs::write(ddlog_path, output).expect("Failed to write ddlog output");
-
+        match fs::write(ddlog_path, output) {
+            Ok(_) => (),
+            Err(e) => panic!("Failed to write ddlog output: {:?}", e),
+        }
+        // Output type map from RType indexes to strings
         let mut type_map_output = "{\n".to_string();
         for (i, (rtype_id, rtype)) in index_to_rtype.iter().enumerate() {
             type_map_output.push_str(format!("\t\"{}\": \"{}\"", rtype_id, rtype.name).as_str());
@@ -677,17 +723,29 @@ impl CallGraph {
             }
         }
         type_map_output.push('}');
-        fs::write(type_map_path, type_map_output).expect("Failed to write type map output");
+        match fs::write(type_map_path, type_map_output) {
+            Ok(_) => (),
+            Err(e) => panic!("Failed to write type map output: {:?}", e),
+        };
     }
 
+    /// Produce a dot file representation of the call graph
+    /// for displaying with graphviz.
     fn to_dot(&self, dot_path: &Path) {
         let output = format!(
             "{:?}",
             Dot::with_config(&self.shortened_node_names(), &[Config::EdgeNoLabel])
         );
-        fs::write(dot_path, output).expect("Failed to write dot file output");
+        match fs::write(dot_path, output) {
+            Ok(_) => (),
+            Err(e) => panic!("Failed to write dot file output: {:?}", e),
+        };
     }
 
+    /// Top-level output function.
+    ///
+    /// First applies a set of reductions to the call graph.
+    /// Then produces datalog and / or dot file output of the call graph.
     pub fn output(&self) {
         let call_graph = self.reduce_graph(self.clone(), &self.config.reductions);
         match &self.config.ddlog_output_path {
