@@ -1,3 +1,4 @@
+use mirai_annotations::*;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::visit::Bfs;
@@ -5,31 +6,62 @@ use petgraph::{Direction, Graph};
 use rustc_hir::def_id::DefId;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 
+// An unique identifier for a Rust type string.
 type RTypeIdx = u32;
+
+// A unique identifier for a graph node.
 type NodeIdx = NodeIndex<DefaultIx>;
+
+// Convenience types for the graph folding algorithm.
 type HalfRawEdge = (NodeIdx, RTypeIdx);
 type RawEdge = (NodeIdx, NodeIdx, RTypeIdx);
 type MidpointExcludedMap = HashMap<NodeIdx, (HashSet<HalfRawEdge>, HashSet<HalfRawEdge>)>;
 
+/// Specifies reduction operations that may be perfomed
+/// on a call graph. Supported operations are:
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum CallGraphReduction {
+    /// Only include nodes reachable from the given node.
+    /// See `CallGraph::filter_reachable`.
     Slice(String),
+    /// Remove nodes in the graph that belong to crates other than
+    /// `CallGraphConfig.included_crates`. The outgoing edges of these
+    /// removed node are connected to the node's parents.
+    /// See `CallGraph::fold_excluded`.
     Fold,
+    /// Remove duplicated edges (only considers edge endpoints).
+    /// See `CallGraph::deduplicate_edges`.
     Deduplicate,
+    /// Remove nodes that have no incoming or outgoing edges.
+    /// See `CallGraph::filter_no_edges`.
     Clean,
 }
 
+/// Configuration options for call graph generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CallGraphConfig {
+    /// Optionally specifies location for graph to be output in dot format
+    /// (for graphviz).
     dot_output_path: Option<String>,
+    /// Optionally specifies location for graph to be output as datalog input
+    /// relations.
     ddlog_output_path: Option<String>,
+    /// Optionally specifies location for mapping from type identifiers to
+    /// type strings.
     type_map_output_path: Option<String>,
+    /// Optionally specifies the location for manually defined type relations
+    /// to be imported.
     type_relations_path: Option<String>,
+    /// A list of call graph reductions to apply sequentially
+    /// to the call graph.
     reductions: Vec<CallGraphReduction>,
+    /// A list of crates to include in the call graph.
+    /// Nodes belonging to crates not in this list will be removed.
     included_crates: Vec<String>,
 }
 
@@ -46,20 +78,22 @@ impl Default for CallGraphConfig {
     }
 }
 
-// The type of a call graph node
+/// The type of a call graph node.
 #[derive(Debug, Clone, PartialEq)]
 enum NodeType {
-    // Regular root
+    /// Regular root
     Root,
-    // Crate root: Starting point for analysis (pub fn)
+    /// Crate root: Starting point for analysis (pub fn)
     CRoot,
 }
 
+/// Nodes in the call graph are functions defined by the program
+/// that is being analyzed.
 #[derive(Debug, Clone)]
 struct CallGraphNode {
-    // A Node has a name and type.
-    // Nodes are uniquely identified by their DefId.
+    /// The name of the function (derived from its DefId).
     name: String,
+    /// The type of the node.
     ntype: NodeType,
 }
 
@@ -78,12 +112,15 @@ impl CallGraphNode {
         }
     }
 
+    /// Extracts a function name from the DefId of a function.
     fn format_name(defid: DefId) -> String {
         let tmp1 = format!("{:?}", defid);
         let tmp2 = tmp1.split("~ ").collect::<Vec<&str>>()[1].to_owned();
         tmp2.replace(")", "")
     }
 
+    /// A node is excluded if its name does not include any
+    /// one of the included crates' names.
     pub fn is_excluded(&self, included_crates: &[String]) -> bool {
         let mut excluded = true;
         for crate_name in included_crates.iter() {
@@ -100,12 +137,17 @@ impl CallGraphNode {
     }
 }
 
+/// Denotes ways that two types, t1 and t2, can be related.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 enum TypeRelationKind {
+    /// States that t1 is equivalent to t2.
     Eq,
+    /// States that t1 is a subtype of t2.
     Sub,
 }
 
+/// A type relation relates types `rtype1` and `rtype2` by a
+/// `TypeRelationKind`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct TypeRelation {
     kind: TypeRelationKind,
@@ -131,6 +173,11 @@ impl TypeRelation {
     }
 }
 
+/// Types in the call graph as encoded as `RType` structs.
+/// An `RType` has:
+/// - `id`: A unique identifier.
+/// - `name`: A textual representation.
+/// - `type_relations`: A set of derived type relations.
 #[derive(Debug, Clone)]
 struct RType {
     id: RTypeIdx,
@@ -147,14 +194,13 @@ impl RType {
         }
     }
 
+    /// Derive equality and subtyping relationships from the following
+    /// heuristics:
+    /// - Option<t> == t
+    /// - &t == t
+    /// - mut t == t
+    /// - [t] > t
     fn derive_type_relations(name: &str) -> HashSet<TypeRelation> {
-        /*
-        Derive equality and subtyping relationships from the following heuristics:
-            Option<t> == t
-            &t == t
-            mut t == t
-            [t] > t
-        */
         let mut relations = HashSet::<TypeRelation>::new();
         let mut base_type = name.to_owned();
         if base_type.contains("&std::option::Option<") {
@@ -191,10 +237,12 @@ impl RType {
     }
 }
 
+/// An edge in the call graph is directed. It connects two nodes
+/// n1 and n2, and represents that n1 is a caller of n2.
 #[derive(Debug, Clone)]
 struct CallGraphEdge {
-    // An Edge connects two nodes.
-    // Edges have an associated Rust type.
+    /// Edges have an associated Rust type, denoting a type of data
+    /// passed in the call from n1 to n2.
     rtype_id: RTypeIdx,
 }
 
@@ -204,16 +252,19 @@ impl CallGraphEdge {
     }
 }
 
+/// `CallGraph` stores all information related to the call graph
+/// and it's associated information.
+#[derive(Debug, Clone)]
 pub struct CallGraph {
-    // Configuration for the call graph
+    /// Configuration for the call graph
     config: CallGraphConfig,
-    // The graph structure capturing calls between nodes
+    /// The graph structure capturing calls between nodes
     graph: Graph<CallGraphNode, CallGraphEdge>,
-    // A map from DefId to node information
+    /// A map from DefId to node information
     nodes: HashMap<DefId, NodeIdx>,
-    // A map from type identifier to type string
+    /// A map from type identifier to type string
     rtypes: HashMap<String, RType>,
-    // Dominance information
+    /// Dominance information
     dominance: HashMap<NodeIdx, HashSet<NodeIdx>>,
 }
 
@@ -233,12 +284,19 @@ impl CallGraph {
     }
 
     fn parse_config(path_to_config: &Path) -> CallGraphConfig {
-        let config_str = fs::read_to_string(path_to_config).expect("Should work");
-        let config: CallGraphConfig =
-            serde_json::from_str(&config_str).expect("Should deserialize");
-        config
+        let config_result = fs::read_to_string(path_to_config)
+            .map_err(|e| e.to_string())
+            .and_then(|config_str| {
+                serde_json::from_str::<CallGraphConfig>(&config_str).map_err(|e| e.to_string())
+            });
+        match config_result {
+            Ok(config) => config,
+            Err(e) => panic!("Failed to read call graph config: {:?}", e),
+        }
     }
 
+    /// Produce an updated call graph structure that preserves all of the
+    /// fields except `graph`, which is replaced.
     fn update(&self, graph: Graph<CallGraphNode, CallGraphEdge>) -> CallGraph {
         CallGraph {
             config: self.config.clone(),
@@ -249,22 +307,14 @@ impl CallGraph {
         }
     }
 
-    fn clone(&self) -> CallGraph {
-        CallGraph {
-            config: self.config.clone(),
-            graph: self.graph.clone(),
-            nodes: self.nodes.clone(),
-            rtypes: self.rtypes.clone(),
-            dominance: self.dominance.clone(),
-        }
-    }
-
+    /// Add a new crate root node to the call graph.
     pub fn add_croot(&mut self, defid: DefId) {
         let croot = CallGraphNode::new_croot(defid);
         let node_idx = self.graph.add_node(croot);
         self.nodes.insert(defid, node_idx);
     }
 
+    /// Add a new root node to the calll graph.
     pub fn add_root(&mut self, defid: DefId) {
         if !self.nodes.contains_key(&defid) {
             let croot = CallGraphNode::new_root(defid);
@@ -273,55 +323,50 @@ impl CallGraph {
         }
     }
 
+    /// Helper function to get a node or insert a new
+    /// root node if it does not exist in the map.
+    fn get_or_insert_node(&mut self, defid: DefId) -> NodeIdx {
+        match self.nodes.entry(defid) {
+            Entry::Occupied(node) => node.get().to_owned(),
+            Entry::Vacant(v) => {
+                let node_idx = self.graph.add_node(CallGraphNode::new_root(defid));
+                *v.insert(node_idx)
+            }
+        }
+    }
+
+    /// Add a dominance relationship to the call graph.
+    /// Denotes that `defid1` is dominated by `defid2`.
     pub fn add_dom(&mut self, defid1: DefId, defid2: DefId) {
-        if !self.nodes.contains_key(&defid1) {
-            self.add_root(defid1);
-        }
-        if !self.nodes.contains_key(&defid2) {
-            self.add_root(defid2);
-        }
-        let node_idx1 = self.nodes.get(&defid1).expect("Exists");
-        let node_idx2 = self.nodes.get(&defid2).expect("Exists");
-        if !self.dominance.contains_key(node_idx1) {
-            self.dominance.insert(*node_idx1, HashSet::<NodeIdx>::new());
-        }
+        let node_idx1 = self.get_or_insert_node(defid1);
+        let node_idx2 = self.get_or_insert_node(defid2);
         self.dominance
-            .get_mut(node_idx1)
-            .expect("Exists")
-            .insert(*node_idx2);
+            .entry(node_idx1)
+            .or_insert(HashSet::<NodeIdx>::new())
+            .insert(node_idx2);
     }
 
+    /// Add a new RType to the call graph's `rtypes`.
     fn add_rtype(&mut self, rtype_str: String) -> RTypeIdx {
-        if !self.rtypes.contains_key(&rtype_str) {
-            let rtype_id = self.rtypes.len() as RTypeIdx;
-            self.rtypes.insert(
-                rtype_str.to_owned(),
-                RType::new(rtype_id, rtype_str.to_owned()),
-            );
+        let new_rtype_id = self.rtypes.len() as RTypeIdx;
+        match self.rtypes.entry(rtype_str.to_owned()) {
+            Entry::Occupied(rtype) => rtype.get().id,
+            Entry::Vacant(v) => v.insert(RType::new(new_rtype_id, rtype_str.to_owned())).id,
         }
-        self.rtypes.get(&rtype_str).expect("Exists").id
     }
 
+    /// Add a new edge to the call graph.
+    /// The edge is a call edge from `caller_id` to `callee_id` with type `rtype_str`.
     pub fn add_edge(&mut self, caller_id: DefId, callee_id: DefId, rtype_str: String) {
         let rtype_id = self.add_rtype(rtype_str);
-        if !self.nodes.contains_key(&caller_id) {
-            self.add_root(caller_id);
-        }
-        if !self.nodes.contains_key(&callee_id) {
-            self.add_root(callee_id);
-        }
-        let caller_node = self
-            .nodes
-            .get(&caller_id)
-            .expect("The node must exist at this point.");
-        let callee_node = self
-            .nodes
-            .get(&callee_id)
-            .expect("The node must exist at this point.");
+        let caller_node = self.get_or_insert_node(caller_id);
+        let callee_node = self.get_or_insert_node(callee_id);
         self.graph
-            .add_edge(*caller_node, *callee_node, CallGraphEdge::new(rtype_id));
+            .add_edge(caller_node, callee_node, CallGraphEdge::new(rtype_id));
     }
 
+    /// Find a node in the call graph given a `name` that may appear as
+    /// a substring within the node's name. The first such node is returned, if any.
     fn get_node_by_name(&self, name: &str) -> Option<NodeIdx> {
         for node_idx in self.graph.node_indices() {
             let node = self.graph.node_weight(node_idx).expect("Should exist");
@@ -332,12 +377,19 @@ impl CallGraph {
         None
     }
 
+    /// Deduplicate edges by only including a single edge for for each
+    /// (caller, callee) pair that has an edge.
+    ///
+    /// If there are multiple edges from a caller to a callee with different types,
+    /// this has the effect of including only one of those edges.
     fn deduplicate_edges(&self) -> CallGraph {
         let mut edges = HashSet::<(NodeIdx, NodeIdx)>::new();
         let graph = self.graph.filter_map(
             |_, node| Some(node.to_owned()),
             |edge_idx, edge| {
-                let endpoints = self.graph.edge_endpoints(edge_idx).expect("Exists");
+                // The edge must exist in the graph because we mapped over the graph's edges.
+                assume!(self.graph.edge_endpoints(edge_idx).is_some());
+                let endpoints = self.graph.edge_endpoints(edge_idx).unwrap();
                 if edges.contains(&endpoints) {
                     None
                 } else {
@@ -349,12 +401,19 @@ impl CallGraph {
         self.update(graph)
     }
 
+    /// Returns the set of nodes (Node indexes, which uniquely identify nodes)
+    /// That are reachable from the given start node. 
+    /// 
+    /// The underlying algorithm used to perform graph traveral is a BFS,
+    /// however, only one crate root is included from the traversal.
     fn reachable_from(&self, start_node: NodeIdx) -> HashSet<NodeIdx> {
         let mut reachable = HashSet::<NodeIdx>::new();
         let mut bfs = Bfs::new(&self.graph, start_node);
         let mut croot: Option<NodeIdx> = None;
         while let Some(node_idx) = bfs.next(&self.graph) {
-            let node = self.graph.node_weight(node_idx).expect("Exists");
+            // The node must exist at this point since we just retrieved it from the graph.
+            assume!(self.graph.node_weight(node_idx).is_some());
+            let node = self.graph.node_weight(node_idx).unwrap();
             if node.is_croot() {
                 if croot.is_none() {
                     croot = Some(node_idx);
