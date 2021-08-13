@@ -29,7 +29,7 @@ type MidpointExcludedMap = HashMap<NodeIdx, (HashSet<HalfRawEdge>, HashSet<HalfR
 enum CallGraphReduction {
     /// Only include nodes reachable from the given node.
     /// See `CallGraph::filter_reachable`.
-    Slice(String),
+    Slice(Box<str>),
     /// Remove nodes in the graph that belong to crates other than
     /// `CallGraphConfig.included_crates`. The outgoing edges of these
     /// removed node are connected to the node's parents.
@@ -48,22 +48,22 @@ enum CallGraphReduction {
 struct CallGraphConfig {
     /// Optionally specifies location for graph to be output in dot format
     /// (for graphviz).
-    dot_output_path: Option<String>,
+    dot_output_path: Option<Box<str>>,
     /// Optionally specifies location for graph to be output as datalog input
     /// relations.
-    ddlog_output_path: Option<String>,
+    ddlog_output_path: Option<Box<str>>,
     /// Optionally specifies location for mapping from type identifiers to
     /// type strings.
-    type_map_output_path: Option<String>,
+    type_map_output_path: Option<Box<str>>,
     /// Optionally specifies the location for manually defined type relations
     /// to be imported.
-    type_relations_path: Option<String>,
+    type_relations_path: Option<Box<str>>,
     /// A list of call graph reductions to apply sequentially
     /// to the call graph.
     reductions: Vec<CallGraphReduction>,
     /// A list of crates to include in the call graph.
     /// Nodes belonging to crates not in this list will be removed.
-    included_crates: Vec<String>,
+    included_crates: Vec<Box<str>>,
 }
 
 impl Default for CallGraphConfig {
@@ -74,7 +74,7 @@ impl Default for CallGraphConfig {
             type_map_output_path: None,
             type_relations_path: None,
             reductions: Vec::<CallGraphReduction>::new(),
-            included_crates: Vec::<String>::new(),
+            included_crates: Vec::<Box<str>>::new(),
         }
     }
 }
@@ -93,7 +93,7 @@ enum NodeType {
 #[derive(Debug, Clone)]
 struct CallGraphNode {
     /// The name of the function (derived from its DefId).
-    name: String,
+    name: Box<str>,
     /// The type of the node.
     ntype: NodeType,
 }
@@ -114,15 +114,15 @@ impl CallGraphNode {
     }
 
     /// Extracts a function name from the DefId of a function.
-    fn format_name(defid: DefId) -> String {
+    fn format_name(defid: DefId) -> Box<str> {
         let tmp1 = format!("{:?}", defid);
-        let tmp2 = tmp1.split("~ ").collect::<Vec<&str>>()[1].to_owned();
-        tmp2.replace(")", "")
+        let tmp2: &str = tmp1.split("~ ").collect::<Vec<&str>>()[1];
+        tmp2.replace(")", "").into_boxed_str()
     }
 
     /// A node is excluded if its name does not include any
     /// one of the included crates' names.
-    pub fn is_excluded(&self, included_crates: &[String]) -> bool {
+    pub fn is_excluded(&self, included_crates: &[&str]) -> bool {
         let mut excluded = true;
         for crate_name in included_crates.iter() {
             if self.name.contains(crate_name) {
@@ -152,12 +152,12 @@ enum TypeRelationKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct TypeRelation {
     kind: TypeRelationKind,
-    rtype1: String,
-    rtype2: String,
+    rtype1: Box<str>,
+    rtype2: Box<str>,
 }
 
 impl TypeRelation {
-    fn new_eq(t1: String, t2: String) -> TypeRelation {
+    fn new_eq(t1: Box<str>, t2: Box<str>) -> TypeRelation {
         TypeRelation {
             kind: TypeRelationKind::Eq,
             rtype1: t1,
@@ -165,7 +165,7 @@ impl TypeRelation {
         }
     }
 
-    fn new_member(t1: String, t2: String) -> TypeRelation {
+    fn new_member(t1: Box<str>, t2: Box<str>) -> TypeRelation {
         TypeRelation {
             kind: TypeRelationKind::Member,
             rtype1: t1,
@@ -182,16 +182,17 @@ impl TypeRelation {
 #[derive(Debug, Clone)]
 struct RType {
     id: RTypeIdx,
-    name: String,
+    name: Box<str>,
     type_relations: HashSet<TypeRelation>,
 }
 
 impl RType {
-    fn new(id: RTypeIdx, name: String) -> RType {
+    fn new(id: RTypeIdx, name: Box<str>) -> RType {
+        let type_relations = RType::derive_type_relations(&name);
         RType {
             id,
-            name: name.to_owned(),
-            type_relations: RType::derive_type_relations(&name),
+            name,
+            type_relations,
         }
     }
 
@@ -209,30 +210,33 @@ impl RType {
                 .replace("&std::option::Option<", "")
                 .replace(">", "");
             relations.insert(TypeRelation::new_eq(
-                base_type.to_owned(),
-                base_type_new.to_owned(),
+                base_type.into_boxed_str(),
+                base_type_new.clone().into_boxed_str(),
             ));
             base_type = base_type_new;
         }
         if base_type.contains('[') && base_type.contains(']') {
             let base_type_new = base_type.replace("[", "").replace("]", "");
             relations.insert(TypeRelation::new_member(
-                base_type.to_owned(),
-                base_type_new.to_owned(),
+                base_type.into_boxed_str(),
+                base_type_new.clone().into_boxed_str(),
             ));
             base_type = base_type_new;
         }
         if base_type.contains("mut") {
             let base_type_new = base_type.replace("mut ", "");
             relations.insert(TypeRelation::new_eq(
-                base_type.to_owned(),
-                base_type_new.to_owned(),
+                base_type.into_boxed_str(),
+                base_type_new.clone().into_boxed_str(),
             ));
             base_type = base_type_new;
         }
         if base_type.contains('&') {
             let base_type_new = base_type.replace("&", "");
-            relations.insert(TypeRelation::new_eq(base_type, base_type_new));
+            relations.insert(TypeRelation::new_eq(
+                base_type.into_boxed_str(),
+                base_type_new.into_boxed_str(),
+            ));
         }
         relations
     }
@@ -263,8 +267,8 @@ pub struct CallGraph {
     graph: Graph<CallGraphNode, CallGraphEdge>,
     /// A map from DefId to node information
     nodes: HashMap<DefId, NodeIdx>,
-    /// A map from type identifier to type string
-    rtypes: HashMap<String, RType>,
+    /// A map from type string to type identifier
+    rtypes: HashMap<Box<str>, RType>,
     /// Dominance information
     dominance: HashMap<NodeIdx, HashSet<NodeIdx>>,
 }
@@ -279,7 +283,7 @@ impl CallGraph {
             config,
             graph: Graph::<CallGraphNode, CallGraphEdge>::new(),
             nodes: HashMap::<DefId, NodeIdx>::new(),
-            rtypes: HashMap::<String, RType>::new(),
+            rtypes: HashMap::<Box<str>, RType>::new(),
             dominance: HashMap::<NodeIdx, HashSet<NodeIdx>>::new(),
         }
     }
@@ -348,7 +352,7 @@ impl CallGraph {
     }
 
     /// Add a new RType to the call graph's `rtypes`.
-    fn add_rtype(&mut self, rtype_str: String) -> RTypeIdx {
+    fn add_rtype(&mut self, rtype_str: Box<str>) -> RTypeIdx {
         let new_rtype_id = self.rtypes.len() as RTypeIdx;
         match self.rtypes.entry(rtype_str.to_owned()) {
             Entry::Occupied(rtype) => rtype.get().id,
@@ -358,7 +362,7 @@ impl CallGraph {
 
     /// Add a new edge to the call graph.
     /// The edge is a call edge from `caller_id` to `callee_id` with type `rtype_str`.
-    pub fn add_edge(&mut self, caller_id: DefId, callee_id: DefId, rtype_str: String) {
+    pub fn add_edge(&mut self, caller_id: DefId, callee_id: DefId, rtype_str: Box<str>) {
         let rtype_id = self.add_rtype(rtype_str);
         let caller_node = self.get_or_insert_node(caller_id);
         let callee_node = self.get_or_insert_node(callee_id);
@@ -512,7 +516,13 @@ impl CallGraph {
         // 1. Find all excluded nodes
         let mut graph = self.graph.filter_map(
             |node_idx, node| {
-                if node.is_excluded(&self.config.included_crates) {
+                let included_crates = self
+                    .config
+                    .included_crates
+                    .iter()
+                    .map(|v| &**v)
+                    .collect::<Vec<&str>>();
+                if node.is_excluded(&included_crates) {
                     excluded.insert(
                         node_idx,
                         (HashSet::<HalfRawEdge>::new(), HashSet::<HalfRawEdge>::new()),
@@ -587,9 +597,9 @@ impl CallGraph {
     /// Produce a representation of the graph that uses
     /// the (shorter) `node.name`, which is derived from the node's DefId,
     /// rather than the full DefId itself.
-    fn shortened_node_names(&self) -> Graph<String, ()> {
+    fn shortened_node_names(&self) -> Graph<&str, ()> {
         self.graph
-            .filter_map(|_, node| Some(node.name.to_owned()), |_, _| Some(()))
+            .filter_map(|_, node| Some(&*node.name), |_, _| Some(()))
     }
 
     /// Perform a specified sequence of reductions on the call graph.
@@ -741,18 +751,21 @@ impl CallGraph {
         let call_graph = self.reduce_graph(self.clone(), &self.config.reductions);
         if let Some(ddlog_path) = &self.config.ddlog_output_path {
             if let Some(type_map_path) = &self.config.type_map_output_path {
+                let ddlog_path_str: &str = &*ddlog_path;
+                let type_map_path_str: &str = &*type_map_path;
                 call_graph.to_datalog(
-                    Path::new(&ddlog_path),
-                    Path::new(&type_map_path),
-                    self.config
-                        .type_relations_path
-                        .as_ref()
-                        .map(|v| Path::new(v)),
+                    Path::new(ddlog_path_str),
+                    Path::new(type_map_path_str),
+                    self.config.type_relations_path.as_ref().map(|v| {
+                        let path_str: &str = &*v;
+                        Path::new(path_str)
+                    }),
                 );
             }
         }
         if let Some(dot_path) = &self.config.dot_output_path {
-            call_graph.to_dot(Path::new(&dot_path));
+            let dot_path_str: &str = &*dot_path;
+            call_graph.to_dot(Path::new(dot_path_str));
         }
     }
 }

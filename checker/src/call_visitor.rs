@@ -292,7 +292,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             self.block_visitor.bv.cv.call_graph.add_edge(
                 self.block_visitor.bv.def_id,
                 self.callee_def_id,
-                format!("{:?}", ty),
+                ty.to_string().into_boxed_str(),
             );
         }
         if let Some(func_ref) = &self.callee_func_ref.clone() {
