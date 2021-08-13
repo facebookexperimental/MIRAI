@@ -2445,6 +2445,11 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .filter(|(p, _)| p.is_rooted_by(&source_path))
             {
                 check_for_early_return!(self);
+                if matches!(&value.expression, Expression::HeapBlockLayout { .. })
+                    && !target_path.is_rooted_by_non_local_structure()
+                {
+                    continue;
+                }
                 let qualified_path = path
                     .replace_root(&source_path, target_path.clone())
                     .canonicalize(&self.current_environment);
