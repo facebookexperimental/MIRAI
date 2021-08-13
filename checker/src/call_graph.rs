@@ -1,8 +1,10 @@
+use core::fmt;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::visit::Bfs;
 use petgraph::{Direction, Graph};
 use rustc_hir::def_id::DefId;
+use serde::ser::{SerializeMap, Serializer};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::hash_map::Entry;
@@ -141,8 +143,8 @@ impl CallGraphNode {
 enum TypeRelationKind {
     /// States that t1 is equivalent to t2.
     Eq,
-    /// States that t1 is a subtype of t2.
-    Sub,
+    /// States that t2 is a member of t1.
+    Member,
 }
 
 /// A type relation relates types `rtype1` and `rtype2` by a
@@ -163,9 +165,9 @@ impl TypeRelation {
         }
     }
 
-    fn new_sub(t1: String, t2: String) -> TypeRelation {
+    fn new_member(t1: String, t2: String) -> TypeRelation {
         TypeRelation {
-            kind: TypeRelationKind::Sub,
+            kind: TypeRelationKind::Member,
             rtype1: t1,
             rtype2: t2,
         }
@@ -193,7 +195,7 @@ impl RType {
         }
     }
 
-    /// Derive equality and subtyping relationships from the following
+    /// Derive equality and membership relationships from the following
     /// heuristics:
     /// - Option<t> == t
     /// - &t == t
@@ -214,7 +216,7 @@ impl RType {
         }
         if base_type.contains('[') && base_type.contains(']') {
             let base_type_new = base_type.replace("[", "").replace("]", "");
-            relations.insert(TypeRelation::new_sub(
+            relations.insert(TypeRelation::new_member(
                 base_type.to_owned(),
                 base_type_new.to_owned(),
             ));
@@ -610,10 +612,6 @@ impl CallGraph {
         let mut type_relations = HashSet::<TypeRelation>::new();
         // Insert input type relations from file
         if let Some(path) = type_relations_path {
-            #[derive(Serialize, Deserialize)]
-            struct TypeRelationsRaw {
-                relations: Vec<TypeRelation>,
-            }
             let input_type_relations_raw: TypeRelationsRaw = match fs::read_to_string(path)
                 .map_err(|e| e.to_string())
                 .and_then(|input_type_relations_str| {
@@ -648,18 +646,18 @@ impl CallGraph {
         type_map_path: &Path,
         type_relations_path: Option<&Path>,
     ) {
-        let mut output = "start;\n".to_string();
-        let mut ctr = 0;
+        let mut ctr: u32 = 0;
         let mut used_rtypes = HashSet::<RTypeIdx>::new();
+        let mut output = DatalogOutput::new();
         // Output dominance relations
         self.graph.map(
             |node_idx1, _| {
                 if let Some(nodes) = self.dominance.get(&node_idx1) {
                     for node_idx2 in nodes.iter() {
-                        output.push_str(
-                            format!("Dom({}, {});\n", node_idx1.index(), node_idx2.index())
-                                .as_str(),
-                        );
+                        output.add_relation(DatalogRelation::new_dom(
+                            node_idx1.index() as u32,
+                            node_idx2.index() as u32,
+                        ))
                     }
                 }
             },
@@ -670,16 +668,12 @@ impl CallGraph {
             |_, _| (),
             |edge_idx, edge| {
                 if let Some((start_idx, end_idx)) = self.graph.edge_endpoints(edge_idx) {
-                    output.push_str(
-                        format!(
-                            "Edge({}, {}, {});\n",
-                            ctr,
-                            start_idx.index(),
-                            end_idx.index()
-                        )
-                        .as_str(),
-                    );
-                    output.push_str(format!("EdgeType({}, {});\n", ctr, edge.rtype_id).as_str());
+                    output.add_relation(DatalogRelation::new_edge(
+                        ctr,
+                        start_idx.index() as u32,
+                        end_idx.index() as u32,
+                    ));
+                    output.add_relation(DatalogRelation::new_edge_type(ctr, edge.rtype_id));
                     used_rtypes.insert(edge.rtype_id);
                     ctr += 1;
                 }
@@ -699,31 +693,28 @@ impl CallGraph {
             if let Some(rtype1) = self.rtypes.get(&type_relation.rtype1) {
                 if let Some(rtype2) = self.rtypes.get(&type_relation.rtype2) {
                     match type_relation.kind {
-                        TypeRelationKind::Eq => output
-                            .push_str(format!("TypeEq({}, {})\n", rtype1.id, rtype2.id).as_str()),
-                        TypeRelationKind::Sub => output
-                            .push_str(format!("TypeSub({}, {})\n", rtype2.id, rtype2.id).as_str()),
+                        TypeRelationKind::Eq => {
+                            output.add_relation(DatalogRelation::new_eq_type(rtype1.id, rtype2.id))
+                        }
+                        TypeRelationKind::Member => {
+                            output.add_relation(DatalogRelation::new_member(rtype1.id, rtype2.id))
+                        }
                     }
                 }
             }
         }
-        output.push_str("commit;\n");
-        match fs::write(ddlog_path, output) {
+        match fs::write(ddlog_path, format!("{}", output)) {
             Ok(_) => (),
             Err(e) => panic!("Failed to write ddlog output: {:?}", e),
         }
-        // Output type map from RType indexes to strings
-        let mut type_map_output = "{\n".to_string();
-        for (i, (rtype_id, rtype)) in index_to_rtype.iter().enumerate() {
-            type_map_output.push_str(format!("\t\"{}\": \"{}\"", rtype_id, rtype.name).as_str());
-            if i == index_to_rtype.len() - 1 {
-                type_map_output.push('\n');
-            } else {
-                type_map_output.push_str(",\n");
-            }
-        }
-        type_map_output.push('}');
-        match fs::write(type_map_path, type_map_output) {
+        // Output the type map
+        match serde_json::to_string(&TypeMapOutput {
+            map: index_to_rtype,
+        })
+        .map_err(|e| e.to_string())
+        .and_then(|type_map_output| {
+            fs::write(type_map_path, type_map_output).map_err(|e| e.to_string())
+        }) {
             Ok(_) => (),
             Err(e) => panic!("Failed to write type map output: {:?}", e),
         };
@@ -748,23 +739,136 @@ impl CallGraph {
     /// Then produces datalog and / or dot file output of the call graph.
     pub fn output(&self) {
         let call_graph = self.reduce_graph(self.clone(), &self.config.reductions);
-        match &self.config.ddlog_output_path {
-            Some(ddlog_path) => match &self.config.type_map_output_path {
-                Some(type_map_path) => call_graph.to_datalog(
+        if let Some(ddlog_path) = &self.config.ddlog_output_path {
+            if let Some(type_map_path) = &self.config.type_map_output_path {
+                call_graph.to_datalog(
                     Path::new(&ddlog_path),
                     Path::new(&type_map_path),
                     self.config
                         .type_relations_path
                         .as_ref()
                         .map(|v| Path::new(v)),
-                ),
-                None => (),
-            },
-            None => (),
-        };
-        match &self.config.dot_output_path {
-            Some(dot_path) => call_graph.to_dot(Path::new(&dot_path)),
-            None => (),
-        };
+                );
+            }
+        }
+        if let Some(dot_path) = &self.config.dot_output_path {
+            call_graph.to_dot(Path::new(&dot_path));
+        }
+    }
+}
+
+/// Temporary data structure for storing deserialzed
+/// manually-added type relations.
+#[derive(Serialize, Deserialize)]
+struct TypeRelationsRaw {
+    relations: Vec<TypeRelation>,
+}
+
+/// Temporary data structure for storing the type
+/// map for serialization.
+struct TypeMapOutput<'a> {
+    map: HashMap<RTypeIdx, &'a RType>,
+}
+
+impl<'a> Serialize for TypeMapOutput<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.map.len()))?;
+        for (k, v) in self.map.iter() {
+            map.serialize_entry(&k.to_string(), &v.name)?;
+        }
+        map.end()
+    }
+}
+
+/// Represents an atomic datalog relation.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct DatalogRelation {
+    /// A relation has a name.
+    name: &'static str,
+    /// As well as one or more operands.
+    operands: Vec<u32>,
+}
+
+impl fmt::Display for DatalogRelation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}({})",
+            self.name,
+            self.operands
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(",")
+        )
+    }
+}
+
+impl DatalogRelation {
+    pub fn new_dom(n1: u32, n2: u32) -> DatalogRelation {
+        DatalogRelation {
+            name: "Dom",
+            operands: vec![n1, n2],
+        }
+    }
+
+    pub fn new_edge(id: u32, n1: u32, n2: u32) -> DatalogRelation {
+        DatalogRelation {
+            name: "Edge",
+            operands: vec![id, n1, n2],
+        }
+    }
+
+    pub fn new_edge_type(id: u32, t: u32) -> DatalogRelation {
+        DatalogRelation {
+            name: "EdgeType",
+            operands: vec![id, t],
+        }
+    }
+
+    pub fn new_eq_type(t1: u32, t2: u32) -> DatalogRelation {
+        DatalogRelation {
+            name: "EqType",
+            operands: vec![t1, t2],
+        }
+    }
+
+    pub fn new_member(t1: u32, t2: u32) -> DatalogRelation {
+        DatalogRelation {
+            name: "Member",
+            operands: vec![t1, t2],
+        }
+    }
+}
+
+/// Structure for storing datalog relations
+/// to later be output as a datalog file that can
+/// be input into a datalog database.
+struct DatalogOutput {
+    relations: HashSet<DatalogRelation>,
+}
+
+impl fmt::Display for DatalogOutput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "start;")?;
+        for relation in self.relations.iter() {
+            writeln!(f, "{};", relation)?;
+        }
+        writeln!(f, "commit;")
+    }
+}
+
+impl DatalogOutput {
+    pub fn new() -> DatalogOutput {
+        DatalogOutput {
+            relations: HashSet::<DatalogRelation>::new(),
+        }
+    }
+
+    pub fn add_relation(&mut self, relation: DatalogRelation) {
+        self.relations.insert(relation);
     }
 }
