@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// Linear call graph with static calls, single type, no dominance, no loops.
+// Call graph with static calls, a single loop, single type, no dominance.
 
 fn fn1(x: u32) -> u32 {
     fn2(x)
@@ -13,10 +13,14 @@ fn fn2(x: u32) -> u32 {
     fn3(x)
 }
 fn fn3(x: u32) -> u32 {
-    x
+    if x > 1 {
+        fn1(x - 1)
+    } else {
+        x
+    }
 }
 pub fn main() {
-    let x = 1;
+    let x = 3;
     fn1(x);
 }
 
@@ -29,13 +33,14 @@ pub fn main() {
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"static[8787]::main\"" ]
-    1 [ label = "\"static[8787]::fn1\"" ]
-    2 [ label = "\"static[8787]::fn2\"" ]
-    3 [ label = "\"static[8787]::fn3\"" ]
+    0 [ label = "\"static_loop[8787]::main\"" ]
+    1 [ label = "\"static_loop[8787]::fn1\"" ]
+    2 [ label = "\"static_loop[8787]::fn2\"" ]
+    3 [ label = "\"static_loop[8787]::fn3\"" ]
     0 -> 1 [ ]
     1 -> 2 [ ]
     2 -> 3 [ ]
+    3 -> 1 [ ]
 }
 */
 
@@ -44,9 +49,11 @@ start;
 Edge(0,0,1);
 Edge(1,1,2);
 Edge(2,2,3);
+Edge(3,3,1);
 EdgeType(0,0);
 EdgeType(1,0);
 EdgeType(2,0);
+EdgeType(3,0);
 commit;
 */
 

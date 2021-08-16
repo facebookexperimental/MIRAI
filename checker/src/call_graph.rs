@@ -827,7 +827,9 @@ impl<'a> Serialize for TypeMapOutput<'a> {
         S: Serializer,
     {
         let mut map = serializer.serialize_map(Some(self.map.len()))?;
-        for (k, v) in self.map.iter() {
+        let mut map_entries: Vec<_> = self.map.iter().collect();
+        map_entries.sort_by_key(|k| k.0);
+        for (k, v) in map_entries.iter() {
             map.serialize_entry(&k.to_string(), &v.name)?;
         }
         map.end()

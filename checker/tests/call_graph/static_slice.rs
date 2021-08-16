@@ -5,8 +5,9 @@
 //
 
 // Linear call graph with static calls, single type, no dominance, no loops.
+// Taking a slice of the call graph from fn1.
 
-fn fn1(x: u32) -> u32 {
+pub fn fn1(x: u32) -> u32 {
     fn2(x)
 }
 fn fn2(x: u32) -> u32 {
@@ -22,20 +23,18 @@ pub fn main() {
 
 /* CONFIG
 {
-    "reductions": [],
+    "reductions": [{"Slice": "fn1"}],
     "included_crates": []
 }
 */
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"static[8787]::main\"" ]
-    1 [ label = "\"static[8787]::fn1\"" ]
-    2 [ label = "\"static[8787]::fn2\"" ]
-    3 [ label = "\"static[8787]::fn3\"" ]
+    0 [ label = "\"static_slice[8787]::fn1\"" ]
+    1 [ label = "\"static_slice[8787]::fn2\"" ]
+    2 [ label = "\"static_slice[8787]::fn3\"" ]
     0 -> 1 [ ]
     1 -> 2 [ ]
-    2 -> 3 [ ]
 }
 */
 
@@ -43,10 +42,8 @@ digraph {
 start;
 Edge(0,0,1);
 Edge(1,1,2);
-Edge(2,2,3);
 EdgeType(0,0);
 EdgeType(1,0);
-EdgeType(2,0);
 commit;
 */
 

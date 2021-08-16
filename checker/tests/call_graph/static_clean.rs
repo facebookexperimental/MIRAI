@@ -5,7 +5,12 @@
 //
 
 // Linear call graph with static calls, single type, no dominance, no loops.
+// Orphan function (unconnected to call graph from main) should be removed 
+// by the "Clean" reduction.
 
+pub fn orphan(x: u32) -> u32 {
+    x
+}
 fn fn1(x: u32) -> u32 {
     fn2(x)
 }
@@ -22,17 +27,17 @@ pub fn main() {
 
 /* CONFIG
 {
-    "reductions": [],
+    "reductions": ["Clean"],
     "included_crates": []
 }
 */
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"static[8787]::main\"" ]
-    1 [ label = "\"static[8787]::fn1\"" ]
-    2 [ label = "\"static[8787]::fn2\"" ]
-    3 [ label = "\"static[8787]::fn3\"" ]
+    0 [ label = "\"static_clean[8787]::main\"" ]
+    1 [ label = "\"static_clean[8787]::fn1\"" ]
+    2 [ label = "\"static_clean[8787]::fn2\"" ]
+    3 [ label = "\"static_clean[8787]::fn3\"" ]
     0 -> 1 [ ]
     1 -> 2 [ ]
     2 -> 3 [ ]
