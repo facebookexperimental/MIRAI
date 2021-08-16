@@ -108,4 +108,41 @@ pub unsafe fn t5(a: A) {
     verify!(bib.i == (((a.x as u16 / 256) + ((a.y as u16 % 256) * 256)) as i16));
 }
 
+#[repr(C)]
+pub struct FatPtr<T> {
+    pub ptr: *const T,
+    pub fat: usize,
+}
+
+pub unsafe fn t6() {
+    let arr_ref: &[i32] = &[1, 2, 3];
+    let arr_ptr = std::mem::transmute::<&[i32], *const [i32]>(arr_ref);
+    let fat_ptr = std::mem::transmute::<*const [i32], FatPtr<i32>>(arr_ptr);
+    verify!(fat_ptr.fat == 3);
+    verify!(*fat_ptr.ptr == 1);
+}
+
+pub unsafe fn t7() {
+    let arr_ref: &[i32] = &[1, 2, 3];
+    let thin_ptr = arr_ref.as_ptr();
+    let fat_ptr = FatPtr {
+        ptr: thin_ptr,
+        fat: 4,
+    };
+    let arr_ref2 = std::mem::transmute::<FatPtr<i32>, &[i32]>(fat_ptr);
+    verify!(arr_ref2.len() == 4);
+    verify!(arr_ref2[0] == 1);
+    verify!(arr_ref2[1] == 2);
+    verify!(arr_ref2[2] == 3);
+    verify!(arr_ref2[3] == 666); //~ possible false verification condition
+}
+
+pub unsafe fn t8() {
+    let char_arr = std::mem::transmute::<&str, &[u8]>("abc");
+    verify!(char_arr.len() == 3);
+    verify!(char_arr[0] == b'a');
+    verify!(char_arr[1] == b'b');
+    verify!(char_arr[2] == b'c');
+}
+
 pub fn main() {}

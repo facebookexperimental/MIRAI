@@ -29,7 +29,7 @@ use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, UintTy};
+use rustc_middle::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, TypeAndMut, UintTy};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -1300,7 +1300,12 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 _ => {}
             }
             // todo: need to call copy_or_move_elements if any selector in tpath is a slice or index
-            if let PathEnum::QualifiedPath { selector, .. } = &tpath.value {
+            if let PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } = &tpath.value
+            {
                 if let PathSelector::Slice(..) | PathSelector::Index(..) = selector.as_ref() {
                     let source_path = Path::get_as_path(rvalue.clone());
                     let target_type = self.type_visitor().get_element_type(
@@ -1316,6 +1321,46 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     }
                     self.copy_or_move_elements(tpath.clone(), source_path, target_type, false);
                     continue;
+                }
+                if let TyKind::Ref(_, t, _) = target_type.kind() {
+                    if let TyKind::Slice(elem_ty) = t.kind() {
+                        if let TyKind::Uint(UintTy::U8) = elem_ty.kind() {
+                            if **selector == PathSelector::Field(0) {
+                                let target_path = qualifier;
+                                // If rvalue is a string constant, we want to expand it so that
+                                // individual char values can be accessed via the &[u8] target.
+                                if let Expression::Variable {
+                                    path,
+                                    var_type: ExpressionType::ThinPointer,
+                                } = &rvalue.expression
+                                {
+                                    if let PathEnum::QualifiedPath {
+                                        qualifier,
+                                        selector,
+                                        ..
+                                    } = &path.value
+                                    {
+                                        if **selector == PathSelector::Field(0) {
+                                            if let PathEnum::Computed { value } = &qualifier.value {
+                                                if let Expression::CompileTimeConstant(
+                                                    ConstantDomain::Str(_),
+                                                ) = &value.expression
+                                                {
+                                                    self.copy_or_move_elements(
+                                                        target_path.clone(),
+                                                        qualifier.clone(),
+                                                        target_type,
+                                                        false,
+                                                    );
+                                                    continue;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if rtype != ExpressionType::NonPrimitive {
@@ -1843,11 +1888,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     .is_slice_pointer(source_rustc_type.kind())
                 {
                     source_fields.push((source_path.clone(), source_rustc_type));
-                } else if self.type_visitor.is_slice_pointer(target_rustc_type.kind())
-                    && !self
-                        .type_visitor
-                        .is_string_pointer(source_rustc_type.kind())
-                {
+                } else if self.type_visitor.is_slice_pointer(target_rustc_type.kind()) {
                     let pointer_path = Path::new_field(source_path.clone(), 0);
                     let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
                         ty: self.type_visitor.get_element_type(source_rustc_type),
@@ -1894,32 +1935,25 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     t_path = Path::new_field(t_path, 0);
                     ty = self.type_visitor().remove_transparent_wrapper(ty);
                 }
-                let source_rustc_type = self
+                let target_rustc_type = self
                     .tcx
                     .mk_ref(region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
                 let t_ref_val = AbstractValue::make_reference(t_path);
                 let target_path = Path::new_computed(t_ref_val);
-                if !self
+                if self
                     .type_visitor()
                     .is_slice_pointer(target_rustc_type.kind())
                 {
-                    target_fields.push((target_path, target_rustc_type))
-                } else if self.type_visitor.is_slice_pointer(source_rustc_type.kind())
-                    && !self
-                        .type_visitor
-                        .is_string_pointer(source_rustc_type.kind())
-                {
                     let pointer_path = Path::new_field(target_path.clone(), 0);
-                    let pointer_type = self
-                        .tcx
-                        .mk_ptr(rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                    let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                        ty: self.type_visitor.get_element_type(target_rustc_type),
+                        mutbl: rustc_hir::Mutability::Not,
+                    });
                     target_fields.push((pointer_path, pointer_type));
                     let len_path = Path::new_length(target_path);
                     target_fields.push((len_path, self.tcx.types.usize));
                 } else {
-                    // todo: when this results in source_fields and target_fields being
-                    // empty, things seem to work. It is not clear what happens in other
-                    // cases. Write a comprehensive test that looks at all cases.
+                    target_fields.push((target_path, target_rustc_type))
                 }
             }
             TyKind::Tuple(substs) => {
@@ -1932,15 +1966,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
             }
             _ => {
-                if !self
+                if self
                     .type_visitor()
                     .is_slice_pointer(target_rustc_type.kind())
-                {
-                    target_fields.push((target_path.clone(), target_rustc_type))
-                } else if self.type_visitor.is_slice_pointer(source_rustc_type.kind())
-                    && !self
-                        .type_visitor
-                        .is_string_pointer(source_rustc_type.kind())
                 {
                     let pointer_path = Path::new_field(target_path.clone(), 0);
                     let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
@@ -1951,9 +1979,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     let len_path = Path::new_length(target_path.clone());
                     target_fields.push((len_path, self.tcx.types.usize));
                 } else {
-                    // todo: when this results in source_fields and target_fields being
-                    // empty, things seem to work. It is not clear what happens in other
-                    // cases. Write a comprehensive test that looks at all cases.
+                    target_fields.push((target_path.clone(), target_rustc_type))
                 }
             }
         }
@@ -1995,6 +2021,38 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             }
             let (source_path, source_type) = &source_fields[source_field_index];
             let source_path = source_path.canonicalize(&self.current_environment);
+            if let PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } = &source_path.value
+            {
+                if **selector == PathSelector::Field(0) {
+                    if let PathEnum::Computed { value } = &qualifier.value {
+                        if let Expression::CompileTimeConstant(ConstantDomain::Str(s)) =
+                            &value.expression
+                        {
+                            // The value is a string literal. See if the target might treat it as &[u8].
+                            if let TyKind::RawPtr(TypeAndMut { ty, .. }) = target_type.kind() {
+                                if let TyKind::Uint(UintTy::U8) = ty.kind() {
+                                    let thin_ptr_deref = Path::new_deref(
+                                        source_path.clone(),
+                                        ExpressionType::NonPrimitive,
+                                    )
+                                    .canonicalize(&self.current_environment);
+                                    for (i, ch) in s.as_bytes().iter().enumerate() {
+                                        let index = Rc::new((i as u128).into());
+                                        let ch_const: Rc<AbstractValue> =
+                                            Rc::new((*ch as u128).into());
+                                        let path = Path::new_index(thin_ptr_deref.clone(), index);
+                                        self.current_environment.update_value_at(path, ch_const);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             let mut val = self.lookup_path_and_refine_result(source_path.clone(), source_type);
             if copied_source_bits > 0 {
                 // discard the lower order bits from val since they have already been copied to a previous target field

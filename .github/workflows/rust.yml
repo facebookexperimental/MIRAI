@@ -1,6 +1,6 @@
 on: push
 
-name: Code coverage with grcov
+name: Continuous Integration
 
 jobs:
   grcov:
@@ -14,11 +14,16 @@ jobs:
         with:
           override: true
           profile: minimal
-          components: rustc-dev, llvm-tools-preview
+          components: clippy, rustc-dev, llvm-tools-preview
           
       - name: Install Z3
         run: cp binaries/libz3.dylib /usr/local/lib
-        
+
+      - name: Run Clippy
+        uses: actions-rs/clippy@master
+        with:
+          args: --all-features --all-targets -- -D warnings
+
       - name: Execute tests
         uses: actions-rs/cargo@v1
         with:
