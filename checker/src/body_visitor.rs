@@ -1703,7 +1703,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         .type_visitor
                         .specialize_substs(substs, &self.type_visitor().generic_argument_map);
                     for (i, field) in def.all_fields().enumerate() {
-                        let target_type = field.ty(self.tcx, substs);
+                        let target_type = self.type_visitor().specialize_generic_argument_type(
+                            field.ty(self.tcx, substs),
+                            &self.type_visitor().generic_argument_map,
+                        );
                         let target_path = Path::new_union_field(qualifier.clone(), i, *num_cases);
                         self.copy_and_transmute(
                             source_path.clone(),
@@ -2011,6 +2014,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         let mut source_field_index = 0;
         let mut copied_source_bits = 0;
         for (target_path, target_type) in target_fields.into_iter() {
+            let target_type = self.type_visitor().specialize_generic_argument_type(
+                target_type,
+                &self.type_visitor().generic_argument_map,
+            );
             if source_field_index >= source_len {
                 let warning = self.cv.session.struct_span_warn(
                     self.current_span,
@@ -2020,6 +2027,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 break;
             }
             let (source_path, source_type) = &source_fields[source_field_index];
+            let source_type = self.type_visitor().specialize_generic_argument_type(
+                source_type,
+                &self.type_visitor().generic_argument_map,
+            );
             let source_path = source_path.canonicalize(&self.current_environment);
             if let PathEnum::QualifiedPath {
                 qualifier,
