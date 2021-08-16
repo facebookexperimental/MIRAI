@@ -43,15 +43,15 @@ digraph {
 
 /* EXPECTED:DDLOG
 start;
-Dom(1,2);
-Dom(1,3);
-Dom(2,3);
-Edge(0,0,1);
-Edge(1,0,2);
-Edge(2,0,3);
-EdgeType(0,0);
-EdgeType(1,0);
-EdgeType(2,0);
+insert Dom(1,2);
+insert Dom(1,3);
+insert Dom(2,3);
+insert Edge(0,0,1);
+insert Edge(1,0,2);
+insert Edge(2,0,3);
+insert EdgeType(0,0);
+insert EdgeType(1,0);
+insert EdgeType(2,0);
 commit;
 */
 

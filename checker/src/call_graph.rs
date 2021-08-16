@@ -114,7 +114,7 @@ impl CallGraphConfig {
 /// The type of a call graph node.
 #[derive(Debug, Clone, PartialEq)]
 enum NodeType {
-    /// Regular root
+    /// Regular root: Any function that is not a crate root
     Root,
     /// Crate root: Starting point for analysis (pub fn)
     CRoot,
@@ -909,7 +909,7 @@ impl fmt::Display for DatalogOutput {
         writeln!(f, "start;")?;
         let mut relation_strs = Vec::<String>::new();
         for relation in self.relations.iter() {
-            relation_strs.push(format!("{};", relation));
+            relation_strs.push(format!("insert {};", relation));
         }
         relation_strs.sort();
         let output = relation_strs.join("\n");

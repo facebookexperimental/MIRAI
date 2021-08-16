@@ -47,16 +47,16 @@ digraph {
 
 /* EXPECTED:DDLOG
 start;
-Edge(0,0,1);
-Edge(1,1,2);
-Edge(2,1,2);
-Edge(3,2,3);
-Edge(4,3,1);
-EdgeType(0,0);
-EdgeType(1,0);
-EdgeType(2,1);
-EdgeType(3,0);
-EdgeType(4,0);
+insert Edge(0,0,1);
+insert Edge(1,1,2);
+insert Edge(2,1,2);
+insert Edge(3,2,3);
+insert Edge(4,3,1);
+insert EdgeType(0,0);
+insert EdgeType(1,0);
+insert EdgeType(2,1);
+insert EdgeType(3,0);
+insert EdgeType(4,0);
 commit;
 */
 

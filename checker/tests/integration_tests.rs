@@ -179,7 +179,7 @@ fn generate_call_graph_config(
     }
     let call_graph_config = CallGraphConfig::new(
         Some(format!("{}/graph.dot", temp_dir_path).into_boxed_str()),
-        Some(format!("{}/graph.ddlog", temp_dir_path).into_boxed_str()),
+        Some(format!("{}/graph.dat", temp_dir_path).into_boxed_str()),
         Some(format!("{}/types.json", temp_dir_path).into_boxed_str()),
         None,
         call_graph_test_config.reductions,

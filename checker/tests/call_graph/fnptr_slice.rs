@@ -40,10 +40,10 @@ digraph {
 
 /* EXPECTED:DDLOG
 start;
-Edge(0,0,1);
-Edge(1,1,2);
-EdgeType(0,0);
-EdgeType(1,0);
+insert Edge(0,0,1);
+insert Edge(1,1,2);
+insert EdgeType(0,0);
+insert EdgeType(1,0);
 commit;
 */
 
