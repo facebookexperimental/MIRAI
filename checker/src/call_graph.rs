@@ -26,7 +26,7 @@ type MidpointExcludedMap = HashMap<NodeIdx, (HashSet<HalfRawEdge>, HashSet<HalfR
 /// Specifies reduction operations that may be perfomed
 /// on a call graph. Supported operations are:
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum CallGraphReduction {
+pub enum CallGraphReduction {
     /// Only include nodes reachable from the given node.
     /// See `CallGraph::filter_reachable`.
     Slice(Box<str>),
@@ -45,7 +45,7 @@ enum CallGraphReduction {
 
 /// Configuration options for call graph generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct CallGraphConfig {
+pub struct CallGraphConfig {
     /// Optionally specifies location for graph to be output in dot format
     /// (for graphviz).
     dot_output_path: Option<Box<str>>,
@@ -76,6 +76,38 @@ impl Default for CallGraphConfig {
             reductions: Vec::<CallGraphReduction>::new(),
             included_crates: Vec::<Box<str>>::new(),
         }
+    }
+}
+
+impl CallGraphConfig {
+    pub fn new(
+        dot_output_path: Option<Box<str>>,
+        ddlog_output_path: Option<Box<str>>,
+        type_map_output_path: Option<Box<str>>,
+        type_relations_path: Option<Box<str>>,
+        reductions: Vec<CallGraphReduction>,
+        included_crates: Vec<Box<str>>,
+    ) -> CallGraphConfig {
+        CallGraphConfig {
+            dot_output_path,
+            ddlog_output_path,
+            type_map_output_path,
+            type_relations_path,
+            reductions,
+            included_crates,
+        }
+    }
+
+    pub fn get_dot_path(&self) -> Option<&str> {
+        self.dot_output_path.as_deref()
+    }
+
+    pub fn get_ddlog_path(&self) -> Option<&str> {
+        self.ddlog_output_path.as_deref()
+    }
+
+    pub fn get_type_map_path(&self) -> Option<&str> {
+        self.type_map_output_path.as_deref()
     }
 }
 
@@ -366,8 +398,14 @@ impl CallGraph {
         let rtype_id = self.add_rtype(rtype_str);
         let caller_node = self.get_or_insert_node(caller_id);
         let callee_node = self.get_or_insert_node(callee_id);
-        self.graph
-            .add_edge(caller_node, callee_node, CallGraphEdge::new(rtype_id));
+        let mut existing_rtypes = HashSet::<RTypeIdx>::new();
+        for edge in self.graph.edges_connecting(caller_node, callee_node) {
+            existing_rtypes.insert(edge.weight().rtype_id);
+        }
+        if !existing_rtypes.contains(&rtype_id) {
+            self.graph
+                .add_edge(caller_node, callee_node, CallGraphEdge::new(rtype_id));
+        }
     }
 
     /// Find a node in the call graph given a `name` that may appear as
@@ -718,7 +756,7 @@ impl CallGraph {
             Err(e) => panic!("Failed to write ddlog output: {:?}", e),
         }
         // Output the type map
-        match serde_json::to_string(&TypeMapOutput {
+        match serde_json::to_string_pretty(&TypeMapOutput {
             map: index_to_rtype,
         })
         .map_err(|e| e.to_string())
@@ -867,9 +905,13 @@ struct DatalogOutput {
 impl fmt::Display for DatalogOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "start;")?;
+        let mut relation_strs = Vec::<String>::new();
         for relation in self.relations.iter() {
-            writeln!(f, "{};", relation)?;
+            relation_strs.push(format!("{};", relation));
         }
+        relation_strs.sort();
+        let output = relation_strs.join("\n");
+        writeln!(f, "{}", output)?;
         writeln!(f, "commit;")
     }
 }
