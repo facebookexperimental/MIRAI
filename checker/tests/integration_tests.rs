@@ -26,6 +26,7 @@ use mirai::call_graph::{CallGraphConfig, CallGraphReduction};
 use mirai::callbacks;
 use mirai::options::{DiagLevel, Options};
 use mirai::utils;
+use mirai_annotations::unrecoverable;
 use regex::Regex;
 use rustc_rayon::iter::IntoParallelIterator;
 use rustc_rayon::iter::ParallelIterator;
@@ -175,7 +176,7 @@ fn generate_call_graph_config(
         call_graph_test_config = serde_json::from_str(&captures[2].to_owned())
             .expect("Failed to deserialize test config");
     } else {
-        panic!("Could not find a call graph config in test file");
+        unrecoverable!("Could not find a call graph config in test file");
     }
     let call_graph_config = CallGraphConfig::new(
         Some(format!("{}/graph.dot", temp_dir_path).into_boxed_str()),
@@ -349,7 +350,7 @@ fn check_call_graph_output(
         assert!(captures.len() == 4);
         expected = captures[2].to_owned();
     } else {
-        panic!("Could not find a call graph config in test file");
+        unrecoverable!("Could not find a call graph config in test file");
     }
     let output_path = match output_type {
         CallGraphOutputType::Dot => call_graph_config.get_dot_path().unwrap(),

@@ -18,17 +18,17 @@ use std::fs;
 use std::path::Path;
 
 // An unique identifier for a Rust type string.
-type RTypeIdx = u32;
+type TypeId = u32;
 
 // A unique identifier for a graph node.
-type NodeIdx = NodeIndex<DefaultIx>;
+type NodeId = NodeIndex<DefaultIx>;
 
 // Convenience types for the graph folding algorithm.
-type HalfRawEdge = (NodeIdx, RTypeIdx);
-type RawEdge = (NodeIdx, NodeIdx, RTypeIdx);
-type MidpointExcludedMap = HashMap<NodeIdx, (HashSet<HalfRawEdge>, HashSet<HalfRawEdge>)>;
+type HalfRawEdge = (NodeId, TypeId);
+type RawEdge = (NodeId, NodeId, TypeId);
+type MidpointExcludedMap = HashMap<NodeId, (HashSet<HalfRawEdge>, HashSet<HalfRawEdge>)>;
 
-/// Specifies reduction operations that may be perfomed
+/// Specifies reduction operations that may be performed
 /// on a call graph. Supported operations are:
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CallGraphReduction {
@@ -52,9 +52,9 @@ pub enum CallGraphReduction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallGraphConfig {
     /// Optionally specifies location for graph to be output in dot format
-    /// (for graphviz).
+    /// (for Graphviz).
     dot_output_path: Option<Box<str>>,
-    /// Optionally specifies location for graph to be output as datalog input
+    /// Optionally specifies location for graph to be output as Datalog input
     /// relations.
     ddlog_output_path: Option<Box<str>>,
     /// Optionally specifies location for mapping from type identifiers to
@@ -132,21 +132,21 @@ struct CallGraphNode {
     /// The name of the function (derived from its DefId).
     name: Box<str>,
     /// The type of the node.
-    ntype: NodeType,
+    node_type: NodeType,
 }
 
 impl CallGraphNode {
     pub fn new_croot(defid: DefId) -> CallGraphNode {
         CallGraphNode {
             name: CallGraphNode::format_name(defid),
-            ntype: NodeType::CRoot,
+            node_type: NodeType::CRoot,
         }
     }
 
     pub fn new_root(defid: DefId) -> CallGraphNode {
         CallGraphNode {
             name: CallGraphNode::format_name(defid),
-            ntype: NodeType::Root,
+            node_type: NodeType::Root,
         }
     }
 
@@ -171,7 +171,7 @@ impl CallGraphNode {
     }
 
     pub fn is_croot(&self) -> bool {
-        self.ntype == NodeType::CRoot
+        self.node_type == NodeType::CRoot
     }
 }
 
@@ -184,49 +184,48 @@ enum TypeRelationKind {
     Member,
 }
 
-/// A type relation relates types `rtype1` and `rtype2` by a
+/// A type relation relates types `type1` and `type2` by a
 /// `TypeRelationKind`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct TypeRelation {
     kind: TypeRelationKind,
-    rtype1: Box<str>,
-    rtype2: Box<str>,
+    type1: Box<str>,
+    type2: Box<str>,
 }
 
 impl TypeRelation {
     fn new_eq(t1: Box<str>, t2: Box<str>) -> TypeRelation {
         TypeRelation {
             kind: TypeRelationKind::Eq,
-            rtype1: t1,
-            rtype2: t2,
+            type1: t1,
+            type2: t2,
         }
     }
 
     fn new_member(t1: Box<str>, t2: Box<str>) -> TypeRelation {
         TypeRelation {
             kind: TypeRelationKind::Member,
-            rtype1: t1,
-            rtype2: t2,
+            type1: t1,
+            type2: t2,
         }
     }
 }
 
-/// Types in the call graph as encoded as `RType` structs.
-/// An `RType` has:
-/// - `id`: A unique identifier.
-/// - `name`: A textual representation.
-/// - `type_relations`: A set of derived type relations.
+/// Types associated with call graph edges
 #[derive(Debug, Clone)]
-struct RType {
-    id: RTypeIdx,
+struct EdgeType {
+    /// Unique identifier for this time
+    id: TypeId,
+    // Textual representation of the type
     name: Box<str>,
+    /// Derived type relations
     type_relations: HashSet<TypeRelation>,
 }
 
-impl RType {
-    fn new(id: RTypeIdx, name: Box<str>) -> RType {
-        let type_relations = RType::derive_type_relations(&name);
-        RType {
+impl EdgeType {
+    fn new(id: TypeId, name: Box<str>) -> EdgeType {
+        let type_relations = EdgeType::derive_type_relations(&name);
+        EdgeType {
             id,
             name,
             type_relations,
@@ -285,12 +284,12 @@ impl RType {
 struct CallGraphEdge {
     /// Edges have an associated Rust type, denoting a type of data
     /// passed in the call from n1 to n2.
-    rtype_id: RTypeIdx,
+    type_id: TypeId,
 }
 
 impl CallGraphEdge {
-    pub fn new(rtype_id: RTypeIdx) -> CallGraphEdge {
-        CallGraphEdge { rtype_id }
+    pub fn new(type_id: TypeId) -> CallGraphEdge {
+        CallGraphEdge { type_id }
     }
 }
 
@@ -303,11 +302,11 @@ pub struct CallGraph {
     /// The graph structure capturing calls between nodes
     graph: Graph<CallGraphNode, CallGraphEdge>,
     /// A map from DefId to node information
-    nodes: HashMap<DefId, NodeIdx>,
-    /// A map from type string to type identifier
-    rtypes: HashMap<Box<str>, RType>,
+    nodes: HashMap<DefId, NodeId>,
+    /// A map from type string to an EdgeType instance
+    edge_types: HashMap<Box<str>, EdgeType>,
     /// Dominance information
-    dominance: HashMap<NodeIdx, HashSet<NodeIdx>>,
+    dominance: HashMap<NodeId, HashSet<NodeId>>,
 }
 
 impl CallGraph {
@@ -319,9 +318,9 @@ impl CallGraph {
         CallGraph {
             config,
             graph: Graph::<CallGraphNode, CallGraphEdge>::new(),
-            nodes: HashMap::<DefId, NodeIdx>::new(),
-            rtypes: HashMap::<Box<str>, RType>::new(),
-            dominance: HashMap::<NodeIdx, HashSet<NodeIdx>>::new(),
+            nodes: HashMap::<DefId, NodeId>::new(),
+            edge_types: HashMap::<Box<str>, EdgeType>::new(),
+            dominance: HashMap::<NodeId, HashSet<NodeId>>::new(),
         }
     }
 
@@ -344,7 +343,7 @@ impl CallGraph {
             config: self.config.clone(),
             graph,
             nodes: self.nodes.clone(),
-            rtypes: self.rtypes.clone(),
+            edge_types: self.edge_types.clone(),
             dominance: self.dominance.clone(),
         }
     }
@@ -356,7 +355,7 @@ impl CallGraph {
         self.nodes.insert(defid, node_idx);
     }
 
-    /// Add a new root node to the calll graph.
+    /// Add a new root node to the call graph.
     pub fn add_root(&mut self, defid: DefId) {
         if let Entry::Vacant(e) = self.nodes.entry(defid) {
             let croot = CallGraphNode::new_root(defid);
@@ -367,7 +366,7 @@ impl CallGraph {
 
     /// Helper function to get a node or insert a new
     /// root node if it does not exist in the map.
-    fn get_or_insert_node(&mut self, defid: DefId) -> NodeIdx {
+    fn get_or_insert_node(&mut self, defid: DefId) -> NodeId {
         match self.nodes.entry(defid) {
             Entry::Occupied(node) => node.get().to_owned(),
             Entry::Vacant(v) => {
@@ -384,38 +383,38 @@ impl CallGraph {
         let node_idx2 = self.get_or_insert_node(defid2);
         self.dominance
             .entry(node_idx1)
-            .or_insert_with(HashSet::<NodeIdx>::new)
+            .or_insert_with(HashSet::<NodeId>::new)
             .insert(node_idx2);
     }
 
-    /// Add a new RType to the call graph's `rtypes`.
-    fn add_rtype(&mut self, rtype_str: Box<str>) -> RTypeIdx {
-        let new_rtype_id = self.rtypes.len() as RTypeIdx;
-        match self.rtypes.entry(rtype_str.to_owned()) {
-            Entry::Occupied(rtype) => rtype.get().id,
-            Entry::Vacant(v) => v.insert(RType::new(new_rtype_id, rtype_str)).id,
+    /// Add a new EdgeType to the call graph's `edge_types`.
+    fn add_edge_type(&mut self, edge_type_str: Box<str>) -> TypeId {
+        let new_type_id = self.edge_types.len() as TypeId;
+        match self.edge_types.entry(edge_type_str.to_owned()) {
+            Entry::Occupied(edge_type) => edge_type.get().id,
+            Entry::Vacant(v) => v.insert(EdgeType::new(new_type_id, edge_type_str)).id,
         }
     }
 
     /// Add a new edge to the call graph.
-    /// The edge is a call edge from `caller_id` to `callee_id` with type `rtype_str`.
-    pub fn add_edge(&mut self, caller_id: DefId, callee_id: DefId, rtype_str: Box<str>) {
-        let rtype_id = self.add_rtype(rtype_str);
+    /// The edge is a call edge from `caller_id` to `callee_id` with type `edge_type_str`.
+    pub fn add_edge(&mut self, caller_id: DefId, callee_id: DefId, edge_type_str: Box<str>) {
+        let type_id = self.add_edge_type(edge_type_str);
         let caller_node = self.get_or_insert_node(caller_id);
         let callee_node = self.get_or_insert_node(callee_id);
-        let mut existing_rtypes = HashSet::<RTypeIdx>::new();
+        let mut existing_types = HashSet::<TypeId>::new();
         for edge in self.graph.edges_connecting(caller_node, callee_node) {
-            existing_rtypes.insert(edge.weight().rtype_id);
+            existing_types.insert(edge.weight().type_id);
         }
-        if !existing_rtypes.contains(&rtype_id) {
+        if !existing_types.contains(&type_id) {
             self.graph
-                .add_edge(caller_node, callee_node, CallGraphEdge::new(rtype_id));
+                .add_edge(caller_node, callee_node, CallGraphEdge::new(type_id));
         }
     }
 
     /// Find a node in the call graph given a `name` that may appear as
     /// a substring within the node's name. The first such node is returned, if any.
-    fn get_node_by_name(&self, name: &str) -> Option<NodeIdx> {
+    fn get_node_by_name(&self, name: &str) -> Option<NodeId> {
         for node_idx in self.graph.node_indices() {
             if let Some(node) = self.graph.node_weight(node_idx) {
                 if node.name.contains(name) {
@@ -432,16 +431,15 @@ impl CallGraph {
     /// If there are multiple edges from a caller to a callee with different types,
     /// this has the effect of including only one of those edges.
     fn deduplicate_edges(&self) -> CallGraph {
-        let mut edges = HashSet::<(NodeIdx, NodeIdx)>::new();
+        let mut edges = HashSet::<(NodeId, NodeId)>::new();
         let graph = self.graph.filter_map(
             |_, node| Some(node.to_owned()),
             |edge_idx, edge| {
                 self.graph.edge_endpoints(edge_idx).and_then(|endpoints| {
-                    if edges.contains(&endpoints) {
-                        None
-                    } else {
-                        edges.insert(endpoints);
+                    if edges.insert(endpoints) {
                         Some(edge.to_owned())
+                    } else {
+                        None
                     }
                 })
             },
@@ -452,21 +450,22 @@ impl CallGraph {
     /// Returns the set of nodes (Node indexes, which uniquely identify nodes)
     /// That are reachable from the given start node.
     ///
-    /// The underlying algorithm used to perform graph traveral is a BFS,
-    /// however, only one crate root is included from the traversal.
-    fn reachable_from(&self, start_node: NodeIdx) -> HashSet<NodeIdx> {
-        let mut reachable = HashSet::<NodeIdx>::new();
+    /// The underlying algorithm used to perform graph traversal is a,
+    /// breath-first search however, only one crate root is included
+    /// from the traversal.
+    fn reachable_from(&self, start_node: NodeId) -> HashSet<NodeId> {
+        let mut reachable = HashSet::<NodeId>::new();
         let mut bfs = Bfs::new(&self.graph, start_node);
-        let mut croot: Option<NodeIdx> = None;
-        while let Some(node_idx) = bfs.next(&self.graph) {
-            if let Some(node) = self.graph.node_weight(node_idx) {
+        let mut croot: Option<NodeId> = None;
+        while let Some(node_id) = bfs.next(&self.graph) {
+            if let Some(node) = self.graph.node_weight(node_id) {
                 if node.is_croot() {
                     if croot.is_none() {
-                        croot = Some(node_idx);
-                        reachable.insert(node_idx);
+                        croot = Some(node_id);
+                        reachable.insert(node_id);
                     }
                 } else {
-                    reachable.insert(node_idx);
+                    reachable.insert(node_id);
                 }
             }
         }
@@ -479,8 +478,8 @@ impl CallGraph {
         if let Some(start_node) = self.get_node_by_name(name) {
             let reachable = self.reachable_from(start_node);
             let graph = self.graph.filter_map(
-                |node_idx, node| {
-                    if reachable.contains(&node_idx) {
+                |node_id, node| {
+                    if reachable.contains(&node_id) {
                         Some(node.to_owned())
                     } else {
                         None
@@ -507,17 +506,19 @@ impl CallGraph {
         initial_set: &HashSet<HalfRawEdge>,
     ) -> HashSet<HalfRawEdge> {
         let mut reachable = initial_set.clone();
-        let mut queue = VecDeque::<NodeIdx>::new();
+        let mut queue = VecDeque::<NodeId>::new();
         for edge in reachable.iter() {
-            queue.push_back(edge.0);
+            let start_node_id = edge.0;
+            queue.push_back(start_node_id);
         }
         while let Some(node_idx) = queue.pop_front() {
-            if let Some(entry) = excluded.get(&node_idx) {
-                for node in entry.1.iter() {
-                    if !reachable.contains(node) {
-                        reachable.insert(*node);
-                        if excluded.contains_key(&node.0) {
-                            queue.push_back(node.0);
+            if let Some((_, child_edges)) = excluded.get(&node_idx) {
+                for edge in child_edges.iter() {
+                    if !reachable.contains(edge) {
+                        reachable.insert(*edge);
+                        let start_node_id = edge.0;
+                        if excluded.contains_key(&start_node_id) {
+                            queue.push_back(start_node_id);
                         }
                     }
                 }
@@ -534,11 +535,11 @@ impl CallGraph {
         let mut condensed_edges = HashSet::<RawEdge>::new();
         for (_, (in_nodes, out_nodes)) in excluded.iter() {
             let out_nodes2 = self.reachable_raw_edges(excluded, out_nodes);
-            for (in_node_idx, in_rtype) in in_nodes.iter() {
-                if !excluded.contains_key(in_node_idx) {
-                    for (out_node_idx, _) in out_nodes2.iter() {
-                        if !excluded.contains_key(out_node_idx) {
-                            condensed_edges.insert((*in_node_idx, *out_node_idx, *in_rtype));
+            for (in_node_id, in_type) in in_nodes.iter() {
+                if !excluded.contains_key(in_node_id) {
+                    for (out_node_id, _) in out_nodes2.iter() {
+                        if !excluded.contains_key(out_node_id) {
+                            condensed_edges.insert((*in_node_id, *out_node_id, *in_type));
                         }
                     }
                 }
@@ -549,7 +550,7 @@ impl CallGraph {
 
     /// Fold the graph to remove excluded nodes and edges.
     ///
-    /// An excluded node satisfies `node.is_excluded()` (it is not one of crates specfied
+    /// An excluded node satisfies `node.is_excluded()` (it is not one of crates specified
     /// by CallGraphConfig::included_crates).
     /// An excluded edge is an edge with at least one excluded endpoint.
     ///
@@ -558,7 +559,7 @@ impl CallGraph {
         let mut excluded = MidpointExcludedMap::new();
         // 1. Find all excluded nodes
         let mut graph = self.graph.filter_map(
-            |node_idx, node| {
+            |node_id, node| {
                 let included_crates = self
                     .config
                     .included_crates
@@ -567,7 +568,7 @@ impl CallGraph {
                     .collect::<Vec<&str>>();
                 if node.is_excluded(&included_crates) {
                     excluded.insert(
-                        node_idx,
+                        node_id,
                         (HashSet::<HalfRawEdge>::new(), HashSet::<HalfRawEdge>::new()),
                     );
                 }
@@ -578,29 +579,29 @@ impl CallGraph {
         // 2. Find all excluded edges
         graph = graph.filter_map(
             |_, node| Some(node.to_owned()),
-            |edge_idx, edge| {
+            |edge_id, edge| {
                 self.graph
-                    .edge_endpoints(edge_idx)
-                    .map(|(start_idx, end_idx)| {
+                    .edge_endpoints(edge_id)
+                    .map(|(start_id, end_id)| {
                         excluded
-                            .get_mut(&end_idx)
-                            .map(|entry| entry.0.insert((start_idx, edge.rtype_id)));
+                            .get_mut(&end_id)
+                            .map(|entry| entry.0.insert((start_id, edge.type_id)));
                         excluded
-                            .get_mut(&start_idx)
-                            .map(|entry| entry.1.insert((end_idx, edge.rtype_id)));
+                            .get_mut(&start_id)
+                            .map(|entry| entry.1.insert((end_id, edge.type_id)));
                         edge.to_owned()
                     })
             },
         );
         // 3. Condense edges and insert
-        for (in_idx, out_idx, rtype_id) in self.condense_edge_set(&excluded).iter() {
-            let edge = CallGraphEdge::new(*rtype_id);
-            graph.add_edge(*in_idx, *out_idx, edge);
+        for (in_id, out_id, type_id) in self.condense_edge_set(&excluded).iter() {
+            let edge = CallGraphEdge::new(*type_id);
+            graph.add_edge(*in_id, *out_id, edge);
         }
         // 4. Remove excluded nodes and edges
         graph = graph.filter_map(
-            |node_idx, node| {
-                if excluded.contains_key(&node_idx) {
+            |node_id, node| {
+                if excluded.contains_key(&node_id) {
                     None
                 } else {
                     Some(node.to_owned())
@@ -615,15 +616,15 @@ impl CallGraph {
     /// or outgoing edges (unconnected from the rest of the graph).
     fn filter_no_edges(&self) -> CallGraph {
         let graph = self.graph.filter_map(
-            |node_idx, node| {
+            |node_id, node| {
                 let has_in_edges = self
                     .graph
-                    .edges_directed(node_idx, Direction::Incoming)
+                    .edges_directed(node_id, Direction::Incoming)
                     .next()
                     .is_some();
                 let has_out_edges = self
                     .graph
-                    .edges_directed(node_idx, Direction::Outgoing)
+                    .edges_directed(node_id, Direction::Outgoing)
                     .next()
                     .is_some();
                 if has_in_edges || has_out_edges {
@@ -659,7 +660,7 @@ impl CallGraph {
 
     fn gather_type_relations(
         &self,
-        index_to_rtype: &HashMap<RTypeIdx, &RType>,
+        index_to_type: &HashMap<TypeId, &EdgeType>,
         type_relations_path: Option<&Path>,
     ) -> HashSet<TypeRelation> {
         let mut type_relations = HashSet::<TypeRelation>::new();
@@ -679,20 +680,20 @@ impl CallGraph {
             }
             type_relations.extend(input_type_relations);
         }
-        for (_, rtype) in index_to_rtype.iter() {
-            type_relations.extend(rtype.type_relations.to_owned());
+        for (_, edge_type) in index_to_type.iter() {
+            type_relations.extend(edge_type.type_relations.to_owned());
         }
         type_relations
     }
 
-    /// Convert the call graph to a datalog representation.
+    /// Convert the call graph to a Datalog representation.
     ///
-    /// Properties of the graph are converted into datalog input relations.
+    /// Properties of the graph are converted into Datalog input relations.
     /// - `Dom(n1, n2)`: `n1` dominates `n2`.
     /// - `Edge(id, n1, n2)`: There is a call edge from `n1` to `n2`.
-    /// - `EdgeType(id, rtype_id)`: The edge has the type `rtype_id`.
-    /// - `EqType(rtype_id1, rtype_id2)`: The type `rtype_id1` is equivalent to `rtype_id2`.
-    /// - `Member(rtype_id1, rtype_id2)`: The type `rtype_id2` is a member of `rtype_id1`.
+    /// - `EdgeType(id, type_id)`: The edge has the type associated with `type_id`.
+    /// - `EqType(type_id1, type_id2)`: The type `type_id1` is equivalent to `type_id2`.
+    /// - `Member(type_id1, type_id2)`: The type `type_id2` is a member of `type_id1`.
     fn to_datalog(
         &self,
         ddlog_path: &Path,
@@ -700,16 +701,16 @@ impl CallGraph {
         type_relations_path: Option<&Path>,
     ) {
         let mut ctr: u32 = 0;
-        let mut used_rtypes = HashSet::<RTypeIdx>::new();
+        let mut used_types = HashSet::<TypeId>::new();
         let mut output = DatalogOutput::new();
         // Output dominance relations
         self.graph.map(
-            |node_idx1, _| {
-                if let Some(nodes) = self.dominance.get(&node_idx1) {
-                    for node_idx2 in nodes.iter() {
+            |node_id1, _| {
+                if let Some(nodes) = self.dominance.get(&node_id1) {
+                    for node_id2 in nodes.iter() {
                         output.add_relation(DatalogRelation::new_dom(
-                            node_idx1.index() as u32,
-                            node_idx2.index() as u32,
+                            node_id1.index() as u32,
+                            node_id2.index() as u32,
                         ))
                     }
                 }
@@ -719,38 +720,38 @@ impl CallGraph {
         // Output edge and edge type relations
         self.graph.map(
             |_, _| (),
-            |edge_idx, edge| {
-                if let Some((start_idx, end_idx)) = self.graph.edge_endpoints(edge_idx) {
+            |edge_id, edge| {
+                if let Some((start_id, end_id)) = self.graph.edge_endpoints(edge_id) {
                     output.add_relation(DatalogRelation::new_edge(
                         ctr,
-                        start_idx.index() as u32,
-                        end_idx.index() as u32,
+                        start_id.index() as u32,
+                        end_id.index() as u32,
                     ));
-                    output.add_relation(DatalogRelation::new_edge_type(ctr, edge.rtype_id));
-                    used_rtypes.insert(edge.rtype_id);
+                    output.add_relation(DatalogRelation::new_edge_type(ctr, edge.type_id));
+                    used_types.insert(edge.type_id);
                     ctr += 1;
                 }
             },
         );
         // Output type relations
-        let mut index_to_rtype = HashMap::<RTypeIdx, &RType>::new();
-        for (_, rtype) in self.rtypes.iter() {
-            if used_rtypes.contains(&rtype.id) {
-                index_to_rtype.insert(rtype.id, rtype);
+        let mut index_to_type = HashMap::<TypeId, &EdgeType>::new();
+        for (_, edge_type) in self.edge_types.iter() {
+            if used_types.contains(&edge_type.id) {
+                index_to_type.insert(edge_type.id, edge_type);
             }
         }
         for type_relation in self
-            .gather_type_relations(&index_to_rtype, type_relations_path)
+            .gather_type_relations(&index_to_type, type_relations_path)
             .iter()
         {
-            if let Some(rtype1) = self.rtypes.get(&type_relation.rtype1) {
-                if let Some(rtype2) = self.rtypes.get(&type_relation.rtype2) {
+            if let Some(type1) = self.edge_types.get(&type_relation.type1) {
+                if let Some(type2) = self.edge_types.get(&type_relation.type2) {
                     match type_relation.kind {
                         TypeRelationKind::Eq => {
-                            output.add_relation(DatalogRelation::new_eq_type(rtype1.id, rtype2.id))
+                            output.add_relation(DatalogRelation::new_eq_type(type1.id, type2.id))
                         }
                         TypeRelationKind::Member => {
-                            output.add_relation(DatalogRelation::new_member(rtype1.id, rtype2.id))
+                            output.add_relation(DatalogRelation::new_member(type1.id, type2.id))
                         }
                     }
                 }
@@ -761,20 +762,18 @@ impl CallGraph {
             Err(e) => panic!("Failed to write ddlog output: {:?}", e),
         }
         // Output the type map
-        match serde_json::to_string_pretty(&TypeMapOutput {
-            map: index_to_rtype,
-        })
-        .map_err(|e| e.to_string())
-        .and_then(|type_map_output| {
-            fs::write(type_map_path, type_map_output).map_err(|e| e.to_string())
-        }) {
+        match serde_json::to_string_pretty(&TypeMapOutput { map: index_to_type })
+            .map_err(|e| e.to_string())
+            .and_then(|type_map_output| {
+                fs::write(type_map_path, type_map_output).map_err(|e| e.to_string())
+            }) {
             Ok(_) => (),
             Err(e) => panic!("Failed to write type map output: {:?}", e),
         };
     }
 
     /// Produce a dot file representation of the call graph
-    /// for displaying with graphviz.
+    /// for displaying with Graphviz.
     fn to_dot(&self, dot_path: &Path) {
         let output = format!(
             "{:?}",
@@ -789,7 +788,7 @@ impl CallGraph {
     /// Top-level output function.
     ///
     /// First applies a set of reductions to the call graph.
-    /// Then produces datalog and / or dot file output of the call graph.
+    /// Then produces Datalog and / or dot file output of the call graph.
     pub fn output(&self) {
         let call_graph = self.reduce_graph(self.clone(), &self.config.reductions);
         if let Some(ddlog_path) = &self.config.ddlog_output_path {
@@ -813,7 +812,7 @@ impl CallGraph {
     }
 }
 
-/// Temporary data structure for storing deserialzed
+/// Temporary data structure for storing deserialized
 /// manually-added type relations.
 #[derive(Serialize, Deserialize)]
 struct TypeRelationsRaw {
@@ -823,7 +822,7 @@ struct TypeRelationsRaw {
 /// Temporary data structure for storing the type
 /// map for serialization.
 struct TypeMapOutput<'a> {
-    map: HashMap<RTypeIdx, &'a RType>,
+    map: HashMap<TypeId, &'a EdgeType>,
 }
 
 impl<'a> Serialize for TypeMapOutput<'a> {
@@ -841,7 +840,7 @@ impl<'a> Serialize for TypeMapOutput<'a> {
     }
 }
 
-/// Represents an atomic datalog relation.
+/// Represents an atomic Datalog relation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct DatalogRelation {
     /// A relation has a name.
@@ -902,9 +901,9 @@ impl DatalogRelation {
     }
 }
 
-/// Structure for storing datalog relations
-/// to later be output as a datalog file that can
-/// be input into a datalog database.
+/// Structure for storing Datalog relations
+/// to later be output as a Datalog file that can
+/// be input into a Datalog database.
 struct DatalogOutput {
     relations: HashSet<DatalogRelation>,
 }
@@ -912,12 +911,12 @@ struct DatalogOutput {
 impl fmt::Display for DatalogOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "start;")?;
-        let mut relation_strs = Vec::<String>::new();
+        let mut relation_strings = Vec::<String>::new();
         for relation in self.relations.iter() {
-            relation_strs.push(format!("insert {};", relation));
+            relation_strings.push(format!("insert {};", relation));
         }
-        relation_strs.sort();
-        let output = relation_strs.join("\n");
+        relation_strings.sort();
+        let output = relation_strings.join("\n");
         writeln!(f, "{}", output)?;
         writeln!(f, "commit;")
     }
