@@ -3392,24 +3392,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             return Rc::new(PathEnum::PhantomData.into());
                         }
                     }
-                    if matches!(selector, PathSelector::Field(0)) {
-                        if let TyKind::Adt(def, ..) = base_ty.kind() {
-                            debug!("def {:?}", def);
-                            if def.repr.transparent() {
-                                if let TyKind::Adt(def, ..) = ty.kind() {
-                                    if def.repr.transparent() {
-                                        debug!("source def {:?}", def);
-                                    } else {
-                                        // don't add the field access
-                                        continue;
-                                    }
-                                } else {
-                                    // don't add the field access
-                                    continue;
-                                }
-                            }
-                        }
-                    }
                 }
                 mir::ProjectionElem::Index(..) | mir::ProjectionElem::ConstantIndex { .. } => {
                     ty = self.type_visitor().get_element_type(ty);

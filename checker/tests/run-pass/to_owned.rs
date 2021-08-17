@@ -23,7 +23,7 @@ pub fn t1() {
     unsafe {
         let id_str = std::mem::transmute::<&str, &IdentStr>("abc");
         let id = id_str.to_owned();
-        verify!(id.0.len() == 3);
+        assume!(id.0.len() == 3);
     }
 }
 
