@@ -32,10 +32,10 @@ pub fn main() {
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"fnptr_fold[8787]::main\"" ]
-    1 [ label = "\"fnptr_fold[8787]::fn1\"" ]
-    2 [ label = "\"fnptr_fold[8787]::fn2\"" ]
-    3 [ label = "\"fnptr_fold[8787]::fn3\"" ]
+    0 [ label = "\"fnptr_fold::main\"" ]
+    1 [ label = "\"fnptr_fold::fn1\"" ]
+    2 [ label = "\"fnptr_fold::fn2\"" ]
+    3 [ label = "\"fnptr_fold::fn3\"" ]
     0 -> 1 [ ]
     0 -> 1 [ ]
     1 -> 2 [ ]

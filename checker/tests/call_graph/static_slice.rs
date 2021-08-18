@@ -30,9 +30,9 @@ pub fn main() {
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"static_slice[8787]::fn1\"" ]
-    1 [ label = "\"static_slice[8787]::fn2\"" ]
-    2 [ label = "\"static_slice[8787]::fn3\"" ]
+    0 [ label = "\"static_slice::fn1\"" ]
+    1 [ label = "\"static_slice::fn2\"" ]
+    2 [ label = "\"static_slice::fn3\"" ]
     0 -> 1 [ ]
     1 -> 2 [ ]
 }

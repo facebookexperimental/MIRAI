@@ -158,7 +158,10 @@ impl CallGraphNode {
     fn format_name(defid: DefId) -> Box<str> {
         let tmp1 = format!("{:?}", defid);
         let tmp2: &str = tmp1.split("~ ").collect::<Vec<&str>>()[1];
-        tmp2.replace(")", "").into_boxed_str()
+        let tmp3 = tmp2.replace(")", "");
+        let lhs = tmp3.split('[').collect::<Vec<&str>>()[0];
+        let rhs = tmp3.split(']').collect::<Vec<&str>>()[1];
+        format!("{}{}", lhs, rhs).into_boxed_str()
     }
 
     /// A node is excluded if its name does not include any

@@ -33,10 +33,10 @@ pub fn main() {
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"static_loop[8787]::main\"" ]
-    1 [ label = "\"static_loop[8787]::fn1\"" ]
-    2 [ label = "\"static_loop[8787]::fn2\"" ]
-    3 [ label = "\"static_loop[8787]::fn3\"" ]
+    0 [ label = "\"static_loop::main\"" ]
+    1 [ label = "\"static_loop::fn1\"" ]
+    2 [ label = "\"static_loop::fn2\"" ]
+    3 [ label = "\"static_loop::fn3\"" ]
     0 -> 1 [ ]
     1 -> 2 [ ]
     2 -> 3 [ ]

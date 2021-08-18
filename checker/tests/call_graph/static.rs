@@ -29,10 +29,10 @@ pub fn main() {
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"static[8787]::main\"" ]
-    1 [ label = "\"static[8787]::fn1\"" ]
-    2 [ label = "\"static[8787]::fn2\"" ]
-    3 [ label = "\"static[8787]::fn3\"" ]
+    0 [ label = "\"static::main\"" ]
+    1 [ label = "\"static::fn1\"" ]
+    2 [ label = "\"static::fn2\"" ]
+    3 [ label = "\"static::fn3\"" ]
     0 -> 1 [ ]
     1 -> 2 [ ]
     2 -> 3 [ ]

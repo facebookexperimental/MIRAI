@@ -29,10 +29,10 @@ pub fn main() {
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"fnptr[8787]::main\"" ]
-    1 [ label = "\"fnptr[8787]::fn1\"" ]
-    2 [ label = "\"fnptr[8787]::fn2\"" ]
-    3 [ label = "\"fnptr[8787]::fn3\"" ]
+    0 [ label = "\"fnptr::main\"" ]
+    1 [ label = "\"fnptr::fn1\"" ]
+    2 [ label = "\"fnptr::fn2\"" ]
+    3 [ label = "\"fnptr::fn3\"" ]
     0 -> 1 [ ]
     0 -> 1 [ ]
     1 -> 2 [ ]

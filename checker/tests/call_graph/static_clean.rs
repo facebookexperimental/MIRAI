@@ -34,10 +34,10 @@ pub fn main() {
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"static_clean[8787]::main\"" ]
-    1 [ label = "\"static_clean[8787]::fn1\"" ]
-    2 [ label = "\"static_clean[8787]::fn2\"" ]
-    3 [ label = "\"static_clean[8787]::fn3\"" ]
+    0 [ label = "\"static_clean::main\"" ]
+    1 [ label = "\"static_clean::fn1\"" ]
+    2 [ label = "\"static_clean::fn2\"" ]
+    3 [ label = "\"static_clean::fn3\"" ]
     0 -> 1 [ ]
     1 -> 2 [ ]
     2 -> 3 [ ]
