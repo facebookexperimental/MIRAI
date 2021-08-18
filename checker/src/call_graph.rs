@@ -129,6 +129,8 @@ enum NodeType {
 /// that is being analyzed.
 #[derive(Debug, Clone)]
 struct CallGraphNode {
+    /// The DefId of the function
+    defid: DefId,
     /// The name of the function (derived from its DefId).
     name: Box<str>,
     /// The type of the node.
@@ -138,6 +140,7 @@ struct CallGraphNode {
 impl CallGraphNode {
     pub fn new_croot(defid: DefId) -> CallGraphNode {
         CallGraphNode {
+            defid,
             name: CallGraphNode::format_name(defid),
             node_type: NodeType::CRoot,
         }
@@ -145,6 +148,7 @@ impl CallGraphNode {
 
     pub fn new_root(defid: DefId) -> CallGraphNode {
         CallGraphNode {
+            defid,
             name: CallGraphNode::format_name(defid),
             node_type: NodeType::Root,
         }
@@ -306,7 +310,7 @@ pub struct CallGraph {
     /// A map from type string to an EdgeType instance
     edge_types: HashMap<Box<str>, EdgeType>,
     /// Dominance information
-    dominance: HashMap<NodeId, HashSet<NodeId>>,
+    dominance: HashMap<DefId, HashSet<DefId>>,
 }
 
 impl CallGraph {
@@ -320,7 +324,7 @@ impl CallGraph {
             graph: Graph::<CallGraphNode, CallGraphEdge>::new(),
             nodes: HashMap::<DefId, NodeId>::new(),
             edge_types: HashMap::<Box<str>, EdgeType>::new(),
-            dominance: HashMap::<NodeId, HashSet<NodeId>>::new(),
+            dominance: HashMap::<DefId, HashSet<DefId>>::new(),
         }
     }
 
@@ -351,16 +355,16 @@ impl CallGraph {
     /// Add a new crate root node to the call graph.
     pub fn add_croot(&mut self, defid: DefId) {
         let croot = CallGraphNode::new_croot(defid);
-        let node_idx = self.graph.add_node(croot);
-        self.nodes.insert(defid, node_idx);
+        let node_id = self.graph.add_node(croot);
+        self.nodes.insert(defid, node_id);
     }
 
     /// Add a new root node to the call graph.
     pub fn add_root(&mut self, defid: DefId) {
         if let Entry::Vacant(e) = self.nodes.entry(defid) {
             let croot = CallGraphNode::new_root(defid);
-            let node_idx = self.graph.add_node(croot);
-            e.insert(node_idx);
+            let node_id = self.graph.add_node(croot);
+            e.insert(node_id);
         }
     }
 
@@ -370,8 +374,8 @@ impl CallGraph {
         match self.nodes.entry(defid) {
             Entry::Occupied(node) => node.get().to_owned(),
             Entry::Vacant(v) => {
-                let node_idx = self.graph.add_node(CallGraphNode::new_root(defid));
-                *v.insert(node_idx)
+                let node_id = self.graph.add_node(CallGraphNode::new_root(defid));
+                *v.insert(node_id)
             }
         }
     }
@@ -379,12 +383,10 @@ impl CallGraph {
     /// Add a dominance relationship to the call graph.
     /// Denotes that `defid1` is dominated by `defid2`.
     pub fn add_dom(&mut self, defid1: DefId, defid2: DefId) {
-        let node_idx1 = self.get_or_insert_node(defid1);
-        let node_idx2 = self.get_or_insert_node(defid2);
         self.dominance
-            .entry(node_idx1)
-            .or_insert_with(HashSet::<NodeId>::new)
-            .insert(node_idx2);
+            .entry(defid1)
+            .or_insert_with(HashSet::<DefId>::new)
+            .insert(defid2);
     }
 
     /// Add a new EdgeType to the call graph's `edge_types`.
@@ -415,10 +417,23 @@ impl CallGraph {
     /// Find a node in the call graph given a `name` that may appear as
     /// a substring within the node's name. The first such node is returned, if any.
     fn get_node_by_name(&self, name: &str) -> Option<NodeId> {
-        for node_idx in self.graph.node_indices() {
-            if let Some(node) = self.graph.node_weight(node_idx) {
+        for node_id in self.graph.node_indices() {
+            if let Some(node) = self.graph.node_weight(node_id) {
                 if node.name.contains(name) {
-                    return Some(node_idx);
+                    return Some(node_id);
+                }
+            }
+        }
+        None
+    }
+
+    /// Find a node in the call graph given a DefId.
+    /// The first such node is returned, if any.
+    fn get_node_by_defid(&self, defid: DefId) -> Option<NodeId> {
+        for node_id in self.graph.node_indices() {
+            if let Some(node) = self.graph.node_weight(node_id) {
+                if node.defid == defid {
+                    return Some(node_id);
                 }
             }
         }
@@ -434,8 +449,8 @@ impl CallGraph {
         let mut edges = HashSet::<(NodeId, NodeId)>::new();
         let graph = self.graph.filter_map(
             |_, node| Some(node.to_owned()),
-            |edge_idx, edge| {
-                self.graph.edge_endpoints(edge_idx).and_then(|endpoints| {
+            |edge_id, edge| {
+                self.graph.edge_endpoints(edge_id).and_then(|endpoints| {
                     if edges.insert(endpoints) {
                         Some(edge.to_owned())
                     } else {
@@ -511,8 +526,8 @@ impl CallGraph {
             let start_node_id = edge.0;
             queue.push_back(start_node_id);
         }
-        while let Some(node_idx) = queue.pop_front() {
-            if let Some((_, child_edges)) = excluded.get(&node_idx) {
+        while let Some(node_id) = queue.pop_front() {
+            if let Some((_, child_edges)) = excluded.get(&node_id) {
                 for edge in child_edges.iter() {
                     if !reachable.contains(edge) {
                         reachable.insert(*edge);
@@ -705,13 +720,15 @@ impl CallGraph {
         let mut output = DatalogOutput::new();
         // Output dominance relations
         self.graph.map(
-            |node_id1, _| {
-                if let Some(nodes) = self.dominance.get(&node_id1) {
-                    for node_id2 in nodes.iter() {
-                        output.add_relation(DatalogRelation::new_dom(
-                            node_id1.index() as u32,
-                            node_id2.index() as u32,
-                        ))
+            |node_id1, node| {
+                if let Some(nodes) = self.dominance.get(&node.defid) {
+                    for defid2 in nodes.iter() {
+                        if let Some(node_id2) = self.get_node_by_defid(*defid2) {
+                            output.add_relation(DatalogRelation::new_dom(
+                                node_id1.index() as u32,
+                                node_id2.index() as u32,
+                            ))
+                        }
                     }
                 }
             },
@@ -740,12 +757,18 @@ impl CallGraph {
                 index_to_type.insert(edge_type.id, edge_type);
             }
         }
+        let used_type_strs: HashMap<Box<str>, EdgeType> = self
+            .edge_types
+            .clone()
+            .into_iter()
+            .filter(|(_, v)| used_types.contains(&v.id))
+            .collect();
         for type_relation in self
             .gather_type_relations(&index_to_type, type_relations_path)
             .iter()
         {
-            if let Some(type1) = self.edge_types.get(&type_relation.type1) {
-                if let Some(type2) = self.edge_types.get(&type_relation.type2) {
+            if let Some(type1) = used_type_strs.get(&type_relation.type1) {
+                if let Some(type2) = used_type_strs.get(&type_relation.type2) {
                     match type_relation.kind {
                         TypeRelationKind::Eq => {
                             output.add_relation(DatalogRelation::new_eq_type(type1.id, type2.id))

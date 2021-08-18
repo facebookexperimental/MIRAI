@@ -146,7 +146,6 @@ fn run_directory(directory_path: PathBuf) -> Vec<(String, String)> {
 }
 
 fn build_options() -> Options {
-    // Read MIRAI options from file content.
     let mut options = Options::default();
     options.parse_from_str(""); // get defaults
     options.diag_level = DiagLevel::Paranoid; // override default
