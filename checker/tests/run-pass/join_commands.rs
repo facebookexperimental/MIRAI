@@ -20,13 +20,13 @@ impl DebugCommand {
         vec![Self::Breakpoint("".to_string())]
     }
 
-    pub fn join_commands() -> String {
-        Self::commands()
-            .iter()
-            .map(|command| command.debug_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
+    // pub fn join_commands() -> String {
+    //     Self::commands()
+    //         .iter()
+    //         .map(|command| command.debug_string())
+    //         .collect::<Vec<_>>()
+    //         .join(", ")
+    // }
 }
 
 pub fn main() {}
