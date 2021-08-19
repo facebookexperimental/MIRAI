@@ -22,14 +22,20 @@ extern crate rustc_driver;
 extern crate rustc_rayon;
 extern crate tempfile;
 
+use mirai::call_graph::{CallGraphConfig, CallGraphReduction};
 use mirai::callbacks;
 use mirai::options::{DiagLevel, Options};
 use mirai::utils;
+use mirai_annotations::unrecoverable;
 use regex::Regex;
 use rustc_rayon::iter::IntoParallelIterator;
 use rustc_rayon::iter::ParallelIterator;
+use serde::Deserialize;
+use serde_json;
+use std::collections::HashMap;
 use std::fs;
 use std::fs::read_to_string;
+use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tempfile::TempDir;
@@ -50,7 +56,29 @@ fn run_pass() {
     if !run_pass_path.exists() {
         run_pass_path = PathBuf::from_str("checker/tests/run-pass").unwrap();
     }
-    assert_eq!(run_directory(run_pass_path, extern_deps), 0);
+    let files = run_directory(run_pass_path);
+    let result = invoke_driver_on_files(
+        files,
+        extern_deps,
+        &(start_driver as fn(DriverConfig) -> usize),
+    );
+    assert_eq!(result, 0);
+}
+
+// Run the tests in the tests/call_graph directory.
+#[test]
+fn run_call_graph_tests() {
+    let mut call_graph_tests_path = PathBuf::from_str("tests/call_graph").unwrap();
+    if !call_graph_tests_path.exists() {
+        call_graph_tests_path = PathBuf::from_str("checker/tests/call_graph").unwrap();
+    }
+    let files = run_directory(call_graph_tests_path);
+    let result = invoke_driver_on_files(
+        files,
+        Vec::<(&str, String)>::new(),
+        &(start_driver_call_graph as fn(DriverConfig) -> usize),
+    );
+    assert_eq!(result, 0);
 }
 
 fn find_extern_library(base_name: &str) -> String {
@@ -95,10 +123,10 @@ fn find_extern_library(base_name: &str) -> String {
 // Iterates through the files in the directory at the given path and runs each as a separate test
 // case. For each case, a temporary output directory is created. The cases are then iterated in
 // parallel and run via invoke_driver.
-fn run_directory(directory_path: PathBuf, extern_deps: Vec<(&str, String)>) -> usize {
-    let sys_root = utils::find_sysroot();
+fn run_directory(directory_path: PathBuf) -> Vec<(String, String)> {
     let mut files_and_temp_dirs = Vec::new();
-    for entry in fs::read_dir(directory_path).expect("failed to read run-pass dir") {
+    let error_msg = format!("failed to read {:?}", directory_path);
+    for entry in fs::read_dir(directory_path).expect(error_msg.as_str()) {
         let entry = entry.unwrap();
         if !entry.file_type().unwrap().is_file() {
             continue;
@@ -114,17 +142,78 @@ fn run_directory(directory_path: PathBuf, extern_deps: Vec<(&str, String)>) -> u
             output_dir_path_buf.into_os_string().into_string().unwrap(),
         ));
     }
+    files_and_temp_dirs
+}
+
+fn build_options() -> Options {
+    let mut options = Options::default();
+    options.parse_from_str(""); // get defaults
+    options.diag_level = DiagLevel::Paranoid; // override default
+    options.max_analysis_time_for_body = 40;
+    options
+}
+
+// Partial call graph config to be read from the
+// test file
+#[derive(Deserialize)]
+struct CallGraphTestConfig {
+    reductions: Vec<CallGraphReduction>,
+    included_crates: Vec<Box<str>>,
+}
+
+// Write a call graph configuration file for the current test case
+fn generate_call_graph_config(
+    file_name: &String,
+    temp_dir_path: &String,
+) -> (CallGraphConfig, String) {
+    let test_case_data =
+        fs::read_to_string(Path::new(&file_name)).expect("Failed to read test case");
+    let call_graph_test_config: CallGraphTestConfig;
+    let config_regex = Regex::new(r"(/\* CONFIG)([\S\s]*?)(\*/)").unwrap();
+    if let Some(captures) = config_regex.captures(&test_case_data) {
+        assert!(captures.len() == 4);
+        call_graph_test_config = serde_json::from_str(&captures[2].to_owned())
+            .expect("Failed to deserialize test config");
+    } else {
+        unrecoverable!("Could not find a call graph config in test file");
+    }
+    let call_graph_config = CallGraphConfig::new(
+        Some(format!("{}/graph.dot", temp_dir_path).into_boxed_str()),
+        Some(format!("{}/graph.dat", temp_dir_path).into_boxed_str()),
+        Some(format!("{}/types.json", temp_dir_path).into_boxed_str()),
+        None,
+        call_graph_test_config.reductions,
+        call_graph_test_config.included_crates,
+    );
+    let call_graph_config_path = format!("{}/call_graph_config.json", temp_dir_path);
+    let call_graph_config_str =
+        serde_json::to_string(&call_graph_config).expect("Failed to serialize config");
+    fs::write(Path::new(&call_graph_config_path), call_graph_config_str)
+        .expect("Failed to write call graph config");
+    (call_graph_config, call_graph_config_path)
+}
+
+struct DriverConfig {
+    file_name: String,
+    temp_dir_path: String,
+    extern_deps: Vec<(&'static str, String)>,
+}
+
+fn invoke_driver_on_files(
+    files_and_temp_dirs: Vec<(String, String)>,
+    extern_deps: Vec<(&'static str, String)>,
+    driver: &fn(DriverConfig) -> usize,
+) -> usize {
     if option_env!("MIRAI_SINGLE").is_some() {
         files_and_temp_dirs
             .into_iter()
             .fold(0, |acc, (file_name, temp_dir_path)| {
                 println!("{}", file_name);
-                acc + self::invoke_driver(
+                acc + driver(DriverConfig {
                     file_name,
                     temp_dir_path,
-                    sys_root.clone(),
-                    extern_deps.clone(),
-                )
+                    extern_deps: extern_deps.clone(),
+                })
             })
     } else {
         files_and_temp_dirs
@@ -132,12 +221,11 @@ fn run_directory(directory_path: PathBuf, extern_deps: Vec<(&str, String)>) -> u
             .fold(
                 || 0,
                 |acc, (file_name, temp_dir_path)| {
-                    acc + self::invoke_driver(
+                    acc + driver(DriverConfig {
                         file_name,
                         temp_dir_path,
-                        sys_root.clone(),
-                        extern_deps.clone(),
-                    )
+                        extern_deps: extern_deps.clone(),
+                    })
                 },
             )
             .reduce(|| 0, |acc, code| acc + code)
@@ -151,12 +239,8 @@ fn invoke_driver(
     temp_dir_path: String,
     sys_root: String,
     extern_deps: Vec<(&str, String)>,
+    mut options: Options,
 ) -> usize {
-    // Read MIRAI options from file content.
-    let mut options = Options::default();
-    options.parse_from_str(""); // get defaults
-    options.diag_level = DiagLevel::Paranoid; // override default
-    options.max_analysis_time_for_body = 40;
     let mut rustc_args = vec![]; // any arguments after `--` for rustc
     {
         let file_content = read_to_string(&Path::new(&file_name)).unwrap();
@@ -205,5 +289,131 @@ fn invoke_driver(
             println!("{} failed", file_name);
             1
         }
+    }
+}
+
+// Parse expected or actual output into a map
+// from trimmed non-emptylines to counts.
+fn build_output_counter(output: &String) -> HashMap<&str, u32> {
+    let items: Vec<&str> = Vec::from_iter(
+        output
+            .split('\n')
+            .collect::<Vec<&str>>()
+            .iter()
+            .filter(|x| x.len() > 0)
+            .map(|x| x.trim()),
+    );
+    let mut counter = HashMap::<&str, u32>::new();
+    for item in items.iter() {
+        *counter.entry(item).or_insert(0) += 1;
+    }
+    counter
+}
+
+// Two outputs are considered equivalent if they
+// have the same lines (and counts of each line),
+// order-independent.
+fn compare_lines(actual: &String, expected: &String) -> bool {
+    let actual_counter = build_output_counter(actual);
+    let expected_counter = build_output_counter(expected);
+    actual_counter == expected_counter
+}
+
+// Checked call graph output types
+#[derive(Debug, PartialEq)]
+enum CallGraphOutputType {
+    Dot,
+    Ddlog,
+    TypeMap,
+}
+
+// Check the call graph output files against
+// the expected output from the test case file.
+fn check_call_graph_output(
+    file_name: &String,
+    call_graph_config: &CallGraphConfig,
+    output_type: CallGraphOutputType,
+) -> usize {
+    let test_case_data =
+        fs::read_to_string(Path::new(&file_name)).expect("Failed to read test case");
+    // Check that the expected and actual output files match
+    let expected: String;
+    let expected_regex = match output_type {
+        CallGraphOutputType::Dot => Regex::new(r"(/\* EXPECTED:DOT)([\S\s]*?)(\*/)").unwrap(),
+        CallGraphOutputType::Ddlog => Regex::new(r"(/\* EXPECTED:DDLOG)([\S\s]*?)(\*/)").unwrap(),
+        CallGraphOutputType::TypeMap => {
+            Regex::new(r"(/\* EXPECTED:TYPEMAP)([\S\s]*?)(\*/)").unwrap()
+        }
+    };
+    if let Some(captures) = expected_regex.captures(&test_case_data) {
+        assert!(captures.len() == 4);
+        expected = captures[2].to_owned();
+    } else {
+        unrecoverable!("Could not find a call graph config in test file");
+    }
+    let output_path = match output_type {
+        CallGraphOutputType::Dot => call_graph_config.get_dot_path().unwrap(),
+        CallGraphOutputType::Ddlog => call_graph_config.get_ddlog_path().unwrap(),
+        CallGraphOutputType::TypeMap => call_graph_config.get_type_map_path().unwrap(),
+    };
+    if let Ok(actual) = fs::read_to_string(output_path) {
+        if compare_lines(&expected, &actual) {
+            0
+        } else {
+            println!("{} failed {:?} output", file_name, output_type);
+            println!("Expected:\n{}", expected);
+            println!("Actual:\n{}", actual);
+            1
+        }
+    } else {
+        println!("{} failed dot output", file_name);
+        return 1;
+    }
+}
+
+// Default test driver
+fn start_driver(config: DriverConfig) -> usize {
+    let sys_root = utils::find_sysroot();
+    let options = build_options();
+    self::invoke_driver(
+        config.file_name,
+        config.temp_dir_path,
+        sys_root.clone(),
+        config.extern_deps,
+        options,
+    )
+}
+
+// Test driver for call graph generation;
+// sets up call graph configuration.
+fn start_driver_call_graph(config: DriverConfig) -> usize {
+    let sys_root = utils::find_sysroot();
+    let mut options = build_options();
+    let (call_graph_config, call_graph_config_path) =
+        generate_call_graph_config(&config.file_name, &config.temp_dir_path);
+    options.call_graph_config = Some(call_graph_config_path);
+    let result = self::invoke_driver(
+        config.file_name.clone(),
+        config.temp_dir_path.clone(),
+        sys_root.clone(),
+        config.extern_deps,
+        options,
+    );
+    if result == 0 {
+        check_call_graph_output(
+            &config.file_name,
+            &call_graph_config,
+            CallGraphOutputType::Dot,
+        ) + check_call_graph_output(
+            &config.file_name,
+            &call_graph_config,
+            CallGraphOutputType::Ddlog,
+        ) + check_call_graph_output(
+            &config.file_name,
+            &call_graph_config,
+            CallGraphOutputType::TypeMap,
+        )
+    } else {
+        result
     }
 }

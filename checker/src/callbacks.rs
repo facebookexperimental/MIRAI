@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 #![allow(clippy::borrowed_box)]
 
+use crate::call_graph::CallGraph;
 use crate::constant_domain::ConstantValueCache;
 use crate::crate_visitor::CrateVisitor;
 use crate::known_names::KnownNamesCache;
@@ -270,6 +271,7 @@ impl MiraiCallbacks {
             "storing summaries for {} at {}/.summary_store.sled",
             self.file_name, summary_store_path
         );
+        let call_graph_config = self.options.call_graph_config.to_owned();
         let mut crate_visitor = CrateVisitor {
             buffered_diagnostics: Vec::new(),
             constant_time_tag_cache: None,
@@ -285,7 +287,9 @@ impl MiraiCallbacks {
             tcx,
             test_run: self.test_run,
             type_cache: Rc::new(RefCell::new(TypeCache::new())),
+            call_graph: CallGraph::new(call_graph_config),
         };
         crate_visitor.analyze_some_bodies();
+        crate_visitor.call_graph.output();
     }
 }

@@ -69,6 +69,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx> {
     pub preconditions: Vec<Precondition>,
     pub fresh_variable_offset: usize,
     pub smt_solver: Z3Solver,
+    pub block_to_call: HashMap<mir::Location, DefId>,
     type_visitor: TypeVisitor<'tcx>,
 }
 
@@ -96,6 +97,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         let def = rustc_middle::ty::InstanceDef::Item(id);
         let mir = crate_visitor.tcx.instance_mir(def);
         let tcx = crate_visitor.tcx;
+        crate_visitor.call_graph.add_root(def_id);
         BodyVisitor {
             cv: crate_visitor,
             tcx,
@@ -124,6 +126,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             preconditions: Vec::new(),
             fresh_variable_offset: 0,
             smt_solver: Z3Solver::default(),
+            block_to_call: HashMap::default(),
             type_visitor: TypeVisitor::new(def_id, mir, tcx, type_cache),
         }
     }
@@ -146,6 +149,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         self.post_condition_block = None;
         self.preconditions = Vec::new();
         self.fresh_variable_offset = 1000;
+        self.block_to_call = HashMap::default();
         self.type_visitor_mut().reset_visitor_state();
     }
 
@@ -267,6 +271,16 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         self.cv
             .constant_value_cache
             .swap_heap_counter(saved_heap_counter);
+
+        // Compute dominance information for calls
+        let dominators = self.mir.dominators();
+        for (location1, callee_defid1) in self.block_to_call.iter() {
+            for (location2, callee_defid2) in self.block_to_call.iter() {
+                if location1 != location2 && location1.dominates(*location2, &dominators) {
+                    self.cv.call_graph.add_dom(*callee_defid1, *callee_defid2);
+                }
+            }
+        }
 
         result
     }

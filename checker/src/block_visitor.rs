@@ -654,6 +654,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let func_const = ConstantDomain::Function(func_ref_to_call);
         let func_const_args =
             &self.get_function_constant_args(&actual_args, &actual_argument_types);
+
+        let current_location = self.bv.current_location;
+        self.bv
+            .block_to_call
+            .insert(current_location, callee_def_id);
+
         let mut call_visitor = CallVisitor::new(
             self,
             callee_def_id,

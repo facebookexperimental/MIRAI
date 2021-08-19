@@ -50,6 +50,16 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .takes_value(false)
         .help("Just print out whether crates were analyzed, etc.")
         .long_help("Just print out whether crates were analyzed and how many diagnostics were produced for each crate."))
+    .arg(Arg::with_name("call_graph_config")
+        .long("call_graph_config")
+        .takes_value(true)
+        .help("Path call graph config.")
+        .long_help(r#"Path to a JSON configuration file that optionally specifies:
+                        "dot_output_path": Path to store the call graph in dot format for displaying with graphviz.
+                        "ddlog_output_path": Path to store datalog input relations representing the call graph.
+                        "type_relations_path": Path to a file storing type relations to be imported for datalog output.
+                        "reductions": A list of reductions to perform on the call graph.
+                        "included_crates": A list of crates to include in the call graph. If empty, all crates are included."#))
 }
 
 /// Represents options passed to MIRAI.
@@ -61,6 +71,7 @@ pub struct Options {
     pub constant_time_tag_name: Option<String>,
     pub max_analysis_time_for_body: u64,
     pub statistics: bool,
+    pub call_graph_config: Option<String>,
 }
 
 /// Represents diag level.
@@ -182,6 +193,9 @@ impl Options {
         }
         if matches.is_present("statistics") {
             self.statistics = true;
+        }
+        if matches.is_present("call_graph_config") {
+            self.call_graph_config = matches.value_of("call_graph_config").map(|s| s.to_string());
         }
         args[rustc_args_start..].to_vec()
     }
