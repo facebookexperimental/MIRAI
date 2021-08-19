@@ -1981,19 +1981,43 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .copy_or_move_elements(path, source_path, ty, is_move);
             }
             mir::CastKind::Misc => {
-                let source_value = self.visit_operand(operand);
+                //todo: enum -> discriminant value
                 let source_type = self.get_operand_rustc_type(operand);
+                let source_value = self.visit_operand(operand);
                 let result = source_value.cast(ExpressionType::from(ty.kind()));
-                if let mir::Operand::Move(place) = operand {
-                    let source_path = self.visit_rh_place(place);
-                    self.bv.current_environment.value_map =
-                        self.bv.current_environment.value_map.remove(&source_path);
-                }
                 if result != source_value || (source_type.is_trait() && !ty.is_trait()) {
                     self.type_visitor_mut()
                         .set_path_rustc_type(Path::get_as_path(result.clone()), ty);
                 }
-                self.bv.current_environment.update_value_at(path, result);
+                if matches!(source_value.expression, Expression::Variable { .. })
+                    && self.type_visitor().is_slice_pointer(source_type.kind())
+                {
+                    // If operand is a slice pointer, we can't just look it up with visit_operand
+                    // since, if known, its value is a (thin_pointer, length) pair.
+                    // Beats me why pointer to pointer casts are done with CastKind::Misc rather
+                    // than CastKind::Pointer.
+                    let mut source_path = self
+                        .get_operand_path(operand)
+                        .canonicalize(&self.bv.current_environment);
+                    if !self.type_visitor().is_slice_pointer(ty.kind()) {
+                        source_path = Path::new_field(source_path, 0);
+                    }
+                    if let mir::Operand::Move(..) = operand {
+                        self.bv
+                            .copy_or_move_elements(path, source_path.clone(), ty, true);
+                        self.bv.current_environment.value_map =
+                            self.bv.current_environment.value_map.remove(&source_path);
+                    } else {
+                        self.bv.copy_or_move_elements(path, source_path, ty, false);
+                    }
+                } else {
+                    if let mir::Operand::Move(place) = operand {
+                        let source_path = self.visit_rh_place(place);
+                        self.bv.current_environment.value_map =
+                            self.bv.current_environment.value_map.remove(&source_path);
+                    }
+                    self.bv.current_environment.update_value_at(path, result);
+                }
             }
         }
     }
