@@ -38,7 +38,8 @@ impl Drop for WaiterQueue<'_> {
             let mut queue = (state_and_queue & !STATE_MASK) as *const Waiter;
             while !queue.is_null() {
                 let next = (*queue).next;
-                let thread = (*queue).thread.replace(None).unwrap();
+                //todo: fix this
+                let thread = (*queue).thread.replace(None).unwrap(); //~ called `Option::unwrap()` on a `None` value
                 (*queue).signaled.store(true, Ordering::Release);
                 queue = next;
                 thread.unpark();

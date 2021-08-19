@@ -2386,6 +2386,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 length as u64,
                 strong_update,
             );
+            let target_len_path = Path::new_length(target_path.clone());
+            let len_value = self.get_u128_const_val(length as u128);
+            self.current_environment
+                .update_value_at(target_len_path, len_value);
             return true;
         }
         false

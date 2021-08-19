@@ -1338,7 +1338,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             source_rustc_type = source_rustc_type.boxed_ty();
             let box_path = Path::new_deref(source_pointer_path, target_type.clone())
                 .canonicalize(&self.block_visitor.bv.current_environment);
-            Path::new_field(box_path, 0)
+            Path::new_field(Path::new_field(box_path, 0), 0)
         } else if self
             .type_visitor()
             .is_slice_pointer(source_pointer_rustc_type.kind())

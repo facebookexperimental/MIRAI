@@ -1676,122 +1676,104 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 selector,
                 ..
             } if *selector.as_ref() == PathSelector::Deref => {
-                if source_type.is_box() && self.type_visitor().is_slice_pointer(target_type.kind())
-                {
-                    // The target type is a slice pointer, so the thing inside the box must be
-                    // an array slice (or a string). In the heap model, we store a thin pointer
-                    // to the slice/string in field 0 of the box and we store the length in
-                    // field 1 (which does not actually exist in the definition of the Box struct).
-                    let deref_ty = self.type_visitor().get_dereferenced_type(target_type);
-                    let thin_ptr_ty = self.bv.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                        ty: deref_ty,
-                        mutbl: rustc_hir::Mutability::Not,
-                    });
-                    let box_path = qualifier.canonicalize(&self.bv.current_environment);
-                    let ptr_val = self.bv.lookup_path_and_refine_result(
-                        Path::new_field(box_path.clone(), 0),
-                        thin_ptr_ty,
-                    );
-                    let ptr_len = self.bv.lookup_path_and_refine_result(
-                        Path::new_length(box_path),
-                        self.bv.tcx.types.usize,
-                    );
-                    self.bv
-                        .current_environment
-                        .update_value_at(Path::new_field(path.clone(), 0), ptr_val);
-                    self.bv
-                        .current_environment
-                        .update_value_at(Path::new_length(path.clone()), ptr_len);
+                if source_type.is_box() {
+                    // A Box contains a Unique (transparently wrapped) pointer to the thing in the box.
+                    // &*box means get hold of the unwrapped pointer.
+                    // box.0 gives us a path to the Unique wrapper.
+                    // box.0.0 gives us a path to the unwrapped pointer.
+                    // qualifier has already been modified to be box.0.0 during path construction.
+
+                    if !self.type_visitor().is_slice_pointer(target_type.kind()) {
+                        // The unwrapped pointer is the thing to store at path.
+                        let ptr_val = self
+                            .bv
+                            .lookup_path_and_refine_result(qualifier.clone(), target_type);
+                        self.bv.current_environment.update_value_at(path, ptr_val);
+                    } else {
+                        // The target type is a slice pointer, so the thing inside the box must be
+                        // an array slice (or a string). In the heap model, the contents of a box
+                        // is always stored in a heap block and the value at path box.0.0 is a
+                        // reference to that heap block. We use that reference as the thin
+                        // part of the target slice pointer and we assume that the length
+                        // has been stored at path box.0.1. The latter is an artifact of the heap
+                        // model and there is actually no such field in the Unique struct.
+                        //
+                        // To look up box.0.0 we need the type of the thin pointer, which we
+                        // derive from target_type (which is known to be a slice pointer).
+                        let deref_ty = self.type_visitor().get_dereferenced_type(target_type);
+                        let thin_ptr_ty = self.bv.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                            ty: deref_ty,
+                            mutbl: rustc_hir::Mutability::Not,
+                        });
+                        let ptr_val = self
+                            .bv
+                            .lookup_path_and_refine_result(qualifier.clone(), thin_ptr_ty);
+                        // Since path is the location of slice pointer, path.0 is the location of
+                        // the thin pointer part of it.
+                        self.bv
+                            .current_environment
+                            .update_value_at(Path::new_field(path.clone(), 0), ptr_val);
+
+                        // box.0.1 is written to with the slice length when the box is initialized
+                        // with the slice value.
+                        if let PathEnum::QualifiedPath {
+                            qualifier: wrapper_path,
+                            ..
+                        } = &qualifier.value
+                        {
+                            let len_val = self.bv.lookup_path_and_refine_result(
+                                Path::new_length(wrapper_path.clone()),
+                                self.bv.tcx.types.usize,
+                            );
+                            // path.1 is the length part of the target slice pointer
+                            self.bv
+                                .current_environment
+                                .update_value_at(Path::new_length(path.clone()), len_val);
+                        } else {
+                            assume_unreachable!("qualifier should be box.0.0  {:?}", qualifier);
+                        }
+                    }
                     return;
                 }
+                // If q does not point to a Box, then we have:
+                // r = *q copies the value that q points to.
+                // r = &*q copies q.
+                // The reason for this distinction seems to be that there is no need for yet another
+                // way to get a pointer to a copy of the thing p points to (i.e. we already have &r
+                // when r = *q), whereas it is useful to have a way to change the nature of p.
+                // For example we see things like r = &mut *p.
+                // Effectively, thus, we are transmuting the pointer.
 
-                // We are taking a reference to the result of a deref. This is a bit awkward.
-                // The deref, by itself, essentially does a copy of the value denoted by the qualifier.
-                // When combined with an address_of operation, however, things are more complicated.
-                // If the contents at offset 0 from the target of the pointer being dereferenced is
-                // a fat (slice) pointer then the address_of operation results in a copy of the fat pointer.
-                // We check for this by looking at the type of the operation result target.
-                if self.type_visitor().is_slice_pointer(target_type.kind()) {
-                    // If we get here we are effectively copying to a fat pointer without a cast,
-                    // so there is no type information to use to come up with the length part of
-                    // the fat pointer. This implies that the source value must itself be a fat
-                    // pointer. This is, however, not what we'll see if we get the type of the
-                    // qualifier path. The reason for that is the ambiguous semantics of the
-                    // deref operator: Mostly, doing a deref of a fat pointer means doing a
-                    // deref of the thin pointer since that is what we expect when de-referencing
-                    // a pointer, whether it is fat or thin.
-                    //
-                    // When combined with an address_of operator, however, deref just means to
-                    // copy the pointer, fat or thin. (In this case, it must be fat.)
-                    // When the qualifier was constructed, however, this contextual bit information
-                    // was not known, so qualifier would have been modified to select the thin
-                    // pointer. Undo the damage by stripping off the field 0, since we now know
-                    // that we want to copy the fat pointer.
+                let mut qualifier = qualifier;
+                if matches!(source_type.kind(), TyKind::Slice(..) | TyKind::Str) {
                     if let PathEnum::QualifiedPath {
-                        qualifier,
+                        qualifier: q,
                         selector,
                         ..
                     } = &qualifier.value
                     {
-                        if matches!(selector.as_ref(), PathSelector::Field(0)) {
-                            self.bv.copy_or_move_elements(
-                                path,
-                                qualifier.canonicalize(&self.bv.current_environment),
-                                target_type,
-                                false,
+                        if **selector == PathSelector::Field(0) {
+                            qualifier = q;
+                        } else {
+                            assume_unreachable!(
+                                "*q where q is a slice pointer should become *(q.0)"
                             );
-                            return;
                         }
+                    } else {
+                        assume_unreachable!("*q where q is a slice pointer should become *(q.0)");
                     }
-                    // Well, this is awkward. Qualifier was not known to be a fat pointer when
-                    // the deref path was constructed. That seems all sorts of wrong.
-                    warn!(
-                        "deref failed to turn a fat pointer into a thin pointer {:?}",
-                        self.bv.current_span
-                    );
-                    // Nevertheless, it happens, so until all the cases are identified and
-                    // debugged, assume that qualifier corresponds to a fat pointer and that
-                    // copy_or_move_elements will populate the target path with the necessary information.
-                    // If that information is not actually there, this results in a conservative over approximation.
                 }
-                // If the target is not a fat pointer, it must be a thin pointer since an
-                // address of operator can hardly result in anything else. So, in this case,
-                // &*source_thin_ptr should just be a non canonical alias for source_thin_ptr.
-                self.bv.copy_or_move_elements(
-                    path,
-                    qualifier.canonicalize(&self.bv.current_environment),
-                    target_type,
-                    false,
-                );
-                return;
-            }
-            PathEnum::QualifiedPath {
-                qualifier,
-                selector,
-                ..
-            } if matches!(selector.as_ref(), PathSelector::Field(0)) => {
-                let qty = self
+                let source_pointer_ty = self
                     .type_visitor()
                     .get_path_rustc_type(qualifier, self.bv.current_span);
-                let unwrapped_qty = self.type_visitor().remove_transparent_wrappers(qty);
-                match &qualifier.value {
-                    PathEnum::QualifiedPath {
-                        qualifier,
-                        selector,
-                        ..
-                    } if *selector.as_ref() == PathSelector::Deref => {
-                        if qty != unwrapped_qty {
-                            AbstractValue::make_reference(qualifier.clone())
-                        } else {
-                            AbstractValue::make_reference(
-                                value_path.canonicalize(&self.bv.current_environment),
-                            )
-                        }
-                    }
-                    _ => AbstractValue::make_reference(
-                        value_path.canonicalize(&self.bv.current_environment),
-                    ),
-                }
+                let source_pointer_path = qualifier.canonicalize(&self.bv.current_environment);
+                self.bv.copy_and_transmute(
+                    source_pointer_path,
+                    source_pointer_ty,
+                    path,
+                    target_type,
+                );
+                return;
             }
             PathEnum::Computed { .. }
             | PathEnum::Offset { .. }
@@ -1956,12 +1938,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                     self.type_visitor()
                                         .get_path_rustc_type(p, self.bv.current_span),
                                 );
+                                // Now write the length alongside the thin pointer
                                 if let TyKind::Array(_, len) = self
                                     .type_visitor()
                                     .get_dereferenced_type(source_type)
                                     .kind()
                                 {
-                                    let length_path = Path::new_length(target_path);
+                                    let length_path = target_path
+                                        .add_or_replace_selector(Rc::new(PathSelector::Field(1)));
                                     let length_value = self.visit_const(len);
                                     self.bv
                                         .current_environment
@@ -2158,13 +2142,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let value = match null_op {
             mir::NullOp::Box => {
                 // The box is a struct that is located at path.
-                // It contains a pointer at field 0, which is a struct of type Unique,
-                // which contains the pointer that points to the new heap block.
-                // This instruction only allocates the heap block
-                // and fills in the box pointer. The initialization of the heap block is done
-                // in a subsequent MIR instruction of the form (*box) = box_value. De-referencing
-                // a box structure amounts to de-referencing the pointer in field 0.
-                path = Path::new_field(path, 0);
+                // It contains a Unique (transparently wrapped) pointer at field 0 of the Box struct.
+                // The unwrapped pointer to the new heap block is stored at field 0 of the Unique struct.
+                // This instruction only allocates the heap block and fills in the pointer.
+                // The initialization of the heap block (and thus the Box) is done
+                // in a subsequent MIR instruction of the form (*box) = box_value.
+                // De-referencing a box structure amounts to de-referencing the unwrapped pointer.
+                path = Path::new_field(Path::new_field(path, 0), 0);
                 AbstractValue::make_reference(Path::get_as_path(
                     self.bv.get_new_heap_block(len, alignment, false, ty),
                 ))
@@ -3233,7 +3217,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         )
     }
 
-    /// Returns a normalized Path instance that is the essentially the same as the Place instance, but which
+    /// Returns a normalized Path instance that is essentially the same as the Place instance, but which
     /// can be serialized and used as a cache key. Also caches the place type with the path as key.
     #[logfn_inputs(TRACE)]
     pub fn visit_rh_place(&mut self, place: &mir::Place<'tcx>) -> Rc<Path> {
@@ -3395,8 +3379,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 mir::ProjectionElem::Deref => {
                     let type_visitor = &mut self.type_visitor_mut();
                     if ty.is_box() {
-                        // Deref the pointer at field 0 of the box
-                        result = Path::new_field(result, 0);
+                        // Deref the pointer at field 0 of the Unique pointer at field 0 of the box
+                        result = Path::new_field(Path::new_field(result, 0), 0);
                         ty = ty.boxed_ty();
                     } else if type_visitor.is_slice_pointer(ty.kind()) {
                         // Deref the thin pointer part of the slice pointer
