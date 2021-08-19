@@ -21,7 +21,7 @@ use log::*;
 use log_derive::{logfn, logfn_inputs};
 use mirai_annotations::*;
 use rustc_errors::{Diagnostic, DiagnosticBuilder};
-use rustc_hir::def_id::DefId;
+use rustc_hir::def_id::{DefId, DefIndex};
 use rustc_middle::mir;
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{TyCtxt, Unevaluated};
@@ -69,6 +69,13 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
         // Determine the functions we want to analyze.
         let function_whitelist = self.get_function_whitelist();
 
+        // Get the entry function
+        let entry_fn_def_id = if let Some((def_id, _)) = self.tcx.entry_fn(()) {
+            def_id
+        } else {
+            DefId::local(DefIndex::from_u32(0))
+        };
+
         // Analyze all functions that are white listed or public
         let building_standard_summaries = std::env::var("MIRAI_START_FRESH").is_ok();
         for local_def_id in self.tcx.body_owners() {
@@ -86,7 +93,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                 }
                 info!("analyzing function {}", name);
             } else if !building_standard_summaries {
-                if !utils::is_public(def_id, self.tcx) {
+                if !utils::is_public(def_id, self.tcx) && def_id != entry_fn_def_id {
                     debug!("skipping function {} as it is not public", name);
                     continue;
                 } else if self
