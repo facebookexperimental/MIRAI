@@ -1925,19 +1925,15 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             let target_type = self
                                 .type_visitor()
                                 .get_path_rustc_type(&target_path, self.bv.current_span);
-                            if self
-                                .type_visitor()
-                                .is_slice_pointer_or_wraps_one(target_type.kind())
-                            {
+                            if self.type_visitor().is_slice_pointer(target_type.kind()) {
                                 // convert the source thin pointer to a fat pointer if the target path is a slice pointer
                                 let thin_pointer_path = Path::new_field(target_path.clone(), 0);
                                 self.bv
                                     .current_environment
                                     .update_value_at(thin_pointer_path, value.clone());
-                                let source_type = self.type_visitor().remove_transparent_wrappers(
-                                    self.type_visitor()
-                                        .get_path_rustc_type(p, self.bv.current_span),
-                                );
+                                let source_type = self
+                                    .type_visitor()
+                                    .get_path_rustc_type(p, self.bv.current_span);
                                 // Now write the length alongside the thin pointer
                                 if let TyKind::Array(_, len) = self
                                     .type_visitor()
@@ -3435,11 +3431,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         match projection_elem {
             mir::ProjectionElem::Deref => PathSelector::Deref,
             mir::ProjectionElem::Field(field, ..) => {
-                if let TyKind::Adt(def, _) = self
-                    .type_visitor()
-                    .remove_transparent_wrappers(base_ty)
-                    .kind()
-                {
+                if let TyKind::Adt(def, _) = base_ty.kind() {
                     if def.is_union() {
                         let variants = &def.variants;
                         assume!(variants.len() == 1); // only enums have more than one variant

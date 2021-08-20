@@ -245,32 +245,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
-    /// Returns true if the given type is a reference (or raw pointer) to a slice type, where
-    /// both or either the reference and slice type can be wrapped with a transparent wrapper type.
-    #[logfn_inputs(TRACE)]
-    #[logfn(TRACE)]
-    pub fn is_slice_pointer_or_wraps_one(&self, ty_kind: &TyKind<'tcx>) -> bool {
-        match ty_kind {
-            TyKind::Adt(def, substs) if def.repr.transparent() => {
-                let variant_0 = VariantIdx::from_u32(0);
-                let v = &def.variants[variant_0];
-                if let Some(f) = v.fields.get(0) {
-                    self.is_slice_pointer_or_wraps_one(f.ty(self.tcx, substs).kind())
-                } else {
-                    debug!("failed to dereference {:?}", ty_kind);
-                    false
-                }
-            }
-            TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
-                trace!("target type {:?}", target.kind());
-                // Pointers to sized arrays are thin pointers.
-                let t = self.remove_transparent_wrappers(target);
-                matches!(t.kind(), TyKind::Slice(..) | TyKind::Str)
-            }
-            _ => false,
-        }
-    }
-
     /// Returns true if the given type is a reference (or raw pointer) to a collection type, in which
     /// case the reference/pointer independently tracks the length of the collection, thus effectively
     /// tracking a slice of the underlying collection.
@@ -300,16 +274,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     #[logfn_inputs(TRACE)]
     pub fn is_thin_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
         match ty_kind {
-            TyKind::Adt(def, substs) if def.repr.transparent() => {
-                let variant_0 = VariantIdx::from_u32(0);
-                let v = &def.variants[variant_0];
-                if let Some(f) = v.fields.get(0) {
-                    self.is_thin_pointer(f.ty(self.tcx, substs).kind())
-                } else {
-                    debug!("failed to dereference {:?}", ty_kind);
-                    false
-                }
-            }
             TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
                 !matches!(target.kind(), TyKind::Slice(..) | TyKind::Str)
             }
@@ -637,7 +601,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// Returns the target type of a reference type.
     #[logfn_inputs(TRACE)]
     pub fn get_dereferenced_type(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
-        match self.remove_transparent_wrappers(ty).kind() {
+        match ty.kind() {
             TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
             TyKind::Ref(_, t, _) => *t,
             _ => {
@@ -956,30 +920,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 });
                 if let Some(f) = non_zst_field {
                     return f.ty(self.tcx, substs);
-                }
-            }
-        }
-        ty
-    }
-
-    /// If the given type is a transparent wrapper, return the embedded type (after removing any
-    /// nested transparent wrappers).
-    pub fn remove_transparent_wrappers(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
-        if let TyKind::Adt(def, substs) = ty.kind() {
-            if def.repr.transparent() {
-                let variant_0 = VariantIdx::from_u32(0);
-                let v = &def.variants[variant_0];
-                let param_env = self.tcx.param_env(v.def_id);
-                let non_zst_field = v.fields.iter().find(|field| {
-                    let field_ty = self.tcx.type_of(field.did);
-                    let is_zst = self
-                        .tcx
-                        .layout_of(param_env.and(field_ty))
-                        .map_or(false, |layout| layout.is_zst());
-                    !is_zst
-                });
-                if let Some(f) = non_zst_field {
-                    return self.remove_transparent_wrappers(f.ty(self.tcx, substs));
                 }
             }
         }

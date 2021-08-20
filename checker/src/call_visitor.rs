@@ -617,8 +617,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     #[logfn_inputs(TRACE)]
     fn handled_clone(&mut self) -> bool {
         precondition!(self.actual_argument_types.len() == 1);
-        if let TyKind::Ref(_, mut t, _) = self.actual_argument_types[0].kind() {
-            t = self.type_visitor().remove_transparent_wrappers(t);
+        if let TyKind::Ref(_, t, _) = self.actual_argument_types[0].kind() {
             if let TyKind::Adt(def, substs) = t.kind() {
                 let variant_0 = VariantIdx::from_u32(0);
                 if Some(def.variants[variant_0].def_id)
@@ -2417,10 +2416,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             if let Expression::HeapBlockLayout { length, .. } = &layout_val.expression {
                 return length.clone();
             }
-        } else if self.type_visitor().is_slice_pointer_or_wraps_one(t.kind()) {
-            let elem_t = self
-                .type_visitor()
-                .get_element_type(self.type_visitor().remove_transparent_wrappers(t));
+        } else if self.type_visitor().is_slice_pointer(t.kind()) {
+            let elem_t = self.type_visitor().get_element_type(t);
             if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(elem_t)) {
                 if !ty_and_layout.is_unsized() {
                     let elem_size_val: Rc<AbstractValue> =
