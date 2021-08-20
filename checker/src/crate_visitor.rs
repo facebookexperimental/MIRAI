@@ -255,7 +255,8 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                 db.clone().buffer(&mut diags)
             });
             if !expected_errors.check_messages(diags) {
-                self.session.fatal("test failed");
+                self.session
+                    .fatal(&format!("test failed: {}", self.file_name));
             }
         } else {
             let mut diagnostics: Vec<&mut DiagnosticBuilder<'_>> =
