@@ -1834,7 +1834,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         match source_rustc_type.kind() {
             TyKind::Adt(source_def, source_substs) => {
                 add_leaf_fields_for(
-                    source_path.clone(),
+                    source_path,
                     source_def,
                     source_substs,
                     self.tcx,
@@ -1851,9 +1851,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
             }
             TyKind::Ref(region, mut ty, mutbl) if type_visitor::is_transparent_wrapper(ty) => {
-                let mut s_path =
-                    Path::new_deref(source_path.clone(), ExpressionType::from(ty.kind()))
-                        .canonicalize(&self.current_environment);
+                let mut s_path = Path::new_deref(source_path, ExpressionType::from(ty.kind()))
+                    .canonicalize(&self.current_environment);
                 while type_visitor::is_transparent_wrapper(ty) {
                     s_path = Path::new_field(s_path, 0);
                     ty = self.type_visitor().remove_transparent_wrapper(ty);
@@ -1863,16 +1862,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     .mk_ref(region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
                 let s_ref_val = AbstractValue::make_reference(s_path);
                 let source_path = Path::new_computed(s_ref_val);
-                if !self
-                    .type_visitor()
-                    .is_slice_pointer(source_rustc_type.kind())
-                {
-                    source_fields.push((source_path, source_rustc_type));
-                } else if self.type_visitor.is_slice_pointer(target_rustc_type.kind())
-                    && !self
-                        .type_visitor
-                        .is_string_pointer(source_rustc_type.kind())
-                {
+                if self.type_visitor.is_slice_pointer(source_rustc_type.kind()) {
                     let pointer_path = Path::new_field(source_path.clone(), 0);
                     let pointer_type = self
                         .tcx
@@ -1881,9 +1871,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     let len_path = Path::new_length(source_path);
                     source_fields.push((len_path, self.tcx.types.usize));
                 } else {
-                    // todo: when this results in source_fields and target_fields being
-                    // empty, things seem to work. It is not clear what happens in other
-                    // cases. Write a comprehensive test that looks at all cases.
+                    source_fields.push((source_path, source_rustc_type));
                 }
             }
             TyKind::Tuple(substs) => {
@@ -1896,24 +1884,17 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
             }
             _ => {
-                if !self
-                    .type_visitor()
-                    .is_slice_pointer(source_rustc_type.kind())
-                {
-                    source_fields.push((source_path.clone(), source_rustc_type));
-                } else if self.type_visitor.is_slice_pointer(target_rustc_type.kind()) {
+                if self.type_visitor.is_slice_pointer(source_rustc_type.kind()) {
                     let pointer_path = Path::new_field(source_path.clone(), 0);
                     let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
                         ty: self.type_visitor.get_element_type(source_rustc_type),
                         mutbl: rustc_hir::Mutability::Not,
                     });
                     source_fields.push((pointer_path, pointer_type));
-                    let len_path = Path::new_length(source_path.clone());
+                    let len_path = Path::new_length(source_path);
                     source_fields.push((len_path, self.tcx.types.usize));
                 } else {
-                    // todo: when this results in source_fields and target_fields being
-                    // empty, things seem to work. It is not clear what happens in other
-                    // cases. Write a comprehensive test that looks at all cases.
+                    source_fields.push((source_path, source_rustc_type));
                 }
             }
         }
@@ -1921,7 +1902,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         match target_rustc_type.kind() {
             TyKind::Adt(target_def, target_substs) => {
                 add_leaf_fields_for(
-                    target_path.clone(),
+                    target_path,
                     target_def,
                     target_substs,
                     self.tcx,
@@ -1941,9 +1922,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
             }
             TyKind::Ref(region, mut ty, mutbl) if type_visitor::is_transparent_wrapper(ty) => {
-                let mut t_path =
-                    Path::new_deref(target_path.clone(), ExpressionType::from(ty.kind()))
-                        .canonicalize(&self.current_environment);
+                let mut t_path = Path::new_deref(target_path, ExpressionType::from(ty.kind()))
+                    .canonicalize(&self.current_environment);
                 while type_visitor::is_transparent_wrapper(ty) {
                     t_path = Path::new_field(t_path, 0);
                     ty = self.type_visitor().remove_transparent_wrapper(ty);
@@ -1989,26 +1969,14 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         mutbl: rustc_hir::Mutability::Not,
                     });
                     target_fields.push((pointer_path, pointer_type));
-                    let len_path = Path::new_length(target_path.clone());
+                    let len_path = Path::new_length(target_path);
                     target_fields.push((len_path, self.tcx.types.usize));
                 } else {
-                    target_fields.push((target_path.clone(), target_rustc_type))
+                    target_fields.push((target_path, target_rustc_type))
                 }
             }
         }
-        if !source_fields.is_empty() && !target_fields.is_empty() {
-            self.copy_field_bits(source_fields, target_fields);
-        } else {
-            self.non_patterned_copy_or_move_elements(
-                target_path,
-                source_path,
-                target_rustc_type,
-                false,
-                |_self, path, _, new_value| {
-                    _self.current_environment.update_value_at(path, new_value);
-                },
-            );
-        }
+        self.copy_field_bits(source_fields, target_fields);
     }
 
     /// Assign abstract values to the target fields that are consistent with the concrete values
