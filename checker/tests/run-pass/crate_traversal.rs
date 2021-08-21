@@ -8,7 +8,7 @@
 
 #![allow(const_err)]
 #![allow(unused)]
-#![feature(llvm_asm)]
+#![feature(asm)]
 #![feature(generators)]
 
 use mirai_annotations::*;
@@ -75,7 +75,7 @@ fn test4() {
 
 pub fn test5() {
     unsafe {
-        llvm_asm!("NOP") //~ Inline llvm assembly code cannot be analyzed by MIRAI.
+        asm!("NOP") //~ Inline assembly code cannot be analyzed by MIRAI.
     }
 }
 

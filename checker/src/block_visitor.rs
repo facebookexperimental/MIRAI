@@ -17,7 +17,7 @@ use crate::options::DiagLevel;
 use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
 use crate::smt_solver::{SmtResult, SmtSolver};
-use crate::summaries::{Precondition, Summary};
+use crate::summaries::Precondition;
 use crate::tag_domain::Tag;
 use crate::type_visitor::TypeVisitor;
 use crate::utils;
@@ -491,9 +491,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 call_visitor.cleanup = unwind;
                 call_visitor.destination = destination;
                 call_visitor.callee_fun_val = func_to_call;
-                let function_summary = call_visitor
-                    .get_function_summary()
-                    .unwrap_or_else(Summary::default);
+                let function_summary = call_visitor.get_function_summary().unwrap_or_default();
                 call_visitor.transfer_and_refine_into_current_environment(&function_summary);
                 return;
             }
@@ -679,9 +677,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         if call_visitor.handled_as_special_function_call() {
             return;
         }
-        let function_summary = call_visitor
-            .get_function_summary()
-            .unwrap_or_else(Summary::default);
+        let function_summary = call_visitor.get_function_summary().unwrap_or_default();
 
         if !function_summary.is_computed {
             if (known_name != KnownNames::StdCloneClone || !self_ty_is_fn_ptr)

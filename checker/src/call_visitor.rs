@@ -2529,45 +2529,43 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 .bv
                 .current_environment
                 .update_value_at(dest_pattern, source_value);
-        } else if let Expression::CompileTimeConstant(count) = &count_value.expression {
-            if let ConstantDomain::U128(count) = count {
-                if let TyKind::Adt(..) | TyKind::Tuple(..) = &elem_type.kind() {
-                    for i in 0..(*count as usize) {
-                        let dest_field = Path::new_field(dest_path.clone(), i);
-                        let field_type = self
-                            .type_visitor()
-                            .get_path_rustc_type(&dest_field, self.block_visitor.bv.current_span);
-                        let field_size = self.type_visitor().get_type_size(field_type);
-                        elem_size -= field_size;
-                        let field_value = repeated_bytes(field_size, byte_value);
-                        self.block_visitor
-                            .bv
-                            .current_environment
-                            .update_value_at(dest_field, field_value);
-                        if elem_size == 0 {
-                            break;
-                        }
+        } else if let Expression::CompileTimeConstant(ConstantDomain::U128(count)) =
+            &count_value.expression
+        {
+            if let TyKind::Adt(..) | TyKind::Tuple(..) = &elem_type.kind() {
+                for i in 0..(*count as usize) {
+                    let dest_field = Path::new_field(dest_path.clone(), i);
+                    let field_type = self
+                        .type_visitor()
+                        .get_path_rustc_type(&dest_field, self.block_visitor.bv.current_span);
+                    let field_size = self.type_visitor().get_type_size(field_type);
+                    elem_size -= field_size;
+                    let field_value = repeated_bytes(field_size, byte_value);
+                    self.block_visitor
+                        .bv
+                        .current_environment
+                        .update_value_at(dest_field, field_value);
+                    if elem_size == 0 {
+                        break;
                     }
-                } else {
-                    if *count > 1 {
-                        warn!(
-                            "unhandled call to write_bytes<{:?}>({:?}: {:?}, {:?}, {:?})",
-                            elem_type,
-                            self.actual_args[0],
-                            dest_type,
-                            self.actual_args[1],
-                            self.actual_args[2]
-                        );
-                    }
-                    self.block_visitor.bv.copy_or_move_elements(
-                        dest_path,
-                        source_path,
-                        elem_type,
-                        false,
-                    );
                 }
             } else {
-                assume_unreachable!("Rust type system should preclude this");
+                if *count > 1 {
+                    warn!(
+                        "unhandled call to write_bytes<{:?}>({:?}: {:?}, {:?}, {:?})",
+                        elem_type,
+                        self.actual_args[0],
+                        dest_type,
+                        self.actual_args[1],
+                        self.actual_args[2]
+                    );
+                }
+                self.block_visitor.bv.copy_or_move_elements(
+                    dest_path,
+                    source_path,
+                    elem_type,
+                    false,
+                );
             }
         } else {
             warn!(

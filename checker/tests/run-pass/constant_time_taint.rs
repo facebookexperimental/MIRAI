@@ -18,10 +18,12 @@ struct ConstantTimeTaintKind<const MASK: TagPropagationSet> {}
 
 type ConstantTimeTaint = ConstantTimeTaintKind<TAG_PROPAGATION_ALL>;
 
-pub fn test1(secret: i32) {
+pub fn test1(secret: i32) -> i32 {
     precondition!(has_tag!(&secret, ConstantTimeTaint));
     if secret ^ 99991 > 5 {
+        0
     } else {
+        1
     }
     //~ the branch condition has a ConstantTimeTaintKind tag
 }

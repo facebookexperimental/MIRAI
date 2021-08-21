@@ -616,8 +616,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
     /// The caller is expected to cache this.
     #[logfn_inputs(TRACE)]
     pub fn get_persistent_summary_for(&self, persistent_key: &str) -> Summary {
-        Self::get_persistent_summary_for_db(&self.db, persistent_key)
-            .unwrap_or_else(Summary::default)
+        Self::get_persistent_summary_for_db(&self.db, persistent_key).unwrap_or_default()
     }
 
     /// Helper for get_summary_for and get_persistent_summary_for.
