@@ -260,41 +260,26 @@ impl Environment {
     {
         let value_map1 = &self.value_map;
         let value_map2 = &other.value_map;
-        let mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>> = HashTrieMap::default();
-        for (path, val1) in value_map1.iter() {
+        let mut value_map: HashTrieMap<Rc<Path>, Rc<AbstractValue>> = value_map1.clone();
+        for (path, val2) in value_map2.iter() {
             let p = path.clone();
-            match value_map2.get(path) {
-                Some(val2) => {
+            match value_map1.get(path) {
+                Some(val1) => {
                     value_map.insert_mut(p, join_or_widen(val1, val2, path));
                 }
                 None => {
-                    if !path.is_rooted_by_parameter() || val1.is_unit() {
-                        // joining val1 and bottom
+                    if !path.is_rooted_by_parameter() || val2.is_unit() {
+                        // joining bottom and val2
                         // The bottom value corresponds to dead (impossible) code, so the join collapses.
-                        value_map.insert_mut(p, val1.clone());
+                        value_map.insert_mut(p, val2.clone());
                     } else {
-                        let val2 = AbstractValue::make_initial_parameter_value(
-                            val1.expression.infer_type(),
+                        let val1 = AbstractValue::make_initial_parameter_value(
+                            val2.expression.infer_type(),
                             path.clone(),
                         );
-                        value_map.insert_mut(p, join_or_widen(val1, &val2, path));
+                        value_map.insert_mut(p, join_or_widen(&val1, val2, path));
                     };
                 }
-            }
-        }
-        for (path, val2) in value_map2.iter() {
-            if !value_map1.contains_key(path) {
-                if !path.is_rooted_by_parameter() {
-                    // joining bottom and val2
-                    // The bottom value corresponds to dead (impossible) code, so the join collapses.
-                    value_map.insert_mut(path.clone(), val2.clone());
-                } else {
-                    let val1 = AbstractValue::make_initial_parameter_value(
-                        val2.expression.infer_type(),
-                        path.clone(),
-                    );
-                    value_map.insert_mut(path.clone(), join_or_widen(&val1, val2, path));
-                };
             }
         }
         Environment {

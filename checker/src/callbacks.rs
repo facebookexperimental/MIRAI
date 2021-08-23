@@ -188,6 +188,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/tools/move-cli/src") // non termination
             || file_name.starts_with("language/tools/move-coverage/src") // out of memory
             || file_name.starts_with("language/tools/move-explain/src") // out of memory
+            || file_name.starts_with("language/tools/move-package/src") // expect reference target to have a value
             || file_name.starts_with("language/tools/move-unit-test/src") // non termination
             || file_name.starts_with("language/tools/read-write-set/src")  // non termination
             || file_name.starts_with("language/tools/resource-viewer/src") // out of memory
@@ -220,20 +221,26 @@ impl MiraiCallbacks {
                 || file_name.starts_with("common/num-variants/src")
                 || file_name.starts_with("common/rate-limiter/src")
                 || file_name.starts_with("config/src")
+                || file_name.starts_with("execution/executor/src")
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/diem-framework/releases/src")
+                || file_name.starts_with("language/diem-tools/df-cli/src")
                 || file_name.starts_with("language/diem-vm/src")
+                || file_name.starts_with("language/move-binary-format/src")
+                || file_name.starts_with("language/move-core/types/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
                 || file_name.starts_with("language/move-prover/boogie-backend-exp/src")
                 || file_name.starts_with("language/move-prover/bytecode/src")
                 || file_name.starts_with("language/move-prover/docgen/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
+                || file_name.starts_with("language/move-prover/mutation")
                 || file_name.starts_with("move-prover/errmapgen/src")
                 || file_name.starts_with("network/builder/src")
                 || file_name.starts_with("network/simple-onchain-discovery/src")
                 || file_name.starts_with("sdk/src")
                 || file_name.starts_with("secure/net/src")
+                || file_name.starts_with("state-sync/state-sync-v1")
                 || file_name.starts_with("storage/schemadb/src")
                 || file_name.starts_with("storage/storage-client/src")
                 || file_name.starts_with("types/src"))
