@@ -13,7 +13,7 @@ cargo update
 cargo fmt --all
 # Run lint checks
 cargo audit
-cargo clippy -- -D warnings
+cargo clippy --all-features --all-targets -- -D warnings
 # Build
 cargo build
 

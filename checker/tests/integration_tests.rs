@@ -31,7 +31,6 @@ use regex::Regex;
 use rustc_rayon::iter::IntoParallelIterator;
 use rustc_rayon::iter::ParallelIterator;
 use serde::Deserialize;
-use serde_json;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::read_to_string;
@@ -126,7 +125,7 @@ fn find_extern_library(base_name: &str) -> String {
 fn run_directory(directory_path: PathBuf) -> Vec<(String, String)> {
     let mut files_and_temp_dirs = Vec::new();
     let error_msg = format!("failed to read {:?}", directory_path);
-    for entry in fs::read_dir(directory_path).expect(error_msg.as_str()) {
+    for entry in fs::read_dir(directory_path).unwrap_or_else(|_| panic!("{}", error_msg)) {
         let entry = entry.unwrap();
         if !entry.file_type().unwrap().is_file() {
             continue;
@@ -162,10 +161,7 @@ struct CallGraphTestConfig {
 }
 
 // Write a call graph configuration file for the current test case
-fn generate_call_graph_config(
-    file_name: &String,
-    temp_dir_path: &String,
-) -> (CallGraphConfig, String) {
+fn generate_call_graph_config(file_name: &str, temp_dir_path: &str) -> (CallGraphConfig, String) {
     let test_case_data =
         fs::read_to_string(Path::new(&file_name)).expect("Failed to read test case");
     let call_graph_test_config: CallGraphTestConfig;
@@ -294,13 +290,13 @@ fn invoke_driver(
 
 // Parse expected or actual output into a map
 // from trimmed non-emptylines to counts.
-fn build_output_counter(output: &String) -> HashMap<&str, u32> {
+fn build_output_counter(output: &str) -> HashMap<&str, u32> {
     let items: Vec<&str> = Vec::from_iter(
         output
             .split('\n')
             .collect::<Vec<&str>>()
             .iter()
-            .filter(|x| x.len() > 0)
+            .filter(|x| !x.is_empty())
             .map(|x| x.trim()),
     );
     let mut counter = HashMap::<&str, u32>::new();
@@ -313,7 +309,7 @@ fn build_output_counter(output: &String) -> HashMap<&str, u32> {
 // Two outputs are considered equivalent if they
 // have the same lines (and counts of each line),
 // order-independent.
-fn compare_lines(actual: &String, expected: &String) -> bool {
+fn compare_lines(actual: &str, expected: &str) -> bool {
     let actual_counter = build_output_counter(actual);
     let expected_counter = build_output_counter(expected);
     actual_counter == expected_counter
@@ -330,7 +326,7 @@ enum CallGraphOutputType {
 // Check the call graph output files against
 // the expected output from the test case file.
 fn check_call_graph_output(
-    file_name: &String,
+    file_name: &str,
     call_graph_config: &CallGraphConfig,
     output_type: CallGraphOutputType,
 ) -> usize {
@@ -367,7 +363,7 @@ fn check_call_graph_output(
         }
     } else {
         println!("{} failed dot output", file_name);
-        return 1;
+        1
     }
 }
 
@@ -378,7 +374,7 @@ fn start_driver(config: DriverConfig) -> usize {
     self::invoke_driver(
         config.file_name,
         config.temp_dir_path,
-        sys_root.clone(),
+        sys_root,
         config.extern_deps,
         options,
     )
@@ -395,7 +391,7 @@ fn start_driver_call_graph(config: DriverConfig) -> usize {
     let result = self::invoke_driver(
         config.file_name.clone(),
         config.temp_dir_path.clone(),
-        sys_root.clone(),
+        sys_root,
         config.extern_deps,
         options,
     );
