@@ -493,7 +493,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     };
                     if result_type != ExpressionType::NonPrimitive {
                         self.current_environment
-                            .update_value_at(path, result.clone());
+                            .strong_update_value_at(path, result.clone());
                     }
                     result
                 })
@@ -509,7 +509,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 };
                 if result_type != ExpressionType::NonPrimitive {
                     self.current_environment
-                        .update_value_at(path, result.clone());
+                        .strong_update_value_at(path, result.clone());
                 }
                 result
             }
@@ -582,7 +582,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             if self.current_environment.value_map.contains_key(&path) {
                 return path;
             }
-            self.current_environment.update_value_at(
+            self.current_environment.strong_update_value_at(
                 path.clone(),
                 AbstractValue::make_typed_unknown(expression_type.clone(), path.clone()),
             );
@@ -677,7 +677,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             // Effects on the heap
             for (path, value) in side_effects.iter() {
                 if path.is_rooted_by_non_local_structure() {
-                    self.current_environment.update_value_at(
+                    self.current_environment.strong_update_value_at(
                         path.refine_parameters_and_paths(
                             &[],
                             &None,
@@ -736,7 +736,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
 
         // Populate the closure object fields with the parameters and locals of the current context.
         self.current_environment
-            .update_value_at(discriminant, discriminant_val);
+            .strong_update_value_at(discriminant, discriminant_val);
         for (i, loc) in self.mir.local_decls.iter().skip(1).enumerate() {
             let qualifier = closure_path.clone();
             let closure_path = Path::new_field(Path::new_field(qualifier, 0), i);
@@ -754,7 +754,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             };
             let value = self.lookup_path_and_refine_result(path, specialized_type);
             self.current_environment
-                .update_value_at(closure_path, value);
+                .strong_update_value_at(closure_path, value);
         }
 
         // Now set up the dummy closure object as the actual argument used to specialize
@@ -843,7 +843,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         .get(&source_length_path)
                         .expect("collection to have a length");
                     let target_length_path = Path::new_length(promoted_root.clone());
-                    environment.update_value_at(target_length_path, length_val.clone());
+                    environment.strong_update_value_at(target_length_path, length_val.clone());
                     promoted_root = Path::new_field(promoted_root, 0);
                     result_root = Path::new_field(result_root, 0);
                 }
@@ -865,9 +865,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                             .iter()
                             .filter(|(p, _)| p.is_rooted_by(&heap_root))
                         {
-                            environment.update_value_at(path.clone(), value.clone());
+                            environment.strong_update_value_at(path.clone(), value.clone());
                         }
-                        environment.update_value_at(promoted_root.clone(), value.clone());
+                        environment.strong_update_value_at(promoted_root.clone(), value.clone());
                     }
                     Expression::Reference(local_path) => {
                         self.promote_reference(
@@ -889,12 +889,13 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         {
                             let promoted_path =
                                 path.replace_root(&result_root, promoted_root.clone());
-                            environment.update_value_at(promoted_path, value.clone());
+                            environment.strong_update_value_at(promoted_path, value.clone());
                         }
                         if let Expression::Variable { .. } = &value.expression {
                             // The constant is a stack allocated struct. No need for a separate entry.
                         } else {
-                            environment.update_value_at(promoted_root.clone(), value.clone());
+                            environment
+                                .strong_update_value_at(promoted_root.clone(), value.clone());
                         }
                     }
                 }
@@ -932,7 +933,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .expect("expect reference target to have a value");
             let value_path = Path::get_as_path(target_value.clone());
             let promoted_value = AbstractValue::make_from(Expression::Reference(value_path), 1);
-            environment.update_value_at(promoted_root.clone(), promoted_value);
+            environment.strong_update_value_at(promoted_root.clone(), promoted_value);
         } else if let TyKind::Ref(..) = target_type.kind() {
             // Promoting a reference to a reference.
             let eight: Rc<AbstractValue> = self.get_u128_const_val(8);
@@ -943,32 +944,32 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .current_environment
                 .value_at(&layout_path)
                 .expect("new heap block should have a layout");
-            environment.update_value_at(layout_path, layout_value.clone());
+            environment.strong_update_value_at(layout_path, layout_value.clone());
             let exit_env_map = self.exit_environment.as_ref().unwrap().value_map.clone();
             let target_value = exit_env_map
                 .get(local_path)
                 .expect("expect reference target to have a value");
-            environment.update_value_at(heap_root.clone(), target_value.clone());
+            environment.strong_update_value_at(heap_root.clone(), target_value.clone());
             if let Expression::Reference(path) = &target_value.expression {
                 if let PathEnum::LocalVariable { ordinal, .. } = &path.value {
                     self.promote_reference(environment, target_type, &heap_root, path, *ordinal);
                 }
             }
             let promoted_value = AbstractValue::make_from(Expression::Reference(heap_root), 1);
-            environment.update_value_at(promoted_root.clone(), promoted_value);
+            environment.strong_update_value_at(promoted_root.clone(), promoted_value);
         } else if let TyKind::Str = target_type.kind() {
             // Promoting a string constant
             let exit_env_map = &self.exit_environment.as_ref().unwrap().value_map;
             let target_value = exit_env_map
                 .get(local_path)
                 .expect("expect reference target to have a value");
-            environment.update_value_at(promoted_root.clone(), target_value.clone());
+            environment.strong_update_value_at(promoted_root.clone(), target_value.clone());
             if let Expression::Reference(str_path) = &target_value.expression {
                 if let PathEnum::Computed { value } = &str_path.value {
-                    environment.update_value_at(str_path.clone(), value.clone());
+                    environment.strong_update_value_at(str_path.clone(), value.clone());
                     let len_path = Path::new_length(str_path.clone());
                     if let Some(len_val) = exit_env_map.get(&len_path) {
-                        environment.update_value_at(len_path, len_val.clone());
+                        environment.strong_update_value_at(len_path, len_val.clone());
                     }
                 }
             }
@@ -996,7 +997,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .current_environment
                 .value_at(&layout_path)
                 .expect("new heap block should have a layout");
-            environment.update_value_at(layout_path, layout_value.clone());
+            environment.strong_update_value_at(layout_path, layout_value.clone());
             for (path, value) in self
                 .exit_environment
                 .as_ref()
@@ -1006,13 +1007,14 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .filter(|(p, _)| (*p) == local_path || p.is_rooted_by(local_path))
             {
                 let renamed_path = path.replace_root(local_path, heap_root.clone());
-                environment.update_value_at(renamed_path, value.clone());
+                environment.strong_update_value_at(renamed_path, value.clone());
             }
 
             let thin_pointer_to_heap = AbstractValue::make_reference(heap_root);
             if self.type_visitor().is_slice_pointer(target_type.kind()) {
                 let promoted_thin_pointer_path = Path::new_field(promoted_root.clone(), 0);
-                environment.update_value_at(promoted_thin_pointer_path, thin_pointer_to_heap);
+                environment
+                    .strong_update_value_at(promoted_thin_pointer_path, thin_pointer_to_heap);
                 let length_value = self
                     .exit_environment
                     .as_ref()
@@ -1022,9 +1024,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     .unwrap_or_else(|| assume_unreachable!("promoted constant slice source is expected to have a length value, see source at {:?}", self.current_span))
                     .clone();
                 let length_path = Path::new_length(promoted_root.clone());
-                environment.update_value_at(length_path, length_value);
+                environment.strong_update_value_at(length_path, length_value);
             } else {
-                environment.update_value_at(promoted_root.clone(), thin_pointer_to_heap);
+                environment.strong_update_value_at(promoted_root.clone(), thin_pointer_to_heap);
             }
         }
     }
@@ -1171,7 +1173,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
                 Expression::Bottom | Expression::Top => {
-                    self.current_environment.update_value_at(tpath, rvalue);
+                    self.current_environment
+                        .strong_update_value_at(tpath, rvalue);
                     continue;
                 }
                 Expression::HeapBlockLayout { source, .. } => {
@@ -1202,7 +1205,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         }
                         _ => {}
                     }
-                    self.current_environment.update_value_at(tpath, rvalue);
+                    self.current_environment
+                        .strong_update_value_at(tpath, rvalue);
                     continue;
                 }
                 Expression::Reference(path) => {
@@ -1305,7 +1309,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                             var_type.clone(),
                             path.clone(),
                         );
-                        self.current_environment.update_value_at(tpath, rvalue);
+                        self.current_environment
+                            .strong_update_value_at(tpath, rvalue);
                         continue;
                     } else if rtype == ExpressionType::NonPrimitive {
                         self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
@@ -1395,7 +1400,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     }
                 }
 
-                self.current_environment.update_value_at(tpath, rvalue);
+                self.current_environment
+                    .strong_update_value_at(tpath, rvalue);
             }
             check_for_early_return!(self);
         }
@@ -1780,7 +1786,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     root_rustc_type,
                     move_elements,
                     |_self, path, _, new_value| {
-                        _self.current_environment.update_value_at(path, new_value);
+                        _self
+                            .current_environment
+                            .strong_update_value_at(path, new_value);
                     },
                 );
             },
@@ -1792,7 +1800,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     move_elements,
                     |_self, path, old_value, new_value| {
                         let weak_value = condition.conditional_expression(new_value, old_value);
-                        _self.current_environment.update_value_at(path, weak_value);
+                        _self
+                            .current_environment
+                            .strong_update_value_at(path, weak_value);
                     },
                 )
             },
@@ -1913,7 +1923,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 let length = self.get_array_length(length);
                 let len_val = Rc::new((length as u128).into());
                 self.current_environment
-                    .update_value_at(Path::new_length(target_path.clone()), len_val);
+                    .strong_update_value_at(Path::new_length(target_path.clone()), len_val);
                 for i in 0..length {
                     target_fields.push((
                         Path::new_index(target_path.clone(), Rc::new((i as u128).into())),
@@ -2034,7 +2044,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                                         let ch_const: Rc<AbstractValue> =
                                             Rc::new((*ch as u128).into());
                                         let path = Path::new_index(thin_ptr_deref.clone(), index);
-                                        self.current_environment.update_value_at(path, ch_const);
+                                        self.current_environment
+                                            .strong_update_value_at(path, ch_const);
                                     }
                                 }
                             }
@@ -2055,7 +2066,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 && copied_source_bits == 0
                 && target_expression_type == val.expression.infer_type()
             {
-                self.current_environment.update_value_at(target_path, val);
+                self.current_environment
+                    .strong_update_value_at(target_path, val);
                 source_field_index += 1;
             } else if source_bits - copied_source_bits >= target_bits_to_write {
                 // target field can be completely assigned from bits of source field value
@@ -2066,7 +2078,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 if source_expression_type != target_expression_type {
                     val = val.transmute(target_expression_type);
                 }
-                self.current_environment.update_value_at(target_path, val);
+                self.current_environment
+                    .strong_update_value_at(target_path, val);
                 copied_source_bits += target_bits_to_write;
                 if copied_source_bits == source_bits {
                     source_field_index += 1;
@@ -2101,7 +2114,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     val = next_val.addition(val);
                     if source_bits >= target_bits_to_write {
                         // We are done with this target field
-                        self.current_environment.update_value_at(
+                        self.current_environment.strong_update_value_at(
                             target_path.clone(),
                             val.transmute(target_expression_type.clone()),
                         );
@@ -2357,7 +2370,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             let target_len_path = Path::new_length(target_path.clone());
             let len_value = self.get_u128_const_val(length as u128);
             self.current_environment
-                .update_value_at(target_len_path, len_value);
+                .strong_update_value_at(target_len_path, len_value);
             return true;
         }
         false
@@ -2735,7 +2748,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             1,
         );
         self.current_environment
-            .update_value_at(layout_path, layout);
+            .strong_update_value_at(layout_path, layout);
         block
     }
 
