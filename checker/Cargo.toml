@@ -33,7 +33,7 @@ itertools = "*"
 rand = "*"
 rpds = { version = "*", features = ["serde"] }
 serde = {version = "*", features = ["derive", "alloc", "rc"] }
-tar = "0.4.35"
+tar = "0.4.36"
 sled = "*"
 shellwords = "*"
 tempfile = "*"
