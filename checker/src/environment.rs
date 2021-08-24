@@ -62,7 +62,53 @@ impl Environment {
         self.value_map.insert_mut(path, value);
     }
 
-    /// If the path contains an abstract value that was constructed with a join, the path is
+    /// Updates the path to value map so that the given path now points to the given value.
+    /// Also update any paths that might alias path to now point to a weaker abstract value that
+    /// includes all of the concrete values that value might be at runtime.
+    #[logfn_inputs(TRACE)]
+    pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
+        self.strong_update_value_at(path.clone(), value.clone());
+        self.weakly_update_aliases(path, value, Rc::new(abstract_value::TRUE));
+    }
+
+    /// Update any paths that might alias path to now point to a weaker abstract value that
+    /// includes all of the concrete values that value might be at runtime.
+    #[logfn_inputs(TRACE)]
+    fn weakly_update_aliases(
+        &mut self,
+        path: Rc<Path>,
+        value: Rc<AbstractValue>,
+        path_condition: Rc<AbstractValue>,
+    ) {
+        if let Some((condition, true_path, false_path)) = self.try_to_split(&path) {
+            // The value path contains an abstract value that was constructed with a conditional.
+            // In this case, we split the path into two and perform weak updates on them.
+            // Rather than do it here, we recurse until there are no more conditionals.
+            self.weakly_update_aliases(
+                true_path,
+                value.clone(),
+                path_condition.and(condition.clone()),
+            );
+            self.weakly_update_aliases(
+                false_path,
+                value,
+                path_condition.and(condition.logical_not()),
+            );
+        } else if path_condition.as_bool_if_known().is_none() {
+            // If the path condition is true, the value of path will be updated with value
+            let old_value = if let Some(v) = self.value_map.get(&path) {
+                v.clone()
+            } else {
+                AbstractValue::make_typed_unknown(value.expression.infer_type(), path.clone())
+            };
+            // todo: if path contains an abstract value we need to enumerate all possible aliases
+            // and weakly update them
+            let weak_value = path_condition.conditional_expression(value, old_value);
+            self.value_map.insert_mut(path, weak_value);
+        }
+    }
+
+    /// If the path contains an abstract value that was constructed with a conditional, the path is
     /// concretized into two paths where the abstract value is replaced by the consequent
     /// and alternate, respectively. These paths can then be weakly updated to reflect the
     /// lack of precise knowledge at compile time.
@@ -99,8 +145,8 @@ impl Environment {
                 ref selector,
                 ..
             } => {
-                if let Some((join_condition, true_path, false_path)) = self.try_to_split(qualifier)
-                {
+                //todo: split selector
+                if let Some((condition, true_path, false_path)) = self.try_to_split(qualifier) {
                     let true_path =
                         if let Some(deref_true_path) = Path::try_to_dereference(&true_path, self) {
                             if *selector.as_ref() == PathSelector::Deref {
@@ -126,7 +172,7 @@ impl Environment {
                         Path::new_qualified(false_path, selector.clone())
                     };
 
-                    return Some((join_condition, true_path, false_path));
+                    return Some((condition, true_path, false_path));
                 }
                 None
             }

@@ -493,7 +493,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     };
                     if result_type != ExpressionType::NonPrimitive {
                         self.current_environment
-                            .strong_update_value_at(path, result.clone());
+                            .update_value_at(path, result.clone());
                     }
                     result
                 })
@@ -509,7 +509,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 };
                 if result_type != ExpressionType::NonPrimitive {
                     self.current_environment
-                        .strong_update_value_at(path, result.clone());
+                        .update_value_at(path, result.clone());
                 }
                 result
             }
@@ -582,7 +582,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             if self.current_environment.value_map.contains_key(&path) {
                 return path;
             }
-            self.current_environment.strong_update_value_at(
+            self.current_environment.update_value_at(
                 path.clone(),
                 AbstractValue::make_typed_unknown(expression_type.clone(), path.clone()),
             );
@@ -677,7 +677,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             // Effects on the heap
             for (path, value) in side_effects.iter() {
                 if path.is_rooted_by_non_local_structure() {
-                    self.current_environment.strong_update_value_at(
+                    self.current_environment.update_value_at(
                         path.refine_parameters_and_paths(
                             &[],
                             &None,
@@ -865,7 +865,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                             .iter()
                             .filter(|(p, _)| p.is_rooted_by(&heap_root))
                         {
-                            environment.strong_update_value_at(path.clone(), value.clone());
+                            environment.update_value_at(path.clone(), value.clone());
                         }
                         environment.strong_update_value_at(promoted_root.clone(), value.clone());
                     }
@@ -1007,7 +1007,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .filter(|(p, _)| (*p) == local_path || p.is_rooted_by(local_path))
             {
                 let renamed_path = path.replace_root(local_path, heap_root.clone());
-                environment.strong_update_value_at(renamed_path, value.clone());
+                environment.update_value_at(renamed_path, value.clone());
             }
 
             let thin_pointer_to_heap = AbstractValue::make_reference(heap_root);
@@ -1173,8 +1173,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
                 Expression::Bottom | Expression::Top => {
-                    self.current_environment
-                        .strong_update_value_at(tpath, rvalue);
+                    self.current_environment.update_value_at(tpath, rvalue);
                     continue;
                 }
                 Expression::HeapBlockLayout { source, .. } => {
@@ -1205,8 +1204,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         }
                         _ => {}
                     }
-                    self.current_environment
-                        .strong_update_value_at(tpath, rvalue);
+                    self.current_environment.update_value_at(tpath, rvalue);
                     continue;
                 }
                 Expression::Reference(path) => {
@@ -1309,8 +1307,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                             var_type.clone(),
                             path.clone(),
                         );
-                        self.current_environment
-                            .strong_update_value_at(tpath, rvalue);
+                        self.current_environment.update_value_at(tpath, rvalue);
                         continue;
                     } else if rtype == ExpressionType::NonPrimitive {
                         self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
@@ -1400,8 +1397,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     }
                 }
 
-                self.current_environment
-                    .strong_update_value_at(tpath, rvalue);
+                self.current_environment.update_value_at(tpath, rvalue);
             }
             check_for_early_return!(self);
         }
@@ -1923,7 +1919,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 let length = self.get_array_length(length);
                 let len_val = Rc::new((length as u128).into());
                 self.current_environment
-                    .strong_update_value_at(Path::new_length(target_path.clone()), len_val);
+                    .update_value_at(Path::new_length(target_path.clone()), len_val);
                 for i in 0..length {
                     target_fields.push((
                         Path::new_index(target_path.clone(), Rc::new((i as u128).into())),
@@ -2044,8 +2040,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                                         let ch_const: Rc<AbstractValue> =
                                             Rc::new((*ch as u128).into());
                                         let path = Path::new_index(thin_ptr_deref.clone(), index);
-                                        self.current_environment
-                                            .strong_update_value_at(path, ch_const);
+                                        self.current_environment.update_value_at(path, ch_const);
                                     }
                                 }
                             }
@@ -2078,8 +2073,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 if source_expression_type != target_expression_type {
                     val = val.transmute(target_expression_type);
                 }
-                self.current_environment
-                    .strong_update_value_at(target_path, val);
+                self.current_environment.update_value_at(target_path, val);
                 copied_source_bits += target_bits_to_write;
                 if copied_source_bits == source_bits {
                     source_field_index += 1;
@@ -2114,7 +2108,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     val = next_val.addition(val);
                     if source_bits >= target_bits_to_write {
                         // We are done with this target field
-                        self.current_environment.strong_update_value_at(
+                        self.current_environment.update_value_at(
                             target_path.clone(),
                             val.transmute(target_expression_type.clone()),
                         );
@@ -2370,7 +2364,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             let target_len_path = Path::new_length(target_path.clone());
             let len_value = self.get_u128_const_val(length as u128);
             self.current_environment
-                .strong_update_value_at(target_len_path, len_value);
+                .update_value_at(target_len_path, len_value);
             return true;
         }
         false
