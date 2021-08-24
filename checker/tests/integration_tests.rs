@@ -31,7 +31,6 @@ use regex::Regex;
 use rustc_rayon::iter::IntoParallelIterator;
 use rustc_rayon::iter::ParallelIterator;
 use serde::Deserialize;
-use serde_json;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::read_to_string;

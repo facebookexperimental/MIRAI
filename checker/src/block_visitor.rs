@@ -1650,10 +1650,16 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .current_environment
             .strong_update_value_at(length_path, length_value.clone());
         let slice_path = Path::new_slice(path, length_value);
+        let root_rustc_type = self
+            .type_visitor()
+            .get_path_rustc_type(&slice_path, self.bv.current_span);
         let initial_value = self.visit_operand(operand);
-        self.bv
-            .current_environment
-            .strong_update_value_at(slice_path, initial_value);
+        self.bv.copy_or_move_elements(
+            slice_path,
+            Path::get_as_path(initial_value),
+            root_rustc_type,
+            false,
+        );
     }
 
     /// path = &x or &mut x or &raw const x
@@ -1794,27 +1800,35 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             _ => AbstractValue::make_reference(value_path.clone()),
         };
         self.bv
-            .current_environment
-            .strong_update_value_at(path, value);
+            .copy_or_move_elements(path, Path::get_as_path(value), target_type, false);
     }
 
     /// Accessing a thread local static. This is inherently a runtime operation, even if llvm
     /// treats it as an access to a static. This `Rvalue` yields a reference to the thread local
     /// static.
     fn visit_thread_local_ref(&mut self, path: Rc<Path>, def_id: DefId) {
+        let root_rustc_type = self
+            .type_visitor()
+            .get_path_rustc_type(&path, self.bv.current_span);
         let static_var = if self.bv.tcx.is_mir_available(def_id) {
             self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
         } else {
             Path::new_static(self.bv.tcx, def_id)
         };
-        self.bv
-            .current_environment
-            .strong_update_value_at(path, AbstractValue::make_reference(static_var));
+        self.bv.copy_or_move_elements(
+            path,
+            Path::get_as_path(AbstractValue::make_reference(static_var)),
+            root_rustc_type,
+            false,
+        );
     }
 
     /// path = length of a [X] or [X;n] value.
     #[logfn_inputs(TRACE)]
     fn visit_len(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
+        let root_rustc_type = self
+            .type_visitor()
+            .get_path_rustc_type(&path, self.bv.current_span);
         let place_ty = self
             .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
@@ -1857,8 +1871,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 .lookup_path_and_refine_result(length_path, self.bv.tcx.types.usize)
         };
         self.bv
-            .current_environment
-            .strong_update_value_at(path, len_value);
+            .copy_or_move_elements(path, Path::get_as_path(len_value), root_rustc_type, false);
     }
 
     /// path = operand as ty.
@@ -2023,6 +2036,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         left_operand: &mir::Operand<'tcx>,
         right_operand: &mir::Operand<'tcx>,
     ) {
+        let root_rustc_type = self
+            .type_visitor()
+            .get_path_rustc_type(&path, self.bv.current_span);
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let result = match bin_op {
@@ -2042,17 +2058,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::BinOp::Rem => left.remainder(right),
             mir::BinOp::Shl => left.shift_left(right),
             mir::BinOp::Shr => {
-                // We assume that path is a temporary used to track the operation result.
-                let target_type = self
-                    .type_visitor()
-                    .get_target_path_type(&path, self.bv.current_span);
+                let target_type = ExpressionType::from(root_rustc_type.kind());
                 left.shr(right, target_type)
             }
             mir::BinOp::Sub => left.subtract(right),
         };
         self.bv
-            .current_environment
-            .strong_update_value_at(path, result);
+            .copy_or_move_elements(path, Path::get_as_path(result), root_rustc_type, false);
     }
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate
@@ -2066,20 +2078,23 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         right_operand: &mir::Operand<'tcx>,
     ) {
         // We assume that path is a temporary used to track the operation result and its overflow status.
-        let target_type = self
+        let root_rustc_type = self
             .type_visitor()
             .get_first_part_of_target_path_type_tuple(&path, self.bv.current_span);
+        let target_type = ExpressionType::from(root_rustc_type.kind());
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
         let (result, overflow_flag) = Self::do_checked_binary_op(bin_op, target_type, left, right);
         let path0 = Path::new_field(path.clone(), 0);
         self.bv
-            .current_environment
-            .strong_update_value_at(path0, result);
+            .copy_or_move_elements(path0, Path::get_as_path(result), root_rustc_type, false);
         let path1 = Path::new_field(path, 1);
-        self.bv
-            .current_environment
-            .strong_update_value_at(path1, overflow_flag);
+        self.bv.copy_or_move_elements(
+            path1,
+            Path::get_as_path(overflow_flag),
+            self.bv.tcx.types.usize,
+            false,
+        );
     }
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate
@@ -2124,6 +2139,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         null_op: mir::NullOp,
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
+        let root_rustc_type = self
+            .type_visitor()
+            .get_path_rustc_type(&path, self.bv.current_span);
         let param_env = self.type_visitor().get_param_env();
         let (len, alignment) = if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
             let layout = ty_and_layout.layout;
@@ -2162,13 +2180,15 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::NullOp::SizeOf => len,
         };
         self.bv
-            .current_environment
-            .strong_update_value_at(path, value);
+            .copy_or_move_elements(path, Path::get_as_path(value), root_rustc_type, false);
     }
 
     /// Apply the given unary operator to the operand and assign to path.
     #[logfn_inputs(TRACE)]
     fn visit_unary_op(&mut self, path: Rc<Path>, un_op: mir::UnOp, operand: &mir::Operand<'tcx>) {
+        let root_rustc_type = self
+            .type_visitor()
+            .get_path_rustc_type(&path, self.bv.current_span);
         let operand = self.visit_operand(operand);
         let result = match un_op {
             mir::UnOp::Neg => operand.negate(),
@@ -2184,23 +2204,28 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
         };
         self.bv
-            .current_environment
-            .strong_update_value_at(path, result);
+            .copy_or_move_elements(path, Path::get_as_path(result), root_rustc_type, false);
     }
 
     /// Read the discriminant of an enum and assign to path.
     #[logfn_inputs(TRACE)]
     fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
+        let root_rustc_type = self
+            .type_visitor()
+            .get_path_rustc_type(&path, self.bv.current_span);
         let discriminant_path = Path::new_discriminant(self.visit_rh_place(place));
         let discriminant_value = self
             .bv
             .lookup_path_and_refine_result(discriminant_path, self.bv.tcx.types.u128);
-        self.bv
-            .current_environment
-            .strong_update_value_at(path, discriminant_value);
+        self.bv.copy_or_move_elements(
+            path,
+            Path::get_as_path(discriminant_value),
+            root_rustc_type,
+            false,
+        );
     }
 
-    /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.
+    /// Currently only survives in MIR, that MIRAI sees, if the aggregate is an array.
     /// See https://github.com/rust-lang/rust/issues/48193.
     /// Copies the values from the operands to the target path and sets the length field.
     /// The target path identifies stack storage for the array and is not a fat pointer to the heap.
@@ -2213,10 +2238,16 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     ) {
         precondition!(matches!(aggregate_kinds, mir::AggregateKind::Array(..)));
         let length_path = Path::new_length(path.clone());
+        let root_rustc_type = self
+            .type_visitor()
+            .get_path_rustc_type(&length_path, self.bv.current_span);
         let length_value = self.get_u128_const_val(operands.len() as u128);
-        self.bv
-            .current_environment
-            .strong_update_value_at(length_path, length_value);
+        self.bv.copy_or_move_elements(
+            length_path,
+            Path::get_as_path(length_value),
+            root_rustc_type,
+            false,
+        );
         for (i, operand) in operands.iter().enumerate() {
             let index_value = self.get_u128_const_val(i as u128);
             let index_path = Path::new_index(path.clone(), index_value);

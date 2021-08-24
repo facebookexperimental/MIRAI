@@ -1776,7 +1776,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             return;
         }
 
-        self.distribute_over_target_joins(
+        self.distribute_over_target_conditionals(
             target_path,
             Rc::new(abstract_value::TRUE),
             &|_self, sub_path| {
@@ -2386,10 +2386,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
 
     /// If the target path if of the form if c { p1 } else { p2 } then it is an alias for either
     /// p1 or p2, so updating the target path must weakly update p1 and p2 as well.
-    pub fn distribute_over_target_joins<F, G>(
+    pub fn distribute_over_target_conditionals<F, G>(
         &mut self,
         target_path: Rc<Path>,
-        join_prefix: Rc<AbstractValue>,
+        condition_prefix: Rc<AbstractValue>,
         strong_update: &F,
         weak_update: &G,
     ) where
@@ -2399,12 +2399,12 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         trace!(
             "target_path {:?} join_prefix {:?}",
             target_path,
-            join_prefix
+            condition_prefix
         );
-        if let Some((join_condition, true_path, false_path)) =
+        if let Some((condition, true_path, false_path)) =
             self.current_environment.try_to_split(&target_path)
         {
-            if join_prefix.as_bool_if_known().unwrap_or(false) {
+            if condition_prefix.as_bool_if_known().unwrap_or(false) {
                 //todo: if the strong update is a move, the weak updates below do not see the values
                 //rooted at the source path because they have moved. On the other hand, if the strong
                 //update is done after the weak updates, then the strong update can't help to refine
@@ -2415,27 +2415,27 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             // The value path contains an abstract value that was constructed with a join.
             // In this case, we split the path into two and perform weak updates on them.
             // Rather than do it here, we recurse until there are no more joins.
-            self.distribute_over_target_joins(
+            self.distribute_over_target_conditionals(
                 true_path,
-                join_prefix.and(join_condition.clone()),
+                condition_prefix.and(condition.clone()),
                 strong_update,
                 weak_update,
             );
-            self.distribute_over_target_joins(
+            self.distribute_over_target_conditionals(
                 false_path,
-                join_prefix.and(join_condition.logical_not()),
+                condition_prefix.and(condition.logical_not()),
                 strong_update,
                 weak_update,
             );
         } else {
             // Get here for a path with no joins.
-            if join_prefix.as_bool_if_known().unwrap_or(false) {
+            if condition_prefix.as_bool_if_known().unwrap_or(false) {
                 // This is the root call, so just do a strong update and return to the caller.
                 strong_update(self, target_path)
             } else {
                 // This is a recursive call, do the weak update and return to the caller.
                 // The caller will do the strong update if it is the root call.
-                weak_update(self, target_path, join_prefix);
+                weak_update(self, target_path, condition_prefix);
             }
         }
     }
@@ -2830,7 +2830,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             return;
         }
 
-        self.distribute_over_target_joins(
+        self.distribute_over_target_conditionals(
             value_path,
             Rc::new(abstract_value::TRUE),
             &|_self, sub_path| {

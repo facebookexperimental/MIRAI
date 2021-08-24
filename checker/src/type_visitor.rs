@@ -199,9 +199,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         &self,
         path: &Rc<Path>,
         current_span: rustc_span::Span,
-    ) -> ExpressionType {
+    ) -> Ty<'tcx> {
         match self.get_path_rustc_type(path, current_span).kind() {
-            TyKind::Tuple(types) => ExpressionType::from(types[0].expect_ty().kind()),
+            TyKind::Tuple(types) => types[0].expect_ty(),
             _ => assume_unreachable!(),
         }
     }

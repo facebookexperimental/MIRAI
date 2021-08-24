@@ -181,6 +181,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-stdlib/src") // stack overflow
             || file_name.starts_with("language/move-prover/interpreter/src") // stack overflow
             || file_name.starts_with("language/move-prover/lab/src")  // stack overflow
+            || file_name.starts_with("language/move-prover/mutation") // stack overflow
             || file_name.starts_with("language/tools/disassembler/src") // out of memory
             || file_name.starts_with("language/tools/genesis-viewer/src/main.rs") // out of memory
             || file_name.starts_with("language/tools/move-bytecode-utils/src") // non termination
@@ -205,6 +206,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("secure/storage/vault/src") // stack overflow
             || file_name.starts_with("secure/storage/src") // stack overflow
             || file_name.starts_with("state-sync/src") // Z3 encoding
+            || file_name.starts_with("state-sync/state-sync-v1")  // Z3 encoding
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemdb/src") // expect reference target to have a value
             || file_name.starts_with("storage/diemsum/src") // out of memory
@@ -234,13 +236,11 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/move-prover/bytecode/src")
                 || file_name.starts_with("language/move-prover/docgen/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
-                || file_name.starts_with("language/move-prover/mutation")
                 || file_name.starts_with("move-prover/errmapgen/src")
                 || file_name.starts_with("network/builder/src")
                 || file_name.starts_with("network/simple-onchain-discovery/src")
                 || file_name.starts_with("sdk/src")
                 || file_name.starts_with("secure/net/src")
-                || file_name.starts_with("state-sync/state-sync-v1")
                 || file_name.starts_with("storage/schemadb/src")
                 || file_name.starts_with("storage/storage-client/src")
                 || file_name.starts_with("types/src"))
