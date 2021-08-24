@@ -190,7 +190,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 let val = self.get_int_const_val(discr_bits, discr_ty);
                 self.bv
                     .current_environment
-                    .strong_update_value_at(target_path, val);
+                    .update_value_at(target_path, val);
             }
             _ => assume_unreachable!("rustc should ensure this"),
         }
@@ -212,7 +212,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         );
         self.bv
             .current_environment
-            .strong_update_value_at(path, abstract_value::BOTTOM.into());
+            .update_value_at(path, abstract_value::BOTTOM.into());
     }
 
     /// Execute a piece of inline Assembly.
@@ -1648,12 +1648,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let length_value = self.visit_const(count);
         self.bv
             .current_environment
-            .strong_update_value_at(length_path, length_value.clone());
+            .update_value_at(length_path, length_value.clone());
         let slice_path = Path::new_slice(path, length_value);
         let initial_value = self.visit_operand(operand);
         self.bv
             .current_environment
-            .strong_update_value_at(slice_path, initial_value);
+            .update_value_at(slice_path, initial_value);
     }
 
     /// path = &x or &mut x or &raw const x
@@ -1684,9 +1684,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         let ptr_val = self
                             .bv
                             .lookup_path_and_refine_result(qualifier.clone(), target_type);
-                        self.bv
-                            .current_environment
-                            .strong_update_value_at(path, ptr_val);
+                        self.bv.current_environment.update_value_at(path, ptr_val);
                     } else {
                         // The target type is a slice pointer, so the thing inside the box must be
                         // an array slice (or a string). In the heap model, the contents of a box
@@ -1710,7 +1708,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // the thin pointer part of it.
                         self.bv
                             .current_environment
-                            .strong_update_value_at(Path::new_field(path.clone(), 0), ptr_val);
+                            .update_value_at(Path::new_field(path.clone(), 0), ptr_val);
 
                         // box.0.1 is written to with the slice length when the box is initialized
                         // with the slice value.
@@ -1726,7 +1724,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             // path.1 is the length part of the target slice pointer
                             self.bv
                                 .current_environment
-                                .strong_update_value_at(Path::new_length(path.clone()), len_val);
+                                .update_value_at(Path::new_length(path.clone()), len_val);
                         } else {
                             assume_unreachable!("qualifier should be box.0.0  {:?}", qualifier);
                         }
@@ -1793,9 +1791,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             PathEnum::HeapBlock { value } => value.clone(),
             _ => AbstractValue::make_reference(value_path.clone()),
         };
-        self.bv
-            .current_environment
-            .strong_update_value_at(path, value);
+        self.bv.current_environment.update_value_at(path, value);
     }
 
     /// Accessing a thread local static. This is inherently a runtime operation, even if llvm
@@ -1809,7 +1805,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         };
         self.bv
             .current_environment
-            .strong_update_value_at(path, AbstractValue::make_reference(static_var));
+            .update_value_at(path, AbstractValue::make_reference(static_var));
     }
 
     /// path = length of a [X] or [X;n] value.
@@ -1856,9 +1852,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             self.bv
                 .lookup_path_and_refine_result(length_path, self.bv.tcx.types.usize)
         };
-        self.bv
-            .current_environment
-            .strong_update_value_at(path, len_value);
+        self.bv.current_environment.update_value_at(path, len_value);
     }
 
     /// path = operand as ty.
@@ -1880,9 +1874,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // Compile time constant pointers can arise from first class function values.
                         // Such pointers are thin.
                         let result = self.visit_operand(operand);
-                        self.bv
-                            .current_environment
-                            .strong_update_value_at(path, result);
+                        self.bv.current_environment.update_value_at(path, result);
                         return;
                     }
                 };
@@ -1924,7 +1916,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             // just copy
                             self.bv
                                 .current_environment
-                                .strong_update_value_at(target_path, value.clone());
+                                .update_value_at(target_path, value.clone());
                         } else {
                             let target_type = self
                                 .type_visitor()
@@ -1934,7 +1926,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 let thin_pointer_path = Path::new_field(target_path.clone(), 0);
                                 self.bv
                                     .current_environment
-                                    .strong_update_value_at(thin_pointer_path, value.clone());
+                                    .update_value_at(thin_pointer_path, value.clone());
                                 let source_type = self
                                     .type_visitor()
                                     .get_path_rustc_type(p, self.bv.current_span);
@@ -1949,7 +1941,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                     let length_value = self.visit_const(len);
                                     self.bv
                                         .current_environment
-                                        .strong_update_value_at(length_path, length_value);
+                                        .update_value_at(length_path, length_value);
                                 } else {
                                     assume_unreachable!(
                                         "non array thin pointer type {:?}",
@@ -1960,7 +1952,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 // just copy
                                 self.bv
                                     .current_environment
-                                    .strong_update_value_at(target_path, value.clone());
+                                    .update_value_at(target_path, value.clone());
                             }
                         }
                     }
@@ -2006,9 +1998,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         self.bv.current_environment.value_map =
                             self.bv.current_environment.value_map.remove(&source_path);
                     }
-                    self.bv
-                        .current_environment
-                        .strong_update_value_at(path, result);
+                    self.bv.current_environment.update_value_at(path, result);
                 }
             }
         }
@@ -2050,9 +2040,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             mir::BinOp::Sub => left.subtract(right),
         };
-        self.bv
-            .current_environment
-            .strong_update_value_at(path, result);
+        self.bv.current_environment.update_value_at(path, result);
     }
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate
@@ -2073,13 +2061,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let right = self.visit_operand(right_operand);
         let (result, overflow_flag) = Self::do_checked_binary_op(bin_op, target_type, left, right);
         let path0 = Path::new_field(path.clone(), 0);
-        self.bv
-            .current_environment
-            .strong_update_value_at(path0, result);
+        self.bv.current_environment.update_value_at(path0, result);
         let path1 = Path::new_field(path, 1);
         self.bv
             .current_environment
-            .strong_update_value_at(path1, overflow_flag);
+            .update_value_at(path1, overflow_flag);
     }
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate
@@ -2161,9 +2147,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             mir::NullOp::SizeOf => len,
         };
-        self.bv
-            .current_environment
-            .strong_update_value_at(path, value);
+        self.bv.current_environment.update_value_at(path, value);
     }
 
     /// Apply the given unary operator to the operand and assign to path.
@@ -2183,9 +2167,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 }
             }
         };
-        self.bv
-            .current_environment
-            .strong_update_value_at(path, result);
+        self.bv.current_environment.update_value_at(path, result);
     }
 
     /// Read the discriminant of an enum and assign to path.
@@ -2197,7 +2179,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .lookup_path_and_refine_result(discriminant_path, self.bv.tcx.types.u128);
         self.bv
             .current_environment
-            .strong_update_value_at(path, discriminant_value);
+            .update_value_at(path, discriminant_value);
     }
 
     /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.
@@ -2216,7 +2198,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let length_value = self.get_u128_const_val(operands.len() as u128);
         self.bv
             .current_environment
-            .strong_update_value_at(length_path, length_value);
+            .update_value_at(length_path, length_value);
         for (i, operand) in operands.iter().enumerate() {
             let index_value = self.get_u128_const_val(i as u128);
             let index_path = Path::new_index(path.clone(), index_value);
@@ -2241,7 +2223,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 let const_value = self.visit_literal(literal);
                 self.bv
                     .current_environment
-                    .strong_update_value_at(target_path, const_value);
+                    .update_value_at(target_path, const_value);
             }
         };
     }
@@ -2655,12 +2637,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         let str_path = Path::new_computed(string_val.clone());
                         self.bv
                             .current_environment
-                            .strong_update_value_at(str_path.clone(), string_val);
+                            .update_value_at(str_path.clone(), string_val);
 
                         let len_path = Path::new_length(str_path.clone());
                         self.bv
                             .current_environment
-                            .strong_update_value_at(len_path, len_val);
+                            .update_value_at(len_path, len_val);
                         return AbstractValue::make_reference(str_path);
                     }
                     _ => {}
@@ -2721,7 +2703,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 };
                 self.bv
                     .current_environment
-                    .strong_update_value_at(target_path, Rc::new(val));
+                    .update_value_at(target_path, Rc::new(val));
                 &bytes[1..]
             }
             TyKind::Char => unsafe {
@@ -2734,105 +2716,81 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .clone();
                 self.bv
                     .current_environment
-                    .strong_update_value_at(target_path, Rc::new(ch.into()));
+                    .update_value_at(target_path, Rc::new(ch.into()));
                 &bytes[4..]
             },
             TyKind::Int(IntTy::Isize) => unsafe {
                 let int_ptr = bytes.as_ptr() as *const isize;
                 let i = self.bv.get_i128_const_val((*int_ptr) as i128);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, i);
+                self.bv.current_environment.update_value_at(target_path, i);
                 let size = std::mem::size_of::<isize>();
                 &bytes[size..]
             },
             TyKind::Int(IntTy::I8) => unsafe {
                 let int_ptr = bytes.as_ptr() as *const i8;
                 let i = self.bv.get_i128_const_val((*int_ptr) as i128);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, i);
+                self.bv.current_environment.update_value_at(target_path, i);
                 &bytes[1..]
             },
             TyKind::Int(IntTy::I16) => unsafe {
                 let int_ptr = bytes.as_ptr() as *const i16;
                 let i = self.bv.get_i128_const_val((*int_ptr) as i128);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, i);
+                self.bv.current_environment.update_value_at(target_path, i);
                 &bytes[2..]
             },
             TyKind::Int(IntTy::I32) => unsafe {
                 let int_ptr = bytes.as_ptr() as *const i32;
                 let i = self.bv.get_i128_const_val((*int_ptr) as i128);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, i);
+                self.bv.current_environment.update_value_at(target_path, i);
                 &bytes[4..]
             },
             TyKind::Int(IntTy::I64) => unsafe {
                 let int_ptr = bytes.as_ptr() as *const i64;
                 let i = self.bv.get_i128_const_val((*int_ptr) as i128);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, i);
+                self.bv.current_environment.update_value_at(target_path, i);
                 &bytes[8..]
             },
             TyKind::Int(IntTy::I128) => unsafe {
                 let int_ptr = bytes.as_ptr() as *const i128;
                 let i = self.bv.get_i128_const_val(*int_ptr);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, i);
+                self.bv.current_environment.update_value_at(target_path, i);
                 &bytes[16..]
             },
             TyKind::Uint(UintTy::Usize) => unsafe {
                 let uint_ptr = bytes.as_ptr() as *const usize;
                 let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, u);
+                self.bv.current_environment.update_value_at(target_path, u);
                 let size = std::mem::size_of::<isize>();
                 &bytes[size..]
             },
             TyKind::Uint(UintTy::U8) => unsafe {
                 let uint_ptr = bytes.as_ptr() as *const u8;
                 let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, u);
+                self.bv.current_environment.update_value_at(target_path, u);
                 &bytes[1..]
             },
             TyKind::Uint(UintTy::U16) => unsafe {
                 let uint_ptr = bytes.as_ptr() as *const u16;
                 let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, u);
+                self.bv.current_environment.update_value_at(target_path, u);
                 &bytes[2..]
             },
             TyKind::Uint(UintTy::U32) => unsafe {
                 let uint_ptr = bytes.as_ptr() as *const u32;
                 let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, u);
+                self.bv.current_environment.update_value_at(target_path, u);
                 &bytes[4..]
             },
             TyKind::Uint(UintTy::U64) => unsafe {
                 let uint_ptr = bytes.as_ptr() as *const u64;
                 let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, u);
+                self.bv.current_environment.update_value_at(target_path, u);
                 &bytes[8..]
             },
             TyKind::Uint(UintTy::U128) => unsafe {
                 let uint_ptr = bytes.as_ptr() as *const u128;
                 let u = self.bv.get_u128_const_val(*uint_ptr);
-                self.bv
-                    .current_environment
-                    .strong_update_value_at(target_path, u);
+                self.bv.current_environment.update_value_at(target_path, u);
                 &bytes[16..]
             },
             TyKind::Float(FloatTy::F32) => unsafe {
@@ -2845,7 +2803,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .clone();
                 self.bv
                     .current_environment
-                    .strong_update_value_at(target_path, Rc::new(f.into()));
+                    .update_value_at(target_path, Rc::new(f.into()));
                 &bytes[4..]
             },
             TyKind::Float(FloatTy::F64) => unsafe {
@@ -2858,7 +2816,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .clone();
                 self.bv
                     .current_environment
-                    .strong_update_value_at(target_path, Rc::new(f.into()));
+                    .update_value_at(target_path, Rc::new(f.into()));
                 &bytes[8..]
             },
             TyKind::RawPtr(rustc_middle::ty::TypeAndMut { .. }) | TyKind::Ref(..) => {
@@ -2883,16 +2841,16 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 let str_path = Path::new_computed(string_val.clone());
                 self.bv
                     .current_environment
-                    .strong_update_value_at(str_path.clone(), string_val);
+                    .update_value_at(str_path.clone(), string_val);
 
                 let len_path = Path::new_length(str_path.clone());
                 self.bv
                     .current_environment
-                    .strong_update_value_at(len_path, len_val);
+                    .update_value_at(len_path, len_val);
 
                 self.bv
                     .current_environment
-                    .strong_update_value_at(target_path, AbstractValue::make_reference(str_path));
+                    .update_value_at(target_path, AbstractValue::make_reference(str_path));
                 &[]
             }
             TyKind::Tuple(substs) => {
@@ -2910,10 +2868,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             _ => {
                 debug!("Type {:?} is not expected to be serializable", ty.kind());
-                self.bv.current_environment.strong_update_value_at(
-                    target_path,
-                    Rc::new(ConstantDomain::Unimplemented.into()),
-                );
+                self.bv
+                    .current_environment
+                    .update_value_at(target_path, Rc::new(ConstantDomain::Unimplemented.into()));
                 &[]
             }
         }
@@ -2962,7 +2919,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let length_value = self.get_u128_const_val(len as u128);
         self.bv
             .current_environment
-            .strong_update_value_at(length_path, length_value);
+            .update_value_at(length_path, length_value);
         bytes_left_deserialize
     }
 
@@ -3124,7 +3081,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     };
                     self.bv
                         .current_environment
-                        .strong_update_value_at(discr_path, discr_data);
+                        .update_value_at(discr_path, discr_data);
 
                     if discr_has_data {
                         use std::ops::Deref;
@@ -3152,7 +3109,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         let content_data = self.get_u128_const_val(data);
                         self.bv
                             .current_environment
-                            .strong_update_value_at(content_path, content_data);
+                            .update_value_at(content_path, content_data);
                     }
 
                     return e;
@@ -3167,7 +3124,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 if let Expression::HeapBlock { .. } = &e.expression {
                     let p = Path::new_discriminant(Path::get_as_path(e.clone()));
                     let d = self.get_u128_const_val(data);
-                    self.bv.current_environment.strong_update_value_at(p, d);
+                    self.bv.current_environment.update_value_at(p, d);
                     return e;
                 }
             }
@@ -3354,7 +3311,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     let len_path = Path::new_length(base_path.clone());
                     self.bv
                         .current_environment
-                        .strong_update_value_at(len_path, len_val);
+                        .update_value_at(len_path, len_val);
                 }
                 TyKind::Closure(def_id, generic_args)
                 | TyKind::Generator(def_id, generic_args, ..) => {
@@ -3362,7 +3319,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     let func_val = Rc::new(func_const.clone().into());
                     self.bv
                         .current_environment
-                        .strong_update_value_at(base_path.clone(), func_val);
+                        .update_value_at(base_path.clone(), func_val);
                 }
                 TyKind::Opaque(def_id, ..) => {
                     if let TyKind::Closure(def_id, generic_args)
@@ -3374,7 +3331,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         let func_val = Rc::new(func_const.clone().into());
                         self.bv
                             .current_environment
-                            .strong_update_value_at(base_path.clone(), func_val);
+                            .update_value_at(base_path.clone(), func_val);
                     }
                 }
                 TyKind::FnDef(def_id, generic_args) => {
@@ -3386,7 +3343,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     let func_val = Rc::new(func_const.clone().into());
                     self.bv
                         .current_environment
-                        .strong_update_value_at(base_path.clone(), func_val);
+                        .update_value_at(base_path.clone(), func_val);
                 }
                 _ => (),
             }
