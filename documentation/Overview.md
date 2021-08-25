@@ -40,8 +40,8 @@ and efficiently that it can be part of every Rust developer's normal work flow, 
 integration work flow. If this can be done without having to come up with novel solutions to difficult problems,
 so much the better.
 
-This [paper](https://alastairreid.github.io/papers/hatra2020.pdf) is an excellent exposition of the ambition of the MIRAI
-project and the problem space that it finds itself in.
+This [paper](https://alastairreid.github.io/papers/hatra2020.pdf) is an excellent exposition of the ambition that the 
+MIRAI project is inspired by and the problem space that it finds itself in.
 
 ## Current status of MIRAI
 
@@ -59,7 +59,7 @@ team to summarize by hand, so MIRAI needs to be able to analyze and summarize it
 to resolve all functions calls, including those made via traits and function parameters. Fortunately, the rust compiler
 has extensive support for this, so it is possible to do this. Unfortunately, the rust compiler prefers to panic whenever
 a plug-in issues a query that is not quite right, so MIRAI is still quite likely to crash when you run it over a crate
-that is not part of Diem. There also performance problems that arise from inherently exponential nature of automated
+that is not part of Diem. There are  also performance problems that arise from inherently exponential nature of automated
 code analysis.
 
 If you would like to use MIRAI to analyze your code, you should not expect things to work perfectly out of the box.

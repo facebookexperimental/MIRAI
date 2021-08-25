@@ -145,7 +145,6 @@ impl Environment {
                 ref selector,
                 ..
             } => {
-                //todo: split selector
                 if let Some((condition, true_path, false_path)) = self.try_to_split(qualifier) {
                     let true_path =
                         if let Some(deref_true_path) = Path::try_to_dereference(&true_path, self) {
@@ -172,7 +171,61 @@ impl Environment {
                         Path::new_qualified(false_path, selector.clone())
                     };
 
-                    return Some((condition, true_path, false_path));
+                    Some((condition, true_path, false_path))
+                } else {
+                    self.try_to_split_selector(qualifier, selector)
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// If the path selector contains an abstract value that was constructed with a conditional, the path is
+    /// concretized into two paths where the abstract value is replaced by the consequent
+    /// and alternate, respectively. These paths can then be weakly updated to reflect the
+    /// lack of precise knowledge at compile time.
+    #[logfn_inputs(TRACE)]
+    fn try_to_split_selector(
+        &mut self,
+        qualifier: &Rc<Path>,
+        selector: &Rc<PathSelector>,
+    ) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
+        match selector.as_ref() {
+            PathSelector::Index(value) => {
+                if let Expression::ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                } = &value.expression
+                {
+                    if consequent.might_benefit_from_refinement()
+                        && alternate.might_benefit_from_refinement()
+                    {
+                        return Some((
+                            condition.clone(),
+                            Path::new_index(qualifier.clone(), consequent.clone()),
+                            Path::new_index(qualifier.clone(), alternate.clone()),
+                        ));
+                    }
+                }
+                None
+            }
+            PathSelector::Slice(value) => {
+                if let Expression::ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                } = &value.expression
+                {
+                    if consequent.might_benefit_from_refinement()
+                        && alternate.might_benefit_from_refinement()
+                    {
+                        return Some((
+                            condition.clone(),
+                            Path::new_slice(qualifier.clone(), consequent.clone()),
+                            Path::new_slice(qualifier.clone(), alternate.clone()),
+                        ));
+                    }
                 }
                 None
             }
