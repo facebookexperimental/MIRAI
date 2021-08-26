@@ -910,6 +910,41 @@ impl PathRefinement for Rc<Path> {
                     }
                 }
             }
+            if let PathSelector::Slice(count) = selector.as_ref() {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(count)) =
+                    &count.expression
+                {
+                    if let PathEnum::QualifiedPath {
+                        qualifier,
+                        selector,
+                        ..
+                    } = &qualifier.value
+                    {
+                        if **selector == PathSelector::Deref {
+                            if let PathEnum::Offset { value } = &qualifier.value {
+                                if let Expression::Offset { left, right } = &value.expression {
+                                    if let Expression::CompileTimeConstant(ConstantDomain::I128(
+                                        from,
+                                    )) = &right.expression
+                                    {
+                                        let base_path = Path::new_deref(
+                                            Path::get_as_path(left.clone()),
+                                            ExpressionType::NonPrimitive,
+                                        );
+                                        let to = *from + (*count as i128);
+                                        let selector = Rc::new(PathSelector::ConstantSlice {
+                                            from: *from as u64,
+                                            to: to as u64,
+                                            from_end: false,
+                                        });
+                                        return Path::new_qualified(base_path, selector);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             Path::new_qualified(canonical_qualifier, selector.clone())
         } else {
             self.clone()
