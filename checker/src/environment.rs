@@ -73,17 +73,33 @@ impl Environment {
             ..
         } = &path.value
         {
-            if let PathSelector::Slice(count) = selector.as_ref() {
-                if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
-                    &count.expression
-                {
-                    for i in 0..*val {
-                        let target_index_val = Rc::new(i.into());
+            match selector.as_ref() {
+                PathSelector::Slice(count) => {
+                    if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
+                        &count.expression
+                    {
+                        for i in 0..*val {
+                            let target_index_val = Rc::new(i.into());
+                            let indexed_target =
+                                Path::new_index(qualifier.clone(), target_index_val);
+                            self.update_value_at(indexed_target, value.clone());
+                        }
+                        return;
+                    }
+                }
+                PathSelector::ConstantSlice {
+                    from,
+                    to,
+                    from_end: false,
+                } => {
+                    for i in *from..*to {
+                        let target_index_val = Rc::new((i as u128).into());
                         let indexed_target = Path::new_index(qualifier.clone(), target_index_val);
                         self.update_value_at(indexed_target, value.clone());
                     }
                     return;
                 }
+                _ => {}
             }
         }
         self.strong_update_value_at(path.clone(), value.clone());
