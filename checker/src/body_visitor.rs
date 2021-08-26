@@ -2563,23 +2563,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         element_type: Ty<'tcx>,
         count: &Rc<AbstractValue>,
     ) {
-        let mut value_map = self.current_environment.value_map.clone();
         let slice_initializer = self.lookup_path_and_refine_result(source_path, element_type);
-        for (path, value) in self.current_environment.value_map.iter() {
-            if let Some(index) = path.get_index_value_qualified_by(root_path) {
-                // The slice initializer may be a conditional that leaves the value at this
-                // particular index unchanged, so weaken the current value by joining it with
-                // the slice initializer.
-                let weakened_value = value.join(slice_initializer.clone(), path);
-                // Any values that are at indices greater than or equal to the count of the slice
-                // are not affected by the slice assignment, so can be conditionally maintained.
-                let guarded_weakened_value = index
-                    .less_than(count.clone())
-                    .conditional_expression(weakened_value.clone(), value.clone());
-                value_map.insert_mut(path.clone(), guarded_weakened_value);
-            }
-        }
-        self.current_environment.value_map = value_map;
+        let slice_target = Path::new_slice(root_path.clone(), count.clone());
+        self.current_environment
+            .update_value_at(slice_target, slice_initializer);
     }
 
     /// Update all index entries rooted at target_path_root to reflect the possibility

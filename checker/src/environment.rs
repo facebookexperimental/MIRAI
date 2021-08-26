@@ -67,6 +67,25 @@ impl Environment {
     /// includes all of the concrete values that value might be at runtime.
     #[logfn_inputs(TRACE)]
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
+        if let PathEnum::QualifiedPath {
+            qualifier,
+            selector,
+            ..
+        } = &path.value
+        {
+            if let PathSelector::Slice(count) = selector.as_ref() {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
+                    &count.expression
+                {
+                    for i in 0..*val {
+                        let target_index_val = Rc::new(i.into());
+                        let indexed_target = Path::new_index(qualifier.clone(), target_index_val);
+                        self.update_value_at(indexed_target, value.clone());
+                    }
+                    return;
+                }
+            }
+        }
         self.strong_update_value_at(path.clone(), value.clone());
         self.weakly_update_aliases(path, value, Rc::new(abstract_value::TRUE));
     }
@@ -91,7 +110,7 @@ impl Environment {
             );
             self.weakly_update_aliases(
                 false_path,
-                value,
+                value.clone(),
                 path_condition.and(condition.logical_not()),
             );
         } else if path_condition.as_bool_if_known().is_none() {
@@ -101,11 +120,74 @@ impl Environment {
             } else {
                 AbstractValue::make_typed_unknown(value.expression.infer_type(), path.clone())
             };
-            // todo: if path contains an abstract value we need to enumerate all possible aliases
-            // and weakly update them
-            let weak_value = path_condition.conditional_expression(value, old_value);
-            self.value_map.insert_mut(path, weak_value);
+            // Do a strong update of path using a weakened value
+            let weak_value = path_condition.conditional_expression(value.clone(), old_value);
+            self.value_map.insert_mut(path.clone(), weak_value);
         }
+        if let PathEnum::QualifiedPath {
+            qualifier,
+            selector,
+            ..
+        } = &path.value
+        {
+            if let PathSelector::Slice(count) = selector.as_ref() {
+                // We are assigning value to every element of the slice qualifier[0..count]
+                // There may already be paths for individual elements of the slice.
+                let value_map = self.value_map.clone();
+                for (p, v) in value_map.iter() {
+                    if p.eq(&path) {
+                        continue;
+                    }
+                    if let PathEnum::QualifiedPath {
+                        qualifier: paq,
+                        selector: pas,
+                        ..
+                    } = &p.value
+                    {
+                        if paq.ne(qualifier) {
+                            // p is not an alias because its qualifier does not match
+                            continue;
+                        }
+                        match pas.as_ref() {
+                            // todo: constant index
+                            PathSelector::Index(index) => {
+                                // paq[index] might alias an element in qualifier[0..count]
+                                let index_is_in_range = index.less_than(count.clone());
+                                match index_is_in_range.as_bool_if_known() {
+                                    Some(true) => {
+                                        // p is an alias for sure, so just update it
+                                        self.strong_update_value_at(p.clone(), value.clone());
+                                    }
+                                    Some(false) => {
+                                        // p is known not to be an alias
+                                        continue;
+                                    }
+                                    None => {
+                                        // p might be an alias, so weaken its value by joining it
+                                        // with the slice initializer.
+                                        let weakened_value = v.join(value.clone(), p);
+                                        // If index is not in range, use the strong value
+                                        let guarded_weakened_value = index_is_in_range
+                                            .conditional_expression(weakened_value, v.clone());
+                                        self.strong_update_value_at(
+                                            p.clone(),
+                                            guarded_weakened_value,
+                                        );
+                                    }
+                                }
+                            }
+                            // todo: constant slice
+                            PathSelector::Slice(..) => {
+                                debug!("todo");
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            // todo: constant slice, index, constant index
+        }
+        //todo: offsets
     }
 
     /// If the path contains an abstract value that was constructed with a conditional, the path is
