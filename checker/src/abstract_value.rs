@@ -2830,7 +2830,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 debug_checked_assume!(!c2.is_zero()); // otherwise constant folding would have reduced the Mul
                 return x.less_or_equal(self.divide(c2.clone()));
             }
-            _ => {}
+            // [x > x] -> false
+            (x, y) => {
+                if x.eq(y) {
+                    return Rc::new(FALSE);
+                }
+            }
         }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::GreaterThan {
             left,
@@ -3350,7 +3355,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
-            _ => {}
+            // [x < x] -> false
+            (x, y) => {
+                if x.eq(y) {
+                    return Rc::new(FALSE);
+                }
+            }
         }
         AbstractValue::make_binary(self.clone(), other, |left, right| Expression::LessThan {
             left,
