@@ -88,4 +88,20 @@ pub fn t6() {
     verify!(a[2] == 0xfe);
 }
 
+fn foo4(a: &mut [u8], n: usize) {
+    a[n] = 99;
+    unsafe {
+        let ptr = a.as_mut_ptr();
+        std::ptr::write_bytes(ptr, 0xfe, n);
+    }
+}
+
+pub fn t7() {
+    let mut a = [1u8, 2u8, 3u8];
+    foo4(&mut a[0..3], 2);
+    verify!(a[0] == 0xfe);
+    verify!(a[1] == 0xfe);
+    verify!(a[2] == 99);
+}
+
 pub fn main() {}

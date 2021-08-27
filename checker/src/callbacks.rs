@@ -167,11 +167,13 @@ impl MiraiCallbacks {
             || file_name.starts_with("json-rpc/types/src") // stack overflow
             || file_name.starts_with("language/compiler/src") // out of memory
             || file_name.starts_with("language/diem-framework/src") // expect reference target to have a value
+            || file_name.starts_with("language/diem-tools/df-cli/src") // Sorts <null> and Int are incompatible
             || file_name.starts_with("language/diem-tools/diem-events-fetcher/src") // crash
             || file_name.starts_with("language/diem-tools/diem-validator-interface") // stack overflow
             || file_name.starts_with("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
             || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src") // stack overflow
             || file_name.starts_with("language/diem-vm/src") // Sorts Bool and Int are incompatible
+            || file_name.starts_with("language/move-binary-format/src") // Sorts <null> and Int are incompatible
             || file_name.starts_with("language/move-vm/types/src") // Unexpected representation of upvar types
             || file_name.starts_with("language/move-lang/src") // non termination
             || file_name.starts_with("language/move-model/src") // non termination
@@ -180,6 +182,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
             || file_name.starts_with("language/move-prover/mutation") // stack overflow
             || file_name.starts_with("language/move-stdlib/src") // stack overflow
+            || file_name.starts_with("language/move-prover/docgen/src") //  Unexpected representation of upvar types tuple Param(<upvars>/
             || file_name.starts_with("language/move-prover/interpreter/src") // stack overflow
             || file_name.starts_with("language/move-prover/lab/src")  // stack overflow
             || file_name.starts_with("language/tools/disassembler/src") // out of memory
@@ -227,14 +230,11 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/diem-framework/releases/src")
-                || file_name.starts_with("language/diem-tools/df-cli/src")
                 || file_name.starts_with("language/diem-vm/src")
-                || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
                 || file_name.starts_with("language/move-prover/boogie-backend-exp/src")
                 || file_name.starts_with("language/move-prover/bytecode/src")
-                || file_name.starts_with("language/move-prover/docgen/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
                 || file_name.starts_with("move-prover/errmapgen/src")
                 || file_name.starts_with("network/builder/src")

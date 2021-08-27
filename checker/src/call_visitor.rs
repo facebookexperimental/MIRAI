@@ -2495,13 +2495,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 .get_dereferenced_type(self.actual_argument_types[0])
                 .kind(),
         );
-        let dest_path = Path::new_deref(
-            Path::get_as_path(self.actual_args[0].1.clone()),
-            target_type,
-        )
-        .canonicalize(&self.block_visitor.bv.current_environment);
+        let dest_path = Path::new_deref(self.actual_args[0].0.clone(), target_type)
+            .canonicalize(&self.block_visitor.bv.current_environment);
         let dest_type = self.actual_argument_types[0];
-        let source_path = Path::get_as_path(self.actual_args[1].1.clone());
+        let source_path = self.actual_args[1]
+            .0
+            .canonicalize(&self.block_visitor.bv.current_environment);
         let byte_value = &self.actual_args[1].1;
         let count_value = self.actual_args[2].1.clone();
         let elem_type = self

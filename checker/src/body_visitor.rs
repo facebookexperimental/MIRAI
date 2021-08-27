@@ -1988,7 +1988,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     /// Assign abstract values to the target fields that are consistent with the concrete values
     /// that will arise at runtime if the sequential (packed) bytes of the source fields are copied to the
     /// target fields on a little endian machine.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn copy_field_bits(
         &mut self,
         source_fields: Vec<(Rc<Path>, Ty<'tcx>)>,
