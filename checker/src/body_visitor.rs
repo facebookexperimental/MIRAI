@@ -493,7 +493,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     };
                     if result_type != ExpressionType::NonPrimitive {
                         self.current_environment
-                            .update_value_at(path, result.clone());
+                            .strong_update_value_at(path, result.clone());
                     }
                     result
                 })
@@ -509,7 +509,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 };
                 if result_type != ExpressionType::NonPrimitive {
                     self.current_environment
-                        .update_value_at(path, result.clone());
+                        .strong_update_value_at(path, result.clone());
                 }
                 result
             }

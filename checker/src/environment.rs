@@ -146,62 +146,124 @@ impl Environment {
             ..
         } = &path.value
         {
-            if let PathSelector::Slice(count) = selector.as_ref() {
-                // We are assigning value to every element of the slice qualifier[0..count]
-                // There may already be paths for individual elements of the slice.
-                let value_map = self.value_map.clone();
-                for (p, v) in value_map.iter() {
-                    if p.eq(&path) {
-                        continue;
-                    }
-                    if let PathEnum::QualifiedPath {
-                        qualifier: paq,
-                        selector: pas,
-                        ..
-                    } = &p.value
-                    {
-                        if paq.ne(qualifier) {
-                            // p is not an alias because its qualifier does not match
+            match selector.as_ref() {
+                PathSelector::Index(index) => {
+                    // We are assigning value to qualifier[index] where index is unknown.
+                    // Hence there may be other (p, v) pairs in the environment where the runtime
+                    // location of p might turn out to be the same as the runtime location of path.
+                    // We have to model this uncertainty by weakening v to include the set of
+                    // concrete values represented by value.
+                    let value_map = self.value_map.clone();
+                    for (p, v) in value_map.iter() {
+                        if p.eq(&path) {
                             continue;
                         }
-                        match pas.as_ref() {
-                            // todo: constant index
-                            PathSelector::Index(index) => {
-                                // paq[index] might alias an element in qualifier[0..count]
-                                let index_is_in_range = index.less_than(count.clone());
-                                match index_is_in_range.as_bool_if_known() {
-                                    Some(true) => {
-                                        // p is an alias for sure, so just update it
-                                        self.strong_update_value_at(p.clone(), value.clone());
-                                    }
-                                    Some(false) => {
-                                        // p is known not to be an alias
-                                        continue;
-                                    }
-                                    None => {
-                                        // p might be an alias, so weaken its value by joining it
-                                        // with the slice initializer.
-                                        let weakened_value = v.join(value.clone(), p);
-                                        // If index is not in range, use the strong value
-                                        let guarded_weakened_value = index_is_in_range
-                                            .conditional_expression(weakened_value, v.clone());
-                                        self.strong_update_value_at(
-                                            p.clone(),
-                                            guarded_weakened_value,
-                                        );
+                        if let PathEnum::QualifiedPath {
+                            qualifier: paq,
+                            selector: pas,
+                            ..
+                        } = &p.value
+                        {
+                            if paq.ne(qualifier) {
+                                // p is not an alias because its qualifier does not match
+                                continue;
+                            }
+                            match pas.as_ref() {
+                                PathSelector::Index(i) => {
+                                    // paq[i] might alias an element in qualifier[index]
+                                    let indices_are_equal = index.equals(i.clone());
+                                    match indices_are_equal.as_bool_if_known() {
+                                        Some(true) => {
+                                            // p is an alias for sure, so just update it
+                                            self.strong_update_value_at(p.clone(), value.clone());
+                                        }
+                                        Some(false) => {
+                                            // p is known not to be an alias
+                                            continue;
+                                        }
+                                        None => {
+                                            // p might be an alias, so weaken its value by making it
+                                            // conditional on index == i
+                                            let conditional_value = indices_are_equal
+                                                .conditional_expression(value.clone(), v.clone());
+                                            debug!("conditional_value {:?}", conditional_value);
+                                            self.strong_update_value_at(
+                                                p.clone(),
+                                                conditional_value,
+                                            );
+                                        }
                                     }
                                 }
+                                PathSelector::ConstantIndex { .. }
+                                | PathSelector::ConstantSlice { .. }
+                                | PathSelector::Slice(..) => {
+                                    let weakened_value = v.join(value.clone(), p);
+                                    self.strong_update_value_at(p.clone(), weakened_value);
+                                }
+                                _ => {}
                             }
-                            // todo: constant slice
-                            PathSelector::Slice(..) => {
-                                debug!("todo");
-                            }
-                            _ => {}
                         }
                     }
                 }
+                PathSelector::Slice(count) => {
+                    // We are assigning value to every element of the slice qualifier[0..count]
+                    // There may already be paths for individual elements of the slice.
+                    let value_map = self.value_map.clone();
+                    for (p, v) in value_map.iter() {
+                        if p.eq(&path) {
+                            continue;
+                        }
+                        if let PathEnum::QualifiedPath {
+                            qualifier: paq,
+                            selector: pas,
+                            ..
+                        } = &p.value
+                        {
+                            if paq.ne(qualifier) {
+                                // p is not an alias because its qualifier does not match
+                                continue;
+                            }
+                            match pas.as_ref() {
+                                // todo: constant index
+                                PathSelector::Index(index) => {
+                                    // paq[index] might alias an element in qualifier[0..count]
+                                    let index_is_in_range = index.less_than(count.clone());
+                                    match index_is_in_range.as_bool_if_known() {
+                                        Some(true) => {
+                                            // p is an alias for sure, so just update it
+                                            self.strong_update_value_at(p.clone(), value.clone());
+                                        }
+                                        Some(false) => {
+                                            // p is known not to be an alias
+                                            continue;
+                                        }
+                                        None => {
+                                            // p might be an alias, so weaken its value by joining it
+                                            // with the slice initializer.
+                                            let weakened_value = v.join(value.clone(), p);
+                                            // If index is not in range, use the strong value
+                                            let guarded_weakened_value = index_is_in_range
+                                                .conditional_expression(weakened_value, v.clone());
+                                            self.strong_update_value_at(
+                                                p.clone(),
+                                                guarded_weakened_value,
+                                            );
+                                        }
+                                    }
+                                }
+                                // todo: constant slice
+                                PathSelector::Slice(..) => {
+                                    debug!("todo");
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // todo: constant slice, constant index
+                }
             }
-            // todo: constant slice, index, constant index
         }
         //todo: offsets
     }
