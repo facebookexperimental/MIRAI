@@ -358,8 +358,19 @@ impl CallGraph {
     /// Add a new crate root node to the call graph.
     pub fn add_croot(&mut self, defid: DefId) {
         let croot = CallGraphNode::new_croot(defid);
-        let node_id = self.graph.add_node(croot);
-        self.nodes.insert(defid, node_id);
+        match self.nodes.entry(defid) {
+            Entry::Occupied(node) => {
+                // Replace non-croot existing node
+                let node_id = node.get().to_owned();
+                if let Some(node_weight) = self.graph.node_weight_mut(node_id) {
+                    *node_weight = croot;
+                }
+            }
+            Entry::Vacant(v) => {
+                let node_id = self.graph.add_node(croot);
+                let _ = *v.insert(node_id);
+            }
+        };
     }
 
     /// Add a new root node to the call graph.
