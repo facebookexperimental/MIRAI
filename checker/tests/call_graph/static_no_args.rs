@@ -4,7 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// Linear call graph with static calls, single type, no dominance, no loops.
+// Test case that ensures that if a static call is made without
+// any arguments, an edge *is* added to the call graph.
 
 fn fn1() -> u32 {
     1

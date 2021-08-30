@@ -4,7 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// Linear call graph with static calls, single type, no dominance, no loops.
+// Test case that ensures that a CROOT node is not duplicated if it
+// is analyzed by MIRAI after MIRAI analyzed its first call.
 
 pub fn main() {
     fn1();
