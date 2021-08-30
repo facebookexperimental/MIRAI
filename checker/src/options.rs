@@ -57,6 +57,7 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .long_help(r#"Path to a JSON configuration file that optionally specifies:
                         "dot_output_path": Path to store the call graph in dot format for displaying with graphviz.
                         "ddlog_output_path": Path to store datalog input relations representing the call graph.
+                        "type_map_output_path": Path to store mapping from edge type indexes to strings.
                         "type_relations_path": Path to a file storing type relations to be imported for datalog output.
                         "reductions": A list of reductions to perform on the call graph.
                         "included_crates": A list of crates to include in the call graph. If empty, all crates are included."#))
