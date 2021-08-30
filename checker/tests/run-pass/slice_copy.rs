@@ -62,4 +62,32 @@ pub fn t3() {
     verify!(b[2] == 6);
 }
 
+fn t4copy_f<'a, F>(a: &mut [i32], b: &mut [i32], get_count: F)
+where
+    F: FnOnce() -> &'a usize,
+{
+    unsafe {
+        let count = get_count();
+        let aptr = a.as_mut_ptr();
+        let bptr = b.as_mut_ptr();
+        std::intrinsics::copy_nonoverlapping(aptr, bptr, *count);
+    }
+}
+
+fn t4copy(a: &mut [i32], b: &mut [i32], count: usize) {
+    t4copy_f(a, b, || &count)
+}
+
+pub fn t4() {
+    let mut a = [1, 2, 3];
+    let mut b = [4, 5, 6];
+    t4copy(&mut b, &mut a, 2);
+    verify!(a[0] == 4);
+    verify!(a[1] == 5);
+    verify!(a[2] == 3);
+    verify!(b[0] == 4);
+    verify!(b[1] == 5);
+    verify!(b[2] == 6);
+}
+
 pub fn main() {}

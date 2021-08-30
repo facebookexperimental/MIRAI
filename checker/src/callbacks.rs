@@ -167,6 +167,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("json-rpc/types/src") // stack overflow
             || file_name.starts_with("language/compiler/src") // out of memory
             || file_name.starts_with("language/diem-framework/src") // expect reference target to have a value
+            || file_name.starts_with("language/diem-framework/releases/src") // non termination
             || file_name.starts_with("language/diem-tools/df-cli/src") // Sorts <null> and Int are incompatible
             || file_name.starts_with("language/diem-tools/diem-events-fetcher/src") // crash
             || file_name.starts_with("language/diem-tools/diem-validator-interface") // stack overflow
@@ -229,7 +230,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("execution/executor/src")
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
-                || file_name.starts_with("language/diem-framework/releases/src")
                 || file_name.starts_with("language/diem-vm/src")
                 || file_name.starts_with("language/move-core/types/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
