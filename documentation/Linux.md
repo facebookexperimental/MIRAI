@@ -8,7 +8,7 @@ You should install rustup and then use it to get hold of the latest Rust compile
 See [here](https://doc.rust-lang.org/book/ch01-01-installation.html) for instructions.
 
 Before installing and running MIRAI you should set the current compiler to be same as the compiler
-listed in the MIRAI [rust-toolchain] (https://github.com/facebookexperimental/MIRAI/blob/master/rust-toolchain).
+listed in the MIRAI [rust-toolchain] (https://github.com/facebookexperimental/MIRAI/blob/main/rust-toolchain).
 
 For example:
 ```
@@ -35,7 +35,7 @@ If that works, you're done. If not, you can find pre-built binaries for Z3
 for linux included in the binaries directory of MIRAI.
 
 Alternatively you'll have to build the Z3 binaries yourself, 
-as described [here](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Z3AndLinux.md).
+as described [here](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Z3AndLinux.md).
 
 ## Installing MIRAI into cargo
 
@@ -63,4 +63,4 @@ RUSTFLAGS='-Clink-arg=-L./binaries -Clink-arg=-lstdc++' cargo install  --path ./
 
 ## Contributing to MIRAI
 
-If you want to help develop MIRAI see the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/DeveloperGuide.md)
+If you want to help develop MIRAI see the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/DeveloperGuide.md)
