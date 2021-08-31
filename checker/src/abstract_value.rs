@@ -26,7 +26,7 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::rc::Rc;
 
-// See https://github.com/facebookexperimental/MIRAI/blob/master/documentation/AbstractValues.md.
+// See https://github.com/facebookexperimental/MIRAI/blob/main/documentation/AbstractValues.md.
 
 /// Mirai is an abstract interpreter and thus produces abstract values.
 /// In general, an abstract value is a value that is not fully known.

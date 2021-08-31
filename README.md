@@ -1,12 +1,12 @@
-# MIRAI [![codecov](https://codecov.io/gh/facebookexperimental/MIRAI/branch/master/graph/badge.svg?token=q4jzL09Ahl)](https://codecov.io/gh/facebookexperimental/MIRAI) [![deps.rs](https://deps.rs/repo/github/facebookexperimental/MIRAI/status.svg)](https://deps.rs/repo/github/facebookexperimental/MIRAI)
+# MIRAI [![codecov](https://codecov.io/gh/facebookexperimental/MIRAI/branch/main/graph/badge.svg?token=q4jzL09Ahl)](https://codecov.io/gh/facebookexperimental/MIRAI) [![deps.rs](https://deps.rs/repo/github/facebookexperimental/MIRAI/status.svg)](https://deps.rs/repo/github/facebookexperimental/MIRAI)
 MIRAI is an abstract interpreter for the [Rust](https://www.rust-lang.org/) compiler's [mid-level intermediate
-representation](https://github.com/rust-lang/rfcs/blob/master/text/1211-mir.md) (MIR).
+representation](https://github.com/rust-lang/rfcs/blob/main/text/1211-mir.md) (MIR).
 It is intended to become a widely used static analysis tool for Rust.
 
 ## Using MIRAI
 
-You'll need to install MIRAI as described here for [MacOS and Windows](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/InstallationGuide.md)
-and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Linux.md).
+You'll need to install MIRAI as described here for [MacOS and Windows](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md)
+and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Linux.md).
 
 To run MIRAI, use cargo with `RUSTC_WRAPPER` set to `mirai`.
 Use `rustup override set nightly-YYYY-MM-DD` to make Cargo use the same version of Rust as MIRAI. See the above installation
@@ -53,17 +53,17 @@ You can get some insight into the inner workings of MIRAI by setting the verbosi
 ## Using MIRAI together with the Rust design by contracts crate
 
 Support for MIRAI is available in the [design by contracts crate](https://gitlab.com/karroffel/contracts).
-See the [shopping cart example](https://github.com/facebookexperimental/MIRAI/blob/master/examples/shopping_cart/src/main.rs) for usage.
+See the [shopping cart example](https://github.com/facebookexperimental/MIRAI/blob/main/examples/shopping_cart/src/main.rs) for usage.
 
 ## Developing MIRAI
-See the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/master/documentation//DeveloperGuide.md)
+See the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/main/documentation//DeveloperGuide.md)
 for instructions on how to build, run and debug MIRAI.
 
 ## Full documentation
-* [Overview of project](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Overview.md).
-* [Architecture](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/Architecture.md).
-* [Design discussions](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/DesignDiscussions.md).
-* [Further reading](https://github.com/facebookexperimental/MIRAI/blob/master/documentation/FurtherReading.md).
+* [Overview of project](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Overview.md).
+* [Architecture](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Architecture.md).
+* [Design discussions](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/DesignDiscussions.md).
+* [Further reading](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/FurtherReading.md).
 
 ## Road map
 * Stabilize MIRAI and get rid of crashing bugs.
@@ -74,7 +74,7 @@ for instructions on how to build, run and debug MIRAI.
 * Facebook page:
 * Mailing list
 * irc:  -->
-See the [CONTRIBUTING](https://github.com/facebookexperimental/MIRAI/blob/master/CONTRIBUTING.md) file for how to help out.
+See the [CONTRIBUTING](https://github.com/facebookexperimental/MIRAI/blob/main/CONTRIBUTING.md) file for how to help out.
 
 ## License
-MIRAI is MIT licensed, as found in the [LICENSE](https://github.com/facebookexperimental/MIRAI/blob/master/LICENSE) file.
+MIRAI is MIT licensed, as found in the [LICENSE](https://github.com/facebookexperimental/MIRAI/blob/main/LICENSE) file.

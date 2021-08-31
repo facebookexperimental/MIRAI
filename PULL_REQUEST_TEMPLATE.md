@@ -17,7 +17,7 @@ Fixes # (issue)
 
 ## Checklist:
 
-- [ ] Fork the repo and create your branch from `master`.
+- [ ] Fork the repo and create your branch from `main`.
 - [ ] If you've added code that should be tested, add tests.
 - [ ] If you've changed APIs, update the documentation.
 - [ ] Ensure the test suite passes.
