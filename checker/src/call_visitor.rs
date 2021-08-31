@@ -421,7 +421,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     let target_path = path.replace_root(&source_path, target_path.clone());
                     self.block_visitor
                         .bv
-                        .current_environment
                         .update_value_at(target_path, value.clone());
                 }
             }
@@ -520,7 +519,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         .lookup_path_and_refine_result(return_value_path, target_rustc_type);
                     self.block_visitor
                         .bv
-                        .current_environment
                         .update_value_at(target_path, return_value);
                 } else {
                     assume_unreachable!();
@@ -607,10 +605,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 if !result.is_bottom() {
                     if let Some((place, _)) = &self.destination {
                         let target_path = self.block_visitor.visit_lh_place(place);
-                        self.block_visitor
-                            .bv
-                            .current_environment
-                            .update_value_at(target_path, result);
+                        self.block_visitor.bv.update_value_at(target_path, result);
                         self.use_entry_condition_as_exit_condition();
                         return true;
                     }
@@ -695,7 +690,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         };
                         self.block_visitor
                             .bv
-                            .current_environment
                             .update_value_at(target_path_discr, target_discr_value);
                         self.use_entry_condition_as_exit_condition();
                         return true;
@@ -1277,10 +1271,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 .type_visitor()
                 .get_place_type(place, self.block_visitor.bv.current_span);
             let abstract_value = AbstractValue::make_typed_unknown(expression_type, path.clone());
-            self.block_visitor
-                .bv
-                .current_environment
-                .update_value_at(path, abstract_value);
+            self.block_visitor.bv.update_value_at(path, abstract_value);
             let exit_condition = self
                 .block_visitor
                 .bv
@@ -1556,7 +1547,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         let destination = &self.destination;
         if let Some((place, _)) = destination {
             let target_path = self.block_visitor.visit_rh_place(place);
-            self.block_visitor.bv.current_environment.update_value_at(
+            self.block_visitor.bv.update_value_at(
                 target_path.clone(),
                 result.unwrap_or_else(|| {
                     AbstractValue::make_typed_unknown(ExpressionType::Bool, target_path)
@@ -1835,10 +1826,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             },
                             1,
                         );
-                        self.block_visitor
-                            .bv
-                            .current_environment
-                            .update_value_at(target_path, rval);
+                        self.block_visitor.bv.update_value_at(target_path, rval);
                     }
                     _ => {
                         let source_path = Path::get_as_path(self.actual_args[2].1.clone());
@@ -2009,10 +1997,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         // Get a layout path and update the environment
         let layout_path = Path::new_layout(heap_block_path)
             .canonicalize(&self.block_visitor.bv.current_environment);
-        self.block_visitor
-            .bv
-            .current_environment
-            .update_value_at(layout_path, layout);
+        self.block_visitor.bv.update_value_at(layout_path, layout);
 
         // Signal to the caller that there is no return result
         abstract_value::BOTTOM.into()
@@ -2089,7 +2074,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             let target_path = self.block_visitor.visit_rh_place(place);
             self.block_visitor
                 .bv
-                .current_environment
                 .update_value_at(target_path, discriminant_value);
         }
         self.use_entry_condition_as_exit_condition();
@@ -2202,12 +2186,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .canonicalize(&self.block_visitor.bv.current_environment);
         self.block_visitor
             .bv
-            .current_environment
             .update_value_at(layout_path.clone(), new_length_layout);
         let layout_path2 = Path::new_layout(layout_path);
         self.block_visitor
             .bv
-            .current_environment
             .update_value_at(layout_path2, layout_param);
 
         // Return the original heap block reference as the result
@@ -2259,14 +2241,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     overflow_flag,
                 )
             };
-            self.block_visitor
-                .bv
-                .current_environment
-                .update_value_at(path0, modulo_result);
-            self.block_visitor
-                .bv
-                .current_environment
-                .update_value_at(path1, overflow_flag);
+            self.block_visitor.bv.update_value_at(path0, modulo_result);
+            self.block_visitor.bv.update_value_at(path1, overflow_flag);
             AbstractValue::make_typed_unknown(target_type, target_path)
         } else {
             assume_unreachable!();
@@ -2534,7 +2510,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             let source_value = repeated_bytes(elem_size, byte_value);
             self.block_visitor
                 .bv
-                .current_environment
                 .update_value_at(dest_pattern, source_value);
         } else if let Expression::CompileTimeConstant(ConstantDomain::U128(count)) =
             &count_value.expression
@@ -2550,7 +2525,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     let field_value = repeated_bytes(field_size, byte_value);
                     self.block_visitor
                         .bv
-                        .current_environment
                         .update_value_at(dest_field, field_value);
                     if elem_size == 0 {
                         break;
@@ -2910,10 +2884,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         } else {
                             self.block_visitor
                                 .bv
-                                .current_environment
                                 .update_value_at(rpath.clone(), rvalue.clone());
                         }
-                        pre_environment.update_value_at(rpath, rvalue);
+                        pre_environment.strong_update_value_at(rpath, rvalue);
                     }
                     check_for_early_return!(self.block_visitor.bv);
                 }
@@ -2951,10 +2924,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 let result =
                     self.callee_fun_val
                         .uninterpreted_call(args, result_type, return_value_path);
-                self.block_visitor
-                    .bv
-                    .current_environment
-                    .update_value_at(target_path, result);
+                self.block_visitor.bv.update_value_at(target_path, result);
             }
         }
     }
