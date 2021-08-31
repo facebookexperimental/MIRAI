@@ -1566,12 +1566,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
 
                 match &const_value.expression {
                     Expression::HeapBlock { .. } => {
-                        let rpath = Rc::new(
-                            PathEnum::HeapBlock {
-                                value: const_value.clone(),
-                            }
-                            .into(),
-                        );
+                        let rpath = Path::get_as_path(const_value);
                         self.bv.copy_or_move_elements(path, rpath, rh_type, false);
                     }
                     _ => {

@@ -606,7 +606,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 let result = self.try_to_inline_special_function();
                 if !result.is_bottom() {
                     if let Some((place, _)) = &self.destination {
-                        let target_path = self.block_visitor.visit_rh_place(place);
+                        let target_path = self.block_visitor.visit_lh_place(place);
                         self.block_visitor
                             .bv
                             .current_environment
