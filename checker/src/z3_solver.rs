@@ -15,8 +15,8 @@ use crate::tag_domain::Tag;
 
 use lazy_static::lazy_static;
 use log::debug;
-use log_derive::logfn_inputs;
-use mirai_annotations::{checked_assume, checked_assume_eq, verify, verify_unreachable};
+use log_derive::*;
+use mirai_annotations::*;
 use std::convert::TryFrom;
 use std::ffi::{CStr, CString};
 use std::fmt::{Debug, Formatter, Result};
@@ -575,12 +575,24 @@ impl Z3Solver {
         if discriminator.expression.is_bit_vector() {
             return self.bv_switch(discriminator, cases, default, get_result_ast);
         }
+        let discriminator_type = discriminator.expression.infer_type();
         let discriminator_ast = self.get_as_z3_ast(&(**discriminator).expression);
         let default_ast = get_result_ast(&(**default).expression);
         cases
             .iter()
             .fold(default_ast, |acc_ast, (case_val, case_result)| unsafe {
-                let case_val_ast = self.get_as_z3_ast(&(**case_val).expression);
+                let case_val_type = (**case_val).expression.infer_type();
+                let case_val_ast = if case_val_type != discriminator_type {
+                    debug!(
+                        "mismatching discriminator and case_val: {:?} {:?}",
+                        discriminator, **case_val
+                    );
+                    let sym = self.get_symbol_for(&(**case_val).expression);
+                    let sort = self.get_sort_for(&discriminator_type);
+                    z3_sys::Z3_mk_const(self.z3_context, sym, sort)
+                } else {
+                    self.get_as_z3_ast(&(**case_val).expression)
+                };
                 let cond_ast = z3_sys::Z3_mk_eq(self.z3_context, discriminator_ast, case_val_ast);
                 let case_result_ast = get_result_ast(&(**case_result).expression);
                 z3_sys::Z3_mk_ite(self.z3_context, cond_ast, case_result_ast, acc_ast)
