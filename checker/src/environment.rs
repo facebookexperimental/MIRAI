@@ -62,54 +62,10 @@ impl Environment {
         self.value_map.insert_mut(path, value);
     }
 
-    /// Updates the path to value map so that the given path now points to the given value.
-    /// Also update any paths that might alias path to now point to a weaker abstract value that
-    /// includes all of the concrete values that value might be at runtime.
-    #[logfn_inputs(TRACE)]
-    pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
-        if let PathEnum::QualifiedPath {
-            qualifier,
-            selector,
-            ..
-        } = &path.value
-        {
-            match selector.as_ref() {
-                PathSelector::Slice(count) => {
-                    if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
-                        &count.expression
-                    {
-                        for i in 0..*val {
-                            let target_index_val = Rc::new(i.into());
-                            let indexed_target =
-                                Path::new_index(qualifier.clone(), target_index_val);
-                            self.update_value_at(indexed_target, value.clone());
-                        }
-                        return;
-                    }
-                }
-                PathSelector::ConstantSlice {
-                    from,
-                    to,
-                    from_end: false,
-                } => {
-                    for i in *from..*to {
-                        let target_index_val = Rc::new((i as u128).into());
-                        let indexed_target = Path::new_index(qualifier.clone(), target_index_val);
-                        self.update_value_at(indexed_target, value.clone());
-                    }
-                    return;
-                }
-                _ => {}
-            }
-        }
-        self.strong_update_value_at(path.clone(), value.clone());
-        self.weakly_update_aliases(path, value, Rc::new(abstract_value::TRUE));
-    }
-
     /// Update any paths that might alias path to now point to a weaker abstract value that
     /// includes all of the concrete values that value might be at runtime.
     #[logfn_inputs(TRACE)]
-    fn weakly_update_aliases(
+    pub fn weakly_update_aliases(
         &mut self,
         path: Rc<Path>,
         value: Rc<AbstractValue>,
