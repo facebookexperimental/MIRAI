@@ -271,6 +271,50 @@ impl Path {
         }
     }
 
+    /// Returns an abstract value for "true if the path is the same runtime location as other"
+    #[logfn_inputs(TRACE)]
+    pub fn equals(&self, other: &Rc<Path>) -> Rc<AbstractValue> {
+        if self.eq(other.as_ref()) {
+            return Rc::new(abstract_value::TRUE);
+        }
+        return match (&self.value, &other.value) {
+            (PathEnum::Computed { value: v1 }, PathEnum::Computed { value: v2 })
+            | (PathEnum::HeapBlock { value: v1 }, PathEnum::HeapBlock { value: v2 }) => {
+                v1.equals(v2.clone())
+            }
+            (PathEnum::Offset { value: v1 }, PathEnum::Offset { value: v2 }) => {
+                if let (
+                    Expression::Offset {
+                        left: l1,
+                        right: r1,
+                    },
+                    Expression::Offset {
+                        left: l2,
+                        right: r2,
+                    },
+                ) = (&v1.expression, &v2.expression)
+                {
+                    l1.equals(l2.clone()).and(r1.equals(r2.clone()))
+                } else {
+                    unreachable!("path offset must wrap expression offset");
+                }
+            }
+            (
+                PathEnum::QualifiedPath {
+                    qualifier: q1,
+                    selector: s1,
+                    ..
+                },
+                PathEnum::QualifiedPath {
+                    qualifier: q2,
+                    selector: s2,
+                    ..
+                },
+            ) => q1.equals(q2).and(s1.equals(s2)),
+            _ => Rc::new(abstract_value::FALSE),
+        };
+    }
+
     /// Returns the index value of the index path qualified by qualifier.
     #[logfn_inputs(TRACE)]
     pub fn get_index_value_qualified_by(&self, root: &Rc<Path>) -> Option<Rc<AbstractValue>> {
@@ -1135,6 +1179,19 @@ impl Debug for PathSelector {
 }
 
 impl PathSelector {
+    /// Returns an abstract value for "true if the self selects the same runtime location as other"
+    #[logfn_inputs(TRACE)]
+    pub fn equals(&self, other: &Rc<PathSelector>) -> Rc<AbstractValue> {
+        if self.eq(other) {
+            return Rc::new(abstract_value::TRUE);
+        }
+        return match (self, other.as_ref()) {
+            (PathSelector::Index(v1), PathSelector::Index(v2))
+            | (PathSelector::Slice(v1), PathSelector::Slice(v2)) => v1.equals(v2.clone()),
+            _ => Rc::new(abstract_value::FALSE),
+        };
+    }
+
     /// Adds any abstract heap addresses found in embedded index values to the given set.
     #[logfn_inputs(TRACE)]
     pub fn record_heap_blocks_and_strings(&self, result: &mut HashSet<Rc<AbstractValue>>) {

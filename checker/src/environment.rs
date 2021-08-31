@@ -147,6 +147,45 @@ impl Environment {
         } = &path.value
         {
             match selector.as_ref() {
+                PathSelector::Deref => {
+                    // we are assigning value to *qualifier and there may be another path *q where
+                    // qualifier and q may be the same path at runtime.
+                    let value_map = self.value_map.clone();
+                    for (p, v) in value_map.iter() {
+                        if p.eq(&path) {
+                            continue;
+                        }
+                        if let PathEnum::QualifiedPath {
+                            qualifier: qs,
+                            selector: s,
+                            ..
+                        } = &p.value
+                        {
+                            if **s == PathSelector::Deref {
+                                let paths_are_equal = qualifier.equals(qs);
+                                debug!("paths_are_equal {:?}", paths_are_equal);
+                                match paths_are_equal.as_bool_if_known() {
+                                    Some(true) => {
+                                        // p is known to be an alias of path, so just update it
+                                        self.strong_update_value_at(p.clone(), value.clone());
+                                    }
+                                    Some(false) => {
+                                        // p is known not to be an alias of path
+                                        continue;
+                                    }
+                                    None => {
+                                        // p might be an alias of, so weaken its value by making it
+                                        // conditional on path_are_equal
+                                        let conditional_value = paths_are_equal
+                                            .conditional_expression(value.clone(), v.clone());
+                                        debug!("conditional_value {:?}", conditional_value);
+                                        self.strong_update_value_at(p.clone(), conditional_value);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 PathSelector::Index(index) => {
                     // We are assigning value to qualifier[index] where index is unknown.
                     // Hence there may be other (p, v) pairs in the environment where the runtime
@@ -174,15 +213,15 @@ impl Environment {
                                     let indices_are_equal = index.equals(i.clone());
                                     match indices_are_equal.as_bool_if_known() {
                                         Some(true) => {
-                                            // p is an alias for sure, so just update it
+                                            // p is known to be an alias of path, so just update it
                                             self.strong_update_value_at(p.clone(), value.clone());
                                         }
                                         Some(false) => {
-                                            // p is known not to be an alias
+                                            // p is known not to be an alias of path
                                             continue;
                                         }
                                         None => {
-                                            // p might be an alias, so weaken its value by making it
+                                            // p might be an alias of path, so weaken its value by making it
                                             // conditional on index == i
                                             let conditional_value = indices_are_equal
                                                 .conditional_expression(value.clone(), v.clone());
@@ -265,7 +304,6 @@ impl Environment {
                 }
             }
         }
-        //todo: offsets
     }
 
     /// If the path contains an abstract value that was constructed with a conditional, the path is

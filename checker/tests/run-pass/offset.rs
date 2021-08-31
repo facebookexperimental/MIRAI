@@ -54,7 +54,23 @@ pub fn t6() {
     }
 }
 
+fn t7a(i: isize) -> u8 {
+    unsafe {
+        let a = std::alloc::alloc(std::alloc::Layout::from_size_align(4, 2).unwrap());
+        let o1 = std::intrinsics::offset(a, 1) as *mut u8;
+        *o1 = 111;
+        let o2 = std::intrinsics::offset(a, i) as *mut u8;
+        *o2 = 111 & (i as u8);
+        *o1
+    }
+}
+
 pub fn t7() {
+    let r = t7a(1);
+    verify!(r == 1);
+}
+
+pub fn t8() {
     unsafe {
         let a1 = std::alloc::alloc(std::alloc::Layout::from_size_align(4, 2).unwrap()) as *mut u8;
         *a1 = 111;
