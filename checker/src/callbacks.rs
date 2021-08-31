@@ -174,7 +174,6 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
             || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src") // stack overflow
             || file_name.starts_with("language/diem-vm/src") // Sorts Bool and Int are incompatible
-            || file_name.starts_with("language/move-binary-format/src") // Sorts <null> and Int are incompatible
             || file_name.starts_with("language/move-vm/types/src") // Unexpected representation of upvar types
             || file_name.starts_with("language/move-lang/src") // non termination
             || file_name.starts_with("language/move-model/src") // non termination
@@ -231,6 +230,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/diem-vm/src")
+                || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
                 || file_name.starts_with("language/move-prover/boogie-backend-exp/src")
