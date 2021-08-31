@@ -1550,24 +1550,26 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 let rh_type = literal.ty();
                 let const_value = self.visit_literal(literal);
                 if const_value.expression.infer_type() == ExpressionType::NonPrimitive {
-                    // Transfer children into the environment, discard const_value.
-                    if let Expression::Reference(rpath) | Expression::Variable { path: rpath, .. } =
-                        &const_value.expression
-                    {
-                        self.bv
-                            .copy_or_move_elements(path, rpath.clone(), rh_type, false);
-                        return;
+                    match &const_value.expression {
+                        Expression::Bottom | Expression::Top => {
+                            // No elements to copy/move.
+                            self.bv.update_value_at(path, const_value);
+                        }
+                        Expression::HeapBlock { .. } => {
+                            let rpath = Path::get_as_path(const_value);
+                            self.bv.copy_or_move_elements(path, rpath, rh_type, false);
+                        }
+                        Expression::Reference(rpath) | Expression::Variable { path: rpath, .. } => {
+                            self.bv
+                                .copy_or_move_elements(path, rpath.clone(), rh_type, false);
+                        }
+                        _ => {
+                            let rpath = Path::new_computed(const_value);
+                            self.bv.copy_or_move_elements(path, rpath, rh_type, false);
+                        }
                     }
-                }
-
-                match &const_value.expression {
-                    Expression::HeapBlock { .. } => {
-                        let rpath = Path::get_as_path(const_value);
-                        self.bv.copy_or_move_elements(path, rpath, rh_type, false);
-                    }
-                    _ => {
-                        self.bv.update_value_at(path, const_value);
-                    }
+                } else {
+                    self.bv.update_value_at(path, const_value);
                 }
             }
         };
