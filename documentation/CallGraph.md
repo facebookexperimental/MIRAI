@@ -62,31 +62,43 @@ at that path using the following schema:
 ```
 {
     "dot_output_path": "path/to/graph.dot",
-    "ddlog_output_path": "path/to/graph.dat",
-    "type_map_output_path": "path/to/types.json",
-    "type_relations_path": "path/to/type_relations.json",
     "reductions": [
         {"Slice": "function name"},
         "Fold",
         "Clean",
         "Deduplicate",
     ],
-    "included_crates": ["crate_name"]
+    "included_crates": ["crate_name"],
+    "datalog_config": {
+        "ddlog_output_path": "path/to/graph.dat" | "path/to/datalog/",
+        "type_map_output_path": "path/to/types.json",
+        "type_relations_path": "path/to/type_relations.json",
+        "datalog_backend": "DifferentialDatalog" | "Souffle"
+    },
 }
 ```
 
 Below, we explain each field in detail:
 - `"dot_output_path"`: (**Optional**) Path where dot output of graph will be saved,
 if provided. See the section below on "Dot output".
-- `"ddlog_output_path"`: (**Optional**) Path where Datalog output of graph will be
-saved, if provided. See the section below on "Datalog output".
-- `"type_map_output_path"`: (**Optional**) Path where type map output of graph will
-be saved, if provided. See the section below on "Type Map output".
-- `"type_relations_path"`: (**Optional**) Path to file where manually-added type
-relations will read from. See the section below on "Type relations"
-- `"reductions"`: Possibly empty list of reductions to apply to the call graph. See the subsection below on "Graph reductions".
+- `"reductions"`: Possibly empty list of reductions to apply to the call graph. 
+See the subsection below on "Graph reductions".
 - `"included_crates"`: List of crate names to _include_ in the graph, 
 if the `Fold` reduction is used. Can be empty if the `Fold` reduction is not being used.
+- `"datalog_config"`: (**Optional**) Configuration for Datalog output (see below).
+If left unspecified, no Datalog output will be generated.
+
+Datalog configuration:
+- `"ddlog_output_path"`: Path where Datalog output of graph will be
+saved. See the section below on "Datalog output".
+- `"type_map_output_path"`: Path where type map output of graph will
+be saved. See the section below on "Type Map output".
+- `"type_relations_path"`: (**Optional**) Path to file where manually-added type
+relations will read from, if provided. See the section below on "Type relations"
+- `"datalog_backend"`: The Datalog output backend to use. Currently 
+[Differential Datalog](https://github.com/vmware/differential-datalog) and
+[Soufflé](https://souffle-lang.github.io/) are supported. Note that if Soufflé is 
+used `"ddlog_output_path"` should be the path to a *directory* rather than a file.
 
 ### Graph reductions
 
@@ -148,7 +160,7 @@ The call graph generator also supports
 Datalog is a logic programming language that can be used, in conjunction with the
 generated call graph, to write an analysis that operates on the call graph.
 
-Here is an example of the Datalog output for the prior graph:
+Here is an example of the Differential Datalog output for the prior graph:
 ```
 start;
 insert Edge(0,0,1);
@@ -286,3 +298,52 @@ Reachable{.node1 = 2, .node2 = 3}
 
 As we can see, there is an output relation for every pair of nodes `n1`, `n2`
 such that `n2` is reachable from `n1`.
+
+This example could also be done with [Soufflé](https://souffle-lang.github.io/) 
+Datalog with minor changes to the syntax:
+```
+.decl Edge(id: number, node1: number, node2: number)
+.input Edge(io=file, delimiter=",")
+.decl EdgeType(id: number, type_id: number)
+.input EdgeType(io=file, delimiter=",")
+
+.decl Reachable(node1: number, node2: number)
+Reachable(node1, node2) :- Edge(_, node1, node2).
+Reachable(node1, node3) :- Edge(_, node1, node2), Reachable(node2, node3).
+
+.output Reachable(io=file, delimiter=",")
+```
+
+The input relations will also need to be formatted differently;
+each relation need to be placed into a separate file titled by the relation:
+- `Edge.facts`
+    ```
+    0,0,1
+    1,1,2
+    2,2,3
+    ```
+- `EdgeType.facts`
+    ```
+    0,0
+    1,0
+    2,0
+    ```
+
+To run the analysis with Soufflé: `souffle reachable.dl`. The output will
+be stored into a file called `Reachable.csv` and will match the results
+we saw before.
+
+An interesting feature of Soufflé is the ability to see proof trees for the
+output. To do this, first run Soufflé's explain command:
+`souffle -t explain reachable`. Then, a particular output relation can be
+explained:
+```
+Enter command > explain Reachable(1,3)
+              Edge(2, 2, 3)   
+              -----------(R1) 
+Edge(1, 1, 2) Reachable(2, 3) 
+--------------------------(R2)
+       Reachable(1, 3)        
+```
+
+We can see how `Reachable(1, 3)` was derived transitively.

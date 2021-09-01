@@ -5,6 +5,7 @@
 //
 
 // Linear call graph with function pointer calls, single type, dominance, and a loop.
+// Using the Soufflé datalog backend.
 
 fn fn1(x: u32, fn2: &fn(u32) -> u32, fn3: &fn(u32) -> u32) -> u32 {
     let y = fn2(x);
@@ -33,18 +34,18 @@ pub fn main() {
     "reductions": [],
     "included_crates": [],
     "datalog_config": {
-        "datalog_backend": "DifferentialDatalog"
+        "datalog_backend": "Souffle"
     }
 }
 */
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"fnptr_dom_loop::main\"" ]
-    1 [ label = "\"fnptr_dom_loop::fn1\"" ]
-    2 [ label = "\"fnptr_dom_loop::fn2\"" ]
-    3 [ label = "\"fnptr_dom_loop::fn3\"" ]
-    4 [ label = "\"fnptr_dom_loop::fn4\"" ]
+    0 [ label = "\"fnptr_dom_loop_souffle::main\"" ]
+    1 [ label = "\"fnptr_dom_loop_souffle::fn1\"" ]
+    2 [ label = "\"fnptr_dom_loop_souffle::fn2\"" ]
+    3 [ label = "\"fnptr_dom_loop_souffle::fn3\"" ]
+    4 [ label = "\"fnptr_dom_loop_souffle::fn4\"" ]
     0 -> 1 [ ]
     0 -> 1 [ ]
     1 -> 2 [ ]
@@ -54,22 +55,18 @@ digraph {
 }
 */
 
-/* EXPECTED:DDLOG
-start;
-insert Dom(2,3);
-insert Edge(0,0,1);
-insert Edge(1,0,1);
-insert Edge(2,1,2);
-insert Edge(3,1,3);
-insert Edge(4,3,4);
-insert Edge(5,4,3);
-insert EdgeType(0,0);
-insert EdgeType(1,1);
-insert EdgeType(2,0);
-insert EdgeType(3,0);
-insert EdgeType(4,0);
-insert EdgeType(5,0);
-commit;
+/* EXPECTED:SOUFFLE
+2,30,0,1
+1,0,1
+2,1,2
+3,1,3
+4,3,4
+5,4,30,0
+1,1
+2,0
+3,0
+4,0
+5,0
 */
 
 /* EXPECTED:TYPEMAP

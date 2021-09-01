@@ -5,12 +5,8 @@
 //
 
 // Linear call graph with static calls, single type, no dominance, no loops.
-// Orphan function (unconnected to call graph from main) should be removed 
-// by the "Clean" reduction.
+// Using the Soufflé datalog backend.
 
-pub fn orphan(x: u32) -> u32 {
-    x
-}
 fn fn1(x: u32) -> u32 {
     fn2(x)
 }
@@ -27,35 +23,32 @@ pub fn main() {
 
 /* CONFIG
 {
-    "reductions": ["Clean"],
+    "reductions": [],
     "included_crates": [],
     "datalog_config": {
-        "datalog_backend": "DifferentialDatalog"
+        "datalog_backend": "Souffle"
     }
 }
 */
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"static_clean::main\"" ]
-    1 [ label = "\"static_clean::fn1\"" ]
-    2 [ label = "\"static_clean::fn2\"" ]
-    3 [ label = "\"static_clean::fn3\"" ]
+    0 [ label = "\"static_souffle::main\"" ]
+    1 [ label = "\"static_souffle::fn1\"" ]
+    2 [ label = "\"static_souffle::fn2\"" ]
+    3 [ label = "\"static_souffle::fn3\"" ]
     0 -> 1 [ ]
     1 -> 2 [ ]
     2 -> 3 [ ]
 }
 */
 
-/* EXPECTED:DDLOG
-start;
-insert Edge(0,0,1);
-insert Edge(1,1,2);
-insert Edge(2,2,3);
-insert EdgeType(0,0);
-insert EdgeType(1,0);
-insert EdgeType(2,0);
-commit;
+/* EXPECTED:SOUFFLE
+0,0,1
+1,1,2
+2,2,30,0
+1,0
+2,0
 */
 
 /* EXPECTED:TYPEMAP
