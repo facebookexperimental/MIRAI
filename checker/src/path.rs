@@ -282,6 +282,26 @@ impl Path {
             | (PathEnum::HeapBlock { value: v1 }, PathEnum::HeapBlock { value: v2 }) => {
                 v1.equals(v2.clone())
             }
+            (PathEnum::HeapBlock { value: v1 }, PathEnum::Offset { value: v2 })
+            | (PathEnum::Offset { value: v2 }, PathEnum::HeapBlock { value: v1 }) => {
+                if let Expression::Offset {
+                    left: l2,
+                    right: r2,
+                } = &v2.expression
+                {
+                    if let Expression::Reference(p2) = &l2.expression {
+                        if let PathEnum::HeapBlock { value: v2 } = &p2.value {
+                            v1.equals(v2.clone()).and(r2.equals(Rc::new(0_i128.into())))
+                        } else {
+                            Rc::new(abstract_value::FALSE)
+                        }
+                    } else {
+                        Rc::new(abstract_value::FALSE)
+                    }
+                } else {
+                    unreachable!("path offset must wrap expression offset");
+                }
+            }
             (PathEnum::Offset { value: v1 }, PathEnum::Offset { value: v2 }) => {
                 if let (
                     Expression::Offset {

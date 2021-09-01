@@ -134,9 +134,28 @@ impl Environment {
                                         // conditional on path_are_equal
                                         let conditional_value = paths_are_equal
                                             .conditional_expression(value.clone(), v.clone());
-                                        debug!("conditional_value {:?}", conditional_value);
                                         self.strong_update_value_at(p.clone(), conditional_value);
                                     }
+                                }
+                            }
+                        }
+                        if let PathEnum::HeapBlock { .. } = &p.value {
+                            let paths_are_equal = qualifier.equals(p);
+                            match paths_are_equal.as_bool_if_known() {
+                                Some(true) => {
+                                    // p is known to be an alias of path, so just update it
+                                    self.strong_update_value_at(p.clone(), value.clone());
+                                }
+                                Some(false) => {
+                                    // p is known not to be an alias of path
+                                    continue;
+                                }
+                                None => {
+                                    // p might be an alias of, so weaken its value by making it
+                                    // conditional on path_are_equal
+                                    let conditional_value = paths_are_equal
+                                        .conditional_expression(value.clone(), v.clone());
+                                    self.strong_update_value_at(p.clone(), conditional_value);
                                 }
                             }
                         }

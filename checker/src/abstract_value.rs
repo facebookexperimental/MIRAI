@@ -139,6 +139,13 @@ impl From<BoolDomain> for AbstractValue {
     }
 }
 
+impl From<i128> for AbstractValue {
+    #[logfn_inputs(TRACE)]
+    fn from(cv: i128) -> AbstractValue {
+        make_value(Expression::CompileTimeConstant(ConstantDomain::I128(cv)))
+    }
+}
+
 impl From<u128> for AbstractValue {
     #[logfn_inputs(TRACE)]
     fn from(cv: u128) -> AbstractValue {
