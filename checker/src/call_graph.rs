@@ -69,6 +69,10 @@ pub struct CallGraphConfig {
     /// A list of crates to include in the call graph.
     /// Nodes belonging to crates not in this list will be removed.
     included_crates: Vec<Box<str>>,
+    /// Datalog output backend to use.
+    /// Currently, Differential Datalog and Soufflé are supported.
+    /// If left unspecified, Differential Datalog will be used.
+    datalog_backend: Option<DatalogBackend>,
 }
 
 impl Default for CallGraphConfig {
@@ -80,6 +84,7 @@ impl Default for CallGraphConfig {
             type_relations_path: None,
             reductions: Vec::<CallGraphReduction>::new(),
             included_crates: Vec::<Box<str>>::new(),
+            datalog_backend: Some(DatalogBackend::DifferentialDatalog),
         }
     }
 }
@@ -92,6 +97,7 @@ impl CallGraphConfig {
         type_relations_path: Option<Box<str>>,
         reductions: Vec<CallGraphReduction>,
         included_crates: Vec<Box<str>>,
+        datalog_backend: Option<DatalogBackend>,
     ) -> CallGraphConfig {
         CallGraphConfig {
             dot_output_path,
@@ -100,6 +106,7 @@ impl CallGraphConfig {
             type_relations_path,
             reductions,
             included_crates,
+            datalog_backend,
         }
     }
 
@@ -113,6 +120,10 @@ impl CallGraphConfig {
 
     pub fn get_type_map_path(&self) -> Option<&str> {
         self.type_map_output_path.as_deref()
+    }
+
+    pub fn get_datalog_backend(&self) -> Option<DatalogBackend> {
+        self.datalog_backend.to_owned()
     }
 }
 
@@ -717,14 +728,10 @@ impl CallGraph {
 
     /// Convert the call graph to a Datalog representation.
     ///
-    /// Properties of the graph are converted into Datalog input relations.
-    /// - `Dom(n1, n2)`: `n1` dominates `n2`.
-    /// - `Edge(id, n1, n2)`: There is a call edge from `n1` to `n2`.
-    /// - `EdgeType(id, type_id)`: The edge has the type associated with `type_id`.
-    /// - `EqType(type_id1, type_id2)`: The type `type_id1` is equivalent to `type_id2`.
-    /// - `Member(type_id1, type_id2)`: The type `type_id2` is a member of `type_id1`.
+    /// Properties of the graph are converted into input relations.
     fn to_datalog(
         &self,
+        backend: DatalogBackend,
         ddlog_path: &Path,
         type_map_path: &Path,
         type_relations_path: Option<&Path>,
@@ -794,7 +801,13 @@ impl CallGraph {
                 }
             }
         }
-        match fs::write(ddlog_path, format!("{}", output)) {
+        // Output the Datalog operations in the format of the configured
+        // Datalog backend
+        let output_result = match backend {
+            DatalogBackend::DifferentialDatalog => output.to_differential_datalog(ddlog_path),
+            DatalogBackend::Souffle => output.to_souffle(ddlog_path),
+        };
+        match output_result {
             Ok(_) => (),
             Err(e) => panic!("Failed to write ddlog output: {:?}", e),
         }
@@ -832,7 +845,13 @@ impl CallGraph {
             if let Some(type_map_path) = &self.config.type_map_output_path {
                 let ddlog_path_str: &str = &*ddlog_path;
                 let type_map_path_str: &str = &*type_map_path;
+                let datalog_backend = self
+                    .config
+                    .datalog_backend
+                    .to_owned()
+                    .unwrap_or(DatalogBackend::DifferentialDatalog);
                 call_graph.to_datalog(
+                    datalog_backend,
                     Path::new(ddlog_path_str),
                     Path::new(type_map_path_str),
                     self.config.type_relations_path.as_ref().map(|v| {
@@ -847,6 +866,13 @@ impl CallGraph {
             call_graph.to_dot(Path::new(dot_path_str));
         }
     }
+}
+
+/// Supported Datalog output formats
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DatalogBackend {
+    DifferentialDatalog,
+    Souffle,
 }
 
 /// Temporary data structure for storing deserialized
@@ -877,19 +903,82 @@ impl<'a> Serialize for TypeMapOutput<'a> {
     }
 }
 
+/// Represents the types of datalog input relations
+/// that are generated.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+enum RelationType {
+    /// `Dom(n1, n2)`: `n1` dominates `n2`.
+    Dom,
+    /// `Edge(id, n1, n2)`: There is a call edge from `n1` to `n2`.
+    Edge,
+    /// `EdgeType(id, type_id)`: The edge has the type associated with `type_id`.
+    EdgeType,
+    /// `EqType(type_id1, type_id2)`: The type `type_id1` is equivalent to `type_id2`.
+    EqType,
+    /// `Member(type_id1, type_id2)`: The type `type_id2` is a member of `type_id1`.
+    Member,
+}
+
+impl fmt::Display for RelationType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RelationType::Dom => write!(f, "Dom"),
+            RelationType::Edge => write!(f, "Edge"),
+            RelationType::EdgeType => write!(f, "EdgeType"),
+            RelationType::EqType => write!(f, "EqType"),
+            RelationType::Member => write!(f, "Member"),
+        }
+    }
+}
+
 /// Represents an atomic Datalog relation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct DatalogRelation {
     /// A relation has a name.
-    name: &'static str,
+    name: RelationType,
     /// As well as one or more operands.
     operands: Vec<u32>,
 }
 
-impl fmt::Display for DatalogRelation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
+impl DatalogRelation {
+    pub fn new_dom(n1: u32, n2: u32) -> DatalogRelation {
+        DatalogRelation {
+            name: RelationType::Dom,
+            operands: vec![n1, n2],
+        }
+    }
+
+    pub fn new_edge(id: u32, n1: u32, n2: u32) -> DatalogRelation {
+        DatalogRelation {
+            name: RelationType::Edge,
+            operands: vec![id, n1, n2],
+        }
+    }
+
+    pub fn new_edge_type(id: u32, t: u32) -> DatalogRelation {
+        DatalogRelation {
+            name: RelationType::EdgeType,
+            operands: vec![id, t],
+        }
+    }
+
+    pub fn new_eq_type(t1: u32, t2: u32) -> DatalogRelation {
+        DatalogRelation {
+            name: RelationType::EqType,
+            operands: vec![t1, t2],
+        }
+    }
+
+    pub fn new_member(t1: u32, t2: u32) -> DatalogRelation {
+        DatalogRelation {
+            name: RelationType::Member,
+            operands: vec![t1, t2],
+        }
+    }
+
+    /// Format the relation for Differential Datalog
+    fn to_differential_datalog(&self) -> String {
+        format!(
             "{}({})",
             self.name,
             self.operands
@@ -899,42 +988,14 @@ impl fmt::Display for DatalogRelation {
                 .join(",")
         )
     }
-}
 
-impl DatalogRelation {
-    pub fn new_dom(n1: u32, n2: u32) -> DatalogRelation {
-        DatalogRelation {
-            name: "Dom",
-            operands: vec![n1, n2],
-        }
-    }
-
-    pub fn new_edge(id: u32, n1: u32, n2: u32) -> DatalogRelation {
-        DatalogRelation {
-            name: "Edge",
-            operands: vec![id, n1, n2],
-        }
-    }
-
-    pub fn new_edge_type(id: u32, t: u32) -> DatalogRelation {
-        DatalogRelation {
-            name: "EdgeType",
-            operands: vec![id, t],
-        }
-    }
-
-    pub fn new_eq_type(t1: u32, t2: u32) -> DatalogRelation {
-        DatalogRelation {
-            name: "EqType",
-            operands: vec![t1, t2],
-        }
-    }
-
-    pub fn new_member(t1: u32, t2: u32) -> DatalogRelation {
-        DatalogRelation {
-            name: "Member",
-            operands: vec![t1, t2],
-        }
+    /// Format the relation for Soufflé Datalog
+    fn to_souffle(&self) -> String {
+        self.operands
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>()
+            .join(",")
     }
 }
 
@@ -943,20 +1004,6 @@ impl DatalogRelation {
 /// be input into a Datalog database.
 struct DatalogOutput {
     relations: HashSet<DatalogRelation>,
-}
-
-impl fmt::Display for DatalogOutput {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "start;")?;
-        let mut relation_strings = Vec::<String>::new();
-        for relation in self.relations.iter() {
-            relation_strings.push(format!("insert {};", relation));
-        }
-        relation_strings.sort();
-        let output = relation_strings.join("\n");
-        writeln!(f, "{}", output)?;
-        writeln!(f, "commit;")
-    }
 }
 
 impl DatalogOutput {
@@ -968,5 +1015,89 @@ impl DatalogOutput {
 
     pub fn add_relation(&mut self, relation: DatalogRelation) {
         self.relations.insert(relation);
+    }
+
+    /// Output `relations` formatted for the given Datalog backend.
+    /// Optionally, `filter` the output to only include relations of a
+    /// particular `RelationType`.
+    fn output_relation_set(
+        &self,
+        relations: &HashSet<DatalogRelation>,
+        filter: Option<RelationType>,
+        backend: DatalogBackend,
+    ) -> String {
+        let mut relation_strings = Vec::<String>::new();
+        for relation in relations.iter() {
+            if filter.map_or(true, |x| x == relation.name) {
+                match backend {
+                    DatalogBackend::DifferentialDatalog => relation_strings
+                        .push(format!("insert {};", relation.to_differential_datalog())),
+                    DatalogBackend::Souffle => relation_strings.push(relation.to_souffle()),
+                };
+            }
+        }
+        relation_strings.sort();
+        relation_strings.join("\n")
+    }
+
+    /// Output the Datalog relations to a file in the format
+    /// expected by Differential Datalog
+    pub fn to_differential_datalog(&self, path: &Path) -> std::io::Result<()> {
+        fs::write(
+            path,
+            format!(
+                "start;\n{}\ncommit;",
+                self.output_relation_set(
+                    &self.relations,
+                    None,
+                    DatalogBackend::DifferentialDatalog
+                )
+            ),
+        )
+    }
+
+    /// Output the Datalog relations to a set of files (one file per relation type)
+    /// in the format expected by Soufflé Datalog
+    pub fn to_souffle(&self, path: &Path) -> std::io::Result<()> {
+        fs::write(
+            path.join("Dom.facts"),
+            self.output_relation_set(
+                &self.relations,
+                Some(RelationType::Dom),
+                DatalogBackend::Souffle,
+            ),
+        )?;
+        fs::write(
+            path.join("Edge.facts"),
+            self.output_relation_set(
+                &self.relations,
+                Some(RelationType::Edge),
+                DatalogBackend::Souffle,
+            ),
+        )?;
+        fs::write(
+            path.join("EdgeType.facts"),
+            self.output_relation_set(
+                &self.relations,
+                Some(RelationType::EdgeType),
+                DatalogBackend::Souffle,
+            ),
+        )?;
+        fs::write(
+            path.join("EqType.facts"),
+            self.output_relation_set(
+                &self.relations,
+                Some(RelationType::EqType),
+                DatalogBackend::Souffle,
+            ),
+        )?;
+        fs::write(
+            path.join("Member.facts"),
+            self.output_relation_set(
+                &self.relations,
+                Some(RelationType::Member),
+                DatalogBackend::Souffle,
+            ),
+        )
     }
 }

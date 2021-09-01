@@ -60,7 +60,8 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
                         "type_map_output_path": Path to store mapping from edge type indexes to strings.
                         "type_relations_path": Path to a file storing type relations to be imported for datalog output.
                         "reductions": A list of reductions to perform on the call graph.
-                        "included_crates": A list of crates to include in the call graph. If empty, all crates are included."#))
+                        "included_crates": A list of crates to include in the call graph. If empty, all crates are included.
+                        "datalog_backend": Choice of Datalog output format. Differential Datalog and Souffle are supported."#))
 }
 
 /// Represents options passed to MIRAI.
