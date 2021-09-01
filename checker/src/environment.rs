@@ -73,7 +73,7 @@ impl Environment {
     ) {
         if let Some((condition, true_path, false_path)) = self.try_to_split(&path) {
             // The value path contains an abstract value that was constructed with a conditional.
-            // In this case, we split the path into two and perform weak updates on them.
+            // In this case, we split the path into two and perform conditional weak updates on both.
             // Rather than do it here, we recurse until there are no more conditionals.
             self.weakly_update_aliases(
                 true_path,
@@ -82,20 +82,28 @@ impl Environment {
             );
             self.weakly_update_aliases(
                 false_path,
-                value.clone(),
+                value,
                 path_condition.and(condition.logical_not()),
             );
-        } else if path_condition.as_bool_if_known().is_none() {
-            // If the path condition is true, the value of path will be updated with value
+            return;
+        }
+        // Incorporate path_condition into value.
+        let value = if path_condition.as_bool_if_known().is_none() {
+            // If the path condition is true, the value of path will be updated with value, otherwise use:
             let old_value = if let Some(v) = self.value_map.get(&path) {
                 v.clone()
             } else {
                 AbstractValue::make_typed_unknown(value.expression.infer_type(), path.clone())
             };
+            // Combine old with new to get a weakened value
+            let weak_value = path_condition.conditional_expression(value, old_value);
             // Do a strong update of path using a weakened value
-            let weak_value = path_condition.conditional_expression(value.clone(), old_value);
-            self.value_map.insert_mut(path.clone(), weak_value);
-        }
+            self.value_map.insert_mut(path.clone(), weak_value.clone());
+            weak_value
+        } else {
+            value
+        };
+        // Now look for potential aliases of path that also need updating
         if let PathEnum::QualifiedPath {
             qualifier,
             selector,
