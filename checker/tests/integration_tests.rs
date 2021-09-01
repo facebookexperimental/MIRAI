@@ -22,7 +22,7 @@ extern crate rustc_driver;
 extern crate rustc_rayon;
 extern crate tempfile;
 
-use mirai::call_graph::{CallGraphConfig, CallGraphReduction, DatalogBackend};
+use mirai::call_graph::{CallGraphConfig, CallGraphReduction, DatalogBackend, DatalogConfig};
 use mirai::callbacks;
 use mirai::options::{DiagLevel, Options};
 use mirai::utils;
@@ -152,13 +152,20 @@ fn build_options() -> Options {
     options
 }
 
+// Partial Datalog output config to be read from the
+// test file
+#[derive(Deserialize)]
+struct DatalogTestConfig {
+    datalog_backend: DatalogBackend,
+}
+
 // Partial call graph config to be read from the
 // test file
 #[derive(Deserialize)]
 struct CallGraphTestConfig {
     reductions: Vec<CallGraphReduction>,
     included_crates: Vec<Box<str>>,
-    datalog_backend: Option<DatalogBackend>,
+    datalog_config: DatalogTestConfig,
 }
 
 // Write a call graph configuration file for the current test case
@@ -174,23 +181,22 @@ fn generate_call_graph_config(file_name: &str, temp_dir_path: &str) -> (CallGrap
     } else {
         unrecoverable!("Could not find a call graph config in test file");
     }
-    let datalog_path = match call_graph_test_config.datalog_backend.to_owned() {
-        Some(datalog_backend) => match datalog_backend {
-            DatalogBackend::DifferentialDatalog => {
-                format!("{}/graph.dat", temp_dir_path).into_boxed_str()
-            }
-            DatalogBackend::Souffle => temp_dir_path.to_owned().into_boxed_str(),
-        },
-        None => format!("{}/graph.dat", temp_dir_path).into_boxed_str(),
+    let datalog_path = match call_graph_test_config.datalog_config.datalog_backend {
+        DatalogBackend::DifferentialDatalog => {
+            format!("{}/graph.dat", temp_dir_path).into_boxed_str()
+        }
+        DatalogBackend::Souffle => temp_dir_path.to_owned().into_boxed_str(),
     };
     let call_graph_config = CallGraphConfig::new(
         Some(format!("{}/graph.dot", temp_dir_path).into_boxed_str()),
-        Some(datalog_path),
-        Some(format!("{}/types.json", temp_dir_path).into_boxed_str()),
-        None,
         call_graph_test_config.reductions,
         call_graph_test_config.included_crates,
-        call_graph_test_config.datalog_backend,
+        Some(DatalogConfig::new(
+            datalog_path,
+            format!("{}/types.json", temp_dir_path).into_boxed_str(),
+            None,
+            call_graph_test_config.datalog_config.datalog_backend,
+        )),
     );
     let call_graph_config_path = format!("{}/call_graph_config.json", temp_dir_path);
     let call_graph_config_str =
@@ -420,7 +426,7 @@ fn start_driver_call_graph(config: DriverConfig) -> usize {
     let (call_graph_config, call_graph_config_path) =
         generate_call_graph_config(&config.file_name, &config.temp_dir_path);
     options.call_graph_config = Some(call_graph_config_path);
-    let mut result = self::invoke_driver(
+    let result = self::invoke_driver(
         config.file_name.clone(),
         config.temp_dir_path.clone(),
         sys_root,
@@ -428,7 +434,7 @@ fn start_driver_call_graph(config: DriverConfig) -> usize {
         options,
     );
     if result == 0 {
-        result += check_call_graph_output(
+        check_call_graph_output(
             &config.file_name,
             &call_graph_config,
             CallGraphOutputType::Dot,
@@ -436,26 +442,19 @@ fn start_driver_call_graph(config: DriverConfig) -> usize {
             &config.file_name,
             &call_graph_config,
             CallGraphOutputType::TypeMap,
-        );
-        result += match call_graph_config.get_datalog_backend() {
-            Some(datalog_backend) => match datalog_backend {
-                DatalogBackend::DifferentialDatalog => check_call_graph_output(
-                    &config.file_name,
-                    &call_graph_config,
-                    CallGraphOutputType::Ddlog,
-                ),
-                DatalogBackend::Souffle => check_call_graph_output(
-                    &config.file_name,
-                    &call_graph_config,
-                    CallGraphOutputType::Souffle,
-                ),
-            },
-            None => check_call_graph_output(
+        ) + (match call_graph_config.get_datalog_backend().unwrap() {
+            DatalogBackend::DifferentialDatalog => check_call_graph_output(
                 &config.file_name,
                 &call_graph_config,
                 CallGraphOutputType::Ddlog,
             ),
-        };
+            DatalogBackend::Souffle => check_call_graph_output(
+                &config.file_name,
+                &call_graph_config,
+                CallGraphOutputType::Souffle,
+            ),
+        })
+    } else {
+        result
     }
-    result
 }

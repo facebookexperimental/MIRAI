@@ -33,7 +33,9 @@ pub fn main() {
 {
     "reductions": [],
     "included_crates": [],
-    "datalog_backend": "Souffle"
+    "datalog_config": {
+        "datalog_backend": "Souffle"
+    }
 }
 */
 

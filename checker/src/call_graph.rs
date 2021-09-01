@@ -48,43 +48,76 @@ pub enum CallGraphReduction {
     Clean,
 }
 
+/// Configuration options for Datalog output
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatalogConfig {
+    /// Specifies location for graph to be output as Datalog input relations.
+    ddlog_output_path: Box<str>,
+    /// Specifies location for mapping from type identifiers to type strings.
+    type_map_output_path: Box<str>,
+    /// Optionally specifies the location for manually defined type relations
+    /// to be imported.
+    type_relations_path: Option<Box<str>>,
+    /// Datalog output backend to use.
+    /// Currently, Differential Datalog and Soufflé are supported.
+    datalog_backend: DatalogBackend,
+}
+
+impl DatalogConfig {
+    pub fn new(
+        ddlog_output_path: Box<str>,
+        type_map_output_path: Box<str>,
+        type_relations_path: Option<Box<str>>,
+        datalog_backend: DatalogBackend,
+    ) -> DatalogConfig {
+        DatalogConfig {
+            ddlog_output_path,
+            type_map_output_path,
+            type_relations_path,
+            datalog_backend,
+        }
+    }
+
+    pub fn get_ddlog_path(&self) -> &str {
+        self.ddlog_output_path.as_ref()
+    }
+
+    pub fn get_type_map_path(&self) -> &str {
+        self.type_map_output_path.as_ref()
+    }
+
+    pub fn get_type_relations_path(&self) -> Option<&str> {
+        self.type_relations_path.as_deref()
+    }
+
+    pub fn get_datalog_backend(&self) -> DatalogBackend {
+        self.datalog_backend
+    }
+}
+
 /// Configuration options for call graph generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallGraphConfig {
     /// Optionally specifies location for graph to be output in dot format
     /// (for Graphviz).
     dot_output_path: Option<Box<str>>,
-    /// Optionally specifies location for graph to be output as Datalog input
-    /// relations.
-    ddlog_output_path: Option<Box<str>>,
-    /// Optionally specifies location for mapping from type identifiers to
-    /// type strings.
-    type_map_output_path: Option<Box<str>>,
-    /// Optionally specifies the location for manually defined type relations
-    /// to be imported.
-    type_relations_path: Option<Box<str>>,
     /// A list of call graph reductions to apply sequentially
     /// to the call graph.
     reductions: Vec<CallGraphReduction>,
     /// A list of crates to include in the call graph.
     /// Nodes belonging to crates not in this list will be removed.
     included_crates: Vec<Box<str>>,
-    /// Datalog output backend to use.
-    /// Currently, Differential Datalog and Soufflé are supported.
-    /// If left unspecified, Differential Datalog will be used.
-    datalog_backend: Option<DatalogBackend>,
+    /// Datalog output configuration
+    datalog_config: Option<DatalogConfig>,
 }
 
 impl Default for CallGraphConfig {
     fn default() -> CallGraphConfig {
         CallGraphConfig {
             dot_output_path: None,
-            ddlog_output_path: None,
-            type_map_output_path: None,
-            type_relations_path: None,
             reductions: Vec::<CallGraphReduction>::new(),
             included_crates: Vec::<Box<str>>::new(),
-            datalog_backend: Some(DatalogBackend::DifferentialDatalog),
+            datalog_config: None,
         }
     }
 }
@@ -92,21 +125,15 @@ impl Default for CallGraphConfig {
 impl CallGraphConfig {
     pub fn new(
         dot_output_path: Option<Box<str>>,
-        ddlog_output_path: Option<Box<str>>,
-        type_map_output_path: Option<Box<str>>,
-        type_relations_path: Option<Box<str>>,
         reductions: Vec<CallGraphReduction>,
         included_crates: Vec<Box<str>>,
-        datalog_backend: Option<DatalogBackend>,
+        datalog_config: Option<DatalogConfig>,
     ) -> CallGraphConfig {
         CallGraphConfig {
             dot_output_path,
-            ddlog_output_path,
-            type_map_output_path,
-            type_relations_path,
             reductions,
             included_crates,
-            datalog_backend,
+            datalog_config,
         }
     }
 
@@ -115,15 +142,21 @@ impl CallGraphConfig {
     }
 
     pub fn get_ddlog_path(&self) -> Option<&str> {
-        self.ddlog_output_path.as_deref()
+        self.datalog_config
+            .as_ref()
+            .map(|config| config.get_ddlog_path())
     }
 
     pub fn get_type_map_path(&self) -> Option<&str> {
-        self.type_map_output_path.as_deref()
+        self.datalog_config
+            .as_ref()
+            .map(|config| config.get_type_map_path())
     }
 
     pub fn get_datalog_backend(&self) -> Option<DatalogBackend> {
-        self.datalog_backend.to_owned()
+        self.datalog_config
+            .as_ref()
+            .map(|config| config.get_datalog_backend())
     }
 }
 
@@ -841,25 +874,15 @@ impl CallGraph {
     /// Then produces Datalog and / or dot file output of the call graph.
     pub fn output(&self) {
         let call_graph = self.reduce_graph(self.clone(), &self.config.reductions);
-        if let Some(ddlog_path) = &self.config.ddlog_output_path {
-            if let Some(type_map_path) = &self.config.type_map_output_path {
-                let ddlog_path_str: &str = &*ddlog_path;
-                let type_map_path_str: &str = &*type_map_path;
-                let datalog_backend = self
-                    .config
-                    .datalog_backend
-                    .to_owned()
-                    .unwrap_or(DatalogBackend::DifferentialDatalog);
-                call_graph.to_datalog(
-                    datalog_backend,
-                    Path::new(ddlog_path_str),
-                    Path::new(type_map_path_str),
-                    self.config.type_relations_path.as_ref().map(|v| {
-                        let path_str: &str = &*v;
-                        Path::new(path_str)
-                    }),
-                );
-            }
+        if let Some(datalog_config) = &self.config.datalog_config {
+            call_graph.to_datalog(
+                datalog_config.get_datalog_backend(),
+                Path::new(datalog_config.get_ddlog_path()),
+                Path::new(datalog_config.get_type_map_path()),
+                datalog_config
+                    .get_type_relations_path()
+                    .map(|path_str| Path::new(path_str)),
+            );
         }
         if let Some(dot_path) = &self.config.dot_output_path {
             let dot_path_str: &str = &*dot_path;
@@ -869,7 +892,7 @@ impl CallGraph {
 }
 
 /// Supported Datalog output formats
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum DatalogBackend {
     DifferentialDatalog,
     Souffle,

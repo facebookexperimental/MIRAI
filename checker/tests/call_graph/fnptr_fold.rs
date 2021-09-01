@@ -26,7 +26,10 @@ pub fn main() {
 /* CONFIG
 {
     "reductions": ["Fold"],
-    "included_crates": ["fnptr_fold"]
+    "included_crates": ["fnptr_fold"],
+    "datalog_config": {
+        "datalog_backend": "DifferentialDatalog"
+    }
 }
 */
 

@@ -62,9 +62,6 @@ at that path using the following schema:
 ```
 {
     "dot_output_path": "path/to/graph.dot",
-    "ddlog_output_path": "path/to/graph.dat" | "path/to/datalog/",
-    "type_map_output_path": "path/to/types.json",
-    "type_relations_path": "path/to/type_relations.json",
     "reductions": [
         {"Slice": "function name"},
         "Fold",
@@ -72,28 +69,36 @@ at that path using the following schema:
         "Deduplicate",
     ],
     "included_crates": ["crate_name"],
-    "datalog_backend": "DifferentialDatalog" | "Souffle"
+    "datalog_config": {
+        "ddlog_output_path": "path/to/graph.dat" | "path/to/datalog/",
+        "type_map_output_path": "path/to/types.json",
+        "type_relations_path": "path/to/type_relations.json",
+        "datalog_backend": "DifferentialDatalog" | "Souffle"
+    },
 }
 ```
 
 Below, we explain each field in detail:
 - `"dot_output_path"`: (**Optional**) Path where dot output of graph will be saved,
 if provided. See the section below on "Dot output".
-- `"ddlog_output_path"`: (**Optional**) Path where Datalog output of graph will be
-saved, if provided. See the section below on "Datalog output".
-- `"type_map_output_path"`: (**Optional**) Path where type map output of graph will
-be saved, if provided. See the section below on "Type Map output".
-- `"type_relations_path"`: (**Optional**) Path to file where manually-added type
-relations will read from. See the section below on "Type relations"
 - `"reductions"`: Possibly empty list of reductions to apply to the call graph. 
 See the subsection below on "Graph reductions".
 - `"included_crates"`: List of crate names to _include_ in the graph, 
 if the `Fold` reduction is used. Can be empty if the `Fold` reduction is not being used.
-- `"datalog_backend"`: (**Optional**) The Datalog output backend to use. Currently 
+- `"datalog_config"`: (**Optional**) Configuration for Datalog output (see below).
+If left unspecified, no Datalog output will be generated.
+
+Datalog configuration:
+- `"ddlog_output_path"`: Path where Datalog output of graph will be
+saved. See the section below on "Datalog output".
+- `"type_map_output_path"`: Path where type map output of graph will
+be saved. See the section below on "Type Map output".
+- `"type_relations_path"`: (**Optional**) Path to file where manually-added type
+relations will read from, if provided. See the section below on "Type relations"
+- `"datalog_backend"`: The Datalog output backend to use. Currently 
 [Differential Datalog](https://github.com/vmware/differential-datalog) and
-[Soufflé](https://souffle-lang.github.io/) are supported.
-If left unspecified, Differential Datalog will be used. Note that if Soufflé is used
-`"ddlog_output_path"` should be the path to a *directory* rather than a file.
+[Soufflé](https://souffle-lang.github.io/) are supported. Note that if Soufflé is 
+used `"ddlog_output_path"` should be the path to a *directory* rather than a file.
 
 ### Graph reductions
 

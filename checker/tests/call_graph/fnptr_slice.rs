@@ -24,7 +24,10 @@ pub fn main() {
 /* CONFIG
 {
     "reductions": [{"Slice": "fn1"}],
-    "included_crates": []
+    "included_crates": [],
+    "datalog_config": {
+        "datalog_backend": "DifferentialDatalog"
+    }
 }
 */
 

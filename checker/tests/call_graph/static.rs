@@ -23,7 +23,10 @@ pub fn main() {
 /* CONFIG
 {
     "reductions": [],
-    "included_crates": []
+    "included_crates": [],
+    "datalog_config": {
+        "datalog_backend": "DifferentialDatalog"
+    }
 }
 */
 
