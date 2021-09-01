@@ -2446,8 +2446,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             {
                 return Rc::new(FALSE);
             }
+
+            // [(join == val)] -> if !interval(join).intersect(interval(val)) { false } else { unknown == val }
             // [(widened == val)] -> if !interval(widened).intersect(interval(val)) { false } else { unknown == val }
-            (Expression::WidenedJoin { path, operand }, _) => {
+            (Expression::Join { path, .. }, _) | (Expression::WidenedJoin { path, .. }, _) => {
                 let widened_interval = self.get_cached_interval();
                 let val_interval = other.get_cached_interval();
                 if !widened_interval.is_bottom()
@@ -2455,7 +2457,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && widened_interval.intersect(&val_interval).is_bottom()
                 {
                     return Rc::new(FALSE);
-                } else if operand.expression.contains_local_variable(true) {
+                } else if self.expression.contains_local_variable(true) {
                     return AbstractValue::make_typed_unknown(
                         other.expression.infer_type(),
                         path.clone(),
@@ -2463,8 +2465,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     .equals(other);
                 }
             }
+            // [(val == join)] -> if !interval(join).intersect(interval(val)) { false } else { val == unknown }
             // [(val == widened)] -> if !interval(widened).intersect(interval(val)) { false } else { val == unknown }
-            (_, Expression::WidenedJoin { path, operand }) => {
+            (_, Expression::Join { path, .. }) | (_, Expression::WidenedJoin { path, .. }) => {
                 let val_interval = self.get_cached_interval();
                 let widened_interval = other.get_cached_interval();
                 if !widened_interval.is_bottom()
@@ -2472,7 +2475,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && widened_interval.intersect(&val_interval).is_bottom()
                 {
                     return Rc::new(FALSE);
-                } else if operand.expression.contains_local_variable(true) {
+                } else if other.expression.contains_local_variable(true) {
                     return self.equals(AbstractValue::make_typed_unknown(
                         self.expression.infer_type(),
                         path.clone(),

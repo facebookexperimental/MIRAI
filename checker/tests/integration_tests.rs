@@ -387,7 +387,7 @@ fn check_call_graph_output(
             fs::read_to_string(call_graph_config.get_type_map_path().unwrap())
         }
         CallGraphOutputType::Souffle => {
-            get_souffle_output(&Path::new(call_graph_config.get_ddlog_path().unwrap()))
+            get_souffle_output(Path::new(call_graph_config.get_ddlog_path().unwrap()))
         }
     };
     if let Ok(actual) = actual {

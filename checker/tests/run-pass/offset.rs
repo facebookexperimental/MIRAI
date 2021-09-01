@@ -81,8 +81,8 @@ pub fn t8() {
             *a2 = 222;
             i += 1;
         }
-        verify!(*a1 == 111); //~ possible false verification condition
-                             //todo: figure out how to verify this
+        verify!(*a1 == 111);
+        //todo: figure out how to verify this
         verify!(*a2 == 222); //~ possible false verification condition
     }
 }
