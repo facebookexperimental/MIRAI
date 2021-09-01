@@ -155,9 +155,9 @@ impl MiraiCallbacks {
             || file_name.starts_with("config/management/network-address-encryption/src") // stack overflow
             || file_name.starts_with("config/management/operational/src") // crash
             || file_name.starts_with("config/seed-peer-generator/src") // stack overflow
-            || file_name.starts_with("consensus/src") // Sorts Int and <null> are incompatible
+            || file_name.starts_with("consensus/src") // (ite (= 1 0) 1 (ite a!1 1 0))) at position 1 does not match declaration
             || file_name.starts_with("consensus/safety-rules/src") // Sorts Int and <null> are incompatible
-            || file_name.starts_with("consensus/consensus-types/src") // Sorts Int and <null> are incompatible
+            || file_name.starts_with("consensus/consensus-types/src") // (ite (= 1 0) 1 (ite a!1 1 0))) at position 1 does not match declaration
             || file_name.starts_with("crypto/crypto/src") // stack overflow
             || file_name.starts_with("crypto/crypto-derive/src") // out of memory
             || file_name.starts_with("diem-node/src") // out of memory
@@ -168,16 +168,14 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/compiler/src") // out of memory
             || file_name.starts_with("language/diem-framework/src") // expect reference target to have a value
             || file_name.starts_with("language/diem-framework/releases/src") // non termination
-            || file_name.starts_with("language/diem-tools/df-cli/src") // Sorts <null> and Int are incompatible
             || file_name.starts_with("language/diem-tools/diem-events-fetcher/src") // crash
             || file_name.starts_with("language/diem-tools/diem-validator-interface") // stack overflow
             || file_name.starts_with("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
             || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src") // stack overflow
-            || file_name.starts_with("language/diem-vm/src") // Sorts Bool and Int are incompatible
+            || file_name.starts_with("language/diem-vm/src") // 'Not a type: DefIndex(3132)
             || file_name.starts_with("language/move-vm/types/src") // Unexpected representation of upvar types
             || file_name.starts_with("language/move-lang/src") // non termination
             || file_name.starts_with("language/move-model/src") // non termination
-            || file_name.starts_with("language/move-prover/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("language/move-prover/boogie-backend/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
             || file_name.starts_with("language/move-prover/mutation") // stack overflow
@@ -208,13 +206,12 @@ impl MiraiCallbacks {
             || file_name.starts_with("secure/storage/github/src") // stack overflow
             || file_name.starts_with("secure/storage/vault/src") // stack overflow
             || file_name.starts_with("secure/storage/src") // stack overflow
-            || file_name.starts_with("state-sync/src") // Z3 encoding
-            || file_name.starts_with("state-sync/state-sync-v1/src") // Z3 encoding
+            || file_name.starts_with("state-sync/state-sync-v1/src") // Unexpected representation of upvar types
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemdb/src") // expect reference target to have a value
             || file_name.starts_with("storage/diemsum/src") // out of memory
             || file_name.starts_with("storage/inspector/src/") // out of memory
-            || file_name.starts_with("types/src") //Sorts Int and <null> are incompatible
+            || file_name.starts_with("types/src") // (ite (= 1 0) 1 (ite (= 1 TOP) 1 0)) at position 1 does not match declaration
             || file_name.starts_with("vm-validator/src")
         {
             return true;
@@ -229,9 +226,11 @@ impl MiraiCallbacks {
                 || file_name.starts_with("execution/executor/src")
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
-                || file_name.starts_with("language/diem-vm/src")
+                || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
+                || file_name.starts_with("language/diem-tools/df-cli/src")
                 || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
+                || file_name.starts_with("language/move-prover/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
                 || file_name.starts_with("language/move-prover/boogie-backend-exp/src")
                 || file_name.starts_with("language/move-prover/bytecode/src")
@@ -241,9 +240,9 @@ impl MiraiCallbacks {
                 || file_name.starts_with("network/simple-onchain-discovery/src")
                 || file_name.starts_with("sdk/src")
                 || file_name.starts_with("secure/net/src")
+                || file_name.starts_with("state-sync/src")
                 || file_name.starts_with("storage/schemadb/src")
-                || file_name.starts_with("storage/storage-client/src")
-                || file_name.starts_with("types/src"))
+                || file_name.starts_with("storage/storage-client/src"))
         {
             return true;
         }
