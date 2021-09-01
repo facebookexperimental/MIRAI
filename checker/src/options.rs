@@ -54,7 +54,7 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .long("call_graph_config")
         .takes_value(true)
         .help("Path call graph config.")
-        .long_help(r#"Path to a JSON file that configures call graph output. Please see documentation/CallGraph.md for details."#))
+        .long_help(r#"Path to a JSON file that configures call graph output. Please see the documentation for details (https://github.com/facebookexperimental/MIRAI/blob/main/documentation/CallGraph.md)."#))
 }
 
 /// Represents options passed to MIRAI.
