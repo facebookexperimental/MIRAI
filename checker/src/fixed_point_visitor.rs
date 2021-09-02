@@ -249,17 +249,21 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
             self.bv.mir.predecessors()[bb]
                 .iter()
                 .filter_map(|pred_bb| {
+                    // If the predecessor can only be reached via bb then bb and pred_bb are
+                    // part of the loop body.
                     let is_loop_back = self.dominators.is_dominated_by(*pred_bb, bb);
                     if iteration_count == 1 && is_loop_back {
                         // For the first iteration of the loop body we only want state that
-                        // precedes the body. Normally, the loop body's state will be in the
-                        // default state and thus get ignored, but if the loop is nested there
-                        // will be state from the previous iteration of the outer loop.
+                        // precedes the body. Normally, the state of a block that is part of the
+                        // loop body will still be in the default state in iteration 1
+                        // and thus get ignored.
+                        // If the loop is nested, however, there will be state from the previous
+                        // iteration of the outer loop, so we have to explicitly ignore the state.
                         return None;
                     }
                     if iteration_count > 1 && !is_loop_back {
                         // Once the loop body has been interpreted in its initial state (iteration 1)
-                        // we only want state from the looping back branches.
+                        // we only want state from previous iterations of the loop.
                         return None;
                     }
                     let pred_state = &self.out_state[pred_bb];
