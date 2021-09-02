@@ -3349,6 +3349,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 mir::ProjectionElem::Subslice { .. } => {}
             }
             result = Path::new_qualified(result, Rc::new(selector));
+            self.type_visitor_mut()
+                .set_path_rustc_type(result.clone(), ty);
         }
         result
     }

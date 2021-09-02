@@ -2269,6 +2269,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent.dereference(target_type.clone()),
                 alternate.dereference(target_type),
             ),
+            Expression::HeapBlock { .. } => self.clone(),
             Expression::Join { path, left, right } => left
                 .dereference(target_type.clone())
                 .join(right.dereference(target_type), path),
