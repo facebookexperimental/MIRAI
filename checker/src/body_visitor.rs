@@ -2693,7 +2693,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     /// Updates the path to value map in self.current_environment so that the given path now points
     /// to the given value. Also update any paths that might alias path to now point to a weaker
     /// abstract value that includes all of the concrete values that value might be at runtime.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     pub fn update_value_at(&mut self, path: Rc<Path>, value: Rc<AbstractValue>) {
         if let PathEnum::QualifiedPath {
             qualifier,
