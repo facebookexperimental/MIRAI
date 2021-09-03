@@ -318,9 +318,6 @@ impl Environment {
                 }
                 None
             }
-            PathEnum::LocalVariable { .. } | PathEnum::Parameter { .. } | PathEnum::Result => {
-                self.try_to_split_local(path)
-            }
             PathEnum::QualifiedPath {
                 ref qualifier,
                 ref selector,
@@ -411,39 +408,6 @@ impl Environment {
                 None
             }
             _ => None,
-        }
-    }
-
-    /// Helper for try_to_split.
-    #[logfn_inputs(TRACE)]
-    fn try_to_split_local(
-        &mut self,
-        path: &Rc<Path>,
-    ) -> Option<(Rc<AbstractValue>, Rc<Path>, Rc<Path>)> {
-        if let Some(AbstractValue {
-            expression:
-                Expression::ConditionalExpression {
-                    condition,
-                    consequent,
-                    alternate,
-                },
-            ..
-        }) = self.value_at(path).map(Rc::as_ref)
-        {
-            if let (Expression::HeapBlock { .. }, Expression::HeapBlock { .. })
-            | (Expression::Reference(..), Expression::Reference(..)) =
-                (&consequent.expression, &alternate.expression)
-            {
-                Some((
-                    condition.clone(),
-                    Path::get_as_path(consequent.clone()),
-                    Path::get_as_path(alternate.clone()),
-                ))
-            } else {
-                None
-            }
-        } else {
-            None
         }
     }
 
