@@ -1772,37 +1772,15 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             return;
         }
 
-        self.distribute_over_target_joins(
+        self.non_patterned_copy_or_move_elements(
             target_path,
-            Rc::new(abstract_value::TRUE),
-            &|_self, sub_path| {
-                _self.non_patterned_copy_or_move_elements(
-                    sub_path,
-                    source_path.clone(),
-                    root_rustc_type,
-                    move_elements,
-                    |_self, path, _, new_value| {
-                        _self
-                            .current_environment
-                            .strong_update_value_at(path, new_value);
-                    },
-                );
+            source_path,
+            root_rustc_type,
+            move_elements,
+            |_self, path, _, new_value| {
+                _self.update_value_at(path, new_value);
             },
-            &|_self, sub_path, condition| {
-                _self.non_patterned_copy_or_move_elements(
-                    sub_path,
-                    source_path.clone(),
-                    root_rustc_type,
-                    move_elements,
-                    |_self, path, old_value, new_value| {
-                        let weak_value = condition.conditional_expression(new_value, old_value);
-                        _self
-                            .current_environment
-                            .strong_update_value_at(path, weak_value);
-                    },
-                )
-            },
-        );
+        )
     }
 
     /// Copy the heap model at source_path to a heap model at target_path.
@@ -2379,62 +2357,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             .expect("Array length constant to have a known value") as usize
     }
 
-    /// If the target path if of the form if c { p1 } else { p2 } then it is an alias for either
-    /// p1 or p2, so updating the target path must weakly update p1 and p2 as well.
-    pub fn distribute_over_target_joins<F, G>(
-        &mut self,
-        target_path: Rc<Path>,
-        join_prefix: Rc<AbstractValue>,
-        strong_update: &F,
-        weak_update: &G,
-    ) where
-        F: Fn(&mut Self, Rc<Path>),
-        G: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>),
-    {
-        trace!(
-            "target_path {:?} join_prefix {:?}",
-            target_path,
-            join_prefix
-        );
-        if let Some((join_condition, true_path, false_path)) =
-            self.current_environment.try_to_split(&target_path)
-        {
-            if join_prefix.as_bool_if_known().unwrap_or(false) {
-                //todo: if the strong update is a move, the weak updates below do not see the values
-                //rooted at the source path because they have moved. On the other hand, if the strong
-                //update is done after the weak updates, then the strong update can't help to refine
-                //the weak values.
-                // For now we work around this problem by always copying.
-                strong_update(self, target_path);
-            }
-            // The value path contains an abstract value that was constructed with a join.
-            // In this case, we split the path into two and perform weak updates on them.
-            // Rather than do it here, we recurse until there are no more joins.
-            self.distribute_over_target_joins(
-                true_path,
-                join_prefix.and(join_condition.clone()),
-                strong_update,
-                weak_update,
-            );
-            self.distribute_over_target_joins(
-                false_path,
-                join_prefix.and(join_condition.logical_not()),
-                strong_update,
-                weak_update,
-            );
-        } else {
-            // Get here for a path with no joins.
-            if join_prefix.as_bool_if_known().unwrap_or(false) {
-                // This is the root call, so just do a strong update and return to the caller.
-                strong_update(self, target_path)
-            } else {
-                // This is a recursive call, do the weak update and return to the caller.
-                // The caller will do the strong update if it is the root call.
-                weak_update(self, target_path, join_prefix);
-            }
-        }
-    }
-
     /// Copies/moves all paths rooted in source_path to corresponding paths rooted in target_path.
     pub fn non_patterned_copy_or_move_elements<F>(
         &mut self,
@@ -2893,126 +2815,50 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             return;
         }
 
-        self.distribute_over_target_joins(
-            value_path,
-            Rc::new(abstract_value::TRUE),
-            &|_self, sub_path| {
-                if !root_rustc_type.is_scalar() {
-                    let (tag_field_path, tag_field_value) =
-                        _self.extract_tag_field_of_non_scalar_value_at(&sub_path, root_rustc_type);
-                    _self
-                        .current_environment
-                        .value_map
-                        .insert_mut(tag_field_path, tag_field_value.add_tag(tag));
-                    if !tag.is_propagated_by(TagPropagation::SubComponent) {
+        if !root_rustc_type.is_scalar() {
+            let (tag_field_path, tag_field_value) =
+                self.extract_tag_field_of_non_scalar_value_at(&value_path, root_rustc_type);
+            self.update_value_at(tag_field_path, tag_field_value.add_tag(tag));
+            if !tag.is_propagated_by(TagPropagation::SubComponent) {
+                return;
+            } else {
+                // fall through, the tag is propagated to sub-components.
+            }
+        }
+
+        self.non_patterned_copy_or_move_elements(
+            value_path.clone(),
+            value_path.clone(),
+            root_rustc_type,
+            false,
+            |_self, path, _, new_value| {
+                // Layout and Discriminant are not accessible to programmers, and they carry internal information
+                // that should not be wrapped by tags. TagField is also skipped, because they will be handled
+                // together with implicit tag fields.
+                if let PathEnum::QualifiedPath { selector, .. } = &path.value {
+                    if matches!(
+                        **selector,
+                        PathSelector::Layout | PathSelector::Discriminant | PathSelector::TagField
+                    ) {
                         return;
-                    } else {
-                        // fall through, the tag is propagated to sub-components.
                     }
                 }
 
-                // We gets here if root_rustc_type is scalar or the tag can be propagated to sub-components.
-                _self.non_patterned_copy_or_move_elements(
-                    sub_path.clone(),
-                    sub_path.clone(),
-                    root_rustc_type,
-                    false,
-                    |_self, path, _, new_value| {
-                        // Layout and Discriminant are not accessible to programmers, and they carry internal information
-                        // that should not be wrapped by tags. TagField is also skipped, because they will be handled
-                        // together with implicit tag fields.
-                        if let PathEnum::QualifiedPath { selector, .. } = &path.value {
-                            if matches!(
-                                **selector,
-                                PathSelector::Layout
-                                    | PathSelector::Discriminant
-                                    | PathSelector::TagField
-                            ) {
-                                return;
-                            }
-                        }
-
-                        // We should update the tag fields of non-scalar values.
-                        // The logic is implemented in propagate_tag_to_tag_fields.
-                        let path_rustc_type = _self
-                            .type_visitor()
-                            .get_path_rustc_type(&path, _self.current_span);
-                        if !path_rustc_type.is_scalar() {
-                            return;
-                        }
-
-                        _self
-                            .current_environment
-                            .value_map
-                            .insert_mut(path, new_value.add_tag(tag));
-                    },
-                );
-
-                // Propagate the tag to all tag fields rooted by sub_path.
-                _self.propagate_tag_to_tag_fields(sub_path, |value| value.add_tag(tag));
-            },
-            &|_self, sub_path, condition| {
-                if !root_rustc_type.is_scalar() {
-                    let (tag_field_path, tag_field_value) =
-                        _self.extract_tag_field_of_non_scalar_value_at(&sub_path, root_rustc_type);
-                    let weak_value = condition
-                        .conditional_expression(tag_field_value.add_tag(tag), tag_field_value);
-                    _self
-                        .current_environment
-                        .value_map
-                        .insert_mut(tag_field_path, weak_value);
-                    if !tag.is_propagated_by(TagPropagation::SubComponent) {
-                        return;
-                    } else {
-                        // fall through, the tag is propagated to sub-components.
-                    }
+                // We should update the tag fields of non-scalar values.
+                // The logic is implemented in propagate_tag_to_tag_fields.
+                let path_rustc_type = _self
+                    .type_visitor()
+                    .get_path_rustc_type(&path, _self.current_span);
+                if !path_rustc_type.is_scalar() {
+                    return;
                 }
 
-                // We gets here if root_rustc_type is scalar or the tag can be propagated to sub-components.
-                _self.non_patterned_copy_or_move_elements(
-                    sub_path.clone(),
-                    sub_path.clone(),
-                    root_rustc_type,
-                    false,
-                    |_self, path, old_value, new_value| {
-                        // Layout and Discriminant are not accessible to programmers, and they carry internal information
-                        // that should not be wrapped by tags. TagField is also skipped, because they will be handled
-                        // together with implicit tag fields.
-                        if let PathEnum::QualifiedPath { selector, .. } = &path.value {
-                            if matches!(
-                                **selector,
-                                PathSelector::Layout
-                                    | PathSelector::Discriminant
-                                    | PathSelector::TagField
-                            ) {
-                                return;
-                            }
-                        }
-
-                        // We should update the tag fields of non-scalar values.
-                        // The logic is implemented in propagate_tag_to_tag_fields.
-                        let path_rustc_type = _self
-                            .type_visitor()
-                            .get_path_rustc_type(&path, _self.current_span);
-                        if !path_rustc_type.is_scalar() {
-                            return;
-                        }
-
-                        let weak_value =
-                            condition.conditional_expression(new_value.add_tag(tag), old_value);
-                        _self
-                            .current_environment
-                            .value_map
-                            .insert_mut(path, weak_value);
-                    },
-                );
-
-                // Propagate the tag to all tag fields rooted by sub_path.
-                _self.propagate_tag_to_tag_fields(sub_path, |value| {
-                    condition.conditional_expression(value.add_tag(tag), value)
-                });
+                _self.update_value_at(path, new_value.add_tag(tag));
             },
         );
+
+        // Propagate the tag to all tag fields rooted by value_path.
+        self.propagate_tag_to_tag_fields(value_path, |value| value.add_tag(tag));
     }
 
     /// Attach `tag` to all index entries rooted at qualifier to reflect the possibility
