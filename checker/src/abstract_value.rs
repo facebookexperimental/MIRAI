@@ -2461,6 +2461,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return Rc::new(FALSE);
             }
 
+            (
+                Expression::HeapBlock {
+                    abstract_address: a1,
+                    ..
+                },
+                Expression::HeapBlock {
+                    abstract_address: a2,
+                    ..
+                },
+            ) => {
+                return if *a1 == *a2 {
+                    Rc::new(TRUE)
+                } else {
+                    Rc::new(FALSE)
+                };
+            }
             // [(join == val)] -> if !interval(join).intersect(interval(val)) { false } else { unknown == val }
             // [(widened == val)] -> if !interval(widened).intersect(interval(val)) { false } else { unknown == val }
             (Expression::Join { path, .. }, _) | (Expression::WidenedJoin { path, .. }, _) => {

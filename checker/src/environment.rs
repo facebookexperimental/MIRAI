@@ -170,9 +170,9 @@ impl Environment {
                     }
                 }
                 PathSelector::Index(index) => {
-                    // We are assigning value to qualifier[index] where index is unknown.
-                    // Hence there may be other (p, v) pairs in the environment where the runtime
-                    // location of p might turn out to be the same as the runtime location of path.
+                    // We are assigning value to qualifier[index] and there may be other (p[i], v)
+                    // pairs in the environment where the runtime location of p[i] might turn out to
+                    // be the same as the runtime location of qualifier[index] (i.e. path).
                     // We have to model this uncertainty by weakening v to include the set of
                     // concrete values represented by value.
                     let value_map = self.value_map.clone();
@@ -282,8 +282,45 @@ impl Environment {
                         }
                     }
                 }
+                // todo: constant slice, constant index
                 _ => {
-                    // todo: constant slice, constant index
+                    // we are assigning value to qualifier.selector and there may be another path q.selector where
+                    // qualifier and q may be the same path at runtime (and hence should be treated
+                    // as a potential alias).
+                    let value_map = self.value_map.clone();
+                    for (p, v) in value_map.iter() {
+                        if p.eq(&path) {
+                            continue;
+                        }
+                        if let PathEnum::QualifiedPath {
+                            qualifier: qs,
+                            selector: s,
+                            ..
+                        } = &p.value
+                        {
+                            if s.eq(selector) {
+                                let paths_are_equal = qualifier.equals(qs);
+                                debug!("paths_are_equal {:?}", paths_are_equal);
+                                match paths_are_equal.as_bool_if_known() {
+                                    Some(true) => {
+                                        // p is known to be an alias of path, so just update it
+                                        self.strong_update_value_at(p.clone(), value.clone());
+                                    }
+                                    Some(false) => {
+                                        // p is known not to be an alias of path
+                                        continue;
+                                    }
+                                    None => {
+                                        // p might be an alias of, so weaken its value by making it
+                                        // conditional on path_are_equal
+                                        let conditional_value = paths_are_equal
+                                            .conditional_expression(value.clone(), v.clone());
+                                        self.strong_update_value_at(p.clone(), conditional_value);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
