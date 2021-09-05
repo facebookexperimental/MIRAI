@@ -930,7 +930,12 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .unwrap()
                 .value_map
                 .get(local_path)
-                .expect("expect reference target to have a value");
+                .unwrap_or_else(|| {
+                    panic!(
+                        "expect reference target to have a value {:?} {:?}",
+                        local_path, self.exit_environment
+                    )
+                });
             let value_path = Path::get_as_path(target_value.clone());
             let promoted_value = AbstractValue::make_from(Expression::Reference(value_path), 1);
             environment.strong_update_value_at(promoted_root.clone(), promoted_value);
@@ -1702,7 +1707,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         }
 
         // Get here if source_path is not a pattern. Now see if target_path is a pattern.
-        // First look for assignments to union fields. Those have become (strong) assignments to
+        // First look for assignments to union fields. Those have to become (strong) assignments to
         // every field of the union because union fields all alias the same underlying storage.
         if let PathEnum::QualifiedPath {
             qualifier,
@@ -1753,17 +1758,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     source_path,
                     root_rustc_type,
                     move_elements,
-                );
-            },
-            |_self, target_path, source_path, index_value: Rc<AbstractValue>| {
-                _self.weak_updates(&target_path, &source_path, |v| index_value.equals(v));
-            },
-            |_self, target_path, source_path, count: Rc<AbstractValue>| {
-                _self.weaken_paths_that_overlap_slice(
-                    &target_path,
-                    source_path,
-                    root_rustc_type,
-                    &count,
                 );
             },
         );
@@ -2245,19 +2239,15 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     /// the possibility that this assignment might modify the values that are currently associated
     /// with them. In this case the function returns false so that the caller can proceed to
     /// also, strongly, update the target_path without treating it as a pattern.
-    pub fn try_expand_target_pattern<F, G, H>(
+    pub fn try_expand_target_pattern<F>(
         &mut self,
         target_path: &Rc<Path>,
         source_path: &Rc<Path>,
         root_rustc_type: Ty<'tcx>,
         strong_update: F,
-        weak_update: G,
-        weak_update_slice: H,
     ) -> bool
     where
         F: Fn(&mut Self, Rc<Path>, Rc<Path>, Ty<'tcx>),
-        G: Fn(&mut Self, Rc<Path>, Rc<Path>, Rc<AbstractValue>),
-        H: Fn(&mut Self, Rc<Path>, Rc<Path>, Rc<AbstractValue>),
     {
         trace!(
             "try_expand_target_pattern(target_path {:?}, source_path {:?}, root_rustc_type {:?},)",
@@ -2271,61 +2261,20 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             ..
         } = &target_path.value
         {
-            match &**selector {
-                PathSelector::Index(value) => {
-                    if let Expression::CompileTimeConstant(..) = &value.expression {
-                        // fall through, the target path is unique
-                    } else {
-                        if value.expression.contains_widened_join() {
-                            // A widened index is like a pattern because it changes from one loop
-                            // iteration to the next, we can't use the current environment to reason
-                            // about the state of any element indexed by it. Consequently, we set all
-                            // entries rooted in qualifier to TOP.
-                            let old_value_map = self.current_environment.value_map.clone();
-                            let mut new_value_map = old_value_map.clone();
-                            for (path, value) in old_value_map
-                                .iter()
-                                .filter(|(path, _)| path.is_rooted_by(qualifier))
-                            {
-                                let top_val =
-                                    AbstractValue::make_from(value.expression.clone(), u64::MAX);
-                                new_value_map.insert_mut(path.clone(), top_val);
-                            }
-                            self.current_environment.value_map = new_value_map;
-                            return true; // stop the caller from any further updates to the state.
-                        }
-                        weak_update(self, qualifier.clone(), source_path.clone(), value.clone());
-                        // fall through
-                    }
-                }
-                PathSelector::Slice(count) => {
-                    // if the count is known at this point, expand it like a pattern.
-                    if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
-                        &count.expression
-                    {
-                        self.expand_slice(
-                            qualifier,
-                            source_path,
-                            root_rustc_type,
-                            0,
-                            *val as u64,
-                            strong_update,
-                        );
-                        return true;
-                    } else {
-                        // Any element that that might get assigned to via this slice need to get weakened.
-                        // That is, the value has to become a condition based on index < count.
-                        weak_update_slice(
-                            self,
-                            qualifier.clone(),
-                            source_path.clone(),
-                            count.clone(),
-                        )
-                        // fall through
-                    }
-                }
-                _ => {
-                    // fall through
+            if let PathSelector::Slice(count) = &**selector {
+                // if the count is known at this point, expand it like a pattern.
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
+                    &count.expression
+                {
+                    self.expand_slice(
+                        qualifier,
+                        source_path,
+                        root_rustc_type,
+                        0,
+                        *val as u64,
+                        strong_update,
+                    );
+                    return true;
                 }
             }
         }
@@ -2436,10 +2385,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     .canonicalize(&self.current_environment);
                 if move_elements {
                     trace!("moving child {:?} to {:?}", value, qualified_path);
-                // todo: doing the remove part of the move here makes it difficult to combine
-                // strong updates with weak updates. See comments in distribute_over_target_joins.
-                // self.current_environment.value_map =
-                //     self.current_environment.value_map.remove(path);
+                    self.current_environment.value_map =
+                        self.current_environment.value_map.remove(path);
                 } else {
                     trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
@@ -2465,104 +2412,13 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             // Just copy/move (rpath, value) itself.
             if move_elements {
                 trace!("moving {:?} to {:?}", value, target_path);
-            // todo: doing the remove part of the move here makes it difficult to combine
-            // strong updates with weak updates. See comments in distribute_over_target_joins.
-            // self.current_environment.value_map =
-            //     self.current_environment.value_map.remove(&source_path);
+                self.current_environment.value_map =
+                    self.current_environment.value_map.remove(&source_path);
             } else {
                 trace!("copying {:?} to {:?}", value, target_path);
             }
             update(self, target_path, old_value, value);
         }
-    }
-
-    /// Weaken (path, value) pairs from the environment if path is rooted by root_path[index].
-    /// Do so by replacing value with: if index < count { unknown_var } else { value }
-    #[logfn_inputs(TRACE)]
-    fn weaken_paths_that_overlap_slice(
-        &mut self,
-        root_path: &Rc<Path>,
-        source_path: Rc<Path>,
-        element_type: Ty<'tcx>,
-        count: &Rc<AbstractValue>,
-    ) {
-        let slice_initializer = self.lookup_path_and_refine_result(source_path, element_type);
-        let slice_target = Path::new_slice(root_path.clone(), count.clone());
-        self.update_value_at(slice_target, slice_initializer);
-    }
-
-    /// Update all index entries rooted at target_path_root to reflect the possibility
-    /// that an assignment via an unknown index value might change their current value.
-    fn weak_updates<F>(
-        &mut self,
-        target_path_root: &Rc<Path>,
-        source_path: &Rc<Path>,
-        make_condition: F,
-    ) where
-        F: Fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
-    {
-        let old_value_map = self.current_environment.value_map.clone();
-        let mut new_value_map = old_value_map.clone();
-        for (path, value) in old_value_map
-            .iter()
-            .filter(|(path, _)| path.is_rooted_by(target_path_root))
-        {
-            // See if path is of the form target_root_path[index_value].some_or_no_selectors
-            let mut subsequent_selectors: Vec<Rc<PathSelector>> = Vec::new();
-            if let Some(index_value) = self.extract_index_and_subsequent_selectors(
-                path,
-                target_path_root,
-                &mut subsequent_selectors,
-            ) {
-                // If the join condition is true, the value at path needs updating.
-                let join_condition = make_condition(index_value.clone());
-
-                // Look up value at source_path_with_selectors.
-                // source_path_with_selectors is of the form source_path.some_or_no_selectors.
-                // This is the value to bind to path if the join condition is true.
-                let source_path_with_selectors =
-                    Path::add_selectors(source_path, &subsequent_selectors);
-                let result_type = value.expression.infer_type();
-                let result_rustc_type = result_type.as_rustc_type(self.tcx);
-                let additional_value = self
-                    .lookup_path_and_refine_result(source_path_with_selectors, result_rustc_type);
-                let updated_value =
-                    join_condition.conditional_expression(additional_value, value.clone());
-
-                new_value_map.insert_mut(path.clone(), updated_value);
-            }
-        }
-        self.current_environment.value_map = new_value_map;
-    }
-
-    /// If the given path is of the form root[index_value].selector1.selector2... then
-    /// return the index_value and appends [selector1, selector2, ..] to selectors.
-    /// Returns None otherwise. Does not append anything if [index_value] is the last selector.
-    #[logfn_inputs(TRACE)]
-    fn extract_index_and_subsequent_selectors(
-        &self,
-        path: &Rc<Path>,
-        root: &Rc<Path>,
-        selectors: &mut Vec<Rc<PathSelector>>,
-    ) -> Option<Rc<AbstractValue>> {
-        if let PathEnum::QualifiedPath {
-            qualifier,
-            selector,
-            ..
-        } = &path.value
-        {
-            if qualifier.eq(root) {
-                if let PathSelector::Index(index_value) = &**selector {
-                    return Some(index_value.clone());
-                }
-            } else {
-                let index_value =
-                    self.extract_index_and_subsequent_selectors(qualifier, root, selectors);
-                selectors.push(selector.clone());
-                return index_value;
-            }
-        }
-        None
     }
 
     // Most of the time, references to string values are just moved around from one memory location
@@ -2804,12 +2660,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             |_self, _target_path, expanded_path, root_rustc_type| {
                 _self.attach_tag_to_elements(tag, expanded_path, root_rustc_type);
             },
-            |_self, target_path, _source_path, index_value| {
-                _self.attach_tag_weakly(tag, &target_path, |v| index_value.equals(v));
-            },
-            |_self, target_path, _source_path, count| {
-                _self.attach_tag_weakly(tag, &target_path, |v| count.greater_than(v));
-            },
         );
         if expanded_target_pattern {
             return;
@@ -2859,30 +2709,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
 
         // Propagate the tag to all tag fields rooted by value_path.
         self.propagate_tag_to_tag_fields(value_path, |value| value.add_tag(tag));
-    }
-
-    /// Attach `tag` to all index entries rooted at qualifier to reflect the possibility
-    /// that tagging an entry at an unknown index might also tag them.
-    fn attach_tag_weakly<F>(&mut self, tag: Tag, qualifier: &Rc<Path>, make_condition: F)
-    where
-        F: Fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
-    {
-        let value_map = self.current_environment.value_map.clone();
-        for (path, old_value) in value_map.iter().filter(|(p, _)| p.is_rooted_by(qualifier)) {
-            let mut subsequent_selectors = Vec::new();
-            if let Some(index_value) = self.extract_index_and_subsequent_selectors(
-                path,
-                qualifier,
-                &mut subsequent_selectors,
-            ) {
-                let join_condition = make_condition(index_value.clone());
-                let new_value = join_condition
-                    .conditional_expression(old_value.add_tag(tag), old_value.clone());
-                self.current_environment
-                    .value_map
-                    .insert_mut(path.clone(), new_value);
-            }
-        }
     }
 
     /// Extract the path and the value of the tag field of the value located at `qualifier`.
