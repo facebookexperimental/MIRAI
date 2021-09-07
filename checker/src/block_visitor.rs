@@ -152,16 +152,19 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.visit_rvalue(path, rvalue);
     }
 
-    /// Denotes a call to the intrinsic function copy_overlapping, where `src` and `dst` denotes the
+    /// Denotes a call to the intrinsic function copy_nonoverlapping, where `src` and `dst` denotes the
     /// memory being read from and written to and size indicates how many bytes are being copied over.
     #[logfn_inputs(TRACE)]
     fn visit_copy_non_overlapping(&mut self, copy_info: &mir::CopyNonOverlapping<'tcx>) {
+        debug!("env {:?}", self.bv.current_environment);
         let source_val = self.visit_operand(&copy_info.src);
         let source_path =
-            Path::new_deref(Path::get_as_path(source_val), ExpressionType::NonPrimitive);
+            Path::new_deref(Path::get_as_path(source_val), ExpressionType::NonPrimitive)
+                .canonicalize(&self.bv.current_environment);
         let target_val = self.visit_operand(&copy_info.dst);
         let target_root =
-            Path::new_deref(Path::get_as_path(target_val), ExpressionType::NonPrimitive);
+            Path::new_deref(Path::get_as_path(target_val), ExpressionType::NonPrimitive)
+                .canonicalize(&self.bv.current_environment);
         let count = self.visit_operand(&copy_info.count);
         let target_path = Path::new_slice(target_root, count);
         let collection_type = self.get_operand_rustc_type(&copy_info.dst);
