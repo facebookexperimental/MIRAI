@@ -1771,7 +1771,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             source_path,
             root_rustc_type,
             move_elements,
-            |_self, path, _, new_value| {
+            |_self, path, new_value| {
                 _self.update_value_at(path, new_value);
             },
         )
@@ -2315,7 +2315,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         move_elements: bool,
         update: F,
     ) where
-        F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>, Rc<AbstractValue>),
+        F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>),
     {
         trace!("non_patterned_copy_or_move_elements(target_path {:?}, source_path {:?}, root_rustc_type {:?})", target_path, source_path, root_rustc_type);
         let value = self.lookup_path_and_refine_result(source_path.clone(), root_rustc_type);
@@ -2390,15 +2390,14 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 } else {
                     trace!("copying child {:?} to {:?}", value, qualified_path);
                 };
-                let old_value = value_map.get(&qualified_path).unwrap_or(value);
-                update(self, qualified_path, old_value.clone(), value.clone());
+                update(self, qualified_path, value.clone());
                 no_children = false;
             }
             if let Expression::InitialParameterValue { path, .. }
             | Expression::Variable { path, .. } = &value.expression
             {
                 if path.is_rooted_by_parameter() {
-                    update(self, target_path.clone(), value.clone(), value.clone());
+                    update(self, target_path.clone(), value.clone());
                     no_children = false;
                 }
             }
@@ -2407,8 +2406,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             || no_children
             || root_rustc_type.is_closure()
         {
-            let old_value =
-                self.lookup_path_and_refine_result(target_path.clone(), root_rustc_type);
             // Just copy/move (rpath, value) itself.
             if move_elements {
                 trace!("moving {:?} to {:?}", value, target_path);
@@ -2417,7 +2414,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             } else {
                 trace!("copying {:?} to {:?}", value, target_path);
             }
-            update(self, target_path, old_value, value);
+            update(self, target_path, value);
         }
     }
 
@@ -2436,7 +2433,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         str_val: &str,
         update: F,
     ) where
-        F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>, Rc<AbstractValue>),
+        F: Fn(&mut Self, Rc<Path>, Rc<AbstractValue>),
     {
         let collection_path = Path::new_computed(value.clone());
         // Create index elements
@@ -2444,28 +2441,18 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             let index = Rc::new((i as u128).into());
             let ch_const: Rc<AbstractValue> = Rc::new((*ch as u128).into());
             let path = Path::new_index(collection_path.clone(), index);
-            update(self, path, ch_const.clone(), ch_const);
+            update(self, path, ch_const);
         }
         // Arrays have a length field
         let length_val: Rc<AbstractValue> = Rc::new((str_val.len() as u128).into());
         let str_length_path = Path::new_length(collection_path);
-        update(
-            self,
-            str_length_path,
-            length_val.clone(),
-            length_val.clone(),
-        );
+        update(self, str_length_path, length_val.clone());
         // The target path is a fat pointer, initialize it.
         let thin_pointer_path = Path::new_field(target_path.clone(), 0);
         let thin_pointer_to_str = AbstractValue::make_reference(Path::get_as_path(value.clone()));
-        update(
-            self,
-            thin_pointer_path,
-            thin_pointer_to_str.clone(),
-            thin_pointer_to_str,
-        );
+        update(self, thin_pointer_path, thin_pointer_to_str);
         let slice_length_path = Path::new_length(target_path.clone());
-        update(self, slice_length_path, length_val.clone(), length_val);
+        update(self, slice_length_path, length_val);
     }
 
     /// Updates the path to value map in self.current_environment so that the given path now points
@@ -2636,7 +2623,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         value_path,
                         root_rustc_type,
                         false,
-                        |_self, path, _, new_value| {
+                        |_self, path, new_value| {
                             _self
                                 .current_environment
                                 .value_map
@@ -2681,7 +2668,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             value_path.clone(),
             root_rustc_type,
             false,
-            |_self, path, _, new_value| {
+            |_self, path, new_value| {
                 // Layout and Discriminant are not accessible to programmers, and they carry internal information
                 // that should not be wrapped by tags. TagField is also skipped, because they will be handled
                 // together with implicit tag fields.
