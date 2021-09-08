@@ -1291,23 +1291,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         .get_path_rustc_type(path, self.current_span);
                     self.type_visitor
                         .set_path_rustc_type(tpath.clone(), source_type);
-                    if let PathEnum::LocalVariable { ordinal, .. } = &path.value {
-                        if *ordinal >= self.fresh_variable_offset {
-                            // A fresh variable from the callee adds no information that is not
-                            // already inherent in the target location.
-                            self.current_environment.value_map =
-                                self.current_environment.value_map.remove(&tpath);
-                            continue;
-                        }
-                        if rtype == ExpressionType::NonPrimitive {
-                            self.copy_or_move_elements(
-                                tpath.clone(),
-                                path.clone(),
-                                target_type,
-                                false,
-                            );
-                        }
-                    } else if path.is_rooted_by_parameter() {
+                    if path.is_rooted_by_parameter() {
                         rvalue = AbstractValue::make_initial_parameter_value(
                             var_type.clone(),
                             path.clone(),
@@ -1316,11 +1300,11 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         continue;
                     } else if rtype == ExpressionType::NonPrimitive {
                         self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
+                        continue;
                     }
                 }
                 _ => {}
             }
-            // todo: need to call copy_or_move_elements if any selector in tpath is a slice or index
             if let PathEnum::QualifiedPath {
                 qualifier,
                 selector,
@@ -1680,7 +1664,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
 
     /// Copies/moves all paths rooted in source_path to corresponding paths rooted in target_path.
     /// source_path and/or target_path may be pattern paths and will be expanded as needed.
-    #[allow(clippy::suspicious_else_formatting)]
     #[logfn_inputs(TRACE)]
     pub fn copy_or_move_elements(
         &mut self,
