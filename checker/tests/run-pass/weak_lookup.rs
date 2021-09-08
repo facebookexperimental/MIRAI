@@ -4,7 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// A test that looks up collection element value via indices that have not been obviously written to.
+// A test that looks up collection element value via indices that have been written to in another
+// function in a non obvious way (i.e. via copy_nonoverlapping and with an unknown length).
 
 #![stable(feature = "dummy", since = "1.0.0")]
 #![feature(intrinsics, staged_api)]
@@ -17,7 +18,7 @@ extern "rust-intrinsic" {
     fn copy_nonoverlapping<T>(src: *const T, dst: *mut T, count: usize);
 }
 
-fn t1(b: &mut [i32; 3], n: usize) {
+fn t1a(b: &mut [i32; 3], n: usize) {
     let a = [1, 2, 3];
     unsafe {
         let aptr = a.as_ptr();
@@ -27,9 +28,13 @@ fn t1(b: &mut [i32; 3], n: usize) {
 }
 
 #[stable(feature = "dummy", since = "1.0.0")]
-pub fn main() {
+pub fn t1() {
     let mut b = [0; 3];
-    t1(&mut b, 2);
-    verify!(b[0] == 1); //~ possible false verification condition
+    t1a(&mut b, 2);
+    verify!(b[0] == 1);
+    verify!(b[1] == 2);
     verify!(b[2] == 0);
 }
+
+#[stable(feature = "dummy", since = "1.0.0")]
+pub fn main() {}
