@@ -2215,13 +2215,87 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         }
     }
 
-    /// If target_path is a slice of known size, this amounts to a series of assignments
-    /// to each, known, slice element. In this case the function returns true.
-    /// If target_path is a "pattern" that may match one or more other paths in the environment,
-    /// depending on some unknown value, then these other paths are "weakly" updated to reflect
-    /// the possibility that this assignment might modify the values that are currently associated
-    /// with them. In this case the function returns false so that the caller can proceed to
-    /// also, strongly, update the target_path without treating it as a pattern.
+    /// We want the environment to reflect the assignment
+    /// target_path[0..count] = source_path[0..count] where count is not known.
+    /// We do this by finding all paths environment entries of the form (source_path[i], v)
+    /// and then updating target_path[i] with the value if i < count { v } else { old(target_path[i]) }.
+    pub fn conditionally_expand_slice<F>(
+        &mut self,
+        target_path: &Rc<Path>,
+        source_path: &Rc<Path>,
+        root_rustc_type: Ty<'tcx>,
+        count: &Rc<AbstractValue>,
+        update: F,
+    ) where
+        F: Fn(&mut Self, Rc<Path>, Rc<Path>, Ty<'tcx>),
+    {
+        debug!(
+            "conditionally_expand_slice(target_path {:?}, source_path {:?}, count {:?} root_rustc_type {:?},)",
+            target_path,
+            source_path,
+            count,
+            root_rustc_type
+        );
+        let mut elem_ty = self.type_visitor().get_element_type(root_rustc_type);
+        if elem_ty == root_rustc_type {
+            elem_ty = self.type_visitor().get_dereferenced_type(root_rustc_type);
+        }
+        let value_map = self.current_environment.value_map.clone();
+        for (p, v) in value_map.iter() {
+            if let PathEnum::QualifiedPath {
+                qualifier: paq,
+                selector: pas,
+                ..
+            } = &p.value
+            {
+                if paq.ne(source_path) {
+                    // p does not potentially overlap source_path[0..count]
+                    continue;
+                }
+                match pas.as_ref() {
+                    // todo: constant index
+                    PathSelector::Index(index) => {
+                        // paq[index] might overlap an element in target_path[0..count]
+                        let tp = Path::new_qualified(target_path.clone(), pas.clone());
+                        let index_is_in_range = index.less_than(count.clone());
+                        match index_is_in_range.as_bool_if_known() {
+                            Some(true) => {
+                                // paq[index] overlaps target_path[0..count] for sure, so just
+                                // target_path[index] with the value of paq[index] (i.e. v)
+                                update(self, tp, Path::new_computed(v.clone()), elem_ty);
+                            }
+                            Some(false) => {
+                                // paq[index] is known not to overlap
+                                continue;
+                            }
+                            None => {
+                                // paq[index] overlaps target_path[0..count] if the index is in range
+                                // Assign index < count ? v : target_path[index] to target_path[index].
+                                let old_target_value =
+                                    self.lookup_path_and_refine_result(tp.clone(), elem_ty);
+                                let guarded_value = index_is_in_range
+                                    .conditional_expression(v.clone(), old_target_value);
+                                update(
+                                    self,
+                                    tp.clone(),
+                                    Path::new_computed(guarded_value),
+                                    elem_ty,
+                                );
+                            }
+                        }
+                    }
+                    // todo: constant slice
+                    PathSelector::Slice(..) => {
+                        debug!("todo");
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// If target_path is a slice (or an array), this amounts to a series of assignments to each element.
+    /// In this case the function returns true.
     pub fn try_expand_target_pattern<F>(
         &mut self,
         target_path: &Rc<Path>,
@@ -2259,10 +2333,24 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     );
                     return true;
                 }
+                if !source_path.is_rooted_by_parameter() {
+                    // The local environment is the authority on what is known about source_path
+                    // What we do not know, is how many elements of target is being over written
+                    // by elements from source. We therefore provide a conditional assignment
+                    // for every known element of source.
+                    self.conditionally_expand_slice(
+                        qualifier,
+                        source_path,
+                        root_rustc_type,
+                        count,
+                        strong_update,
+                    );
+                    return true;
+                }
             }
         }
 
-        // Assigning to a fixed length array is like a pattern
+        // Assigning to a fixed length array is like a slice.
         if let TyKind::Array(_, length) = root_rustc_type.kind() {
             let length = self.get_array_length(length);
             self.expand_slice(
