@@ -62,10 +62,10 @@ fn run_pass() {
         &(start_driver as fn(DriverConfig) -> usize),
     );
     assert_eq!(result, 0);
+    run_call_graph_tests();
 }
 
 // Run the tests in the tests/call_graph directory.
-#[test]
 fn run_call_graph_tests() {
     let mut call_graph_tests_path = PathBuf::from_str("tests/call_graph").unwrap();
     if !call_graph_tests_path.exists() {

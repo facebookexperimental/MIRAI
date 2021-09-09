@@ -6,7 +6,7 @@
 use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
-use crate::expression::Expression;
+use crate::expression::{Expression, ExpressionType};
 use crate::path::{Path, PathEnum, PathSelector};
 
 use crate::constant_domain::ConstantDomain;
@@ -111,6 +111,18 @@ impl Environment {
         } = &path.value
         {
             match selector.as_ref() {
+                PathSelector::ConstantIndex {
+                    offset, from_end, ..
+                } => {
+                    let mut index = Rc::new((*offset as u128).into());
+                    if *from_end {
+                        let length_path = Path::new_length(qualifier.clone());
+                        let length_val =
+                            AbstractValue::make_typed_unknown(ExpressionType::Usize, length_path);
+                        index = length_val.subtract(index);
+                    };
+                    self.weaken_potential_aliased_index_paths(&path, &value, qualifier, &index)
+                }
                 PathSelector::Deref => {
                     // we are assigning value to *qualifier and there may be another path *q where
                     // qualifier and q may be the same path at runtime.
@@ -170,62 +182,7 @@ impl Environment {
                     }
                 }
                 PathSelector::Index(index) => {
-                    // We are assigning value to qualifier[index] and there may be other (p[i], v)
-                    // pairs in the environment where the runtime location of p[i] might turn out to
-                    // be the same as the runtime location of qualifier[index] (i.e. path).
-                    // We have to model this uncertainty by weakening v to include the set of
-                    // concrete values represented by value.
-                    let value_map = self.value_map.clone();
-                    for (p, v) in value_map.iter() {
-                        if p.eq(&path) {
-                            continue;
-                        }
-                        if let PathEnum::QualifiedPath {
-                            qualifier: paq,
-                            selector: pas,
-                            ..
-                        } = &p.value
-                        {
-                            if paq.ne(qualifier) {
-                                // p is not an alias because its qualifier does not match
-                                continue;
-                            }
-                            match pas.as_ref() {
-                                PathSelector::Index(i) => {
-                                    // paq[i] might alias an element in qualifier[index]
-                                    let indices_are_equal = index.equals(i.clone());
-                                    match indices_are_equal.as_bool_if_known() {
-                                        Some(true) => {
-                                            // p is known to be an alias of path, so just update it
-                                            self.strong_update_value_at(p.clone(), value.clone());
-                                        }
-                                        Some(false) => {
-                                            // p is known not to be an alias of path
-                                            continue;
-                                        }
-                                        None => {
-                                            // p might be an alias of path, so weaken its value by making it
-                                            // conditional on index == i
-                                            let conditional_value = indices_are_equal
-                                                .conditional_expression(value.clone(), v.clone());
-                                            debug!("conditional_value {:?}", conditional_value);
-                                            self.strong_update_value_at(
-                                                p.clone(),
-                                                conditional_value,
-                                            );
-                                        }
-                                    }
-                                }
-                                PathSelector::ConstantIndex { .. }
-                                | PathSelector::ConstantSlice { .. }
-                                | PathSelector::Slice(..) => {
-                                    let weakened_value = v.join(value.clone(), p);
-                                    self.strong_update_value_at(p.clone(), weakened_value);
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
+                    self.weaken_potential_aliased_index_paths(&path, &value, qualifier, index)
                 }
                 PathSelector::Slice(count) => {
                     // We are assigning value to every element of the slice qualifier[0..count]
@@ -246,7 +203,10 @@ impl Environment {
                                 continue;
                             }
                             match pas.as_ref() {
-                                // todo: constant index
+                                PathSelector::ConstantIndex { .. }
+                                | PathSelector::ConstantSlice { .. } => {
+                                    unreachable!("path {:?} p {:?} v {:?}", path, p, v);
+                                }
                                 PathSelector::Index(index) => {
                                     // paq[index] might alias an element in qualifier[0..count]
                                     let index_is_in_range = index.less_than(count.clone());
@@ -273,16 +233,25 @@ impl Environment {
                                         }
                                     }
                                 }
-                                // todo: constant slice
-                                PathSelector::Slice(..) => {
-                                    debug!("todo");
+                                PathSelector::Slice(c) => {
+                                    // The elements of paq[0..c] alias elements of qualifier[0..count]
+                                    // If c <= count, then all of the elements of paq[0..c] will be updated with value.
+                                    // If c > count, then some of elements will still have value v.
+                                    let aliased_slice_is_smaller_or_equal =
+                                        c.less_or_equal(count.clone());
+                                    let weakened_value = v.join(value.clone(), p);
+                                    let guarded_weakened_value = aliased_slice_is_smaller_or_equal
+                                        .conditional_expression(value.clone(), weakened_value);
+                                    self.strong_update_value_at(p.clone(), guarded_weakened_value);
                                 }
                                 _ => {}
                             }
                         }
                     }
                 }
-                // todo: constant slice, constant index
+                PathSelector::ConstantSlice { .. } => {
+                    unreachable!("path {:?}", path);
+                }
                 _ => {
                     // we are assigning value to qualifier.selector and there may be another path q.selector where
                     // qualifier and q may be the same path at runtime (and hence should be treated
@@ -321,6 +290,68 @@ impl Environment {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// We are assigning value to qualifier[index] and there may be other (p[i], v)
+    /// pairs in the environment where the runtime location of p[i] might turn out to
+    /// be the same as the runtime location of qualifier[index] (i.e. path).
+    /// We have to model this uncertainty by weakening v to include the set of
+    /// concrete values represented by value.
+    fn weaken_potential_aliased_index_paths(
+        &mut self,
+        path: &Rc<Path>,
+        value: &Rc<AbstractValue>,
+        qualifier: &Rc<Path>,
+        index: &Rc<AbstractValue>,
+    ) {
+        let value_map = self.value_map.clone();
+        for (p, v) in value_map.iter() {
+            if p.eq(path) {
+                continue;
+            }
+            if let PathEnum::QualifiedPath {
+                qualifier: paq,
+                selector: pas,
+                ..
+            } = &p.value
+            {
+                if paq.ne(qualifier) {
+                    // p is not an alias because its qualifier does not match
+                    continue;
+                }
+                match pas.as_ref() {
+                    PathSelector::Index(i) => {
+                        // paq[i] might alias an element in qualifier[index]
+                        let indices_are_equal = index.equals(i.clone());
+                        match indices_are_equal.as_bool_if_known() {
+                            Some(true) => {
+                                // p is known to be an alias of path, so just update it
+                                self.strong_update_value_at(p.clone(), value.clone());
+                            }
+                            Some(false) => {
+                                // p is known not to be an alias of path
+                                continue;
+                            }
+                            None => {
+                                // p might be an alias of path, so weaken its value by making it
+                                // conditional on index == i
+                                let conditional_value = indices_are_equal
+                                    .conditional_expression(value.clone(), v.clone());
+                                debug!("conditional_value {:?}", conditional_value);
+                                self.strong_update_value_at(p.clone(), conditional_value);
+                            }
+                        }
+                    }
+                    PathSelector::ConstantIndex { .. }
+                    | PathSelector::ConstantSlice { .. }
+                    | PathSelector::Slice(..) => {
+                        let weakened_value = v.join(value.clone(), p);
+                        self.strong_update_value_at(p.clone(), weakened_value);
+                    }
+                    _ => {}
                 }
             }
         }
