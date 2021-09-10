@@ -313,8 +313,6 @@ pub enum Expression {
         left: Rc<AbstractValue>,
         // The value of the right operand.
         right: Rc<AbstractValue>,
-        // The type of the left argument and the result
-        result_type: ExpressionType,
     },
 
     /// An expression that is false if left shifted right by right bits would shift way all bits. >>
@@ -1045,7 +1043,7 @@ impl Expression {
             Expression::Rem { right, .. } => right.expression.infer_type(),
             Expression::Shl { left, .. } => left.expression.infer_type(),
             Expression::ShlOverflows { .. } => Bool,
-            Expression::Shr { result_type, .. } => *result_type,
+            Expression::Shr { left, .. } => left.expression.infer_type(),
             Expression::ShrOverflows { .. } => Bool,
             Expression::Sub { left, .. } => left.expression.infer_type(),
             Expression::SubOverflows { .. } => Bool,

@@ -772,7 +772,7 @@ pub trait AbstractValueTrait: Sized {
     fn remove_conjuncts_that_depend_on(&self, variables: &HashSet<Rc<Path>>) -> Self;
     fn shift_left(&self, other: Self) -> Self;
     fn shl_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
-    fn shr(&self, other: Self, expression_type: ExpressionType) -> Self;
+    fn shr(&self, other: Self) -> Self;
     fn shr_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn subtract(&self, other: Self) -> Self;
     fn sub_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
@@ -783,7 +783,7 @@ pub trait AbstractValueTrait: Sized {
         default: Rc<AbstractValue>,
     ) -> Rc<AbstractValue>;
     fn try_to_retype_as(&self, target_type: ExpressionType) -> Self;
-    fn try_to_simplify_binary_op(
+    fn try_to_constant_fold_and_distribute_binary_op(
         &self,
         other: Self,
         const_op: fn(&ConstantDomain, &ConstantDomain) -> ConstantDomain,
@@ -832,6 +832,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self + other".
     #[logfn_inputs(TRACE)]
     fn addition(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        // [x + c] -> c + x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.addition(self.clone());
+        }
         if let Expression::CompileTimeConstant(c1) = &self.expression {
             // [0 + x] -> x
             if c1.is_zero() {
@@ -847,11 +853,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
-        } else if matches!(&other.expression, Expression::CompileTimeConstant(..)) {
-            // Normalize addition expressions so that if only one of the operands is a constant, it is
-            // always the left operand.
-            return other.addition(self.clone());
         }
+
         // [x + (-y)] -> x - y
         if let Expression::Neg { operand } = &other.expression {
             return self.subtract(operand.clone());
@@ -912,9 +915,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
         }
 
-        self.try_to_simplify_binary_op(other, ConstantDomain::add, Self::addition, |l, r| {
-            AbstractValue::make_binary(l, r, |left, right| Expression::Add { left, right })
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::add,
+            Self::addition,
+            |l, r| AbstractValue::make_binary(l, r, |left, right| Expression::Add { left, right }),
+        )
     }
 
     /// Returns an element that is true if "self + other" is not in range of target_type.
@@ -924,6 +930,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
+        // [x + c] -> c + x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.add_overflows(self.clone(), target_type);
+        }
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
             return AbstractValue::make_typed_unknown(
                 ExpressionType::Bool,
@@ -953,11 +965,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
-        }
-        if matches!(&other.expression, Expression::CompileTimeConstant(..)) {
-            // Normalize addition expressions so that if only one of the operands is a constant, it is
-            // always the left operand.
-            return other.add_overflows(self.clone(), target_type);
         }
         // [x + x] -> 2 * x
         if self.eq(&other) {
@@ -1591,6 +1598,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self & other".
     #[logfn_inputs(TRACE)]
     fn bit_and(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        // [x & c] -> c & x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.bit_and(self.clone());
+        }
         let self_bool = self.as_bool_if_known();
         if let Some(false) = self_bool {
             // [false & y] -> false
@@ -1613,22 +1626,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [x & 0] -> 0
             return other.clone();
         }
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.bit_and(v2);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
         // [x & x] -> x
         if self.eq(&other) {
             return other;
         }
-        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::BitAnd {
-            left,
-            right,
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::bit_and,
+            Self::bit_and,
+            |l, r| {
+                AbstractValue::make_binary(l, r, |left, right| Expression::BitAnd { left, right })
+            },
+        )
     }
 
     /// Returns an element that is "!self" where self is an integer.
@@ -1651,43 +1660,58 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self | other".
     #[logfn_inputs(TRACE)]
     fn bit_or(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        // [x | 0] -> x
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
+        // [x | c] -> c | x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.bit_or(self.clone());
+        }
+        if let Expression::CompileTimeConstant(ConstantDomain::I128(0))
+        | Expression::CompileTimeConstant(ConstantDomain::U128(0)) = self.expression
         {
-            let result = v1.bit_or(v2);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
+            // [0 | y] -> y
+            return other;
+        }
+        if let Expression::CompileTimeConstant(ConstantDomain::I128(0))
+        | Expression::CompileTimeConstant(ConstantDomain::U128(0)) = other.expression
+        {
+            // [x | 0] -> x
+            return self.clone();
+        }
         // [x | x] -> x
         if self.eq(&other) {
             return other;
         }
-        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::BitOr {
-            left,
-            right,
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::bit_or,
+            Self::bit_or,
+            |l, r| {
+                AbstractValue::make_binary(l, r, |left, right| Expression::BitOr { left, right })
+            },
+        )
     }
 
     /// Returns an element that is "self ^ other".
     #[logfn_inputs(TRACE)]
     fn bit_xor(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.bit_xor(v2);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
+        // [x ^ c] -> c ^ x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.bit_xor(self.clone());
+        }
         if self.eq(&other) {
             return Rc::new(0u128.into());
         }
-        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::BitXor {
-            left,
-            right,
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::bit_xor,
+            Self::bit_xor,
+            |l, r| {
+                AbstractValue::make_binary(l, r, |left, right| Expression::BitXor { left, right })
+            },
+        )
     }
 
     /// Returns an element that is "self as target_type".
@@ -2388,9 +2412,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             _ => (),
         }
-        self.try_to_simplify_binary_op(other, ConstantDomain::div, Self::divide, |l, r| {
-            AbstractValue::make_binary(l, r, |left, right| Expression::Div { left, right })
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::div,
+            Self::divide,
+            |l, r| AbstractValue::make_binary(l, r, |left, right| Expression::Div { left, right }),
+        )
     }
 
     /// Returns an abstract value that describes if `tag` is *not* attached to `self`.
@@ -2402,17 +2429,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self == other".
     #[logfn_inputs(TRACE)]
     fn equals(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            return Rc::new(v1.equals(v2).into());
-        };
+        // [x == c] -> c == x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.equals(self.clone());
+        }
         match (&self.expression, &other.expression) {
-            (_, Expression::CompileTimeConstant(..)) => {
-                // Normalize equality expressions so that if only one of the operands is a constant, it is
-                // always the left operand.
-                return other.equals(self.clone());
-            }
             // true == x -> x
             (Expression::CompileTimeConstant(ConstantDomain::True), _) => {
                 return other.clone();
@@ -2646,10 +2669,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Equals {
-            left,
-            right,
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::equals,
+            Self::equals,
+            |l, r| {
+                AbstractValue::make_binary(l, r, |left, right| Expression::Equals { left, right })
+            },
+        )
     }
 
     /// Extracts a subexpression that must be true for the overall expression to be true
@@ -2719,11 +2746,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self >= other".
     #[logfn_inputs(TRACE)]
     fn greater_or_equal(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            return Rc::new(v1.greater_or_equal(v2).into());
-        };
+        // [x >= c] -> c <= x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.less_or_equal(self.clone());
+        }
         if let Some(result) = self
             .get_cached_interval()
             .greater_or_equal(&other.get_cached_interval())
@@ -2782,21 +2810,26 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
             _ => {}
         }
-        AbstractValue::make_binary(self.clone(), other, |left, right| {
-            Expression::GreaterOrEqual { left, right }
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::greater_or_equal,
+            Self::greater_or_equal,
+            |l, r| {
+                AbstractValue::make_binary(l, r, |left, right| Expression::GreaterOrEqual {
+                    left,
+                    right,
+                })
+            },
+        )
     }
 
     /// Returns an element that is "self > other".
     #[logfn_inputs(TRACE)]
     fn greater_than(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            return Rc::new(v1.greater_than(v2).into());
-        };
         // [x > c] -> c < x
-        if other.is_compile_time_constant() {
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
             return other.less_than(self.clone());
         }
         if let Some(result) = self
@@ -2865,10 +2898,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::GreaterThan {
-            left,
-            right,
-        })
+
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::greater_than,
+            Self::greater_than,
+            |l, r| {
+                AbstractValue::make_binary(l, r, |left, right| Expression::GreaterThan {
+                    left,
+                    right,
+                })
+            },
+        )
     }
 
     /// Returns an abstract value that describes whether `tag` is attached to `self` or not.
@@ -3204,11 +3245,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self <= other".
     #[logfn_inputs(TRACE)]
     fn less_or_equal(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            return Rc::new(v1.less_or_equal(v2).into());
-        };
+        // [x <= c] -> c >= x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.greater_or_equal(self.clone());
+        }
         if let Some(result) = self
             .get_cached_interval()
             .less_equal(&other.get_cached_interval())
@@ -3296,22 +3338,26 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             _ => {}
         }
-        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::LessOrEqual {
-            left,
-            right,
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::less_or_equal,
+            Self::less_or_equal,
+            |l, r| {
+                AbstractValue::make_binary(l, r, |left, right| Expression::LessOrEqual {
+                    left,
+                    right,
+                })
+            },
+        )
     }
 
     /// Returns an element that is self < other
     #[logfn_inputs(TRACE)]
     fn less_than(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            return Rc::new(v1.less_than(v2).into());
-        };
         // [x < c] -> c > x
-        if other.is_compile_time_constant() {
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
             return other.greater_than(self.clone());
         }
         if let Some(result) = self
@@ -3390,10 +3436,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::LessThan {
-            left,
-            right,
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::less_than,
+            Self::less_than,
+            |l, r| {
+                AbstractValue::make_binary(l, r, |left, right| Expression::LessThan { left, right })
+            },
+        )
     }
 
     /// Returns an element that is "!self" where self is a bool.
@@ -3522,6 +3572,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self * other".
     #[logfn_inputs(TRACE)]
     fn multiply(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
+        // [x * c] -> c * x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize multiply expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.multiply(self.clone());
+        }
         if let Expression::CompileTimeConstant(c1) = &self.expression {
             match c1 {
                 // [0 * y] -> 0
@@ -3562,14 +3618,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
-        } else if matches!(&other.expression, Expression::CompileTimeConstant(..)) {
-            // Normalize multiply expressions so that if only one of the operands is a constant, it is
-            // always the left operand.
-            return other.multiply(self.clone());
         }
-        self.try_to_simplify_binary_op(other, ConstantDomain::mul, Self::multiply, |l, r| {
-            AbstractValue::make_binary(l, r, |left, right| Expression::Mul { left, right })
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::mul,
+            Self::multiply,
+            |l, r| AbstractValue::make_binary(l, r, |left, right| Expression::Mul { left, right }),
+        )
     }
 
     /// Returns an element that is true if "self * other" is not in range of target_type.
@@ -3579,6 +3634,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> Rc<AbstractValue> {
+        // [x * c] -> c * x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize multiply expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.mul_overflows(self.clone(), target_type);
+        }
         if self.is_bottom() || self.is_top() || other.is_bottom() || other.is_top() {
             return AbstractValue::make_typed_unknown(
                 ExpressionType::Bool,
@@ -3630,11 +3691,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
-            // Normalize multiply expressions so that if only one of the operands is a constant, it is
-            // always the left operand.
-            return other.mul_overflows(self.clone(), target_type);
-        }
         let interval = self.get_cached_interval().mul(&other.get_cached_interval());
         if interval.is_contained_in(target_type) {
             return Rc::new(FALSE);
@@ -3670,17 +3726,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self != other".
     #[logfn_inputs(TRACE)]
     fn not_equals(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            return Rc::new(v1.not_equals(v2).into());
-        };
+        // [x != c] -> c != x
+        if !self.is_compile_time_constant() && other.is_compile_time_constant() {
+            // Normalize binary expressions so that if only one of the operands is a constant, it is
+            // always the left operand.
+            return other.not_equals(self.clone());
+        }
         match (&self.expression, &other.expression) {
-            (_, Expression::CompileTimeConstant(..)) => {
-                // Normalize not equals expressions so that if only one of the operands is a constant, it is
-                // always the left operand.
-                return other.not_equals(self.clone());
-            }
             // true != x -> !x
             (Expression::CompileTimeConstant(ConstantDomain::True), _) => {
                 return other.logical_not();
@@ -3761,10 +3813,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Ne {
-            left,
-            right,
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::not_equals,
+            Self::not_equals,
+            |l, r| AbstractValue::make_binary(l, r, |left, right| Expression::Ne { left, right }),
+        )
     }
 
     /// Returns an element that is "&self + other*scale".
@@ -3775,9 +3829,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         } else if other.is_zero() {
             self.clone()
         } else {
-            AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Offset {
-                left,
-                right,
+            self.try_to_distribute_binary_op(other, Self::offset, |l, r| {
+                AbstractValue::make_binary(l, r, |left, right| Expression::Offset { left, right })
             })
         }
     }
@@ -4426,10 +4479,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
                 _ => {}
             }
-            AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Or {
-                left,
-                right,
-            })
+            self.try_to_constant_fold_and_distribute_binary_op(
+                other,
+                ConstantDomain::or,
+                Self::or,
+                |l, r| {
+                    AbstractValue::make_binary(l, r, |left, right| Expression::Or { left, right })
+                },
+            )
         }
     }
 
@@ -4460,9 +4517,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        self.try_to_simplify_binary_op(other, ConstantDomain::rem, Self::remainder, |l, r| {
-            AbstractValue::make_binary(l, r, |left, right| Expression::Rem { left, right })
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::rem,
+            Self::remainder,
+            |l, r| AbstractValue::make_binary(l, r, |left, right| Expression::Rem { left, right }),
+        )
     }
 
     /// If self refers to any variable in the given set, return TRUE otherwise return self.
@@ -4486,21 +4546,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self << other".
     #[logfn_inputs(TRACE)]
     fn shift_left(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.shl(v2);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
         if other.is_zero() {
             return self.clone();
         }
-        AbstractValue::make_binary(self.clone(), other, |left, right| Expression::Shl {
-            left,
-            right,
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::shl,
+            Self::shift_left,
+            |l, r| AbstractValue::make_binary(l, r, |left, right| Expression::Shl { left, right }),
+        )
     }
 
     /// Returns an element that is true if "self << other" shifts away all bits.
@@ -4542,27 +4596,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Returns an element that is "self >> other".
     #[logfn_inputs(TRACE)]
-    fn shr(&self, other: Rc<AbstractValue>, expression_type: ExpressionType) -> Rc<AbstractValue> {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.shr(v2);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
+    fn shr(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         if other.is_zero() {
             return self.clone();
         }
-        AbstractValue::make_typed_binary(
-            self.clone(),
+        self.try_to_constant_fold_and_distribute_binary_op(
             other,
-            expression_type,
-            |left, right, result_type| Expression::Shr {
-                left,
-                right,
-                result_type,
-            },
+            ConstantDomain::shr,
+            Self::shr,
+            |l, r| AbstractValue::make_binary(l, r, |left, right| Expression::Shr { left, right }),
         )
     }
 
@@ -4695,9 +4737,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
-        self.try_to_simplify_binary_op(other, ConstantDomain::sub, Self::subtract, |l, r| {
-            AbstractValue::make_binary(l, r, |left, right| Expression::Sub { left, right })
-        })
+        self.try_to_constant_fold_and_distribute_binary_op(
+            other,
+            ConstantDomain::sub,
+            Self::subtract,
+            |l, r| AbstractValue::make_binary(l, r, |left, right| Expression::Sub { left, right }),
+        )
     }
 
     /// Returns an element that is true if "self - other" is not in range of target_type.
@@ -4860,7 +4905,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// the operation over self and/or other.
     /// Returns operation(self, other) if no simplification is possible.
     #[logfn(TRACE)]
-    fn try_to_simplify_binary_op(
+    fn try_to_constant_fold_and_distribute_binary_op(
         &self,
         other: Rc<AbstractValue>,
         const_op: fn(&ConstantDomain, &ConstantDomain) -> ConstantDomain,
@@ -5570,16 +5615,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
                     *result_type,
                 ),
-            Expression::Shr {
-                left,
-                right,
-                result_type,
-            } => left
+            Expression::Shr { left, right } => left
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
-                .shr(
-                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    *result_type,
-                ),
+                .shr(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
             Expression::ShrOverflows {
                 left,
                 right,
@@ -5977,13 +6015,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => left
                 .refine_with(path_condition, depth + 1)
                 .shl_overflows(right.refine_with(path_condition, depth + 1), *result_type),
-            Expression::Shr {
-                left,
-                right,
-                result_type,
-            } => left
+            Expression::Shr { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .shr(right.refine_with(path_condition, depth + 1), *result_type),
+                .shr(right.refine_with(path_condition, depth + 1)),
             Expression::ShrOverflows {
                 left,
                 right,
