@@ -259,6 +259,13 @@ impl Z3Solver {
                 z3_sys::Z3_mk_bvsgt,
                 z3_sys::Z3_mk_bvugt,
             ),
+            Expression::InitialParameterValue { path, .. }
+            | Expression::UninterpretedCall { path, .. }
+            | Expression::UnknownModelField { path, .. }
+            | Expression::UnknownTagField { path }
+            | Expression::Variable { path, .. } => {
+                self.general_variable(path, &expression.infer_type())
+            }
             Expression::IntrinsicBitVectorUnary { bit_length, .. } => {
                 self.get_as_bv_z3_ast(expression, u32::from(*bit_length))
             }
@@ -313,13 +320,6 @@ impl Z3Solver {
             Expression::Top | Expression::Bottom => unsafe {
                 z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.any_sort)
             },
-            Expression::UninterpretedCall {
-                result_type: var_type,
-                path,
-                ..
-            }
-            | Expression::InitialParameterValue { path, var_type }
-            | Expression::Variable { path, var_type } => self.general_variable(path, var_type),
             Expression::UnknownTagCheck {
                 operand,
                 tag,
@@ -335,9 +335,7 @@ impl Z3Solver {
             Expression::WidenedJoin { path, operand } => {
                 self.get_ast_for_widened(path, operand, operand.expression.infer_type())
             }
-            Expression::Join { path, .. }
-            | Expression::UnknownModelField { path, .. }
-            | Expression::UnknownTagField { path } => self.general_join(expression, path),
+            Expression::Join { left, right, .. } => self.general_join(left, right),
             _ => unsafe {
                 debug!("uninterpreted expression: {:?}", expression);
                 let sym = self.get_symbol_for(expression);
@@ -623,11 +621,13 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn general_join(&self, expression: &Expression, path: &Rc<Path>) -> z3_sys::Z3_ast {
+    fn general_join(&self, left: &Rc<AbstractValue>, right: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
+        let left_ast = self.get_as_z3_ast(&left.expression);
+        let right_ast = self.get_as_z3_ast(&right.expression);
         unsafe {
-            let path_symbol = self.get_symbol_for(path);
-            let sort = self.get_sort_for(&expression.infer_type());
-            z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
+            let sym = self.get_symbol_for(self);
+            let condition_ast = z3_sys::Z3_mk_const(self.z3_context, sym, self.bool_sort);
+            z3_sys::Z3_mk_ite(self.z3_context, condition_ast, left_ast, right_ast)
         }
     }
 
@@ -647,9 +647,9 @@ impl Z3Solver {
                 return z3_sys::Z3_mk_false(self.z3_context);
             },
 
-            Expression::UnknownModelField { path, .. }
+            Expression::InitialParameterValue { path, .. }
+            | Expression::UnknownModelField { path, .. }
             | Expression::UnknownTagField { path }
-            | Expression::InitialParameterValue { path, .. }
             | Expression::Variable { path, .. } => {
                 // A variable is an unknown value of a place in memory.
                 // Therefore, returns an unknown tag check via the logical predicate has_tag(path, tag).
@@ -693,13 +693,13 @@ impl Z3Solver {
                 }
             }
 
-            Expression::Join { left, right, path } => {
+            Expression::Join { left, right, .. } => {
                 // Whether the join expression has tag or not is computed by
                 // ite(unknown condition, (left has tag), (right has tag)).
                 let left_check = self.general_has_tag(&left.expression, tag);
                 let right_check = self.general_has_tag(&right.expression, tag);
                 unsafe {
-                    let sym = self.get_symbol_for(path);
+                    let sym = self.get_symbol_for(self);
                     let condition_ast = z3_sys::Z3_mk_const(self.z3_context, sym, self.bool_sort);
                     return z3_sys::Z3_mk_ite(
                         self.z3_context,
@@ -975,9 +975,7 @@ impl Z3Solver {
             Expression::Div { left, right } => {
                 self.numeric_binary(left, right, z3_sys::Z3_mk_fpa_div, z3_sys::Z3_mk_div)
             }
-            Expression::Join { path, .. }
-            | Expression::UnknownModelField { path, .. }
-            | Expression::UnknownTagField { path } => self.numeric_join(expression, path),
+            Expression::Join { left, right, .. } => self.numeric_join(left, right),
             Expression::Mul { left, right } => {
                 self.numeric_binary_var_arg(left, right, z3_sys::Z3_mk_fpa_mul, z3_sys::Z3_mk_mul)
             }
@@ -1033,6 +1031,13 @@ impl Z3Solver {
                     z3_sys::Z3_mk_const(self.z3_context, sym, sort),
                 )
             },
+            Expression::InitialParameterValue { path, .. }
+            | Expression::UninterpretedCall { path, .. }
+            | Expression::UnknownModelField { path, .. }
+            | Expression::UnknownTagField { path }
+            | Expression::Variable { path, .. } => {
+                self.numeric_variable(expression, path, &expression.infer_type())
+            }
             Expression::IntrinsicBitVectorUnary { .. } => unsafe {
                 //todo: use the name to select an appropriate Z3 bitvector function
                 let sym = self.get_symbol_for(expression);
@@ -1090,15 +1095,6 @@ impl Z3Solver {
                     z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.int_sort),
                 )
             },
-            Expression::UninterpretedCall {
-                result_type: var_type,
-                path,
-                ..
-            }
-            | Expression::InitialParameterValue { path, var_type }
-            | Expression::Variable { path, var_type } => {
-                self.numeric_variable(expression, path, var_type)
-            }
             Expression::WidenedJoin { path, operand } => self.numeric_widen(path, operand),
             _ => (false, self.get_as_z3_ast(expression)),
         }
@@ -1236,17 +1232,20 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn numeric_join(&self, expression: &Expression, path: &Rc<Path>) -> (bool, z3_sys::Z3_ast) {
+    fn numeric_join(
+        &self,
+        left: &Rc<AbstractValue>,
+        right: &Rc<AbstractValue>,
+    ) -> (bool, z3_sys::Z3_ast) {
         unsafe {
-            let path_symbol = self.get_symbol_for(path);
-            let mut var_type = &expression.infer_type();
-            if !(var_type.is_integer() || var_type.is_floating_point_number()) {
-                var_type = &ExpressionType::I128
-            };
-            let sort = self.get_sort_for(var_type);
+            let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
+            let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+            checked_assume_eq!(lf, rf);
+            let sym = self.get_symbol_for(self);
+            let condition_ast = z3_sys::Z3_mk_const(self.z3_context, sym, self.bool_sort);
             (
-                var_type.is_floating_point_number(),
-                z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort),
+                lf,
+                z3_sys::Z3_mk_ite(self.z3_context, condition_ast, left_ast, right_ast),
             )
         }
     }
@@ -1756,7 +1755,7 @@ impl Z3Solver {
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
                 z3_sys::Z3_mk_const(self.z3_context, sym, sort)
             },
-            Expression::Join { path, .. } => self.bv_join(num_bits, path),
+            Expression::Join { left, right, .. } => self.bv_join(left, right, num_bits),
             Expression::Neg { operand } => self.bv_neg(num_bits, operand),
             Expression::Offset { .. } => unsafe {
                 let sym = self.get_symbol_for(expression);
@@ -1945,11 +1944,18 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn bv_join(&self, num_bits: u32, path: &Rc<Path>) -> z3_sys::Z3_ast {
+    fn bv_join(
+        &self,
+        left: &Rc<AbstractValue>,
+        right: &Rc<AbstractValue>,
+        num_bits: u32,
+    ) -> z3_sys::Z3_ast {
+        let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
+        let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
         unsafe {
-            let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
-            let path_symbol = self.get_symbol_for(path);
-            z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort)
+            let sym = self.get_symbol_for(self);
+            let condition_ast = z3_sys::Z3_mk_const(self.z3_context, sym, self.bool_sort);
+            z3_sys::Z3_mk_ite(self.z3_context, condition_ast, left_ast, right_ast)
         }
     }
 
