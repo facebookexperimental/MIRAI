@@ -154,7 +154,7 @@ impl IntervalDomain {
     // Note that i128::MIN and i128::MAX are reserved to indicate missing (unbounded) lower and upper
     // bounds, respectively.
     #[logfn_inputs(TRACE)]
-    pub fn is_contained_in(&self, target_type: &ExpressionType) -> bool {
+    pub fn is_contained_in(&self, target_type: ExpressionType) -> bool {
         if self.is_bottom() || self.is_top() {
             return false;
         };
@@ -188,7 +188,7 @@ impl IntervalDomain {
     // Returns true if this interval is known to be contained in the interval [0 ... bit size of target_type).
     // A false result just means that we don't know, it never means that we know it does not.
     #[logfn_inputs(TRACE)]
-    pub fn is_contained_in_width_of(&self, target_type: &ExpressionType) -> bool {
+    pub fn is_contained_in_width_of(&self, target_type: ExpressionType) -> bool {
         if self.is_bottom() || self.is_top() {
             return false;
         };

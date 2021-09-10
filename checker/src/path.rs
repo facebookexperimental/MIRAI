@@ -548,7 +548,7 @@ impl Path {
                         (&consequent.expression, &alternate.expression)
                     {
                         let consequent =
-                            AbstractValue::make_typed_unknown(target_type.clone(), c_path.clone());
+                            AbstractValue::make_typed_unknown(target_type, c_path.clone());
                         let alternate =
                             AbstractValue::make_typed_unknown(target_type, a_path.clone());
                         return Path::new_computed(
@@ -743,7 +743,7 @@ impl Path {
                 expression_type, ..
             } => {
                 result.insert(AbstractValue::make_typed_unknown(
-                    expression_type.clone(),
+                    *expression_type,
                     Rc::new(self.clone()),
                 ));
             }
@@ -1032,7 +1032,7 @@ impl PathRefinement for Rc<Path> {
                 if let Expression::Offset { left, right } = &value.expression {
                     if let Expression::InitialParameterValue { path, var_type } = &left.expression {
                         let unwrapped_left =
-                            AbstractValue::make_typed_unknown(var_type.clone(), path.clone());
+                            AbstractValue::make_typed_unknown(*var_type, path.clone());
                         let unwrapped_offset = unwrapped_left.offset(right.clone());
                         return Path::get_as_path(unwrapped_offset);
                     }

@@ -476,18 +476,18 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                                     }
                                 }
                             }
-                            AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
+                            AbstractValue::make_typed_unknown(result_type, path.clone())
                         }
                         _ => {
                             if result_type == ExpressionType::Unit {
                                 Rc::new(ConstantDomain::Unit.into())
                             } else if path.is_rooted_by_parameter() {
                                 AbstractValue::make_initial_parameter_value(
-                                    result_type.clone(),
+                                    result_type,
                                     path.clone(),
                                 )
                             } else {
-                                AbstractValue::make_typed_unknown(result_type.clone(), path.clone())
+                                AbstractValue::make_typed_unknown(result_type, path.clone())
                             }
                         }
                     };
@@ -501,11 +501,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 debug!("max path length exceeded in refined value");
                 let result = match path.value {
                     PathEnum::LocalVariable { .. } => refined_val,
-                    PathEnum::Parameter { .. } => AbstractValue::make_initial_parameter_value(
-                        result_type.clone(),
-                        path.clone(),
-                    ),
-                    _ => AbstractValue::make_typed_unknown(result_type.clone(), path.clone()),
+                    PathEnum::Parameter { .. } => {
+                        AbstractValue::make_initial_parameter_value(result_type, path.clone())
+                    }
+                    _ => AbstractValue::make_typed_unknown(result_type, path.clone()),
                 };
                 if result_type != ExpressionType::NonPrimitive {
                     self.current_environment
@@ -584,7 +583,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             }
             self.update_value_at(
                 path.clone(),
-                AbstractValue::make_typed_unknown(expression_type.clone(), path.clone()),
+                AbstractValue::make_typed_unknown(*expression_type, path.clone()),
             );
             self.import_def_id_as_static(&path, *def_id, summary_cache_key);
         }
@@ -1260,11 +1259,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     result_type,
                     ..
                 } => {
-                    rvalue = callee.uninterpreted_call(
-                        arguments.clone(),
-                        result_type.clone(),
-                        tpath.clone(),
-                    );
+                    rvalue =
+                        callee.uninterpreted_call(arguments.clone(), *result_type, tpath.clone());
                 }
                 Expression::InitialParameterValue { path, var_type }
                 | Expression::Variable { path, var_type } => {
@@ -1292,10 +1288,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     self.type_visitor
                         .set_path_rustc_type(tpath.clone(), source_type);
                     if path.is_rooted_by_parameter() {
-                        rvalue = AbstractValue::make_initial_parameter_value(
-                            var_type.clone(),
-                            path.clone(),
-                        );
+                        rvalue =
+                            AbstractValue::make_initial_parameter_value(*var_type, path.clone());
                         self.update_value_at(tpath, rvalue);
                         continue;
                     } else if rtype == ExpressionType::NonPrimitive {
@@ -1503,7 +1497,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                                         let new_block_path =
                                             p.replace_root(qualifier, new_block_path.clone());
                                         let new_variable = AbstractValue::make_typed_unknown(
-                                            var_type.clone(),
+                                            *var_type,
                                             new_block_path,
                                         );
                                         updated_value_map.insert_mut(path.clone(), new_variable);
@@ -2067,7 +2061,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         // We are done with this target field
                         self.current_environment.strong_update_value_at(
                             target_path.clone(),
-                            val.transmute(target_expression_type.clone()),
+                            val.transmute(target_expression_type),
                         );
                         if source_bits == target_bits_to_write {
                             copied_source_bits = 0;

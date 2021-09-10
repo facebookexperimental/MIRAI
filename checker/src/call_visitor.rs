@@ -1329,7 +1329,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         let target_type = ExpressionType::from(source_rustc_type.kind());
         let source_thin_pointer_path = if source_rustc_type.is_box() {
             source_rustc_type = source_rustc_type.boxed_ty();
-            let box_path = Path::new_deref(source_pointer_path, target_type.clone())
+            let box_path = Path::new_deref(source_pointer_path, target_type)
                 .canonicalize(&self.block_visitor.bv.current_environment);
             Path::new_field(Path::new_field(box_path, 0), 0)
         } else if self
@@ -2208,14 +2208,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             let right = self.actual_args[1].1.clone();
             let modulo = target_type.modulo_value();
             let (result, overflow_flag) =
-                BlockVisitor::do_checked_binary_op(bin_op, target_type.clone(), left, right);
+                BlockVisitor::do_checked_binary_op(bin_op, target_type, left, right);
             let (modulo_result, overflow_flag) = if !modulo.is_bottom() {
                 (result.remainder(target_type.modulo_value()), overflow_flag)
             } else {
                 // todo: figure out an expression that represents the truncated overflow of a
                 // signed operation.
                 let unknown_typed_value =
-                    AbstractValue::make_typed_unknown(target_type.clone(), path0.clone());
+                    AbstractValue::make_typed_unknown(target_type, path0.clone());
                 (
                     overflow_flag.conditional_expression(unknown_typed_value, result),
                     overflow_flag,
