@@ -296,8 +296,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
         match &path.value {
             PathEnum::Computed { value } => match &value.expression {
-                Expression::ConditionalExpression { consequent, .. } => {
-                    self.get_path_rustc_type(&Path::get_as_path(consequent.clone()), current_span)
+                Expression::ConditionalExpression { consequent: e, .. }
+                | Expression::Join { left: e, .. } => {
+                    self.get_path_rustc_type(&Path::get_as_path(e.clone()), current_span)
                 }
                 Expression::CompileTimeConstant(c) => {
                     if let ConstantDomain::Function(fr) = c {
@@ -317,7 +318,6 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     }
                 }
                 Expression::InitialParameterValue { path, .. }
-                | Expression::Join { path, .. }
                 | Expression::Variable { path, .. }
                 | Expression::WidenedJoin { path, .. } => {
                     self.get_path_rustc_type(path, current_span)

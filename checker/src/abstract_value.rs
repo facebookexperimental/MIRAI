@@ -337,10 +337,10 @@ impl AbstractValue {
                     ));
             }
 
-            Expression::Join { left, right, path } => {
+            Expression::Join { left, right } => {
                 return left
                     .make_presence_check(tag)
-                    .join(right.make_presence_check(tag), path);
+                    .join(right.make_presence_check(tag));
             }
 
             Expression::Switch {
@@ -505,10 +505,10 @@ impl AbstractValue {
                     ));
             }
 
-            Expression::Join { left, right, path } => {
+            Expression::Join { left, right } => {
                 return left
                     .make_absence_check(tag)
-                    .join(right.make_absence_check(tag), path);
+                    .join(right.make_absence_check(tag));
             }
 
             Expression::Switch {
@@ -756,7 +756,7 @@ pub trait AbstractValueTrait: Sized {
     fn is_top(&self) -> bool;
     fn is_unit(&self) -> bool;
     fn is_zero(&self) -> bool;
-    fn join(&self, other: Self, path: &Rc<Path>) -> Self;
+    fn join(&self, other: Self) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
     fn less_than(&self, other: Self) -> Self;
     fn might_benefit_from_refinement(&self) -> bool;
@@ -801,7 +801,7 @@ pub trait AbstractValueTrait: Sized {
     fn get_is_non_null(&self) -> bool;
     fn get_cached_tags(&self) -> Rc<TagDomain>;
     fn get_tags(&self) -> TagDomain;
-    fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>>;
+    fn get_widened_subexpression(&self) -> Option<Rc<AbstractValue>>;
     fn refine_parameters_and_paths(
         &self,
         args: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -1731,8 +1731,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 alternate,
             } => condition
                 .conditional_expression(consequent.cast(target_type), alternate.cast(target_type)),
-            Expression::Join { left, right, path } => {
-                left.cast(target_type).join(right.cast(target_type), path)
+            Expression::Join { left, right } => {
+                left.cast(target_type).join(right.cast(target_type))
             }
             Expression::Switch {
                 discriminator,
@@ -2234,9 +2234,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Div { left, right } => left
                 .try_to_retype_as(target_type)
                 .divide(right.try_to_retype_as(target_type)),
-            Expression::Join { path, left, right } => left
+            Expression::Join { left, right } => left
                 .try_to_retype_as(target_type)
-                .join(right.try_to_retype_as(target_type), path),
+                .join(right.try_to_retype_as(target_type)),
             Expression::Mul { left, right } => left
                 .try_to_retype_as(target_type)
                 .multiply(right.try_to_retype_as(target_type)),
@@ -2303,9 +2303,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 alternate.dereference(target_type),
             ),
             Expression::HeapBlock { .. } => self.clone(),
-            Expression::Join { path, left, right } => left
+            Expression::Join { left, right } => left
                 .dereference(target_type)
-                .join(right.dereference(target_type), path),
+                .join(right.dereference(target_type)),
             Expression::Offset { .. } => {
                 let path = Path::get_as_path(self.clone());
                 let deref_path = Path::new_deref(path, target_type);
@@ -2491,8 +2491,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 };
             }
             // [(join == val)] -> if !interval(join).intersect(interval(val)) { false } else { unknown == val }
+            //(Expression::Join { path, .. }, _) |
             // [(widened == val)] -> if !interval(widened).intersect(interval(val)) { false } else { unknown == val }
-            (Expression::Join { path, .. }, _) | (Expression::WidenedJoin { path, .. }, _) => {
+            (Expression::Join { .. }, _) | (Expression::WidenedJoin { .. }, _) => {
                 let widened_interval = self.get_cached_interval();
                 let val_interval = other.get_cached_interval();
                 if !widened_interval.is_bottom()
@@ -2503,14 +2504,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 } else if self.expression.contains_local_variable(true) {
                     return AbstractValue::make_typed_unknown(
                         other.expression.infer_type(),
-                        path.clone(),
+                        Path::get_as_path(self.clone()),
                     )
                     .equals(other);
                 }
             }
             // [(val == join)] -> if !interval(join).intersect(interval(val)) { false } else { val == unknown }
             // [(val == widened)] -> if !interval(widened).intersect(interval(val)) { false } else { val == unknown }
-            (_, Expression::Join { path, .. }) | (_, Expression::WidenedJoin { path, .. }) => {
+            (_, Expression::Join { .. }) | (_, Expression::WidenedJoin { .. }) => {
                 let val_interval = self.get_cached_interval();
                 let widened_interval = other.get_cached_interval();
                 if !widened_interval.is_bottom()
@@ -2521,7 +2522,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 } else if other.expression.contains_local_variable(true) {
                     return self.equals(AbstractValue::make_typed_unknown(
                         self.expression.infer_type(),
-                        path.clone(),
+                        Path::get_as_path(self.clone()),
                     ));
                 }
             }
@@ -3141,7 +3142,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an abstract value whose corresponding set of concrete values includes all of the values
     /// corresponding to self and other.
     #[logfn_inputs(TRACE)]
-    fn join(&self, other: Rc<AbstractValue>, path: &Rc<Path>) -> Rc<AbstractValue> {
+    fn join(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         // [{} join y] -> y
         if self.is_bottom() {
             return other;
@@ -3163,11 +3164,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return other;
         }
         // [(x has a subexpression that widens at path) join y] -> widened subexpression
-        if let Some(widened_subexpression) = self.get_widened_subexpression(path) {
+        if let Some(widened_subexpression) = self.get_widened_subexpression() {
             return widened_subexpression;
         }
         // [x join (y has a subexpression that widens at path)] -> widened subexpression
-        if let Some(widened_subexpression) = other.get_widened_subexpression(path) {
+        if let Some(widened_subexpression) = other.get_widened_subexpression() {
             return widened_subexpression;
         }
         match (&self.expression, &other.expression) {
@@ -3178,7 +3179,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
                 Expression::Join { left: y2, .. },
             ) if y1.eq(y2) => {
-                return x.join(other, path);
+                return x.join(other);
             }
             // [(x join y) join (z join a)] -> x join (y join (z join a))
             (
@@ -3187,7 +3188,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 },
                 Expression::Join { .. },
             ) => {
-                return x.join(y.join(other, path), path);
+                return x.join(y.join(other));
             }
             // [x join (if c { x } else { y })] -> x join y
             // [x join (if c { y } else { x })] -> x join y
@@ -3207,25 +3208,21 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     ..
                 },
             ) if self.eq(x) => {
-                return x.join(y.clone(), path);
+                return x.join(y.clone());
             }
             // [x join (y join (x join z))] -> x join (y join z)
             (
                 _,
                 Expression::Join {
-                    left: y,
-                    right: xz,
-                    path: p,
+                    left: y, right: xz, ..
                 },
-            ) if p.eq(path) && matches!(&xz.expression, Expression::Join { .. }) => {
+            ) if matches!(&xz.expression, Expression::Join { .. }) => {
                 if let Expression::Join {
-                    left: x,
-                    right: z,
-                    path: pp,
+                    left: x, right: z, ..
                 } = &xz.expression
                 {
-                    if self.eq(x) && pp.eq(path) {
-                        return self.join(y.join(z.clone(), path), path);
+                    if self.eq(x) {
+                        return self.join(y.join(z.clone()));
                     }
                 }
             }
@@ -3234,7 +3231,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         let expression_size = self.expression_size.saturating_add(other.expression_size);
         AbstractValue::make_from(
             Expression::Join {
-                path: path.clone(),
                 left: self.clone(),
                 right: other,
             },
@@ -4956,11 +4952,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 recursive_op(self, alternate.clone()),
             );
         };
-        if let Join { left, right, path } = &self.expression {
-            return recursive_op(left, other.clone()).join(recursive_op(right, other), path);
+        if let Join { left, right } = &self.expression {
+            return recursive_op(left, other.clone()).join(recursive_op(right, other));
         }
-        if let Join { left, right, path } = &other.expression {
-            return recursive_op(self, left.clone()).join(recursive_op(self, right.clone()), path);
+        if let Join { left, right } = &other.expression {
+            return recursive_op(self, left.clone()).join(recursive_op(self, right.clone()));
         }
         operation(self.clone(), other)
     }
@@ -5239,10 +5235,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
-    /// Returns a subexpression that is a widened expression at the given path.
+    /// Returns a subexpression that is a widened expression.
     /// Returns None if no such expression can be found.
     #[logfn_inputs(TRACE)]
-    fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>> {
+    fn get_widened_subexpression(&self) -> Option<Rc<AbstractValue>> {
         match &self.expression {
             Expression::Bottom | Expression::Top => None,
             Expression::Add { left, right }
@@ -5271,8 +5267,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::ShrOverflows { left, right, .. }
             | Expression::Sub { left, right }
             | Expression::SubOverflows { left, right, .. } => left
-                .get_widened_subexpression(path)
-                .or_else(|| right.get_widened_subexpression(path)),
+                .get_widened_subexpression()
+                .or_else(|| right.get_widened_subexpression()),
             Expression::BitNot { operand, .. }
             | Expression::Cast { operand, .. }
             | Expression::IntrinsicBitVectorUnary { operand, .. }
@@ -5281,33 +5277,31 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::LogicalNot { operand }
             | Expression::TaggedExpression { operand, .. }
             | Expression::Transmute { operand, .. }
-            | Expression::UnknownTagCheck { operand, .. } => {
-                operand.get_widened_subexpression(path)
-            }
+            | Expression::UnknownTagCheck { operand, .. } => operand.get_widened_subexpression(),
             Expression::CompileTimeConstant(..) => None,
             Expression::ConditionalExpression {
                 condition,
                 consequent,
                 alternate,
-            } => condition.get_widened_subexpression(path).or_else(|| {
+            } => condition.get_widened_subexpression().or_else(|| {
                 consequent
-                    .get_widened_subexpression(path)
-                    .or_else(|| alternate.get_widened_subexpression(path))
+                    .get_widened_subexpression()
+                    .or_else(|| alternate.get_widened_subexpression())
             }),
             Expression::HeapBlock { .. } => None,
             Expression::HeapBlockLayout {
                 length, alignment, ..
             } => length
-                .get_widened_subexpression(path)
-                .or_else(|| alignment.get_widened_subexpression(path)),
+                .get_widened_subexpression()
+                .or_else(|| alignment.get_widened_subexpression()),
             Expression::Memcmp {
                 left,
                 right,
                 length,
-            } => left.get_widened_subexpression(path).or_else(|| {
+            } => left.get_widened_subexpression().or_else(|| {
                 right
-                    .get_widened_subexpression(path)
-                    .or_else(|| length.get_widened_subexpression(path))
+                    .get_widened_subexpression()
+                    .or_else(|| length.get_widened_subexpression())
             }),
             Expression::Reference(..) => None,
             Expression::InitialParameterValue { .. } => None,
@@ -5315,12 +5309,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 discriminator,
                 cases,
                 default,
-            } => discriminator.get_widened_subexpression(path).or_else(|| {
-                default.get_widened_subexpression(path).or_else(|| {
+            } => discriminator.get_widened_subexpression().or_else(|| {
+                default.get_widened_subexpression().or_else(|| {
                     cases.iter().find_map(|(case_val, result_val)| {
                         case_val
-                            .get_widened_subexpression(path)
-                            .or_else(|| result_val.get_widened_subexpression(path))
+                            .get_widened_subexpression()
+                            .or_else(|| result_val.get_widened_subexpression())
                     })
                 })
             }),
@@ -5328,20 +5322,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 callee,
                 arguments: args,
                 ..
-            } => callee.get_widened_subexpression(path).or_else(|| {
-                args.iter()
-                    .find_map(|arg| arg.get_widened_subexpression(path))
-            }),
+            } => callee
+                .get_widened_subexpression()
+                .or_else(|| args.iter().find_map(|arg| arg.get_widened_subexpression())),
             Expression::UnknownModelField { .. } => None,
             Expression::UnknownTagField { .. } => None,
             Expression::Variable { .. } => None,
-            Expression::WidenedJoin { path: p, .. } => {
-                if p.eq(path) {
-                    Some(self.clone())
-                } else {
-                    None
-                }
-            }
+            Expression::WidenedJoin { .. } => Some(self.clone()),
         }
     }
 
@@ -5503,12 +5490,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::IntrinsicFloatingPointUnary { operand, name } => operand
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .intrinsic_floating_point_unary(*name),
-            Expression::Join { left, right, path } => left
+            Expression::Join { left, right } => left
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
-                .join(
-                    right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    &path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                ),
+                .join(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
             Expression::LessOrEqual { left, right } => left
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .less_or_equal(
@@ -5939,9 +5923,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::IntrinsicFloatingPointUnary { operand, name } => operand
                 .refine_with(path_condition, depth + 1)
                 .intrinsic_floating_point_unary(*name),
-            Expression::Join { left, right, path } => left
+            Expression::Join { left, right } => left
                 .refine_with(path_condition, depth + 1)
-                .join(right.refine_with(path_condition, depth + 1), path),
+                .join(right.refine_with(path_condition, depth + 1)),
             Expression::LessOrEqual { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .less_or_equal(right.refine_with(path_condition, depth + 1)),
@@ -6344,9 +6328,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::HeapBlockLayout {
                 length, alignment, ..
             } => length.uses(variables) || alignment.uses(variables),
-            Expression::Join { left, right, path } => {
-                variables.contains(path) || left.uses(variables) || right.uses(variables)
-            }
+            Expression::Join { left, right } => left.uses(variables) || right.uses(variables),
             Expression::Memcmp {
                 left,
                 right,
@@ -6387,9 +6369,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn widen(&self, path: &Rc<Path>) -> Rc<AbstractValue> {
         match &self.expression {
-            Expression::Join {
-                path: join_path, ..
-            } if path.eq(join_path) => AbstractValue::make_from(
+            Expression::Join { .. } => AbstractValue::make_from(
                 Expression::WidenedJoin {
                     path: path.clone(),
                     operand: self.clone(),

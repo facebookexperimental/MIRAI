@@ -1598,7 +1598,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 .conditional_expression(consequent_tag_value, alternate_tag_value),
                         );
                     }
-                    Expression::Join { left, right, path } => {
+                    Expression::Join { left, right } => {
                         let left_tag_value = self
                             .get_possibly_tagged_value(
                                 tag,
@@ -1615,11 +1615,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 source_rustc_type,
                             )
                             .1;
-                        let tag_path = Path::new_tag_field(path.clone());
-                        return (
-                            source_path.clone(),
-                            left_tag_value.join(right_tag_value, &tag_path),
-                        );
+                        return (source_path.clone(), left_tag_value.join(right_tag_value));
                     }
                     Expression::Offset { left, .. } => {
                         let left_tag_value = self

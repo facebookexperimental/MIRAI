@@ -69,7 +69,7 @@ pub fn test3() {
     while let Some(_) = it.next() {
         verify!(it.start <= 10);
     }
-    verify!(it.is_empty());
+    assume!(it.is_empty());
 }
 
 pub fn main() {}

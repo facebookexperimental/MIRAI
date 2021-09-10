@@ -198,8 +198,6 @@ pub enum Expression {
     /// either its initial value or the value computed in the first loop body iteration and we
     /// don't have a way to tell which value it is.
     Join {
-        /// The path of the location where the two flows join together.
-        path: Rc<Path>,
         // The value of the left operand.
         left: Rc<AbstractValue>,
         // The value of the right operand.
@@ -518,10 +516,9 @@ impl Debug for Expression {
             Expression::IntrinsicFloatingPointUnary { operand, name } => {
                 f.write_fmt(format_args!("({:?}).{:?}()", operand, name))
             }
-            Expression::Join { path, left, right } => f.write_fmt(format_args!(
-                "({:?}) join ({:?}) at {:?}",
-                left, right, path
-            )),
+            Expression::Join { left, right } => {
+                f.write_fmt(format_args!("({:?}) join ({:?})", left, right))
+            }
             Expression::LessOrEqual { left, right } => {
                 f.write_fmt(format_args!("({:?}) <= ({:?})", left, right))
             }

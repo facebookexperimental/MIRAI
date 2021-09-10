@@ -187,7 +187,7 @@ impl Summary {
         for (path, val1) in self.side_effects.iter_mut() {
             match other_map.get(path) {
                 Some(val2) => {
-                    *val1 = val1.join((*val2).clone(), path);
+                    *val1 = val1.join((*val2).clone());
                 }
                 None => {
                     if path.is_rooted_by_parameter() {
@@ -195,7 +195,7 @@ impl Summary {
                             val1.expression.infer_type(),
                             path.clone(),
                         );
-                        *val1 = val1.join(val2, path);
+                        *val1 = val1.join(val2);
                     };
                 }
             }

@@ -222,7 +222,7 @@ impl Environment {
                                         None => {
                                             // p might be an alias, so weaken its value by joining it
                                             // with the slice initializer.
-                                            let weakened_value = v.join(value.clone(), p);
+                                            let weakened_value = v.join(value.clone());
                                             // If index is not in range, use the strong value
                                             let guarded_weakened_value = index_is_in_range
                                                 .conditional_expression(weakened_value, v.clone());
@@ -239,7 +239,7 @@ impl Environment {
                                     // If c > count, then some of elements will still have value v.
                                     let aliased_slice_is_smaller_or_equal =
                                         c.less_or_equal(count.clone());
-                                    let weakened_value = v.join(value.clone(), p);
+                                    let weakened_value = v.join(value.clone());
                                     let guarded_weakened_value = aliased_slice_is_smaller_or_equal
                                         .conditional_expression(value.clone(), weakened_value);
                                     self.strong_update_value_at(p.clone(), guarded_weakened_value);
@@ -348,7 +348,7 @@ impl Environment {
                     PathSelector::ConstantIndex { .. }
                     | PathSelector::ConstantSlice { .. }
                     | PathSelector::Slice(..) => {
-                        let weakened_value = v.join(value.clone(), p);
+                        let weakened_value = v.join(value.clone());
                         self.strong_update_value_at(p.clone(), weakened_value);
                     }
                     _ => {}
@@ -510,14 +510,14 @@ impl Environment {
     /// value that is the join of self.value_at(path) and other.value_at(path)
     #[logfn_inputs(TRACE)]
     pub fn join(&self, other: Environment) -> Environment {
-        self.join_or_widen(other, |x, y, p| {
-            if let Some(val) = x.get_widened_subexpression(p) {
+        self.join_or_widen(other, |x, y, _p| {
+            if let Some(val) = x.get_widened_subexpression() {
                 return val;
             }
-            if let Some(val) = y.get_widened_subexpression(p) {
+            if let Some(val) = y.get_widened_subexpression() {
                 return val;
             }
-            x.join(y.clone(), p)
+            x.join(y.clone())
         })
     }
 
@@ -526,13 +526,13 @@ impl Environment {
     #[logfn_inputs(TRACE)]
     pub fn widen(&self, other: Environment) -> Environment {
         self.join_or_widen(other, |x, y, p| {
-            if let Some(val) = x.get_widened_subexpression(p) {
+            if let Some(val) = x.get_widened_subexpression() {
                 return val;
             }
-            if let Some(val) = y.get_widened_subexpression(p) {
+            if let Some(val) = y.get_widened_subexpression() {
                 return val;
             }
-            x.join(y.clone(), p).widen(p)
+            x.join(y.clone()).widen(p)
         })
     }
 
