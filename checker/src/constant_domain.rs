@@ -194,6 +194,18 @@ impl ConstantDomain {
         }
     }
 
+    /// Returns a constant that is "self && other".
+    #[logfn_inputs(TRACE)]
+    pub fn and(&self, other: &Self) -> Self {
+        match (&self, &other) {
+            (ConstantDomain::False, ConstantDomain::False) => ConstantDomain::False,
+            (ConstantDomain::False, ConstantDomain::True) => ConstantDomain::False,
+            (ConstantDomain::True, ConstantDomain::False) => ConstantDomain::False,
+            (ConstantDomain::True, ConstantDomain::True) => ConstantDomain::True,
+            _ => ConstantDomain::Bottom,
+        }
+    }
+
     /// The Boolean value of this constant, if it is a Boolean constant, otherwise None.
     #[logfn_inputs(TRACE)]
     pub fn as_bool_if_known(&self) -> Option<bool> {
@@ -805,6 +817,18 @@ impl ConstantDomain {
         match &self {
             ConstantDomain::False => ConstantDomain::True,
             ConstantDomain::True => ConstantDomain::False,
+            _ => ConstantDomain::Bottom,
+        }
+    }
+
+    /// Returns a constant that is "self || other".
+    #[logfn_inputs(TRACE)]
+    pub fn or(&self, other: &Self) -> Self {
+        match (&self, &other) {
+            (ConstantDomain::False, ConstantDomain::False) => ConstantDomain::False,
+            (ConstantDomain::False, ConstantDomain::True) => ConstantDomain::True,
+            (ConstantDomain::True, ConstantDomain::False) => ConstantDomain::True,
+            (ConstantDomain::True, ConstantDomain::True) => ConstantDomain::True,
             _ => ConstantDomain::Bottom,
         }
     }

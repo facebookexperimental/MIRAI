@@ -2011,13 +2011,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::BinOp::Offset => left.offset(right),
             mir::BinOp::Rem => left.remainder(right),
             mir::BinOp::Shl => left.shift_left(right),
-            mir::BinOp::Shr => {
-                // We assume that path is a temporary used to track the operation result.
-                let target_type = self
-                    .type_visitor()
-                    .get_target_path_type(&path, self.bv.current_span);
-                left.shr(right, target_type)
-            }
+            mir::BinOp::Shr => left.shr(right),
             mir::BinOp::Sub => left.subtract(right),
         };
         self.bv.update_value_at(path, result);
@@ -2068,7 +2062,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 left.shl_overflows(right, target_type),
             ),
             mir::BinOp::Shr => (
-                left.shr(right.clone(), target_type),
+                left.shr(right.clone()),
                 left.shr_overflows(right, target_type),
             ),
             mir::BinOp::Sub => (

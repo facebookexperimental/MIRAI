@@ -300,11 +300,7 @@ impl Z3Solver {
             Expression::Shl { left, right } => {
                 self.bv_binary(128, left, right, z3_sys::Z3_mk_bvshl)
             }
-            Expression::Shr {
-                left,
-                right,
-                result_type,
-            } => self.general_shr(left, right, *result_type),
+            Expression::Shr { left, right } => self.general_shr(left, right),
             Expression::ShlOverflows {
                 right, result_type, ..
             }
@@ -526,12 +522,8 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn general_shr(
-        &self,
-        left: &Rc<AbstractValue>,
-        right: &Rc<AbstractValue>,
-        result_type: ExpressionType,
-    ) -> z3_sys::Z3_ast {
+    fn general_shr(&self, left: &Rc<AbstractValue>, right: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
+        let result_type = left.expression.infer_type();
         let num_bits = u32::from(result_type.bit_length());
         let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
         let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
@@ -1765,11 +1757,7 @@ impl Z3Solver {
             Expression::Shl { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvshl)
             }
-            Expression::Shr {
-                left,
-                right,
-                result_type,
-            } => self.bv_shr_by(num_bits, left, right, *result_type),
+            Expression::Shr { left, right } => self.bv_shr_by(num_bits, left, right),
             Expression::Top | Expression::Bottom => unsafe {
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
                 z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort)
@@ -1973,12 +1961,12 @@ impl Z3Solver {
         num_bits: u32,
         left: &Rc<AbstractValue>,
         right: &Rc<AbstractValue>,
-        result_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
+        let left_type = left.expression.infer_type();
         let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
         let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
         unsafe {
-            if result_type.is_signed_integer() {
+            if left_type.is_signed_integer() {
                 z3_sys::Z3_mk_bvashr(self.z3_context, left_ast, right_ast)
             } else {
                 z3_sys::Z3_mk_bvlshr(self.z3_context, left_ast, right_ast)
