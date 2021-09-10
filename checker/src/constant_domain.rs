@@ -168,7 +168,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is true if "self + other" is not in range of target_type.
     #[logfn_inputs(TRACE)]
-    pub fn add_overflows(&self, other: &Self, target_type: &ExpressionType) -> Self {
+    pub fn add_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => match target_type {
                 ExpressionType::Isize => isize::overflowing_add(*val1 as isize, *val2 as isize).1,
@@ -271,7 +271,7 @@ impl ConstantDomain {
     /// if an unsigned integer is being cast to a thin pointer.
     #[allow(clippy::cast_lossless)]
     #[logfn_inputs(TRACE)]
-    pub fn cast(&self, target_type: &ExpressionType) -> Self {
+    pub fn cast(&self, target_type: ExpressionType) -> Self {
         match self {
             ConstantDomain::Bottom => self.clone(),
             ConstantDomain::Char(ch) => {
@@ -331,13 +331,13 @@ impl ConstantDomain {
             }
             ConstantDomain::F32(val) => {
                 let f = f32::from_bits(*val);
-                if *target_type == ExpressionType::F64 {
+                if target_type == ExpressionType::F64 {
                     ConstantDomain::F64((f as f64).to_bits())
                 } else if target_type.is_signed_integer() {
                     ConstantDomain::I128(f as i128).cast(target_type)
                 } else if target_type.is_unsigned_integer() {
                     ConstantDomain::U128(f as u128).cast(target_type)
-                } else if *target_type == ExpressionType::F32 {
+                } else if target_type == ExpressionType::F32 {
                     self.clone()
                 } else {
                     ConstantDomain::Bottom
@@ -345,13 +345,13 @@ impl ConstantDomain {
             }
             ConstantDomain::F64(val) => {
                 let f = f64::from_bits(*val);
-                if *target_type == ExpressionType::F32 {
+                if target_type == ExpressionType::F32 {
                     ConstantDomain::F32((f as f32).to_bits())
                 } else if target_type.is_signed_integer() {
                     ConstantDomain::I128(f as i128).cast(target_type)
                 } else if target_type.is_unsigned_integer() {
                     ConstantDomain::U128(f as u128).cast(target_type)
-                } else if *target_type == ExpressionType::F64 {
+                } else if target_type == ExpressionType::F64 {
                     self.clone()
                 } else {
                     ConstantDomain::Bottom
@@ -726,7 +726,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is true if "self * other" is not in range of target_type.
     #[logfn_inputs(TRACE)]
-    pub fn mul_overflows(&self, other: &Self, target_type: &ExpressionType) -> Self {
+    pub fn mul_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => {
                 let result = match target_type {
@@ -860,7 +860,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is true if "self << other" is not in range of target_type.
     #[logfn_inputs(TRACE)]
-    pub fn shl_overflows(&self, other: &Self, target_type: &ExpressionType) -> Self {
+    pub fn shl_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
         let other_as_u32 = match &other {
             ConstantDomain::I128(val2) => Some(*val2 as u32),
             ConstantDomain::U128(val2) => Some(*val2 as u32),
@@ -912,7 +912,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is true if "self >> other" shifts away all bits.
     #[logfn_inputs(TRACE)]
-    pub fn shr_overflows(&self, other: &Self, target_type: &ExpressionType) -> Self {
+    pub fn shr_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
         let other_as_u32 = match &other {
             ConstantDomain::I128(val2) => Some(*val2 as u32),
             ConstantDomain::U128(val2) => Some(*val2 as u32),
@@ -967,7 +967,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is true if "self - other" is not in range of target_type.
     #[logfn_inputs(TRACE)]
-    pub fn sub_overflows(&self, other: &Self, target_type: &ExpressionType) -> Self {
+    pub fn sub_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => match target_type {
                 ExpressionType::Isize => isize::overflowing_sub(*val1 as isize, *val2 as isize).1,

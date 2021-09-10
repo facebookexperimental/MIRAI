@@ -204,7 +204,7 @@ impl Z3Solver {
         match expression {
             Expression::HeapBlock { .. } => {
                 let path = Path::get_as_path(AbstractValue::make_from(expression.clone(), 1));
-                self.general_variable(&path, &expression.infer_type())
+                self.general_variable(&path, expression.infer_type())
             }
             Expression::Add { .. }
             | Expression::AddOverflows { .. }
@@ -228,7 +228,7 @@ impl Z3Solver {
             Expression::Cast {
                 operand,
                 target_type,
-            } => self.general_cast(operand, target_type),
+            } => self.general_cast(operand, *target_type),
             Expression::CompileTimeConstant(const_domain) => self.get_constant_as_ast(const_domain),
             Expression::ConditionalExpression {
                 condition,
@@ -264,7 +264,7 @@ impl Z3Solver {
             | Expression::UnknownModelField { path, .. }
             | Expression::UnknownTagField { path }
             | Expression::Variable { path, .. } => {
-                self.general_variable(path, &expression.infer_type())
+                self.general_variable(path, expression.infer_type())
             }
             Expression::IntrinsicBitVectorUnary { bit_length, .. } => {
                 self.get_as_bv_z3_ast(expression, u32::from(*bit_length))
@@ -289,7 +289,7 @@ impl Z3Solver {
             Expression::Ne { left, right } => self.general_ne(left, right),
             Expression::Neg { operand } => self.general_negation(operand),
             Expression::Offset { .. } => unsafe {
-                let sort = self.get_sort_for(&expression.infer_type());
+                let sort = self.get_sort_for(expression.infer_type());
                 let sym = self.get_symbol_for(expression);
                 z3_sys::Z3_mk_const(self.z3_context, sym, sort)
             },
@@ -304,13 +304,13 @@ impl Z3Solver {
                 left,
                 right,
                 result_type,
-            } => self.general_shr(left, right, result_type),
+            } => self.general_shr(left, right, *result_type),
             Expression::ShlOverflows {
                 right, result_type, ..
             }
             | Expression::ShrOverflows {
                 right, result_type, ..
-            } => self.general_shift_overflows(right, result_type),
+            } => self.general_shift_overflows(right, *result_type),
             Expression::Switch {
                 discriminator,
                 cases,
@@ -339,7 +339,7 @@ impl Z3Solver {
             _ => unsafe {
                 debug!("uninterpreted expression: {:?}", expression);
                 let sym = self.get_symbol_for(expression);
-                let sort = self.get_sort_for(&expression.infer_type());
+                let sort = self.get_sort_for(expression.infer_type());
                 z3_sys::Z3_mk_const(self.z3_context, sym, sort)
             },
         }
@@ -368,13 +368,12 @@ impl Z3Solver {
     fn general_cast(
         &self,
         operand: &Rc<AbstractValue>,
-        target_type: &ExpressionType,
+        target_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
-        if *target_type == ExpressionType::NonPrimitive
-            || *target_type == ExpressionType::ThinPointer
+        if target_type == ExpressionType::NonPrimitive || target_type == ExpressionType::ThinPointer
         {
             self.get_as_z3_ast(&operand.expression)
-        } else if *target_type == ExpressionType::Bool {
+        } else if target_type == ExpressionType::Bool {
             self.get_as_bool_z3_ast(&operand.expression)
         } else {
             self.get_as_numeric_z3_ast(&operand.expression).1
@@ -531,7 +530,7 @@ impl Z3Solver {
         &self,
         left: &Rc<AbstractValue>,
         right: &Rc<AbstractValue>,
-        result_type: &ExpressionType,
+        result_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
         let num_bits = u32::from(result_type.bit_length());
         let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
@@ -549,7 +548,7 @@ impl Z3Solver {
     fn general_shift_overflows(
         &self,
         right: &Rc<AbstractValue>,
-        result_type: &ExpressionType,
+        result_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
         let (f, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
         checked_assume!(!f);
@@ -586,7 +585,7 @@ impl Z3Solver {
                         discriminator, **case_val
                     );
                     let sym = self.get_symbol_for(&(**case_val).expression);
-                    let sort = self.get_sort_for(&discriminator_type);
+                    let sort = self.get_sort_for(discriminator_type);
                     z3_sys::Z3_mk_const(self.z3_context, sym, sort)
                 } else {
                     self.get_as_z3_ast(&(**case_val).expression)
@@ -598,7 +597,7 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn general_variable(&self, path: &Rc<Path>, var_type: &ExpressionType) -> z3_sys::Z3_ast {
+    fn general_variable(&self, path: &Rc<Path>, var_type: ExpressionType) -> z3_sys::Z3_ast {
         unsafe {
             let path_symbol = self.get_symbol_for(path);
             let sort = self.get_sort_for(var_type);
@@ -852,7 +851,7 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn get_sort_for(&self, var_type: &ExpressionType) -> z3_sys::Z3_sort {
+    fn get_sort_for(&self, var_type: ExpressionType) -> z3_sys::Z3_sort {
         use self::ExpressionType::*;
         match var_type {
             Bool => self.bool_sort,
@@ -872,7 +871,7 @@ impl Z3Solver {
         operand: &Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
-        let sort = self.get_sort_for(&target_type);
+        let sort = self.get_sort_for(target_type);
         unsafe {
             let path_symbol = self.get_symbol_for(path);
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
@@ -962,7 +961,7 @@ impl Z3Solver {
         match expression {
             Expression::HeapBlock { .. } => {
                 let path = Path::get_as_path(AbstractValue::make_from(expression.clone(), 1));
-                self.numeric_variable(expression, &path, &expression.infer_type())
+                self.numeric_variable(expression, &path, expression.infer_type())
             }
             Expression::Add { left, right } => {
                 self.numeric_binary_var_arg(left, right, z3_sys::Z3_mk_fpa_add, z3_sys::Z3_mk_add)
@@ -971,7 +970,7 @@ impl Z3Solver {
                 left,
                 right,
                 result_type,
-            } => self.numeric_binary_overflow_vararg(left, right, result_type, z3_sys::Z3_mk_add),
+            } => self.numeric_binary_overflow_vararg(left, right, *result_type, z3_sys::Z3_mk_add),
             Expression::Div { left, right } => {
                 self.numeric_binary(left, right, z3_sys::Z3_mk_fpa_div, z3_sys::Z3_mk_div)
             }
@@ -983,7 +982,7 @@ impl Z3Solver {
                 left,
                 right,
                 result_type,
-            } => self.numeric_binary_overflow_vararg(left, right, result_type, z3_sys::Z3_mk_mul),
+            } => self.numeric_binary_overflow_vararg(left, right, *result_type, z3_sys::Z3_mk_mul),
             Expression::Rem { left, right } => self.numeric_rem(left, right),
             Expression::Sub { left, right } => {
                 self.numeric_binary_var_arg(left, right, z3_sys::Z3_mk_fpa_sub, z3_sys::Z3_mk_sub)
@@ -992,7 +991,7 @@ impl Z3Solver {
                 left,
                 right,
                 result_type,
-            } => self.numeric_binary_overflow_vararg(left, right, result_type, z3_sys::Z3_mk_sub),
+            } => self.numeric_binary_overflow_vararg(left, right, *result_type, z3_sys::Z3_mk_sub),
             Expression::And { .. }
             | Expression::Equals { .. }
             | Expression::GreaterOrEqual { .. }
@@ -1008,11 +1007,11 @@ impl Z3Solver {
             Expression::BitNot {
                 operand,
                 result_type,
-            } => self.numeric_bitwise_not(operand, result_type),
+            } => self.numeric_bitwise_not(operand, *result_type),
             Expression::Cast {
                 operand,
                 target_type,
-            } => self.numeric_cast(&operand.expression, target_type),
+            } => self.numeric_cast(&operand.expression, *target_type),
             Expression::CompileTimeConstant(const_domain) => {
                 self.numeric_const(expression, const_domain)
             }
@@ -1024,7 +1023,7 @@ impl Z3Solver {
             Expression::IntrinsicBinary { .. } => unsafe {
                 let expresssion_type = expression.infer_type();
                 let sym = self.get_symbol_for(expression);
-                let sort = self.get_sort_for(&expresssion_type);
+                let sort = self.get_sort_for(expresssion_type);
                 //todo: use the name to select an appropriate Z3 function
                 (
                     expresssion_type.is_floating_point_number(),
@@ -1036,7 +1035,7 @@ impl Z3Solver {
             | Expression::UnknownModelField { path, .. }
             | Expression::UnknownTagField { path }
             | Expression::Variable { path, .. } => {
-                self.numeric_variable(expression, path, &expression.infer_type())
+                self.numeric_variable(expression, path, expression.infer_type())
             }
             Expression::IntrinsicBitVectorUnary { .. } => unsafe {
                 //todo: use the name to select an appropriate Z3 bitvector function
@@ -1049,7 +1048,7 @@ impl Z3Solver {
             Expression::IntrinsicFloatingPointUnary { .. } => unsafe {
                 //todo: use the name to select an appropriate Z3 floating point function
                 let sym = self.get_symbol_for(expression);
-                let sort = self.get_sort_for(&expression.infer_type());
+                let sort = self.get_sort_for(expression.infer_type());
                 (true, z3_sys::Z3_mk_const(self.z3_context, sym, sort))
             },
             Expression::Neg { operand } => self.numeric_neg(operand),
@@ -1062,7 +1061,7 @@ impl Z3Solver {
                 };
                 let is_float = expr_type.is_floating_point_number();
                 let sym = self.get_symbol_for(expression);
-                let sort = self.get_sort_for(&expr_type);
+                let sort = self.get_sort_for(expr_type);
                 (is_float, z3_sys::Z3_mk_const(self.z3_context, sym, sort))
             },
             Expression::Reference(path) => self.numeric_reference(path),
@@ -1083,7 +1082,7 @@ impl Z3Solver {
             }
             Expression::Transmute { target_type, .. } => unsafe {
                 let sym = self.get_symbol_for(expression);
-                let sort = self.get_sort_for(target_type);
+                let sort = self.get_sort_for(*target_type);
                 (
                     target_type.is_floating_point_number(),
                     z3_sys::Z3_mk_const(self.z3_context, sym, sort),
@@ -1138,7 +1137,7 @@ impl Z3Solver {
         &self,
         left: &Rc<AbstractValue>,
         right: &Rc<AbstractValue>,
-        result_type: &ExpressionType,
+        result_type: ExpressionType,
         int_op: unsafe extern "C" fn(
             c: z3_sys::Z3_context,
             num_args: ::std::os::raw::c_uint,
@@ -1271,7 +1270,7 @@ impl Z3Solver {
     fn numeric_bitwise_not(
         &self,
         operand: &Rc<AbstractValue>,
-        result_type: &ExpressionType,
+        result_type: ExpressionType,
     ) -> (bool, z3_sys::Z3_ast) {
         unsafe {
             if result_type.is_signed_integer() {
@@ -1293,7 +1292,7 @@ impl Z3Solver {
     fn numeric_cast(
         &self,
         expression: &Expression,
-        target_type: &ExpressionType,
+        target_type: ExpressionType,
     ) -> (bool, z3_sys::Z3_ast) {
         unsafe {
             let path_symbol = self.get_symbol_for(expression);
@@ -1307,9 +1306,9 @@ impl Z3Solver {
                     z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.f64_sort),
                 ),
                 _ => {
-                    if target_type.is_integer() || *target_type == ExpressionType::Char {
+                    if target_type.is_integer() || target_type == ExpressionType::Char {
                         let exp_type = expression.infer_type();
-                        if exp_type == *target_type {
+                        if exp_type == target_type {
                             self.get_as_numeric_z3_ast(expression)
                         } else if exp_type.is_signed_integer() {
                             // In order to (re-interpret) cast the expr value to unsigned, or
@@ -1384,7 +1383,7 @@ impl Z3Solver {
                             )
                         }
                     } else {
-                        if *target_type != ExpressionType::ThinPointer {
+                        if target_type != ExpressionType::ThinPointer {
                             // target type is not numeric and not a pointer, but the result of the
                             // cast is expected to be numeric. This probably a mistake.
                             info!(
@@ -1401,7 +1400,7 @@ impl Z3Solver {
 
     fn transmute_to_signed_if_necessary(
         &self,
-        target_type: &ExpressionType,
+        target_type: ExpressionType,
         modulo_ast: z3_sys::Z3_ast,
         unsigned_ast: z3_sys::Z3_ast,
     ) -> (bool, z3_sys::Z3_ast) {
@@ -1545,7 +1544,7 @@ impl Z3Solver {
         &self,
         expression: &Expression,
         path: &Rc<Path>,
-        var_type: &ExpressionType,
+        var_type: ExpressionType,
     ) -> (bool, z3_sys::Z3_ast) {
         use self::ExpressionType::*;
         match var_type {
@@ -1677,7 +1676,7 @@ impl Z3Solver {
             } => self.bv_overflows(
                 left,
                 right,
-                result_type,
+                *result_type,
                 z3_sys::Z3_mk_bvadd_no_overflow,
                 z3_sys::Z3_mk_bvadd_no_underflow,
             ),
@@ -1694,7 +1693,7 @@ impl Z3Solver {
             } => self.bv_overflows(
                 left,
                 right,
-                result_type,
+                *result_type,
                 z3_sys::Z3_mk_bvmul_no_overflow,
                 z3_sys::Z3_mk_bvmul_no_underflow,
             ),
@@ -1711,7 +1710,7 @@ impl Z3Solver {
             } => self.bv_overflows(
                 left,
                 right,
-                result_type,
+                *result_type,
                 z3_sys::Z3_mk_bvsub_no_underflow,
                 z3_sys::Z3_mk_bvsub_no_overflow,
             ),
@@ -1730,7 +1729,7 @@ impl Z3Solver {
             Expression::BitNot {
                 operand,
                 result_type,
-            } => self.bv_not(num_bits, operand, result_type),
+            } => self.bv_not(num_bits, operand, *result_type),
             Expression::BitOr { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvor)
             }
@@ -1740,7 +1739,7 @@ impl Z3Solver {
             Expression::Cast {
                 target_type,
                 operand,
-            } => self.bv_cast(&operand.expression, target_type, num_bits),
+            } => self.bv_cast(&operand.expression, *target_type, num_bits),
             Expression::CompileTimeConstant(const_domain) => {
                 self.bv_constant(num_bits, const_domain)
             }
@@ -1770,7 +1769,7 @@ impl Z3Solver {
                 left,
                 right,
                 result_type,
-            } => self.bv_shr_by(num_bits, left, right, result_type),
+            } => self.bv_shr_by(num_bits, left, right, *result_type),
             Expression::Top | Expression::Bottom => unsafe {
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
                 z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort)
@@ -1811,7 +1810,7 @@ impl Z3Solver {
         &self,
         num_bits: u32,
         operand: &Rc<AbstractValue>,
-        result_type: &ExpressionType,
+        result_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
         let ast = self.get_as_bv_z3_ast(&(**operand).expression, num_bits);
         unsafe { z3_sys::Z3_mk_bvnot(self.z3_context, ast) }
@@ -1822,7 +1821,7 @@ impl Z3Solver {
         &self,
         left: &Rc<AbstractValue>,
         right: &Rc<AbstractValue>,
-        result_type: &ExpressionType,
+        result_type: ExpressionType,
         no_overflow: unsafe extern "C" fn(
             c: z3_sys::Z3_context,
             t1: z3_sys::Z3_ast,
@@ -1867,7 +1866,7 @@ impl Z3Solver {
     fn bv_cast(
         &self,
         expression: &Expression,
-        target_type: &ExpressionType,
+        target_type: ExpressionType,
         num_bits: u32,
     ) -> z3_sys::Z3_ast {
         let ast = self.get_as_bv_z3_ast(expression, num_bits);
@@ -1974,7 +1973,7 @@ impl Z3Solver {
         num_bits: u32,
         left: &Rc<AbstractValue>,
         right: &Rc<AbstractValue>,
-        result_type: &ExpressionType,
+        result_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
         let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
         let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);

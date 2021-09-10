@@ -782,7 +782,7 @@ pub trait AbstractValueTrait: Sized {
         cases: Vec<(Rc<AbstractValue>, Rc<AbstractValue>)>,
         default: Rc<AbstractValue>,
     ) -> Rc<AbstractValue>;
-    fn try_to_retype_as(&self, target_type: &ExpressionType) -> Self;
+    fn try_to_retype_as(&self, target_type: ExpressionType) -> Self;
     fn try_to_simplify_binary_op(
         &self,
         other: Self,
@@ -933,7 +933,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
-            let result = v1.add_overflows(v2, &target_type);
+            let result = v1.add_overflows(v2, target_type);
             if result != ConstantDomain::Bottom {
                 return Rc::new(result.into());
             }
@@ -972,7 +972,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
 
         let interval = self.get_cached_interval().add(&other.get_cached_interval());
-        if interval.is_contained_in(&target_type) {
+        if interval.is_contained_in(target_type) {
             return Rc::new(FALSE);
         }
         AbstractValue::make_typed_binary(
@@ -1635,7 +1635,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn bit_not(&self, result_type: ExpressionType) -> Rc<AbstractValue> {
         if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.bit_not(result_type.clone());
+            let result = v1.bit_not(result_type);
             if result != ConstantDomain::Bottom {
                 return Rc::new(result.into());
             }
@@ -1694,7 +1694,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn cast(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.cast(&target_type);
+            let result = v1.cast(target_type);
             if result != ConstantDomain::Bottom {
                 return Rc::new(result.into());
             }
@@ -1705,13 +1705,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 condition,
                 consequent,
                 alternate,
-            } => condition.conditional_expression(
-                consequent.cast(target_type.clone()),
-                alternate.cast(target_type),
-            ),
-            Expression::Join { left, right, path } => left
-                .cast(target_type.clone())
-                .join(right.cast(target_type), path),
+            } => condition
+                .conditional_expression(consequent.cast(target_type), alternate.cast(target_type)),
+            Expression::Join { left, right, path } => {
+                left.cast(target_type).join(right.cast(target_type), path)
+            }
             Expression::Switch {
                 discriminator,
                 cases,
@@ -1719,9 +1717,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => discriminator.switch(
                 cases
                     .iter()
-                    .map(|(case_val, result_val)| {
-                        (case_val.clone(), result_val.cast(target_type.clone()))
-                    })
+                    .map(|(case_val, result_val)| (case_val.clone(), result_val.cast(target_type)))
                     .collect(),
                 default.cast(target_type),
             ),
@@ -2114,10 +2110,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         // In this context not primitive is expected to indicate that the value is a default value obtained
         // via an unspecialized summary from a generic function.
         if !consequent_type.is_primitive() && alternate_type.is_primitive() {
-            consequent = consequent.try_to_retype_as(&alternate_type);
+            consequent = consequent.try_to_retype_as(alternate_type);
             consequent_type = consequent.expression.infer_type();
         } else if consequent_type.is_primitive() && !alternate_type.is_primitive() {
-            alternate = alternate.try_to_retype_as(&consequent_type);
+            alternate = alternate.try_to_retype_as(consequent_type);
             alternate_type = alternate.expression.infer_type();
         };
         if consequent_type != alternate_type
@@ -2182,7 +2178,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     // The need for this function arises from the difficulty of correctly typing variables that have
     // generic types when constructed, but then leak out to caller contexts via summaries.
     #[logfn_inputs(TRACE)]
-    fn try_to_retype_as(&self, target_type: &ExpressionType) -> Rc<AbstractValue> {
+    fn try_to_retype_as(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Add { left, right } => left
                 .try_to_retype_as(target_type)
@@ -2231,7 +2227,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .subtract(right.try_to_retype_as(target_type)),
             Expression::Neg { operand } => operand.try_to_retype_as(target_type).negate(),
             Expression::InitialParameterValue { path, .. } => {
-                AbstractValue::make_initial_parameter_value(target_type.clone(), path.clone())
+                AbstractValue::make_initial_parameter_value(target_type, path.clone())
             }
             Expression::Switch {
                 discriminator,
@@ -2250,7 +2246,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 operand.try_to_retype_as(target_type).add_tag(*tag)
             }
             Expression::Variable { path, .. } => {
-                AbstractValue::make_typed_unknown(target_type.clone(), path.clone())
+                AbstractValue::make_typed_unknown(target_type, path.clone())
             }
             Expression::WidenedJoin { .. } => self.clone(),
 
@@ -2279,16 +2275,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent,
                 alternate,
             } => condition.conditional_expression(
-                consequent.dereference(target_type.clone()),
+                consequent.dereference(target_type),
                 alternate.dereference(target_type),
             ),
             Expression::HeapBlock { .. } => self.clone(),
             Expression::Join { path, left, right } => left
-                .dereference(target_type.clone())
+                .dereference(target_type)
                 .join(right.dereference(target_type), path),
             Expression::Offset { .. } => {
                 let path = Path::get_as_path(self.clone());
-                let deref_path = Path::new_deref(path, target_type.clone());
+                let deref_path = Path::new_deref(path, target_type);
                 if let PathEnum::Computed { value }
                 | PathEnum::HeapBlock { value }
                 | PathEnum::Offset { value } = &deref_path.value
@@ -2324,10 +2320,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 cases
                     .iter()
                     .map(|(case_val, result_val)| {
-                        (
-                            case_val.clone(),
-                            result_val.dereference(target_type.clone()),
-                        )
+                        (case_val.clone(), result_val.dereference(target_type))
                     })
                     .collect(),
                 default.dereference(target_type),
@@ -2377,20 +2370,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let Expression::Mul { left: x, right: y } = &operand.expression {
                     if x.eq(&other) {
                         // [((x * y) as target_type) / x] -> y as target_type
-                        return y.cast(target_type.clone());
+                        return y.cast(*target_type);
                     } else if y.eq(&other) {
                         // [((x * y) as target_type) / y] -> x as target_type
-                        return x.cast(target_type.clone());
+                        return x.cast(*target_type);
                     } else {
                         // [((c1 * y) as t) / c2] -> ((c1 / c2) * y) as t if c1 >= c2 and c1 % c2 == 0
                         if let Expression::CompileTimeConstant(ConstantDomain::U128(c1)) =
                             &x.expression
                         {
                             if *c1 > *c2 && *c1 % *c2 == 0 {
-                                return x
-                                    .divide(other)
-                                    .multiply(y.clone())
-                                    .cast(target_type.clone());
+                                return x.divide(other).multiply(y.clone()).cast(*target_type);
                             }
                         }
                     }
@@ -3598,7 +3588,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
-            let result = v1.mul_overflows(v2, &target_type);
+            let result = v1.mul_overflows(v2, target_type);
             if result != ConstantDomain::Bottom {
                 return Rc::new(result.into());
             }
@@ -3646,7 +3636,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return other.mul_overflows(self.clone(), target_type);
         }
         let interval = self.get_cached_interval().mul(&other.get_cached_interval());
-        if interval.is_contained_in(&target_type) {
+        if interval.is_contained_in(target_type) {
             return Rc::new(FALSE);
         }
         AbstractValue::make_typed_binary(
@@ -4529,13 +4519,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
-            let result = v1.shl_overflows(v2, &target_type);
+            let result = v1.shl_overflows(v2, target_type);
             if result != ConstantDomain::Bottom {
                 return Rc::new(result.into());
             }
         };
         let interval = other.get_cached_interval();
-        if interval.is_contained_in_width_of(&target_type) {
+        if interval.is_contained_in_width_of(target_type) {
             return Rc::new(FALSE);
         }
         AbstractValue::make_typed_binary(
@@ -4592,13 +4582,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
-            let result = v1.shr_overflows(v2, &target_type);
+            let result = v1.shr_overflows(v2, target_type);
             if result != ConstantDomain::Bottom {
                 return Rc::new(result.into());
             }
         };
         let interval = &other.get_cached_interval();
-        if interval.is_contained_in_width_of(&target_type) {
+        if interval.is_contained_in_width_of(target_type) {
             return Rc::new(FALSE);
         }
         AbstractValue::make_typed_binary(
@@ -4726,13 +4716,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
             (&self.expression, &other.expression)
         {
-            let result = v1.sub_overflows(v2, &target_type);
+            let result = v1.sub_overflows(v2, target_type);
             if result != ConstantDomain::Bottom {
                 return Rc::new(result.into());
             }
         };
         let interval = self.get_cached_interval().sub(&other.get_cached_interval());
-        if interval.is_contained_in(&target_type) {
+        if interval.is_contained_in(target_type) {
             return Rc::new(FALSE);
         }
         AbstractValue::make_typed_binary(
@@ -4978,7 +4968,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 target_type,
             } => operand
                 .get_as_interval()
-                .intersect(&IntervalDomain::from(target_type.clone())),
+                .intersect(&IntervalDomain::from(*target_type)),
             Expression::CompileTimeConstant(ConstantDomain::I128(val)) => (*val).into(),
             Expression::CompileTimeConstant(ConstantDomain::U128(val)) => (*val).into(),
             Expression::ConditionalExpression {
@@ -5338,7 +5328,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .add_overflows(
                     right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    result_type.clone(),
+                    *result_type,
                 ),
             Expression::And { left, right } => left
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
@@ -5351,7 +5341,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 result_type,
             } => operand
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
-                .bit_not(result_type.clone()),
+                .bit_not(*result_type),
             Expression::BitOr { left, right } => left
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .bit_or(right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh)),
@@ -5363,7 +5353,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 target_type,
             } => operand
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
-                .cast(target_type.clone()),
+                .cast(*target_type),
             Expression::CompileTimeConstant(..) => self.clone(),
             Expression::ConditionalExpression {
                 condition,
@@ -5444,12 +5434,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // affected by subsequent side effects on the parameter.
                 if refined_path.is_rooted_by_parameter() {
                     // This will not get refined again
-                    AbstractValue::make_initial_parameter_value(var_type.clone(), refined_path)
+                    AbstractValue::make_initial_parameter_value(*var_type, refined_path)
                 } else {
                     // The value is rooted in a local variable leaked from the callee or
                     // in a static. In the latter case we want lookup_and_refine_value to
                     // to see this. In the former, refinement is a no-op.
-                    AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
+                    AbstractValue::make_typed_unknown(*var_type, refined_path)
                 }
             }
             Expression::IntrinsicBinary { left, right, name } => left
@@ -5525,7 +5515,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .mul_overflows(
                     right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    result_type.clone(),
+                    *result_type,
                 ),
             Expression::Ne { left, right } => left
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
@@ -5578,7 +5568,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .shl_overflows(
                     right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    result_type.clone(),
+                    *result_type,
                 ),
             Expression::Shr {
                 left,
@@ -5588,7 +5578,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .shr(
                     right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    result_type.clone(),
+                    *result_type,
                 ),
             Expression::ShrOverflows {
                 left,
@@ -5598,7 +5588,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .shr_overflows(
                     right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    result_type.clone(),
+                    *result_type,
                 ),
             Expression::Sub { left, right } => left
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
@@ -5613,7 +5603,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                 .sub_overflows(
                     right.refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
-                    result_type.clone(),
+                    *result_type,
                 ),
             Expression::Switch {
                 discriminator,
@@ -5645,7 +5635,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 target_type,
             } => operand
                 .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
-                .transmute(target_type.clone()),
+                .transmute(*target_type),
             Expression::UninterpretedCall {
                 callee,
                 arguments,
@@ -5662,11 +5652,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     .collect();
                 let refined_path =
                     path.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                refined_callee.uninterpreted_call(
-                    refined_arguments,
-                    result_type.clone(),
-                    refined_path,
-                )
+                refined_callee.uninterpreted_call(refined_arguments, *result_type, refined_path)
             }
             Expression::UnknownModelField { path, default } => {
                 let refined_path =
@@ -5741,7 +5727,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 } else if refined_path.eq(path) {
                     self.clone()
                 } else {
-                    AbstractValue::make_typed_unknown(var_type.clone(), refined_path)
+                    AbstractValue::make_typed_unknown(*var_type, refined_path)
                 }
             }
             Expression::WidenedJoin { path, operand } => {
@@ -5820,10 +5806,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).add_overflows(
-                right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .add_overflows(right.refine_with(path_condition, depth + 1), *result_type),
             Expression::And { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .and(right.refine_with(path_condition, depth + 1)),
@@ -5835,7 +5820,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 result_type,
             } => operand
                 .refine_with(path_condition, depth + 1)
-                .bit_not(result_type.clone()),
+                .bit_not(*result_type),
             Expression::BitOr { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .bit_or(right.refine_with(path_condition, depth + 1)),
@@ -5847,7 +5832,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 target_type,
             } => operand
                 .refine_with(path_condition, depth + 1)
-                .cast(target_type.clone()),
+                .cast(*target_type),
             Expression::CompileTimeConstant(..) => self.clone(),
             Expression::ConditionalExpression {
                 condition,
@@ -5940,10 +5925,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).mul_overflows(
-                right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .mul_overflows(right.refine_with(path_condition, depth + 1), *result_type),
             Expression::Ne { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .not_equals(right.refine_with(path_condition, depth + 1)),
@@ -5990,26 +5974,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).shl_overflows(
-                right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .shl_overflows(right.refine_with(path_condition, depth + 1), *result_type),
             Expression::Shr {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).shr(
-                right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .shr(right.refine_with(path_condition, depth + 1), *result_type),
             Expression::ShrOverflows {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).shr_overflows(
-                right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .shr_overflows(right.refine_with(path_condition, depth + 1), *result_type),
             Expression::Sub { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .subtract(right.refine_with(path_condition, depth + 1)),
@@ -6017,10 +5998,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 left,
                 right,
                 result_type,
-            } => left.refine_with(path_condition, depth + 1).sub_overflows(
-                right.refine_with(path_condition, depth + 1),
-                result_type.clone(),
-            ),
+            } => left
+                .refine_with(path_condition, depth + 1)
+                .sub_overflows(right.refine_with(path_condition, depth + 1), *result_type),
             Expression::Switch {
                 discriminator,
                 cases,
@@ -6045,7 +6025,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 target_type,
             } => operand
                 .refine_with(path_condition, depth + 1)
-                .transmute(target_type.clone()),
+                .transmute(*target_type),
             Expression::UninterpretedCall {
                 callee,
                 arguments,
@@ -6058,7 +6038,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         .iter()
                         .map(|v| v.refine_with(path_condition, depth + 1))
                         .collect(),
-                    result_type.clone(),
+                    *result_type,
                     path.clone(),
                 ),
             Expression::UnknownModelField { .. } => self.clone(),
@@ -6109,17 +6089,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             Expression::InitialParameterValue { path, var_type } => {
                 AbstractValue::make_initial_parameter_value(
-                    var_type.clone(),
+                    *var_type,
                     path.replace_root(old_root, new_root),
                 )
             }
             Expression::Reference(path) => {
                 AbstractValue::make_reference(path.replace_root(old_root, new_root))
             }
-            Expression::Variable { path, var_type } => AbstractValue::make_typed_unknown(
-                var_type.clone(),
-                path.replace_root(old_root, new_root),
-            ),
+            Expression::Variable { path, var_type } => {
+                AbstractValue::make_typed_unknown(*var_type, path.replace_root(old_root, new_root))
+            }
             Expression::WidenedJoin { path, operand } => {
                 operand.widen(&path.replace_root(old_root, new_root))
             }
@@ -6243,10 +6222,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if let Expression::CompileTimeConstant(c) = &self.expression {
             Rc::new(c.unsigned_modulo(num_bits).into())
         } else if num_bits == 128 {
-            self.try_to_retype_as(&ExpressionType::U128)
+            self.try_to_retype_as(ExpressionType::U128)
         } else {
             let power_of_two = Rc::new(ConstantDomain::U128(1 << num_bits).into());
-            let unsigned = self.try_to_retype_as(&ExpressionType::U128);
+            let unsigned = self.try_to_retype_as(ExpressionType::U128);
             unsigned.remainder(power_of_two)
         }
     }
@@ -6259,7 +6238,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Rc::new(c.unsigned_shift_left(num_bits).into())
         } else {
             let power_of_two = Rc::new(ConstantDomain::U128(1 << num_bits).into());
-            let unsigned = self.try_to_retype_as(&ExpressionType::U128);
+            let unsigned = self.try_to_retype_as(ExpressionType::U128);
             unsigned.multiply(power_of_two)
         }
     }
@@ -6272,7 +6251,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Rc::new(c.unsigned_shift_right(num_bits).into())
         } else {
             let power_of_two = Rc::new(ConstantDomain::U128(1 << num_bits).into());
-            let unsigned = self.try_to_retype_as(&ExpressionType::U128);
+            let unsigned = self.try_to_retype_as(ExpressionType::U128);
             unsigned.divide(power_of_two)
         }
     }

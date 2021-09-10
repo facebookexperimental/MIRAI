@@ -2068,7 +2068,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 left.shl_overflows(right, target_type),
             ),
             mir::BinOp::Shr => (
-                left.shr(right.clone(), target_type.clone()),
+                left.shr(right.clone(), target_type),
                 left.shr_overflows(right, target_type),
             ),
             mir::BinOp::Sub => (
@@ -3202,7 +3202,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         Expression::Join { left, right, .. } => {
                             let target_type = ExpressionType::from(ty.kind());
                             let distributed_deref = left
-                                .dereference(target_type.clone())
+                                .dereference(target_type)
                                 .join(right.dereference(target_type), &place_path);
                             path = Path::get_as_path(distributed_deref);
                             self.type_visitor_mut()

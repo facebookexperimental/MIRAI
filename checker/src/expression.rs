@@ -931,7 +931,7 @@ impl Expression {
             Expression::AddOverflows { .. } => Bool,
             Expression::And { .. } => Bool,
             Expression::BitAnd { left, .. } => left.expression.infer_type(),
-            Expression::BitNot { result_type, .. } => result_type.clone(),
+            Expression::BitNot { result_type, .. } => *result_type,
             Expression::BitOr { left, .. } => left.expression.infer_type(),
             Expression::HeapBlock { .. } => NonPrimitive,
             Expression::HeapBlockLayout { .. } => NonPrimitive,
@@ -1012,7 +1012,7 @@ impl Expression {
                 _ => assume_unreachable!("invalid name {:?} for intrinsic unary", name),
             },
             Expression::BitXor { left, .. } => left.expression.infer_type(),
-            Expression::Cast { target_type, .. } => target_type.clone(),
+            Expression::Cast { target_type, .. } => *target_type,
             Expression::CompileTimeConstant(c) => c.into(),
             Expression::ConditionalExpression {
                 consequent,
@@ -1041,22 +1041,22 @@ impl Expression {
             Expression::Or { .. } => Bool,
             Expression::Offset { .. } => ThinPointer,
             Expression::Reference(_) => ThinPointer,
-            Expression::InitialParameterValue { var_type, .. } => var_type.clone(),
+            Expression::InitialParameterValue { var_type, .. } => *var_type,
             Expression::Rem { right, .. } => right.expression.infer_type(),
             Expression::Shl { left, .. } => left.expression.infer_type(),
             Expression::ShlOverflows { .. } => Bool,
-            Expression::Shr { result_type, .. } => result_type.clone(),
+            Expression::Shr { result_type, .. } => *result_type,
             Expression::ShrOverflows { .. } => Bool,
             Expression::Sub { left, .. } => left.expression.infer_type(),
             Expression::SubOverflows { .. } => Bool,
             Expression::Switch { default, .. } => default.expression.infer_type(),
             Expression::TaggedExpression { operand, .. } => operand.expression.infer_type(),
-            Expression::Transmute { target_type, .. } => target_type.clone(),
-            Expression::UninterpretedCall { result_type, .. } => result_type.clone(),
+            Expression::Transmute { target_type, .. } => *target_type,
+            Expression::UninterpretedCall { result_type, .. } => *result_type,
             Expression::UnknownModelField { default, .. } => default.expression.infer_type(),
             Expression::UnknownTagCheck { .. } => Bool,
             Expression::UnknownTagField { .. } => I8,
-            Expression::Variable { var_type, .. } => var_type.clone(),
+            Expression::Variable { var_type, .. } => *var_type,
             Expression::WidenedJoin { operand, .. } => operand.expression.infer_type(),
         }
     }
@@ -1221,7 +1221,7 @@ impl Expression {
 /// For now, we are only really interested to distinguish between
 /// floating point values and other values, because NaN != NaN.
 /// In the future the other distinctions may be helpful to SMT solvers.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ExpressionType {
     Bool,
     Char,
@@ -1382,7 +1382,7 @@ impl ExpressionType {
             I64 => ExpressionType::U64,
             I128 => ExpressionType::U128,
             Isize => ExpressionType::Usize,
-            _ => self.clone(),
+            _ => *self,
         }
     }
 
