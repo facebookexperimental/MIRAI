@@ -3197,7 +3197,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             let target_type = ExpressionType::from(ty.kind());
                             let distributed_deref = left
                                 .dereference(target_type)
-                                .join(right.dereference(target_type), &place_path);
+                                .join(right.dereference(target_type));
                             path = Path::get_as_path(distributed_deref);
                             self.type_visitor_mut()
                                 .set_path_rustc_type(path.clone(), ty);

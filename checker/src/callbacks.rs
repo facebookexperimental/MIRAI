@@ -167,8 +167,11 @@ impl MiraiCallbacks {
             || file_name.starts_with("json-rpc/types/src") // stack overflow
             || file_name.starts_with("language/bytecode-verifier/src") // Unexpected representation of upvar types tuple Param(<upvars>/#4)
             || file_name.starts_with("language/compiler/src") // out of memory
+            || file_name.starts_with("language/compiler/bytecode-source-map/src") // stack overflow
+            || file_name.starts_with("language/compiler/ir-to-bytecode/src") // stack overflow
             || file_name.starts_with("language/diem-framework/src") // expect reference target to have a value
             || file_name.starts_with("language/diem-framework/releases/src") // non termination
+            || file_name.starts_with("language/diem-tools/df-cli/src") // stack overflow
             || file_name.starts_with("language/diem-tools/diem-events-fetcher/src") // crash
             || file_name.starts_with("language/diem-tools/diem-validator-interface") // stack overflow
             || file_name.starts_with("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
@@ -181,6 +184,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
             || file_name.starts_with("language/move-prover/mutation") // stack overflow
             || file_name.starts_with("language/move-stdlib/src") // stack overflow
+            || file_name.starts_with("language/move-prover/src") // stack overflow
             || file_name.starts_with("language/move-prover/docgen/src") //  Unexpected representation of upvar types tuple Param(<upvars>/
             || file_name.starts_with("language/move-prover/interpreter/src") // stack overflow
             || file_name.starts_with("language/move-prover/lab/src")  // stack overflow
@@ -225,12 +229,9 @@ impl MiraiCallbacks {
                 || file_name.starts_with("common/rate-limiter/src")
                 || file_name.starts_with("config/src")
                 || file_name.starts_with("execution/executor/src")
-                || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
-                || file_name.starts_with("language/diem-tools/df-cli/src")
                 || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
-                || file_name.starts_with("language/move-prover/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
                 || file_name.starts_with("language/move-prover/boogie-backend-exp/src")
                 || file_name.starts_with("language/move-prover/bytecode/src")
