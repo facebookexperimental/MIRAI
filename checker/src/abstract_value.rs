@@ -759,7 +759,6 @@ pub trait AbstractValueTrait: Sized {
     fn join(&self, other: Self) -> Self;
     fn less_or_equal(&self, other: Self) -> Self;
     fn less_than(&self, other: Self) -> Self;
-    fn might_benefit_from_refinement(&self) -> bool;
     fn multiply(&self, other: Self) -> Self;
     fn mul_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn negate(self) -> Self;
@@ -816,7 +815,7 @@ pub trait AbstractValueTrait: Sized {
     fn get_is_non_null(&self) -> bool;
     fn get_cached_tags(&self) -> Rc<TagDomain>;
     fn get_tags(&self) -> TagDomain;
-    fn get_widened_subexpression(&self) -> Option<Rc<AbstractValue>>;
+    fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>>;
     fn refine_parameters_and_paths(
         &self,
         args: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -2502,10 +2501,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     Rc::new(FALSE)
                 };
             }
-            // [(join == val)] -> if !interval(join).intersect(interval(val)) { false } else { unknown == val }
-            //(Expression::Join { path, .. }, _) |
             // [(widened == val)] -> if !interval(widened).intersect(interval(val)) { false } else { unknown == val }
-            (Expression::Join { .. }, _) | (Expression::WidenedJoin { .. }, _) => {
+            (Expression::WidenedJoin { path, .. }, _) => {
                 let widened_interval = self.get_cached_interval();
                 let val_interval = other.get_cached_interval();
                 if !widened_interval.is_bottom()
@@ -2513,17 +2510,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && widened_interval.intersect(&val_interval).is_bottom()
                 {
                     return Rc::new(FALSE);
-                } else if self.expression.contains_local_variable(true) {
+                } else {
                     return AbstractValue::make_typed_unknown(
                         other.expression.infer_type(),
-                        Path::get_as_path(self.clone()),
+                        path.clone(),
                     )
                     .equals(other);
                 }
             }
-            // [(val == join)] -> if !interval(join).intersect(interval(val)) { false } else { val == unknown }
             // [(val == widened)] -> if !interval(widened).intersect(interval(val)) { false } else { val == unknown }
-            (_, Expression::Join { .. }) | (_, Expression::WidenedJoin { .. }) => {
+            (_, Expression::WidenedJoin { path, .. }) => {
                 let val_interval = self.get_cached_interval();
                 let widened_interval = other.get_cached_interval();
                 if !widened_interval.is_bottom()
@@ -2531,10 +2527,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && widened_interval.intersect(&val_interval).is_bottom()
                 {
                     return Rc::new(FALSE);
-                } else if other.expression.contains_local_variable(true) {
+                } else {
                     return self.equals(AbstractValue::make_typed_unknown(
                         self.expression.infer_type(),
-                        Path::get_as_path(self.clone()),
+                        path.clone(),
                     ));
                 }
             }
@@ -3175,14 +3171,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if other.is_top() {
             return other;
         }
-        // [(x has a subexpression that widens at path) join y] -> widened subexpression
-        if let Some(widened_subexpression) = self.get_widened_subexpression() {
-            return widened_subexpression;
-        }
-        // [x join (y has a subexpression that widens at path)] -> widened subexpression
-        if let Some(widened_subexpression) = other.get_widened_subexpression() {
-            return widened_subexpression;
-        }
         match (&self.expression, &other.expression) {
             // [(x join y) join (y join z)] -> x join (y join z)
             (
@@ -3524,56 +3512,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             _ => AbstractValue::make_unary(self.clone(), |operand| Expression::LogicalNot {
                 operand,
             }),
-        }
-    }
-
-    /// A heuristic for whether refining this value in the current environment could lead to simplification.
-    /// Used to reduce the cost of optional refinement.
-    #[logfn_inputs(TRACE)]
-    fn might_benefit_from_refinement(&self) -> bool {
-        match &self.expression {
-            Expression::Cast { operand, .. }
-            | Expression::TaggedExpression { operand, .. }
-            | Expression::Transmute { operand, .. }
-            | Expression::UnknownTagCheck { operand, .. } => {
-                operand.might_benefit_from_refinement()
-            }
-            Expression::ConditionalExpression {
-                consequent,
-                alternate,
-                ..
-            } => {
-                consequent.might_benefit_from_refinement()
-                    || alternate.might_benefit_from_refinement()
-            }
-            Expression::Join { left, right, .. } => {
-                left.might_benefit_from_refinement() || right.might_benefit_from_refinement()
-            }
-            Expression::Offset { .. } | Expression::Reference(..) => {
-                // These won't benefit directly, but are cheap and make the heuristic useful when
-                // they are directly embedded inside conditional or join expressions.
-                true
-            }
-            Expression::Switch {
-                discriminator,
-                cases,
-                default,
-            } => {
-                discriminator.might_benefit_from_refinement()
-                    || default.might_benefit_from_refinement()
-                    || cases.iter().any(|(_, v)| v.might_benefit_from_refinement())
-            }
-            Expression::UninterpretedCall { path, .. }
-            | Expression::UnknownModelField { path, .. }
-            | Expression::UnknownTagField { path, .. }
-            | Expression::Variable { path, .. }
-            | Expression::WidenedJoin { path, .. } => {
-                if let PathEnum::Computed { value } = &path.value {
-                    return value.might_benefit_from_refinement();
-                }
-                false
-            }
-            _ => false,
         }
     }
 
@@ -4824,7 +4762,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 self.subset(consequent) || self.subset(alternate)
             }
             // x subset widen { z } if x subset z
-            (_, Expression::WidenedJoin { operand, .. }) => self.subset(operand),
+            (_, Expression::WidenedJoin { operand, .. }) => {
+                // This is a conservative answer. False does not imply other.subset(self).
+                self.subset(operand)
+            }
             // (left join right) is a subset of x if both left and right are subsets of x.
             (Expression::Join { left, right, .. }, _) => {
                 // This is a conservative answer. False does not imply other.subset(self).
@@ -4833,7 +4774,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // x is a subset of (left join right) if x is a subset of either left or right.
             (_, Expression::Join { left, right, .. }) => {
                 // This is a conservative answer. False does not imply other.subset(self).
-                self.subset(left) || self.subset(right)
+                self.subset(left) && self.subset(right)
             }
             _ => false,
         }
@@ -5330,7 +5271,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns a subexpression that is a widened expression.
     /// Returns None if no such expression can be found.
     #[logfn_inputs(TRACE)]
-    fn get_widened_subexpression(&self) -> Option<Rc<AbstractValue>> {
+    fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>> {
         match &self.expression {
             Expression::Bottom | Expression::Top => None,
             Expression::Add { left, right }
@@ -5359,8 +5300,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::ShrOverflows { left, right, .. }
             | Expression::Sub { left, right }
             | Expression::SubOverflows { left, right, .. } => left
-                .get_widened_subexpression()
-                .or_else(|| right.get_widened_subexpression()),
+                .get_widened_subexpression(path)
+                .or_else(|| right.get_widened_subexpression(path)),
             Expression::BitNot { operand, .. }
             | Expression::Cast { operand, .. }
             | Expression::IntrinsicBitVectorUnary { operand, .. }
@@ -5369,31 +5310,33 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::LogicalNot { operand }
             | Expression::TaggedExpression { operand, .. }
             | Expression::Transmute { operand, .. }
-            | Expression::UnknownTagCheck { operand, .. } => operand.get_widened_subexpression(),
+            | Expression::UnknownTagCheck { operand, .. } => {
+                operand.get_widened_subexpression(path)
+            }
             Expression::CompileTimeConstant(..) => None,
             Expression::ConditionalExpression {
                 condition,
                 consequent,
                 alternate,
-            } => condition.get_widened_subexpression().or_else(|| {
+            } => condition.get_widened_subexpression(path).or_else(|| {
                 consequent
-                    .get_widened_subexpression()
-                    .or_else(|| alternate.get_widened_subexpression())
+                    .get_widened_subexpression(path)
+                    .or_else(|| alternate.get_widened_subexpression(path))
             }),
             Expression::HeapBlock { .. } => None,
             Expression::HeapBlockLayout {
                 length, alignment, ..
             } => length
-                .get_widened_subexpression()
-                .or_else(|| alignment.get_widened_subexpression()),
+                .get_widened_subexpression(path)
+                .or_else(|| alignment.get_widened_subexpression(path)),
             Expression::Memcmp {
                 left,
                 right,
                 length,
-            } => left.get_widened_subexpression().or_else(|| {
+            } => left.get_widened_subexpression(path).or_else(|| {
                 right
-                    .get_widened_subexpression()
-                    .or_else(|| length.get_widened_subexpression())
+                    .get_widened_subexpression(path)
+                    .or_else(|| length.get_widened_subexpression(path))
             }),
             Expression::Reference(..) => None,
             Expression::InitialParameterValue { .. } => None,
@@ -5401,12 +5344,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 discriminator,
                 cases,
                 default,
-            } => discriminator.get_widened_subexpression().or_else(|| {
-                default.get_widened_subexpression().or_else(|| {
+            } => discriminator.get_widened_subexpression(path).or_else(|| {
+                default.get_widened_subexpression(path).or_else(|| {
                     cases.iter().find_map(|(case_val, result_val)| {
                         case_val
-                            .get_widened_subexpression()
-                            .or_else(|| result_val.get_widened_subexpression())
+                            .get_widened_subexpression(path)
+                            .or_else(|| result_val.get_widened_subexpression(path))
                     })
                 })
             }),
@@ -5414,13 +5357,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 callee,
                 arguments: args,
                 ..
-            } => callee
-                .get_widened_subexpression()
-                .or_else(|| args.iter().find_map(|arg| arg.get_widened_subexpression())),
+            } => callee.get_widened_subexpression(path).or_else(|| {
+                args.iter()
+                    .find_map(|arg| arg.get_widened_subexpression(path))
+            }),
             Expression::UnknownModelField { .. } => None,
             Expression::UnknownTagField { .. } => None,
             Expression::Variable { .. } => None,
-            Expression::WidenedJoin { .. } => Some(self.clone()),
+            Expression::WidenedJoin { path: p, .. } => {
+                if p.eq(path) {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
         }
     }
 

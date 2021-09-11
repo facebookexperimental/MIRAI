@@ -374,15 +374,11 @@ impl Environment {
                     alternate,
                 } = &value.expression
                 {
-                    if consequent.might_benefit_from_refinement()
-                        && alternate.might_benefit_from_refinement()
-                    {
-                        return Some((
-                            condition.clone(),
-                            Path::get_as_path(consequent.refine_with(condition, 0)),
-                            Path::get_as_path(alternate.refine_with(&condition.logical_not(), 0)),
-                        ));
-                    }
+                    return Some((
+                        condition.clone(),
+                        Path::get_as_path(consequent.refine_with(condition, 0)),
+                        Path::get_as_path(alternate.refine_with(&condition.logical_not(), 0)),
+                    ));
                 }
                 None
             }
@@ -444,15 +440,11 @@ impl Environment {
                     alternate,
                 } = &value.expression
                 {
-                    if consequent.might_benefit_from_refinement()
-                        && alternate.might_benefit_from_refinement()
-                    {
-                        return Some((
-                            condition.clone(),
-                            Path::new_index(qualifier.clone(), consequent.clone()),
-                            Path::new_index(qualifier.clone(), alternate.clone()),
-                        ));
-                    }
+                    return Some((
+                        condition.clone(),
+                        Path::new_index(qualifier.clone(), consequent.clone()),
+                        Path::new_index(qualifier.clone(), alternate.clone()),
+                    ));
                 }
                 None
             }
@@ -463,15 +455,11 @@ impl Environment {
                     alternate,
                 } = &value.expression
                 {
-                    if consequent.might_benefit_from_refinement()
-                        && alternate.might_benefit_from_refinement()
-                    {
-                        return Some((
-                            condition.clone(),
-                            Path::new_slice(qualifier.clone(), consequent.clone()),
-                            Path::new_slice(qualifier.clone(), alternate.clone()),
-                        ));
-                    }
+                    return Some((
+                        condition.clone(),
+                        Path::new_slice(qualifier.clone(), consequent.clone()),
+                        Path::new_slice(qualifier.clone(), alternate.clone()),
+                    ));
                 }
                 None
             }
@@ -510,11 +498,11 @@ impl Environment {
     /// value that is the join of self.value_at(path) and other.value_at(path)
     #[logfn_inputs(TRACE)]
     pub fn join(&self, other: Environment) -> Environment {
-        self.join_or_widen(other, |x, y, _p| {
-            if let Some(val) = x.get_widened_subexpression() {
+        self.join_or_widen(other, |x, y, p| {
+            if let Some(val) = x.get_widened_subexpression(p) {
                 return val;
             }
-            if let Some(val) = y.get_widened_subexpression() {
+            if let Some(val) = y.get_widened_subexpression(p) {
                 return val;
             }
             x.join(y.clone())
@@ -526,10 +514,10 @@ impl Environment {
     #[logfn_inputs(TRACE)]
     pub fn widen(&self, other: Environment) -> Environment {
         self.join_or_widen(other, |x, y, p| {
-            if let Some(val) = x.get_widened_subexpression() {
+            if let Some(val) = x.get_widened_subexpression(p) {
                 return val;
             }
-            if let Some(val) = y.get_widened_subexpression() {
+            if let Some(val) = y.get_widened_subexpression(p) {
                 return val;
             }
             x.join(y.clone()).widen(p)
