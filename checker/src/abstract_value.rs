@@ -790,11 +790,26 @@ pub trait AbstractValueTrait: Sized {
         recursive_op: fn(&Self, Self) -> Self,
         operation: fn(Self, Self) -> Self,
     ) -> Self;
+    fn try_to_constant_fold_and_distribute_binary_overflow_op(
+        &self,
+        other: Self,
+        target_type: ExpressionType,
+        const_op: fn(&ConstantDomain, &ConstantDomain, ExpressionType) -> ConstantDomain,
+        recursive_op: fn(&Self, Self, ExpressionType) -> Self,
+        operation: fn(Self, Self, ExpressionType) -> Self,
+    ) -> Self;
     fn try_to_distribute_binary_op(
         &self,
         other: Self,
         recursive_op: fn(&Self, Self) -> Self,
         operation: fn(Self, Self) -> Self,
+    ) -> Self;
+    fn try_to_distribute_binary_overflow_op(
+        &self,
+        other: Self,
+        target_type: ExpressionType,
+        recursive_op: fn(&Self, Self, ExpressionType) -> Self,
+        operation: fn(Self, Self, ExpressionType) -> Self,
     ) -> Self;
     fn get_cached_interval(&self) -> Rc<IntervalDomain>;
     fn get_as_interval(&self) -> IntervalDomain;
@@ -942,14 +957,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 Path::new_computed(TOP.into()),
             );
         }
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.add_overflows(v2, target_type);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
         if let Expression::CompileTimeConstant(c1) = &self.expression {
             // [0 + x] -> x
             if c1.is_zero() {
@@ -982,14 +989,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in(target_type) {
             return Rc::new(FALSE);
         }
-        AbstractValue::make_typed_binary(
-            self.clone(),
+        self.try_to_constant_fold_and_distribute_binary_overflow_op(
             other,
             target_type,
-            |left, right, result_type| Expression::AddOverflows {
-                left,
-                right,
-                result_type,
+            ConstantDomain::add_overflows,
+            Self::add_overflows,
+            |l, r, t| {
+                AbstractValue::make_typed_binary(l, r, t, |left, right, result_type| {
+                    Expression::AddOverflows {
+                        left,
+                        right,
+                        result_type,
+                    }
+                })
             },
         )
     }
@@ -3642,14 +3654,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 Path::new_computed(TOP.into()),
             );
         }
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.mul_overflows(v2, target_type);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
         if let Expression::CompileTimeConstant(c1) = &self.expression {
             match c1 {
                 // [0 * y] -> 0
@@ -3691,14 +3695,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in(target_type) {
             return Rc::new(FALSE);
         }
-        AbstractValue::make_typed_binary(
-            self.clone(),
+        self.try_to_constant_fold_and_distribute_binary_overflow_op(
             other,
             target_type,
-            |left, right, result_type| Expression::MulOverflows {
-                left,
-                right,
-                result_type,
+            ConstantDomain::mul_overflows,
+            Self::mul_overflows,
+            |l, r, t| {
+                AbstractValue::make_typed_binary(l, r, t, |left, right, result_type| {
+                    Expression::MulOverflows {
+                        left,
+                        right,
+                        result_type,
+                    }
+                })
             },
         )
     }
@@ -4566,26 +4575,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 Path::new_computed(TOP.into()),
             );
         }
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.shl_overflows(v2, target_type);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
         let interval = other.get_cached_interval();
         if interval.is_contained_in_width_of(target_type) {
             return Rc::new(FALSE);
         }
-        AbstractValue::make_typed_binary(
-            self.clone(),
+        self.try_to_constant_fold_and_distribute_binary_overflow_op(
             other,
             target_type,
-            |left, right, result_type| Expression::ShlOverflows {
-                left,
-                right,
-                result_type,
+            ConstantDomain::shl_overflows,
+            Self::shl_overflows,
+            |l, r, t| {
+                AbstractValue::make_typed_binary(l, r, t, |left, right, result_type| {
+                    Expression::ShlOverflows {
+                        left,
+                        right,
+                        result_type,
+                    }
+                })
             },
         )
     }
@@ -4617,26 +4623,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 Path::new_computed(TOP.into()),
             );
         }
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.shr_overflows(v2, target_type);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
         let interval = &other.get_cached_interval();
         if interval.is_contained_in_width_of(target_type) {
             return Rc::new(FALSE);
         }
-        AbstractValue::make_typed_binary(
-            self.clone(),
+        self.try_to_constant_fold_and_distribute_binary_overflow_op(
             other,
             target_type,
-            |left, right, result_type| Expression::ShrOverflows {
-                left,
-                right,
-                result_type,
+            ConstantDomain::shr_overflows,
+            Self::shr_overflows,
+            |l, r, t| {
+                AbstractValue::make_typed_binary(l, r, t, |left, right, result_type| {
+                    Expression::ShrOverflows {
+                        left,
+                        right,
+                        result_type,
+                    }
+                })
             },
         )
     }
@@ -4754,26 +4757,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 Path::new_computed(TOP.into()),
             );
         }
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            let result = v1.sub_overflows(v2, target_type);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
         let interval = self.get_cached_interval().sub(&other.get_cached_interval());
         if interval.is_contained_in(target_type) {
             return Rc::new(FALSE);
         }
-        AbstractValue::make_typed_binary(
-            self.clone(),
+        self.try_to_constant_fold_and_distribute_binary_overflow_op(
             other,
             target_type,
-            |left, right, result_type| Expression::SubOverflows {
-                left,
-                right,
-                result_type,
+            ConstantDomain::sub_overflows,
+            Self::sub_overflows,
+            |l, r, t| {
+                AbstractValue::make_typed_binary(l, r, t, |left, right, result_type| {
+                    Expression::SubOverflows {
+                        left,
+                        right,
+                        result_type,
+                    }
+                })
             },
         )
     }
@@ -4921,6 +4921,45 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
+    /// Tries to simplify operation(self, other) by constant folding or by distribution
+    /// the operation over self and/or other.
+    /// Returns operation(self, other) if no simplification is possible.
+    #[logfn(TRACE)]
+    fn try_to_constant_fold_and_distribute_binary_overflow_op(
+        &self,
+        other: Rc<AbstractValue>,
+        target_type: ExpressionType,
+        const_op: fn(&ConstantDomain, &ConstantDomain, ExpressionType) -> ConstantDomain,
+        recursive_op: fn(
+            &Rc<AbstractValue>,
+            Rc<AbstractValue>,
+            ExpressionType,
+        ) -> Rc<AbstractValue>,
+        operation: fn(Rc<AbstractValue>, Rc<AbstractValue>, ExpressionType) -> Rc<AbstractValue>,
+    ) -> Rc<AbstractValue> {
+        match (&self.expression, &other.expression) {
+            (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) => {
+                let result = const_op(v1, v2, target_type);
+                if result == ConstantDomain::Bottom {
+                    self.try_to_distribute_binary_overflow_op(
+                        other,
+                        target_type,
+                        recursive_op,
+                        operation,
+                    )
+                } else {
+                    Rc::new(result.into())
+                }
+            }
+            _ => self.try_to_distribute_binary_overflow_op(
+                other,
+                target_type,
+                recursive_op,
+                operation,
+            ),
+        }
+    }
+
     /// Tries to distribute the operation over self and/or other.
     /// Return operation(self, other) if no simplification is possible.
     #[logfn(TRACE)]
@@ -4959,6 +4998,59 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return recursive_op(self, left.clone()).join(recursive_op(self, right.clone()));
         }
         operation(self.clone(), other)
+    }
+
+    /// Tries to distribute the operation over self and/or other.
+    /// Return operation(self, other) if no simplification is possible.
+    #[logfn(TRACE)]
+    fn try_to_distribute_binary_overflow_op(
+        &self,
+        other: Rc<AbstractValue>,
+        target_type: ExpressionType,
+        recursive_op: fn(
+            &Rc<AbstractValue>,
+            Rc<AbstractValue>,
+            ExpressionType,
+        ) -> Rc<AbstractValue>,
+        operation: fn(Rc<AbstractValue>, Rc<AbstractValue>, ExpressionType) -> Rc<AbstractValue>,
+    ) -> Rc<AbstractValue> {
+        if let ConditionalExpression {
+            condition,
+            consequent,
+            alternate,
+        } = &self.expression
+        {
+            return condition.conditional_expression(
+                recursive_op(consequent, other.clone(), target_type),
+                recursive_op(alternate, other.clone(), target_type),
+            );
+        };
+        if let ConditionalExpression {
+            condition,
+            consequent,
+            alternate,
+        } = &other.expression
+        {
+            return condition.conditional_expression(
+                recursive_op(self, consequent.clone(), target_type),
+                recursive_op(self, alternate.clone(), target_type),
+            );
+        };
+        if let Join { left, right } = &self.expression {
+            return recursive_op(left, other.clone(), target_type).join(recursive_op(
+                right,
+                other,
+                target_type,
+            ));
+        }
+        if let Join { left, right } = &other.expression {
+            return recursive_op(self, left.clone(), target_type).join(recursive_op(
+                self,
+                right.clone(),
+                target_type,
+            ));
+        }
+        operation(self.clone(), other, target_type)
     }
 
     /// Determines if the expression is known at compile time to always be a non-null pointer.
