@@ -242,35 +242,6 @@ impl Path {
         }
     }
 
-    /// Returns true if the path contains a value whose expression contains a widened join.
-    #[logfn_inputs(TRACE)]
-    pub fn contains_widened_join(&self) -> bool {
-        match &self.value {
-            PathEnum::Computed { value } => value.expression.contains_widened_join(),
-            PathEnum::HeapBlock { .. } => false,
-            PathEnum::LocalVariable { .. } => false,
-            PathEnum::Offset { value } => value.expression.contains_widened_join(),
-            PathEnum::Parameter { .. } => true,
-            PathEnum::Result => false,
-            PathEnum::StaticVariable { .. } => true,
-            PathEnum::PhantomData => false,
-            PathEnum::PromotedConstant { .. } => false,
-            PathEnum::QualifiedPath {
-                qualifier,
-                selector,
-                ..
-            } => {
-                qualifier.contains_widened_join() || {
-                    if let PathSelector::Index(value) = selector.as_ref() {
-                        value.expression.contains_widened_join()
-                    } else {
-                        false
-                    }
-                }
-            }
-        }
-    }
-
     /// Returns an abstract value for "true if the path is the same runtime location as other"
     #[logfn_inputs(TRACE)]
     pub fn equals(&self, other: &Rc<Path>) -> Rc<AbstractValue> {
