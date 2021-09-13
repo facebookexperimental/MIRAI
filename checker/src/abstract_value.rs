@@ -763,7 +763,7 @@ pub trait AbstractValueTrait: Sized {
     fn less_than(&self, other: Self) -> Self;
     fn multiply(&self, other: Self) -> Self;
     fn mul_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
-    fn negate(self) -> Self;
+    fn negate(&self) -> Self;
     fn not_equals(&self, other: Self) -> Self;
     fn logical_not(&self) -> Self;
     fn offset(&self, other: Self) -> Self;
@@ -806,6 +806,12 @@ pub trait AbstractValueTrait: Sized {
         recursive_op: fn(&Self, ExpressionType) -> Self,
         operation: fn(Self, ExpressionType) -> Self,
     ) -> Self;
+    fn try_to_constant_fold_and_distribute_unary_op(
+        &self,
+        const_op: fn(&ConstantDomain) -> ConstantDomain,
+        recursive_op: fn(&Self) -> Self,
+        operation: fn(Self) -> Self,
+    ) -> Self;
     fn try_to_distribute_binary_op(
         &self,
         other: Self,
@@ -824,6 +830,11 @@ pub trait AbstractValueTrait: Sized {
         target_type: ExpressionType,
         recursive_op: fn(&Self, ExpressionType) -> Self,
         operation: fn(Self, ExpressionType) -> Self,
+    ) -> Self;
+    fn try_to_distribute_unary_op(
+        &self,
+        recursive_op: fn(&Self) -> Self,
+        operation: fn(Self) -> Self,
     ) -> Self;
     fn get_cached_interval(&self) -> Rc<IntervalDomain>;
     fn get_as_interval(&self) -> IntervalDomain;
@@ -3505,18 +3516,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
 
     /// Returns an element that is "-self".
     #[logfn_inputs(TRACE)]
-    fn negate(self) -> Rc<AbstractValue> {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.neg();
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
+    fn negate(&self) -> Rc<AbstractValue> {
         // [-(x - y)] -> y - x
         if let Expression::Sub { left: x, right: y } = &self.expression {
             return y.subtract(x.clone());
         }
-        AbstractValue::make_unary(self, |operand| Expression::Neg { operand })
+        self.try_to_constant_fold_and_distribute_unary_op(ConstantDomain::neg, Self::negate, |o| {
+            AbstractValue::make_unary(o, |operand| Expression::Neg { operand })
+        })
     }
 
     /// Returns an element that is "self != other".
@@ -3620,12 +3627,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "!self" where self is a bool.
     #[logfn_inputs(TRACE)]
     fn logical_not(&self) -> Rc<AbstractValue> {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.logical_not();
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
         match &self.expression {
             Expression::Bottom => self.clone(),
             Expression::Equals { left: x, right: y } if x.expression.infer_type().is_integer() => {
@@ -3684,9 +3685,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     unreachable!()
                 }
             }
-            _ => AbstractValue::make_unary(self.clone(), |operand| Expression::LogicalNot {
-                operand,
-            }),
+            _ => self.try_to_constant_fold_and_distribute_unary_op(
+                ConstantDomain::logical_not,
+                Self::logical_not,
+                |o| AbstractValue::make_unary(o, |operand| Expression::LogicalNot { operand }),
+            ),
         }
     }
 
@@ -4926,6 +4929,25 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         self.try_to_distribute_typed_unary_op(target_type, recursive_op, operation)
     }
 
+    /// Tries to simplify operation(self) by constant folding or by distribution
+    /// the operation over self and/or other.
+    /// Returns operation(self) if no simplification is possible.
+    #[logfn(TRACE)]
+    fn try_to_constant_fold_and_distribute_unary_op(
+        &self,
+        const_op: fn(&ConstantDomain) -> ConstantDomain,
+        recursive_op: fn(&Rc<AbstractValue>) -> Rc<AbstractValue>,
+        operation: fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
+    ) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = const_op(v1);
+            if result != ConstantDomain::Bottom {
+                return Rc::new(result.into());
+            }
+        };
+        self.try_to_distribute_unary_op(recursive_op, operation)
+    }
+
     /// Tries to distribute the operation over self and/or other.
     /// Return operation(self, other) if no simplification is possible.
     #[logfn(TRACE)]
@@ -5020,7 +5042,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     }
 
     /// Tries to distribute the operation over self and/or other.
-    /// Return operation(self, other) if no simplification is possible.
+    /// Return operation(self, target_type) if no simplification is possible.
     #[logfn(TRACE)]
     fn try_to_distribute_typed_unary_op(
         &self,
@@ -5043,6 +5065,28 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return recursive_op(left, target_type).join(recursive_op(right, target_type));
         }
         operation(self.clone(), target_type)
+    }
+
+    /// Tries to distribute the operation over self and/or other.
+    /// Return operation(self) if no simplification is possible.
+    fn try_to_distribute_unary_op(
+        &self,
+        recursive_op: fn(&Rc<AbstractValue>) -> Rc<AbstractValue>,
+        operation: fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
+    ) -> Rc<AbstractValue> {
+        if let ConditionalExpression {
+            condition,
+            consequent,
+            alternate,
+        } = &self.expression
+        {
+            return condition
+                .conditional_expression(recursive_op(consequent), recursive_op(alternate));
+        };
+        if let Join { left, right } = &self.expression {
+            return recursive_op(left).join(recursive_op(right));
+        }
+        operation(self.clone())
     }
 
     /// Gets or constructs an interval that is cached.

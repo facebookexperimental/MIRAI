@@ -555,7 +555,10 @@ impl ConstantDomain {
                 128 => ConstantDomain::U128(Self::call_intrinsic_unary(*val, name)),
                 _ => assume_unreachable!("invalid bit length for intrinsic {:?}", name),
             },
-            _ => assume_unreachable!("invalid argument for intrinsic {:?}", name),
+            _ => {
+                debug!("invalid argument {:?} for intrinsic {:?}", self, name);
+                ConstantDomain::Bottom
+            }
         }
     }
 
