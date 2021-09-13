@@ -253,7 +253,9 @@ impl AbstractValue {
         result_type: ExpressionType,
         path: Rc<Path>,
     ) -> Rc<AbstractValue> {
-        //todo: compute the expression size
+        let expression_size = arguments.iter().fold(callee.expression_size, |acc, a| {
+            acc.saturating_add(a.expression_size)
+        });
         AbstractValue::make_from(
             Expression::UninterpretedCall {
                 callee,
@@ -261,7 +263,7 @@ impl AbstractValue {
                 result_type,
                 path,
             },
-            1,
+            expression_size,
         )
     }
 
@@ -789,7 +791,7 @@ pub trait AbstractValueTrait: Sized {
         recursive_op: fn(&Self, Self) -> Self,
         operation: fn(Self, Self) -> Self,
     ) -> Self;
-    fn try_to_constant_fold_and_distribute_binary_overflow_op(
+    fn try_to_constant_fold_and_distribute_typed_binary_op(
         &self,
         other: Self,
         target_type: ExpressionType,
@@ -797,18 +799,31 @@ pub trait AbstractValueTrait: Sized {
         recursive_op: fn(&Self, Self, ExpressionType) -> Self,
         operation: fn(Self, Self, ExpressionType) -> Self,
     ) -> Self;
+    fn try_to_constant_fold_and_distribute_typed_unary_op(
+        &self,
+        target_type: ExpressionType,
+        const_op: fn(&ConstantDomain, ExpressionType) -> ConstantDomain,
+        recursive_op: fn(&Self, ExpressionType) -> Self,
+        operation: fn(Self, ExpressionType) -> Self,
+    ) -> Self;
     fn try_to_distribute_binary_op(
         &self,
         other: Self,
         recursive_op: fn(&Self, Self) -> Self,
         operation: fn(Self, Self) -> Self,
     ) -> Self;
-    fn try_to_distribute_binary_overflow_op(
+    fn try_to_distribute_typed_binary_op(
         &self,
         other: Self,
         target_type: ExpressionType,
         recursive_op: fn(&Self, Self, ExpressionType) -> Self,
         operation: fn(Self, Self, ExpressionType) -> Self,
+    ) -> Self;
+    fn try_to_distribute_typed_unary_op(
+        &self,
+        target_type: ExpressionType,
+        recursive_op: fn(&Self, ExpressionType) -> Self,
+        operation: fn(Self, ExpressionType) -> Self,
     ) -> Self;
     fn get_cached_interval(&self) -> Rc<IntervalDomain>;
     fn get_as_interval(&self) -> IntervalDomain;
@@ -988,7 +1003,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in(target_type) {
             return Rc::new(FALSE);
         }
-        self.try_to_constant_fold_and_distribute_binary_overflow_op(
+        self.try_to_constant_fold_and_distribute_typed_binary_op(
             other,
             target_type,
             ConstantDomain::add_overflows,
@@ -1574,15 +1589,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if let Some(trimmed_left) =
                     left.trim_prefix_conjuncts(target_size - right.expression_size)
                 {
-                    return Some(trimmed_left.and(right.clone()));
+                    Some(trimmed_left.and(right.clone()))
                 } else {
-                    return Some(right.clone());
+                    Some(right.clone())
                 }
             } else {
-                return right.trim_prefix_conjuncts(target_size);
+                right.trim_prefix_conjuncts(target_size)
             }
+        } else {
+            None
         }
-        None
     }
 
     /// The Boolean value of this expression, if known, otherwise None.
@@ -1591,10 +1607,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match self.expression {
             Expression::CompileTimeConstant(ConstantDomain::True) => Some(true),
             Expression::CompileTimeConstant(ConstantDomain::False) => Some(false),
-            _ => {
-                // todo: ask other domains about this (construct some if need be).
-                None
-            }
+            _ => None,
         }
     }
 
@@ -1654,18 +1667,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "!self" where self is an integer.
     #[logfn_inputs(TRACE)]
     fn bit_not(&self, result_type: ExpressionType) -> Rc<AbstractValue> {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.bit_not(result_type);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
-        AbstractValue::make_typed_unary(self.clone(), result_type, |operand, result_type| {
-            Expression::BitNot {
-                operand,
-                result_type,
-            }
-        })
+        self.try_to_constant_fold_and_distribute_typed_unary_op(
+            result_type,
+            ConstantDomain::bit_not,
+            Self::bit_not,
+            |o, t| {
+                AbstractValue::make_typed_unary(o, t, |operand, result_type| Expression::BitNot {
+                    operand,
+                    result_type,
+                })
+            },
+        )
     }
 
     /// Returns an element that is "self | other".
@@ -1728,12 +1740,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is "self as target_type".
     #[logfn_inputs(TRACE)]
     fn cast(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.cast(target_type);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
         match &self.expression {
             Expression::Bottom => self.clone(),
             Expression::ConditionalExpression {
@@ -1808,12 +1814,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         let field0 = Path::new_field(Path::get_as_path(self.clone()), 0);
                         AbstractValue::make_typed_unknown(target_type, field0)
                     } else {
-                        AbstractValue::make_typed_unary(
-                            self.clone(),
+                        self.try_to_constant_fold_and_distribute_typed_unary_op(
                             target_type,
-                            |operand, target_type| Expression::Cast {
-                                operand,
-                                target_type,
+                            ConstantDomain::cast,
+                            Self::cast,
+                            |o, t| {
+                                AbstractValue::make_typed_unary(o, t, |operand, target_type| {
+                                    Expression::Cast {
+                                        operand,
+                                        target_type,
+                                    }
+                                })
                             },
                         )
                     }
@@ -2207,88 +2218,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         )
     }
 
-    // Attempts to construct an equivalent expression to self, but with the difference that
-    // the type inferred for the resulting expression will be the target type.
-    // If this is not possible, the original expression is returned.
-    // The need for this function arises from the difficulty of correctly typing variables that have
-    // generic types when constructed, but then leak out to caller contexts via summaries.
-    #[logfn_inputs(TRACE)]
-    fn try_to_retype_as(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
-        match &self.expression {
-            Expression::Add { left, right } => left
-                .try_to_retype_as(target_type)
-                .addition(right.try_to_retype_as(target_type)),
-            Expression::BitAnd { left, right } => left
-                .try_to_retype_as(target_type)
-                .bit_and(right.try_to_retype_as(target_type)),
-            Expression::BitOr { left, right } => left
-                .try_to_retype_as(target_type)
-                .bit_or(right.try_to_retype_as(target_type)),
-            Expression::BitXor { left, right } => left
-                .try_to_retype_as(target_type)
-                .bit_xor(right.try_to_retype_as(target_type)),
-            Expression::Cast {
-                operand,
-                target_type: tt,
-            } if *tt == ExpressionType::NonPrimitive || *tt == ExpressionType::ThinPointer => {
-                operand.try_to_retype_as(target_type)
-            }
-            Expression::ConditionalExpression {
-                condition,
-                consequent,
-                alternate,
-            } => {
-                let consequent = consequent.try_to_retype_as(target_type);
-                let alternate = alternate.try_to_retype_as(target_type);
-                condition.conditional_expression(consequent, alternate)
-            }
-            Expression::Div { left, right } => left
-                .try_to_retype_as(target_type)
-                .divide(right.try_to_retype_as(target_type)),
-            Expression::Join { left, right } => left
-                .try_to_retype_as(target_type)
-                .join(right.try_to_retype_as(target_type)),
-            Expression::Mul { left, right } => left
-                .try_to_retype_as(target_type)
-                .multiply(right.try_to_retype_as(target_type)),
-            Expression::Rem { left, right } => left
-                .try_to_retype_as(target_type)
-                .remainder(right.try_to_retype_as(target_type)),
-            Expression::Shl { left, right } => left
-                .try_to_retype_as(target_type)
-                .shift_left(right.try_to_retype_as(target_type)),
-            Expression::Sub { left, right } => left
-                .try_to_retype_as(target_type)
-                .subtract(right.try_to_retype_as(target_type)),
-            Expression::Neg { operand } => operand.try_to_retype_as(target_type).negate(),
-            Expression::InitialParameterValue { path, .. } => {
-                AbstractValue::make_initial_parameter_value(target_type, path.clone())
-            }
-            Expression::Switch {
-                discriminator,
-                cases,
-                default,
-            } => discriminator.switch(
-                cases
-                    .iter()
-                    .map(|(case_val, result_val)| {
-                        (case_val.clone(), result_val.try_to_retype_as(target_type))
-                    })
-                    .collect(),
-                default.try_to_retype_as(target_type),
-            ),
-            Expression::TaggedExpression { operand, tag } => {
-                operand.try_to_retype_as(target_type).add_tag(*tag)
-            }
-            Expression::Variable { path, .. } => {
-                AbstractValue::make_typed_unknown(target_type, path.clone())
-            }
-            Expression::WidenedJoin { .. } => self.clone(),
-
-            _ => self.clone(),
-        }
-    }
-
     /// Returns an element that is "*self".
     #[logfn_inputs(TRACE)]
     fn dereference(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
@@ -2505,34 +2434,31 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             (Expression::WidenedJoin { path, .. }, _) => {
                 let widened_interval = self.get_cached_interval();
                 let val_interval = other.get_cached_interval();
-                if !widened_interval.is_bottom()
+                return if !widened_interval.is_bottom()
                     && !val_interval.is_bottom()
                     && widened_interval.intersect(&val_interval).is_bottom()
                 {
-                    return Rc::new(FALSE);
+                    Rc::new(FALSE)
                 } else {
-                    return AbstractValue::make_typed_unknown(
-                        other.expression.infer_type(),
-                        path.clone(),
-                    )
-                    .equals(other);
-                }
+                    AbstractValue::make_typed_unknown(other.expression.infer_type(), path.clone())
+                        .equals(other)
+                };
             }
             // [(val == widened)] -> if !interval(widened).intersect(interval(val)) { false } else { val == unknown }
             (_, Expression::WidenedJoin { path, .. }) => {
                 let val_interval = self.get_cached_interval();
                 let widened_interval = other.get_cached_interval();
-                if !widened_interval.is_bottom()
+                return if !widened_interval.is_bottom()
                     && !val_interval.is_bottom()
                     && widened_interval.intersect(&val_interval).is_bottom()
                 {
-                    return Rc::new(FALSE);
+                    Rc::new(FALSE)
                 } else {
-                    return self.equals(AbstractValue::make_typed_unknown(
+                    self.equals(AbstractValue::make_typed_unknown(
                         self.expression.infer_type(),
                         path.clone(),
-                    ));
-                }
+                    ))
+                };
             }
 
             // [c3 == (c ? v1 : v2)] -> !c if v1 != c3 && v2 == c3
@@ -2613,11 +2539,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [1 == x] -> x when x is a Boolean. Canonicalize it to the latter.
             (Expression::CompileTimeConstant(ConstantDomain::U128(val)), x) => {
                 if x.infer_type() == ExpressionType::Bool {
-                    if *val == 0 {
-                        return other.logical_not();
+                    return if *val == 0 {
+                        other.logical_not()
                     } else {
-                        return other.clone();
-                    }
+                        other.clone()
+                    };
                 }
             }
             // [(if x { y } else { z }) == z]  -> [if x { y == z } else { true }] -> !x || y == z
@@ -3442,79 +3368,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         )
     }
 
-    /// Returns an element that is "!self" where self is a bool.
-    #[logfn_inputs(TRACE)]
-    fn logical_not(&self) -> Rc<AbstractValue> {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.logical_not();
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
-            }
-        };
-        match &self.expression {
-            Expression::Bottom => self.clone(),
-            Expression::Equals { left: x, right: y } if x.expression.infer_type().is_integer() => {
-                // [!(x == y)] -> x != y
-                x.not_equals(y.clone())
-            }
-            Expression::GreaterThan { left: x, right: y }
-                if x.expression.infer_type().is_integer() =>
-            {
-                // [!(x > y)] -> x <= y
-                x.less_or_equal(y.clone())
-            }
-            Expression::GreaterOrEqual { left: x, right: y }
-                if x.expression.infer_type().is_integer() =>
-            {
-                // [!(x >= y)] -> x < y
-                x.less_than(y.clone())
-            }
-            Expression::LessThan { left: x, right: y }
-                if x.expression.infer_type().is_integer() =>
-            {
-                // [!(x < y)] -> x >= y
-                x.greater_or_equal(y.clone())
-            }
-            Expression::LessOrEqual { left: x, right: y }
-                if x.expression.infer_type().is_integer() =>
-            {
-                // [!(x <= y)] -> x > y
-                x.greater_than(y.clone())
-            }
-            Expression::LogicalNot { operand } => {
-                // [!!x] -> x
-                operand.clone()
-            }
-            Expression::Ne { left: x, right: y } if x.expression.infer_type().is_integer() => {
-                // [!(x != y)] -> x == y
-                x.equals(y.clone())
-            }
-            Expression::Or { left: x, right }
-                if matches!(right.expression, Expression::LogicalNot { .. }) =>
-            {
-                // [!(x || !y)] -> !x && y
-                if let Expression::LogicalNot { operand: y } = &right.expression {
-                    x.logical_not().and(y.clone())
-                } else {
-                    unreachable!()
-                }
-            }
-            Expression::Or { left, right: y }
-                if matches!(left.expression, Expression::LogicalNot { .. }) =>
-            {
-                // [!(!x || y)] -> x && !y
-                if let Expression::LogicalNot { operand: x } = &left.expression {
-                    x.and(y.logical_not())
-                } else {
-                    unreachable!()
-                }
-            }
-            _ => AbstractValue::make_unary(self.clone(), |operand| Expression::LogicalNot {
-                operand,
-            }),
-        }
-    }
-
     /// Returns an element that is "self * other".
     #[logfn_inputs(TRACE)]
     fn multiply(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
@@ -3633,7 +3486,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in(target_type) {
             return Rc::new(FALSE);
         }
-        self.try_to_constant_fold_and_distribute_binary_overflow_op(
+        self.try_to_constant_fold_and_distribute_typed_binary_op(
             other,
             target_type,
             ConstantDomain::mul_overflows,
@@ -3762,6 +3615,79 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Self::not_equals,
             |l, r| AbstractValue::make_binary(l, r, |left, right| Expression::Ne { left, right }),
         )
+    }
+
+    /// Returns an element that is "!self" where self is a bool.
+    #[logfn_inputs(TRACE)]
+    fn logical_not(&self) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = v1.logical_not();
+            if result != ConstantDomain::Bottom {
+                return Rc::new(result.into());
+            }
+        };
+        match &self.expression {
+            Expression::Bottom => self.clone(),
+            Expression::Equals { left: x, right: y } if x.expression.infer_type().is_integer() => {
+                // [!(x == y)] -> x != y
+                x.not_equals(y.clone())
+            }
+            Expression::GreaterThan { left: x, right: y }
+                if x.expression.infer_type().is_integer() =>
+            {
+                // [!(x > y)] -> x <= y
+                x.less_or_equal(y.clone())
+            }
+            Expression::GreaterOrEqual { left: x, right: y }
+                if x.expression.infer_type().is_integer() =>
+            {
+                // [!(x >= y)] -> x < y
+                x.less_than(y.clone())
+            }
+            Expression::LessThan { left: x, right: y }
+                if x.expression.infer_type().is_integer() =>
+            {
+                // [!(x < y)] -> x >= y
+                x.greater_or_equal(y.clone())
+            }
+            Expression::LessOrEqual { left: x, right: y }
+                if x.expression.infer_type().is_integer() =>
+            {
+                // [!(x <= y)] -> x > y
+                x.greater_than(y.clone())
+            }
+            Expression::LogicalNot { operand } => {
+                // [!!x] -> x
+                operand.clone()
+            }
+            Expression::Ne { left: x, right: y } if x.expression.infer_type().is_integer() => {
+                // [!(x != y)] -> x == y
+                x.equals(y.clone())
+            }
+            Expression::Or { left: x, right }
+                if matches!(right.expression, Expression::LogicalNot { .. }) =>
+            {
+                // [!(x || !y)] -> !x && y
+                if let Expression::LogicalNot { operand: y } = &right.expression {
+                    x.logical_not().and(y.clone())
+                } else {
+                    unreachable!()
+                }
+            }
+            Expression::Or { left, right: y }
+                if matches!(left.expression, Expression::LogicalNot { .. }) =>
+            {
+                // [!(!x || y)] -> x && !y
+                if let Expression::LogicalNot { operand: x } = &left.expression {
+                    x.and(y.logical_not())
+                } else {
+                    unreachable!()
+                }
+            }
+            _ => AbstractValue::make_unary(self.clone(), |operand| Expression::LogicalNot {
+                operand,
+            }),
+        }
     }
 
     /// Returns an element that is "&self + other*scale".
@@ -4379,7 +4305,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 (
                     Expression::Or {
                         left: x,
-                        right: yltz,
+                        right: y_lt_z,
                     },
                     Expression::Equals {
                         left: z1,
@@ -4389,7 +4315,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     if let Expression::LessThan {
                         left: y2,
                         right: z2,
-                    } = &yltz.expression
+                    } = &y_lt_z.expression
                     {
                         if y1.eq(y2) && z1.eq(z2) {
                             return x.or(y1.less_or_equal(z1.clone()));
@@ -4517,7 +4443,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in_width_of(target_type) {
             return Rc::new(FALSE);
         }
-        self.try_to_constant_fold_and_distribute_binary_overflow_op(
+        self.try_to_constant_fold_and_distribute_typed_binary_op(
             other,
             target_type,
             ConstantDomain::shl_overflows,
@@ -4565,7 +4491,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in_width_of(target_type) {
             return Rc::new(FALSE);
         }
-        self.try_to_constant_fold_and_distribute_binary_overflow_op(
+        self.try_to_constant_fold_and_distribute_typed_binary_op(
             other,
             target_type,
             ConstantDomain::shr_overflows,
@@ -4699,7 +4625,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if interval.is_contained_in(target_type) {
             return Rc::new(FALSE);
         }
-        self.try_to_constant_fold_and_distribute_binary_overflow_op(
+        self.try_to_constant_fold_and_distribute_typed_binary_op(
             other,
             target_type,
             ConstantDomain::sub_overflows,
@@ -4838,6 +4764,88 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         )
     }
 
+    // Attempts to construct an equivalent expression to self, but with the difference that
+    // the type inferred for the resulting expression will be the target type.
+    // If this is not possible, the original expression is returned.
+    // The need for this function arises from the difficulty of correctly typing variables that have
+    // generic types when constructed, but then leak out to caller contexts via summaries.
+    #[logfn_inputs(TRACE)]
+    fn try_to_retype_as(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
+        match &self.expression {
+            Expression::Add { left, right } => left
+                .try_to_retype_as(target_type)
+                .addition(right.try_to_retype_as(target_type)),
+            Expression::BitAnd { left, right } => left
+                .try_to_retype_as(target_type)
+                .bit_and(right.try_to_retype_as(target_type)),
+            Expression::BitOr { left, right } => left
+                .try_to_retype_as(target_type)
+                .bit_or(right.try_to_retype_as(target_type)),
+            Expression::BitXor { left, right } => left
+                .try_to_retype_as(target_type)
+                .bit_xor(right.try_to_retype_as(target_type)),
+            Expression::Cast {
+                operand,
+                target_type: tt,
+            } if *tt == ExpressionType::NonPrimitive || *tt == ExpressionType::ThinPointer => {
+                operand.try_to_retype_as(target_type)
+            }
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                let consequent = consequent.try_to_retype_as(target_type);
+                let alternate = alternate.try_to_retype_as(target_type);
+                condition.conditional_expression(consequent, alternate)
+            }
+            Expression::Div { left, right } => left
+                .try_to_retype_as(target_type)
+                .divide(right.try_to_retype_as(target_type)),
+            Expression::Join { left, right } => left
+                .try_to_retype_as(target_type)
+                .join(right.try_to_retype_as(target_type)),
+            Expression::Mul { left, right } => left
+                .try_to_retype_as(target_type)
+                .multiply(right.try_to_retype_as(target_type)),
+            Expression::Rem { left, right } => left
+                .try_to_retype_as(target_type)
+                .remainder(right.try_to_retype_as(target_type)),
+            Expression::Shl { left, right } => left
+                .try_to_retype_as(target_type)
+                .shift_left(right.try_to_retype_as(target_type)),
+            Expression::Sub { left, right } => left
+                .try_to_retype_as(target_type)
+                .subtract(right.try_to_retype_as(target_type)),
+            Expression::Neg { operand } => operand.try_to_retype_as(target_type).negate(),
+            Expression::InitialParameterValue { path, .. } => {
+                AbstractValue::make_initial_parameter_value(target_type, path.clone())
+            }
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => discriminator.switch(
+                cases
+                    .iter()
+                    .map(|(case_val, result_val)| {
+                        (case_val.clone(), result_val.try_to_retype_as(target_type))
+                    })
+                    .collect(),
+                default.try_to_retype_as(target_type),
+            ),
+            Expression::TaggedExpression { operand, tag } => {
+                operand.try_to_retype_as(target_type).add_tag(*tag)
+            }
+            Expression::Variable { path, .. } => {
+                AbstractValue::make_typed_unknown(target_type, path.clone())
+            }
+            Expression::WidenedJoin { .. } => self.clone(),
+
+            _ => self.clone(),
+        }
+    }
+
     /// Tries to simplify operation(self, other) by constant folding or by distribution
     /// the operation over self and/or other.
     /// Returns operation(self, other) if no simplification is possible.
@@ -4862,11 +4870,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         }
     }
 
-    /// Tries to simplify operation(self, other) by constant folding or by distribution
+    /// Tries to simplify operation(self, other, target_type) by constant folding or by distribution
     /// the operation over self and/or other.
-    /// Returns operation(self, other) if no simplification is possible.
+    /// Returns operation(self, other, target_type) if no simplification is possible.
     #[logfn(TRACE)]
-    fn try_to_constant_fold_and_distribute_binary_overflow_op(
+    fn try_to_constant_fold_and_distribute_typed_binary_op(
         &self,
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
@@ -4882,7 +4890,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) => {
                 let result = const_op(v1, v2, target_type);
                 if result == ConstantDomain::Bottom {
-                    self.try_to_distribute_binary_overflow_op(
+                    self.try_to_distribute_typed_binary_op(
                         other,
                         target_type,
                         recursive_op,
@@ -4892,13 +4900,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     Rc::new(result.into())
                 }
             }
-            _ => self.try_to_distribute_binary_overflow_op(
-                other,
-                target_type,
-                recursive_op,
-                operation,
-            ),
+            _ => {
+                self.try_to_distribute_typed_binary_op(other, target_type, recursive_op, operation)
+            }
         }
+    }
+
+    /// Tries to simplify operation(self, target_type) by constant folding or by distribution
+    /// the operation over self and/or other.
+    /// Returns operation(self, target_type) if no simplification is possible.
+    #[logfn(TRACE)]
+    fn try_to_constant_fold_and_distribute_typed_unary_op(
+        &self,
+        target_type: ExpressionType,
+        const_op: fn(&ConstantDomain, ExpressionType) -> ConstantDomain,
+        recursive_op: fn(&Rc<AbstractValue>, ExpressionType) -> Rc<AbstractValue>,
+        operation: fn(Rc<AbstractValue>, ExpressionType) -> Rc<AbstractValue>,
+    ) -> Rc<AbstractValue> {
+        if let Expression::CompileTimeConstant(v1) = &self.expression {
+            let result = const_op(v1, target_type);
+            if result != ConstantDomain::Bottom {
+                return Rc::new(result.into());
+            }
+        };
+        self.try_to_distribute_typed_unary_op(target_type, recursive_op, operation)
     }
 
     /// Tries to distribute the operation over self and/or other.
@@ -4944,7 +4969,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Tries to distribute the operation over self and/or other.
     /// Return operation(self, other) if no simplification is possible.
     #[logfn(TRACE)]
-    fn try_to_distribute_binary_overflow_op(
+    fn try_to_distribute_typed_binary_op(
         &self,
         other: Rc<AbstractValue>,
         target_type: ExpressionType,
@@ -4994,21 +5019,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         operation(self.clone(), other, target_type)
     }
 
-    /// Determines if the expression is known at compile time to always be a non-null pointer.
-    #[logfn_inputs(TRACE)]
-    fn get_is_non_null(&self) -> bool {
-        match &self.expression {
-            Expression::ConditionalExpression {
-                consequent,
-                alternate,
-                ..
-            } => consequent.is_non_null() && alternate.is_non_null(),
-            Expression::Join { left, right, .. } => left.is_non_null() && right.is_non_null(),
-            Expression::Offset { left, .. } => left.is_non_null(),
-            Expression::Reference(..) => true,
-            Expression::WidenedJoin { operand, .. } => operand.is_non_null(),
-            _ => false,
+    /// Tries to distribute the operation over self and/or other.
+    /// Return operation(self, other) if no simplification is possible.
+    #[logfn(TRACE)]
+    fn try_to_distribute_typed_unary_op(
+        &self,
+        target_type: ExpressionType,
+        recursive_op: fn(&Rc<AbstractValue>, ExpressionType) -> Rc<AbstractValue>,
+        operation: fn(Rc<AbstractValue>, ExpressionType) -> Rc<AbstractValue>,
+    ) -> Rc<AbstractValue> {
+        if let ConditionalExpression {
+            condition,
+            consequent,
+            alternate,
+        } = &self.expression
+        {
+            return condition.conditional_expression(
+                recursive_op(consequent, target_type),
+                recursive_op(alternate, target_type),
+            );
+        };
+        if let Join { left, right } = &self.expression {
+            return recursive_op(left, target_type).join(recursive_op(right, target_type));
         }
+        operation(self.clone(), target_type)
     }
 
     /// Gets or constructs an interval that is cached.
@@ -5108,6 +5142,23 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 interval
             }
             _ => interval_domain::BOTTOM,
+        }
+    }
+
+    /// Determines if the expression is known at compile time to always be a non-null pointer.
+    #[logfn_inputs(TRACE)]
+    fn get_is_non_null(&self) -> bool {
+        match &self.expression {
+            Expression::ConditionalExpression {
+                consequent,
+                alternate,
+                ..
+            } => consequent.is_non_null() && alternate.is_non_null(),
+            Expression::Join { left, right, .. } => left.is_non_null() && right.is_non_null(),
+            Expression::Offset { left, .. } => left.is_non_null(),
+            Expression::Reference(..) => true,
+            Expression::WidenedJoin { operand, .. } => operand.is_non_null(),
+            _ => false,
         }
     }
 
@@ -6180,21 +6231,26 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// or zero filled as appropriate.
     #[logfn(TRACE)]
     fn transmute(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
-        if let Expression::CompileTimeConstant(c) = &self.expression {
-            Rc::new(c.transmute(target_type).into())
-        } else if target_type.is_integer() && self.expression.infer_type().is_integer() {
+        if target_type.is_integer() && self.expression.infer_type().is_integer() {
             self.unsigned_modulo(target_type.bit_length())
                 .cast(target_type)
         } else if target_type == ExpressionType::Bool {
             self.unsigned_modulo(target_type.bit_length())
                 .not_equals(Rc::new(ConstantDomain::U128(0).into()))
         } else {
-            AbstractValue::make_typed_unary(self.clone(), target_type, |operand, target_type| {
-                Expression::Transmute {
-                    operand,
-                    target_type,
-                }
-            })
+            self.try_to_constant_fold_and_distribute_typed_unary_op(
+                target_type,
+                ConstantDomain::transmute,
+                Self::transmute,
+                |o, t| {
+                    AbstractValue::make_typed_unary(o, t, |operand, target_type| {
+                        Expression::Transmute {
+                            operand,
+                            target_type,
+                        }
+                    })
+                },
+            )
         }
     }
 
