@@ -139,7 +139,6 @@ impl Environment {
                         {
                             if **s == PathSelector::Deref {
                                 let paths_are_equal = qualifier.equals(qs);
-                                debug!("paths_are_equal {:?}", paths_are_equal);
                                 match paths_are_equal.as_bool_if_known() {
                                     Some(true) => {
                                         // p is known to be an alias of path, so just update it
@@ -269,7 +268,6 @@ impl Environment {
                         {
                             if s.eq(selector) {
                                 let paths_are_equal = qualifier.equals(qs);
-                                debug!("paths_are_equal {:?}", paths_are_equal);
                                 match paths_are_equal.as_bool_if_known() {
                                     Some(true) => {
                                         // p is known to be an alias of path, so just update it

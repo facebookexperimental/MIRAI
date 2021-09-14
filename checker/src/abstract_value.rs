@@ -3200,6 +3200,25 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ) => {
                 return x.join(y.join(other));
             }
+            // [x_join_y join widen(x_join_y)] -> widen(x_join_y)
+            (Expression::Join { .. }, Expression::WidenedJoin { operand, .. })
+                if self.eq(operand) =>
+            {
+                return other;
+            }
+            // [widen(x_join_y) join x_join_y] -> widen(x_join_y)
+            (Expression::WidenedJoin { operand, .. }, Expression::Join { .. })
+                if other.eq(operand) =>
+            {
+                return self.clone();
+            }
+            // [widen(x, p) join widen(y, p)] -> widen(x, p)
+            (
+                Expression::WidenedJoin { path: p1, .. },
+                Expression::WidenedJoin { path: p2, .. },
+            ) if p1.eq(p2) => {
+                return self.clone();
+            }
             // [x join (if c { x } else { y })] -> x join y
             // [x join (if c { y } else { x })] -> x join y
             (
