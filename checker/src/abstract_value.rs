@@ -2925,10 +2925,47 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns self.f(other) where f is an intrinsic binary function.
     #[logfn_inputs(TRACE)]
     fn intrinsic_binary(&self, other: Self, name: KnownNames) -> Self {
-        if let (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) =
-            (&self.expression, &other.expression)
-        {
-            return Rc::new(v1.intrinsic_binary(v2, name).into());
+        match (&self.expression, &other.expression) {
+            (Expression::CompileTimeConstant(v1), Expression::CompileTimeConstant(v2)) => {
+                return Rc::new(v1.intrinsic_binary(v2, name).into());
+            }
+            (
+                Expression::ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                },
+                _,
+            ) => {
+                return condition.conditional_expression(
+                    consequent.intrinsic_binary(other.clone(), name),
+                    alternate.intrinsic_binary(other.clone(), name),
+                );
+            }
+            (
+                _,
+                Expression::ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                },
+            ) => {
+                return condition.conditional_expression(
+                    self.intrinsic_binary(consequent.clone(), name),
+                    self.intrinsic_binary(alternate.clone(), name),
+                );
+            }
+            (Expression::Join { left, right }, _) => {
+                return left
+                    .intrinsic_binary(other.clone(), name)
+                    .join(right.intrinsic_binary(other, name));
+            }
+            (_, Expression::Join { left, right }) => {
+                return self
+                    .intrinsic_binary(left.clone(), name)
+                    .join(self.intrinsic_binary(right.clone(), name));
+            }
+            _ => {}
         };
         AbstractValue::make_from(
             Expression::IntrinsicBinary {
@@ -2943,12 +2980,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns (self as u(8|16|32|64|128)).f() where f is an intrinsic bit vector unary function.
     #[logfn_inputs(TRACE)]
     fn intrinsic_bit_vector_unary(&self, bit_length: u8, name: KnownNames) -> Self {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.intrinsic_bit_vector_unary(bit_length, name);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
+        match &self.expression {
+            Expression::CompileTimeConstant(v1) => {
+                let result = v1.intrinsic_bit_vector_unary(bit_length, name);
+                if result != ConstantDomain::Bottom {
+                    return Rc::new(result.into());
+                }
             }
-        };
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                return condition.conditional_expression(
+                    consequent.intrinsic_bit_vector_unary(bit_length, name),
+                    alternate.intrinsic_bit_vector_unary(bit_length, name),
+                );
+            }
+            Expression::Join { left, right } => {
+                return left
+                    .intrinsic_bit_vector_unary(bit_length, name)
+                    .join(right.intrinsic_bit_vector_unary(bit_length, name));
+            }
+            _ => {}
+        }
         AbstractValue::make_from(
             Expression::IntrinsicBitVectorUnary {
                 operand: self.clone(),
@@ -2962,12 +3017,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns self.f() where f is an intrinsic floating point unary function.
     #[logfn_inputs(TRACE)]
     fn intrinsic_floating_point_unary(&self, name: KnownNames) -> Self {
-        if let Expression::CompileTimeConstant(v1) = &self.expression {
-            let result = v1.intrinsic_floating_point_unary(name);
-            if result != ConstantDomain::Bottom {
-                return Rc::new(result.into());
+        match &self.expression {
+            Expression::CompileTimeConstant(v1) => {
+                let result = v1.intrinsic_floating_point_unary(name);
+                if result != ConstantDomain::Bottom {
+                    return Rc::new(result.into());
+                }
             }
-        };
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                return condition.conditional_expression(
+                    consequent.intrinsic_floating_point_unary(name),
+                    alternate.intrinsic_floating_point_unary(name),
+                );
+            }
+            Expression::Join { left, right } => {
+                return left
+                    .intrinsic_floating_point_unary(name)
+                    .join(right.intrinsic_floating_point_unary(name));
+            }
+            _ => {}
+        }
         AbstractValue::make_from(
             Expression::IntrinsicFloatingPointUnary {
                 operand: self.clone(),
