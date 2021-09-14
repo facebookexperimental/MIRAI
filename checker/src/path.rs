@@ -83,8 +83,7 @@ impl Path {
             Expression::Offset { .. } => PathEnum::Offset { value }.into(),
             Expression::UninterpretedCall { path, .. }
             | Expression::InitialParameterValue { path, .. }
-            | Expression::Variable { path, .. }
-            | Expression::WidenedJoin { path, .. } => path.as_ref().clone(),
+            | Expression::Variable { path, .. } => path.as_ref().clone(),
             _ => PathEnum::Computed { value }.into(),
         })
     }
