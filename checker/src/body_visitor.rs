@@ -1399,7 +1399,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     ) {
         if let Expression::TaggedExpression { tag, operand } = &tag_field_value.expression {
             self.transfer_and_propagate_tags(operand, root_path, root_rustc_type);
-            self.attach_tag_to_elements(*tag, root_path.clone(), root_rustc_type);
+            self.attach_tag_to_value_at_path(*tag, root_path.clone(), root_rustc_type);
         }
     }
 
@@ -2649,7 +2649,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     /// and need be expanded.
     #[allow(clippy::suspicious_else_formatting)]
     #[logfn_inputs(TRACE)]
-    pub fn attach_tag_to_elements(
+    pub fn attach_tag_to_value_at_path(
         &mut self,
         tag: Tag,
         value_path: Rc<Path>,
@@ -2663,7 +2663,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             &value_path,
             root_rustc_type,
             |_self, _target_path, expanded_path, root_rustc_type| {
-                _self.attach_tag_to_elements(tag, expanded_path, root_rustc_type);
+                _self.attach_tag_to_value_at_path(tag, expanded_path, root_rustc_type);
             },
         );
         if expanded_source_pattern {
@@ -2710,7 +2710,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             &value_path,
             root_rustc_type,
             |_self, _target_path, expanded_path, root_rustc_type| {
-                _self.attach_tag_to_elements(tag, expanded_path, root_rustc_type);
+                _self.attach_tag_to_value_at_path(tag, expanded_path, root_rustc_type);
             },
         );
         if expanded_target_pattern {

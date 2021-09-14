@@ -1306,7 +1306,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             // Augment the tags associated at the source with a new tag.
             self.block_visitor
                 .bv
-                .attach_tag_to_elements(tag, source_path, source_rustc_type);
+                .attach_tag_to_value_at_path(tag, source_path, source_rustc_type);
         }
 
         // Update exit conditions.
@@ -1418,7 +1418,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             }
 
             // Get the value to check for the presence or absence of the tag
-            let (tag_field_path, tag_field_value) = self.get_possibly_tagged_value(
+            let (tag_field_path, tag_field_value) = self.get_value_to_check_for_tag(
                 tag,
                 checking_presence,
                 source_path.clone(),
@@ -1561,7 +1561,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// the tag propagates to super components, it will be the tag field of a component of the
     /// structure, if there is one.
     #[logfn_inputs(TRACE)]
-    fn get_possibly_tagged_value(
+    fn get_value_to_check_for_tag(
         &mut self,
         tag: Tag,
         checking_presence: bool,
@@ -1577,7 +1577,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         alternate,
                     } => {
                         let consequent_tag_value = self
-                            .get_possibly_tagged_value(
+                            .get_value_to_check_for_tag(
                                 tag,
                                 checking_presence,
                                 Path::new_computed(consequent.clone()),
@@ -1585,7 +1585,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             )
                             .1;
                         let alternate_tag_value = self
-                            .get_possibly_tagged_value(
+                            .get_value_to_check_for_tag(
                                 tag,
                                 checking_presence,
                                 Path::new_computed(alternate.clone()),
@@ -1600,7 +1600,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     }
                     Expression::Join { left, right } => {
                         let left_tag_value = self
-                            .get_possibly_tagged_value(
+                            .get_value_to_check_for_tag(
                                 tag,
                                 checking_presence,
                                 Path::new_computed(left.clone()),
@@ -1608,7 +1608,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             )
                             .1;
                         let right_tag_value = self
-                            .get_possibly_tagged_value(
+                            .get_value_to_check_for_tag(
                                 tag,
                                 checking_presence,
                                 Path::new_computed(right.clone()),
@@ -1619,7 +1619,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     }
                     Expression::Offset { left, .. } => {
                         let left_tag_value = self
-                            .get_possibly_tagged_value(
+                            .get_value_to_check_for_tag(
                                 tag,
                                 checking_presence,
                                 Path::new_computed(left.clone()),
@@ -1631,7 +1631,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     Expression::Reference(path)
                     | Expression::Variable { path, .. }
                     | Expression::InitialParameterValue { path, .. } => {
-                        return self.get_possibly_tagged_value(
+                        return self.get_value_to_check_for_tag(
                             tag,
                             checking_presence,
                             path.clone(),
@@ -1640,7 +1640,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     }
                     Expression::WidenedJoin { operand, path } => {
                         let operand_tag_value = self
-                            .get_possibly_tagged_value(
+                            .get_value_to_check_for_tag(
                                 tag,
                                 checking_presence,
                                 Path::new_computed(operand.clone()),
@@ -1665,7 +1665,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 }
                 PathEnum::Offset { value, .. } => {
                     if let Expression::Offset { left, .. } = &value.expression {
-                        return self.get_possibly_tagged_value(
+                        return self.get_value_to_check_for_tag(
                             tag,
                             checking_presence,
                             Path::new_computed(left.clone()),
@@ -1691,7 +1691,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 let ty = self
                                     .type_visitor()
                                     .get_path_rustc_type(path, self.block_visitor.bv.current_span);
-                                self.get_possibly_tagged_value(
+                                self.get_value_to_check_for_tag(
                                     tag,
                                     checking_presence,
                                     path.clone(),
@@ -1701,7 +1701,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             Expression::Offset { left, .. } => {
                                 let target_type = ExpressionType::from(source_rustc_type.kind());
                                 let deref_value = left.dereference(target_type);
-                                self.get_possibly_tagged_value(
+                                self.get_value_to_check_for_tag(
                                     tag,
                                     checking_presence,
                                     Path::new_computed(deref_value),
@@ -1711,7 +1711,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             _ => {
                                 let target_type = ExpressionType::from(source_rustc_type.kind());
                                 let deref_value = value.dereference(target_type);
-                                self.get_possibly_tagged_value(
+                                self.get_value_to_check_for_tag(
                                     tag,
                                     checking_presence,
                                     Path::new_computed(deref_value),
@@ -1723,7 +1723,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         let ty = self
                             .type_visitor()
                             .get_path_rustc_type(qualifier, self.block_visitor.bv.current_span);
-                        self.get_possibly_tagged_value(
+                        self.get_value_to_check_for_tag(
                             tag,
                             checking_presence,
                             qualifier.clone(),
