@@ -148,7 +148,9 @@ impl MiraiCallbacks {
             || file_name.starts_with("client/faucet/src") // non termination
             || file_name.starts_with("client/swiss-knife/src") // out of memory
             || file_name.starts_with("common/bitvec/src") // stack overflow
+            || file_name.starts_with("common/metrics/src") // z3 encoding
             || file_name.starts_with("common/debug-interface/src") // stack overflow
+            || file_name.starts_with("common/rate-limiter/src") // z3 encoding
             || file_name.starts_with("config/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
             || file_name.starts_with("config/management/genesis/src") // stack overflow
             || file_name.starts_with("config/management/src") // crash
@@ -216,6 +218,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("storage/diemdb/src") // expect reference target to have a value
             || file_name.starts_with("storage/diemsum/src") // out of memory
             || file_name.starts_with("storage/inspector/src/") // out of memory
+            || file_name.starts_with("storage/schemadb/src") // z3 encoding
             || file_name.starts_with("types/src") // (ite (= 1 0) 1 (ite (= 1 TOP) 1 0)) at position 1 does not match declaration
             || file_name.starts_with("vm-validator/src")
         {
@@ -224,9 +227,7 @@ impl MiraiCallbacks {
 
         // Exclude crates that currently slow down testing too much
         if self.options.diag_level == DiagLevel::Default
-            && (file_name.starts_with("common/metrics/src")
-                || file_name.starts_with("common/num-variants/src")
-                || file_name.starts_with("common/rate-limiter/src")
+            && (file_name.starts_with("common/num-variants/src")
                 || file_name.starts_with("config/src")
                 || file_name.starts_with("execution/executor/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
@@ -242,7 +243,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("sdk/src")
                 || file_name.starts_with("secure/net/src")
                 || file_name.starts_with("state-sync/src")
-                || file_name.starts_with("storage/schemadb/src")
                 || file_name.starts_with("storage/storage-client/src"))
         {
             return true;
