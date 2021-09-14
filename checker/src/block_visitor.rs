@@ -3192,25 +3192,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 ..
             } if **selector == PathSelector::Deref => {
                 if let PathEnum::Computed { value } = &qualifier.value {
-                    match &value.expression {
-                        Expression::Join { left, right, .. } => {
-                            let target_type = ExpressionType::from(ty.kind());
-                            let distributed_deref = left
-                                .dereference(target_type)
-                                .join(right.dereference(target_type));
-                            path = Path::get_as_path(distributed_deref);
-                            self.type_visitor_mut()
-                                .set_path_rustc_type(path.clone(), ty);
-                        }
-                        Expression::WidenedJoin { operand, .. } => {
-                            let target_type = ExpressionType::from(ty.kind());
-                            let distributed_deref =
-                                operand.dereference(target_type).widen(&place_path);
-                            path = Path::get_as_path(distributed_deref);
-                            self.type_visitor_mut()
-                                .set_path_rustc_type(path.clone(), ty);
-                        }
-                        _ => (),
+                    if let Expression::Join { left, right, .. } = &value.expression {
+                        let target_type = ExpressionType::from(ty.kind());
+                        let distributed_deref = left
+                            .dereference(target_type)
+                            .join(right.dereference(target_type));
+                        path = Path::get_as_path(distributed_deref);
+                        self.type_visitor_mut()
+                            .set_path_rustc_type(path.clone(), ty);
                     }
                 }
             }
