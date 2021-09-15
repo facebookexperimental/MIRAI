@@ -1034,7 +1034,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// Returns an element that is `self` attached with `tag`.
     #[logfn_inputs(TRACE)]
     fn add_tag(&self, tag: Tag) -> Rc<AbstractValue> {
-        if self.is_bottom() || self.is_top() {
+        if self.is_bottom()
+            || self.is_top()
+            || self.get_cached_tags().has_tag(&tag) == BoolDomain::True
+        {
             self.clone()
         } else {
             AbstractValue::make_from(
