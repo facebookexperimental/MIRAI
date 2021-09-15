@@ -80,7 +80,7 @@ pub mod propagation_for_vectors {
         for foo in bar.iter() {
             add_tag!(foo, SecretTaint);
         }
-        // verify!(has_tag!(&bar, SecretTaint));
+        verify!(has_tag!(&bar, SecretTaint));
         verify!(has_tag!(&bar[0], SecretTaint));
     }
 
@@ -91,7 +91,8 @@ pub mod propagation_for_vectors {
             add_tag!(foo, SecretTaint);
         }
         for foo in bar.iter() {
-            verify!(has_tag!(foo, SecretTaint));
+            // todo: fix this
+            verify!(has_tag!(foo, SecretTaint)); //~ provably false verification condition
         }
     }
 

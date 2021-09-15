@@ -1430,8 +1430,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 AbstractValue::make_tag_check(tag_field_value, tag, checking_presence);
 
             // If the tag can be propagated through sub-components we need to check the tag on the
-            // values that can contain source_path as a sub-component.
-            // Operationally, source_path is a qualified path and we check if any of its prefixes
+            // values that can contain tag_field_path as a sub-component.
+            // Operationally, if tag_field_path is a qualified path we check if any of its prefixes
             // has the tag (when checking_presence = true), or if all of its prefixes does not have
             // the tag (when checking_presence = false).
             if tag.is_propagated_by(TagPropagation::SubComponent) {
@@ -1483,6 +1483,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 }
             }
 
+            // If the tag can be propagated from a sub-component to its container
             if tag.is_propagated_by(TagPropagation::SuperComponent) {
                 let value_map = self.block_visitor.bv.current_environment.value_map.clone();
                 for (_, value) in value_map
@@ -1557,9 +1558,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// Get the possibly tagged value associated with source_path.
     /// It the value at source path is a scalar value, it will just be that value.
     /// If the value at source path is a structured value, it will be the value of its $tag field.
-    /// If the value at source path is a structure value that does not have a $tag field, but
-    /// the tag propagates to super components, it will be the tag field of a component of the
-    /// structure, if there is one.
     #[logfn_inputs(TRACE)]
     fn get_value_to_check_for_tag(
         &mut self,
@@ -1568,172 +1566,66 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         source_path: Rc<Path>,
         source_rustc_type: Ty<'tcx>,
     ) -> (Rc<Path>, Rc<AbstractValue>) {
-        if tag.is_propagated_by(TagPropagation::SuperComponent) {
-            match &source_path.value {
-                PathEnum::Computed { value } => match &value.expression {
-                    Expression::ConditionalExpression {
-                        condition,
-                        consequent,
-                        alternate,
-                    } => {
-                        let consequent_tag_value = self
-                            .get_value_to_check_for_tag(
-                                tag,
-                                checking_presence,
-                                Path::new_computed(consequent.clone()),
-                                source_rustc_type,
-                            )
-                            .1;
-                        let alternate_tag_value = self
-                            .get_value_to_check_for_tag(
-                                tag,
-                                checking_presence,
-                                Path::new_computed(alternate.clone()),
-                                source_rustc_type,
-                            )
-                            .1;
-                        return (
-                            source_path.clone(),
-                            condition
-                                .conditional_expression(consequent_tag_value, alternate_tag_value),
-                        );
-                    }
-                    Expression::Join { left, right } => {
-                        let left_tag_value = self
-                            .get_value_to_check_for_tag(
-                                tag,
-                                checking_presence,
-                                Path::new_computed(left.clone()),
-                                source_rustc_type,
-                            )
-                            .1;
-                        let right_tag_value = self
-                            .get_value_to_check_for_tag(
-                                tag,
-                                checking_presence,
-                                Path::new_computed(right.clone()),
-                                source_rustc_type,
-                            )
-                            .1;
-                        return (source_path.clone(), left_tag_value.join(right_tag_value));
-                    }
-                    Expression::Offset { left, .. } => {
-                        let left_tag_value = self
-                            .get_value_to_check_for_tag(
-                                tag,
-                                checking_presence,
-                                Path::new_computed(left.clone()),
-                                source_rustc_type,
-                            )
-                            .1;
-                        return (source_path.clone(), left_tag_value);
-                    }
-                    Expression::Reference(path)
-                    | Expression::Variable { path, .. }
-                    | Expression::InitialParameterValue { path, .. } => {
-                        return self.get_value_to_check_for_tag(
+        if let PathEnum::Computed { value } = &source_path.value {
+            match &value.expression {
+                Expression::ConditionalExpression {
+                    condition,
+                    consequent,
+                    alternate,
+                } => {
+                    let consequent_tag_value = self
+                        .get_value_to_check_for_tag(
                             tag,
                             checking_presence,
-                            path.clone(),
+                            Path::new_computed(consequent.clone()),
                             source_rustc_type,
-                        );
-                    }
-                    Expression::WidenedJoin { operand, path } => {
-                        let operand_tag_value = self
-                            .get_value_to_check_for_tag(
-                                tag,
-                                checking_presence,
-                                Path::new_computed(operand.clone()),
-                                source_rustc_type,
-                            )
-                            .1;
-                        let tag_path = Path::new_tag_field(path.clone());
-                        return (tag_path.clone(), operand_tag_value.widen(&tag_path));
-                    }
-                    _ => {}
-                },
-                PathEnum::HeapBlock { .. } => {
-                    let layout_field = Path::new_layout(source_path.clone());
-                    let (_, tag_field_value) = self
-                        .block_visitor
-                        .bv
-                        .extract_tag_field_of_non_scalar_value_at(
-                            &layout_field,
-                            self.block_visitor.bv.tcx.types.trait_object_dummy_self,
-                        );
-                    return (layout_field, tag_field_value);
+                        )
+                        .1;
+                    let alternate_tag_value = self
+                        .get_value_to_check_for_tag(
+                            tag,
+                            checking_presence,
+                            Path::new_computed(alternate.clone()),
+                            source_rustc_type,
+                        )
+                        .1;
+                    return (
+                        source_path.clone(),
+                        condition.conditional_expression(consequent_tag_value, alternate_tag_value),
+                    );
                 }
-                PathEnum::Offset { value, .. } => {
-                    if let Expression::Offset { left, .. } = &value.expression {
-                        return self.get_value_to_check_for_tag(
+                Expression::Join { left, right } => {
+                    let left_tag_value = self
+                        .get_value_to_check_for_tag(
                             tag,
                             checking_presence,
                             Path::new_computed(left.clone()),
                             source_rustc_type,
-                        );
-                    }
-                }
-                PathEnum::QualifiedPath {
-                    qualifier,
-                    selector,
-                    ..
-                } if **selector == PathSelector::Deref => {
-                    let val_at = self
-                        .block_visitor
-                        .bv
-                        .current_environment
-                        .value_at(qualifier)
-                        .cloned();
-                    return if let Some(value) = val_at {
-                        match &value.expression {
-                            Expression::Variable { path, .. }
-                            | Expression::InitialParameterValue { path, .. } => {
-                                let ty = self
-                                    .type_visitor()
-                                    .get_path_rustc_type(path, self.block_visitor.bv.current_span);
-                                self.get_value_to_check_for_tag(
-                                    tag,
-                                    checking_presence,
-                                    path.clone(),
-                                    ty,
-                                )
-                            }
-                            Expression::Offset { left, .. } => {
-                                let target_type = ExpressionType::from(source_rustc_type.kind());
-                                let deref_value = left.dereference(target_type);
-                                self.get_value_to_check_for_tag(
-                                    tag,
-                                    checking_presence,
-                                    Path::new_computed(deref_value),
-                                    source_rustc_type,
-                                )
-                            }
-                            _ => {
-                                let target_type = ExpressionType::from(source_rustc_type.kind());
-                                let deref_value = value.dereference(target_type);
-                                self.get_value_to_check_for_tag(
-                                    tag,
-                                    checking_presence,
-                                    Path::new_computed(deref_value),
-                                    source_rustc_type,
-                                )
-                            }
-                        }
-                    } else {
-                        let ty = self
-                            .type_visitor()
-                            .get_path_rustc_type(qualifier, self.block_visitor.bv.current_span);
-                        self.get_value_to_check_for_tag(
+                        )
+                        .1;
+                    let right_tag_value = self
+                        .get_value_to_check_for_tag(
                             tag,
                             checking_presence,
-                            qualifier.clone(),
-                            ty,
+                            Path::new_computed(right.clone()),
+                            source_rustc_type,
                         )
-                    };
+                        .1;
+                    return (source_path.clone(), left_tag_value.join(right_tag_value));
                 }
-                _ => {
-                    debug!("path val {:?}", source_path.value);
+                Expression::WidenedJoin { operand, path } => {
+                    let operand_tag_value = self
+                        .get_value_to_check_for_tag(
+                            tag,
+                            checking_presence,
+                            Path::new_computed(operand.clone()),
+                            source_rustc_type,
+                        )
+                        .1;
+                    let tag_path = Path::new_tag_field(path.clone());
+                    return (tag_path.clone(), operand_tag_value.widen(&tag_path));
                 }
+                _ => {}
             }
         }
 
