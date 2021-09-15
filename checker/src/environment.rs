@@ -518,6 +518,17 @@ impl Environment {
             if let Some(val) = y.get_widened_subexpression(p) {
                 return val;
             }
+            if let (
+                Expression::WidenedJoin { path: p1, .. },
+                Expression::WidenedJoin { path: p2, .. },
+            ) = (&x.expression, &y.expression)
+            {
+                if p1.eq(p2) || p2.eq(p) {
+                    return x.clone();
+                } else if p1.eq(p) {
+                    return y.clone();
+                }
+            }
             x.join(y.clone()).widen(p)
         })
     }
