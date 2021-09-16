@@ -4756,11 +4756,6 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             (_, Expression::Top) => true,
             // The universal set is not a subset of any set other than the universal set.
             (Expression::Top, _) => false,
-            // Widened expressions are equal if their paths are equal, regardless of their operand values.
-            (
-                Expression::WidenedJoin { path: p1, .. },
-                Expression::WidenedJoin { path: p2, .. },
-            ) => p1.eq(p2),
             // (condition ? consequent : alternate) is a subset of x if both consequent and alternate are subsets of x.
             (
                 Expression::ConditionalExpression {
@@ -4785,6 +4780,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // This is a conservative answer. False does not imply other.subset(self).
                 self.subset(consequent) || self.subset(alternate)
             }
+            // widen { x } subset widen { z } if x subset z
+            (
+                Expression::WidenedJoin { operand: o1, .. },
+                Expression::WidenedJoin { operand: o2, .. },
+            ) => o1.subset(o2),
             // x subset widen { z } if x subset z
             (_, Expression::WidenedJoin { operand, .. }) => {
                 // This is a conservative answer. False does not imply other.subset(self).
@@ -6574,8 +6574,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Reference(path)
             | Expression::InitialParameterValue { path, .. }
             | Expression::UnknownTagField { path }
-            | Expression::Variable { path, .. }
-            | Expression::WidenedJoin { path, .. } => variables.contains(path),
+            | Expression::Variable { path, .. } => variables.contains(path),
             Expression::Switch {
                 discriminator,
                 cases,
@@ -6594,6 +6593,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => callee.uses(variables) || args.iter().any(|arg| arg.uses(variables)),
             Expression::UnknownModelField { path, default } => {
                 variables.contains(path) || default.uses(variables)
+            }
+            Expression::WidenedJoin { operand, path } => {
+                operand.uses(variables) || variables.contains(path)
             }
         }
     }

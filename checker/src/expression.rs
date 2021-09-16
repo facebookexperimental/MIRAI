@@ -418,9 +418,12 @@ pub enum Expression {
     /// the path of this value. This models a variable that is assigned to from inside a loop
     /// body.
     WidenedJoin {
-        /// The path of the location where an indeterminate number of flows join together.
-        /// This is the same as the path in operand, and is repeated here for convenience in
-        /// pattern matches.
+        /// The path of a location where an indeterminate number of flows join together.
+        /// It is attached to a widened join at a join a point and then preserved in derived
+        /// values. If such a derived value returns to the join point as its new value, the
+        /// original value can be used so that the fix point loop converges.
+        /// The path does not provide identity and two widened joins with the same path
+        /// are not necessary the same value.
         path: Rc<Path>,
         /// The join of some of the flows to come together at this path.
         /// The first few iterations do joins. Once widening happens, further iterations
