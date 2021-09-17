@@ -914,8 +914,7 @@ impl PathRefinement for Rc<Path> {
                         }
                         // since self is a qualified path we have to drop the reference operator
                         // since selectors implicitly dereference pointers.
-                        return Path::new_qualified(p.clone(), selector.clone())
-                            .canonicalize(environment);
+                        return Path::new_qualified(p.clone(), selector.clone());
                     }
                     Expression::Variable { path, .. } => {
                         return Path::new_qualified(path.clone(), selector.clone());
