@@ -390,7 +390,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 }
                 match &**selector {
                     PathSelector::ConstantSlice { .. } => {
-                        return t;
+                        return self.tcx.mk_imm_ref(self.tcx.lifetimes.re_erased, t);
                     }
                     PathSelector::UnionField {
                         case_index: ordinal,

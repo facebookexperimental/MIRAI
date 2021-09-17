@@ -71,6 +71,18 @@ pub mod alloc {
                 }
             }
         }
+
+        pub mod vec_deque {
+            fn INITIAL_CAPACITY() -> usize {
+                7
+            }
+            fn MINIMUM_CAPACITY() -> usize {
+                1
+            }
+            fn MAXIMUM_ZST_CAPACITY() -> usize {
+                1 << (usize::BITS - 1)
+            }
+        }
     }
 
     pub mod fmt {
@@ -132,6 +144,12 @@ pub mod alloc {
                 _self
             }
             default_contract!(from);
+        }
+    }
+
+    pub mod sync {
+        fn MAX_REFCOUNT() -> usize {
+            (isize::MAX) as usize
         }
     }
 
@@ -2735,6 +2753,10 @@ pub mod core {
     }
 
     pub mod num {
+        fn ASCII_CASE_MASK() -> u8 {
+            0b0010_0000
+        }
+
         pub mod implement_isize {
             default_contract!(from_str);
             default_contract!(from_str_radix);
@@ -3371,6 +3393,22 @@ pub mod core {
     }
 
     pub mod time {
+        pub fn NANOS_PER_SEC() -> u32 {
+            1_000_000_000
+        }
+        pub fn NANOS_PER_MILLI() -> u32 {
+            1_000_000
+        }
+        pub fn NANOS_PER_MICRO() -> u32 {
+            1_000
+        }
+        pub fn MILLIS_PER_SEC() -> u64 {
+            1_000
+        }
+        pub fn MICROS_PER_SEC() -> u64 {
+            1_000_000
+        }
+
         pub mod implement_core_time_Duration {
             default_contract!(mul);
         }

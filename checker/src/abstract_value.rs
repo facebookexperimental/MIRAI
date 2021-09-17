@@ -6343,6 +6343,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     path.replace_root(old_root, new_root),
                 )
             }
+            Expression::Join { left, right } => left
+                .replace_embedded_path_root(old_root, new_root.clone())
+                .join(right.replace_embedded_path_root(old_root, new_root)),
+            Expression::Offset { left, right } => left
+                .replace_embedded_path_root(old_root, new_root)
+                .offset(right.clone()),
             Expression::Reference(path) => {
                 AbstractValue::make_reference(path.replace_root(old_root, new_root))
             }

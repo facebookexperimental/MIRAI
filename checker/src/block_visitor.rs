@@ -2364,7 +2364,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         return val_at_path;
                     }
                     // Seems like a lazily serialized constant. Force evaluation.
-                    val = val.eval(self.bv.tcx, self.type_visitor().get_param_env());
+                    val = val.eval(
+                        self.bv.tcx,
+                        self.type_visitor()
+                            .get_param_env()
+                            .with_reveal_all_normalized(self.bv.cv.tcx),
+                    );
                     if let rustc_middle::ty::ConstKind::Unevaluated(..) = &val {
                         // val.eval did not manage to evaluate this, go with unknown.
                         info!(
