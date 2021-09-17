@@ -5,7 +5,7 @@
 
 // A test for tag propagation through control flows
 
-#![feature(const_generics)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 use mirai_annotations::*;

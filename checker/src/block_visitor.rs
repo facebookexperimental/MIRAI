@@ -31,7 +31,7 @@ use rustc_middle::ty::adjustment::PointerCast;
 use rustc_middle::ty::layout::PrimitiveExt;
 use rustc_middle::ty::subst::{GenericArg, SubstsRef};
 use rustc_middle::ty::{
-    Const, ConstKind, FloatTy, IntTy, ParamConst, ScalarInt, Ty, TyKind, UintTy, Unevaluated,
+    Const, ConstKind, FloatTy, IntTy, ParamConst, ScalarInt, Ty, TyKind, UintTy,
 };
 use rustc_target::abi::{TagEncoding, VariantIdx, Variants};
 use std::borrow::Borrow;
@@ -2277,12 +2277,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     }
 
     fn visit_const_kind(&mut self, mut val: ConstKind<'tcx>, lty: Ty<'tcx>) -> Rc<AbstractValue> {
-        if let rustc_middle::ty::ConstKind::Unevaluated(Unevaluated {
-            def: def_ty,
-            substs,
-            promoted,
-        }) = &val
-        {
+        if let rustc_middle::ty::ConstKind::Unevaluated(unevaluated) = &val {
+            let substs = unevaluated.substs(self.bv.cv.tcx);
+            let def_ty = unevaluated.def;
             if def_ty.const_param_did.is_some() {
                 val = val.eval(self.bv.tcx, self.type_visitor().get_param_env());
             } else {
@@ -2291,7 +2288,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .type_visitor()
                     .specialize_substs(substs, &self.type_visitor().generic_argument_map);
                 self.bv.cv.substs_cache.insert(def_id, substs);
-                let path = match promoted {
+                let path = match unevaluated.promoted {
                     Some(promoted) => {
                         let index = promoted.index();
                         Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
@@ -2352,6 +2349,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         }
                     }
                 };
+
                 self.type_visitor_mut()
                     .set_path_rustc_type(path.clone(), lty);
                 let val_at_path = self.bv.lookup_path_and_refine_result(path, lty);

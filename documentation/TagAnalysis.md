@@ -37,7 +37,7 @@ incomplete. To enable such an incomplete and unstable feature only in MIRAI buil
 conditional compilation:
 
 ``` rust
-#![cfg_attr(mirai, allow(incomplete_features), feature(const_generics))]
+#![cfg_attr(mirai, allow(incomplete_features), feature(generic_const_exprs))]
 ```
 
 The code below declares a tag kind named

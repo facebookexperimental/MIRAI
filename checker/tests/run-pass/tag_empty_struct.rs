@@ -5,7 +5,7 @@
 
 // A test for adding and checking tags on empty structs
 
-#![feature(const_generics)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 #[macro_use]

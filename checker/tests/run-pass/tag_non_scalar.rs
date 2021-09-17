@@ -5,7 +5,7 @@
 
 // A test for adding tags to non-scalar values and checking tags on sub-components
 
-#![feature(const_generics)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 #[macro_use]

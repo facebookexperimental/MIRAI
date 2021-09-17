@@ -5,7 +5,7 @@
 
 // This is an example of adding tag-related annotations to trait methods.
 
-#![cfg_attr(mirai, allow(incomplete_features), feature(const_generics))]
+#![cfg_attr(mirai, allow(incomplete_features), feature(generic_const_exprs))]
 
 #[macro_use]
 extern crate mirai_annotations;

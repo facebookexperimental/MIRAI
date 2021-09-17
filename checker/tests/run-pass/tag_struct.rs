@@ -5,7 +5,7 @@
 
 // A test for adding tags to structs and checking tags on fields
 
-#![feature(const_generics)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 #[macro_use]
