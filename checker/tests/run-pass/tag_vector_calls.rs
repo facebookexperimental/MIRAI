@@ -5,7 +5,7 @@
 
 // A test for adding tags to vectors and checking the tags in calls
 
-#![feature(const_generics)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 #[macro_use]

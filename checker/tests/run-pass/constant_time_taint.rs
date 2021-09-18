@@ -7,7 +7,7 @@
 
 // MIRAI_FLAGS --constant_time ConstantTimeTaintKind
 
-#![feature(const_generics)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 use mirai_annotations::*;

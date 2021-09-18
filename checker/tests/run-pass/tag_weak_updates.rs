@@ -5,7 +5,7 @@
 
 // A test for adding/checking tags on an array element
 
-#![feature(const_generics)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 use mirai_annotations::*;

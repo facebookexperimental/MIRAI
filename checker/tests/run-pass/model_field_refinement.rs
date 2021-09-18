@@ -5,7 +5,7 @@
 
 // A test where function preconditions involve model/tag fields of parameters
 
-#![feature(const_generics)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 use mirai_annotations::*;

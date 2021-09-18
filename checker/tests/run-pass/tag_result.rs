@@ -5,7 +5,7 @@
 
 // A test for adding tags to Result structs
 
-#![feature(const_generics)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 use mirai_annotations::*;

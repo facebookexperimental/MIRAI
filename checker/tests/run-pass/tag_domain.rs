@@ -6,7 +6,7 @@
 
 // A test for basic tracking of tags
 
-#![feature(const_generics)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 use mirai_annotations::*;
