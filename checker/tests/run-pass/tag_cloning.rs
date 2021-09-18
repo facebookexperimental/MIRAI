@@ -12,8 +12,8 @@
 use mirai_annotations::*;
 
 #[derive(Clone)]
-struct Block {
-    content: i32,
+pub struct Block {
+    pub content: i32,
 }
 
 struct TaintTagKind<const MASK: TagPropagationSet> {}

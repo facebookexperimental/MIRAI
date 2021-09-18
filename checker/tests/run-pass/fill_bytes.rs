@@ -56,7 +56,9 @@ impl ThreadRng {
 pub fn new_with_temp_dir() {
     let mut rng = thread_rng();
     let mut bytes = [0_u8; 16];
-    rng.fill_bytes(&mut bytes);
+    //todo: fix this
+    rng.fill_bytes(&mut bytes); //~ possible attempt to multiply with overflow
+                                //~ related location
 }
 
 pub fn main() {}

@@ -3264,12 +3264,6 @@ pub mod core {
     }
 
     pub mod slice {
-        pub unsafe fn from_raw_parts<'a, T>(data: *const T, len: usize) -> &'a [T] {
-            let result = std::slice::from_raw_parts(data, len);
-            assumed_postcondition!(result.len() == len);
-            result
-        }
-
         pub mod implement {
             pub mod copy_from_slice {
                 fn len_mismatch_fail(dst_len: usize, src_len: usize) {
@@ -4380,10 +4374,10 @@ pub mod std {
         pub mod implement_std_fs_File {
             use std::fs::File;
 
-            pub fn read(_self: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
-                for i in 0..buf.len() {
-                    buf[i] = abstract_value!(0);
-                }
+            pub fn read(_self: &mut File, _buf: &mut [u8]) -> std::io::Result<usize> {
+                // for i in 0..buf.len() {
+                //     buf[i] = abstract_value!(0);
+                // }
                 result!()
             }
 

@@ -13,6 +13,7 @@
 #![feature(pattern)]
 #![feature(toowned_clone_into)]
 #![feature(ptr_internals)]
+#![feature(ptr_metadata)]
 #![feature(control_flow_enum)]
 
 #[macro_use]
