@@ -8,6 +8,7 @@ use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::visit::Bfs;
 use petgraph::{Direction, Graph};
+use regex::Regex;
 use rustc_hir::def_id::DefId;
 use serde::ser::{SerializeMap, Serializer};
 use serde::{Deserialize, Serialize};
@@ -251,6 +252,21 @@ impl TypeRelation {
     }
 }
 
+const COLLECTION_TYPES: &[&str] = &[
+    "std::slice::Iter",
+    "std::iter::Enumerate",
+    "std::iter::Map",
+    "std::collections::HashSet",
+    "std::collections::HashMap",
+    "std::vec::Vec",
+];
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum SimpleType {
+    Base(Box<str>),
+    Collection(Box<str>),
+}
+
 /// Types associated with call graph edges
 #[derive(Debug, Clone)]
 struct EdgeType {
@@ -258,63 +274,11 @@ struct EdgeType {
     id: TypeId,
     // Textual representation of the type
     name: Box<str>,
-    /// Derived type relations
-    type_relations: HashSet<TypeRelation>,
 }
 
 impl EdgeType {
     fn new(id: TypeId, name: Box<str>) -> EdgeType {
-        let type_relations = EdgeType::derive_type_relations(&name);
-        EdgeType {
-            id,
-            name,
-            type_relations,
-        }
-    }
-
-    /// Derive equality and membership relationships from the following
-    /// heuristics:
-    /// - Option<t> == t
-    /// - &t == t
-    /// - mut t == t
-    /// - [t] > t
-    fn derive_type_relations(name: &str) -> HashSet<TypeRelation> {
-        let mut relations = HashSet::<TypeRelation>::new();
-        let mut base_type = name.to_owned();
-        if base_type.contains("&std::option::Option<") {
-            let base_type_new = base_type
-                .replace("&std::option::Option<", "")
-                .replace(">", "");
-            relations.insert(TypeRelation::new_eq(
-                base_type.into_boxed_str(),
-                base_type_new.clone().into_boxed_str(),
-            ));
-            base_type = base_type_new;
-        }
-        if base_type.contains('[') && base_type.contains(']') {
-            let base_type_new = base_type.replace("[", "").replace("]", "");
-            relations.insert(TypeRelation::new_member(
-                base_type.into_boxed_str(),
-                base_type_new.clone().into_boxed_str(),
-            ));
-            base_type = base_type_new;
-        }
-        if base_type.contains("mut") {
-            let base_type_new = base_type.replace("mut ", "");
-            relations.insert(TypeRelation::new_eq(
-                base_type.into_boxed_str(),
-                base_type_new.clone().into_boxed_str(),
-            ));
-            base_type = base_type_new;
-        }
-        if base_type.contains('&') {
-            let base_type_new = base_type.replace("&", "");
-            relations.insert(TypeRelation::new_eq(
-                base_type.into_boxed_str(),
-                base_type_new.into_boxed_str(),
-            ));
-        }
-        relations
+        EdgeType { id, name }
     }
 }
 
@@ -720,13 +684,172 @@ impl CallGraph {
             })
     }
 
+    /// Extract base types from collection types. Ex:
+    /// - std::slice::Iter<T> == [T]
+    /// - std::iter::Enumerate<std::slice::Iter<T1, T2>> == [T1], [T2]
+    fn extract_iterator_type(&self, name: &str) -> Vec<Box<str>> {
+        let s1 = name.replace("&mut ", "");
+        let s2 = s1.replace("&", "");
+        let mut base_types = Vec::<Box<str>>::new();
+        let type_regex = Regex::new(r"(?P<type>[^<>,\s]+)").unwrap();
+        for caps in type_regex.captures_iter(&s2) {
+            let cap_type = &caps["type"];
+            if !COLLECTION_TYPES.contains(&cap_type) {
+                base_types.push(format!("[{}]", cap_type).into_boxed_str());
+            }
+        }
+        base_types
+    }
+
+    /// Simplify a type according to these heuristics:
+    /// - &t == t
+    /// - mut t == t
+    /// - [t] > t
+    fn simplify_single_type(&self, name: &str) -> SimpleType {
+        let mut base_type = name.to_owned();
+        if base_type.contains("mut ") {
+            base_type = base_type.replace("mut ", "");
+        }
+        if base_type.contains('&') {
+            base_type = base_type.replace("&", "");
+        }
+        if base_type.contains('[') && base_type.contains(']') {
+            base_type = base_type.replace("[", "").replace("]", "");
+            SimpleType::Collection(base_type.into_boxed_str())
+        } else {
+            SimpleType::Base(base_type.into_boxed_str())
+        }
+    }
+
+    /// Simplify a type that may be a collection
+    fn simplify_type(&self, name: &str) -> Vec<SimpleType> {
+        let is_collection_type: bool = COLLECTION_TYPES.iter().any(|x| name.contains(x));
+        if is_collection_type {
+            let base_types = self.extract_iterator_type(name);
+            base_types
+                .iter()
+                .map(|x| self.simplify_single_type(x))
+                .collect::<Vec<SimpleType>>()
+        } else {
+            vec![self.simplify_single_type(name)]
+        }
+    }
+
+    /// Check whether two types are nominally equivalent or
+    /// equivalent according to input type relations
+    fn simple_type_eq(&self, t1: &str, t2: &str, eq_map: &HashMap<Box<str>, Box<str>>) -> bool {
+        if t1 == t2 {
+            return true;
+        } else {
+            if let Some(map_t1) = eq_map.get(t2) {
+                if t1 == map_t1.as_ref() {
+                    return true;
+                }
+            }
+            if let Some(map_t2) = eq_map.get(t1) {
+                if t2 == map_t2.as_ref() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Derive all type relations
+    fn derive_all_relations(
+        &self,
+        type_map: &HashMap<TypeId, Box<str>>,
+        eq_map: &HashMap<Box<str>, Box<str>>,
+    ) -> HashSet<TypeRelation> {
+        let mut simple_types = Vec::<(Box<str>, SimpleType)>::new();
+        for (_, t) in type_map.iter() {
+            let simple_ts = self.simplify_type(t.as_ref());
+            for simple_t in simple_ts.iter() {
+                simple_types.push((t.to_owned(), simple_t.to_owned()));
+            }
+        }
+        let mut relations = HashSet::<TypeRelation>::new();
+        let mut pairs = HashSet::<(&str, &str)>::new();
+        for (t1, simple_t1) in simple_types.iter() {
+            for (t2, simple_t2) in simple_types.iter() {
+                if t1 != t2 {
+                    match (simple_t1, simple_t2) {
+                        // Case 1: [t] > t
+                        (SimpleType::Collection(t1_base), SimpleType::Base(t2_base)) => {
+                            if self.simple_type_eq(t1_base.as_ref(), t2_base.as_ref(), eq_map) {
+                                relations
+                                    .insert(TypeRelation::new_member(t1.to_owned(), t2.to_owned()));
+                            }
+                        }
+                        // Case 2: t < [t]
+                        (SimpleType::Base(t1_base), SimpleType::Collection(t2_base)) => {
+                            if self.simple_type_eq(t1_base.as_ref(), t2_base.as_ref(), eq_map) {
+                                relations
+                                    .insert(TypeRelation::new_member(t2.to_owned(), t1.to_owned()));
+                            }
+                        }
+                        // Case 3: [t] = [t] | t = t
+                        (SimpleType::Collection(t1_base), SimpleType::Collection(t2_base))
+                        | (SimpleType::Base(t1_base), SimpleType::Base(t2_base)) => {
+                            // Avoid trivial or redundant relations
+                            // - Trivial: EqType(a, a)
+                            // - Redundant: EqType(a, b) and EqType(b, a)
+                            if self.simple_type_eq(t1_base.as_ref(), t2_base.as_ref(), eq_map)
+                                && pairs.get(&(t1.as_ref(), t2.as_ref())).is_none()
+                                && pairs.get(&(t2.as_ref(), t1.as_ref())).is_none()
+                            {
+                                // Deterministic lexicographic ordering
+                                if t1 < t2 {
+                                    relations
+                                        .insert(TypeRelation::new_eq(t1.to_owned(), t2.to_owned()));
+                                } else {
+                                    relations
+                                        .insert(TypeRelation::new_eq(t2.to_owned(), t1.to_owned()));
+                                }
+                                pairs.insert((t1.as_ref(), t2.as_ref()));
+                                pairs.insert((t2.as_ref(), t1.as_ref()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        relations
+    }
+
+    fn get_input_equivalences(
+        &self,
+        input_relations: &HashSet<TypeRelation>,
+    ) -> HashMap<Box<str>, Box<str>> {
+        let mut eq_map = HashMap::<Box<str>, Box<str>>::new();
+        for relation in input_relations.iter() {
+            match relation.kind {
+                TypeRelationKind::Eq => {
+                    eq_map.insert(relation.type1.to_owned(), relation.type2.to_owned());
+                    eq_map.insert(relation.type2.to_owned(), relation.type1.to_owned());
+                }
+                TypeRelationKind::Member => {}
+            }
+        }
+        eq_map
+    }
+
+    /// Gather together type relations from the input type relations file
+    /// as well as type relations derived from program types.
     fn gather_type_relations(
         &self,
-        index_to_type: &HashMap<TypeId, &EdgeType>,
+        type_map: &mut HashMap<TypeId, Box<str>>,
         type_relations_path: Option<&Path>,
     ) -> HashSet<TypeRelation> {
+        let mut type_to_index = HashMap::<Box<str>, TypeId>::new();
+        for (type_id, type_str) in type_map.iter() {
+            type_to_index.insert(type_str.to_owned(), *type_id);
+        }
         let mut type_relations = HashSet::<TypeRelation>::new();
-        // Insert input type relations from file
+        let mut max_id = type_map
+            .keys()
+            .into_iter()
+            .fold(u32::MIN, |acc, x| acc.max(*x));
         if let Some(path) = type_relations_path {
             let input_type_relations_raw: TypeRelationsRaw = match fs::read_to_string(path)
                 .map_err(|e| e.to_string())
@@ -736,15 +859,27 @@ impl CallGraph {
                 Ok(relations) => relations,
                 Err(e) => panic!("Failed to read input type relations: {:?}", e),
             };
-            let mut input_type_relations = HashSet::<TypeRelation>::new();
-            for relation in input_type_relations_raw.relations.iter() {
-                input_type_relations.insert(relation.to_owned());
+            let input_relations = input_type_relations_raw.relations;
+            for relation in input_relations.iter() {
+                type_relations.insert(relation.to_owned());
+                match type_to_index.get(&relation.type1) {
+                    Some(_) => {}
+                    None => {
+                        max_id += 1;
+                        type_map.insert(max_id, relation.type1.to_owned());
+                    }
+                }
+                match type_to_index.get(&relation.type2) {
+                    Some(_) => {}
+                    None => {
+                        max_id += 1;
+                        type_map.insert(max_id + 2, relation.type2.to_owned());
+                    }
+                }
             }
-            type_relations.extend(input_type_relations);
         }
-        for (_, edge_type) in index_to_type.iter() {
-            type_relations.extend(edge_type.type_relations.to_owned());
-        }
+        let eq_map = self.get_input_equivalences(&type_relations);
+        type_relations.extend(self.derive_all_relations(type_map, &eq_map));
         type_relations
     }
 
@@ -794,30 +929,26 @@ impl CallGraph {
             },
         );
         // Output type relations
-        let mut index_to_type = HashMap::<TypeId, &EdgeType>::new();
+        let mut index_to_type = HashMap::<TypeId, Box<str>>::new();
         for (_, edge_type) in self.edge_types.iter() {
             if used_types.contains(&edge_type.id) {
-                index_to_type.insert(edge_type.id, edge_type);
+                index_to_type.insert(edge_type.id, edge_type.name.to_owned());
             }
         }
-        let used_type_strs: HashMap<Box<str>, EdgeType> = self
-            .edge_types
-            .clone()
-            .into_iter()
-            .filter(|(_, v)| used_types.contains(&v.id))
-            .collect();
-        for type_relation in self
-            .gather_type_relations(&index_to_type, type_relations_path)
-            .iter()
-        {
-            if let Some(type1) = used_type_strs.get(&type_relation.type1) {
-                if let Some(type2) = used_type_strs.get(&type_relation.type2) {
+        let type_relations = self.gather_type_relations(&mut index_to_type, type_relations_path);
+        let mut type_to_index = HashMap::<Box<str>, TypeId>::new();
+        for (type_id, type_str) in index_to_type.iter() {
+            type_to_index.insert(type_str.to_owned(), *type_id);
+        }
+        for type_relation in type_relations.iter() {
+            if let Some(type_id1) = type_to_index.get(type_relation.type1.as_ref()) {
+                if let Some(type_id2) = type_to_index.get(type_relation.type2.as_ref()) {
                     match type_relation.kind {
                         TypeRelationKind::Eq => {
-                            output.add_relation(DatalogRelation::new_eq_type(type1.id, type2.id))
+                            output.add_relation(DatalogRelation::new_eq_type(*type_id1, *type_id2))
                         }
                         TypeRelationKind::Member => {
-                            output.add_relation(DatalogRelation::new_member(type1.id, type2.id))
+                            output.add_relation(DatalogRelation::new_member(*type_id1, *type_id2))
                         }
                     }
                 }
@@ -896,11 +1027,11 @@ struct TypeRelationsRaw {
 
 /// Temporary data structure for storing the type
 /// map for serialization.
-struct TypeMapOutput<'a> {
-    map: HashMap<TypeId, &'a EdgeType>,
+struct TypeMapOutput {
+    map: HashMap<TypeId, Box<str>>,
 }
 
-impl<'a> Serialize for TypeMapOutput<'a> {
+impl Serialize for TypeMapOutput {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -909,7 +1040,7 @@ impl<'a> Serialize for TypeMapOutput<'a> {
         let mut map_entries: Vec<_> = self.map.iter().collect();
         map_entries.sort_by_key(|k| k.0);
         for (k, v) in map_entries.iter() {
-            map.serialize_entry(&k.to_string(), &v.name)?;
+            map.serialize_entry(&k.to_string(), v.as_ref())?;
         }
         map.end()
     }
