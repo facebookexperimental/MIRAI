@@ -2104,6 +2104,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             )
         };
         let value = match null_op {
+            mir::NullOp::AlignOf => alignment,
             mir::NullOp::Box => {
                 // The box is a struct that is located at path.
                 // It contains a Unique (transparently wrapped) pointer at field 0 of the Box struct.

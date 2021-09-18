@@ -173,7 +173,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         if cfg!(DEBUG) {
             let mut stdout = std::io::stdout();
             stdout.write_fmt(format_args!("{:?}", self.def_id)).unwrap();
-            rustc_mir::util::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
+            rustc_middle::mir::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
             info!("{:?}", stdout.flush());
         }
         *self.active_calls_map.entry(self.def_id).or_insert(0) += 1;

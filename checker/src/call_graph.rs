@@ -96,7 +96,7 @@ impl DatalogConfig {
 }
 
 /// Configuration options for call graph generation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct CallGraphConfig {
     /// Optionally specifies location for graph to be output in dot format
     /// (for Graphviz).
@@ -109,17 +109,6 @@ pub struct CallGraphConfig {
     included_crates: Vec<Box<str>>,
     /// Datalog output configuration
     datalog_config: Option<DatalogConfig>,
-}
-
-impl Default for CallGraphConfig {
-    fn default() -> CallGraphConfig {
-        CallGraphConfig {
-            dot_output_path: None,
-            reductions: Vec::<CallGraphReduction>::new(),
-            included_crates: Vec::<Box<str>>::new(),
-            datalog_config: None,
-        }
-    }
 }
 
 impl CallGraphConfig {
