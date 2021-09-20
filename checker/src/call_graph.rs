@@ -769,7 +769,11 @@ impl CallGraph {
             }
         }
         let mut relations = HashSet::<TypeRelation>::new();
-        let mut pairs = HashSet::<(&str, &str)>::new();
+        // Initialize the set of pairs with the existing equality relations
+        let mut pairs = eq_map
+            .iter()
+            .map(|(a, b)| (a.as_ref(), b.as_ref()))
+            .collect::<HashSet<(&str, &str)>>();
         for (t1, simple_t1) in simple_types.iter() {
             for (t2, simple_t2) in simple_types.iter() {
                 if t1 != t2 {
@@ -841,15 +845,14 @@ impl CallGraph {
         type_map: &mut HashMap<TypeId, Box<str>>,
         type_relations_path: Option<&Path>,
     ) -> HashSet<TypeRelation> {
-        let mut type_to_index = HashMap::<Box<str>, TypeId>::new();
-        for (type_id, type_str) in type_map.iter() {
-            type_to_index.insert(type_str.to_owned(), *type_id);
-        }
+        let type_to_index: HashMap<Box<str>, TypeId> = type_map
+            .iter()
+            .map(|(type_id, type_str)| (type_str.to_owned(), *type_id))
+            .collect();
         let mut type_relations = HashSet::<TypeRelation>::new();
-        let mut max_id = type_map
-            .keys()
-            .into_iter()
-            .fold(u32::MIN, |acc, x| acc.max(*x));
+        // If there is no maximum element then the type map is empty
+        // and we default to a starting ID of 0.
+        let mut max_id: u32 = *type_map.keys().into_iter().max().unwrap_or(&0);
         if let Some(path) = type_relations_path {
             let input_type_relations_raw: TypeRelationsRaw = match fs::read_to_string(path)
                 .map_err(|e| e.to_string())
@@ -873,7 +876,7 @@ impl CallGraph {
                     Some(_) => {}
                     None => {
                         max_id += 1;
-                        type_map.insert(max_id + 2, relation.type2.to_owned());
+                        type_map.insert(max_id, relation.type2.to_owned());
                     }
                 }
             }

@@ -85,27 +85,26 @@ insert EdgeType(1,6);
 insert EdgeType(2,8);
 insert EdgeType(3,30);
 insert EqType(0,33);
-insert EqType(0,36);
+insert EqType(0,34);
 insert EqType(0,6);
-insert EqType(33,36);
-insert EqType(34,30);
-insert EqType(36,33);
+insert EqType(32,30);
+insert EqType(33,34);
 insert EqType(6,33);
-insert EqType(6,36);
+insert EqType(6,34);
 insert EqType(8,30);
-insert EqType(8,34);
+insert EqType(8,32);
 insert Member(30,0);
 insert Member(30,33);
-insert Member(30,36);
+insert Member(30,34);
 insert Member(30,6);
-insert Member(31,34);
-insert Member(34,0);
-insert Member(34,33);
-insert Member(34,36);
-insert Member(34,6);
+insert Member(31,32);
+insert Member(32,0);
+insert Member(32,33);
+insert Member(32,34);
+insert Member(32,6);
 insert Member(8,0);
 insert Member(8,33);
-insert Member(8,36);
+insert Member(8,34);
 insert Member(8,6);
 commit;
 */
@@ -117,8 +116,8 @@ commit;
   "8": "&[Foo]",
   "30": "std::vec::Vec<Foo>",
   "31": "Bar",
+  "32": "[test::Foo]",
   "33": "test::Foo",
-  "34": "[test::Foo]",
-  "36": "Foo"
+  "34": "Foo"
 }
 */
