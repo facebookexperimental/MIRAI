@@ -707,12 +707,8 @@ impl CallGraph {
     /// - [t] > t
     fn simplify_single_type(&self, name: &str) -> SimpleType {
         let mut base_type = name.to_owned();
-        if base_type.contains("mut ") {
-            base_type = base_type.replace("mut ", "");
-        }
-        if base_type.contains('&') {
-            base_type = base_type.replace("&", "");
-        }
+        base_type = base_type.replace("mut ", "");
+        base_type = base_type.replace("&", "");
         if base_type.contains('[') && base_type.contains(']') {
             base_type = base_type.replace("[", "").replace("]", "");
             SimpleType::Collection(base_type.into_boxed_str())
@@ -761,13 +757,17 @@ impl CallGraph {
         type_map: &HashMap<TypeId, Box<str>>,
         eq_map: &HashMap<Box<str>, Box<str>>,
     ) -> HashSet<TypeRelation> {
-        let mut simple_types = Vec::<(Box<str>, SimpleType)>::new();
-        for (_, t) in type_map.iter() {
-            let simple_ts = self.simplify_type(t.as_ref());
-            for simple_t in simple_ts.iter() {
-                simple_types.push((t.to_owned(), simple_t.to_owned()));
-            }
-        }
+        let simple_types: Vec<(&str, SimpleType)> =
+            type_map
+                .iter()
+                .fold(Vec::<(&str, SimpleType)>::new(), |mut acc, (_, t)| {
+                    acc.extend(
+                        self.simplify_type(t.as_ref())
+                            .into_iter()
+                            .map(|simple_t| (t.as_ref(), simple_t)),
+                    );
+                    acc
+                });
         let mut relations = HashSet::<TypeRelation>::new();
         // Initialize the set of pairs with the existing equality relations
         let mut pairs = eq_map
@@ -781,15 +781,19 @@ impl CallGraph {
                         // Case 1: [t] > t
                         (SimpleType::Collection(t1_base), SimpleType::Base(t2_base)) => {
                             if self.simple_type_eq(t1_base.as_ref(), t2_base.as_ref(), eq_map) {
-                                relations
-                                    .insert(TypeRelation::new_member(t1.to_owned(), t2.to_owned()));
+                                relations.insert(TypeRelation::new_member(
+                                    (*t1).to_owned().into_boxed_str(),
+                                    (*t2).to_owned().into_boxed_str(),
+                                ));
                             }
                         }
                         // Case 2: t < [t]
                         (SimpleType::Base(t1_base), SimpleType::Collection(t2_base)) => {
                             if self.simple_type_eq(t1_base.as_ref(), t2_base.as_ref(), eq_map) {
-                                relations
-                                    .insert(TypeRelation::new_member(t2.to_owned(), t1.to_owned()));
+                                relations.insert(TypeRelation::new_member(
+                                    (*t2).to_owned().into_boxed_str(),
+                                    (*t1).to_owned().into_boxed_str(),
+                                ));
                             }
                         }
                         // Case 3: [t] = [t] | t = t
@@ -799,19 +803,23 @@ impl CallGraph {
                             // - Trivial: EqType(a, a)
                             // - Redundant: EqType(a, b) and EqType(b, a)
                             if self.simple_type_eq(t1_base.as_ref(), t2_base.as_ref(), eq_map)
-                                && pairs.get(&(t1.as_ref(), t2.as_ref())).is_none()
-                                && pairs.get(&(t2.as_ref(), t1.as_ref())).is_none()
+                                && pairs.get(&(t1, t2)).is_none()
+                                && pairs.get(&(t2, t1)).is_none()
                             {
                                 // Deterministic lexicographic ordering
                                 if t1 < t2 {
-                                    relations
-                                        .insert(TypeRelation::new_eq(t1.to_owned(), t2.to_owned()));
+                                    relations.insert(TypeRelation::new_eq(
+                                        (*t1).to_owned().into_boxed_str(),
+                                        (*t2).to_owned().into_boxed_str(),
+                                    ));
                                 } else {
-                                    relations
-                                        .insert(TypeRelation::new_eq(t2.to_owned(), t1.to_owned()));
+                                    relations.insert(TypeRelation::new_eq(
+                                        (*t2).to_owned().into_boxed_str(),
+                                        (*t1).to_owned().into_boxed_str(),
+                                    ));
                                 }
-                                pairs.insert((t1.as_ref(), t2.as_ref()));
-                                pairs.insert((t2.as_ref(), t1.as_ref()));
+                                pairs.insert((t1, t2));
+                                pairs.insert((t2, t1));
                             }
                         }
                     }
