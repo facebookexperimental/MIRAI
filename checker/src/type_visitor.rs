@@ -534,9 +534,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     self.specialize_substs(substs, &self.generic_argument_map);
                                 if *ordinal < def.variants.len() {
                                     let variant = &def.variants[VariantIdx::new(*ordinal)];
-                                    let field_tys =
-                                        variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
-                                    return self.tcx.mk_tup(field_tys);
+                                    return if variant.fields.is_empty() {
+                                        self.tcx.types.unit
+                                    } else {
+                                        variant.fields[0].ty(self.tcx, substs)
+                                    };
                                 }
                                 if !type_visitor::is_transparent_wrapper(t) {
                                     break;
