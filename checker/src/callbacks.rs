@@ -146,19 +146,11 @@ impl MiraiCallbacks {
         // Exclude crates that contain code that causes MIRAI to crash
         if file_name.starts_with("client/assets-proof/src") // Sort mismatch at argument #2 for function (declare-fun + (Int Int) Int) supplied sort is <null> 
             || file_name.starts_with("consensus/consensus-types/src") // (ite (= 1 0) 1 (ite a!1 1 0))) at position 1 does not match declaration
-            || file_name.starts_with("crypto/crypto/src") // stack overflow
-            || file_name.starts_with("json-rpc/types/src") // stack overflow
             || file_name.starts_with("language/bytecode-verifier/src") // Unexpected representation of upvar types tuple Param(<upvars>/#4)
-            || file_name.starts_with("language/compiler/ir-to-bytecode/src") // stack overflow
             || file_name.starts_with("language/diem-framework/src") // expect reference target to have a value
             || file_name.starts_with("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
             || file_name.starts_with("language/move-prover/boogie-backend/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
-            || file_name.starts_with("language/move-prover/mutation") // stack overflow
-            || file_name.starts_with("language/move-stdlib/src") // stack overflow
-            || file_name.starts_with("language/move-prover/src") // stack overflow
             || file_name.starts_with("language/move-prover/docgen/src") //  Unexpected representation of upvar types tuple Param(<upvars>/
-            || file_name.starts_with("language/move-prover/interpreter/src") // stack overflow
-            || file_name.starts_with("language/move-prover/lab/src")  // stack overflow
             || file_name.starts_with("language/tools/move-coverage/src") // out of memory
             || file_name.starts_with("language/transaction-builder/generator/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
             || file_name.starts_with("network/netcore/src") // operator is applied to arguments of the wrong sort
@@ -211,17 +203,25 @@ impl MiraiCallbacks {
                 || file_name.starts_with("config/management/genesis/src")
                 || file_name.starts_with("config/seed-peer-generator/src")
                 || file_name.starts_with("common/debug-interface/src")
+                || file_name.starts_with("crypto/crypto/src")
                 || file_name.starts_with("execution/db-bootstrapper/src")
                 || file_name.starts_with("execution/executor/src")
+                || file_name.starts_with("json-rpc/types/src")
+                || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
                 || file_name.starts_with("language/diem-tools/df-cli/src")
                 || file_name.starts_with("language/diem-tools/diem-validator-interface")
                 || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src")
                 || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
+                || file_name.starts_with("language/move-prover/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
                 || file_name.starts_with("language/move-prover/boogie-backend-exp/src")
+                || file_name.starts_with("language/move-prover/interpreter/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
+                || file_name.starts_with("language/move-prover/lab/src")
+                || file_name.starts_with("language/move-prover/mutation")
+                || file_name.starts_with("language/move-stdlib/src")
                 || file_name.starts_with("language/tools/disassembler/src")
                 || file_name.starts_with("move-prover/errmapgen/src")
                 || file_name.starts_with("config/management/network-address-encryption/src")
@@ -232,6 +232,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("secure/key-manager/src")
                 || file_name.starts_with("secure/net/src")
                 || file_name.starts_with("secure/storage/src")
+                || file_name.starts_with("secure/storage/github/src")
                 || file_name.starts_with("secure/storage/vault/src")
                 || file_name.starts_with("state-sync/src")
                 || file_name.starts_with("state-sync/inter-component/event-notifications/src")
