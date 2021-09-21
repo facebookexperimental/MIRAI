@@ -444,7 +444,11 @@ impl Z3Solver {
         } else {
             let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
             let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
-            checked_assume_eq!(lf, rf);
+            if lf != rf {
+                warn!("can't encode {:?} relational op {:?}", left, right);
+                return self
+                    .general_variable(&Path::get_as_path(left.clone()), ExpressionType::Bool);
+            }
             unsafe {
                 if lf {
                     float_op(self.z3_context, left_ast, right_ast)
@@ -476,7 +480,11 @@ impl Z3Solver {
         } else {
             let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
             let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
-            checked_assume_eq!(lf, rf);
+            if lf != rf {
+                warn!("can't encode {:?} != {:?}", left, right);
+                return self
+                    .general_variable(&Path::get_as_path(left.clone()), ExpressionType::Bool);
+            }
             unsafe {
                 if lf {
                     let l = z3_sys::Z3_mk_fpa_is_nan(self.z3_context, left_ast);
@@ -1111,7 +1119,14 @@ impl Z3Solver {
     ) -> (bool, z3_sys::Z3_ast) {
         let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
         let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
-        checked_assume_eq!(lf, rf);
+        if lf != rf {
+            warn!("can't encode {:?} numeric var arg op {:?}", left, right);
+            let vt = left.expression.infer_type();
+            return (
+                vt.is_floating_point_number(),
+                self.general_variable(&Path::get_as_path(left.clone()), vt),
+            );
+        }
         unsafe {
             if lf {
                 (
@@ -1164,7 +1179,14 @@ impl Z3Solver {
     ) -> (bool, z3_sys::Z3_ast) {
         let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
         let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
-        checked_assume_eq!(lf, rf);
+        if lf != rf {
+            warn!("can't encode {:?} rem {:?}", left, right);
+            let vt = left.expression.infer_type();
+            return (
+                vt.is_floating_point_number(),
+                self.general_variable(&Path::get_as_path(left.clone()), vt),
+            );
+        }
         unsafe {
             if lf {
                 (
@@ -1210,7 +1232,14 @@ impl Z3Solver {
     ) -> (bool, z3_sys::Z3_ast) {
         let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
         let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
-        checked_assume_eq!(lf, rf);
+        if lf != rf {
+            warn!("can't encode {:?} numeric op {:?}", left, right);
+            let vt = left.expression.infer_type();
+            return (
+                vt.is_floating_point_number(),
+                self.general_variable(&Path::get_as_path(left.clone()), vt),
+            );
+        }
         unsafe {
             if lf {
                 (
@@ -1232,7 +1261,14 @@ impl Z3Solver {
         unsafe {
             let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
             let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
-            checked_assume_eq!(lf, rf);
+            if lf != rf {
+                warn!("can't encode {:?} join {:?}", left, right);
+                let vt = left.expression.infer_type();
+                return (
+                    vt.is_floating_point_number(),
+                    self.general_variable(&Path::get_as_path(left.clone()), vt),
+                );
+            }
             let sym = self.get_symbol_for(self);
             let condition_ast = z3_sys::Z3_mk_const(self.z3_context, sym, self.bool_sort);
             (
@@ -1758,6 +1794,11 @@ impl Z3Solver {
             Expression::Top | Expression::Bottom => unsafe {
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
                 z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, sort)
+            },
+            Expression::Transmute { .. } => unsafe {
+                let sym = self.get_symbol_for(expression);
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                z3_sys::Z3_mk_const(self.z3_context, sym, sort)
             },
             Expression::UninterpretedCall { path, .. }
             | Expression::InitialParameterValue { path, .. }
