@@ -132,6 +132,9 @@ fn run_directory(directory_path: PathBuf) -> Vec<(String, String)> {
         };
         let file_path = entry.path();
         let file_name = entry.file_name();
+        if file_path.extension().unwrap() != "rs" {
+            continue;
+        }
         let temp_dir = TempDir::new().expect("failed to create a temp dir");
         let temp_dir_path_buf = temp_dir.into_path();
         let output_dir_path_buf = temp_dir_path_buf.join(file_name.into_string().unwrap());
@@ -157,6 +160,7 @@ fn build_options() -> Options {
 #[derive(Deserialize)]
 struct DatalogTestConfig {
     datalog_backend: DatalogBackend,
+    type_relations_path: Option<Box<str>>,
 }
 
 // Partial call graph config to be read from the
@@ -194,7 +198,7 @@ fn generate_call_graph_config(file_name: &str, temp_dir_path: &str) -> (CallGrap
         Some(DatalogConfig::new(
             datalog_path,
             format!("{}/types.json", temp_dir_path).into_boxed_str(),
-            None,
+            call_graph_test_config.datalog_config.type_relations_path,
             call_graph_test_config.datalog_config.datalog_backend,
         )),
     );

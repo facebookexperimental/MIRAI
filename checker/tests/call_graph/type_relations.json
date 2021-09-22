@@ -1,0 +1,14 @@
+{
+    "relations": [
+        {
+            "kind": "Member",
+            "type1": "Bar",
+            "type2": "[test::Foo]"
+        },
+        {
+            "kind": "Eq",
+            "type1": "test::Foo",
+            "type2": "Foo"
+        }
+    ]
+}
