@@ -756,7 +756,8 @@ impl CallGraph {
         &self,
         type_map: &HashMap<TypeId, Box<str>>,
         eq_map: &HashMap<Box<str>, Box<str>>,
-    ) -> HashSet<TypeRelation> {
+        relations: &mut HashSet<TypeRelation>,
+    ) {
         let simple_types: Vec<(&str, SimpleType)> =
             type_map
                 .iter()
@@ -768,12 +769,6 @@ impl CallGraph {
                     );
                     acc
                 });
-        let mut relations = HashSet::<TypeRelation>::new();
-        // Initialize the set of pairs with the existing equality relations
-        let mut pairs = eq_map
-            .iter()
-            .map(|(a, b)| (a.as_ref(), b.as_ref()))
-            .collect::<HashSet<(&str, &str)>>();
         for (t1, simple_t1) in simple_types.iter() {
             for (t2, simple_t2) in simple_types.iter() {
                 if t1 != t2 {
@@ -799,13 +794,7 @@ impl CallGraph {
                         // Case 3: [t] = [t] | t = t
                         (SimpleType::Collection(t1_base), SimpleType::Collection(t2_base))
                         | (SimpleType::Base(t1_base), SimpleType::Base(t2_base)) => {
-                            // Avoid trivial or redundant relations
-                            // - Trivial: EqType(a, a)
-                            // - Redundant: EqType(a, b) and EqType(b, a)
-                            if self.simple_type_eq(t1_base.as_ref(), t2_base.as_ref(), eq_map)
-                                && pairs.get(&(t1, t2)).is_none()
-                                && pairs.get(&(t2, t1)).is_none()
-                            {
+                            if self.simple_type_eq(t1_base.as_ref(), t2_base.as_ref(), eq_map) {
                                 // Deterministic lexicographic ordering
                                 if t1 < t2 {
                                     relations.insert(TypeRelation::new_eq(
@@ -818,32 +807,28 @@ impl CallGraph {
                                         (*t1).to_owned().into_boxed_str(),
                                     ));
                                 }
-                                pairs.insert((t1, t2));
-                                pairs.insert((t2, t1));
                             }
                         }
                     }
                 }
             }
         }
-        relations
     }
 
     fn get_input_equivalences(
         &self,
         input_relations: &HashSet<TypeRelation>,
     ) -> HashMap<Box<str>, Box<str>> {
-        let mut eq_map = HashMap::<Box<str>, Box<str>>::new();
-        for relation in input_relations.iter() {
-            match relation.kind {
-                TypeRelationKind::Eq => {
-                    eq_map.insert(relation.type1.to_owned(), relation.type2.to_owned());
-                    eq_map.insert(relation.type2.to_owned(), relation.type1.to_owned());
-                }
-                TypeRelationKind::Member => {}
-            }
-        }
-        eq_map
+        input_relations
+            .iter()
+            .flat_map(|relation| match relation.kind {
+                TypeRelationKind::Eq => vec![
+                    (relation.type1.to_owned(), relation.type2.to_owned()),
+                    (relation.type2.to_owned(), relation.type1.to_owned()),
+                ],
+                TypeRelationKind::Member => vec![],
+            })
+            .collect::<HashMap<Box<str>, Box<str>>>()
     }
 
     /// Gather together type relations from the input type relations file
@@ -872,7 +857,24 @@ impl CallGraph {
             };
             let input_relations = input_type_relations_raw.relations;
             for relation in input_relations.iter() {
-                type_relations.insert(relation.to_owned());
+                let relation_to_insert = match relation.kind {
+                    TypeRelationKind::Eq => {
+                        // Deterministic lexicographic ordering
+                        if relation.type1 < relation.type2 {
+                            TypeRelation::new_eq(
+                                relation.type1.to_owned(),
+                                relation.type2.to_owned(),
+                            )
+                        } else {
+                            TypeRelation::new_eq(
+                                relation.type2.to_owned(),
+                                relation.type1.to_owned(),
+                            )
+                        }
+                    }
+                    TypeRelationKind::Member => relation.to_owned(),
+                };
+                type_relations.insert(relation_to_insert);
                 match type_to_index.get(&relation.type1) {
                     Some(_) => {}
                     None => {
@@ -890,7 +892,7 @@ impl CallGraph {
             }
         }
         let eq_map = self.get_input_equivalences(&type_relations);
-        type_relations.extend(self.derive_all_relations(type_map, &eq_map));
+        self.derive_all_relations(type_map, &eq_map, &mut type_relations);
         type_relations
     }
 

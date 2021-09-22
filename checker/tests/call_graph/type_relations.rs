@@ -88,7 +88,7 @@ insert EqType(0,33);
 insert EqType(0,34);
 insert EqType(0,6);
 insert EqType(32,30);
-insert EqType(33,34);
+insert EqType(34,33);
 insert EqType(6,33);
 insert EqType(6,34);
 insert EqType(8,30);
