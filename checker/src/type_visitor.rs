@@ -499,21 +499,13 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                         _ => {}
                                     }
                                 }
-                                if *ordinal == 0
-                                    && matches!(
-                                        t.kind(),
-                                        TyKind::FnPtr(..) | TyKind::RawPtr(..) | TyKind::Ref(..)
-                                    )
-                                {
-                                    // If the qualifier is a thin pointer to something that
-                                    // does not have a field 0, it could be that qualifier.0
-                                    // is a bogus path that got constructed when transferring
-                                    // a returned fat pointer into a thin pointer target
-                                    // variable without an explicit cast.
-                                    // It is hard to detect this case before calling this
-                                    // routine, so we'll allow it to happen tell the caller
-                                    // to look out for it by returning this:
-                                    return self.tcx.types.never;
+                                if *ordinal == 0 {
+                                    // Taking the address of a struct returns the address of field 0
+                                    // and the type of the address is both *S and *F where S is the
+                                    // struct type and F is the type of field 0. If get here, it
+                                    // is because we tracked type F, whereas rustc used S.
+                                    // We therefore return F.
+                                    return t;
                                 }
                             }
                         }

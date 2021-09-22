@@ -1120,7 +1120,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         let target_type = self
             .type_visitor()
             .get_path_rustc_type(&target_path, self.current_span);
-        let target_is_thin_pointer = self.type_visitor().is_thin_pointer(target_type.kind());
         for (path, value) in effects
             .iter()
             .filter(|(p, _)| (*p) == *source_path || p.is_rooted_by(source_path))
@@ -1227,31 +1226,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         self.copy_or_move_elements(tpath.clone(), path.clone(), lh_type, false);
                         continue;
                     }
-                    if target_is_thin_pointer && lh_type == self.tcx.types.never {
-                        // This can happen if the result of the called function is actually a slice pointer
-                        // that is being implicitly cast to a thin pointer. In that case, tpath needs
-                        // to drop the field 0 bit.
-                        if let PathEnum::QualifiedPath {
-                            qualifier,
-                            selector,
-                            ..
-                        } = &tpath.value
-                        {
-                            match selector.as_ref() {
-                                PathSelector::Field(0)
-                                | PathSelector::Slice(..)
-                                | PathSelector::UnionField { .. } => {
-                                    // assign the pointer field of the slice pointer to the unqualified target
-                                    tpath = qualifier.clone();
-                                }
-                                PathSelector::Field(1) => {
-                                    // drop the assignment of the length field
-                                    continue;
-                                }
-                                _ => assume_unreachable!("something went wrong here: {:?}", tpath),
-                            }
-                        }
-                    }
                 }
                 Expression::UninterpretedCall {
                     callee,
@@ -1272,13 +1246,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         self.current_environment.value_map.remove_mut(path);
                         continue;
                     }
-                    let mut target_type = self
+                    let target_type = self
                         .type_visitor()
                         .get_path_rustc_type(&tpath, self.current_span);
-                    if target_type == self.tcx.types.never {
-                        //todo: figure out why this happens
-                        target_type = rtype.as_rustc_type(self.tcx);
-                    }
                     // If the copy does an upcast we have to track the type of
                     // the source value and use it to override the type system
                     // when resolving methods using the target value as self.
