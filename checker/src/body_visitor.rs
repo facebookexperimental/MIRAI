@@ -1236,8 +1236,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     rvalue =
                         callee.uninterpreted_call(arguments.clone(), *result_type, tpath.clone());
                 }
-                Expression::InitialParameterValue { path, var_type }
-                | Expression::Variable { path, var_type } => {
+                Expression::InitialParameterValue { path, .. }
+                | Expression::Variable { path, .. } => {
                     if matches!(&path.value, PathEnum::PhantomData) {
                         continue;
                     }
@@ -1246,9 +1246,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         self.current_environment.value_map.remove_mut(path);
                         continue;
                     }
-                    let target_type = self
-                        .type_visitor()
-                        .get_path_rustc_type(&tpath, self.current_span);
                     // If the copy does an upcast we have to track the type of
                     // the source value and use it to override the type system
                     // when resolving methods using the target value as self.
@@ -1257,13 +1254,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         .get_path_rustc_type(path, self.current_span);
                     self.type_visitor
                         .set_path_rustc_type(tpath.clone(), source_type);
-                    if path.is_rooted_by_parameter() {
-                        rvalue =
-                            AbstractValue::make_initial_parameter_value(*var_type, path.clone());
-                        self.update_value_at(tpath, rvalue);
-                        continue;
-                    } else if rtype == ExpressionType::NonPrimitive {
-                        self.copy_or_move_elements(tpath.clone(), path.clone(), target_type, false);
+                    if rtype == ExpressionType::NonPrimitive {
+                        self.copy_or_move_elements(tpath.clone(), path.clone(), source_type, false);
                         continue;
                     }
                 }

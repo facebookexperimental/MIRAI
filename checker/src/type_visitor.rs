@@ -531,6 +531,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             if let TyKind::Adt(def, substs) = t.kind() {
                                 let substs =
                                     self.specialize_substs(substs, &self.generic_argument_map);
+                                if !def.is_enum() {
+                                    // Could be a *&S vs *&S.Field_0 confusion
+                                    t = self.get_field_type(def, substs, 0);
+                                    continue;
+                                }
                                 if *ordinal < def.variants.len() {
                                     let variant = &def.variants[VariantIdx::new(*ordinal)];
                                     let field_tys =
