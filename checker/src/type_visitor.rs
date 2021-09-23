@@ -498,14 +498,21 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                         }
                                         _ => {}
                                     }
-                                }
-                                if *ordinal == 0 {
+                                } else {
                                     // Taking the address of a struct returns the address of field 0
-                                    // and the type of the address is both *S and *F where S is the
+                                    // and the type of the address is both &S and &F where S is the
                                     // struct type and F is the type of field 0. If get here, it
                                     // is because we tracked type F, whereas rustc used S.
-                                    // We therefore return F.
-                                    return t;
+                                    match *ordinal {
+                                        0 => {
+                                            return t;
+                                        }
+                                        1 => {
+                                            // Assume &S is a slice pointer
+                                            return self.tcx.types.usize;
+                                        }
+                                        _ => {}
+                                    }
                                 }
                             }
                         }
@@ -526,11 +533,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     self.specialize_substs(substs, &self.generic_argument_map);
                                 if *ordinal < def.variants.len() {
                                     let variant = &def.variants[VariantIdx::new(*ordinal)];
-                                    return if variant.fields.is_empty() {
-                                        self.tcx.types.unit
-                                    } else {
-                                        variant.fields[0].ty(self.tcx, substs)
-                                    };
+                                    let field_tys =
+                                        variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
+                                    return self.tcx.mk_tup(field_tys);
                                 }
                                 if !type_visitor::is_transparent_wrapper(t) {
                                     break;

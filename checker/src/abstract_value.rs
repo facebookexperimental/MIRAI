@@ -693,7 +693,7 @@ impl AbstractValue {
         path: Rc<Path>,
     ) -> Rc<AbstractValue> {
         Rc::new(make_value(Expression::InitialParameterValue {
-            path,
+            path: path.remove_initial_value_wrapper(),
             var_type,
         }))
     }
