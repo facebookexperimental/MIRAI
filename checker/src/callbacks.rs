@@ -159,6 +159,8 @@ impl MiraiCallbacks {
 
         // Exclude crates that crash and also take longer than 2 minutes to analyze, or don't terminate
         if file_name.starts_with("client/faucet/src") // non termination
+            || file_name.starts_with("config/src") // unreachable code: path <&(local_40(4464).0: ThinPointer)[80]>.deref.[1 : 0, from_end: true].0.deref.[1 : 0, from_end: true]', checker/src/environment.rs:252:21
+            || file_name.starts_with("config/management/genesis/src") // out of memory
             || file_name.starts_with("config/management/operational/src") // crash
             || file_name.starts_with("consensus/src") // (ite (= 1 0) 1 (ite a!1 1 0))) at position 1 does not match declaration
             || file_name.starts_with("crypto/crypto-derive/src") // out of memory
@@ -167,6 +169,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/compiler/src") // out of memory
             || file_name.starts_with("language/diem-framework/releases/src") // non termination
             || file_name.starts_with("language/diem-tools/df-cli/src") // out of memory
+            || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src")  // out of memory
             || file_name.starts_with("language/diem-vm/src") // 'Not a type: DefIndex(3132)
             || file_name.starts_with("language/move-lang/src") // non termination
             || file_name.starts_with("language/move-model/src") // non termination
@@ -190,8 +193,9 @@ impl MiraiCallbacks {
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemdb/src") // expect reference target to have a value local_1(41) Some({result: &(local_1(41))})
             || file_name.starts_with("storage/diemsum/src") // out of memory
-            || file_name.starts_with("storage/inspector/src/")
-        // out of memory
+            || file_name.starts_with("storage/inspector/src/") // out of memory
+            || file_name.starts_with("types/src")
+        // entered unreachable code: path <&(local_40(4184).0: ThinPointer)[80]>.deref.[1 : 0, from_end: true]
         {
             return true;
         }
@@ -201,9 +205,7 @@ impl MiraiCallbacks {
             && (file_name.starts_with("client/assets-proof/src")
                 || file_name.starts_with("common/num-variants/src")
                 || file_name.starts_with("common/rate-limiter/src")
-                || file_name.starts_with("config/src")
                 || file_name.starts_with("config/management/src")
-                || file_name.starts_with("config/management/genesis/src")
                 || file_name.starts_with("config/seed-peer-generator/src")
                 || file_name.starts_with("common/debug-interface/src")
                 || file_name.starts_with("crypto/crypto/src")
@@ -214,7 +216,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
                 || file_name.starts_with("language/diem-tools/diem-validator-interface")
-                || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src")
                 || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
@@ -236,7 +237,6 @@ impl MiraiCallbacks {
                 || file_name.starts_with("state-sync/src")
                 || file_name.starts_with("state-sync/inter-component/event-notifications/src")
                 || file_name.starts_with("storage/storage-client/src")
-                || file_name.starts_with("types/src")
                 || file_name.starts_with("vm-validator/src"))
         {
             return true;

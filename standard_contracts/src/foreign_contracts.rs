@@ -1081,6 +1081,13 @@ pub mod core {
                 default_contract!(psignd128);
             }
         }
+
+        pub mod x86_64 {
+            pub mod adx {
+                default_contract!(llvm_addcarry_u64);
+                default_contract!(llvm_subborrow_u64);
+            }
+        }
     }
 
     pub mod default {
@@ -1121,6 +1128,7 @@ pub mod core {
         pub mod implement_core_fmt_Formatter {
             default_contract!(debug_struct);
             default_contract!(debug_tuple);
+            default_contract!(new);
             default_contract!(write_fmt);
             default_contract!(write_str);
         }
@@ -2344,7 +2352,7 @@ pub mod core {
             default_contract!(caller_location);
             default_contract!(init);
             default_contract!(uninit);
-            // pub fn forget<T>(_: T) {}
+            pub fn forget<T>(_: T) {}
             default_contract!(needs_drop);
             pub unsafe fn volatile_copy_nonoverlapping_memory<T>(
                 dst: *mut T,
@@ -2370,6 +2378,7 @@ pub mod core {
             //     *dst = val
             // }
 
+            default_contract!(float_to_int_unchecked);
             pub fn fmaf32(a: f32, b: f32, c: f32) -> f32 {
                 a * b + c
             }
@@ -4515,6 +4524,10 @@ pub mod std {
                 default_contract!(set_write_timeout);
                 default_contract!(shutdown);
             }
+
+            pub mod implement_std_net_tcp_TcpStream {
+                default_contract!(read);
+            }
         }
     }
 
@@ -4692,6 +4705,7 @@ pub mod std {
     pub mod time {
         pub mod implement {
             default_contract!(checked_add);
+            default_contract!(checked_duration_since);
             default_contract!(duration);
             default_contract!(elapsed);
             default_contract!(now);
@@ -4742,6 +4756,16 @@ pub mod syn {
     pub mod spanned {
         pub mod implement {
             default_contract!(span);
+        }
+    }
+}
+
+pub mod tinyvec {
+    pub mod array {
+        pub mod generated_impl {
+            pub mod implement_array_generic_par_T {
+                default_contract!(CAPACITY);
+            }
         }
     }
 }
