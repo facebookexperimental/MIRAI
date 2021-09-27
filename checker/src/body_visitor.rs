@@ -669,7 +669,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 &side_effects,
                 path.clone(),
                 &Path::new_result(),
-                &None,
+                &Some(path.clone()),
                 &[],
                 &environment,
             );

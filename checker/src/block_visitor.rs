@@ -1657,6 +1657,18 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
         let value_path = self.visit_lh_place(place);
+        match (source_type.kind(), target_type.kind()) {
+            (TyKind::Ref(_, st, _), TyKind::Ref(_, tt, _)) if st.eq(tt) => {
+                // If we are just changing the mutability or lifetime of the reference,
+                // the value stays the same for us.
+                let value = self
+                    .bv
+                    .lookup_path_and_refine_result(value_path, source_type);
+                self.bv.update_value_at(path, value);
+                return;
+            }
+            _ => {}
+        }
         let value = match &value_path.value {
             PathEnum::QualifiedPath {
                 qualifier,

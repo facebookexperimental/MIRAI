@@ -1593,7 +1593,7 @@ impl Z3Solver {
     fn numeric_widen(&self, operand: &Rc<AbstractValue>) -> (bool, z3_sys::Z3_ast) {
         use self::ExpressionType::*;
         let expr_type = match operand.expression.infer_type() {
-            Bool | Function | ThinPointer | NonPrimitive => ExpressionType::I128,
+            Bool | Function | ThinPointer | NonPrimitive | Unit => ExpressionType::I128,
             val => val,
         };
         let is_float = expr_type.is_floating_point_number();

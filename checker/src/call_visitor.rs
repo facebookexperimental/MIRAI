@@ -163,7 +163,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             self.block_visitor.bv.start_instant = Instant::now() - elapsed_time;
             return summary;
         }
-        if !self.block_visitor.bv.tcx.is_static(self.callee_def_id) {
+        if !self.block_visitor.bv.tcx.is_static(self.callee_def_id)
+            && self.callee_known_name != KnownNames::StdCloneClone
+        {
             info!("function {:?} has no MIR", self.callee_def_id);
             if let Some(fr) = &self.callee_func_ref {
                 info!(
@@ -206,8 +208,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 gen_args,
             ) {
                 let resolved_def_id = instance.def.def_id();
+                let tcx = self.block_visitor.bv.tcx;
+                let has_mir = tcx.is_mir_available(resolved_def_id);
+                if !has_mir && self.callee_known_name == KnownNames::StdCloneClone {
+                    return;
+                }
                 self.callee_def_id = resolved_def_id;
-                let resolved_ty = self.block_visitor.bv.tcx.type_of(resolved_def_id);
+                let resolved_ty = tcx.type_of(resolved_def_id);
                 let resolved_map = self.type_visitor().get_generic_arguments_map(
                     resolved_def_id,
                     instance.substs,
@@ -242,8 +249,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     instance.substs,
                     &self.actual_argument_types,
                 );
-                let tcx = self.block_visitor.bv.tcx;
-                if specialized_resolved_ty.is_closure() && tcx.is_mir_available(resolved_def_id) {
+                if has_mir && specialized_resolved_ty.is_closure() {
                     let mir = tcx.optimized_mir(resolved_def_id);
                     if self.actual_argument_types.len() + 1 == mir.arg_count {
                         // When the closure has no captured variables, the first argument is just the function pointer.
