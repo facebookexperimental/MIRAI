@@ -38,6 +38,48 @@ pub fn find_sysroot() -> String {
     }
 }
 
+/// Returns true if the function identified by def_id is a has a parameter that is, or contains,
+/// a function pointer or closure or generator that can be called by the function.
+/// The function body is not analyzed to determine that such parameters are actually called
+/// and the check does not traverse past references, so this check is approximate.
+/// It is intended to filter out higher order functions from the set of functions used as analysis
+/// roots, which we want to do because we can't accurately analyze a higher order function without
+/// information from its calling context.
+#[logfn(TRACE)]
+pub fn is_higher_order_function(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
+    let fn_ty = tcx.type_of(def_id);
+    if fn_ty.is_fn() {
+        let fn_sig = fn_ty.fn_sig(tcx).skip_binder();
+        for param_ty in fn_sig.inputs() {
+            if contains_function(param_ty, tcx) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Returns true if the given type is a function, a closure, a generator, or a struct with
+/// a field that is (or contains) a function in this sense.
+/// This does not traverse references, so the answer is approximate.
+#[logfn(TRACE)]
+pub fn contains_function<'tcx>(ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
+    if ty.is_fn() || ty.is_closure() || ty.is_generator() {
+        return true;
+    }
+    if let TyKind::Adt(def, substs) = ty.kind() {
+        for variant in def.variants.iter() {
+            for (_, field) in variant.fields.iter().enumerate() {
+                let field_ty = field.ty(tcx, substs);
+                if contains_function(field_ty, tcx) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Returns true if the function identified by def_id is a public function.
 #[logfn(TRACE)]
 pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {

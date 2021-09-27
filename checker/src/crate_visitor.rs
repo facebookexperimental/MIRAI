@@ -108,6 +108,12 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                 } else if self.tcx.is_const_fn_raw(def_id) {
                     debug!("skipping function {} as it is a constant function", name);
                     continue;
+                } else if utils::is_higher_order_function(def_id, self.tcx) {
+                    debug!(
+                        "skipping function {} as it is a higher order function",
+                        name
+                    );
+                    continue;
                 } else {
                     info!("analyzing function {}", name);
                 }
