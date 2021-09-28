@@ -302,6 +302,12 @@ pub mod core {
 
         pub mod implement_core_char_ToLowercase {
             default_contract!(next);
+            default_contract!(size_hint);
+        }
+
+        pub mod implement_core_char_ToUppercase {
+            default_contract!(next);
+            default_contract!(size_hint);
         }
 
         pub fn TAG_CONT() -> u8 {
@@ -2722,6 +2728,14 @@ pub mod core {
         pub mod result {
             pub fn unwrap_failed() {
                 panic!("result unwrap failed")
+            }
+        }
+
+        pub mod traits {
+            pub mod accum {
+                pub mod Sum {
+                    default_contract!(sum);
+                }
             }
         }
     }

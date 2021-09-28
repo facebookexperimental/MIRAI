@@ -570,7 +570,12 @@ impl Z3Solver {
         F: FnOnce(&Expression) -> z3_sys::Z3_ast + Copy,
     {
         if discriminator.expression.is_bit_vector() {
-            return self.bv_switch(discriminator, cases, default, get_result_ast);
+            return self.switch_with_bv_discriminator(
+                discriminator,
+                cases,
+                default,
+                get_result_ast,
+            );
         }
         let discriminator_type = discriminator.expression.infer_type();
         let discriminator_ast = self.get_as_z3_ast(&(**discriminator).expression);
@@ -1687,10 +1692,6 @@ impl Z3Solver {
     #[logfn_inputs(TRACE)]
     fn get_as_bv_z3_ast(&self, expression: &Expression, num_bits: u32) -> z3_sys::Z3_ast {
         match expression {
-            Expression::HeapBlock { .. } => {
-                let path = Path::get_as_path(AbstractValue::make_from(expression.clone(), 1));
-                self.bv_variable(&path, num_bits)
-            }
             Expression::Add { left, right } => {
                 self.bv_binary(num_bits, left, right, z3_sys::Z3_mk_bvadd)
             }
@@ -1804,7 +1805,10 @@ impl Z3Solver {
             | Expression::InitialParameterValue { path, .. }
             | Expression::Variable { path, .. } => self.bv_variable(path, num_bits),
             Expression::WidenedJoin { operand, .. } => self.bv_widen(operand, num_bits),
-            _ => self.get_as_z3_ast(expression),
+            _ => {
+                let path = Path::get_as_path(AbstractValue::make_from(expression.clone(), 1));
+                self.bv_variable(&path, num_bits)
+            }
         }
     }
 
@@ -2012,7 +2016,7 @@ impl Z3Solver {
         }
     }
 
-    fn bv_switch<F>(
+    fn switch_with_bv_discriminator<F>(
         &self,
         discriminator: &Rc<AbstractValue>,
         cases: &[(Rc<AbstractValue>, Rc<AbstractValue>)],

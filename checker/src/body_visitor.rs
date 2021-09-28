@@ -170,7 +170,12 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     ) -> Summary {
         let diag_level = self.cv.options.diag_level;
         let max_analysis_time_for_body = self.cv.options.max_analysis_time_for_body;
-        if cfg!(DEBUG) {
+        if cfg!(DEBUG)
+            && !matches!(
+                self.tcx.def_kind(self.def_id),
+                rustc_hir::def::DefKind::Variant
+            )
+        {
             let mut stdout = std::io::stdout();
             stdout.write_fmt(format_args!("{:?}", self.def_id)).unwrap();
             rustc_middle::mir::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();

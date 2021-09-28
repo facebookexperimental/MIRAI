@@ -143,19 +143,9 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(&self, file_name: &str) -> bool {
-        // Exclude crates that contain code that causes MIRAI to crash
-        if file_name.starts_with("consensus/consensus-types/src") // (ite (= 1 0) 1 (ite a!1 1 0))) at position 1 does not match declaration
-            || file_name.starts_with("language/diem-framework/src") // expect reference target to have a value
-            || file_name.starts_with("language/diem-tools/transaction-replay/src") // 'Not a type: DefIndex(3082)'
-            || file_name.starts_with("language/move-prover/boogie-backend/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
-            || file_name.starts_with("language/move-prover/docgen/src") //  Unexpected representation of upvar types tuple Param(<upvars>/
-            || file_name.starts_with("language/tools/move-coverage/src") // out of memory
-            || file_name.starts_with("language/transaction-builder/generator/src") // entered unreachable code', checker/src/type_visitor.rs:783:25
-            || file_name.starts_with("network/netcore/src")
-        // operator is applied to arguments of the wrong sort
-        {
-            return true;
-        }
+        // if file_name.starts_with("language/diem-tools/transaction-replay/src") {
+        //     return false;
+        // }
 
         // Exclude crates that crash and also take longer than 2 minutes to analyze, or don't terminate
         if file_name.starts_with("client/faucet/src") // non termination
@@ -178,6 +168,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/tools/move-cli/src") // non termination
             || file_name.starts_with("language/tools/move-package/src") // expect reference target to have a value
             || file_name.starts_with("language/move-prover/src") // non termination
+            || file_name.starts_with("language/move-prover/boogie-backend/src") // Unexpected representation of upvar types tuple Param(<upvars>/#3)
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
             || file_name.starts_with("language/move-prover/lab/src") // out of memory
             || file_name.starts_with("language/move-prover/mutation/src") // out of memory
@@ -200,13 +191,15 @@ impl MiraiCallbacks {
             return true;
         }
 
-        // Conditionally exclude crates that currently slow down testing too much
+        // Conditionally exclude crates that currently slow down testing too much because they take longer than 2 minutes to analyze
         if self.options.diag_level == DiagLevel::Default
             && (file_name.starts_with("client/assets-proof/src")
                 || file_name.starts_with("common/num-variants/src")
                 || file_name.starts_with("common/rate-limiter/src")
                 || file_name.starts_with("config/management/src")
+                || file_name.starts_with("config/management/network-address-encryption/src")
                 || file_name.starts_with("config/seed-peer-generator/src")
+                || file_name.starts_with("consensus/consensus-types/src")
                 || file_name.starts_with("common/debug-interface/src")
                 || file_name.starts_with("crypto/crypto/src")
                 || file_name.starts_with("execution/db-bootstrapper/src")
@@ -215,16 +208,21 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
+                || file_name.starts_with("language/diem-framework/src")
                 || file_name.starts_with("language/diem-tools/diem-validator-interface")
+                || file_name.starts_with("language/diem-tools/transaction-replay/src")
                 || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
                 || file_name.starts_with("language/move-prover/boogie-backend-exp/src")
+                || file_name.starts_with("language/move-prover/docgen/src")
                 || file_name.starts_with("language/move-prover/interpreter/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
                 || file_name.starts_with("language/tools/disassembler/src")
+                || file_name.starts_with("language/tools/move-coverage/src")
+                || file_name.starts_with("language/transaction-builder/generator/src")
                 || file_name.starts_with("move-prover/errmapgen/src")
-                || file_name.starts_with("config/management/network-address-encryption/src")
+                || file_name.starts_with("network/netcore/src")
                 || file_name.starts_with("network/discovery/src")
                 || file_name.starts_with("network/simple-onchain-discovery/src")
                 || file_name.starts_with("consensus/safety-rules/src")
