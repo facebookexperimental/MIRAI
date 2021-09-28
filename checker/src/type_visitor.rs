@@ -137,19 +137,21 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
         match path_ty.kind() {
             TyKind::Closure(_, substs) => {
-                for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
-                    let var_type = ExpressionType::from(ty.kind());
-                    let mut qualifier = path.clone();
-                    if is_ref {
-                        qualifier = Path::new_deref(path.clone(), ExpressionType::NonPrimitive)
+                if utils::are_concrete(substs) {
+                    for (i, ty) in substs.as_closure().upvar_tys().enumerate() {
+                        let var_type = ExpressionType::from(ty.kind());
+                        let mut qualifier = path.clone();
+                        if is_ref {
+                            qualifier = Path::new_deref(path.clone(), ExpressionType::NonPrimitive)
+                        }
+                        let closure_field_path = Path::new_field(qualifier, i);
+                        self.set_path_rustc_type(closure_field_path.clone(), ty);
+                        let closure_field_val =
+                            AbstractValue::make_typed_unknown(var_type, closure_field_path.clone());
+                        first_state
+                            .value_map
+                            .insert_mut(closure_field_path, closure_field_val);
                     }
-                    let closure_field_path = Path::new_field(qualifier, i);
-                    self.set_path_rustc_type(closure_field_path.clone(), ty);
-                    let closure_field_val =
-                        AbstractValue::make_typed_unknown(var_type, closure_field_path.clone());
-                    first_state
-                        .value_map
-                        .insert_mut(closure_field_path, closure_field_val);
                 }
             }
             TyKind::Generator(_, substs, _) => {
@@ -423,13 +425,20 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     _ => {}
                                 }
                             }
-                            TyKind::Closure(def_id, subs) => {
-                                return subs.as_closure().upvar_tys().nth(*ordinal).unwrap_or_else(
-                                    || {
-                                        info!("closure field not found {:?} {:?}", def_id, ordinal);
-                                        self.tcx.types.never
-                                    },
-                                );
+                            TyKind::Closure(def_id, substs) => {
+                                if utils::are_concrete(substs) {
+                                    return substs
+                                        .as_closure()
+                                        .upvar_tys()
+                                        .nth(*ordinal)
+                                        .unwrap_or_else(|| {
+                                            info!(
+                                                "closure field not found {:?} {:?}",
+                                                def_id, ordinal
+                                            );
+                                            self.tcx.types.never
+                                        });
+                                }
                             }
                             TyKind::Generator(def_id, substs, _) => {
                                 let mut tuple_types =
@@ -445,20 +454,23 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 // why would getting a field from a closure not need a deref
                                 // before the field access? I.e. is a reference to a closure
                                 // a sort of fat pointer?
-                                if let TyKind::Closure(def_id, subs) = t.kind() {
-                                    return subs
-                                        .as_closure()
-                                        .upvar_tys()
-                                        .nth(*ordinal)
-                                        .unwrap_or_else(|| {
-                                            info!(
-                                                "closure field not found {:?} {:?}",
-                                                def_id, ordinal
-                                            );
-                                            self.tcx.types.never
-                                        });
+                                if let TyKind::Closure(def_id, substs) = t.kind() {
+                                    if utils::are_concrete(substs) {
+                                        return substs
+                                            .as_closure()
+                                            .upvar_tys()
+                                            .nth(*ordinal)
+                                            .unwrap_or_else(|| {
+                                                info!(
+                                                    "closure field not found {:?} {:?}",
+                                                    def_id, ordinal
+                                                );
+                                                self.tcx.types.never
+                                            });
+                                    }
+                                } else {
+                                    unreachable!("t.kind is a closure because of the guard");
                                 }
-                                unreachable!("t.kind is a closure because of the guard");
                             }
                             TyKind::Str => {
                                 match *ordinal {
