@@ -121,6 +121,14 @@ pub mod alloc {
         }
     }
 
+    pub mod str {
+        pub mod implement_str {
+            default_contract!(to_lowercase);
+            default_contract!(repeat);
+            default_contract!(replace);
+        }
+    }
+
     pub mod string {
         pub mod implement {
             use std::borrow::Cow;
@@ -144,6 +152,7 @@ pub mod alloc {
                 _self
             }
             default_contract!(from);
+            default_contract!(to_string);
         }
     }
 
@@ -3620,6 +3629,10 @@ pub mod libc {
                 0
             }
 
+            pub fn pthread_cond_timedwait() -> u64 {
+                0
+            }
+
             pub fn pthread_cond_wait() -> u64 {
                 0
             }
@@ -3633,6 +3646,10 @@ pub mod libc {
             }
 
             pub fn pthread_rwlock_unlock() -> u64 {
+                0
+            }
+
+            pub fn pthread_rwlock_rdlock() -> u64 {
                 0
             }
 
@@ -3662,6 +3679,7 @@ pub mod libc {
                 pub fn __error() -> &'static i32 {
                     &-1
                 }
+                default_contract!(gettimeofday);
             }
 
             default_contract!(ioctl);
@@ -3936,6 +3954,14 @@ pub mod rand {
         pub fn gen_bool__rand_rngs_std_StdRng(_self: &rngs::std::StdRng, probability: f64) -> bool {
             precondition!(probability >= 0.0 && probability <= 1.0);
             result!()
+        }
+    }
+}
+
+pub mod regex {
+    pub mod re_unicode {
+        pub mod implement_regex_re_unicode_Regex {
+            default_contract!(captures);
         }
     }
 }
@@ -4581,6 +4607,10 @@ pub mod std {
             }
 
             default_contract!(_join);
+            default_contract!(_with_extension);
+            default_contract!(is_absolute);
+            default_contract!(file_name);
+            default_contract!(parent);
             default_contract!(to_str);
         }
 
@@ -4643,8 +4673,18 @@ pub mod std {
                 default_contract!(register_dtor);
             }
 
+            pub mod fs {
+                default_contract!(stat);
+            }
+
             pub mod memchr {
                 default_contract!(memchr);
+            }
+
+            pub mod os_str {
+                pub mod implement_std_sys_unix_os_str_Slice {
+                    default_contract!(to_string_lossy);
+                }
             }
 
             pub mod thread_local_dtor {
@@ -4726,6 +4766,7 @@ pub mod std {
         }
         pub mod implement_std_time_Instant {
             default_contract!(add);
+            default_contract!(sub);
         }
         pub mod implement_std_time_SystemTime {
             default_contract!(duration);

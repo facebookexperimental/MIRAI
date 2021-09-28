@@ -143,16 +143,11 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(&self, file_name: &str) -> bool {
-        // if file_name.starts_with("language/diem-tools/transaction-replay/src") {
-        //     return false;
-        // }
-
-        // Exclude crates that crash and also take longer than 2 minutes to analyze, or don't terminate
+        // Exclude crates that crash or don't terminate. All of these currently take longer than 2 minutes to analyze.
         if file_name.starts_with("client/faucet/src") // non termination
             || file_name.starts_with("config/src") // unreachable code: path <&(local_40(4464).0: ThinPointer)[80]>.deref.[1 : 0, from_end: true].0.deref.[1 : 0, from_end: true]', checker/src/environment.rs:252:21
             || file_name.starts_with("config/management/genesis/src") // out of memory
             || file_name.starts_with("config/management/operational/src") // crash
-            || file_name.starts_with("consensus/src") // (ite (= 1 0) 1 (ite a!1 1 0))) at position 1 does not match declaration
             || file_name.starts_with("crypto/crypto-derive/src") // out of memory
             || file_name.starts_with("json-rpc/src") // expected a type, but found another kind
             || file_name.starts_with("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
@@ -168,19 +163,18 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/tools/move-cli/src") // non termination
             || file_name.starts_with("language/tools/move-package/src") // expect reference target to have a value
             || file_name.starts_with("language/move-prover/src") // non termination
-            || file_name.starts_with("language/move-prover/boogie-backend/src") // Unexpected representation of upvar types tuple Param(<upvars>/#3)
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
             || file_name.starts_with("language/move-prover/lab/src") // out of memory
             || file_name.starts_with("language/move-prover/mutation/src") // out of memory
             || file_name.starts_with("language/move-stdlib/src") // out of memory
+            || file_name.starts_with("language/tools/move-coverage/src") // out of memory
             || file_name.starts_with("language/tools/move-unit-test/src") // non termination
             || file_name.starts_with("language/tools/read-write-set/src")  // non termination
-            || file_name.starts_with("language/tools/vm-genesis/src") // Unexpected representation of upvar types
+            || file_name.starts_with("language/transaction-builder/generator/src") // out of memory
             || file_name.starts_with("mempool/src") // out of memory
             || file_name.starts_with("network/src")
             || file_name.starts_with("network/builder/src") // compiler/rustc_traits/src/normalize_erasing_regions.rs:54:32:
             || file_name.starts_with("sdk/client/src") // non termination
-            || file_name.starts_with("state-sync/state-sync-v1/src") // Unexpected representation of upvar types
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemdb/src") // expect reference target to have a value local_1(41) Some({result: &(local_1(41))})
             || file_name.starts_with("storage/diemsum/src") // out of memory
@@ -199,7 +193,9 @@ impl MiraiCallbacks {
                 || file_name.starts_with("config/management/src")
                 || file_name.starts_with("config/management/network-address-encryption/src")
                 || file_name.starts_with("config/seed-peer-generator/src")
+                || file_name.starts_with("consensus/src")
                 || file_name.starts_with("consensus/consensus-types/src")
+                || file_name.starts_with("consensus/safety-rules/src")
                 || file_name.starts_with("common/debug-interface/src")
                 || file_name.starts_with("crypto/crypto/src")
                 || file_name.starts_with("execution/db-bootstrapper/src")
@@ -214,18 +210,18 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
                 || file_name.starts_with("language/move-prover/abigen/src")
+                || file_name.starts_with("language/move-prover/boogie-backend/src")
                 || file_name.starts_with("language/move-prover/boogie-backend-exp/src")
                 || file_name.starts_with("language/move-prover/docgen/src")
                 || file_name.starts_with("language/move-prover/interpreter/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
                 || file_name.starts_with("language/tools/disassembler/src")
-                || file_name.starts_with("language/tools/move-coverage/src")
+                || file_name.starts_with("language/tools/vm-genesis/src")
                 || file_name.starts_with("language/transaction-builder/generator/src")
                 || file_name.starts_with("move-prover/errmapgen/src")
                 || file_name.starts_with("network/netcore/src")
                 || file_name.starts_with("network/discovery/src")
                 || file_name.starts_with("network/simple-onchain-discovery/src")
-                || file_name.starts_with("consensus/safety-rules/src")
                 || file_name.starts_with("sdk/src")
                 || file_name.starts_with("secure/key-manager/src")
                 || file_name.starts_with("secure/net/src")
@@ -234,6 +230,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("secure/storage/vault/src")
                 || file_name.starts_with("state-sync/src")
                 || file_name.starts_with("state-sync/inter-component/event-notifications/src")
+                || file_name.starts_with("state-sync/state-sync-v1/src")
                 || file_name.starts_with("storage/storage-client/src")
                 || file_name.starts_with("vm-validator/src"))
         {

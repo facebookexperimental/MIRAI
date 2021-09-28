@@ -2383,12 +2383,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     );
                     if let rustc_middle::ty::ConstKind::Unevaluated(..) = &val {
                         // val.eval did not manage to evaluate this, go with unknown.
-                        info!(
+                        debug!(
                             "static def_id with no MIR {:?} {:?}",
                             def_id,
                             utils::summary_key_str(self.bv.tcx, def_id)
                         );
-                        info!(
+                        debug!(
                             "type key {:?}",
                             utils::argument_types_key_str(self.bv.tcx, Some(substs))
                         );
