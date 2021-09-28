@@ -263,7 +263,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     }
                 }
             } else {
-                info!(
+                debug!(
                     "could not resolve function {:?}, {:?}, {:?}",
                     self.callee_def_id, param_env, gen_args,
                 )
