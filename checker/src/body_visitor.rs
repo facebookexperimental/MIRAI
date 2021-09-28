@@ -2524,6 +2524,20 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     }
                     return;
                 }
+                PathSelector::ConstantSlice {
+                    from,
+                    to,
+                    from_end: true,
+                } => {
+                    let one = Rc::new(0u128.into());
+                    let end_index = self.get_len(qualifier.clone()).subtract(one);
+                    for i in *from..*to {
+                        let target_index_val = end_index.subtract(Rc::new((i as u128).into()));
+                        let indexed_target = Path::new_index(qualifier.clone(), target_index_val);
+                        self.update_value_at(indexed_target, value.clone());
+                    }
+                    return;
+                }
                 PathSelector::UnionField {
                     case_index,
                     num_cases,
