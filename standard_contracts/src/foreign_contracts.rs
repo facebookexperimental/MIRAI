@@ -1148,6 +1148,10 @@ pub mod core {
             default_contract!(write_str);
         }
 
+        pub mod implement_str {
+            default_contract!(fmt);
+        }
+
         pub mod rt {
             pub mod v1 {
                 pub struct Argument {}
@@ -4567,6 +4571,7 @@ pub mod std {
 
             pub mod implement_std_net_tcp_TcpStream {
                 default_contract!(read);
+                default_contract!(write);
             }
         }
     }
