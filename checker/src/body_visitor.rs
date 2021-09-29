@@ -879,7 +879,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                             result_rustc_type,
                             &promoted_root,
                             local_path,
-                            ordinal,
                         );
                     }
                     _ => {
@@ -922,9 +921,11 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         result_rustc_type: Ty<'tcx>,
         promoted_root: &Rc<Path>,
         local_path: &Rc<Path>,
-        ordinal: usize,
     ) {
         let target_type = self.type_visitor().get_dereferenced_type(result_rustc_type);
+        if target_type.is_unit() {
+            return;
+        }
         if ExpressionType::from(target_type.kind()).is_primitive() {
             // Kind of weird, but seems to be generated for debugging support.
             // Move the value into a path, so that we can drop the reference to the soon to be dead local.
@@ -960,8 +961,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .expect("expect reference target to have a value");
             environment.strong_update_value_at(heap_root.clone(), target_value.clone());
             if let Expression::Reference(path) = &target_value.expression {
-                if let PathEnum::LocalVariable { ordinal, .. } = &path.value {
-                    self.promote_reference(environment, target_type, &heap_root, path, *ordinal);
+                if matches!(&path.value, PathEnum::LocalVariable { .. }) {
+                    self.promote_reference(environment, target_type, &heap_root, path);
                 }
             }
             let promoted_value = AbstractValue::make_from(Expression::Reference(heap_root), 1);

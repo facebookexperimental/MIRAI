@@ -146,21 +146,20 @@ impl MiraiCallbacks {
         // Exclude crates that crash or don't terminate. All of these currently take longer than 2 minutes to analyze.
         if file_name.starts_with("client/faucet/src") // non termination
             || file_name.starts_with("config/management/genesis/src") // out of memory
-            || file_name.starts_with("config/management/operational/src") // crash
+            || file_name.starts_with("config/management/operational/src") // non termination
             || file_name.starts_with("crypto/crypto-derive/src") // out of memory
-            || file_name.starts_with("json-rpc/src") // expected a type, but found another kind
-            || file_name.starts_with("execution/execution-correctness/src") // unreachable: checker/src/body_visitor.rs:1213:38
+            || file_name.starts_with("execution/db-bootstrapper/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("language/compiler/src") // out of memory
             || file_name.starts_with("language/diem-framework/releases/src") // non termination
             || file_name.starts_with("language/diem-tools/df-cli/src") // out of memory
             || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src")  // out of memory
-            || file_name.starts_with("language/diem-vm/src") // 'Not a type: DefIndex(3132)
+            || file_name.starts_with("language/diem-vm/src") // non termination
             || file_name.starts_with("language/move-lang/src") // non termination
             || file_name.starts_with("language/move-model/src") // non termination
             || file_name.starts_with("language/tools/genesis-viewer/src/main.rs") // out of memory
             || file_name.starts_with("language/tools/move-bytecode-viewer/src") // out of memory
             || file_name.starts_with("language/tools/move-cli/src") // non termination
-            || file_name.starts_with("language/tools/move-package/src") // expect reference target to have a value
+            || file_name.starts_with("language/tools/move-package/src") // non termination
             || file_name.starts_with("language/move-prover/src") // non termination
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
             || file_name.starts_with("language/move-prover/lab/src") // out of memory
@@ -171,11 +170,10 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/tools/read-write-set/src")  // non termination
             || file_name.starts_with("language/transaction-builder/generator/src") // out of memory
             || file_name.starts_with("mempool/src") // out of memory
-            || file_name.starts_with("network/src")
-            || file_name.starts_with("network/builder/src") // compiler/rustc_traits/src/normalize_erasing_regions.rs:54:32:
+            || file_name.starts_with("network/src") // non termination
+            || file_name.starts_with("network/builder/src") // non termination
             || file_name.starts_with("sdk/client/src") // non termination
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
-            || file_name.starts_with("storage/diemdb/src") // expect reference target to have a value local_1(41) Some({result: &(local_1(41))})
             || file_name.starts_with("storage/diemsum/src") // out of memory
             || file_name.starts_with("storage/inspector/src/")
         // out of memory
@@ -198,7 +196,9 @@ impl MiraiCallbacks {
                 || file_name.starts_with("common/debug-interface/src")
                 || file_name.starts_with("crypto/crypto/src")
                 || file_name.starts_with("execution/db-bootstrapper/src")
+                || file_name.starts_with("execution/execution-correctness/src")
                 || file_name.starts_with("execution/executor/src")
+                || file_name.starts_with("json-rpc/src")
                 || file_name.starts_with("json-rpc/types/src")
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
@@ -231,6 +231,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("state-sync/src")
                 || file_name.starts_with("state-sync/inter-component/event-notifications/src")
                 || file_name.starts_with("state-sync/state-sync-v1/src")
+                || file_name.starts_with("storage/diemdb/src")
                 || file_name.starts_with("storage/storage-client/src")
                 || file_name.starts_with("types/src")
                 || file_name.starts_with("vm-validator/src"))
