@@ -389,6 +389,36 @@ impl Path {
         }
     }
 
+    /// True if path qualifies a local, or another qualified path rooted by a local.
+    #[logfn_inputs(TRACE)]
+    pub fn is_rooted_by_local(&self) -> bool {
+        match &self.value {
+            PathEnum::Computed { value } => {
+                if let Expression::InitialParameterValue { path, .. }
+                | Expression::Reference(path)
+                | Expression::Variable { path, .. } = &value.expression
+                {
+                    return path.is_rooted_by_local();
+                }
+                false
+            }
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, .. } = &value.expression {
+                    if let Expression::InitialParameterValue { path, .. }
+                    | Expression::Reference(path)
+                    | Expression::Variable { path, .. } = &left.expression
+                    {
+                        return path.is_rooted_by_local();
+                    }
+                }
+                false
+            }
+            PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_local(),
+            PathEnum::LocalVariable { .. } => true,
+            _ => false,
+        }
+    }
+
     /// True if path qualifies an abstract heap block, string or static, or another qualified path
     /// rooted by an abstract heap block, string or static.
     #[logfn_inputs(TRACE)]
