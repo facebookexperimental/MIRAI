@@ -1173,7 +1173,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         }
         let mut argument_map = self.callee_generic_argument_map.clone();
         if closure_ty.is_closure() {
-            if self.callee_known_name != KnownNames::StdSyncOnceCallOnce {
+            if self.callee_known_name == KnownNames::StdOpsFunctionFnOnceCallOnce
+                || self.callee_known_name == KnownNames::StdSyncOnceCallOnce
+            {
                 let closure_path = self.actual_args[0].0.clone();
                 let closure_reference = AbstractValue::make_reference(closure_path);
                 actual_args.insert(
@@ -1183,6 +1185,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         closure_reference,
                     ),
                 );
+                actual_argument_types.insert(0, closure_ref_ty);
+            } else {
+                actual_args.insert(0, self.actual_args[0].clone());
                 actual_argument_types.insert(0, closure_ref_ty);
             }
             if let TyKind::Closure(def_id, substs) = closure_ty.kind() {
