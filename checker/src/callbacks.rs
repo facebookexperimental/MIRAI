@@ -204,6 +204,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
                 || file_name.starts_with("language/diem-framework/src")
+                || file_name.starts_with("language/diem-framework/DPN/releases/src")
                 || file_name.starts_with("language/diem-tools/diem-validator-interface")
                 || file_name.starts_with("language/diem-tools/transaction-replay/src")
                 || file_name.starts_with("language/move-binary-format/src")
