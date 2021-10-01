@@ -150,9 +150,11 @@ impl MiraiCallbacks {
             || file_name.starts_with("crypto/crypto-derive/src") // out of memory
             || file_name.starts_with("execution/db-bootstrapper/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("language/compiler/src") // out of memory
+            || file_name.starts_with("language/diem-framework/src") // non termination
             || file_name.starts_with("language/diem-framework/DPN/releases/src")  // non termination
             || file_name.starts_with("language/diem-framework/releases/src") // non termination
             || file_name.starts_with("language/diem-tools/df-cli/src") // out of memory
+            || file_name.starts_with("language/diem-tools/transaction-replay/src") // out of memory
             || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src")  // out of memory
             || file_name.starts_with("language/diem-vm/src") // non termination
             || file_name.starts_with("language/move-lang/src") // non termination
@@ -205,9 +207,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
-                || file_name.starts_with("language/diem-framework/src")
                 || file_name.starts_with("language/diem-tools/diem-validator-interface")
-                || file_name.starts_with("language/diem-tools/transaction-replay/src")
                 || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
                 || file_name.starts_with("language/move-ir/types/src/")
