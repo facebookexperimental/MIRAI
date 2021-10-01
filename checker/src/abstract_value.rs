@@ -5624,18 +5624,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent,
                 alternate,
             } => {
-                if let Expression::Variable { path, .. } = &condition.expression {
-                    if path.is_rooted_by_local() {
-                        // The condition is base on local state of the callee, so it is fully unknown
-                        // to the caller and a join is better than a conditional expression here.
-                        return consequent
-                            .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
-                            .join(alternate.refine_parameters_and_paths(
-                                args, result, pre_env, post_env, fresh,
-                            ));
-                    }
-                }
-                let cond =
+                let mut cond =
                     condition.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
                 if let Some(c) = cond.as_bool_if_known() {
                     if c {
@@ -5646,6 +5635,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                             .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
                     }
                 } else {
+                    if condition.expression.contains_local_variable(false) {
+                        // The condition contains local state of the callee and could not be
+                        // satisfied by refining other parts of the condition with call site state.
+                        if let Some(promotable_condition) = cond.extract_promotable_disjuncts(false)
+                        {
+                            // The overall condition can be satisfied by our caller
+                            // so simplify the condition to just that part.
+                            cond = promotable_condition;
+                        } else {
+                            // The condition can not be satisfied without knowing the callee state
+                            // so just join (and thus avoid keeping around a potentially large useless expression).
+                            return consequent
+                                .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                                .join(alternate.refine_parameters_and_paths(
+                                    args, result, pre_env, post_env, fresh,
+                                ));
+                        }
+                    }
                     cond.conditional_expression(
                         consequent
                             .refine_parameters_and_paths(args, result, pre_env, post_env, fresh),
