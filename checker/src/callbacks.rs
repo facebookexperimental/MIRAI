@@ -150,6 +150,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("crypto/crypto-derive/src") // out of memory
             || file_name.starts_with("execution/db-bootstrapper/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("language/compiler/src") // out of memory
+            || file_name.starts_with("language/diem-framework/DPN/releases/src")  // non termination
             || file_name.starts_with("language/diem-framework/releases/src") // non termination
             || file_name.starts_with("language/diem-tools/df-cli/src") // out of memory
             || file_name.starts_with("language/diem-tools/writeset-transaction-generator/src")  // out of memory
@@ -161,6 +162,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/tools/move-cli/src") // non termination
             || file_name.starts_with("language/tools/move-package/src") // non termination
             || file_name.starts_with("language/move-prover/src") // non termination
+            || file_name.starts_with("language/move-prover/boogie-backend/src") // non termination
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
             || file_name.starts_with("language/move-prover/lab/src") // out of memory
             || file_name.starts_with("language/move-prover/mutation/src") // out of memory
@@ -204,15 +206,12 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
                 || file_name.starts_with("language/diem-framework/src")
-                || file_name.starts_with("language/diem-framework/DPN/releases/src")
                 || file_name.starts_with("language/diem-tools/diem-validator-interface")
                 || file_name.starts_with("language/diem-tools/transaction-replay/src")
                 || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
                 || file_name.starts_with("language/move-ir/types/src/")
                 || file_name.starts_with("language/move-prover/abigen/src")
-                || file_name.starts_with("language/move-prover/boogie-backend/src")
-                || file_name.starts_with("language/move-prover/boogie-backend-exp/src")
                 || file_name.starts_with("language/move-prover/docgen/src")
                 || file_name.starts_with("language/move-prover/interpreter/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")

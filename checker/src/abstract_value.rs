@@ -5624,6 +5624,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 consequent,
                 alternate,
             } => {
+                if let Expression::Variable { path, .. } = &condition.expression {
+                    if path.is_rooted_by_local() {
+                        // The condition is base on local state of the callee, so it is fully unknown
+                        // to the caller and a join is better than a conditional expression here.
+                        return consequent
+                            .refine_parameters_and_paths(args, result, pre_env, post_env, fresh)
+                            .join(alternate.refine_parameters_and_paths(
+                                args, result, pre_env, post_env, fresh,
+                            ));
+                    }
+                }
                 let cond =
                     condition.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
                 if let Some(c) = cond.as_bool_if_known() {
