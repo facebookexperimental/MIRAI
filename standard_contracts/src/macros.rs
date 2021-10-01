@@ -45,6 +45,19 @@ macro_rules! atomic_max_min {
     };
 }
 
+macro_rules! atomic_cxchg {
+    ($n:ident, $t:ty) => {
+        pub unsafe fn $n(dst: *mut $t, old: $t, src: $t) -> ($t, bool) {
+            if abstract_value!(true) {
+                *dst = src;
+                (old, true)
+            } else {
+                (abstract_value!(old), false)
+            }
+        }
+    };
+}
+
 // No preconditions needed and no post conditions provided.
 // No side-effects and can be safely used as an uninterpreted function.
 macro_rules! default_contract {

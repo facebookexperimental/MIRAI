@@ -1177,158 +1177,392 @@ pub mod core {
 
     pub mod intrinsics {
 
-        pub unsafe fn atomic_cxchg<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchg_acq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchg_rel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchg_acqrel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchg_relaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchg_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchg_failacq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchg_acq_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchg_acqrel_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchgweak<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchgweak_acq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchgweak_rel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchgweak_acqrel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchgweak_relaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchgweak_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchgweak_failacq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchgweak_acq_failrelaxed<T>(
-            dst: *mut T,
-            old: T,
-            src: T,
-        ) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
-        pub unsafe fn atomic_cxchgweak_acqrel_failrelaxed<T>(
-            dst: *mut T,
-            old: T,
-            src: T,
-        ) -> (T, bool) {
-            if abstract_value!(true) {
-                *dst = src;
-                (old, true)
-            } else {
-                (abstract_value!(old), false)
-            }
-        }
+        // pub unsafe fn atomic_cxchg<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchg__i8, i8);
+        atomic_cxchg!(atomic_cxchg__i16, i16);
+        atomic_cxchg!(atomic_cxchg__i32, i32);
+        atomic_cxchg!(atomic_cxchg__i64, i64);
+        atomic_cxchg!(atomic_cxchg__isize, isize);
+        atomic_cxchg!(atomic_cxchg__u8, u8);
+        atomic_cxchg!(atomic_cxchg__u16, u16);
+        atomic_cxchg!(atomic_cxchg__u32, u32);
+        atomic_cxchg!(atomic_cxchg__u64, u64);
+        atomic_cxchg!(atomic_cxchg__usize, usize);
+        atomic_cxchg!(atomic_cxchg__i128, i128);
+        atomic_cxchg!(atomic_cxchg__u128, u128);
+
+        // pub unsafe fn atomic_cxchg_acq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchg_acq__i8, i8);
+        atomic_cxchg!(atomic_cxchg_acq__i16, i16);
+        atomic_cxchg!(atomic_cxchg_acq__i32, i32);
+        atomic_cxchg!(atomic_cxchg_acq__i64, i64);
+        atomic_cxchg!(atomic_cxchg_acq__isize, isize);
+        atomic_cxchg!(atomic_cxchg_acq__u8, u8);
+        atomic_cxchg!(atomic_cxchg_acq__u16, u16);
+        atomic_cxchg!(atomic_cxchg_acq__u32, u32);
+        atomic_cxchg!(atomic_cxchg_acq__u64, u64);
+        atomic_cxchg!(atomic_cxchg_acq__usize, usize);
+        atomic_cxchg!(atomic_cxchg_acq__i128, i128);
+        atomic_cxchg!(atomic_cxchg_acq__u128, u128);
+
+        // pub unsafe fn atomic_cxchg_rel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchg_rel__i8, i8);
+        atomic_cxchg!(atomic_cxchg_rel__i16, i16);
+        atomic_cxchg!(atomic_cxchg_rel__i32, i32);
+        atomic_cxchg!(atomic_cxchg_rel__i64, i64);
+        atomic_cxchg!(atomic_cxchg_rel__isize, isize);
+        atomic_cxchg!(atomic_cxchg_rel__u8, u8);
+        atomic_cxchg!(atomic_cxchg_rel__u16, u16);
+        atomic_cxchg!(atomic_cxchg_rel__u32, u32);
+        atomic_cxchg!(atomic_cxchg_rel__u64, u64);
+        atomic_cxchg!(atomic_cxchg_rel__usize, usize);
+        atomic_cxchg!(atomic_cxchg_rel__i128, i128);
+        atomic_cxchg!(atomic_cxchg_rel__u128, u128);
+
+        // pub unsafe fn atomic_cxchg_acqrel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchg_acqrel__i8, i8);
+        atomic_cxchg!(atomic_cxchg_acqrel__i16, i16);
+        atomic_cxchg!(atomic_cxchg_acqrel__i32, i32);
+        atomic_cxchg!(atomic_cxchg_acqrel__i64, i64);
+        atomic_cxchg!(atomic_cxchg_acqrel__isize, isize);
+        atomic_cxchg!(atomic_cxchg_acqrel__u8, u8);
+        atomic_cxchg!(atomic_cxchg_acqrel__u16, u16);
+        atomic_cxchg!(atomic_cxchg_acqrel__u32, u32);
+        atomic_cxchg!(atomic_cxchg_acqrel__u64, u64);
+        atomic_cxchg!(atomic_cxchg_acqrel__usize, usize);
+        atomic_cxchg!(atomic_cxchg_acqrel__i128, i128);
+        atomic_cxchg!(atomic_cxchg_acqrel__u128, u128);
+
+        // pub unsafe fn atomic_cxchg_relaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchg_relaxed__i8, i8);
+        atomic_cxchg!(atomic_cxchg_relaxed__i16, i16);
+        atomic_cxchg!(atomic_cxchg_relaxed__i32, i32);
+        atomic_cxchg!(atomic_cxchg_relaxed__i64, i64);
+        atomic_cxchg!(atomic_cxchg_relaxed__isize, isize);
+        atomic_cxchg!(atomic_cxchg_relaxed__u8, u8);
+        atomic_cxchg!(atomic_cxchg_relaxed__u16, u16);
+        atomic_cxchg!(atomic_cxchg_relaxed__u32, u32);
+        atomic_cxchg!(atomic_cxchg_relaxed__u64, u64);
+        atomic_cxchg!(atomic_cxchg_relaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchg_relaxed__i128, i128);
+        atomic_cxchg!(atomic_cxchg_relaxed__u128, u128);
+
+        // pub unsafe fn atomic_cxchg_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchg_failrelaxed__i8, i8);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__i16, i16);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__i32, i32);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__i64, i64);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__isize, isize);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__u8, u8);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__u16, u16);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__u32, u32);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__u64, u64);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__i128, i128);
+        atomic_cxchg!(atomic_cxchg_failrelaxed__u128, u128);
+
+        // pub unsafe fn atomic_cxchg_failacq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchg_failacq__i8, i8);
+        atomic_cxchg!(atomic_cxchg_failacq__i16, i16);
+        atomic_cxchg!(atomic_cxchg_failacq__i32, i32);
+        atomic_cxchg!(atomic_cxchg_failacq__i64, i64);
+        atomic_cxchg!(atomic_cxchg_failacq__isize, isize);
+        atomic_cxchg!(atomic_cxchg_failacq__u8, u8);
+        atomic_cxchg!(atomic_cxchg_failacq__u16, u16);
+        atomic_cxchg!(atomic_cxchg_failacq__u32, u32);
+        atomic_cxchg!(atomic_cxchg_failacq__u64, u64);
+        atomic_cxchg!(atomic_cxchg_failacq__usize, usize);
+        atomic_cxchg!(atomic_cxchg_failacq__i128, i128);
+        atomic_cxchg!(atomic_cxchg_failacq__u128, u128);
+
+        // pub unsafe fn atomic_cxchg_acq_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__i8, i8);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__i16, i16);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__i32, i32);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__i64, i64);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__isize, isize);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__u8, u8);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__u16, u16);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__u32, u32);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__u64, u64);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__i128, i128);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__u128, u128);
+
+        // pub unsafe fn atomic_cxchg_acqrel_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__i8, i8);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__i16, i16);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__i32, i32);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__i64, i64);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__isize, isize);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__u8, u8);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__u16, u16);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__u32, u32);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__u64, u64);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__i128, i128);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__u128, u128);
+
+        // pub unsafe fn atomic_cxchgweak<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchgweak__i8, i8);
+        atomic_cxchg!(atomic_cxchgweak__i16, i16);
+        atomic_cxchg!(atomic_cxchgweak__i32, i32);
+        atomic_cxchg!(atomic_cxchgweak__i64, i64);
+        atomic_cxchg!(atomic_cxchgweak__isize, isize);
+        atomic_cxchg!(atomic_cxchgweak__u8, u8);
+        atomic_cxchg!(atomic_cxchgweak__u16, u16);
+        atomic_cxchg!(atomic_cxchgweak__u32, u32);
+        atomic_cxchg!(atomic_cxchgweak__u64, u64);
+        atomic_cxchg!(atomic_cxchgweak__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak__i128, i128);
+        atomic_cxchg!(atomic_cxchgweak__u128, u128);
+
+        // pub unsafe fn atomic_cxchgweak_acq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchgweak_acq__i8, i8);
+        atomic_cxchg!(atomic_cxchgweak_acq__i16, i16);
+        atomic_cxchg!(atomic_cxchgweak_acq__i32, i32);
+        atomic_cxchg!(atomic_cxchgweak_acq__i64, i64);
+        atomic_cxchg!(atomic_cxchgweak_acq__isize, isize);
+        atomic_cxchg!(atomic_cxchgweak_acq__u8, u8);
+        atomic_cxchg!(atomic_cxchgweak_acq__u16, u16);
+        atomic_cxchg!(atomic_cxchgweak_acq__u32, u32);
+        atomic_cxchg!(atomic_cxchgweak_acq__u64, u64);
+        atomic_cxchg!(atomic_cxchgweak_acq__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_acq__i128, i128);
+        atomic_cxchg!(atomic_cxchgweak_acq__u128, u128);
+
+        // pub unsafe fn atomic_cxchgweak_rel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchgweak_rel__i8, i8);
+        atomic_cxchg!(atomic_cxchgweak_rel__i16, i16);
+        atomic_cxchg!(atomic_cxchgweak_rel__i32, i32);
+        atomic_cxchg!(atomic_cxchgweak_rel__i64, i64);
+        atomic_cxchg!(atomic_cxchgweak_rel__isize, isize);
+        atomic_cxchg!(atomic_cxchgweak_rel__u8, u8);
+        atomic_cxchg!(atomic_cxchgweak_rel__u16, u16);
+        atomic_cxchg!(atomic_cxchgweak_rel__u32, u32);
+        atomic_cxchg!(atomic_cxchgweak_rel__u64, u64);
+        atomic_cxchg!(atomic_cxchgweak_rel__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_rel__i128, i128);
+        atomic_cxchg!(atomic_cxchgweak_rel__u128, u128);
+
+        // pub unsafe fn atomic_cxchgweak_acqrel<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchgweak_acqrel__i8, i8);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__i16, i16);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__i32, i32);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__i64, i64);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__isize, isize);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__u8, u8);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__u16, u16);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__u32, u32);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__u64, u64);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__i128, i128);
+        atomic_cxchg!(atomic_cxchgweak_acqrel__u128, u128);
+
+        // pub unsafe fn atomic_cxchgweak_relaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchgweak_relaxed__i8, i8);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__i16, i16);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__i32, i32);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__i64, i64);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__isize, isize);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__u8, u8);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__u16, u16);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__u32, u32);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__u64, u64);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__i128, i128);
+        atomic_cxchg!(atomic_cxchgweak_relaxed__u128, u128);
+
+        // pub unsafe fn atomic_cxchgweak_failrelaxed<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__i8, i8);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__i16, i16);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__i32, i32);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__i64, i64);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__isize, isize);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__u8, u8);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__u16, u16);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__u32, u32);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__u64, u64);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__i128, i128);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed__u128, u128);
+
+        // pub unsafe fn atomic_cxchgweak_failacq<T>(dst: *mut T, old: T, src: T) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchgweak_failacq__i8, i8);
+        atomic_cxchg!(atomic_cxchgweak_failacq__i16, i16);
+        atomic_cxchg!(atomic_cxchgweak_failacq__i32, i32);
+        atomic_cxchg!(atomic_cxchgweak_failacq__i64, i64);
+        atomic_cxchg!(atomic_cxchgweak_failacq__isize, isize);
+        atomic_cxchg!(atomic_cxchgweak_failacq__u8, u8);
+        atomic_cxchg!(atomic_cxchgweak_failacq__u16, u16);
+        atomic_cxchg!(atomic_cxchgweak_failacq__u32, u32);
+        atomic_cxchg!(atomic_cxchgweak_failacq__u64, u64);
+        atomic_cxchg!(atomic_cxchgweak_failacq__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_failacq__i128, i128);
+        atomic_cxchg!(atomic_cxchgweak_failacq__u128, u128);
+
+        // pub unsafe fn atomic_cxchgweak_acq_failrelaxed<T>(
+        //     dst: *mut T,
+        //     old: T,
+        //     src: T,
+        // ) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__i8, i8);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__i16, i16);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__i32, i32);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__i64, i64);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__isize, isize);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__u8, u8);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__u16, u16);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__u32, u32);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__u64, u64);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__i128, i128);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__u128, u128);
+
+        // pub unsafe fn atomic_cxchgweak_acqrel_failrelaxed<T>(
+        //     dst: *mut T,
+        //     old: T,
+        //     src: T,
+        // ) -> (T, bool) {
+        //     if abstract_value!(true) {
+        //         *dst = src;
+        //         (old, true)
+        //     } else {
+        //         (abstract_value!(old), false)
+        //     }
+        // }
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__i8, i8);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__i16, i16);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__i32, i32);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__i64, i64);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__isize, isize);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__u8, u8);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__u16, u16);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__u32, u32);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__u64, u64);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__i128, i128);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__u128, u128);
+
         pub unsafe fn atomic_load<T>(src: *const T) -> T
         where
             T: Copy,
