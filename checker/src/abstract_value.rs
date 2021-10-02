@@ -1200,6 +1200,32 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 {
                     return other.clone();
                 }
+                // [x && (true join x)] -> x
+                Expression::Join { left, right: x }
+                    if left.as_bool_if_known().unwrap_or(false) && self.eq(x) =>
+                {
+                    return self.clone();
+                }
+                // [x && (x join true)] -> x
+                Expression::Join { left: x, right }
+                    if right.as_bool_if_known().unwrap_or(false) && self.eq(x) =>
+                {
+                    return self.clone();
+                }
+                // [x && (true join false)] -> x
+                Expression::Join { left: x, right: y }
+                    if x.as_bool_if_known().unwrap_or(false)
+                        && !y.as_bool_if_known().unwrap_or(true) =>
+                {
+                    return self.clone();
+                }
+                // [x && (false join true)] -> x
+                Expression::Join { left: x, right: y }
+                    if !x.as_bool_if_known().unwrap_or(true)
+                        && y.as_bool_if_known().unwrap_or(false) =>
+                {
+                    return self.clone();
+                }
                 Expression::LogicalNot { operand } if operand.eq(self) => {
                     // [x && !x] -> false
                     return Rc::new(FALSE);
@@ -3207,6 +3233,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             (Expression::Join { .. }, Expression::WidenedJoin { operand, .. })
                 if self.eq(operand) =>
             {
+                return other;
+            }
+            // [(x join y) join y] -> x join y
+            // [(x join y) join x] -> x join y
+            (Expression::Join { left: x, right: y }, _) if x.eq(&other) || y.eq(&other) => {
+                return self.clone();
+            }
+            // [x join (x join y)] -> x join y
+            // [y join (x join y)] -> x join y
+            (_, Expression::Join { left: x, right: y }) if x.eq(self) || y.eq(self) => {
                 return other;
             }
             // [widen(x_join_y) join x_join_y] -> widen(x_join_y)
