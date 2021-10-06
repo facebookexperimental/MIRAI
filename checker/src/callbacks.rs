@@ -199,6 +199,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("consensus/safety-rules/src")
                 || file_name.starts_with("common/debug-interface/src")
                 || file_name.starts_with("crypto/crypto/src")
+                || file_name.starts_with("diem-node/src")
                 || file_name.starts_with("execution/db-bootstrapper/src")
                 || file_name.starts_with("execution/execution-correctness/src")
                 || file_name.starts_with("execution/executor/src")
