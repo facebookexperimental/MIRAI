@@ -12,7 +12,7 @@ use crate::{k_limits, utils};
 use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
-use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::{Ty, TyCtxt};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
@@ -28,6 +28,12 @@ use std::rc::Rc;
 pub struct Path {
     pub value: PathEnum,
     hash: u64,
+}
+
+#[derive(Debug)]
+pub enum PathOrFunction<'tcx> {
+    Path(Rc<Path>),
+    Function(Ty<'tcx>, Rc<AbstractValue>),
 }
 
 impl Debug for Path {

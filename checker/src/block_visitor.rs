@@ -15,7 +15,7 @@ use crate::k_limits;
 use crate::known_names::KnownNames;
 use crate::options::DiagLevel;
 use crate::path::{Path, PathEnum, PathSelector};
-use crate::path::{PathRefinement, PathRoot};
+use crate::path::{PathOrFunction, PathRefinement, PathRoot};
 use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries::Precondition;
 use crate::tag_domain::Tag;
@@ -717,64 +717,120 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         actual_arg_types: &[Ty<'tcx>],
     ) -> Vec<(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)> {
         let mut result = vec![];
+
+        // First set up a representation of all paths in the current environment that lead to functions
+        let mut roots_that_can_reach_functions: HashMap<Rc<Path>, Vec<(Rc<Path>, PathOrFunction)>> =
+            HashMap::new();
+        let mut newly_discovered_paths: Vec<(Rc<Path>, PathOrFunction)> = vec![];
         for (path, value) in self.bv.current_environment.value_map.iter() {
             if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &value.expression
             {
-                for (i, (arg_path, arg_val)) in actual_args.iter().enumerate() {
-                    let is_arg_path = (*path) == *arg_path;
-                    if is_arg_path || path.is_rooted_by(arg_path) {
-                        let param_path_root = Path::new_parameter(i + 1);
-                        let param_path = path.replace_root(arg_path, param_path_root);
-                        let ty = if is_arg_path {
-                            actual_arg_types[i]
-                        } else {
-                            self.type_visitor()
-                                .get_path_rustc_type(path, self.bv.current_span)
-                        };
-                        if !ty.is_never() {
-                            result.push((param_path, ty, value.clone()));
-                        }
-                        break;
-                    } else {
-                        match &arg_val.expression {
-                            Expression::Reference(ipath)
-                            | Expression::InitialParameterValue { path: ipath, .. }
-                            | Expression::Variable { path: ipath, .. } => {
-                                if (*path) == *ipath || path.is_rooted_by(ipath) {
-                                    let mut param_path_root = Path::new_parameter(i + 1);
-                                    if matches!(&arg_val.expression, Expression::Reference(..)) {
-                                        let deref_type = self
-                                            .type_visitor()
-                                            .get_target_path_type(ipath, self.bv.current_span);
-                                        param_path_root =
-                                            Path::new_deref(param_path_root, deref_type);
-                                    }
-                                    let param_path = path.replace_root(ipath, param_path_root);
-                                    let ty = self
-                                        .type_visitor()
-                                        .get_path_rustc_type(path, self.bv.current_span);
-                                    result.push((param_path, ty, value.clone()));
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
+                let ty = self
+                    .type_visitor()
+                    .get_path_rustc_type(path, self.bv.current_span);
+                if path.is_rooted_by_non_local_structure() {
+                    // This function can be accessed by the callee without explicitly being
+                    // passed as an argument, so include it in the callee's environment whether
+                    // it uses it or not.
+                    result.push((path.clone(), ty, value.clone()));
+                }
+                newly_discovered_paths
+                    .push((path.clone(), PathOrFunction::Function(ty, value.clone())));
+            }
+        }
+        let mut newly_discovered_paths_exist: bool = !newly_discovered_paths.is_empty();
+        while newly_discovered_paths_exist {
+            for (path, val) in newly_discovered_paths.into_iter() {
+                let root = path.get_path_root().clone();
+                let entry = roots_that_can_reach_functions
+                    .entry(root)
+                    .or_insert_with(Vec::new);
+                entry.push((path, val));
+            }
+            newly_discovered_paths = vec![];
+            for (path, value) in self.bv.current_environment.value_map.iter() {
+                let env_root = path.get_path_root();
+                if roots_that_can_reach_functions.contains_key(env_root) {
+                    continue;
+                }
+                if let Expression::InitialParameterValue { path: p, .. }
+                | Expression::Reference(p)
+                | Expression::Variable { path: p, .. } = &value.expression
+                {
+                    let value_root = p.get_path_root();
+                    if roots_that_can_reach_functions.contains_key(value_root) {
+                        newly_discovered_paths
+                            .push((path.clone(), PathOrFunction::Path(p.clone())));
                     }
                 }
             }
+            newly_discovered_paths_exist = !newly_discovered_paths.is_empty();
         }
-        for (i, (path, value)) in actual_args.iter().enumerate() {
-            if let PathEnum::Computed { value: val }
-            | PathEnum::HeapBlock { value: val }
-            | PathEnum::Offset { value: val } = &path.value
+
+        // Now add all such paths that originate in an actual argument to the result
+        for (i, (arg_path, arg_value)) in actual_args.iter().enumerate() {
+            let mut callee_param = Path::new_parameter(i + 1);
+            if matches!(
+                arg_value.expression,
+                Expression::CompileTimeConstant(ConstantDomain::Function(..))
+            ) {
+                let ty = actual_arg_types[i];
+                result.push((callee_param.clone(), ty, arg_value.clone()));
+                continue;
+            }
+            let mut arg_path = arg_path;
+            match &arg_value.expression {
+                Expression::Reference(p) => {
+                    callee_param = Path::new_deref(callee_param, ExpressionType::NonPrimitive);
+                    arg_path = p;
+                }
+                Expression::InitialParameterValue { path, .. }
+                | Expression::Variable { path, .. } => {
+                    arg_path = path;
+                }
+                _ => {}
+            }
+            let arg_root = arg_path.get_path_root();
+            for (p, t, f) in self
+                .all_paths_from(arg_root, &roots_that_can_reach_functions)
+                .into_iter()
             {
-                if *val == *value {
-                    if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) =
-                        &value.expression
-                    {
-                        let param_path = Path::new_parameter(i + 1);
-                        let ty = actual_arg_types[i];
-                        result.push((param_path, ty, value.clone()));
+                if p.eq(arg_path) || p.is_rooted_by(arg_path) {
+                    let p = p.replace_root(arg_path, callee_param.clone());
+                    result.push((p, t, f))
+                }
+            }
+        }
+        result
+    }
+
+    /// Given a root path and a map from roots to functions, or to paths the lead indirectly
+    /// to roots that lead to functions, construct a list of all of the transitive paths
+    /// rooted in the root and leading to functions.
+    #[logfn_inputs(TRACE)]
+    fn all_paths_from(
+        &self,
+        root: &Rc<Path>,
+        roots_that_can_reach_functions: &HashMap<Rc<Path>, Vec<(Rc<Path>, PathOrFunction<'tcx>)>>,
+    ) -> Vec<(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)> {
+        let mut result: Vec<(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)> = vec![];
+        if let Some(v) = roots_that_can_reach_functions.get(root) {
+            for (p, pf) in v.iter() {
+                match pf {
+                    PathOrFunction::Function(t, f) => {
+                        result.push((p.clone(), t, f.clone()));
+                    }
+                    PathOrFunction::Path(indirect_path) => {
+                        let indirect_root = indirect_path.get_path_root();
+                        for (ip, t, f) in
+                            self.all_paths_from(indirect_root, roots_that_can_reach_functions)
+                        {
+                            let path = ip.replace_root(
+                                indirect_root,
+                                Path::new_deref(p.clone(), ExpressionType::NonPrimitive),
+                            );
+                            result.push((path, t, f));
+                        }
                     }
                 }
             }
