@@ -206,6 +206,115 @@ impl Debug for PathEnum {
     }
 }
 
+pub trait PathRoot: Sized {
+    fn get_path_root(&self) -> &Self;
+    fn get_parameter_root_ordinal(&self) -> Option<usize>;
+    fn is_rooted_by(&self, root: &Rc<Path>) -> bool;
+    fn is_rooted_by_non_local_structure(&self) -> bool;
+    fn is_rooted_by_zeroed_heap_block(&self) -> bool;
+    fn is_rooted_by_parameter(&self) -> bool;
+}
+
+impl PathRoot for Rc<Path> {
+    /// Returns a reference to the effective root of the given path.
+    #[logfn_inputs(TRACE)]
+    fn get_path_root(&self) -> &Rc<Path> {
+        match &self.value {
+            PathEnum::Computed { value } => {
+                if let Expression::InitialParameterValue { path, .. }
+                | Expression::Reference(path)
+                | Expression::Variable { path, .. } = &value.expression
+                {
+                    return path.get_path_root();
+                }
+                self
+            }
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, .. } = &value.expression {
+                    if let Expression::InitialParameterValue { path, .. }
+                    | Expression::Reference(path)
+                    | Expression::Variable { path, .. } = &left.expression
+                    {
+                        return path.get_path_root();
+                    }
+                }
+                self
+            }
+            PathEnum::QualifiedPath { qualifier, .. } => qualifier.get_path_root(),
+            _ => self,
+        }
+    }
+
+    /// Returns the ordinal of the parameter at the root of this path, if there is one.
+    #[logfn_inputs(TRACE)]
+    fn get_parameter_root_ordinal(&self) -> Option<usize> {
+        if let PathEnum::Parameter { ordinal } = self.get_path_root().value {
+            Some(ordinal)
+        } else {
+            None
+        }
+    }
+
+    /// True if path qualifies root, or another qualified path rooted by root.
+    #[logfn_inputs(TRACE)]
+    fn is_rooted_by(&self, root: &Rc<Path>) -> bool {
+        match &self.value {
+            PathEnum::Computed { value } => {
+                if let Expression::InitialParameterValue { path, .. }
+                | Expression::Reference(path)
+                | Expression::Variable { path, .. } = &value.expression
+                {
+                    return *path == *root || path.is_rooted_by(root);
+                }
+                false
+            }
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, .. } = &value.expression {
+                    if let Expression::InitialParameterValue { path, .. }
+                    | Expression::Reference(path)
+                    | Expression::Variable { path, .. } = &left.expression
+                    {
+                        return *path == *root || path.is_rooted_by(root);
+                    }
+                }
+                false
+            }
+            PathEnum::QualifiedPath { qualifier, .. } => {
+                *qualifier == *root || qualifier.is_rooted_by(root)
+            }
+            _ => false,
+        }
+    }
+
+    /// True if path qualifies an abstract heap block, string or static, or another qualified path
+    /// rooted by an abstract heap block, string or static.
+    #[logfn_inputs(TRACE)]
+    fn is_rooted_by_non_local_structure(&self) -> bool {
+        matches!(
+            self.get_path_root().value,
+            PathEnum::HeapBlock { .. } | PathEnum::StaticVariable { .. }
+        )
+    }
+
+    /// True if path qualifies an abstract heap block, or another qualified path rooted by an
+    /// abstract heap block, where the corresponding memory block has been zeroed by the heap allocator.
+    #[logfn_inputs(TRACE)]
+    fn is_rooted_by_zeroed_heap_block(&self) -> bool {
+        if let PathEnum::HeapBlock { value, .. } = &self.get_path_root().value {
+            if let Expression::HeapBlock { is_zeroed, .. } = &value.expression {
+                return *is_zeroed;
+            }
+        }
+        false
+    }
+
+    /// True if path qualifies a parameter, or another qualified path rooted by a parameter.
+    #[logfn_inputs(TRACE)]
+    fn is_rooted_by_parameter(&self) -> bool {
+        matches!(self.get_path_root().value, PathEnum::Parameter { .. })
+    }
+}
+
 impl Path {
     /// Returns true if the path contains a value whose expression contains a local variable.
     #[logfn_inputs(TRACE)]
@@ -325,161 +434,6 @@ impl Path {
                 }
             }
             _ => None,
-        }
-    }
-
-    /// Returns the ordinal of the parameter at the root of this path, if there is one.
-    #[logfn_inputs(TRACE)]
-    pub fn get_parameter_root_ordinal(&self) -> Option<usize> {
-        match &self.value {
-            PathEnum::Computed { value } => {
-                if let Expression::InitialParameterValue { path, .. }
-                | Expression::Reference(path)
-                | Expression::Variable { path, .. } = &value.expression
-                {
-                    return path.get_parameter_root_ordinal();
-                }
-                None
-            }
-            PathEnum::Offset { value } => {
-                if let Expression::Offset { left, .. } = &value.expression {
-                    if let Expression::InitialParameterValue { path, .. }
-                    | Expression::Reference(path)
-                    | Expression::Variable { path, .. } = &left.expression
-                    {
-                        return path.get_parameter_root_ordinal();
-                    }
-                }
-                None
-            }
-            PathEnum::QualifiedPath { qualifier, .. } => qualifier.get_parameter_root_ordinal(),
-            PathEnum::Parameter { ordinal } => Some(*ordinal),
-            _ => None,
-        }
-    }
-
-    /// True if path qualifies root, or another qualified path rooted by root.
-    #[logfn_inputs(TRACE)]
-    pub fn is_rooted_by(&self, root: &Rc<Path>) -> bool {
-        match &self.value {
-            PathEnum::Computed { value } => {
-                if let Expression::InitialParameterValue { path, .. }
-                | Expression::Reference(path)
-                | Expression::Variable { path, .. } = &value.expression
-                {
-                    return *path == *root || path.is_rooted_by(root);
-                }
-                false
-            }
-            PathEnum::Offset { value } => {
-                if let Expression::Offset { left, .. } = &value.expression {
-                    if let Expression::InitialParameterValue { path, .. }
-                    | Expression::Reference(path)
-                    | Expression::Variable { path, .. } = &left.expression
-                    {
-                        return *path == *root || path.is_rooted_by(root);
-                    }
-                }
-                false
-            }
-            PathEnum::QualifiedPath { qualifier, .. } => {
-                *qualifier == *root || qualifier.is_rooted_by(root)
-            }
-            _ => false,
-        }
-    }
-
-    /// True if path qualifies an abstract heap block, string or static, or another qualified path
-    /// rooted by an abstract heap block, string or static.
-    #[logfn_inputs(TRACE)]
-    pub fn is_rooted_by_non_local_structure(&self) -> bool {
-        match &self.value {
-            PathEnum::Computed { value } => matches!(
-                value.expression,
-                Expression::CompileTimeConstant(ConstantDomain::Str(..))
-            ),
-            PathEnum::HeapBlock { .. } => true,
-            PathEnum::Offset { value } => {
-                if let Expression::Offset { left, .. } = &value.expression {
-                    if let Expression::Reference(path) | Expression::Variable { path, .. } =
-                        &left.expression
-                    {
-                        return path.is_rooted_by_non_local_structure();
-                    }
-                }
-                false
-            }
-            PathEnum::QualifiedPath { qualifier, .. } => {
-                qualifier.is_rooted_by_non_local_structure()
-            }
-            PathEnum::StaticVariable { .. } => true,
-            _ => false,
-        }
-    }
-
-    /// True if path qualifies an abstract heap block, or another qualified path rooted by an
-    /// abstract heap block, where the corresponding memory block has been zeroed by the heap allocator.
-    #[logfn_inputs(TRACE)]
-    pub fn is_rooted_by_zeroed_heap_block(&self) -> bool {
-        match &self.value {
-            PathEnum::Computed { value } => {
-                if let Expression::InitialParameterValue { path, .. }
-                | Expression::Reference(path)
-                | Expression::Variable { path, .. } = &value.expression
-                {
-                    return path.is_rooted_by_zeroed_heap_block();
-                }
-                false
-            }
-            PathEnum::HeapBlock { value, .. } => {
-                if let Expression::HeapBlock { is_zeroed, .. } = &value.expression {
-                    *is_zeroed
-                } else {
-                    false
-                }
-            }
-            PathEnum::Offset { value } => {
-                if let Expression::Offset { left, .. } = &value.expression {
-                    if let Expression::Reference(path) | Expression::Variable { path, .. } =
-                        &left.expression
-                    {
-                        return path.is_rooted_by_zeroed_heap_block();
-                    }
-                }
-                false
-            }
-            PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_zeroed_heap_block(),
-            _ => false,
-        }
-    }
-
-    /// True if path qualifies a parameter, or another qualified path rooted by a parameter.
-    #[logfn_inputs(TRACE)]
-    pub fn is_rooted_by_parameter(&self) -> bool {
-        match &self.value {
-            PathEnum::Computed { value } => {
-                if let Expression::InitialParameterValue { path, .. }
-                | Expression::Reference(path)
-                | Expression::Variable { path, .. } = &value.expression
-                {
-                    return path.is_rooted_by_parameter();
-                }
-                false
-            }
-            PathEnum::Offset { value } => {
-                if let Expression::Offset { left, .. } = &value.expression {
-                    if let Expression::InitialParameterValue { path, .. }
-                    | Expression::Reference(path)
-                    | Expression::Variable { path, .. } = &left.expression
-                    {
-                        return path.is_rooted_by_parameter();
-                    }
-                }
-                false
-            }
-            PathEnum::QualifiedPath { qualifier, .. } => qualifier.is_rooted_by_parameter(),
-            PathEnum::Parameter { .. } => true,
-            _ => false,
         }
     }
 

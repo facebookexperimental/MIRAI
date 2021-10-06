@@ -8,7 +8,7 @@ use crate::abstract_value::AbstractValueTrait;
 use crate::constant_domain::FunctionReference;
 use crate::environment::Environment;
 use crate::expression::Expression;
-use crate::path::{Path, PathEnum, PathSelector};
+use crate::path::{Path, PathEnum, PathRoot, PathSelector};
 use crate::utils;
 
 use itertools::Itertools;

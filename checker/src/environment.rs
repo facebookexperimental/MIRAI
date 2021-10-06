@@ -7,7 +7,7 @@ use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
 use crate::abstract_value::AbstractValueTrait;
 use crate::expression::{Expression, ExpressionType};
-use crate::path::{Path, PathEnum, PathSelector};
+use crate::path::{Path, PathEnum, PathRoot, PathSelector};
 
 use crate::constant_domain::ConstantDomain;
 use log_derive::{logfn, logfn_inputs};
