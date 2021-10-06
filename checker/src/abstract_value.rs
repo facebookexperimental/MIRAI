@@ -11,8 +11,8 @@ use crate::expression::Expression::{ConditionalExpression, Join};
 use crate::expression::{Expression, ExpressionType};
 use crate::interval_domain::{self, IntervalDomain};
 use crate::k_limits;
-use crate::path::PathRefinement;
 use crate::path::{Path, PathEnum, PathSelector};
+use crate::path::{PathRefinement, PathRoot};
 use crate::tag_domain::{Tag, TagDomain};
 
 use crate::known_names::KnownNames;

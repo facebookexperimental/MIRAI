@@ -6,7 +6,7 @@
 use crate::abstract_value::AbstractValue;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
-use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
+use crate::path::{Path, PathEnum, PathRefinement, PathRoot, PathSelector};
 use crate::rustc_middle::ty::DefIdTree;
 use crate::{type_visitor, utils};
 

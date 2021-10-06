@@ -24,7 +24,7 @@ use crate::expression::{Expression, ExpressionType, LayoutSource};
 use crate::k_limits;
 use crate::known_names::KnownNames;
 use crate::options::DiagLevel;
-use crate::path::{Path, PathEnum, PathRefinement, PathSelector};
+use crate::path::{Path, PathEnum, PathRefinement, PathRoot, PathSelector};
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
 use crate::type_visitor::TypeVisitor;
