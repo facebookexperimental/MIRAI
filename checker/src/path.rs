@@ -30,9 +30,9 @@ pub struct Path {
     hash: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PathOrFunction<'tcx> {
-    Path(Rc<Path>),
+    Path(Rc<Path>, bool),
     Function(Ty<'tcx>, Rc<AbstractValue>),
 }
 

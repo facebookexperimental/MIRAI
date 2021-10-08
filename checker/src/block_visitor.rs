@@ -35,7 +35,7 @@ use rustc_middle::ty::{
 };
 use rustc_target::abi::{TagEncoding, VariantIdx, Variants};
 use std::borrow::Borrow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
@@ -719,6 +719,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let mut result = vec![];
 
         // First set up a representation of all paths in the current environment that lead to functions
+        let mut paths_that_can_reach_functions: HashSet<Rc<Path>> = HashSet::new();
         let mut roots_that_can_reach_functions: HashMap<Rc<Path>, Vec<(Rc<Path>, PathOrFunction)>> =
             HashMap::new();
         let mut newly_discovered_paths: Vec<(Rc<Path>, PathOrFunction)> = vec![];
@@ -740,34 +741,45 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         }
         let mut newly_discovered_paths_exist: bool = !newly_discovered_paths.is_empty();
         while newly_discovered_paths_exist {
-            for (path, val) in newly_discovered_paths.into_iter() {
+            for (path, val) in newly_discovered_paths.iter() {
+                paths_that_can_reach_functions.insert(path.clone());
                 let root = path.get_path_root().clone();
                 let entry = roots_that_can_reach_functions
                     .entry(root)
                     .or_insert_with(Vec::new);
-                entry.push((path, val));
+                entry.push((path.clone(), val.clone()));
             }
-            newly_discovered_paths = vec![];
+            newly_discovered_paths.clear();
             for (path, value) in self.bv.current_environment.value_map.iter() {
-                let env_root = path.get_path_root();
-                if roots_that_can_reach_functions.contains_key(env_root) {
+                if matches!(path.value, PathEnum::Computed { .. }) {
+                    continue;
+                }
+                if paths_that_can_reach_functions.contains(path) {
                     continue;
                 }
                 if let Expression::InitialParameterValue { path: p, .. }
-                | Expression::Reference(p)
-                | Expression::Variable { path: p, .. } = &value.expression
+                | Expression::Reference(p) = &value.expression
                 {
+                    let path_root = path.get_path_root();
+                    if p.eq(path_root) || p.is_rooted_by(path_root) {
+                        continue;
+                    }
                     let value_root = p.get_path_root();
                     if roots_that_can_reach_functions.contains_key(value_root) {
-                        newly_discovered_paths
-                            .push((path.clone(), PathOrFunction::Path(p.clone())));
+                        newly_discovered_paths.push((
+                            path.clone(),
+                            PathOrFunction::Path(
+                                p.clone(),
+                                matches!(&value.expression, Expression::Reference(..)),
+                            ),
+                        ));
                     }
                 }
             }
             newly_discovered_paths_exist = !newly_discovered_paths.is_empty();
         }
 
-        // Now add all such paths that originate in an actual argument to the result
+        // Now add all reaching paths that originate in an actual argument to the result
         for (i, (arg_path, arg_value)) in actual_args.iter().enumerate() {
             let mut callee_param = Path::new_parameter(i + 1);
             if matches!(
@@ -778,14 +790,16 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 result.push((callee_param.clone(), ty, arg_value.clone()));
                 continue;
             }
+            if roots_that_can_reach_functions.is_empty() {
+                continue;
+            }
             let mut arg_path = arg_path;
             match &arg_value.expression {
-                Expression::Reference(p) => {
+                Expression::Reference(path) => {
                     callee_param = Path::new_deref(callee_param, ExpressionType::NonPrimitive);
-                    arg_path = p;
+                    arg_path = path;
                 }
-                Expression::InitialParameterValue { path, .. }
-                | Expression::Variable { path, .. } => {
+                Expression::InitialParameterValue { path, .. } => {
                     arg_path = path;
                 }
                 _ => {}
@@ -820,14 +834,18 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     PathOrFunction::Function(t, f) => {
                         result.push((p.clone(), t, f.clone()));
                     }
-                    PathOrFunction::Path(indirect_path) => {
+                    PathOrFunction::Path(indirect_path, needs_deref) => {
                         let indirect_root = indirect_path.get_path_root();
                         for (ip, t, f) in
                             self.all_paths_from(indirect_root, roots_that_can_reach_functions)
                         {
                             let path = ip.replace_root(
                                 indirect_root,
-                                Path::new_deref(p.clone(), ExpressionType::NonPrimitive),
+                                if *needs_deref {
+                                    Path::new_deref(p.clone(), ExpressionType::NonPrimitive)
+                                } else {
+                                    p.clone()
+                                },
                             );
                             result.push((path, t, f));
                         }
@@ -950,6 +968,18 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 specialized_closure_ty,
                                 Some(substs),
                             ));
+                        }
+                        if let TyKind::Dynamic(..) = specialized_closure_ty.kind() {
+                            // val is a reference to an object implementing a callable trait such as std::ops::Fn
+                            let deref_path =
+                                Path::new_deref(path.clone(), ExpressionType::Function);
+                            if let Expression::CompileTimeConstant(c) = &self
+                                .bv
+                                .lookup_path_and_refine_result(deref_path, specialized_closure_ty)
+                                .expression
+                            {
+                                return extract_func_ref(c);
+                            }
                         }
                     }
                     _ => {}
