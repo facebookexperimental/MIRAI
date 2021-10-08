@@ -8,15 +8,15 @@
 use mirai_annotations::*;
 
 pub struct ContainsFunc {
-    pub func_ptr: fn() -> i32,
+    pub func: fn() -> i32,
 }
 
 fn t1a(cf: &ContainsFunc) -> i32 {
-    (cf.func_ptr)()
+    (cf.func)()
 }
 
 pub fn t1() {
-    let cf = ContainsFunc { func_ptr: || 1 };
+    let cf = ContainsFunc { func: || 1 };
     let r = t1a(&cf);
     verify!(r == 1);
 }
@@ -26,13 +26,33 @@ pub struct SmugglesFunc<'a> {
 }
 
 fn t2a(sf: &SmugglesFunc) -> i32 {
-    (sf.smuggle.func_ptr)()
+    (sf.smuggle.func)()
 }
 
 pub fn t2() {
-    let cf = ContainsFunc { func_ptr: || 1 };
+    let cf = ContainsFunc { func: || 1 };
     let sf = SmugglesFunc { smuggle: &cf };
     let r = t2a(&sf);
+    verify!(r == 1);
+}
+
+pub struct ContainsFuncRef<'a> {
+    pub func_ref: &'a dyn Fn() -> i32,
+}
+
+pub struct SmugglesFuncRef<'a> {
+    pub smuggle: &'a ContainsFuncRef<'a>,
+}
+
+fn t3a(sf: &SmugglesFuncRef) -> i32 {
+    (sf.smuggle.func_ref)()
+}
+
+pub fn t3() {
+    let f = || 1;
+    let cf = ContainsFuncRef { func_ref: &|| f() };
+    let sf = SmugglesFuncRef { smuggle: &cf };
+    let r = t3a(&sf);
     verify!(r == 1);
 }
 

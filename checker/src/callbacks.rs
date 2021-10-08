@@ -187,7 +187,8 @@ impl MiraiCallbacks {
 
         // Conditionally exclude crates that currently slow down testing too much because they take longer than 2 minutes to analyze
         if self.options.diag_level == DiagLevel::Default
-            && (file_name.starts_with("client/assets-proof/src")
+            && (file_name.starts_with("api/src")
+                || file_name.starts_with("client/assets-proof/src")
                 || file_name.starts_with("common/num-variants/src")
                 || file_name.starts_with("common/rate-limiter/src")
                 || file_name.starts_with("config/src")
