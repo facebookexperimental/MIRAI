@@ -788,7 +788,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             ) {
                 let ty = actual_arg_types[i];
                 result.push((callee_param.clone(), ty, arg_value.clone()));
-                continue;
             }
             if roots_that_can_reach_functions.is_empty() {
                 continue;
@@ -809,6 +808,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 .all_paths_from(arg_root, &roots_that_can_reach_functions)
                 .into_iter()
             {
+                if f.eq(arg_value) {
+                    continue;
+                }
                 if p.eq(arg_path) || p.is_rooted_by(arg_path) {
                     let p = p.replace_root(arg_path, callee_param.clone());
                     result.push((p, t, f))
@@ -2244,7 +2246,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// Read the discriminant of an enum and assign to path.
     #[logfn_inputs(TRACE)]
     fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
-        let discriminant_path = Path::new_discriminant(self.visit_rh_place(place));
+        let discriminant_path = Path::new_discriminant(self.visit_rh_place(place))
+            .canonicalize(&self.bv.current_environment);
         let discriminant_value = self
             .bv
             .lookup_path_and_refine_result(discriminant_path, self.bv.tcx.types.u128);

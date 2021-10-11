@@ -147,6 +147,7 @@ impl MiraiCallbacks {
         if file_name.starts_with("client/faucet/src") // non termination
             || file_name.starts_with("config/management/genesis/src") // out of memory
             || file_name.starts_with("config/management/operational/src") // non termination
+            || file_name.starts_with("crypto/crypto/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("crypto/crypto-derive/src") // out of memory
             || file_name.starts_with("execution/db-bootstrapper/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("language/compiler/src") // out of memory
@@ -209,6 +210,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/bytecode-verifier/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/src")
                 || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
+                || file_name.starts_with("language/diem-tools/diem-events-fetcher/src")
                 || file_name.starts_with("language/diem-tools/diem-validator-interface")
                 || file_name.starts_with("language/move-binary-format/src")
                 || file_name.starts_with("language/move-core/types/src")
@@ -233,6 +235,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("state-sync/src")
                 || file_name.starts_with("state-sync/inter-component/event-notifications/src")
                 || file_name.starts_with("state-sync/state-sync-v1/src")
+                || file_name.starts_with("storage/backup/backup-service/src")
                 || file_name.starts_with("storage/diemdb/src")
                 || file_name.starts_with("storage/storage-client/src")
                 || file_name.starts_with("types/src")
