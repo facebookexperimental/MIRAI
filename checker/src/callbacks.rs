@@ -167,6 +167,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-prover/src") // non termination
             || file_name.starts_with("language/move-prover/boogie-backend/src") // non termination
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
+            || file_name.starts_with("language/move-prover/interpreter/crypto/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("language/move-prover/lab/src") // out of memory
             || file_name.starts_with("language/move-prover/mutation/src") // out of memory
             || file_name.starts_with("language/move-stdlib/src") // out of memory
@@ -180,8 +181,9 @@ impl MiraiCallbacks {
             || file_name.starts_with("sdk/client/src") // non termination
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemsum/src") // out of memory
-            || file_name.starts_with("storage/inspector/src/")
-        // out of memory
+            || file_name.starts_with("storage/inspector/src/") // out of memory
+            || file_name.starts_with("types/src")
+        // Sorts (_ BitVec 128) and Bool are incompatible
         {
             return true;
         }
