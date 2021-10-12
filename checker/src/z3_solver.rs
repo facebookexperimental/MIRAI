@@ -865,7 +865,7 @@ impl Z3Solver {
             }
             F32 => self.f32_sort,
             F64 => self.f64_sort,
-            Function | NonPrimitive | ThinPointer | Unit => self.any_sort,
+            NonPrimitive | ThinPointer | Unit => self.any_sort,
         }
     }
 
@@ -1598,7 +1598,7 @@ impl Z3Solver {
     fn numeric_widen(&self, operand: &Rc<AbstractValue>) -> (bool, z3_sys::Z3_ast) {
         use self::ExpressionType::*;
         let expr_type = match operand.expression.infer_type() {
-            Bool | Function | ThinPointer | NonPrimitive | Unit => ExpressionType::I128,
+            Bool | ThinPointer | NonPrimitive | Unit => ExpressionType::I128,
             val => val,
         };
         let is_float = expr_type.is_floating_point_number();

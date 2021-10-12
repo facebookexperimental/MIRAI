@@ -974,7 +974,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         if let TyKind::Dynamic(..) = specialized_closure_ty.kind() {
                             // val is a reference to an object implementing a callable trait such as std::ops::Fn
                             let deref_path =
-                                Path::new_deref(path.clone(), ExpressionType::Function);
+                                Path::new_deref(path.clone(), ExpressionType::NonPrimitive);
                             if let Expression::CompileTimeConstant(c) = &self
                                 .bv
                                 .lookup_path_and_refine_result(deref_path, specialized_closure_ty)

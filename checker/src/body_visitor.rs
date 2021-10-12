@@ -1185,6 +1185,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     self.update_value_at(tpath, rvalue);
                     continue;
                 }
+                Expression::CompileTimeConstant(ConstantDomain::Function(..)) => {
+                    self.update_value_at(tpath, rvalue);
+                    continue;
+                }
                 Expression::HeapBlockLayout { source, .. } => {
                     match source {
                         LayoutSource::DeAlloc => {
@@ -1348,6 +1352,11 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     }
                 }
 
+                self.update_value_at(tpath, rvalue);
+            } else if matches!(
+                target_type.kind(),
+                TyKind::Closure(..) | TyKind::FnDef(..) | TyKind::FnPtr(_) | TyKind::Generator(..)
+            ) {
                 self.update_value_at(tpath, rvalue);
             }
             check_for_early_return!(self);
@@ -2400,7 +2409,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         // in the final environment are used construct the summary. We work around this
         // by creating an entry for the non primitive (unknown) value. The caller will
         // be saddled with removing it. This case corresponds to no_children being true.
-        if target_type == ExpressionType::NonPrimitive || target_type == ExpressionType::Function {
+        if target_type == ExpressionType::NonPrimitive {
             // First look at paths that are rooted in rpath.
             let env = self.current_environment.clone();
             for (path, value) in env
@@ -2438,7 +2447,17 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         }
         if target_type != ExpressionType::NonPrimitive
             || no_children
-            || root_rustc_type.is_closure()
+            || matches!(
+                root_rustc_type.kind(),
+                TyKind::Closure(..)
+                    | TyKind::Dynamic(..)
+                    | TyKind::FnDef(..)
+                    | TyKind::FnPtr(_)
+                    | TyKind::Foreign(..)
+                    | TyKind::Generator(..)
+                    | TyKind::GeneratorWitness(..)
+                    | TyKind::Opaque(..)
+            )
         {
             // Just copy/move (rpath, value) itself.
             if move_elements {
