@@ -1125,7 +1125,6 @@ impl Expression {
 pub enum ExpressionType {
     Bool,
     Char,
-    Function,
     F32,
     F64,
     I8,
@@ -1153,7 +1152,7 @@ impl From<&ConstantDomain> for ExpressionType {
             ConstantDomain::Bottom => NonPrimitive,
             ConstantDomain::Char(..) => Char,
             ConstantDomain::False => Bool,
-            ConstantDomain::Function(..) => Function,
+            ConstantDomain::Function(..) => NonPrimitive,
             ConstantDomain::I128(..) => I128,
             ConstantDomain::F64(..) => F64,
             ConstantDomain::F32(..) => F32,
@@ -1186,13 +1185,6 @@ impl ExpressionType {
             TyKind::Uint(UintTy::U128) => ExpressionType::U128,
             TyKind::Float(FloatTy::F32) => ExpressionType::F32,
             TyKind::Float(FloatTy::F64) => ExpressionType::F64,
-            TyKind::Dynamic(..)
-            | TyKind::Foreign(..)
-            | TyKind::FnDef(..)
-            | TyKind::FnPtr(..)
-            | TyKind::Generator(..)
-            | TyKind::GeneratorWitness(..)
-            | TyKind::Opaque(..) => ExpressionType::Function,
             TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
                 if matches!(target.kind(), TyKind::Slice(..) | TyKind::Str) {
                     // Such pointer types are non primitive because they are (pointer, length) tuples.
@@ -1217,8 +1209,6 @@ impl ExpressionType {
         match self {
             Bool => tcx.types.bool,
             Char => tcx.types.char,
-            // This is a hack
-            Function => tcx.types.never,
             F32 => tcx.types.f32,
             F64 => tcx.types.f64,
             I8 => tcx.types.i8,
@@ -1261,7 +1251,7 @@ impl ExpressionType {
     #[logfn_inputs(TRACE)]
     pub fn is_primitive(&self) -> bool {
         use self::ExpressionType::*;
-        !matches!(self, Function | NonPrimitive | ThinPointer)
+        !matches!(self, NonPrimitive | ThinPointer)
     }
 
     /// Returns true if this type is one of the signed integer types.
@@ -1301,7 +1291,6 @@ impl ExpressionType {
         match self {
             Bool => 8,
             Char => 32,
-            Function => 64,
             F32 => 32,
             F64 => 64,
             I8 => 8,
