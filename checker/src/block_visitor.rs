@@ -2248,9 +2248,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     fn visit_discriminant(&mut self, path: Rc<Path>, place: &mir::Place<'tcx>) {
         let discriminant_path = Path::new_discriminant(self.visit_rh_place(place))
             .canonicalize(&self.bv.current_environment);
+        let discriminant_type = self
+            .type_visitor()
+            .get_path_rustc_type(&discriminant_path, self.bv.current_span);
         let discriminant_value = self
             .bv
-            .lookup_path_and_refine_result(discriminant_path, self.bv.tcx.types.u128);
+            .lookup_path_and_refine_result(discriminant_path, discriminant_type);
         self.bv.update_value_at(path, discriminant_value);
     }
 

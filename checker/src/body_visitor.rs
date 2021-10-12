@@ -2402,8 +2402,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         // be saddled with removing it. This case corresponds to no_children being true.
         if target_type == ExpressionType::NonPrimitive || target_type == ExpressionType::Function {
             // First look at paths that are rooted in rpath.
-            let value_map = self.current_environment.value_map.clone();
-            for (path, value) in value_map
+            let env = self.current_environment.clone();
+            for (path, value) in env
+                .value_map
                 .iter()
                 .filter(|(p, _)| p.is_rooted_by(&source_path))
             {
@@ -2415,7 +2416,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
                 let qualified_path = path
                     .replace_root(&source_path, target_path.clone())
-                    .canonicalize(&self.current_environment);
+                    .canonicalize(&env);
                 if move_elements {
                     trace!("moving child {:?} to {:?}", value, qualified_path);
                     self.current_environment.value_map =
