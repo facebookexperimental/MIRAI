@@ -192,8 +192,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         // Add parameter values that are function constants.
         // Also add entries for closure fields.
         for (path, path_ty, val) in function_constant_args.iter() {
+            let cf_path = path.remove_selector(Rc::new(PathSelector::Function));
             self.type_visitor_mut()
-                .add_any_closure_fields_for(path_ty, path, &mut first_state);
+                .add_any_closure_fields_for(path_ty, &cf_path, &mut first_state);
             first_state.value_map.insert_mut(path.clone(), val.clone());
         }
         first_state.exit_conditions = HashTrieMap::default();
@@ -406,11 +407,22 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         }
         let refined_val = {
             let top = abstract_value::TOP.into();
-            let local_val = self
-                .current_environment
-                .value_at(&path)
-                .unwrap_or(&top)
-                .clone();
+            let local_val = if self
+                .type_visitor()
+                .is_function_like(result_rustc_type.kind())
+            {
+                // When looking up the value of the root path of a closure or generator, we need
+                // to return the enclosed function. That value is stored at path.func.
+                self.current_environment
+                    .value_at(&Path::new_function(path.clone()))
+                    .unwrap_or(&top)
+                    .clone()
+            } else {
+                self.current_environment
+                    .value_at(&path)
+                    .unwrap_or(&top)
+                    .clone()
+            };
             if self
                 .current_environment
                 .entry_condition
@@ -1352,11 +1364,6 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     }
                 }
 
-                self.update_value_at(tpath, rvalue);
-            } else if matches!(
-                target_type.kind(),
-                TyKind::Closure(..) | TyKind::FnDef(..) | TyKind::FnPtr(_) | TyKind::Generator(..)
-            ) {
                 self.update_value_at(tpath, rvalue);
             }
             check_for_early_return!(self);
@@ -2445,20 +2452,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
             }
         }
-        if target_type != ExpressionType::NonPrimitive
-            || no_children
-            || matches!(
-                root_rustc_type.kind(),
-                TyKind::Closure(..)
-                    | TyKind::Dynamic(..)
-                    | TyKind::FnDef(..)
-                    | TyKind::FnPtr(_)
-                    | TyKind::Foreign(..)
-                    | TyKind::Generator(..)
-                    | TyKind::GeneratorWitness(..)
-                    | TyKind::Opaque(..)
-            )
-        {
+        if target_type != ExpressionType::NonPrimitive || no_children {
             // Just copy/move (rpath, value) itself.
             if move_elements {
                 trace!("moving {:?} to {:?}", value, target_path);

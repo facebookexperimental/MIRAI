@@ -754,6 +754,7 @@ pub trait AbstractValueTrait: Sized {
     fn is_bottom(&self) -> bool;
     fn is_compile_time_constant(&self) -> bool;
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
+    fn is_function(&self) -> bool;
     fn is_non_null(&self) -> bool;
     fn is_top(&self) -> bool;
     fn is_unit(&self) -> bool;
@@ -3145,6 +3146,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             | Expression::Variable { path, .. } => path.is_rooted_by_zeroed_heap_block(),
             _ => false,
         }
+    }
+
+    /// True if this value is a function constant.
+    #[logfn_inputs(TRACE)]
+    fn is_function(&self) -> bool {
+        matches!(
+            &self.expression,
+            Expression::CompileTimeConstant(ConstantDomain::Function(..))
+        )
     }
 
     /// True if its known at compile time that this value is a pointer or reference that is never null.
