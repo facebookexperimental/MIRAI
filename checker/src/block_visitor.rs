@@ -724,8 +724,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             HashMap::new();
         let mut newly_discovered_paths: Vec<(Rc<Path>, PathOrFunction)> = vec![];
         for (path, value) in self.bv.current_environment.value_map.iter() {
-            if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &value.expression
-            {
+            if value.is_function() {
                 let ty = self
                     .type_visitor()
                     .get_path_rustc_type(path, self.bv.current_span);
@@ -782,12 +781,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         // Now add all reaching paths that originate in an actual argument to the result
         for (i, (arg_path, arg_value)) in actual_args.iter().enumerate() {
             let mut callee_param = Path::new_parameter(i + 1);
-            if matches!(
-                arg_value.expression,
-                Expression::CompileTimeConstant(ConstantDomain::Function(..))
-            ) {
+            if arg_value.is_function() {
                 let ty = actual_arg_types[i];
-                result.push((callee_param.clone(), ty, arg_value.clone()));
+                result.push((
+                    Path::new_function(callee_param.clone()),
+                    ty,
+                    arg_value.clone(),
+                ));
             }
             if roots_that_can_reach_functions.is_empty() {
                 continue;
@@ -812,7 +812,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     continue;
                 }
                 if p.eq(arg_path) || p.is_rooted_by(arg_path) {
-                    let p = p.replace_root(arg_path, callee_param.clone());
+                    let p = Path::new_function(p.replace_root(arg_path, callee_param.clone()));
                     result.push((p, t, f))
                 }
             }
@@ -1962,7 +1962,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // Compile time constant pointers can arise from first class function values.
                         // Such pointers are thin.
                         let result = self.visit_operand(operand);
-                        self.bv.update_value_at(path, result);
+                        if result.is_function() {
+                            self.bv.update_value_at(Path::new_function(path), result);
+                        } else {
+                            self.bv.update_value_at(path, result);
+                        }
                         return;
                     }
                 };
@@ -3354,7 +3358,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 | TyKind::Generator(def_id, generic_args, ..) => {
                     let func_const = self.visit_function_reference(*def_id, ty, Some(generic_args));
                     let func_val = Rc::new(func_const.clone().into());
-                    self.bv.update_value_at(base_path.clone(), func_val);
+                    self.bv
+                        .update_value_at(Path::new_function(base_path.clone()), func_val);
                 }
                 TyKind::Opaque(def_id, ..) => {
                     if let TyKind::Closure(def_id, generic_args)
@@ -3364,7 +3369,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         let func_const =
                             self.visit_function_reference(*def_id, ty, Some(generic_args));
                         let func_val = Rc::new(func_const.clone().into());
-                        self.bv.update_value_at(base_path.clone(), func_val);
+                        self.bv
+                            .update_value_at(Path::new_function(base_path.clone()), func_val);
                     }
                 }
                 TyKind::FnDef(def_id, generic_args) => {
@@ -3374,7 +3380,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         Some(generic_args.as_closure().substs),
                     );
                     let func_val = Rc::new(func_const.clone().into());
-                    self.bv.update_value_at(base_path.clone(), func_val);
+                    self.bv
+                        .update_value_at(Path::new_function(base_path.clone()), func_val);
                 }
                 _ => (),
             }

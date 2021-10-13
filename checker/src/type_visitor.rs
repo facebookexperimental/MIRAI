@@ -251,6 +251,24 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// case the reference/pointer independently tracks the length of the collection, thus effectively
     /// tracking a slice of the underlying collection.
     #[logfn_inputs(TRACE)]
+    pub fn is_function_like(&self, ty_kind: &TyKind<'tcx>) -> bool {
+        matches!(
+            ty_kind,
+            TyKind::Closure(..)
+                | TyKind::Dynamic(..)
+                | TyKind::FnDef(..)
+                | TyKind::FnPtr(_)
+                | TyKind::Foreign(..)
+                | TyKind::Generator(..)
+                | TyKind::GeneratorWitness(..)
+                | TyKind::Opaque(..)
+        )
+    }
+
+    /// Returns true if the given type is a reference (or raw pointer) to a collection type, in which
+    /// case the reference/pointer independently tracks the length of the collection, thus effectively
+    /// tracking a slice of the underlying collection.
+    #[logfn_inputs(TRACE)]
     pub fn is_slice_pointer(&self, ty_kind: &TyKind<'tcx>) -> bool {
         match ty_kind {
             TyKind::RawPtr(TypeAndMut { ty: target, .. }) | TyKind::Ref(_, target, _) => {
@@ -393,6 +411,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 match &**selector {
                     PathSelector::ConstantSlice { .. } => {
                         return self.tcx.mk_imm_ref(self.tcx.lifetimes.re_erased, t);
+                    }
+                    PathSelector::Function => {
+                        return t;
                     }
                     PathSelector::UnionField {
                         case_index: ordinal,

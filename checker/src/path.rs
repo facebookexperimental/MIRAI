@@ -499,6 +499,18 @@ impl Path {
         Self::new_qualified(enum_path, selector)
     }
 
+    /// Creates a path the selects the function of the function/closure value at the given path.
+    #[logfn_inputs(TRACE)]
+    pub fn new_function(func_path: Rc<Path>) -> Rc<Path> {
+        if let PathEnum::QualifiedPath { selector, .. } = &func_path.value {
+            if matches!(selector.as_ref(), PathSelector::Function) {
+                return func_path;
+            }
+        }
+        let selector = Rc::new(PathSelector::Function);
+        Self::new_qualified(func_path, selector)
+    }
+
     /// Creates a path the selects the given field of the struct at the given path.
     #[logfn_inputs(TRACE)]
     pub fn new_field(qualifier: Rc<Path>, field_index: usize) -> Rc<Path> {
@@ -712,6 +724,9 @@ pub trait PathRefinement: Sized {
     /// Returns a copy of self with the selector replace by a new selector.
     /// It is only legal to call this on a qualified path.
     fn add_or_replace_selector(&self, new_selector: Rc<PathSelector>) -> Rc<Path>;
+
+    /// Returns a copy of self with its last selector removed if that matches the given selector.
+    fn remove_selector(&self, selector: Rc<PathSelector>) -> Rc<Path>;
 }
 
 impl PathRefinement for Rc<Path> {
@@ -1027,6 +1042,22 @@ impl PathRefinement for Rc<Path> {
             _ => Path::new_qualified(self.clone(), new_selector),
         }
     }
+
+    /// Returns a copy of self with its last selector removed if that matches the given selector.
+    #[logfn_inputs(TRACE)]
+    fn remove_selector(&self, selector: Rc<PathSelector>) -> Rc<Path> {
+        match &self.value {
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector: s,
+                ..
+            } if selector.eq(s) => {
+                return qualifier.clone();
+            }
+            _ => {}
+        }
+        self.clone()
+    }
 }
 
 /// The selector denotes a de-referenced item, field, or element, or slice.
@@ -1040,6 +1071,10 @@ pub enum PathSelector {
 
     /// The tag used to indicate which case of an enum is used for a particular enum value.
     Discriminant,
+
+    /// Selects the function associated with a closure. Simple function values also
+    /// use this so that all calls of a value find the function to call via this selector.
+    Function,
 
     /// Select the struct field with the given index.
     Field(usize),
@@ -1100,6 +1135,7 @@ impl Debug for PathSelector {
             PathSelector::Layout => f.write_str("layout"),
             PathSelector::Deref => f.write_str("deref"),
             PathSelector::Discriminant => f.write_str("discr"),
+            PathSelector::Function => f.write_str("func"),
             PathSelector::Field(index) => index.fmt(f),
             PathSelector::UnionField {
                 case_index,
