@@ -57,10 +57,16 @@ impl Debug for ConstantDomain {
             ConstantDomain::Char(ch) if (*ch as u32) == 0 => f.write_fmt(format_args!("'null'")),
             ConstantDomain::Char(ch) => f.write_fmt(format_args!("'{}'", ch)),
             ConstantDomain::False => f.write_str("false"),
-            ConstantDomain::Function(func_ref) => f.write_fmt(format_args!(
-                "fn {}{}<{:?}>",
-                func_ref.summary_cache_key, func_ref.argument_type_key, func_ref.generic_arguments
-            )),
+            ConstantDomain::Function(func_ref) => {
+                if let Some(def_id) = func_ref.def_id {
+                    f.write_fmt(format_args!("{:?}", def_id))
+                } else {
+                    f.write_fmt(format_args!(
+                        "fn {}{}",
+                        func_ref.summary_cache_key, func_ref.argument_type_key
+                    ))
+                }
+            }
             ConstantDomain::I128(val) => val.fmt(f),
             ConstantDomain::F64(val) => (f64::from_bits(*val)).fmt(f),
             ConstantDomain::F32(val) => (f32::from_bits(*val)).fmt(f),
