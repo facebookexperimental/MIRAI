@@ -445,8 +445,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             }
             KnownNames::StdOpsFunctionFnCall
             | KnownNames::StdOpsFunctionFnMutCallMut
-            | KnownNames::StdOpsFunctionFnOnceCallOnce
-            | KnownNames::StdSyncOnceCallOnce => {
+            | KnownNames::StdOpsFunctionFnOnceCallOnce => {
                 self.inline_indirectly_called_function();
                 return true;
             }
@@ -1110,30 +1109,19 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             self.function_constant_args
         );
         // Get the function to call (it is either a function pointer or a closure)
-        let callee = if self.callee_known_name == KnownNames::StdSyncOnceCallOnce {
-            self.actual_args[1].1.clone()
-        } else {
-            self.actual_args[0].1.clone()
-        };
+        let callee = self.actual_args[0].1.clone();
+        let callee_func_ref = self.block_visitor.get_func_ref(&callee);
 
         // Get the path of the tuple containing the arguments.
         let callee_arg_array_path = self.actual_args[1].0.clone();
+        if let Some(func_ref) = &callee_func_ref {
+            let def_id = func_ref.def_id.expect("defined when used here");
+            let func_const = ConstantDomain::Function(func_ref.clone());
 
-        // Unpack the arguments. We use the generic arguments of the caller as a proxy for the callee function signature.
-        let generic_argument_types: Vec<Ty<'tcx>> = self
-            .callee_generic_arguments
-            .expect("call_once, etc. are generic")
-            .as_ref()
-            .iter()
-            .map(|gen_arg| gen_arg.expect_ty())
-            .collect();
-
-        let mut actual_argument_types: Vec<Ty<'tcx>>;
-        if self.callee_known_name == KnownNames::StdSyncOnceCallOnce {
-            actual_argument_types = vec![];
-        } else {
-            checked_assume!(generic_argument_types.len() == 2);
-            if let TyKind::Tuple(tuple_types) = generic_argument_types[1].kind() {
+            // Unpack the type of the second argument, which should be a tuple.
+            checked_assume!(self.actual_argument_types.len() == 2);
+            let mut actual_argument_types: Vec<Ty<'tcx>>;
+            if let TyKind::Tuple(tuple_types) = self.actual_argument_types[1].kind() {
                 actual_argument_types = tuple_types
                     .iter()
                     .map(|gen_arg| gen_arg.expect_ty())
@@ -1141,85 +1129,86 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             } else {
                 assume_unreachable!("expected second type argument to be a tuple type");
             }
-        }
 
-        let mut actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = actual_argument_types
-            .iter()
-            .enumerate()
-            .map(|(i, t)| {
-                let arg_path = Path::new_field(callee_arg_array_path.clone(), i);
-                let arg_val = self
-                    .block_visitor
-                    .bv
-                    .lookup_path_and_refine_result(arg_path.clone(), t);
-                (arg_path, arg_val)
-            })
-            .collect();
+            // Unpack the second argument, which should be a tuple
+            let mut actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = actual_argument_types
+                .iter()
+                .enumerate()
+                .map(|(i, t)| {
+                    let arg_path = Path::new_field(callee_arg_array_path.clone(), i);
+                    let arg_val = self
+                        .block_visitor
+                        .bv
+                        .lookup_path_and_refine_result(arg_path.clone(), t);
+                    (arg_path, arg_val)
+                })
+                .collect();
 
-        // Prepend the closure (if there is one) to the unpacked arguments vector.
-        // Also update the Self parameter in the arguments map.
-        let mut closure_ty = if self.callee_known_name == KnownNames::StdSyncOnceCallOnce {
-            self.actual_argument_types[1]
-        } else {
-            self.actual_argument_types[0]
-        };
-        let closure_ref_ty;
-        if let TyKind::Ref(_, ty, _) = closure_ty.kind() {
-            closure_ref_ty = closure_ty;
-            closure_ty = ty;
-        } else {
+            // Prepend the callee closure/generator/function to the unpacked arguments vector
+            // if the called function actually expects it.
             let tcx = self.block_visitor.bv.tcx;
-            closure_ref_ty = tcx.mk_mut_ref(tcx.lifetimes.re_static, closure_ty);
-        }
-        let mut argument_map = self.callee_generic_argument_map.clone();
-        if closure_ty.is_closure() {
-            if self.callee_known_name == KnownNames::StdOpsFunctionFnOnceCallOnce
-                || self.callee_known_name == KnownNames::StdSyncOnceCallOnce
-            {
-                let closure_path = self.actual_args[0].0.clone();
-                let closure_reference = AbstractValue::make_reference(closure_path);
-                actual_args.insert(
-                    0,
-                    (
-                        Path::get_as_path(closure_reference.clone()),
-                        closure_reference,
-                    ),
-                );
-                actual_argument_types.insert(0, closure_ref_ty);
-            } else {
+            let callee_ty = self.actual_argument_types[0];
+            if !callee_ty.is_fn() || tcx.is_closure(def_id) {
                 actual_args.insert(0, self.actual_args[0].clone());
-                actual_argument_types.insert(0, closure_ref_ty);
+                actual_argument_types.insert(0, callee_ty);
+                if self.callee_known_name == KnownNames::StdOpsFunctionFnOnceCallOnce
+                    && self.block_visitor.bv.tcx.is_mir_available(def_id)
+                {
+                    // call_once consumes it's callee argument. If the callee does not,
+                    // we have to provide it with a reference.
+                    // Sadly, the easiest way to get hold of the type of the first parameter
+                    // of the callee is to look at its MIR body. If there is no body, we wont
+                    // be executing it and the type of the first argument is immaterial, so this
+                    // does not cause problems.
+                    let mir = tcx.optimized_mir(def_id);
+                    if let Some(decl) = mir.local_decls.get(mir::Local::from(1usize)) {
+                        if decl.ty.is_ref() {
+                            let closure_path = self.actual_args[0].0.clone();
+                            let closure_reference = AbstractValue::make_reference(closure_path);
+                            actual_args[0] = (
+                                Path::get_as_path(closure_reference.clone()),
+                                closure_reference,
+                            );
+                            // decl.ty is not type specialized
+                            actual_argument_types[0] =
+                                tcx.mk_mut_ref(tcx.lifetimes.re_static, callee_ty);
+                        }
+                    }
+                }
             }
-            if let TyKind::Closure(def_id, substs) = closure_ty.kind() {
-                argument_map = self.type_visitor().get_generic_arguments_map(
-                    *def_id,
+
+            let function_constant_args = self
+                .block_visitor
+                .get_function_constant_args(&actual_args, &actual_argument_types);
+
+            // Get the generic argument map for the indirectly called function
+            let generic_arguments = match callee_ty.kind() {
+                TyKind::Closure(_, substs) => Some(self.type_visitor().specialize_substs(
                     substs.as_closure().substs,
-                    &[],
-                );
-            }
-        }
+                    &self.type_visitor().generic_argument_map,
+                )),
+                TyKind::Generator(_, substs, _) => Some(self.type_visitor().specialize_substs(
+                    substs.as_generator().substs,
+                    &self.type_visitor().generic_argument_map,
+                )),
+                TyKind::FnDef(_, substs) | TyKind::Opaque(_, substs) => Some(
+                    self.type_visitor()
+                        .specialize_substs(substs, &self.type_visitor().generic_argument_map),
+                ),
+                _ => self.block_visitor.bv.cv.substs_cache.get(&def_id).cloned(),
+            };
 
-        let function_constant_args = self
-            .block_visitor
-            .get_function_constant_args(&actual_args, &actual_argument_types);
-        let callee_func_ref = self.block_visitor.get_func_ref(&callee);
-
-        if let Some(func_ref) = &callee_func_ref {
-            let func_const = ConstantDomain::Function(func_ref.clone());
-            let def_id = func_ref.def_id.expect("defined when used here");
-            if !closure_ty.is_closure() && self.block_visitor.bv.tcx.is_closure(def_id) {
-                // The function appears to be a closure with no captures, so provide the function pointer as the closure state
-                actual_args.insert(0, self.actual_args[0].clone());
-                actual_argument_types.insert(0, closure_ref_ty);
-            }
-            let generic_arguments = self.block_visitor.bv.cv.substs_cache.get(&def_id).cloned();
-            if let Some(substs) = generic_arguments {
-                argument_map = self.type_visitor().get_generic_arguments_map(
+            let argument_map = if let Some(substs) = generic_arguments {
+                self.type_visitor().get_generic_arguments_map(
                     def_id,
                     substs,
                     &actual_argument_types,
                 )
-            }
+            } else {
+                None
+            };
+
+            // Set up a call visitor
             let environment_before_call = self.block_visitor.bv.current_environment.clone();
             let mut block_visitor = BlockVisitor::new(self.block_visitor.bv);
             let mut indirect_call_visitor = CallVisitor::new(
@@ -1255,7 +1244,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 }
                 return;
             }
-        };
+        }
         if self
             .block_visitor
             .bv
