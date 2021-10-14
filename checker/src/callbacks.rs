@@ -146,12 +146,14 @@ impl MiraiCallbacks {
         // Exclude crates that crash or don't terminate. All of these currently take longer than 2 minutes to analyze.
         if file_name.starts_with("client/faucet/src") // non termination
             || file_name.starts_with("config/src") // Sorts Bool and (_ BitVec 128) are incompatible
+            || file_name.starts_with("config/management/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("config/management/genesis/src") // out of memory
             || file_name.starts_with("config/management/operational/src") // non termination
             || file_name.starts_with("consensus/consensus-types/src") //  Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("consensus/safety-rules/src") //  Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("crypto/crypto/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("crypto/crypto-derive/src") // out of memory
+            || file_name.starts_with("execution/execution-correctness/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("execution/db-bootstrapper/src") // Sorts Int and <null> are incompatible
             || file_name.starts_with("language/compiler/src") // out of memory
             || file_name.starts_with("language/diem-framework/src") // non termination
@@ -184,8 +186,10 @@ impl MiraiCallbacks {
             || file_name.starts_with("network/builder/src") // non termination
             || file_name.starts_with("sdk/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("sdk/client/src") // non termination
+            || file_name.starts_with("secure/key-manager/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("secure/storage/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("secure/storage/vault/src") // Sorts Bool and (_ BitVec 128) are incompatible
+            || file_name.starts_with("state-sync/state-sync-v1/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemsum/src") // out of memory
             || file_name.starts_with("storage/inspector/src/") // out of memory
