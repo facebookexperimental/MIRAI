@@ -798,7 +798,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     callee_param = Path::new_deref(callee_param, ExpressionType::NonPrimitive);
                     arg_path = path;
                 }
-                Expression::InitialParameterValue { path, .. } => {
+                Expression::InitialParameterValue { path, .. }
+                | Expression::Variable { path, .. } => {
                     arg_path = path;
                 }
                 _ => {}
