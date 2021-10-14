@@ -172,6 +172,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-prover/src") // non termination
             || file_name.starts_with("language/move-prover/boogie-backend/src") // non termination
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
+            || file_name.starts_with("language/move-prover/docgen/src") // entered unreachable code', checker/src/type_visitor.rs:880
             || file_name.starts_with("language/move-prover/interpreter/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("language/move-prover/interpreter/crypto/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("language/move-prover/lab/src") // out of memory
