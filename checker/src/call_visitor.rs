@@ -1889,9 +1889,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     fn handle_copy_non_overlapping(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
         let source_path =
-            Path::new_deref(self.actual_args[0].0.clone(), ExpressionType::NonPrimitive);
+            Path::new_deref(self.actual_args[0].0.clone(), ExpressionType::NonPrimitive)
+                .canonicalize(&self.environment_before_call);
         let target_root =
-            Path::new_deref(self.actual_args[1].0.clone(), ExpressionType::NonPrimitive);
+            Path::new_deref(self.actual_args[1].0.clone(), ExpressionType::NonPrimitive)
+                .canonicalize(&self.environment_before_call);
         let count = self.actual_args[2].1.clone();
         let target_path = Path::new_slice(target_root, count);
         let collection_type = self.actual_argument_types[0];

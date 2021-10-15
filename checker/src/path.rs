@@ -806,7 +806,8 @@ impl PathRefinement for Rc<Path> {
     /// form, after removing indirections. This does not solve the alias problem entirely, but
     /// it reduces the problem to dealing with PathEnum::Computed and PathSelector::Index and
     /// PathSelector::Slice.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
+    #[logfn(DEBUG)]
     fn canonicalize(&self, environment: &Environment) -> Rc<Path> {
         if let Some(val) = environment.value_at(self) {
             // If self binds to value &p then self and path &p are equivalent paths.
@@ -835,7 +836,11 @@ impl PathRefinement for Rc<Path> {
                 }
                 return Path::new_computed(val.clone());
             }
-        };
+            // If the environment contains a value for (key) self, self must be canonical.
+            // At any rate, it makes no sense to turn it into another path that likely
+            // does not lead to the known value.
+            return self.clone();
+        }
 
         // If self is a qualified path, then recursive canonicalization of the qualifier may
         // cause substitutions (as above) and that could result in a non canonical qualified path
