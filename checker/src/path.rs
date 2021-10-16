@@ -806,8 +806,8 @@ impl PathRefinement for Rc<Path> {
     /// form, after removing indirections. This does not solve the alias problem entirely, but
     /// it reduces the problem to dealing with PathEnum::Computed and PathSelector::Index and
     /// PathSelector::Slice.
-    #[logfn_inputs(DEBUG)]
-    #[logfn(DEBUG)]
+    #[logfn_inputs(TRACE)]
+    #[logfn(TRACE)]
     fn canonicalize(&self, environment: &Environment) -> Rc<Path> {
         if let Some(val) = environment.value_at(self) {
             // If self binds to value &p then self and path &p are equivalent paths.
@@ -866,11 +866,30 @@ impl PathRefinement for Rc<Path> {
             if let Some(value) = qualifier_as_value {
                 match &value.expression {
                     Expression::InitialParameterValue { path, .. } => {
-                        return if matches!(path.value, PathEnum::Parameter { .. }) {
-                            // old(p).s => p.s if there has been no assignment to p
-                            Path::new_qualified(path.clone(), selector.clone())
+                        let ps = Path::new_qualified(path.clone(), selector.clone());
+                        return if let Some(v) = environment.value_at(&ps) {
+                            if let Expression::InitialParameterValue { path: p, .. } = &v.expression
+                            {
+                                if ps.eq(p) {
+                                    // The p.s is the key for old(p.s), so ps by itself is unambiguous.
+                                    return ps;
+                                }
+                            }
+                            if matches!(path.value, PathEnum::Parameter { .. }) {
+                                // old(p).s => p.s if there has been no assignment to p, which is
+                                // the case because qualifier_as_value is a dummy value.
+                                Path::new_qualified(path.clone(), selector.clone())
+                            } else {
+                                Path::new_qualified(
+                                    Path::new_computed(value.clone()),
+                                    selector.clone(),
+                                )
+                            }
                         } else {
-                            Path::new_qualified(Path::new_computed(value.clone()), selector.clone())
+                            // Since there is no entry for ps in the environment, looking up
+                            // its value will create it (in a context where the type of p.s
+                            // is known).
+                            ps
                         };
                     }
                     Expression::Offset { left, right } if right.is_zero() => {
