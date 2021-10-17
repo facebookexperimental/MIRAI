@@ -1182,7 +1182,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchg__i8, i8);
@@ -1203,7 +1203,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchg_acq__i8, i8);
@@ -1224,7 +1224,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchg_rel__i8, i8);
@@ -1245,7 +1245,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchg_acqrel__i8, i8);
@@ -1266,7 +1266,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchg_relaxed__i8, i8);
@@ -1287,7 +1287,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchg_failrelaxed__i8, i8);
@@ -1308,7 +1308,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchg_failacq__i8, i8);
@@ -1329,7 +1329,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchg_acq_failrelaxed__i8, i8);
@@ -1350,7 +1350,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__i8, i8);
@@ -1371,7 +1371,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchgweak__i8, i8);
@@ -1392,7 +1392,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchgweak_acq__i8, i8);
@@ -1413,7 +1413,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchgweak_rel__i8, i8);
@@ -1434,7 +1434,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchgweak_acqrel__i8, i8);
@@ -1455,7 +1455,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchgweak_relaxed__i8, i8);
@@ -1476,7 +1476,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchgweak_failrelaxed__i8, i8);
@@ -1497,7 +1497,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchgweak_failacq__i8, i8);
@@ -1522,7 +1522,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__i8, i8);
@@ -1547,7 +1547,7 @@ pub mod core {
         //         *dst = src;
         //         (old, true)
         //     } else {
-        //         (abstract_value!(old), false)
+        //         (*dst, false)
         //     }
         // }
         atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__i8, i8);
