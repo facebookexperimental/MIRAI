@@ -2496,7 +2496,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     Rc::new(FALSE)
                 } else {
                     self.equals(AbstractValue::make_typed_unknown(
-                        self.expression.infer_type(),
+                        other.expression.infer_type(),
                         path.clone(),
                     ))
                 };
