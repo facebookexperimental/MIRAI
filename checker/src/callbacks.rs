@@ -182,6 +182,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/tools/move-coverage/src") // out of memory
             || file_name.starts_with("language/tools/move-unit-test/src") // non termination
             || file_name.starts_with("language/tools/read-write-set/src")  // non termination
+            || file_name.starts_with("language/tools/vm-genesis/src") // out of memory
             || file_name.starts_with("language/transaction-builder/generator/src") // out of memory
             || file_name.starts_with("mempool/src") // out of memory
             || file_name.starts_with("network/src") // non termination
