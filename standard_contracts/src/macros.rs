@@ -52,7 +52,7 @@ macro_rules! atomic_cxchg {
                 *dst = src;
                 (old, true)
             } else {
-                (abstract_value!(old), false)
+                (*dst, false)
             }
         }
     };

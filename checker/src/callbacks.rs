@@ -149,6 +149,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("config/management/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("config/management/genesis/src") // out of memory
             || file_name.starts_with("config/management/operational/src") // non termination
+            || file_name.starts_with("consensus/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("consensus/consensus-types/src") //  Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("consensus/safety-rules/src") //  Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("crypto/crypto/src") // Sorts Bool and (_ BitVec 128) are incompatible
