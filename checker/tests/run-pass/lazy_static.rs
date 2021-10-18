@@ -6,6 +6,8 @@
 
 // A test that uses a lazy static initializer
 
+// MIRAI_FLAGS --diag=default
+
 use std::cell::{Cell, UnsafeCell};
 use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
@@ -41,6 +43,27 @@ pub struct Waiter {
 pub struct WaiterQueue<'a> {
     pub state_and_queue: &'a AtomicUsize,
     pub set_state_on_drop_to: usize,
+}
+
+impl Drop for WaiterQueue<'_> {
+    fn drop(&mut self) {
+        let state_and_queue = self
+            .state_and_queue
+            .swap(self.set_state_on_drop_to, Ordering::AcqRel);
+
+        assert_eq!(state_and_queue & STATE_MASK, RUNNING);
+
+        unsafe {
+            let mut queue = (state_and_queue & !STATE_MASK) as *const Waiter;
+            while !queue.is_null() {
+                let next = (*queue).next;
+                let thread = (*queue).thread.replace(None).unwrap();
+                (*queue).signaled.store(true, Ordering::Release);
+                queue = next;
+                thread.unpark();
+            }
+        }
+    }
 }
 
 pub struct OnceCellS<T> {
@@ -255,5 +278,5 @@ impl<T, F: FnOnce() -> T> Lazy<T, F> {
 pub static SYMBOL_POOL: Lazy<Mutex<Pool>> = Lazy::new(|| Mutex::new(Pool::new()));
 
 pub fn main() {
-    //Lazy::force(&SYMBOL_POOL);
+    Lazy::force(&SYMBOL_POOL);
 }
