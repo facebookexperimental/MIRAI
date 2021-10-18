@@ -929,7 +929,13 @@ impl Expression {
             Expression::Equals { .. } => Bool,
             Expression::GreaterOrEqual { .. } => Bool,
             Expression::GreaterThan { .. } => Bool,
-            Expression::Join { left, .. } => left.expression.infer_type(),
+            Expression::Join { left, right } => {
+                if left.is_compile_time_constant() {
+                    right.expression.infer_type()
+                } else {
+                    left.expression.infer_type()
+                }
+            }
             Expression::LessOrEqual { .. } => Bool,
             Expression::LessThan { .. } => Bool,
             Expression::LogicalNot { .. } => Bool,
