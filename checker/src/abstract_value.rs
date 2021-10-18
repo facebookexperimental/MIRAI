@@ -3304,6 +3304,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             }
+            // [x join widened(x join y)] -> widened(x join y)
+            (_, Expression::WidenedJoin { operand, .. }) => {
+                if let Expression::Join { left: x, .. } = &operand.expression {
+                    if self.eq(x) {
+                        return other.clone();
+                    }
+                }
+            }
             _ => {}
         }
         let expression_size = self.expression_size.saturating_add(other.expression_size);
