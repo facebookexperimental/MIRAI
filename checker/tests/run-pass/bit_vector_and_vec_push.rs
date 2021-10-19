@@ -31,6 +31,8 @@ pub fn write_u32_as_uleb128(binary: &mut Vec<u8>, value: u32) {
 pub fn main() {
     let mut buf = Vec::<u8>::new();
     write_u32_as_uleb128(&mut buf, 129);
-    verify!(buf.len() == 2);
+    //todo: more simplifications might allow the verify below to succeed
+    verify!(buf.len() == 2); //~ possible false verification condition
+                             //todo: find out why the above check causes the below one to become "provable" when it is clearly not
     verify!(buf.len() == 1); //~ provably false verification condition
 }

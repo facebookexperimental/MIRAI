@@ -5264,6 +5264,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         match &self.expression {
             Expression::Top => interval_domain::BOTTOM,
             Expression::Add { left, right } => left.get_as_interval().add(&right.get_as_interval()),
+            Expression::BitAnd { left, .. } => {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(v)) = left.expression {
+                    if v < (i128::MAX as u128) && (v + 1).is_power_of_two() {
+                        let lower: IntervalDomain = 0u128.into();
+                        let upper: IntervalDomain = v.into();
+                        return lower.widen(&upper);
+                    }
+                }
+                interval_domain::BOTTOM
+            }
             Expression::Cast {
                 operand,
                 target_type,
