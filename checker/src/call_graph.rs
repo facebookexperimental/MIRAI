@@ -1012,9 +1012,7 @@ impl CallGraph {
                 datalog_config.get_datalog_backend(),
                 Path::new(datalog_config.get_ddlog_path()),
                 Path::new(datalog_config.get_type_map_path()),
-                datalog_config
-                    .get_type_relations_path()
-                    .map(|path_str| Path::new(path_str)),
+                datalog_config.get_type_relations_path().map(Path::new),
             );
         }
         if let Some(dot_path) = &self.config.dot_output_path {

@@ -7,7 +7,7 @@
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Foo {
-    x: u32
+    x: u32,
 }
 
 fn foo_ref(f: &Foo) {
@@ -82,30 +82,30 @@ insert Edge(2,0,3);
 insert Edge(3,0,4);
 insert EdgeType(0,0);
 insert EdgeType(1,6);
-insert EdgeType(2,8);
-insert EdgeType(3,30);
-insert EqType(0,33);
-insert EqType(0,34);
+insert EdgeType(2,25);
+insert EdgeType(3,42);
+insert EqType(0,45);
+insert EqType(0,46);
 insert EqType(0,6);
-insert EqType(32,30);
-insert EqType(34,33);
-insert EqType(6,33);
-insert EqType(6,34);
-insert EqType(8,30);
-insert EqType(8,32);
-insert Member(30,0);
-insert Member(30,33);
-insert Member(30,34);
-insert Member(30,6);
-insert Member(31,32);
-insert Member(32,0);
-insert Member(32,33);
-insert Member(32,34);
-insert Member(32,6);
-insert Member(8,0);
-insert Member(8,33);
-insert Member(8,34);
-insert Member(8,6);
+insert EqType(25,42);
+insert EqType(25,44);
+insert EqType(44,42);
+insert EqType(46,45);
+insert EqType(6,45);
+insert EqType(6,46);
+insert Member(25,0);
+insert Member(25,45);
+insert Member(25,46);
+insert Member(25,6);
+insert Member(42,0);
+insert Member(42,45);
+insert Member(42,46);
+insert Member(42,6);
+insert Member(43,44);
+insert Member(44,0);
+insert Member(44,45);
+insert Member(44,46);
+insert Member(44,6);
 commit;
 */
 
@@ -113,11 +113,11 @@ commit;
 {
   "0": "&Foo",
   "6": "&mut Foo",
-  "8": "&[Foo]",
-  "30": "std::vec::Vec<Foo>",
-  "31": "Bar",
-  "32": "[test::Foo]",
-  "33": "test::Foo",
-  "34": "Foo"
+  "25": "&[Foo]",
+  "42": "std::vec::Vec<Foo>",
+  "43": "Bar",
+  "44": "[test::Foo]",
+  "45": "test::Foo",
+  "46": "Foo"
 }
 */
