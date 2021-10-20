@@ -178,6 +178,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-prover/interpreter/crypto/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("language/move-prover/lab/src") // out of memory
             || file_name.starts_with("language/move-prover/mutation/src") // out of memory
+            || file_name.starts_with("language/move-prover/tools/spec-flatten/src") // entered unreachable code', checker/src/type_visitor.rs:880:29
             || file_name.starts_with("language/move-stdlib/src") // out of memory
             || file_name.starts_with("language/tools/move-coverage/src") // out of memory
             || file_name.starts_with("language/tools/move-unit-test/src") // non termination
@@ -192,6 +193,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("secure/key-manager/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("secure/storage/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("secure/storage/vault/src") // Sorts Bool and (_ BitVec 128) are incompatible
+            || file_name.starts_with("state-sync/inter-component/event-notifications/src") // non termination
             || file_name.starts_with("state-sync/state-sync-v1/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemsum/src") // out of memory
@@ -244,6 +246,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("network/discovery/src")
                 || file_name.starts_with("network/simple-onchain-discovery/src")
                 || file_name.starts_with("sdk/src")
+                || file_name.starts_with("sdk/transaction-builder/src")
                 || file_name.starts_with("secure/key-manager/src")
                 || file_name.starts_with("secure/net/src")
                 || file_name.starts_with("secure/storage/src")
@@ -254,6 +257,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("state-sync/state-sync-v1/src")
                 || file_name.starts_with("storage/backup/backup-service/src")
                 || file_name.starts_with("storage/diemdb/src")
+                || file_name.starts_with("storage/schemadb/src")
                 || file_name.starts_with("storage/storage-client/src")
                 || file_name.starts_with("types/src")
                 || file_name.starts_with("vm-validator/src"))

@@ -80,7 +80,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
 
         // Analyze all functions that are white listed or public
         let building_standard_summaries = std::env::var("MIRAI_START_FRESH").is_ok();
-        for local_def_id in self.tcx.body_owners() {
+        for local_def_id in self.tcx.hir().body_owners() {
             let def_id = local_def_id.to_def_id();
             let name = utils::summary_key_str(self.tcx, def_id);
             if let Some(white_list) = &function_whitelist {

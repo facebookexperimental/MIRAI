@@ -1629,6 +1629,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::Rvalue::Aggregate(aggregate_kinds, operands) => {
                 self.visit_aggregate(path, aggregate_kinds, operands);
             }
+            mir::Rvalue::ShallowInitBox(operand, ty) => {
+                self.visit_shallow_init_box(path, operand, ty);
+            }
         }
     }
 
@@ -2287,6 +2290,21 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             let index_path = Path::new_index(path.clone(), index_value);
             self.visit_used_operand(index_path, operand);
         }
+    }
+
+    /// Transmutes a `*mut u8` into shallow-initialized `Box<T>`.
+    ///
+    /// This is different a normal transmute because dataflow analysis will treat the box
+    /// as initialized but its content as uninitialized.
+    #[logfn_inputs(TRACE)]
+    fn visit_shallow_init_box(
+        &mut self,
+        path: Rc<Path>,
+        operand: &mir::Operand<'tcx>,
+        _ty: Ty<'tcx>,
+    ) {
+        let value_path = Path::new_field(Path::new_field(path, 0), 0);
+        self.visit_used_operand(value_path, operand);
     }
 
     /// Operand defines the values that can appear inside an rvalue. They are intentionally
@@ -3213,14 +3231,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     &ConstantDomain::True
                 }
             }
-            TyKind::Char => &mut self
+            TyKind::Char => self
                 .bv
                 .cv
                 .constant_value_cache
                 .get_char_for(char::try_from(data as u32).unwrap()),
             TyKind::Float(..) => match size {
-                4 => &mut self.bv.cv.constant_value_cache.get_f32_for(data as u32),
-                _ => &mut self.bv.cv.constant_value_cache.get_f64_for(data as u64),
+                4 => self.bv.cv.constant_value_cache.get_f32_for(data as u32),
+                _ => self.bv.cv.constant_value_cache.get_f64_for(data as u64),
             },
             TyKind::Int(..) => {
                 let value: i128 = match size {
@@ -3230,10 +3248,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     8 => i128::from(data as i64),
                     _ => data as i128,
                 };
-                &mut self.bv.cv.constant_value_cache.get_i128_for(value)
+                self.bv.cv.constant_value_cache.get_i128_for(value)
             }
-            TyKind::Uint(..) => &mut self.bv.cv.constant_value_cache.get_u128_for(data),
-            TyKind::RawPtr(..) => &mut self.bv.cv.constant_value_cache.get_u128_for(data),
+            TyKind::Uint(..) => self.bv.cv.constant_value_cache.get_u128_for(data),
+            TyKind::RawPtr(..) => self.bv.cv.constant_value_cache.get_u128_for(data),
             _ => assume_unreachable!(),
         }
     }
@@ -3259,7 +3277,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         if let Some(generic_args) = generic_args {
             self.bv.cv.substs_cache.insert(def_id, generic_args);
         }
-        &mut self.bv.cv.constant_value_cache.get_function_constant_for(
+        self.bv.cv.constant_value_cache.get_function_constant_for(
             def_id,
             ty,
             generic_args,

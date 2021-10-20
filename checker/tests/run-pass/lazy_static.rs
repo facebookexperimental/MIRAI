@@ -285,12 +285,12 @@ impl<T, F: FnOnce() -> T> Deref for Lazy<T, F> {
 
 pub static SYMBOL_POOL: Lazy<Mutex<Pool>> = Lazy::new(|| Mutex::new(Pool::new()));
 
-pub fn t1() {
-    let _ = Lazy::force(&SYMBOL_POOL);
-}
-
-pub fn t2() {
-    let _ = SYMBOL_POOL.deref();
-}
+// pub fn t1() {
+//     let _ = Lazy::force(&SYMBOL_POOL);
+// }
+//
+// pub fn t2() {
+//     let _ = SYMBOL_POOL.deref();
+// }
 
 pub fn main() {}
