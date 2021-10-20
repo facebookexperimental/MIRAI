@@ -8,6 +8,7 @@
 
 // MIRAI_FLAGS --diag=default
 
+use core::ops::Deref;
 use std::cell::{Cell, UnsafeCell};
 use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
@@ -275,8 +276,21 @@ impl<T, F: FnOnce() -> T> Lazy<T, F> {
     }
 }
 
+impl<T, F: FnOnce() -> T> Deref for Lazy<T, F> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        Lazy::force(self)
+    }
+}
+
 pub static SYMBOL_POOL: Lazy<Mutex<Pool>> = Lazy::new(|| Mutex::new(Pool::new()));
 
-pub fn main() {
-    Lazy::force(&SYMBOL_POOL);
+pub fn t1() {
+    let _ = Lazy::force(&SYMBOL_POOL);
 }
+
+pub fn t2() {
+    let _ = SYMBOL_POOL.deref();
+}
+
+pub fn main() {}

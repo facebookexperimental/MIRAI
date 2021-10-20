@@ -4060,30 +4060,6 @@ pub mod move_binary_format {
     }
 }
 
-pub mod once_cell {
-    pub mod imp {
-        pub fn INCOMPLETE() -> usize {
-            0x0
-        }
-
-        pub fn POISONED() -> usize {
-            0x1
-        }
-
-        pub fn RUNNING() -> usize {
-            0x2
-        }
-
-        pub fn COMPLETE() -> usize {
-            0x3
-        }
-
-        pub fn STATE_MASK() -> usize {
-            0x3
-        }
-    }
-}
-
 pub mod parking_lot {
     pub mod condvar {
         pub mod implement_parking_lot_condvar_Condvar {
