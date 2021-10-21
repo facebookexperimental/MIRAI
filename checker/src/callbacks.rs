@@ -180,8 +180,10 @@ impl MiraiCallbacks {
             || file_name.starts_with("mempool/src") // out of memory
             || file_name.starts_with("network/src") // non termination
             || file_name.starts_with("network/builder/src") // non termination
+            || file_name.starts_with("network/discovery/src") // out of memory
             || file_name.starts_with("sdk/client/src") // non termination
             || file_name.starts_with("state-sync/inter-component/event-notifications/src") // non termination
+            || file_name.starts_with("state-sync/state-sync-v1/src") // non termination
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemsum/src") // out of memory
             || file_name.starts_with("storage/inspector/src/") // out of memory
