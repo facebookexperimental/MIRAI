@@ -200,6 +200,17 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
+    fn boolean_join(&self, left: &Rc<AbstractValue>, right: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
+        let left_ast = self.get_as_bool_z3_ast(&left.expression);
+        let right_ast = self.get_as_bool_z3_ast(&right.expression);
+        unsafe {
+            let sym = self.get_symbol_for(self);
+            let condition_ast = z3_sys::Z3_mk_const(self.z3_context, sym, self.bool_sort);
+            z3_sys::Z3_mk_ite(self.z3_context, condition_ast, left_ast, right_ast)
+        }
+    }
+
+    #[logfn_inputs(TRACE)]
     fn get_as_z3_ast(&self, expression: &Expression) -> z3_sys::Z3_ast {
         match expression {
             Expression::HeapBlock { .. } => {
@@ -651,6 +662,9 @@ impl Z3Solver {
 
     #[logfn_inputs(TRACE)]
     fn general_join(&self, left: &Rc<AbstractValue>, right: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
+        if left.expression.is_bit_vector() || right.expression.is_bit_vector() {
+            return self.bv_join(left, right, 128);
+        }
         let left_ast = self.get_as_z3_ast(&left.expression);
         let right_ast = self.get_as_z3_ast(&right.expression);
         unsafe {
@@ -1702,6 +1716,7 @@ impl Z3Solver {
                     )
                 }
             }
+            Expression::Join { left, right } => self.boolean_join(left, right),
             Expression::Reference(path) => unsafe {
                 let path_symbol = self.get_symbol_for(path);
                 z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.bool_sort)
@@ -1941,9 +1956,9 @@ impl Z3Solver {
         let ast = self.get_as_z3_ast(expression);
         // ast results in a boolean, but we want a bit vector.
         unsafe {
-            let bv_one = z3_sys::Z3_mk_int2bv(self.z3_context, num_bits, self.one);
-            let bv_zero = z3_sys::Z3_mk_int2bv(self.z3_context, num_bits, self.zero);
-            z3_sys::Z3_mk_ite(self.z3_context, ast, bv_one, bv_zero)
+            let bv_true = self.bv_constant(num_bits, &ConstantDomain::True);
+            let bv_false = self.bv_constant(num_bits, &ConstantDomain::False);
+            z3_sys::Z3_mk_ite(self.z3_context, ast, bv_true, bv_false)
         }
     }
 

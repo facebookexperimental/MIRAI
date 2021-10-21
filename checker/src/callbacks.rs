@@ -145,17 +145,10 @@ impl MiraiCallbacks {
     fn is_excluded(&self, file_name: &str) -> bool {
         // Exclude crates that crash or don't terminate. All of these currently take longer than 2 minutes to analyze.
         if file_name.starts_with("client/faucet/src") // non termination
-            || file_name.starts_with("config/src") // Sorts Bool and (_ BitVec 128) are incompatible
-            || file_name.starts_with("config/management/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("config/management/genesis/src") // out of memory
             || file_name.starts_with("config/management/operational/src") // non termination
-            || file_name.starts_with("consensus/src") // Sorts (_ BitVec 128) and Bool are incompatible
-            || file_name.starts_with("consensus/consensus-types/src") //  Sorts Bool and (_ BitVec 128) are incompatible
-            || file_name.starts_with("consensus/safety-rules/src") //  Sorts Bool and (_ BitVec 128) are incompatible
-            || file_name.starts_with("crypto/crypto/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("crypto/crypto-derive/src") // out of memory
-            || file_name.starts_with("execution/execution-correctness/src") // Sorts (_ BitVec 128) and Bool are incompatible
-            || file_name.starts_with("execution/db-bootstrapper/src") // Sorts Int and <null> are incompatible
+            || file_name.starts_with("execution/db-bootstrapper/src") // Not a type: DefIndex(3250)
             || file_name.starts_with("language/compiler/src") // out of memory
             || file_name.starts_with("language/diem-framework/src") // non termination
             || file_name.starts_with("language/diem-framework/DPN/releases/src")  // non termination
@@ -174,8 +167,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-prover/boogie-backend/src") // non termination
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
             || file_name.starts_with("language/move-prover/docgen/src") // entered unreachable code', checker/src/type_visitor.rs:880
-            || file_name.starts_with("language/move-prover/interpreter/src") // Sorts (_ BitVec 128) and Bool are incompatible
-            || file_name.starts_with("language/move-prover/interpreter/crypto/src") // Sorts (_ BitVec 128) and Bool are incompatible
+            || file_name.starts_with("language/move-prover/interpreter/src") // entered unreachable code', checker/src/type_visitor.rs:880:29
             || file_name.starts_with("language/move-prover/lab/src") // out of memory
             || file_name.starts_with("language/move-prover/mutation/src") // out of memory
             || file_name.starts_with("language/move-prover/tools/spec-flatten/src") // entered unreachable code', checker/src/type_visitor.rs:880:29
@@ -188,19 +180,13 @@ impl MiraiCallbacks {
             || file_name.starts_with("mempool/src") // out of memory
             || file_name.starts_with("network/src") // non termination
             || file_name.starts_with("network/builder/src") // non termination
-            || file_name.starts_with("sdk/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("sdk/client/src") // non termination
-            || file_name.starts_with("secure/key-manager/src") // Sorts (_ BitVec 128) and Bool are incompatible
-            || file_name.starts_with("secure/storage/src") // Sorts Bool and (_ BitVec 128) are incompatible
-            || file_name.starts_with("secure/storage/vault/src") // Sorts Bool and (_ BitVec 128) are incompatible
             || file_name.starts_with("state-sync/inter-component/event-notifications/src") // non termination
-            || file_name.starts_with("state-sync/state-sync-v1/src") // Sorts (_ BitVec 128) and Bool are incompatible
             || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
             || file_name.starts_with("storage/diemsum/src") // out of memory
             || file_name.starts_with("storage/inspector/src/") // out of memory
-            || file_name.starts_with("types/src") // Sorts (_ BitVec 128) and Bool are incompatible
-            || file_name.starts_with("vm-validator/src")
-        // Sorts (_ BitVec 128) and Bool are incompatible
+             || file_name.starts_with("types/src")
+        // out of memory
         {
             return true;
         }
@@ -208,7 +194,9 @@ impl MiraiCallbacks {
         // Conditionally exclude crates that currently slow down testing too much because they take longer than 2 minutes to analyze
         if self.options.diag_level == DiagLevel::Default
             && (file_name.starts_with("api/src")
+                || file_name.starts_with("api/types")
                 || file_name.starts_with("client/assets-proof/src")
+                || file_name.starts_with("common/logger/src")
                 || file_name.starts_with("common/num-variants/src")
                 || file_name.starts_with("common/rate-limiter/src")
                 || file_name.starts_with("config/src")
