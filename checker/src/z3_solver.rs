@@ -219,7 +219,16 @@ impl Z3Solver {
             Expression::And { left, right } => {
                 self.general_boolean_op(left, right, z3_sys::Z3_mk_and)
             }
-            Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
+            Expression::BitAnd { left, right } => {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(v)) = left.expression {
+                    if v < u128::MAX && (v + 1).is_power_of_two() {
+                        let p2: Rc<AbstractValue> = Rc::new((v + 1).into());
+                        return self.numeric_rem(right, &p2).1;
+                    }
+                }
+                self.get_as_bv_z3_ast(expression, 128)
+            }
+            Expression::BitOr { .. } | Expression::BitXor { .. } => {
                 self.get_as_bv_z3_ast(expression, 128)
             }
             Expression::BitNot { result_type, .. } => {
@@ -427,7 +436,15 @@ impl Z3Solver {
             (ty.is_signed_integer(), u32::from(ty.bit_length()))
         } else if right.expression.is_bit_vector() {
             let ty = right.expression.infer_type();
-            (ty.is_signed_integer(), u32::from(ty.bit_length()))
+            let mut result = (ty.is_signed_integer(), u32::from(ty.bit_length()));
+            if let Expression::BitAnd { left, .. } = &right.expression {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(v)) = left.expression {
+                    if v < u128::MAX && (v + 1).is_power_of_two() {
+                        result = (false, 0);
+                    }
+                }
+            }
+            result
         } else {
             (false, 0)
         };
@@ -464,7 +481,15 @@ impl Z3Solver {
         let num_bits = if left.expression.is_bit_vector() {
             u32::from(left.expression.infer_type().bit_length())
         } else if right.expression.is_bit_vector() {
-            u32::from(right.expression.infer_type().bit_length())
+            let mut result = u32::from(right.expression.infer_type().bit_length());
+            if let Expression::BitAnd { left, .. } = &right.expression {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(v)) = left.expression {
+                    if v < u128::MAX && (v + 1).is_power_of_two() {
+                        result = 0;
+                    }
+                }
+            }
+            result
         } else {
             0
         };
@@ -966,7 +991,7 @@ impl Z3Solver {
         match expression {
             Expression::HeapBlock { .. } => {
                 let path = Path::get_as_path(AbstractValue::make_from(expression.clone(), 1));
-                self.numeric_variable(expression, &path, expression.infer_type())
+                self.numeric_variable(&path, expression.infer_type())
             }
             Expression::Add { left, right } => {
                 self.numeric_binary_var_arg(left, right, z3_sys::Z3_mk_fpa_add, z3_sys::Z3_mk_add)
@@ -1006,8 +1031,16 @@ impl Z3Solver {
             | Expression::LogicalNot { .. }
             | Expression::Ne { .. }
             | Expression::Or { .. } => self.numeric_boolean_op(expression),
-            Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
-                // todo: BitAnd with constant that is 2**n - 1 can become a remainder
+            Expression::BitAnd { left, right } => {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(v)) = left.expression {
+                    if v < u128::MAX && (v + 1).is_power_of_two() {
+                        let p2: Rc<AbstractValue> = Rc::new((v + 1).into());
+                        return self.numeric_rem(right, &p2);
+                    }
+                }
+                self.numeric_bitwise_expression(expression)
+            }
+            Expression::BitOr { .. } | Expression::BitXor { .. } => {
                 self.numeric_bitwise_expression(expression)
             }
             Expression::BitNot {
@@ -1041,7 +1074,7 @@ impl Z3Solver {
             | Expression::UnknownModelField { path, .. }
             | Expression::UnknownTagField { path }
             | Expression::Variable { path, .. } => {
-                self.numeric_variable(expression, path, expression.infer_type())
+                self.numeric_variable(path, expression.infer_type())
             }
             Expression::IntrinsicBitVectorUnary { .. } => unsafe {
                 //todo: use the name to select an appropriate Z3 bitvector function
@@ -1101,7 +1134,14 @@ impl Z3Solver {
                 )
             },
             Expression::WidenedJoin { path, operand } => self.numeric_widen(path, operand),
-            _ => (false, self.get_as_z3_ast(expression)),
+            _ => unsafe {
+                debug!("uninterpreted expression: {:?}", expression);
+                let sym = self.get_symbol_for(expression);
+                (
+                    false,
+                    z3_sys::Z3_mk_const(self.z3_context, sym, self.int_sort),
+                )
+            },
         }
     }
 
@@ -1576,21 +1616,32 @@ impl Z3Solver {
     #[logfn_inputs(TRACE)]
     fn numeric_variable(
         &self,
-        expression: &Expression,
         path: &Rc<Path>,
         var_type: ExpressionType,
     ) -> (bool, z3_sys::Z3_ast) {
         use self::ExpressionType::*;
-        match var_type {
-            Bool | ThinPointer | NonPrimitive => unsafe {
-                let path_symbol = self.get_symbol_for(path);
-                (
-                    false,
-                    z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.int_sort),
-                )
-            },
-            F32 | F64 => (true, self.get_as_z3_ast(expression)),
-            _ => (false, self.get_as_z3_ast(expression)),
+        unsafe {
+            let path_symbol = self.get_symbol_for(path);
+            let sort = match var_type {
+                F32 => self.f32_sort,
+                F64 => self.f64_sort,
+                _ => self.int_sort,
+            };
+            let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
+            if var_type.is_integer() {
+                let min_ast = self.get_constant_as_ast(&var_type.min_value());
+                let max_ast = self.get_constant_as_ast(&var_type.max_value());
+                let range_check = self.get_range_check(ast, min_ast, max_ast);
+
+                // Side-effecting the solver smells bad, but it hard to come up with an expression
+                // of type var_type that only take values that satisfies the range constraint.
+                // Since this is kind of a lazy variable declaration, it is probably OK.
+
+                // It turns out that if there were previous calls to the smt solver that produced strings
+                // this call will crash
+                z3_sys::Z3_solver_assert(self.z3_context, self.z3_solver, range_check);
+            }
+            (var_type.is_floating_point_number(), ast)
         }
     }
 
