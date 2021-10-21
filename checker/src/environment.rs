@@ -523,9 +523,9 @@ impl Environment {
                 Expression::WidenedJoin { path: p2, .. },
             ) = (&x.expression, &y.expression)
             {
-                if p1.eq(p2) || p2.eq(p) {
+                if p1.eq(p2) || p1.eq(p) {
                     return x.clone();
-                } else if p1.eq(p) {
+                } else if p2.eq(p) {
                     return y.clone();
                 }
             }
