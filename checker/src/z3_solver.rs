@@ -328,8 +328,8 @@ impl Z3Solver {
                     unsafe { z3_sys::Z3_mk_not(self.z3_context, check_ast) }
                 }
             }
-            Expression::WidenedJoin { operand, .. } => {
-                self.get_ast_for_widened(operand, operand.expression.infer_type())
+            Expression::WidenedJoin { path, operand } => {
+                self.get_ast_for_widened(path, operand, operand.expression.infer_type())
             }
             Expression::Join { left, right, .. } => self.general_join(left, right),
             _ => unsafe {
@@ -872,17 +872,16 @@ impl Z3Solver {
     #[logfn_inputs(TRACE)]
     fn get_ast_for_widened(
         &self,
+        path: &Rc<Path>,
         operand: &Rc<AbstractValue>,
         target_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
         let sort = self.get_sort_for(target_type);
         unsafe {
-            let path_symbol = self.get_symbol_for(operand);
+            let path_symbol = self.get_symbol_for(path);
             let ast = z3_sys::Z3_mk_const(self.z3_context, path_symbol, sort);
             if target_type.is_integer() {
-                let interval = operand
-                    .widen(&Path::get_as_path(operand.clone()))
-                    .get_as_interval();
+                let interval = operand.widen(path).get_as_interval();
                 if !interval.is_bottom() {
                     if let Some(lower_bound) = interval.lower_bound() {
                         let lb = self.get_constant_as_ast(&ConstantDomain::I128(lower_bound));
@@ -1008,6 +1007,7 @@ impl Z3Solver {
             | Expression::Ne { .. }
             | Expression::Or { .. } => self.numeric_boolean_op(expression),
             Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
+                // todo: BitAnd with constant that is 2**n - 1 can become a remainder
                 self.numeric_bitwise_expression(expression)
             }
             Expression::BitNot {
@@ -1100,7 +1100,7 @@ impl Z3Solver {
                     z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.int_sort),
                 )
             },
-            Expression::WidenedJoin { operand, .. } => self.numeric_widen(operand),
+            Expression::WidenedJoin { path, operand } => self.numeric_widen(path, operand),
             _ => (false, self.get_as_z3_ast(expression)),
         }
     }
@@ -1595,14 +1595,18 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn numeric_widen(&self, operand: &Rc<AbstractValue>) -> (bool, z3_sys::Z3_ast) {
+    fn numeric_widen(
+        &self,
+        path: &Rc<Path>,
+        operand: &Rc<AbstractValue>,
+    ) -> (bool, z3_sys::Z3_ast) {
         use self::ExpressionType::*;
         let expr_type = match operand.expression.infer_type() {
             Bool | ThinPointer | NonPrimitive | Unit => ExpressionType::I128,
             val => val,
         };
         let is_float = expr_type.is_floating_point_number();
-        let ast = self.get_ast_for_widened(operand, expr_type);
+        let ast = self.get_ast_for_widened(path, operand, expr_type);
         (is_float, ast)
     }
 
@@ -1669,8 +1673,8 @@ impl Z3Solver {
                     z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.bool_sort)
                 }
             }
-            Expression::WidenedJoin { operand, .. } => {
-                self.get_ast_for_widened(operand, ExpressionType::Bool)
+            Expression::WidenedJoin { path, operand } => {
+                self.get_ast_for_widened(path, operand, ExpressionType::Bool)
             }
             _ => {
                 let expression_type = expression.infer_type();
@@ -1804,7 +1808,7 @@ impl Z3Solver {
             Expression::UninterpretedCall { path, .. }
             | Expression::InitialParameterValue { path, .. }
             | Expression::Variable { path, .. } => self.bv_variable(path, num_bits),
-            Expression::WidenedJoin { operand, .. } => self.bv_widen(operand, num_bits),
+            Expression::WidenedJoin { path, .. } => self.bv_widen(path, num_bits),
             _ => {
                 let path = Path::get_as_path(AbstractValue::make_from(expression.clone(), 1));
                 self.bv_variable(&path, num_bits)
@@ -2050,8 +2054,7 @@ impl Z3Solver {
     }
 
     #[logfn_inputs(TRACE)]
-    fn bv_widen(&self, operand: &Rc<AbstractValue>, num_bits: u32) -> z3_sys::Z3_ast {
-        let path = Path::get_as_path(operand.clone());
-        self.bv_variable(&path, num_bits)
+    fn bv_widen(&self, path: &Rc<Path>, num_bits: u32) -> z3_sys::Z3_ast {
+        self.bv_variable(path, num_bits)
     }
 }

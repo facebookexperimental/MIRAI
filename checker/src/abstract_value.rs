@@ -2336,9 +2336,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
                 )
             }
-            Expression::WidenedJoin { path, operand } => {
-                operand.dereference(target_type).widen(path)
-            }
+            Expression::WidenedJoin { path, operand } => operand
+                .dereference(target_type)
+                .widen(&Path::new_deref(path.clone(), target_type)),
             _ => {
                 info!(
                     "found unhandled expression that is of type reference: {:?}",
