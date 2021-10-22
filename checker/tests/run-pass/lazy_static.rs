@@ -9,6 +9,7 @@
 // MIRAI_FLAGS --diag=default
 
 use core::ops::Deref;
+use mirai_annotations::*;
 use std::cell::{Cell, UnsafeCell};
 use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
@@ -154,7 +155,11 @@ fn initialize_inner(my_state_and_queue: &AtomicUsize, init: &mut dyn FnMut() -> 
                 return success;
             }
             _ => {
-                assert!(state_and_queue & STATE_MASK == RUNNING);
+                // The assumption cannot be proved here or even promoted to a precondition
+                // because wait below conditionally pollutes my_state_and_queue with local state
+                // that it expects another thread to clean up. Since MIRAI is a single thread
+                // analysis, it cannot reason about such control flows and hence we have to assume this.
+                assume!(state_and_queue & STATE_MASK == RUNNING);
                 wait(&my_state_and_queue, state_and_queue);
                 state_and_queue = my_state_and_queue.load(Ordering::Acquire);
             }
@@ -285,12 +290,14 @@ impl<T, F: FnOnce() -> T> Deref for Lazy<T, F> {
 
 pub static SYMBOL_POOL: Lazy<Mutex<Pool>> = Lazy::new(|| Mutex::new(Pool::new()));
 
-// pub fn t1() {
-//     let _ = Lazy::force(&SYMBOL_POOL);
-// }
-//
-// pub fn t2() {
-//     let _ = SYMBOL_POOL.deref();
-// }
+pub fn t1() {
+    assume_preconditions!();
+    let _ = Lazy::force(&SYMBOL_POOL);
+}
+
+pub fn t2() {
+    assume_preconditions!();
+    let _ = SYMBOL_POOL.deref();
+}
 
 pub fn main() {}
