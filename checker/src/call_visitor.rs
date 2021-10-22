@@ -116,6 +116,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 self.block_visitor.bv.active_calls_map,
                 self.block_visitor.bv.cv.type_cache.clone(),
             );
+            body_visitor.treat_as_foreign = self.block_visitor.bv.treat_as_foreign
+                || self.block_visitor.bv.assume_preconditions_of_next_call;
             body_visitor.type_visitor_mut().actual_argument_types =
                 self.actual_argument_types.clone();
             body_visitor.type_visitor_mut().generic_arguments = self.callee_generic_arguments;
