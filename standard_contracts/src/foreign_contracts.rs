@@ -600,31 +600,6 @@ pub mod core {
         }
     }
 
-    pub mod convert {
-        pub mod AsRef {
-            pub fn as_ref__trait_aead_Buffer_slice_u8<T>(_self: &T) -> &T {
-                _self
-            }
-        }
-
-        pub mod Into {
-            pub fn into__ref_str_alloc_boxed_Box_trait_std_error_Error_alloc_alloc_Global(
-                s: &str,
-            ) -> Box<&str> {
-                Box::new(s)
-            }
-            pub fn into__usize_usize(t: usize) -> usize {
-                t
-            }
-        }
-
-        pub mod implement_convert {
-            pub fn try_into__ref_slice_u8_array_u8(arg: &[u8]) -> &[u8] {
-                arg
-            }
-        }
-    }
-
     pub mod core_arch {
         pub mod simd_llvm {
             //pub fn simd_select_bitmask
@@ -2893,6 +2868,31 @@ pub mod core {
         default_contract!(is_aligned_and_not_null);
 
         default_contract!(is_nonoverlapping);
+    }
+
+    pub mod convert {
+        pub mod AsRef {
+            pub fn as_ref__trait_aead_Buffer_slice_u8<T>(_self: &T) -> &T {
+                _self
+            }
+        }
+
+        pub mod Into {
+            pub fn into__ref_str_alloc_boxed_Box_trait_std_error_Error_alloc_alloc_Global(
+                s: &str,
+            ) -> Box<&str> {
+                Box::new(s)
+            }
+            pub fn into__usize_usize(t: usize) -> usize {
+                t
+            }
+        }
+
+        pub mod implement_convert {
+            pub fn try_into__ref_slice_u8_array_u8(arg: &[u8]) -> &[u8] {
+                arg
+            }
+        }
     }
 
     pub mod isize {
