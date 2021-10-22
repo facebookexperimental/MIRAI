@@ -70,6 +70,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx> {
     pub fresh_variable_offset: usize,
     pub smt_solver: Z3Solver,
     pub block_to_call: HashMap<mir::Location, DefId>,
+    pub treat_as_foreign: bool,
     type_visitor: TypeVisitor<'tcx>,
 }
 
@@ -127,6 +128,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             fresh_variable_offset: 0,
             smt_solver: Z3Solver::default(),
             block_to_call: HashMap::default(),
+            treat_as_foreign: false,
             type_visitor: TypeVisitor::new(def_id, mir, tcx, type_cache),
         }
     }
@@ -318,7 +320,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     /// which is desirable for tools that compare the diagnostics from one run of MIRAI with another.
     #[logfn_inputs(TRACE)]
     pub fn emit_diagnostic(&mut self, mut diagnostic_builder: DiagnosticBuilder<'compilation>) {
-        if !self.def_id.is_local() && !matches!(self.cv.options.diag_level, DiagLevel::Paranoid) {
+        if (self.treat_as_foreign || !self.def_id.is_local())
+            && !matches!(self.cv.options.diag_level, DiagLevel::Paranoid)
+        {
             // only give diagnostics in code that belongs to the crate being analyzed
             diagnostic_builder.cancel();
             return;
