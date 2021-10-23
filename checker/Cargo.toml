@@ -7,7 +7,7 @@ description = "A static analysis tool for Rust, based on Abstract Interpretation
 repository = "https://github.com/facebookexperimental/MIRAI"
 readme = "../README.md"
 license = "MIT"
-edition = "2018"
+edition = "2021"
 build = "build.rs"
 
 [lib]
