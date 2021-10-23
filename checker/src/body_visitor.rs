@@ -175,7 +175,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         if cfg!(DEBUG)
             && !matches!(
                 self.tcx.def_kind(self.def_id),
-                rustc_hir::def::DefKind::Variant
+                rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Variant
             )
         {
             let mut stdout = std::io::stdout();
@@ -872,6 +872,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                             }
                             .into(),
                         );
+                        self.type_visitor_mut()
+                            .set_path_rustc_type(heap_root.clone(), result_rustc_type);
                         for (path, value) in self
                             .exit_environment
                             .as_ref()
