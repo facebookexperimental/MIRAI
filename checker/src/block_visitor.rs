@@ -729,10 +729,15 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             HashMap::new();
         let mut newly_discovered_paths: Vec<(Rc<Path>, PathOrFunction)> = vec![];
         for (path, value) in self.bv.current_environment.value_map.iter() {
-            if value.is_function() {
-                let ty = self
-                    .type_visitor()
-                    .get_path_rustc_type(path, self.bv.current_span);
+            if let Expression::CompileTimeConstant(ConstantDomain::Function(func_ref)) =
+                &value.expression
+            {
+                let ty = if let Some(def_id) = func_ref.def_id {
+                    self.bv.tcx.type_of(def_id)
+                } else {
+                    self.type_visitor()
+                        .get_path_rustc_type(path, self.bv.current_span)
+                };
                 if path.is_rooted_by_non_local_structure() {
                     // This function can be accessed by the callee without explicitly being
                     // passed as an argument, so include it in the callee's environment whether
