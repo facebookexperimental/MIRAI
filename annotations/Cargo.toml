@@ -7,7 +7,7 @@ description = "Macros that provide source code annotations for MIRAI"
 repository = "https://github.com/facebookexperimental/MIRAI"
 readme = "README.md"
 license = "MIT"
-edition = "2018"
+edition = "2021"
 
 [lib]
 test = false # we have no unit tests

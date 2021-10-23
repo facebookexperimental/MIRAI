@@ -15,7 +15,7 @@ you'll see an error message complaining about a dynamic load library not being f
 
 The easiest way to get started is to first build your project in the normal way (with one exception:
  set `RUSTFLAGS="-Z always_encode_mir"` to force the rust compiler to include MIR into its compiled output).
-Refer to [this link](https://doc.rust-lang.org/1.30.0/book/2018-edition/ch01-00-getting-started.html) for details
+Refer to [this link](https://doc.rust-lang.org/stable/book/ch01-00-getting-started.html) for details
 on compiling a cargo project.
 When there are no compile errors,
 no lint errors and no test failures, you can proceed to the next step and run MIRAI. For example:
