@@ -1424,6 +1424,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
                 // [(x >= y) && (x == y)] -> x == y
+                // [(x >= y) && (x > y)] -> x > y
                 (
                     Expression::GreaterOrEqual {
                         left: x1,
@@ -1432,11 +1433,16 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     Expression::Equals {
                         left: x2,
                         right: y2,
+                    }
+                    | Expression::GreaterThan {
+                        left: x2,
+                        right: y2,
                     },
                 ) if x1.eq(x2) && y1.eq(y2) => {
                     return other.clone();
                 }
                 // [(x <= y) && (x == y)] -> x == y
+                // [(x <= y) && (x < y)] -> x < y
                 (
                     Expression::LessOrEqual {
                         left: x1,
@@ -1445,13 +1451,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     Expression::Equals {
                         left: x2,
                         right: y2,
+                    }
+                    | Expression::LessThan {
+                        left: x2,
+                        right: y2,
                     },
                 ) if x1.eq(x2) && y1.eq(y2) => {
                     return other.clone();
                 }
                 // [(x == y) && (x >= y)] -> x == y
+                // [(x > y) && (x >= y)] -> x > y
                 (
                     Expression::Equals {
+                        left: x1,
+                        right: y1,
+                    }
+                    | Expression::GreaterThan {
                         left: x1,
                         right: y1,
                     },
@@ -1463,8 +1478,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     return self.clone();
                 }
                 // [(x == y) && (x <= y)] -> x == y
+                // [(x < y) && (x <= y)] -> x < y
                 (
                     Expression::Equals {
+                        left: x1,
+                        right: y1,
+                    }
+                    | Expression::LessThan {
                         left: x1,
                         right: y1,
                     },
