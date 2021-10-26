@@ -472,10 +472,17 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .visit_function_reference(destructor.did, fun_ty, Some(substs))
                     .clone();
                 let func_to_call = Rc::new(func_const.clone().into());
+                let ref_to_path_value = AbstractValue::make_reference(path.clone());
+                let actual_args = vec![(
+                    Path::new_computed(ref_to_path_value.clone()),
+                    ref_to_path_value,
+                )];
+                let function_constant_args =
+                    self.get_function_constant_args(&actual_args, &actual_argument_types);
+
                 // We need a place, but the drop statement does not provide one, so we use the
                 // local being dropped as the return result.
                 let destination = Some((*place, target));
-                let ref_to_path_value = AbstractValue::make_reference(path.clone());
                 let mut call_visitor = CallVisitor::new(
                     self,
                     destructor.did,
@@ -484,14 +491,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     self.bv.current_environment.clone(),
                     func_const,
                 );
-                call_visitor.actual_args = vec![(
-                    Path::new_computed(ref_to_path_value.clone()),
-                    ref_to_path_value,
-                )];
+                call_visitor.actual_args = actual_args;
                 call_visitor.actual_argument_types = actual_argument_types;
                 call_visitor.cleanup = unwind;
                 call_visitor.destination = destination;
                 call_visitor.callee_fun_val = func_to_call;
+                call_visitor.function_constant_args = &function_constant_args;
+
                 let function_summary = call_visitor.get_function_summary().unwrap_or_default();
                 call_visitor.transfer_and_refine_into_current_environment(&function_summary);
                 // Undo the return type update of the fake return value place.
