@@ -280,6 +280,20 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
                             // If pred_bb is known to have a false exit condition for bb it can be ignored.
                             None
                         }
+                    } else if let mir::BasicBlockData {
+                        is_cleanup: true, ..
+                    } = &self.bv.mir[bb]
+                    {
+                        // A clean up block does not execute starting with the normal exit state of
+                        // a predecessor block. If the predecessor ends on a call, the side effects of
+                        // the call should probably be used to havoc parts of the normal state of
+                        // the predecessor. For now, just proceed as if the predecessor block had no
+                        // effect on its initial state.
+                        // todo: perhaps just leave function constants in the initial state.
+                        Some((
+                            self.terminator_state[pred_bb].clone(),
+                            Rc::new(abstract_value::TRUE),
+                        ))
                     } else {
                         // If pred_state does not have an exit condition map, it is in its default state
                         // which means it has not yet been visited, or it is code that is known to always
