@@ -974,8 +974,20 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .expect("expect reference target to have a value");
             environment.strong_update_value_at(heap_root.clone(), target_value.clone());
             if let Expression::Reference(path) = &target_value.expression {
-                if matches!(&path.value, PathEnum::LocalVariable { .. }) {
-                    self.promote_reference(environment, target_type, &heap_root, path);
+                match &path.value {
+                    PathEnum::LocalVariable { .. } => {
+                        self.promote_reference(environment, target_type, &heap_root, path)
+                    }
+                    PathEnum::Computed { value } => {
+                        environment.strong_update_value_at(path.clone(), value.clone());
+                        if target_type.is_slice() {
+                            let len_path = Path::new_length(path.clone());
+                            if let Some(len_val) = exit_env_map.get(&len_path) {
+                                environment.strong_update_value_at(len_path, len_val.clone());
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             let promoted_value = AbstractValue::make_from(Expression::Reference(heap_root), 1);
@@ -2408,6 +2420,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     }
                 }
             }
+            update(self, target_path.clone(), value.clone());
         }
         let target_type = ExpressionType::from(root_rustc_type.kind());
         let mut no_children = true;
