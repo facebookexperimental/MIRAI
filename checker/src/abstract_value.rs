@@ -3359,6 +3359,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         {
             return Rc::new(result.into());
         }
+        // [0 <= v1] -> true if v1 is an unsigned number
+        if self.is_zero() && other.expression.infer_type().is_unsigned_integer() {
+            return Rc::new(TRUE);
+        }
         match (&self.expression, &other.expression) {
             // [(c ? v1 : v2) <= c3] -> c ? (v1 <= c3) : (v2 <= c3)
             (
@@ -5852,16 +5856,30 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 let refined_length =
                     length.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
 
-                let arr1 = refined_left.try_resolve_as_byte_array(post_env);
-                let arr2 = refined_right.try_resolve_as_byte_array(post_env);
-                if let (Some(arr1), Some(arr2)) = (&arr1, &arr2) {
-                    return Rc::new(ConstantDomain::I128(arr1.cmp(arr2) as i32 as i128).into());
-                }
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(len)) =
+                    &refined_length.expression
+                {
+                    let n = *len as usize;
 
-                let str1 = refined_left.try_resolve_as_ref_to_str(post_env);
-                let str2 = refined_right.try_resolve_as_ref_to_str(post_env);
-                if let (Some(str1), Some(str2)) = (str1, str2) {
-                    return Rc::new(ConstantDomain::I128(str1.cmp(&str2) as i32 as i128).into());
+                    let arr1 = refined_left.try_resolve_as_byte_array(post_env);
+                    let arr2 = refined_right.try_resolve_as_byte_array(post_env);
+                    if let (Some(arr1), Some(arr2)) = (&arr1, &arr2) {
+                        let n1 = usize::min(n, arr1.len());
+                        let n2 = usize::min(n, arr2.len());
+                        return Rc::new(
+                            ConstantDomain::I128(arr1[..n1].cmp(&arr2[..n2]) as i32 as i128).into(),
+                        );
+                    }
+
+                    let str1 = refined_left.try_resolve_as_ref_to_str(post_env);
+                    let str2 = refined_right.try_resolve_as_ref_to_str(post_env);
+                    if let (Some(str1), Some(str2)) = (str1, str2) {
+                        let n1 = usize::min(n, str1.len());
+                        let n2 = usize::min(n, str2.len());
+                        return Rc::new(
+                            ConstantDomain::I128(str1[..n1].cmp(&str2[..n2]) as i32 as i128).into(),
+                        );
+                    }
                 }
                 AbstractValue::make_memcmp(refined_left, refined_right, refined_length)
             }
