@@ -2607,7 +2607,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 } else {
                     scalar_int.to_bits(scalar_int.size()).unwrap()
                 };
-                let byte_array = unsafe { std::mem::transmute::<u128, [u8; 16]>(data) };
+                let byte_array = data.to_ne_bytes();
                 let bytes: &[u8] = &byte_array[0..size];
 
                 match lty.kind() {
