@@ -19,7 +19,7 @@ pub const MAX_EXPRESSION_SIZE: u64 = 1_000;
 pub const MAX_FIXPOINT_ITERATIONS: usize = 10;
 
 /// Prevents the outer fixed point loop from creating ever more new abstract values of type Expression::Variable.
-pub const MAX_PATH_LENGTH: usize = 30;
+pub const MAX_PATH_LENGTH: usize = 300;
 
 /// Refining values with a path condition that is a really deep expression leads to exponential blow up.
 pub const MAX_REFINE_DEPTH: usize = 40;

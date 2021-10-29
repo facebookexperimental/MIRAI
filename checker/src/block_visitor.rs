@@ -149,6 +149,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             _ => {}
         }
+        let pty = self
+            .type_visitor()
+            .get_rustc_place_type(place, self.bv.current_span);
+        self.type_visitor_mut()
+            .set_path_rustc_type(path.clone(), pty);
         self.visit_rvalue(path, rvalue);
     }
 
@@ -2312,9 +2317,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         &mut self,
         path: Rc<Path>,
         operand: &mir::Operand<'tcx>,
-        _ty: Ty<'tcx>,
+        ty: Ty<'tcx>,
     ) {
         let value_path = Path::new_field(Path::new_field(path, 0), 0);
+        let ty = self
+            .type_visitor()
+            .specialize_generic_argument_type(ty, &self.type_visitor().generic_argument_map);
+        self.type_visitor_mut()
+            .set_path_rustc_type(value_path.clone(), ty);
         self.visit_used_operand(value_path, operand);
     }
 
