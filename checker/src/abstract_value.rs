@@ -3288,6 +3288,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             ) if p1.eq(p2) => {
                 return self.clone();
             }
+            // [widen(x_join_y) join x] -> widen(x_join_y)
+            // [widen(x_join_y) join y] -> widen(x_join_y)
+            (Expression::WidenedJoin { operand, .. }, _) => {
+                if let Expression::Join { left, right } = &operand.expression {
+                    if left.eq(&other) || right.eq(&other) {
+                        return self.clone();
+                    }
+                }
+            }
             // [x join (if c { x } else { y })] -> x join y
             // [x join (if c { y } else { x })] -> x join y
             (
@@ -3325,9 +3334,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
             // [x join widened(x join y)] -> widened(x join y)
+            // [y join widened(x join y)] -> widened(x join y)
             (_, Expression::WidenedJoin { operand, .. }) => {
-                if let Expression::Join { left: x, .. } = &operand.expression {
-                    if self.eq(x) {
+                if let Expression::Join { left: x, right: y } = &operand.expression {
+                    if self.eq(x) || self.eq(y) {
                         return other.clone();
                     }
                 }
@@ -3802,7 +3812,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     fn logical_not(&self) -> Rc<AbstractValue> {
         match &self.expression {
             Expression::Bottom => self.clone(),
-            Expression::Equals { left: x, right: y } if x.expression.infer_type().is_integer() => {
+            Expression::Equals { left: x, right: y }
+                if !x.expression.infer_type().is_floating_point_number() =>
+            {
                 // [!(x == y)] -> x != y
                 x.not_equals(y.clone())
             }
@@ -3834,7 +3846,9 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // [!!x] -> x
                 operand.clone()
             }
-            Expression::Ne { left: x, right: y } if x.expression.infer_type().is_integer() => {
+            Expression::Ne { left: x, right: y }
+                if !x.expression.infer_type().is_floating_point_number() =>
+            {
                 // [!(x != y)] -> x == y
                 x.equals(y.clone())
             }

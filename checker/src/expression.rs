@@ -827,7 +827,13 @@ impl Expression {
         match self {
             Expression::Top => NonPrimitive,
             Expression::Bottom => NonPrimitive,
-            Expression::Add { left, .. } => left.expression.infer_type(),
+            Expression::Add { left, right } => {
+                let lt = left.expression.infer_type();
+                if lt == ExpressionType::ThinPointer {
+                    return lt;
+                }
+                right.expression.infer_type()
+            }
             Expression::AddOverflows { .. } => Bool,
             Expression::And { .. } => Bool,
             Expression::BitAnd { left, .. } => left.expression.infer_type(),
