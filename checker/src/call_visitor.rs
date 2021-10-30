@@ -2635,6 +2635,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     _ => Rc::new(abstract_value::FALSE),
                 };
                 if promoted_condition.as_bool_if_known().is_none() {
+                    if self.block_visitor.bv.current_span.in_derive_expansion() {
+                        info!("derive macro has warning: {:?}", precondition.message);
+                        // do not propagate preconditions across derive macros since
+                        // derived code is pretty much foreign code.
+                        continue;
+                    }
+
                     let mut stacked_spans = vec![self.block_visitor.bv.current_span];
                     stacked_spans.append(&mut precondition.spans.clone());
                     let promoted_precondition = Precondition {
