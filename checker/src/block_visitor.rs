@@ -485,6 +485,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 let function_constant_args =
                     self.get_function_constant_args(&actual_args, &actual_argument_types);
 
+                // Since drop calls are implicit in the source code, we treat them like foreign
+                // code and suppress diagnostics. In most cases this should improve precision, but
+                // it does sacrifice soundness, so we still give diagnostics when in Paranoid mode.
+                let saved_assume_preconditions_of_next_call =
+                    self.bv.assume_preconditions_of_next_call;
+                self.bv.assume_preconditions_of_next_call = saved_assume_preconditions_of_next_call
+                    || self.bv.cv.options.diag_level != DiagLevel::Paranoid;
+
                 // We need a place, but the drop statement does not provide one, so we use the
                 // local being dropped as the return result.
                 let destination = Some((*place, target));
@@ -508,6 +516,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 // Undo the return type update of the fake return value place.
                 self.type_visitor_mut()
                     .set_path_rustc_type(path.clone(), ty);
+                self.bv.assume_preconditions_of_next_call = saved_assume_preconditions_of_next_call;
                 return;
             }
         }
