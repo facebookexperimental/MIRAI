@@ -2495,30 +2495,39 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             (Expression::WidenedJoin { path, .. }, _) => {
                 let widened_interval = self.get_cached_interval();
                 let val_interval = other.get_cached_interval();
-                return if !widened_interval.is_bottom()
+                if !widened_interval.is_bottom()
                     && !val_interval.is_bottom()
                     && widened_interval.intersect(&val_interval).is_bottom()
                 {
-                    Rc::new(FALSE)
-                } else {
-                    AbstractValue::make_typed_unknown(other.expression.infer_type(), path.clone())
-                        .equals(other)
+                    return Rc::new(FALSE);
+                } else if self.expression_size.saturating_add(other.expression_size)
+                    > k_limits::MAX_EXPRESSION_SIZE / 2
+                    || self.expression.contains_local_variable(false)
+                {
+                    return AbstractValue::make_typed_unknown(
+                        other.expression.infer_type(),
+                        path.clone(),
+                    )
+                    .equals(other);
                 };
             }
             // [(val == widened)] -> if !interval(widened).intersect(interval(val)) { false } else { val == unknown }
             (_, Expression::WidenedJoin { path, .. }) => {
                 let val_interval = self.get_cached_interval();
                 let widened_interval = other.get_cached_interval();
-                return if !widened_interval.is_bottom()
+                if !widened_interval.is_bottom()
                     && !val_interval.is_bottom()
                     && widened_interval.intersect(&val_interval).is_bottom()
                 {
-                    Rc::new(FALSE)
-                } else {
-                    self.equals(AbstractValue::make_typed_unknown(
+                    return Rc::new(FALSE);
+                } else if self.expression_size.saturating_add(other.expression_size)
+                    > k_limits::MAX_EXPRESSION_SIZE / 2
+                    || other.expression.contains_local_variable(false)
+                {
+                    return self.equals(AbstractValue::make_typed_unknown(
                         other.expression.infer_type(),
                         path.clone(),
-                    ))
+                    ));
                 };
             }
 
