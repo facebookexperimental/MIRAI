@@ -1113,17 +1113,18 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .session
             .struct_span_warn(span, diagnostic.as_ref());
         for pc_span in precondition.spans.iter() {
-            let span_str = self
-                .bv
-                .tcx
-                .sess
-                .source_map()
-                .span_to_diagnostic_string(*pc_span);
-            if span_str.starts_with("/rustc/") {
-                warning.span_note(*pc_span, &format!("related location {}", span_str));
-            } else {
+            let snippet = self.bv.tcx.sess.source_map().span_to_snippet(*pc_span);
+            if snippet.is_ok() {
                 warning.span_note(*pc_span, "related location");
-            };
+            } else {
+                let span_str = self
+                    .bv
+                    .tcx
+                    .sess
+                    .source_map()
+                    .span_to_diagnostic_string(*pc_span);
+                warning.span_note(*pc_span, &format!("related location {}", span_str));
+            }
         }
         self.bv.emit_diagnostic(warning);
     }

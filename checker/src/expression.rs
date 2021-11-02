@@ -704,6 +704,9 @@ impl Expression {
                         .expression
                         .contains_local_variable(is_post_condition)
             }
+            Expression::InitialParameterValue { path, .. } => {
+                path.contains_local_variable(is_post_condition)
+            }
             Expression::Join { left, right, .. } => {
                 left.expression.contains_local_variable(is_post_condition)
                     || right.expression.contains_local_variable(is_post_condition)
@@ -723,7 +726,6 @@ impl Expression {
                 .expression
                 .contains_local_variable(is_post_condition),
             Expression::Reference(path) => path.contains_local_variable(is_post_condition),
-            Expression::InitialParameterValue { .. } => false,
             Expression::Switch {
                 discriminator,
                 cases,
