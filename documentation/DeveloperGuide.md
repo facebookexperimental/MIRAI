@@ -60,9 +60,10 @@ To run mirai on a crate, as if it were rustc, just set the `RUSTC_WRAPPER` envir
 When running `RUSTC_WRAPPER=~/mirai/target/debug/mirai cargo build` on a crate make sure to either:
 1. Set Rust to use the same nightly as MIRAI in the crate's directory (via `rustup override`, or by linking to 
     MIRAI's [rust-toolchain](https://github.com/facebookexperimental/MIRAI/blob/main/rust-toolchain) file).
-2. Or set `DYLD_LIBRARY_PATH=/Users/$USER/.rustup/toolchains/nightly-YYYY-MM-DD-x86_64-apple-darwin/lib/` before running 
+2. Or set `DYLD_LIBRARY_PATH=/Users/$USER/.rustup/toolchains/nightly-YYYY-MM-DD-TA/lib/` before running 
     `RUSTC_WRAPPER=mirai cargo build`.
-    - (Be sure to fill `YYYY-MM-DD` with the correctly nightly date.)
+    - (Be sure to fill `YYYY-MM-DD` with the correctly nightly date and to replace TA with the appropriate target
+architecture string. You can obtain that using `rustc --print sysroot`.)
 
 Failure to do so may result in the error: `dyld: Library not loaded`.
 
