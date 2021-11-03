@@ -447,19 +447,14 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 }
                             }
                             TyKind::Closure(def_id, substs) => {
-                                if utils::are_concrete(substs) {
-                                    return substs
-                                        .as_closure()
-                                        .upvar_tys()
-                                        .nth(*ordinal)
-                                        .unwrap_or_else(|| {
-                                            info!(
-                                                "closure field not found {:?} {:?}",
-                                                def_id, ordinal
-                                            );
-                                            self.tcx.types.never
-                                        });
-                                }
+                                return substs
+                                    .as_closure()
+                                    .upvar_tys()
+                                    .nth(*ordinal)
+                                    .unwrap_or_else(|| {
+                                        info!("closure field not found {:?} {:?}", def_id, ordinal);
+                                        self.tcx.types.never
+                                    });
                             }
                             TyKind::Generator(def_id, substs, _) => {
                                 let mut tuple_types =

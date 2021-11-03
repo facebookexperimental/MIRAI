@@ -138,9 +138,13 @@ pub mod alloc {
             }
         }
         pub mod implement_alloc_boxed_Box_str_alloc_alloc_Global {
-            fn from(s: String) -> Box<str> {
-                //s.into_boxed_str()
-                result!()
+            fn from(s: String) -> String {
+                s
+            }
+        }
+        pub mod implement_alloc_vec_Vec_u8_alloc_alloc_Global {
+            fn from(s: String) -> String {
+                s
             }
         }
         pub mod implement_alloc_string_Drain {
@@ -151,8 +155,9 @@ pub mod alloc {
                 //todo: provide mirai helper that does a deep clone
                 _self
             }
-            default_contract!(from);
-            default_contract!(to_string);
+            fn from(s: String) -> String {
+                s
+            }
         }
     }
 
@@ -1115,6 +1120,12 @@ pub mod core {
             }
         }
 
+        pub mod float {
+            pub mod implement_f64 {
+                default_contract!(fmt);
+            }
+        }
+
         pub mod implement_core_fmt_Formatter {
             default_contract!(debug_struct);
             default_contract!(debug_tuple);
@@ -1127,6 +1138,13 @@ pub mod core {
             default_contract!(fmt);
         }
 
+        pub mod num {
+            pub mod imp {
+                pub mod implement_u64 {
+                    default_contract!(fmt);
+                }
+            }
+        }
         pub mod rt {
             pub mod v1 {
                 pub struct Argument {}
@@ -1169,7 +1187,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchg__u16, u16);
         atomic_cxchg!(atomic_cxchg__u32, u32);
         atomic_cxchg!(atomic_cxchg__u64, u64);
-        atomic_cxchg!(atomic_cxchg__usize, usize);
+        atomic_cxchg!(atomic_cxchg, usize);
         atomic_cxchg!(atomic_cxchg__i128, i128);
         atomic_cxchg!(atomic_cxchg__u128, u128);
 
@@ -1190,7 +1208,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchg_acq__u16, u16);
         atomic_cxchg!(atomic_cxchg_acq__u32, u32);
         atomic_cxchg!(atomic_cxchg_acq__u64, u64);
-        atomic_cxchg!(atomic_cxchg_acq__usize, usize);
+        atomic_cxchg!(atomic_cxchg_acq, usize);
         atomic_cxchg!(atomic_cxchg_acq__i128, i128);
         atomic_cxchg!(atomic_cxchg_acq__u128, u128);
 
@@ -1211,7 +1229,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchg_rel__u16, u16);
         atomic_cxchg!(atomic_cxchg_rel__u32, u32);
         atomic_cxchg!(atomic_cxchg_rel__u64, u64);
-        atomic_cxchg!(atomic_cxchg_rel__usize, usize);
+        atomic_cxchg!(atomic_cxchg_rel, usize);
         atomic_cxchg!(atomic_cxchg_rel__i128, i128);
         atomic_cxchg!(atomic_cxchg_rel__u128, u128);
 
@@ -1232,7 +1250,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchg_acqrel__u16, u16);
         atomic_cxchg!(atomic_cxchg_acqrel__u32, u32);
         atomic_cxchg!(atomic_cxchg_acqrel__u64, u64);
-        atomic_cxchg!(atomic_cxchg_acqrel__usize, usize);
+        atomic_cxchg!(atomic_cxchg_acqrel, usize);
         atomic_cxchg!(atomic_cxchg_acqrel__i128, i128);
         atomic_cxchg!(atomic_cxchg_acqrel__u128, u128);
 
@@ -1253,7 +1271,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchg_relaxed__u16, u16);
         atomic_cxchg!(atomic_cxchg_relaxed__u32, u32);
         atomic_cxchg!(atomic_cxchg_relaxed__u64, u64);
-        atomic_cxchg!(atomic_cxchg_relaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchg_relaxed, usize);
         atomic_cxchg!(atomic_cxchg_relaxed__i128, i128);
         atomic_cxchg!(atomic_cxchg_relaxed__u128, u128);
 
@@ -1274,7 +1292,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchg_failrelaxed__u16, u16);
         atomic_cxchg!(atomic_cxchg_failrelaxed__u32, u32);
         atomic_cxchg!(atomic_cxchg_failrelaxed__u64, u64);
-        atomic_cxchg!(atomic_cxchg_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchg_failrelaxed, usize);
         atomic_cxchg!(atomic_cxchg_failrelaxed__i128, i128);
         atomic_cxchg!(atomic_cxchg_failrelaxed__u128, u128);
 
@@ -1295,7 +1313,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchg_failacq__u16, u16);
         atomic_cxchg!(atomic_cxchg_failacq__u32, u32);
         atomic_cxchg!(atomic_cxchg_failacq__u64, u64);
-        atomic_cxchg!(atomic_cxchg_failacq__usize, usize);
+        atomic_cxchg!(atomic_cxchg_failacq, usize);
         atomic_cxchg!(atomic_cxchg_failacq__i128, i128);
         atomic_cxchg!(atomic_cxchg_failacq__u128, u128);
 
@@ -1316,7 +1334,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchg_acq_failrelaxed__u16, u16);
         atomic_cxchg!(atomic_cxchg_acq_failrelaxed__u32, u32);
         atomic_cxchg!(atomic_cxchg_acq_failrelaxed__u64, u64);
-        atomic_cxchg!(atomic_cxchg_acq_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchg_acq_failrelaxed, usize);
         atomic_cxchg!(atomic_cxchg_acq_failrelaxed__i128, i128);
         atomic_cxchg!(atomic_cxchg_acq_failrelaxed__u128, u128);
 
@@ -1337,7 +1355,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__u16, u16);
         atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__u32, u32);
         atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__u64, u64);
-        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed, usize);
         atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__i128, i128);
         atomic_cxchg!(atomic_cxchg_acqrel_failrelaxed__u128, u128);
 
@@ -1358,7 +1376,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchgweak__u16, u16);
         atomic_cxchg!(atomic_cxchgweak__u32, u32);
         atomic_cxchg!(atomic_cxchgweak__u64, u64);
-        atomic_cxchg!(atomic_cxchgweak__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak, usize);
         atomic_cxchg!(atomic_cxchgweak__i128, i128);
         atomic_cxchg!(atomic_cxchgweak__u128, u128);
 
@@ -1379,7 +1397,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchgweak_acq__u16, u16);
         atomic_cxchg!(atomic_cxchgweak_acq__u32, u32);
         atomic_cxchg!(atomic_cxchgweak_acq__u64, u64);
-        atomic_cxchg!(atomic_cxchgweak_acq__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_acq, usize);
         atomic_cxchg!(atomic_cxchgweak_acq__i128, i128);
         atomic_cxchg!(atomic_cxchgweak_acq__u128, u128);
 
@@ -1400,7 +1418,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchgweak_rel__u16, u16);
         atomic_cxchg!(atomic_cxchgweak_rel__u32, u32);
         atomic_cxchg!(atomic_cxchgweak_rel__u64, u64);
-        atomic_cxchg!(atomic_cxchgweak_rel__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_rel, usize);
         atomic_cxchg!(atomic_cxchgweak_rel__i128, i128);
         atomic_cxchg!(atomic_cxchgweak_rel__u128, u128);
 
@@ -1421,7 +1439,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchgweak_acqrel__u16, u16);
         atomic_cxchg!(atomic_cxchgweak_acqrel__u32, u32);
         atomic_cxchg!(atomic_cxchgweak_acqrel__u64, u64);
-        atomic_cxchg!(atomic_cxchgweak_acqrel__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_acqrel, usize);
         atomic_cxchg!(atomic_cxchgweak_acqrel__i128, i128);
         atomic_cxchg!(atomic_cxchgweak_acqrel__u128, u128);
 
@@ -1442,7 +1460,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchgweak_relaxed__u16, u16);
         atomic_cxchg!(atomic_cxchgweak_relaxed__u32, u32);
         atomic_cxchg!(atomic_cxchgweak_relaxed__u64, u64);
-        atomic_cxchg!(atomic_cxchgweak_relaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_relaxed, usize);
         atomic_cxchg!(atomic_cxchgweak_relaxed__i128, i128);
         atomic_cxchg!(atomic_cxchgweak_relaxed__u128, u128);
 
@@ -1463,7 +1481,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchgweak_failrelaxed__u16, u16);
         atomic_cxchg!(atomic_cxchgweak_failrelaxed__u32, u32);
         atomic_cxchg!(atomic_cxchgweak_failrelaxed__u64, u64);
-        atomic_cxchg!(atomic_cxchgweak_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_failrelaxed, usize);
         atomic_cxchg!(atomic_cxchgweak_failrelaxed__i128, i128);
         atomic_cxchg!(atomic_cxchgweak_failrelaxed__u128, u128);
 
@@ -1484,7 +1502,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchgweak_failacq__u16, u16);
         atomic_cxchg!(atomic_cxchgweak_failacq__u32, u32);
         atomic_cxchg!(atomic_cxchgweak_failacq__u64, u64);
-        atomic_cxchg!(atomic_cxchgweak_failacq__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_failacq, usize);
         atomic_cxchg!(atomic_cxchgweak_failacq__i128, i128);
         atomic_cxchg!(atomic_cxchgweak_failacq__u128, u128);
 
@@ -1509,7 +1527,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__u16, u16);
         atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__u32, u32);
         atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__u64, u64);
-        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed, usize);
         atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__i128, i128);
         atomic_cxchg!(atomic_cxchgweak_acq_failrelaxed__u128, u128);
 
@@ -1534,7 +1552,7 @@ pub mod core {
         atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__u16, u16);
         atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__u32, u32);
         atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__u64, u64);
-        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__usize, usize);
+        atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed, usize);
         atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__i128, i128);
         atomic_cxchg!(atomic_cxchgweak_acqrel_failrelaxed__u128, u128);
 
@@ -3778,6 +3796,15 @@ pub mod crossbeam_epoch {
     }
 }
 
+pub mod diem_logger {
+    pub mod logger {
+        pub mod Logger {
+            default_contract!(enabled);
+            default_contract!(record);
+        }
+    }
+}
+
 pub mod hashbrown {
     pub mod raw {
         fn DELETED() -> u8 {
@@ -4742,6 +4769,10 @@ pub mod std {
     pub mod net {
         pub mod addr {
             pub mod implement_std_net_addr_SocketAddr {
+                default_contract!(to_socket_addrs);
+            }
+
+            pub mod implement_tuple_2_ref_str_u16 {
                 default_contract!(to_socket_addrs);
             }
         }

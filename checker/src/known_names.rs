@@ -314,7 +314,9 @@ impl KnownNamesCache {
                         .map(|n| match n.as_str().deref() {
                             "call" => KnownNames::StdOpsFunctionFnCall,
                             "call_mut" => KnownNames::StdOpsFunctionFnMutCallMut,
-                            "call_once" => KnownNames::StdOpsFunctionFnOnceCallOnce,
+                            "call_once" | "call_once_force" => {
+                                KnownNames::StdOpsFunctionFnOnceCallOnce
+                            }
                             _ => KnownNames::None,
                         })
                         .unwrap_or(KnownNames::None),
@@ -379,6 +381,19 @@ impl KnownNamesCache {
                 _ => KnownNames::None,
             };
 
+        let get_known_name_for_sync_once_namespace =
+            |mut def_path_data_iter: Iter<'_>| match path_data_elem_as_disambiguator(
+                def_path_data_iter.next(),
+            ) {
+                Some(2) => get_path_data_elem_name(def_path_data_iter.next())
+                    .map(|n| match n.as_str().deref() {
+                        "call_once" | "call_once_force" => KnownNames::StdOpsFunctionFnOnceCallOnce,
+                        _ => KnownNames::None,
+                    })
+                    .unwrap_or(KnownNames::None),
+                _ => KnownNames::None,
+            };
+
         let get_known_name_for_raw_vec_namespace =
             |mut def_path_data_iter: Iter<'_>| match path_data_elem_as_disambiguator(
                 def_path_data_iter.next(),
@@ -396,6 +411,16 @@ impl KnownNamesCache {
             get_path_data_elem_name(def_path_data_iter.next())
                 .map(|n| match n.as_str().deref() {
                     "cmp" => get_known_name_for_slice_cmp_namespace(def_path_data_iter),
+                    _ => KnownNames::None,
+                })
+                .unwrap_or(KnownNames::None)
+        };
+
+        //get_known_name_for_sync_namespace
+        let get_known_name_for_sync_namespace = |mut def_path_data_iter: Iter<'_>| {
+            get_path_data_elem_name(def_path_data_iter.next())
+                .map(|n| match n.as_str().deref() {
+                    "once" => get_known_name_for_sync_once_namespace(def_path_data_iter),
                     _ => KnownNames::None,
                 })
                 .unwrap_or(KnownNames::None)
@@ -428,6 +453,7 @@ impl KnownNamesCache {
                     "mirai_verify" => KnownNames::MiraiVerify,
                     "raw_vec" => get_known_name_for_raw_vec_namespace(def_path_data_iter),
                     "slice" => get_known_name_for_slice_namespace(def_path_data_iter),
+                    "sync" => get_known_name_for_sync_namespace(def_path_data_iter),
                     _ => KnownNames::None,
                 })
                 .unwrap_or(KnownNames::None)
