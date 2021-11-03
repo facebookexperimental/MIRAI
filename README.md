@@ -3,7 +3,22 @@ MIRAI is an abstract interpreter for the [Rust](https://www.rust-lang.org/) comp
 representation](https://github.com/rust-lang/rfcs/blob/main/text/1211-mir.md) (MIR).
 It is intended to become a widely used static analysis tool for Rust.
 
-## Using MIRAI
+## Who should use MIRAI
+
+MIRAI can be used as a linter that finds panics that may be unintentional or are not the best way to terminate a
+program. This use case generally requires no annotations and is best realized by integrating MIRAI into a CI pipeline.
+
+MIRAI can also be used to verify correctness properties. Such properties need to be encoded into annotations of the
+source program.
+
+A related use is to better document an API via explicit precondition annotations and then use MIRAI to check that 
+the annotations match the code.
+
+Finally, MIRAI can be used to look for security bugs via taint analysis (information leaks, code injection bugs, etc.)
+and constant time analysis (information leaks via side channels). Unintentional (or ill-considered) panics can also
+become security problems (denial of service, undefined behavior).
+
+## How to use MIRAI
 
 You'll need to install MIRAI as described here for [MacOS and Windows](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md)
 and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Linux.md).
