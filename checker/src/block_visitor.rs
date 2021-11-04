@@ -2716,8 +2716,41 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             _ => {}
                         }
                     }
-                    Some(GlobalAlloc::Function(_instance)) => {
-                        //todo: figure out what kind of constants are encoded this way. Get a test case.
+                    Some(GlobalAlloc::Function(instance)) => {
+                        let def_id = instance.def.def_id();
+                        let substs = self.type_visitor().specialize_substs(
+                            instance.substs,
+                            &self.type_visitor().generic_argument_map,
+                        );
+                        let fn_ty = self.bv.tcx.type_of(def_id);
+                        self.bv.cv.substs_cache.insert(def_id, substs);
+                        let fun_val = Rc::new(
+                            self.bv
+                                .cv
+                                .constant_value_cache
+                                .get_function_constant_for(
+                                    def_id,
+                                    fn_ty,
+                                    Some(substs),
+                                    self.bv.tcx,
+                                    &mut self.bv.cv.known_names_cache,
+                                    &mut self.bv.cv.summary_cache,
+                                )
+                                .clone()
+                                .into(),
+                        );
+                        let heap_val = self.bv.get_new_heap_block(
+                            Rc::new((8u128).into()),
+                            Rc::new(1u128.into()),
+                            false,
+                            lty,
+                        );
+                        let heap_path = Path::get_as_path(heap_val.clone());
+                        let field_0 = Path::new_field(heap_path, 0);
+                        self.bv
+                            .current_environment
+                            .strong_update_value_at(field_0, fun_val);
+                        return heap_val;
                     }
                     Some(GlobalAlloc::Static(def_id)) => {
                         return AbstractValue::make_reference(
@@ -3327,11 +3360,22 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let mut ty = self
             .type_visitor()
             .get_path_rustc_type(&path, self.bv.current_span);
+        // If place_path is an alias we generally prefer the type of the canonical path
+        // to the type obtained directly from place, because the canonical path type is more likely
+        // to be concrete. But if the canonical path is untyped for some reason, or if we are
+        // casting an integer to a pointer, we need to use the type of place_path.
         if ty.is_never() {
             ty = self
                 .type_visitor()
                 .get_rustc_place_type(place, self.bv.current_span);
             debug!("ty {:?}", ty);
+        } else if ty.is_ptr_sized_integral() {
+            let place_ty = self
+                .type_visitor()
+                .get_rustc_place_type(place, self.bv.current_span);
+            if place_ty.is_any_ptr() {
+                ty = place_ty;
+            }
         }
         self.type_visitor_mut()
             .set_path_rustc_type(path.clone(), ty);
