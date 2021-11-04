@@ -2642,6 +2642,20 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         continue;
                     }
 
+                    if (self.block_visitor.bv.treat_as_foreign
+                        || !self.block_visitor.bv.def_id.is_local())
+                        && !matches!(
+                            self.block_visitor.bv.cv.options.diag_level,
+                            DiagLevel::Paranoid
+                        )
+                        && precondition.message.contains("result unwrap failed")
+                    {
+                        // When foreign code unwraps a result, it is unlikely to be a parameter check.
+                        // Instead, let's assume that the code intends a panic to happen if the
+                        // result is not OK.
+                        continue;
+                    }
+
                     let mut stacked_spans = vec![self.block_visitor.bv.current_span];
                     stacked_spans.append(&mut precondition.spans.clone());
                     let promoted_precondition = Precondition {
