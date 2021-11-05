@@ -337,7 +337,8 @@ impl Path {
             PathEnum::Parameter { .. } => false,
             // In a post condition, a function result does not count as a local variable of the function
             PathEnum::Result => !is_post_condition,
-            PathEnum::StaticVariable { .. } => false,
+            // A caller will not know anything about a static variable that is not known locally
+            PathEnum::StaticVariable { .. } => true,
             PathEnum::PhantomData => false,
             PathEnum::PromotedConstant { .. } => true,
             PathEnum::QualifiedPath {
