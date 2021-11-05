@@ -1078,6 +1078,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             }
             KnownNames::StdIntrinsicsMinAlignOfVal => self.handle_min_align_of_val(),
             KnownNames::StdIntrinsicsMulWithOverflow => self.handle_checked_binary_operation(),
+            KnownNames::StdIntrinsicsNeedsDrop => self.handle_needs_drop(),
             KnownNames::StdIntrinsicsOffset => self.handle_offset(),
             KnownNames::StdIntrinsicsRawEq => self.handle_raw_eq(),
             KnownNames::StdIntrinsicsSizeOf => self.handle_size_of(),
@@ -2119,6 +2120,22 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         } else {
             assume_unreachable!();
         }
+    }
+
+    /// If `ty.needs_drop(...)` returns `true`, then `ty` is definitely
+    /// non-copy and *might* have a destructor attached; if it returns
+    /// `false`, then `ty` definitely has no destructor (i.e., no drop glue).
+    #[logfn_inputs(TRACE)]
+    fn handle_needs_drop(&mut self) -> Rc<AbstractValue> {
+        let sym = rustc_span::Symbol::intern("T");
+        let t = (self.callee_generic_argument_map.as_ref())
+            .expect("std::intrinsics::needs_drop must be called with generic arguments")
+            .get(&sym)
+            .expect("std::intrinsics::needs_drop must have generic argument T")
+            .expect_ty();
+        let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
+        let result = t.needs_drop(self.block_visitor.bv.tcx, param_env);
+        Rc::new(result.into())
     }
 
     /// Set the call result to an offset derived from the arguments.

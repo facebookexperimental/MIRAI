@@ -2599,7 +2599,6 @@ pub mod core {
             default_contract!(init);
             default_contract!(uninit);
             pub fn forget<T>(_: T) {}
-            default_contract!(needs_drop);
             pub unsafe fn volatile_copy_nonoverlapping_memory<T>(
                 dst: *mut T,
                 src: *const T,
