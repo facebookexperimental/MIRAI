@@ -2082,9 +2082,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .copy_or_move_elements(path, source_path, ty, is_move);
             }
             mir::CastKind::Misc => {
-                //todo: enum -> discriminant value
                 let source_type = self.get_operand_rustc_type(operand);
-                let source_value = self.visit_operand(operand);
+                let mut source_value = self.visit_operand(operand);
+                if source_type.is_enum() {
+                    let enum_path = Path::get_as_path(source_value);
+                    let discr_path = Path::new_discriminant(enum_path);
+                    source_value = self.bv.lookup_path_and_refine_result(discr_path, ty);
+                }
                 let result = source_value.cast(ExpressionType::from(ty.kind()));
                 if result != source_value || (source_type.is_trait() && !ty.is_trait()) {
                     self.type_visitor_mut()
