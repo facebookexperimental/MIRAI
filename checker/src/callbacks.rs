@@ -149,15 +149,15 @@ impl MiraiCallbacks {
             || file_name.starts_with("config/management/operational/src") // non termination
             || file_name.starts_with("crypto/crypto-derive/src") // out of memory
             || file_name.starts_with("diem-move/df-cli/src") // non termination
+            || file_name.starts_with("diem-move/diem-framework/src") // non termination
+            || file_name.starts_with("diem-move/diem-framework/DPN/releases/src") // non termination
+            || file_name.starts_with("diem-move/diem-framework/releases/src") // non termination
+            || file_name.starts_with("diem-move/diem-vm") // non termination
             || file_name.starts_with("diem-move/transaction-replay/src") // out of memory
             || file_name.starts_with("diem-move/vm-genesis/src") // Not a type: DefIndex(3250)
             || file_name.starts_with("diem-move/writeset-transaction-generator/src")  // out of memory
             || file_name.starts_with("execution/db-bootstrapper/src") // Not a type: DefIndex(3250)
             || file_name.starts_with("language/compiler/src") // out of memory
-            || file_name.starts_with("language/diem-framework/src") // non termination
-            || file_name.starts_with("language/diem-framework/DPN/releases/src")  // non termination
-            || file_name.starts_with("language/diem-framework/releases/src") // non termination
-            || file_name.starts_with("language/diem-vm/src") // non termination
             || file_name.starts_with("language/move-lang/src") // non termination
             || file_name.starts_with("language/move-model/src") // non termination
             || file_name.starts_with("language/tools/move-bytecode-viewer/src") // out of memory
@@ -212,6 +212,10 @@ impl MiraiCallbacks {
                 || file_name.starts_with("diem-node/src")
                 || file_name.starts_with("diem-move/df-cli/src")
                 || file_name.starts_with("diem-move/diem-events-fetcher/src")
+                || file_name.starts_with("diem-move/diem-framework/src")
+                || file_name.starts_with("diem-move/diem-framework/DPN/releases/src")
+                || file_name.starts_with("diem-move/diem-framework/releases/src")
+                || file_name.starts_with("diem-move/diem-vm")
                 || file_name.starts_with("diem-move/transaction-replay/src")
                 || file_name.starts_with("diem-move/diem-validator-interface")
                 || file_name.starts_with("diem-move/vm-genesis/src")
