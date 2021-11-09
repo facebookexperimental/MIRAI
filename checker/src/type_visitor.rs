@@ -361,8 +361,17 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     self.get_type_from_index(*type_index)
                 }
             }
-            PathEnum::HeapBlock { value } | PathEnum::Offset { value } => {
-                value.expression.infer_type().as_rustc_type(self.tcx)
+            PathEnum::HeapBlock { .. } => self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
+                ty: self.tcx.types.u8,
+                mutbl: rustc_hir::Mutability::Not,
+            }),
+            PathEnum::Offset { value } => {
+                if let Expression::Offset { left, .. } = &value.expression {
+                    let base_path = Path::get_as_path(left.clone());
+                    self.get_path_rustc_type(&base_path, current_span)
+                } else {
+                    unreachable!("an offset path, must contain an offset expression");
+                }
             }
             PathEnum::Parameter { ordinal } => {
                 if *ordinal > 0 && *ordinal < self.mir.local_decls.len() {
