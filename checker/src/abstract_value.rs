@@ -2048,6 +2048,17 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
         }
 
+        // [if c { true join (c || d) } else { e }] -> c || e
+        if let Expression::Join { left, right } = &consequent.expression {
+            if left.as_bool_if_known().unwrap_or(false) {
+                if let Expression::Or { left, .. } = &right.expression {
+                    if self.eq(left) {
+                        return self.or(alternate);
+                    }
+                }
+            }
+        }
+
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
         if !matches!(self.expression, Expression::Or { .. }) {
             if consequent.expression_size <= k_limits::MAX_EXPRESSION_SIZE / 10 {
