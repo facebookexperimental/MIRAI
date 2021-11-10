@@ -471,6 +471,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             }
             KnownNames::MiraiAssumePreconditions => {
                 checked_assume!(self.actual_args.is_empty());
+                self.use_entry_condition_as_exit_condition();
                 self.block_visitor.bv.assume_preconditions_of_next_call = true;
                 return true;
             }
