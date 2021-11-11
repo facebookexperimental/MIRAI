@@ -168,6 +168,7 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
             || file_name.starts_with("language/move-prover/lab/src") // out of memory
             || file_name.starts_with("language/move-prover/mutation/src") // out of memory
+            || file_name.starts_with("language/move-prover/tools/spec-flatten/src") // out of memory
             || file_name.starts_with("language/move-stdlib/src") // out of memory
             || file_name.starts_with("language/tools/move-coverage/src") // out of memory
             || file_name.starts_with("language/tools/move-unit-test/src") // non termination
