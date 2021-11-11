@@ -14,6 +14,7 @@ use rustc_middle::ty;
 use rustc_middle::ty::print::{FmtPrinter, Printer};
 use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
 use rustc_middle::ty::{DefIdTree, FloatTy, IntTy, ProjectionTy, Ty, TyCtxt, TyKind, UintTy};
+use std::io::Write;
 use std::rc::Rc;
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
@@ -470,5 +471,18 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
         | TyKind::Param(..) => false,
         TyKind::Ref(_, ty, _) => is_concrete(ty.kind()),
         _ => true,
+    }
+}
+
+/// Dumps a human readable MIR redendering of the function with the given DefId to standard output.
+pub fn pretty_print_mir(tcx: TyCtxt<'_>, def_id: DefId) {
+    if !matches!(
+        tcx.def_kind(def_id),
+        rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Variant
+    ) {
+        let mut stdout = std::io::stdout();
+        stdout.write_fmt(format_args!("{:?}", def_id)).unwrap();
+        rustc_middle::mir::write_mir_pretty(tcx, Some(def_id), &mut stdout).unwrap();
+        let _ = stdout.flush();
     }
 }
