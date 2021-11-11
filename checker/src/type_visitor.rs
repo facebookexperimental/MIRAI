@@ -783,18 +783,25 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
-    /// Returns the specialized type fo the given local variable
+    /// Returns the specialized type for the given local variable
     #[logfn_inputs(TRACE)]
     pub fn get_loc_ty(&self, local: mir::Local) -> Ty<'tcx> {
         let i = local.as_usize();
-        if 0 < i && i <= self.mir.arg_count && i <= self.actual_argument_types.len() {
-            self.actual_argument_types[i - 1]
-        } else {
-            self.specialize_generic_argument_type(
-                self.mir.local_decls[local].ty,
-                &self.generic_argument_map,
-            )
+        let loc_ty = self.specialize_generic_argument_type(
+            self.mir.local_decls[local].ty,
+            &self.generic_argument_map,
+        );
+        if !utils::is_concrete(loc_ty.kind())
+            && 0 < i
+            && i <= self.mir.arg_count
+            && i <= self.actual_argument_types.len()
+        {
+            let act_ty = self.actual_argument_types[i - 1];
+            if utils::is_concrete(act_ty.kind()) {
+                return act_ty;
+            }
         }
+        loc_ty
     }
 
     /// Returns an ExpressionType value corresponding to the Rustc type of the place.

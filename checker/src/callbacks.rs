@@ -166,11 +166,8 @@ impl MiraiCallbacks {
             || file_name.starts_with("language/move-prover/src") // non termination
             || file_name.starts_with("language/move-prover/boogie-backend/src") // non termination
             || file_name.starts_with("language/move-prover/bytecode/src") // non termination
-            || file_name.starts_with("language/move-prover/docgen/src") // entered unreachable code', checker/src/type_visitor.rs:880
-            || file_name.starts_with("language/move-prover/interpreter/src") // entered unreachable code', checker/src/type_visitor.rs:880:29
             || file_name.starts_with("language/move-prover/lab/src") // out of memory
             || file_name.starts_with("language/move-prover/mutation/src") // out of memory
-            || file_name.starts_with("language/move-prover/tools/spec-flatten/src") // entered unreachable code', checker/src/type_visitor.rs:880:29
             || file_name.starts_with("language/move-stdlib/src") // out of memory
             || file_name.starts_with("language/tools/move-coverage/src") // out of memory
             || file_name.starts_with("language/tools/move-unit-test/src") // non termination
@@ -235,6 +232,7 @@ impl MiraiCallbacks {
                 || file_name.starts_with("language/move-prover/docgen/src")
                 || file_name.starts_with("language/move-prover/interpreter/src")
                 || file_name.starts_with("language/move-prover/interpreter/crypto/src")
+                || file_name.starts_with("language/move-prover/tools/spec-flatten/src")
                 || file_name.starts_with("language/tools/disassembler/src")
                 || file_name.starts_with("language/transaction-builder/generator/src")
                 || file_name.starts_with("move-prover/errmapgen/src")
