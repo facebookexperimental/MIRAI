@@ -17,7 +17,9 @@ jobs:
           components: clippy, rustc-dev, llvm-tools-preview
           
       - name: Install Z3
-        run: cp binaries/libz3.dylib /usr/local/lib
+        run: |
+          cp binaries/libz3.dylib /usr/local/lib
+          cp include/*.h /usr/local/include
 
       - name: Run Clippy
         uses: actions-rs/clippy@master
