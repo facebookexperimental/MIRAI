@@ -1967,7 +1967,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         }
                     }
                 } else {
-                    assume_unreachable!("{:?}", selector);
+                    // qualifier is an unsized struct type and selector selects the last field,
+                    // which is an unsized array
                 }
             }
             let length_path =

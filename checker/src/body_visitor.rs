@@ -1439,9 +1439,13 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     }
                     self.current_environment.value_map = purged_map;
                 }
+            } else {
+                assume_unreachable!("Layout values should only be associated with layout paths");
             }
         } else {
-            assume_unreachable!("Layout values should only be associated with layout paths");
+            // Could get here during summary refinement because the caller state makes some
+            // paths (such as downcasts) unreachable and invalid, in which case they are replaced
+            // with BOTTOM (and hence do not have a layout selector).
         }
     }
 
