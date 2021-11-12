@@ -8,7 +8,7 @@ use crate::call_graph::CallGraph;
 use crate::constant_domain::ConstantValueCache;
 use crate::crate_visitor::CrateVisitor;
 use crate::known_names::KnownNamesCache;
-use crate::options::{DiagLevel, Options};
+use crate::options::Options;
 use crate::summaries::PersistentSummaryCache;
 
 use crate::type_visitor::TypeCache;
@@ -143,119 +143,10 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(&self, file_name: &str) -> bool {
-        // Exclude crates that crash or don't terminate. All of these currently take longer than 2 minutes to analyze.
-        if file_name.starts_with("client/faucet/src") // non termination
-            || file_name.starts_with("config/management/genesis/src") // out of memory
-            || file_name.starts_with("config/management/operational/src") // non termination
-            || file_name.starts_with("crypto/crypto-derive/src") // out of memory
-            || file_name.starts_with("diem-move/df-cli/src") // non termination
-            || file_name.starts_with("diem-move/diem-framework/src") // non termination
-            || file_name.starts_with("diem-move/diem-framework/DPN/releases/src") // non termination
-            || file_name.starts_with("diem-move/diem-framework/releases/src") // non termination
-            || file_name.starts_with("diem-move/diem-vm") // non termination
-            || file_name.starts_with("diem-move/transaction-replay/src") // out of memory
-            || file_name.starts_with("diem-move/vm-genesis/src") // Not a type: DefIndex(3250)
-            || file_name.starts_with("diem-move/writeset-transaction-generator/src")  // out of memory
-            || file_name.starts_with("execution/db-bootstrapper/src") // Not a type: DefIndex(3250)
-            || file_name.starts_with("language/compiler/src") // out of memory
-            || file_name.starts_with("language/move-lang/src") // non termination
-            || file_name.starts_with("language/move-model/src") // non termination
-            || file_name.starts_with("language/tools/move-bytecode-viewer/src") // out of memory
-            || file_name.starts_with("language/tools/move-cli/src") // non termination
-            || file_name.starts_with("language/tools/move-package/src") // non termination
-            || file_name.starts_with("language/move-prover/src") // non termination
-            || file_name.starts_with("language/move-prover/boogie-backend/src") // non termination
-            || file_name.starts_with("language/move-prover/bytecode/src") // non termination
-            || file_name.starts_with("language/move-prover/lab/src") // out of memory
-            || file_name.starts_with("language/move-prover/mutation/src") // out of memory
-            || file_name.starts_with("language/move-prover/tools/spec-flatten/src") // out of memory
-            || file_name.starts_with("language/move-stdlib/src") // out of memory
-            || file_name.starts_with("language/tools/move-coverage/src") // out of memory
-            || file_name.starts_with("language/tools/move-unit-test/src") // non termination
-            || file_name.starts_with("language/tools/read-write-set/src")  // non termination
-            || file_name.starts_with("language/transaction-builder/generator/src") // out of memory
-            || file_name.starts_with("mempool/src") // out of memory
-            || file_name.starts_with("network/src") // non termination
-            || file_name.starts_with("network/builder/src") // non termination
-            || file_name.starts_with("network/discovery/src") // out of memory
-            || file_name.starts_with("sdk/client/src") // non termination
-            || file_name.starts_with("state-sync/inter-component/event-notifications/src") // non termination
-            || file_name.starts_with("state-sync/state-sync-v1/src") // non termination
-            || file_name.starts_with("storage/backup/backup-cli/src") // out of memory
-            || file_name.starts_with("storage/diemsum/src") // out of memory
-            || file_name.starts_with("storage/inspector/src/") // out of memory
-             || file_name.starts_with("types/src")
-        // out of memory
-        {
-            return true;
-        }
-
-        // Conditionally exclude crates that currently slow down testing too much because they take longer than 2 minutes to analyze
-        if self.options.diag_level == DiagLevel::Default
-            && (file_name.starts_with("api/src")
-                || file_name.starts_with("api/types")
-                || file_name.starts_with("client/assets-proof/src")
-                || file_name.starts_with("common/logger/src")
-                || file_name.starts_with("common/num-variants/src")
-                || file_name.starts_with("common/rate-limiter/src")
-                || file_name.starts_with("config/src")
-                || file_name.starts_with("config/management/src")
-                || file_name.starts_with("config/management/network-address-encryption/src")
-                || file_name.starts_with("config/seed-peer-generator/src")
-                || file_name.starts_with("consensus/src")
-                || file_name.starts_with("consensus/consensus-types/src")
-                || file_name.starts_with("consensus/safety-rules/src")
-                || file_name.starts_with("common/debug-interface/src")
-                || file_name.starts_with("crypto/crypto/src")
-                || file_name.starts_with("diem-node/src")
-                || file_name.starts_with("diem-move/df-cli/src")
-                || file_name.starts_with("diem-move/diem-events-fetcher/src")
-                || file_name.starts_with("diem-move/diem-framework/src")
-                || file_name.starts_with("diem-move/diem-framework/DPN/releases/src")
-                || file_name.starts_with("diem-move/diem-framework/releases/src")
-                || file_name.starts_with("diem-move/diem-vm")
-                || file_name.starts_with("diem-move/transaction-replay/src")
-                || file_name.starts_with("diem-move/diem-validator-interface")
-                || file_name.starts_with("diem-move/vm-genesis/src")
-                || file_name.starts_with("diem-move/writeset-transaction-generator/src")
-                || file_name.starts_with("execution/db-bootstrapper/src")
-                || file_name.starts_with("execution/execution-correctness/src")
-                || file_name.starts_with("execution/executor/src")
-                || file_name.starts_with("json-rpc/src")
-                || file_name.starts_with("json-rpc/types/src")
-                || file_name.starts_with("language/bytecode-verifier/src")
-                || file_name.starts_with("language/compiler/ir-to-bytecode/src")
-                || file_name.starts_with("language/compiler/ir-to-bytecode/syntax/src")
-                || file_name.starts_with("language/move-binary-format/src")
-                || file_name.starts_with("language/move-core/types/src")
-                || file_name.starts_with("language/move-ir/types/src/")
-                || file_name.starts_with("language/move-prover/abigen/src")
-                || file_name.starts_with("language/move-prover/docgen/src")
-                || file_name.starts_with("language/move-prover/interpreter/src")
-                || file_name.starts_with("language/move-prover/interpreter/crypto/src")
-                || file_name.starts_with("language/move-prover/tools/spec-flatten/src")
-                || file_name.starts_with("language/tools/disassembler/src")
-                || file_name.starts_with("language/transaction-builder/generator/src")
-                || file_name.starts_with("move-prover/errmapgen/src")
-                || file_name.starts_with("network/netcore/src")
-                || file_name.starts_with("network/discovery/src")
-                || file_name.starts_with("network/simple-onchain-discovery/src")
-                || file_name.starts_with("sdk/src")
-                || file_name.starts_with("sdk/transaction-builder/src")
-                || file_name.starts_with("secure/key-manager/src")
-                || file_name.starts_with("secure/net/src")
-                || file_name.starts_with("secure/storage/src")
-                || file_name.starts_with("secure/storage/github/src")
-                || file_name.starts_with("secure/storage/vault/src")
-                || file_name.starts_with("state-sync/src")
-                || file_name.starts_with("state-sync/inter-component/event-notifications/src")
-                || file_name.starts_with("state-sync/state-sync-v1/src")
-                || file_name.starts_with("storage/backup/backup-service/src")
-                || file_name.starts_with("storage/diemdb/src")
-                || file_name.starts_with("storage/schemadb/src")
-                || file_name.starts_with("storage/storage-client/src")
-                || file_name.starts_with("types/src")
-                || file_name.starts_with("vm-validator/src"))
+        if file_name.starts_with("diem-move/diem-framework/releases/src")
+            || file_name.starts_with("language/tools/move-coverage/src")
+            || file_name.starts_with("language/move-prover/bytecode/src")
+            || file_name.starts_with("storage/backup/backup-cli/src")
         {
             return true;
         }

@@ -13,7 +13,6 @@ use rustc_target::abi::VariantIdx;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::block_visitor::BlockVisitor;
@@ -131,7 +130,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         .set_path_rustc_type(p.clone(), *t);
                 }
             }
-            let elapsed_time = self.block_visitor.bv.start_instant.elapsed();
             let mut summary = body_visitor.visit_body(self.function_constant_args);
             trace!("summary {:?} {:?}", self.callee_def_id, summary);
             if let Some(func_ref) = &self.callee_func_ref {
@@ -162,7 +160,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         summary.clone(),
                     );
             }
-            self.block_visitor.bv.start_instant = Instant::now() - elapsed_time;
             return summary;
         }
         if !self.block_visitor.bv.tcx.is_static(self.callee_def_id)

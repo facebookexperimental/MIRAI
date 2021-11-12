@@ -29,14 +29,15 @@ instruction to determine which version to use. If you forget to do that or use t
 you'll see an error message complaining about a dynamic load library not being found.
 
 The easiest way to get started is to first build your project in the normal way (with one exception:
- set `RUSTFLAGS="-Z always_encode_mir"` to force the rust compiler to include MIR into its compiled output).
+ set `RUSTFLAGS="-Z always_encode_mir --cfg="mirai"` to force the rust compiler to include MIR into its compiled output 
+and enable any MIRAI annotations that are present in the source code).
 Refer to [this link](https://doc.rust-lang.org/stable/book/ch01-00-getting-started.html) for details
 on compiling a cargo project.
 When there are no compile errors,
 no lint errors and no test failures, you can proceed to the next step and run MIRAI. For example:
 ```
 touch src/lib.rs
-RUSTFLAGS="-Z always_encode_mir" RUSTC_WRAPPER=mirai cargo build
+RUSTC_WRAPPER=mirai cargo build
 ```
 
 The touch command (which needs to reference a real file in your project) forces Cargo to re-run rustc and to not assume

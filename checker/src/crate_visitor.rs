@@ -33,6 +33,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::ops::Deref;
 use std::rc::Rc;
+use std::time::Instant;
 
 /// A visitor that takes information gathered by the Rust compiler when compiling a particular
 /// crate and then analyses some of the functions in that crate to see if any of the assertions
@@ -68,6 +69,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     /// Analyze some of the bodies in the crate that is being compiled.
     #[logfn(TRACE)]
     pub fn analyze_some_bodies(&mut self) {
+        let start_instant = Instant::now();
         // Determine the functions we want to analyze.
         let function_whitelist = self.get_function_whitelist();
 
@@ -122,6 +124,10 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
             }
             self.call_graph.add_croot(def_id);
             self.analyze_body(def_id);
+            if start_instant.elapsed().as_secs() > self.options.max_analysis_time_for_crate {
+                info!("exceeded total time allowed for crate analysis");
+                break;
+            }
         }
         self.emit_or_check_diagnostics();
     }
