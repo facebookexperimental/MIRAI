@@ -941,14 +941,14 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .get(local_path)
                 .unwrap_or_else(|| {
                     panic!(
-                        "expect reference target to have a value {:?} {:?}",
+                        "expect reference target to have a value {:?} in env {:?}",
                         local_path, self.exit_environment
                     )
                 });
             let value_path = Path::get_as_path(target_value.clone());
             let promoted_value = AbstractValue::make_from(Expression::Reference(value_path), 1);
             environment.strong_update_value_at(promoted_root.clone(), promoted_value);
-        } else if let TyKind::Ref(..) = target_type.kind() {
+        } else if let TyKind::Ref(_, t, _) = target_type.kind() {
             // Promoting a reference to a reference.
             let eight: Rc<AbstractValue> = self.get_u128_const_val(8);
             let heap_value = self.get_new_heap_block(eight.clone(), eight, false, target_type);
@@ -960,29 +960,44 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 .expect("new heap block should have a layout");
             environment.strong_update_value_at(layout_path, layout_value.clone());
             let exit_env_map = self.exit_environment.as_ref().unwrap().value_map.clone();
-            let target_value = exit_env_map
-                .get(local_path)
-                .expect("expect reference target to have a value");
-            environment.strong_update_value_at(heap_root.clone(), target_value.clone());
-            if let Expression::Reference(path) = &target_value.expression {
-                match &path.value {
-                    PathEnum::LocalVariable { .. } => {
-                        self.promote_reference(environment, target_type, &heap_root, path)
-                    }
-                    PathEnum::Computed { value } => {
-                        environment.strong_update_value_at(path.clone(), value.clone());
-                        if target_type.is_slice() {
-                            let len_path = Path::new_length(path.clone());
-                            if let Some(len_val) = exit_env_map.get(&len_path) {
-                                environment.strong_update_value_at(len_path, len_val.clone());
+            if !exit_env_map.contains_key(local_path) {
+                self.promote_reference(
+                    environment,
+                    t,
+                    &Path::new_field(heap_root.clone(), 0),
+                    &Path::new_field(local_path.clone(), 0),
+                );
+                self.promote_reference(
+                    environment,
+                    self.tcx.types.usize,
+                    &Path::new_length(heap_root),
+                    &Path::new_length(local_path.clone()),
+                );
+            } else {
+                let target_value = exit_env_map
+                    .get(local_path)
+                    .expect("expect reference target to have a value");
+                environment.strong_update_value_at(heap_root.clone(), target_value.clone());
+                if let Expression::Reference(path) = &target_value.expression {
+                    match &path.value {
+                        PathEnum::LocalVariable { .. } => {
+                            self.promote_reference(environment, target_type, &heap_root, path)
+                        }
+                        PathEnum::Computed { value } => {
+                            environment.strong_update_value_at(path.clone(), value.clone());
+                            if target_type.is_slice() {
+                                let len_path = Path::new_length(path.clone());
+                                if let Some(len_val) = exit_env_map.get(&len_path) {
+                                    environment.strong_update_value_at(len_path, len_val.clone());
+                                }
                             }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
+                let promoted_value = AbstractValue::make_from(Expression::Reference(heap_root), 1);
+                environment.strong_update_value_at(promoted_root.clone(), promoted_value);
             }
-            let promoted_value = AbstractValue::make_from(Expression::Reference(heap_root), 1);
-            environment.strong_update_value_at(promoted_root.clone(), promoted_value);
         } else if let TyKind::Str = target_type.kind() {
             // Promoting a string constant
             let exit_env_map = &self.exit_environment.as_ref().unwrap().value_map;
