@@ -151,7 +151,8 @@ fn build_options() -> Options {
     let mut options = Options::default();
     options.parse_from_str(""); // get defaults
     options.diag_level = DiagLevel::Paranoid; // override default
-    options.max_analysis_time_for_body = 40;
+    options.max_analysis_time_for_body = 20;
+    options.max_analysis_time_for_crate = 60;
     options
 }
 

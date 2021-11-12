@@ -41,9 +41,15 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
     .arg(Arg::with_name("body_analysis_timeout")
         .long("body_analysis_timeout")
         .takes_value(true)
-        .default_value("40")
+        .default_value("30")
         .help("The maximum number of seconds that MIRAI will spend analyzing a function body.")
-        .long_help("The default is 40 seconds."))
+        .long_help("The default is 30 seconds."))
+    .arg(Arg::with_name("crate_analysis_timeout")
+        .long("crate_analysis_timeout")
+        .takes_value(true)
+        .default_value("240")
+        .help("The maximum number of seconds that MIRAI will spend analyzing a function body.")
+        .long_help("The default is 240 seconds."))
     .arg(Arg::with_name("statistics")
         .long("statistics")
         .short("stats")
@@ -65,6 +71,7 @@ pub struct Options {
     pub diag_level: DiagLevel,
     pub constant_time_tag_name: Option<String>,
     pub max_analysis_time_for_body: u64,
+    pub max_analysis_time_for_crate: u64,
     pub statistics: bool,
     pub call_graph_config: Option<String>,
 }
@@ -181,6 +188,18 @@ impl Options {
                     Err(_) => early_error(
                         ErrorOutputType::default(),
                         "--body_analysis_timeout expects an integer",
+                    ),
+                },
+                None => assume_unreachable!(),
+            }
+        }
+        if matches.is_present("crate_analysis_timeout") {
+            self.max_analysis_time_for_crate = match matches.value_of("crate_analysis_timeout") {
+                Some(s) => match s.parse::<u64>() {
+                    Ok(v) => v,
+                    Err(_) => early_error(
+                        ErrorOutputType::default(),
+                        "--crate_analysis_timeout expects an integer",
                     ),
                 },
                 None => assume_unreachable!(),
