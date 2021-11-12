@@ -7,7 +7,6 @@ use crate::abstract_value::{self, AbstractValue, AbstractValueTrait};
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
-use crate::k_limits;
 use crate::options::DiagLevel;
 use crate::path::{Path, PathEnum, PathSelector};
 use crate::path::{PathRefinement, PathRoot};
@@ -16,6 +15,7 @@ use crate::summaries;
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
 use crate::type_visitor::{self, TypeCache, TypeVisitor};
+use crate::{k_limits, utils};
 
 use crate::block_visitor::BlockVisitor;
 use crate::call_visitor::CallVisitor;
@@ -34,7 +34,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Formatter, Result};
-use std::io::Write;
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -172,16 +171,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     ) -> Summary {
         let diag_level = self.cv.options.diag_level;
         let max_analysis_time_for_body = self.cv.options.max_analysis_time_for_body;
-        if cfg!(DEBUG)
-            && !matches!(
-                self.tcx.def_kind(self.def_id),
-                rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Variant
-            )
-        {
-            let mut stdout = std::io::stdout();
-            stdout.write_fmt(format_args!("{:?}", self.def_id)).unwrap();
-            rustc_middle::mir::write_mir_pretty(self.tcx, Some(self.def_id), &mut stdout).unwrap();
-            info!("{:?}", stdout.flush());
+        if cfg!(DEBUG) {
+            utils::pretty_print_mir(self.tcx, self.def_id);
         }
         *self.active_calls_map.entry(self.def_id).or_insert(0) += 1;
         let saved_heap_counter = self.cv.constant_value_cache.swap_heap_counter(0);

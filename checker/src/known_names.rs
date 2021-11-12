@@ -454,6 +454,7 @@ impl KnownNamesCache {
                     "mirai_set_model_field" => KnownNames::MiraiSetModelField,
                     "mirai_verify" => KnownNames::MiraiVerify,
                     "raw_vec" => get_known_name_for_raw_vec_namespace(def_path_data_iter),
+                    "rt" => get_known_name_for_panicking_namespace(def_path_data_iter),
                     "slice" => get_known_name_for_slice_namespace(def_path_data_iter),
                     "sync" => get_known_name_for_sync_namespace(def_path_data_iter),
                     _ => KnownNames::None,

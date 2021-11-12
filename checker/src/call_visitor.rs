@@ -596,12 +596,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 if self.block_visitor.bv.check_for_errors {
                     self.report_calls_to_special_functions();
                 }
-                if let Some((_, target)) = &self.destination {
+                if let Some(target) = &self.cleanup {
+                    let exit_condition = self
+                        .block_visitor
+                        .bv
+                        .current_environment
+                        .entry_condition
+                        .clone();
                     self.block_visitor
                         .bv
                         .current_environment
                         .exit_conditions
-                        .insert_mut(*target, abstract_value::FALSE.into());
+                        .insert_mut(*target, exit_condition);
                 }
                 return true;
             }

@@ -589,11 +589,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .insert(func_to_call)
             {
                 self.report_missing_summary();
-                warn!(
-                        "function {} can't be reliably analyzed because it calls an unknown function. {:?}",
-                        utils::summary_key_str(self.bv.tcx, self.bv.def_id),
-                        self.bv.current_span
-                    );
             }
             return;
         }

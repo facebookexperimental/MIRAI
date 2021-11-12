@@ -1126,6 +1126,10 @@ pub mod core {
             }
         }
 
+        pub mod implement_core_fmt_Arguments {
+            default_contract!(fmt);
+        }
+
         pub mod implement_core_fmt_Formatter {
             default_contract!(debug_struct);
             default_contract!(debug_tuple);
@@ -4839,6 +4843,10 @@ pub mod std {
             }
         }
 
+        pub mod implement_std_path_Components {
+            default_contract!(next_back);
+        }
+
         pub mod implement_std_path_Path {
             use std::ffi::OsString;
             use std::path::Path;
@@ -4853,6 +4861,7 @@ pub mod std {
 
             default_contract!(_join);
             default_contract!(_with_extension);
+            default_contract!(components);
             default_contract!(is_absolute);
             default_contract!(file_name);
             default_contract!(parent);
@@ -4863,6 +4872,7 @@ pub mod std {
             default_contract!(default);
             default_contract!(from_str);
             default_contract!(_push);
+            default_contract!(_set_extension);
         }
     }
 
@@ -4927,6 +4937,9 @@ pub mod std {
             }
 
             pub mod os_str {
+                pub mod implement_std_sys_unix_os_str_Buf {
+                    default_contract!(from_string);
+                }
                 pub mod implement_std_sys_unix_os_str_Slice {
                     default_contract!(to_string_lossy);
                 }
