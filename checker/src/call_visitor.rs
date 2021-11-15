@@ -2525,7 +2525,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             self.destination, self.actual_args
         );
         self.check_preconditions_if_necessary(function_summary);
+        check_for_early_return!(self.block_visitor.bv);
         self.transfer_and_refine_normal_return_state(function_summary);
+        check_for_early_return!(self.block_visitor.bv);
         self.add_post_condition_to_exit_conditions(function_summary);
         debug!("post env {:?}", self.block_visitor.bv.current_environment);
     }

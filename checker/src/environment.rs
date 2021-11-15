@@ -9,6 +9,7 @@ use crate::abstract_value::AbstractValueTrait;
 use crate::expression::{Expression, ExpressionType};
 use crate::path::{Path, PathEnum, PathRoot, PathSelector};
 
+use crate::body_visitor::BodyVisitor;
 use crate::constant_domain::ConstantDomain;
 use log_derive::{logfn, logfn_inputs};
 use rpds::HashTrieMap;
@@ -70,6 +71,7 @@ impl Environment {
         path: Rc<Path>,
         value: Rc<AbstractValue>,
         path_condition: Rc<AbstractValue>,
+        body_visitor: &mut BodyVisitor,
     ) {
         if let Some((condition, true_path, false_path)) = self.try_to_split(&path) {
             // The value path contains an abstract value that was constructed with a conditional.
@@ -79,11 +81,13 @@ impl Environment {
                 true_path,
                 value.clone(),
                 path_condition.and(condition.clone()),
+                body_visitor,
             );
             self.weakly_update_aliases(
                 false_path,
                 value,
                 path_condition.and(condition.logical_not()),
+                body_visitor,
             );
             return;
         }
@@ -121,7 +125,13 @@ impl Environment {
                             AbstractValue::make_typed_unknown(ExpressionType::Usize, length_path);
                         index = length_val.subtract(index);
                     };
-                    self.weaken_potential_aliased_index_paths(&path, &value, qualifier, &index)
+                    self.weaken_potential_aliased_index_paths(
+                        &path,
+                        &value,
+                        qualifier,
+                        &index,
+                        body_visitor,
+                    )
                 }
                 PathSelector::Deref => {
                     // we are assigning value to *qualifier and there may be another path *q where
@@ -180,9 +190,13 @@ impl Environment {
                         }
                     }
                 }
-                PathSelector::Index(index) => {
-                    self.weaken_potential_aliased_index_paths(&path, &value, qualifier, index)
-                }
+                PathSelector::Index(index) => self.weaken_potential_aliased_index_paths(
+                    &path,
+                    &value,
+                    qualifier,
+                    index,
+                    body_visitor,
+                ),
                 PathSelector::Slice(count) => {
                     // We are assigning value to every element of the slice qualifier[0..count]
                     // There may already be paths for individual elements of the slice.
@@ -304,9 +318,11 @@ impl Environment {
         value: &Rc<AbstractValue>,
         qualifier: &Rc<Path>,
         index: &Rc<AbstractValue>,
+        body_visitor: &mut BodyVisitor,
     ) {
         let value_map = self.value_map.clone();
         for (p, v) in value_map.iter() {
+            check_for_early_return!(body_visitor);
             if p.eq(path) {
                 continue;
             }
