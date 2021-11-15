@@ -978,10 +978,20 @@ impl Expression {
     /// Determines if the given expression is the result of a non constant binary bitwise operation.
     #[logfn_inputs(TRACE)]
     pub fn is_bit_vector(&self) -> bool {
-        matches!(
-            self,
-            Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. }
-        )
+        match self {
+            Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
+                true
+            }
+            Expression::ConditionalExpression {
+                consequent: left,
+                alternate: right,
+                ..
+            }
+            | Expression::Join { left, right } => {
+                left.expression.is_bit_vector() || right.expression.is_bit_vector()
+            }
+            _ => false,
+        }
     }
 
     /// True if the expression involves a comparison operator (= != > >= < <=)
