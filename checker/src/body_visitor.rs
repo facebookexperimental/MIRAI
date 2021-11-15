@@ -1210,6 +1210,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 self.fresh_variable_offset,
             );
             trace!("refined effect {:?} {:?}", tpath, rvalue);
+            check_for_early_return!(self);
             let rtype = rvalue.expression.infer_type();
             match &rvalue.expression {
                 Expression::Bottom | Expression::Top => {
@@ -2542,8 +2543,25 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
                         &count.expression
                     {
-                        for i in 0..*val {
-                            let target_index_val = Rc::new(i.into());
+                        if *val < (k_limits::MAX_BYTE_ARRAY_LENGTH as u128) {
+                            for i in 0..*val {
+                                let target_index_val = Rc::new(i.into());
+                                let indexed_target =
+                                    Path::new_index(qualifier.clone(), target_index_val);
+                                self.update_value_at(indexed_target, value.clone());
+                            }
+                            return;
+                        }
+                    }
+                }
+                PathSelector::ConstantSlice {
+                    from,
+                    to,
+                    from_end: false,
+                } => {
+                    if (*to - *from) < (k_limits::MAX_BYTE_ARRAY_LENGTH as u64) {
+                        for i in *from..*to {
+                            let target_index_val = Rc::new((i as u128).into());
                             let indexed_target =
                                 Path::new_index(qualifier.clone(), target_index_val);
                             self.update_value_at(indexed_target, value.clone());
@@ -2554,28 +2572,19 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 PathSelector::ConstantSlice {
                     from,
                     to,
-                    from_end: false,
-                } => {
-                    for i in *from..*to {
-                        let target_index_val = Rc::new((i as u128).into());
-                        let indexed_target = Path::new_index(qualifier.clone(), target_index_val);
-                        self.update_value_at(indexed_target, value.clone());
-                    }
-                    return;
-                }
-                PathSelector::ConstantSlice {
-                    from,
-                    to,
                     from_end: true,
                 } => {
-                    let one = Rc::new(0u128.into());
-                    let end_index = self.get_len(qualifier.clone()).subtract(one);
-                    for i in *from..*to {
-                        let target_index_val = end_index.subtract(Rc::new((i as u128).into()));
-                        let indexed_target = Path::new_index(qualifier.clone(), target_index_val);
-                        self.update_value_at(indexed_target, value.clone());
+                    if (*to - *from) < (k_limits::MAX_BYTE_ARRAY_LENGTH as u64) {
+                        let one = Rc::new(0u128.into());
+                        let end_index = self.get_len(qualifier.clone()).subtract(one);
+                        for i in *from..*to {
+                            let target_index_val = end_index.subtract(Rc::new((i as u128).into()));
+                            let indexed_target =
+                                Path::new_index(qualifier.clone(), target_index_val);
+                            self.update_value_at(indexed_target, value.clone());
+                        }
+                        return;
                     }
-                    return;
                 }
                 PathSelector::UnionField {
                     case_index,
@@ -2618,8 +2627,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         }
         self.current_environment
             .strong_update_value_at(path.clone(), value.clone());
-        self.current_environment
-            .weakly_update_aliases(path, value, Rc::new(abstract_value::TRUE));
+        let mut environment = self.current_environment.clone();
+        environment.weakly_update_aliases(path, value, Rc::new(abstract_value::TRUE), self);
+        self.current_environment = environment;
     }
 
     /// Get the length of an array. Will be a compile time constant if the array length is known.
