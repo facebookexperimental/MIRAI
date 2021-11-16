@@ -263,7 +263,7 @@ impl Environment {
                     }
                 }
                 PathSelector::ConstantSlice { .. } => {
-                    unreachable!("path {:?}", path);
+                    // empty slice, or too large slice, do nothing
                 }
                 _ => {
                     // we are assigning value to qualifier.selector and there may be another path q.selector where

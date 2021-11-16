@@ -1034,9 +1034,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// `ty` might not be a 128-bit integer type, so this method extends/truncates the bit
     /// representation accordingly.
     pub fn get_int_const_val(&mut self, mut val: u128, ty: Ty<'tcx>) -> Rc<AbstractValue> {
-        let param_env = self.type_visitor().get_param_env();
         let is_signed;
-        if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
+        if let Ok(ty_and_layout) = self.type_visitor().layout_of(ty) {
             is_signed = ty_and_layout.abi.is_signed();
             let size = ty_and_layout.size;
             if is_signed {
@@ -2221,8 +2220,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         null_op: mir::NullOp,
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
-        let param_env = self.type_visitor().get_param_env();
-        let (len, alignment) = if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
+        let (len, alignment) = if let Ok(ty_and_layout) = self.type_visitor().layout_of(ty) {
             let layout = ty_and_layout.layout;
             (
                 Rc::new((layout.size.bytes() as u128).into()),
@@ -2477,9 +2475,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         } else if self.bv.cv.known_names_cache.get(self.bv.tcx, def_id)
                             == KnownNames::AllocRawVecMinNonZeroCap
                         {
-                            let param_env = self.bv.tcx.param_env(def_id);
                             if let Ok(ty_and_layout) =
-                                self.bv.tcx.layout_of(param_env.and(substs.type_at(0)))
+                                self.type_visitor().layout_of(substs.type_at(0))
                             {
                                 if !ty_and_layout.is_unsized() {
                                     let size_of_t = ty_and_layout.layout.size.bytes();
@@ -3085,12 +3082,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 return Rc::new(ConstantDomain::U128(0).into());
             }
             let data = scalar_int.to_bits(size).unwrap();
-            let param_env = self.type_visitor().get_param_env();
-            if let Ok(ty_and_layout) = self.bv.tcx.layout_of(param_env.and(ty)) {
+            if let Ok(ty_and_layout) = self.type_visitor().layout_of(ty) {
                 // The type of the discriminant tag
                 let discr_ty = ty_and_layout.ty.discriminant_ty(self.bv.tcx);
                 // The layout of the discriminant tag
-                let discr_layout = self.bv.tcx.layout_of(param_env.and(discr_ty)).unwrap();
+                let discr_layout = self.type_visitor().layout_of(discr_ty).unwrap();
 
                 let discr_signed; // Whether the discriminant tag is signed or not
                 let discr_bits; // The actual representation of the discriminant tag
@@ -3132,9 +3128,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // The discriminant tag can be defined explicitly, and it can be negative.
                         // Extracts the tag layout that indicates the tag's sign.
                         let tag_layout = self
-                            .bv
-                            .tcx
-                            .layout_of(param_env.and(tag.value.to_int_ty(self.bv.tcx)))
+                            .type_visitor()
+                            .layout_of(tag.value.to_int_ty(self.bv.tcx))
                             .unwrap();
                         discr_signed = tag_layout.abi.is_signed();
                         match *tag_encoding {
