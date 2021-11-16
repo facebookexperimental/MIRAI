@@ -181,12 +181,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// computing it if necessary.
     #[logfn_inputs(TRACE)]
     fn try_to_devirtualize(&mut self) {
+        let tcx = self.block_visitor.bv.tcx;
         if self
             .block_visitor
             .bv
             .tcx
             .is_mir_available(self.callee_def_id)
-            && !utils::is_trait_method(self.callee_def_id, self.block_visitor.bv.tcx)
+            && !utils::is_trait_method(self.callee_def_id, tcx)
         {
             return;
         }
@@ -196,18 +197,24 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             trace!(
                 "devirtualize resolving def_id {:?}: {:?}",
                 self.callee_def_id,
-                self.block_visitor.bv.tcx.type_of(self.callee_def_id)
+                tcx.type_of(self.callee_def_id)
             );
             trace!("devirtualize resolving func_ref {:?}", self.callee_func_ref,);
             trace!("gen_args {:?}", gen_args);
-            if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
-                self.block_visitor.bv.tcx,
-                param_env,
-                self.callee_def_id,
-                gen_args,
-            ) {
+            let abi = tcx.type_of(self.callee_def_id).fn_sig(tcx).abi();
+            let resolved_instance = if abi == rustc_target::spec::abi::Abi::Rust {
+                Some(rustc_middle::ty::Instance::resolve(
+                    tcx,
+                    param_env,
+                    self.callee_def_id,
+                    gen_args,
+                ))
+            } else {
+                None
+            };
+            if let Some(Ok(Some(instance))) = resolved_instance {
                 let resolved_def_id = instance.def.def_id();
-                let tcx = self.block_visitor.bv.tcx;
+                let tcx = tcx;
                 let has_mir = tcx.is_mir_available(resolved_def_id);
                 if !has_mir && self.callee_known_name == KnownNames::StdCloneClone {
                     return;
@@ -2207,8 +2214,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .get(&sym)
             .expect("std::intrinsics::size_of must have generic argument T")
             .expect_ty();
-        let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
-        if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(t)) {
+        if let Ok(ty_and_layout) = self.type_visitor().layout_of(t) {
             if !ty_and_layout.is_unsized() {
                 return Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
             }
@@ -2249,12 +2255,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     ///
     /// Every reference to a value of the type `T` must be a multiple of this number.
     fn handle_min_align_of_val(&mut self) -> Rc<AbstractValue> {
-        let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
         checked_assume!(self.actual_argument_types.len() == 1);
         let t = self
             .type_visitor()
             .get_dereferenced_type(self.actual_argument_types[0]);
-        if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(t)) {
+        if let Ok(ty_and_layout) = self.type_visitor().layout_of(t) {
             return Rc::new((ty_and_layout.layout.align.abi.bytes() as u128).into());
         }
         // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).
@@ -2274,7 +2279,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// then `size_of_val` can be used to get the dynamically-known size.
     #[logfn_inputs(TRACE)]
     fn handle_size_of_val(&mut self) -> Rc<AbstractValue> {
-        let param_env = self.block_visitor.bv.tcx.param_env(self.callee_def_id);
         checked_assume!(self.actual_argument_types.len() == 1);
         let t = self.actual_argument_types[0];
         checked_assume!(self.actual_args.len() == 1);
@@ -2292,7 +2296,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             }
         } else if self.type_visitor().is_slice_pointer(t.kind()) {
             let elem_t = self.type_visitor().get_element_type(t);
-            if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(elem_t)) {
+            if let Ok(ty_and_layout) = self.type_visitor().layout_of(elem_t) {
                 if !ty_and_layout.is_unsized() {
                     let elem_size_val: Rc<AbstractValue> =
                         Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
@@ -2311,7 +2315,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .get(&sym)
             .expect("std::intrinsics::size_of_val must have generic argument T")
             .expect_ty();
-        if let Ok(ty_and_layout) = self.block_visitor.bv.tcx.layout_of(param_env.and(t)) {
+        if let Ok(ty_and_layout) = self.type_visitor().layout_of(t) {
             if !ty_and_layout.is_unsized() {
                 return Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
             }

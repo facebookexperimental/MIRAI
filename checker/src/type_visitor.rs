@@ -934,8 +934,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
 
     /// Returns the size in bytes (including padding) of an instance of the given type.
     pub fn get_type_size(&self, ty: Ty<'tcx>) -> u64 {
-        let param_env = self.get_param_env();
-        if let Ok(ty_and_layout) = self.tcx.layout_of(param_env.and(ty)) {
+        if let Ok(ty_and_layout) = self.layout_of(ty) {
             ty_and_layout.layout.size.bytes()
         } else {
             0
@@ -944,8 +943,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
 
     /// Returns the size (including padding) and alignment, in bytes,  of an instance of the given type.
     pub fn get_type_size_and_alignment(&self, ty: Ty<'tcx>) -> (u128, u128) {
-        let param_env = self.get_param_env();
-        if let Ok(ty_and_layout) = self.tcx.layout_of(param_env.and(ty)) {
+        if let Ok(ty_and_layout) = self.layout_of(ty) {
             (
                 ty_and_layout.layout.size.bytes() as u128,
                 ty_and_layout.align.pref.bytes() as u128,
@@ -955,17 +953,31 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         }
     }
 
+    /// Returns a layout for the given type, if concrete.
+    pub fn layout_of(
+        &self,
+        ty: Ty<'tcx>,
+    ) -> std::result::Result<
+        rustc_middle::ty::layout::TyAndLayout<'tcx>,
+        rustc_middle::ty::layout::LayoutError<'tcx>,
+    > {
+        let param_env = self.get_param_env();
+        if utils::is_concrete(ty.kind()) {
+            self.tcx.layout_of(param_env.and(ty))
+        } else {
+            Err(rustc_middle::ty::layout::LayoutError::Unknown(ty))
+        }
+    }
+
     pub fn remove_transparent_wrapper(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
         if let TyKind::Adt(def, substs) = ty.kind() {
             if def.repr.transparent() {
                 let variant_0 = VariantIdx::from_u32(0);
                 let v = &def.variants[variant_0];
-                let param_env = self.tcx.param_env(v.def_id);
                 let non_zst_field = v.fields.iter().find(|field| {
                     let field_ty = self.tcx.type_of(field.did);
                     let is_zst = self
-                        .tcx
-                        .layout_of(param_env.and(field_ty))
+                        .layout_of(field_ty)
                         .map_or(false, |layout| layout.is_zst());
                     !is_zst
                 });

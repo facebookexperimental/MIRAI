@@ -2559,7 +2559,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     to,
                     from_end: false,
                 } => {
-                    if (*to - *from) < (k_limits::MAX_BYTE_ARRAY_LENGTH as u64) {
+                    if *to >= *from && (*to - *from) < (k_limits::MAX_BYTE_ARRAY_LENGTH as u64) {
                         for i in *from..*to {
                             let target_index_val = Rc::new((i as u128).into());
                             let indexed_target =
@@ -2574,7 +2574,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     to,
                     from_end: true,
                 } => {
-                    if (*to - *from) < (k_limits::MAX_BYTE_ARRAY_LENGTH as u64) {
+                    if *to >= *from && (*to - *from) < (k_limits::MAX_BYTE_ARRAY_LENGTH as u64) {
                         let one = Rc::new(0u128.into());
                         let end_index = self.get_len(qualifier.clone()).subtract(one);
                         for i in *from..*to {
