@@ -6,8 +6,8 @@
 // Somewhat arbitrary constants used to limit things in the abstract interpreter that may
 // take too long or use too much memory.
 
-/// The maximum number of elements in a byte array that will be individually tracked.
-pub const MAX_BYTE_ARRAY_LENGTH: usize = 100;
+/// The maximum number of elements in a collection that will be individually tracked.
+pub const MAX_ELEMENTS_TO_TRACK: usize = 100;
 
 /// Helps to limit the size of summaries.
 pub const MAX_INFERRED_PRECONDITIONS: usize = 50;

@@ -2155,8 +2155,17 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         } else {
                             to
                         };
-                        self.expand_slice(target_path, qualifier, root_rustc_ty, from, to, update);
-                        return true;
+                        if to - from < k_limits::MAX_ELEMENTS_TO_TRACK as u64 {
+                            self.expand_slice(
+                                target_path,
+                                qualifier,
+                                root_rustc_ty,
+                                from,
+                                to,
+                                update,
+                            );
+                            return true;
+                        }
                     }
                 }
                 _ => (),
@@ -2325,15 +2334,17 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
                     &count.expression
                 {
-                    self.expand_slice(
-                        qualifier,
-                        source_path,
-                        root_rustc_type,
-                        0,
-                        *val as u64,
-                        strong_update,
-                    );
-                    return true;
+                    if *val < k_limits::MAX_ELEMENTS_TO_TRACK as u128 {
+                        self.expand_slice(
+                            qualifier,
+                            source_path,
+                            root_rustc_type,
+                            0,
+                            *val as u64,
+                            strong_update,
+                        );
+                        return true;
+                    }
                 }
                 if !source_path.is_rooted_by_parameter() {
                     // The local environment is the authority on what is known about source_path
@@ -2355,14 +2366,16 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         // Assigning to a fixed length array is like a slice.
         if let TyKind::Array(_, length) = root_rustc_type.kind() {
             let length = self.get_array_length(length);
-            self.expand_slice(
-                target_path,
-                source_path,
-                root_rustc_type,
-                0,
-                length as u64,
-                strong_update,
-            );
+            if length < k_limits::MAX_ELEMENTS_TO_TRACK {
+                self.expand_slice(
+                    target_path,
+                    source_path,
+                    root_rustc_type,
+                    0,
+                    length as u64,
+                    strong_update,
+                );
+            }
             let target_len_path = Path::new_length(target_path.clone());
             let len_value = self.get_u128_const_val(length as u128);
             self.update_value_at(target_len_path, len_value);
@@ -2543,7 +2556,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     if let Expression::CompileTimeConstant(ConstantDomain::U128(val)) =
                         &count.expression
                     {
-                        if *val < (k_limits::MAX_BYTE_ARRAY_LENGTH as u128) {
+                        if *val < (k_limits::MAX_ELEMENTS_TO_TRACK as u128) {
                             for i in 0..*val {
                                 let target_index_val = Rc::new(i.into());
                                 let indexed_target =
@@ -2559,7 +2572,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     to,
                     from_end: false,
                 } => {
-                    if *to >= *from && (*to - *from) < (k_limits::MAX_BYTE_ARRAY_LENGTH as u64) {
+                    if *to >= *from && (*to - *from) < (k_limits::MAX_ELEMENTS_TO_TRACK as u64) {
                         for i in *from..*to {
                             let target_index_val = Rc::new((i as u128).into());
                             let indexed_target =
@@ -2574,7 +2587,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     to,
                     from_end: true,
                 } => {
-                    if *to >= *from && (*to - *from) < (k_limits::MAX_BYTE_ARRAY_LENGTH as u64) {
+                    if *to >= *from && (*to - *from) < (k_limits::MAX_ELEMENTS_TO_TRACK as u64) {
                         let one = Rc::new(0u128.into());
                         let end_index = self.get_len(qualifier.clone()).subtract(one);
                         for i in *from..*to {
