@@ -143,12 +143,7 @@ impl MiraiCallbacks {
     }
 
     fn is_excluded(&self, file_name: &str) -> bool {
-        if file_name.starts_with("config/management/operational/src")
-            || file_name.starts_with("config/src")
-            || file_name.starts_with("diem-move/diem-framework/releases/src")
-            || file_name.starts_with("diem-move/transaction-replay/src")
-            || file_name.starts_with("language/tools/move-coverage/src")
-        {
+        if file_name.starts_with("language/tools/move-coverage/src") {
             return true;
         }
         false
