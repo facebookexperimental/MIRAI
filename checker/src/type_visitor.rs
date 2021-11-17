@@ -221,7 +221,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// Returns a parameter environment for the current function.
     pub fn get_param_env(&self) -> rustc_middle::ty::ParamEnv<'tcx> {
         let env_def_id = if self.tcx.is_closure(self.def_id) {
-            self.tcx.closure_base_def_id(self.def_id)
+            self.tcx.typeck_root_def_id(self.def_id)
         } else {
             self.def_id
         };
