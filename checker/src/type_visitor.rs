@@ -1037,9 +1037,15 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     item_def_id,
                     specialized_substs,
                 ) {
-                    let item_def_id = instance.def.def_id();
-                    let item_type = self.tcx.type_of(item_def_id);
-                    let map = self.get_generic_arguments_map(item_def_id, instance.substs, &[]);
+                    let instance_item_def_id = instance.def.def_id();
+                    if item_def_id == instance_item_def_id {
+                        return self
+                            .tcx
+                            .mk_projection(projection.item_def_id, specialized_substs);
+                    }
+                    let item_type = self.tcx.type_of(instance_item_def_id);
+                    let map =
+                        self.get_generic_arguments_map(instance_item_def_id, instance.substs, &[]);
                     if item_type == gen_arg_type && map.is_none() {
                         // Can happen if the projection just adds a life time
                         item_type
