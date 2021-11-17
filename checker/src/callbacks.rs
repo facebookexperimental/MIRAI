@@ -142,10 +142,7 @@ impl MiraiCallbacks {
         false
     }
 
-    fn is_excluded(&self, file_name: &str) -> bool {
-        if file_name.starts_with("language/tools/move-coverage/src") {
-            return true;
-        }
+    fn is_excluded(&self, _file_name: &str) -> bool {
         false
     }
 
