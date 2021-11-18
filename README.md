@@ -37,14 +37,17 @@ When there are no compile errors,
 no lint errors and no test failures, you can proceed to the next step and run MIRAI. For example:
 ```
 touch src/lib.rs
-RUSTC_WRAPPER=mirai cargo build
+RUSTC_WRAPPER=mirai cargo test --no-run
 ```
+You could also just use `cargo check` if you do not have unit tests with good code coverage. The reason that 
+`cargo test` is recommended is because unit tests are good entry points for the analysis. If you use cargo check,
+also do an initial check rather than build for the dependencies that you do not want to analyze with MIRAI.
 
 The touch command (which needs to reference a real file in your project) forces Cargo to re-run rustc and to not assume
 that its cached error messages are still correct.
 
 This will likely produce some warnings, which you can then fix by adding annotations declared in this
-[crate](https://crates.io/crates/mirai-annotations). Keep re-touching and running cargo build as above until
+[crate](https://crates.io/crates/mirai-annotations). Keep running cargo as above until
 there are no more warnings.
 
 At this stage your code will be better documented and more readable. Perhaps you'll also have found and fixed a few bugs.
@@ -52,8 +55,6 @@ At this stage your code will be better documented and more readable. Perhaps you
 You can use the environment variable `MIRAI_FLAGS` to get cargo to provide command line options to MIRAI. The value is a
 string which can contain any of the following flags:
 
-- `--test_only`: instructs MIRAI to analyze only test methods in your crate. You must also provide the `--tests`
-  option to the `cargo build` command to include those tests actually into your build.
 - `--diag=default|verify|library|paranoid`: configures level of diagnostics. With `default` MIRAI
    will not report errors which are potential 'false positives'. With `verify` it will point out
    functions that may contain such errors. With `library` it will require explicit preconditions.

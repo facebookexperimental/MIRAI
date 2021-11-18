@@ -14,7 +14,7 @@ cargo fmt --all
 # Run lint checks
 cargo audit
 cargo clippy --all-features --all-targets -- -D warnings
-# Build
+# Build mirai (in debug mode) so that we can build the standard contracts
 cargo build
 
 # build the mirai-standard-contracts crate
@@ -39,6 +39,6 @@ cargo install --path ./checker
 
 # Run mirai on itself (using the optimized build in cargo as the bootstrap).
 cargo clean
-RUSTFLAGS="-Z always_encode_mir" cargo build
+RUSTFLAGS="-Z always_encode_mir" cargo check
 touch checker/src/lib.rs
-RUSTFLAGS="-Z always_encode_mir" RUSTC_WRAPPER=mirai RUST_BACKTRACE=full MIRAI_LOG=warn MIRAI_FLAGS="--body_analysis_timeout 10" cargo build --lib -p mirai
+RUSTFLAGS="-Z always_encode_mir" RUSTC_WRAPPER=mirai RUST_BACKTRACE=full MIRAI_LOG=warn MIRAI_FLAGS="--body_analysis_timeout 10" cargo check --lib

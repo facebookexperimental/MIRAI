@@ -75,19 +75,10 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     fn config(&mut self, config: &mut interface::Config) {
         self.file_name = config.input.source_name().prefer_remapped().to_string();
         info!("Processing input file: {}", self.file_name);
-        if self.options.test_only {
-            if config.opts.test {
-                if Self::is_test_excluded(&self.file_name) {
-                    // This file is known not to compile with the test flag.
-                    // This happens in Libra code.
-                    std::process::exit(0);
-                }
-            } else {
-                // In test only mode we only run MIRAI when the --tests flag has been set.
-                return;
-            }
+        if config.opts.test {
+            info!("in test only mode");
+            self.options.test_only = true;
         }
-
         config.crate_cfg.insert(("mirai".to_string(), None));
         match &config.output_dir {
             None => {
@@ -109,10 +100,6 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
         compiler.session().abort_if_errors();
-        if self.options.test_only && !compiler.session().opts.test {
-            // In test only mode we only run MIRAI when the --tests flag has been set.
-            return Compilation::Continue;
-        }
         if self
             .output_directory
             .to_str()
@@ -138,31 +125,9 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
 }
 
 impl MiraiCallbacks {
-    fn is_test_excluded(_file_name: &str) -> bool {
-        false
-    }
-
-    fn is_excluded(&self, _file_name: &str) -> bool {
-        false
-    }
-
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
     fn analyze_with_mirai<'tcx>(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
-        if self.options.test_only {
-            if Self::is_test_excluded(&self.file_name) {
-                if self.options.statistics {
-                    println!("{}, not analyzed, 0", self.file_name);
-                }
-                return;
-            }
-        } else if self.is_excluded(&self.file_name) {
-            if self.options.statistics {
-                println!("{}, not analyzed, 0", self.file_name);
-            }
-            return;
-        }
-
         let output_dir = String::from(self.output_directory.to_str().expect("valid string"));
         let summary_store_path = if std::env::var("MIRAI_SHARE_PERSISTENT_STORE").is_ok() {
             output_dir

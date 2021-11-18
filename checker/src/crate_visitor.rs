@@ -71,7 +71,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     pub fn analyze_some_bodies(&mut self) {
         let start_instant = Instant::now();
         // Determine the functions we want to analyze.
-        let function_whitelist = self.get_function_whitelist();
+        let selected_functions = self.get_selected_function_list();
 
         // Get the entry function
         let entry_fn_def_id = if let Some((def_id, _)) = self.tcx.entry_fn(()) {
@@ -85,8 +85,8 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
         for local_def_id in self.tcx.hir().body_owners() {
             let def_id = local_def_id.to_def_id();
             let name = utils::summary_key_str(self.tcx, def_id);
-            if let Some(white_list) = &function_whitelist {
-                if !self.included_in(white_list.as_ref(), name.as_ref(), def_id) {
+            if let Some(selections) = &selected_functions {
+                if !self.included_in(selections.as_ref(), name.as_ref(), def_id) {
                     if self.options.single_func.is_none() {
                         debug!(
                             "skipping function {} as it is not selected for analysis",
@@ -95,7 +95,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                     }
                     continue;
                 }
-                info!("analyzing function {}", name);
+                info!("analyzing selected function {}", name);
             } else if !building_standard_summaries {
                 if !utils::is_public(def_id, self.tcx) && def_id != entry_fn_def_id {
                     debug!("skipping function {} as it is not public", name);
@@ -135,7 +135,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     /// Use compilation options to determine a list of functions to analyze.
     /// If this returns None, default logic is used by the caller.
     #[logfn(TRACE)]
-    fn get_function_whitelist(&mut self) -> Option<Vec<String>> {
+    fn get_selected_function_list(&mut self) -> Option<Vec<String>> {
         if let Some(func_name) = &self.options.single_func {
             Some(vec![func_name.clone()])
         } else if self.options.test_only {
