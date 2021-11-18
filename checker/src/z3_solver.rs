@@ -1989,12 +1989,16 @@ impl Z3Solver {
                 z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },
             ConstantDomain::F32(v) => unsafe {
-                let fv = f32::from_bits(*v);
-                z3_sys::Z3_mk_fpa_numeral_float(self.z3_context, fv, self.f32_sort)
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                let num_str = format!("{}", (*v as u32));
+                let c_string = CString::new(num_str).unwrap();
+                z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },
             ConstantDomain::F64(v) => unsafe {
-                let fv = f64::from_bits(*v);
-                z3_sys::Z3_mk_fpa_numeral_double(self.z3_context, fv, self.f64_sort)
+                let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
+                let num_str = format!("{}", (*v as u64));
+                let c_string = CString::new(num_str).unwrap();
+                z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },
             ConstantDomain::I128(v) => unsafe {
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
