@@ -10,10 +10,10 @@ use rustc_session::config::ErrorOutputType;
 use rustc_session::early_error;
 
 /// Creates the clap::App metadata for argument parsing.
-fn make_options_parser<'a>() -> App<'a, 'a> {
+fn make_options_parser<'a>(running_test_harness: bool) -> App<'a, 'a> {
     // We could put this into lazy_static! with a Mutex around, but we really do not expect
     // to construct this more then once per regular program run.
-    App::new("MIRAI")
+    let mut parser = App::new("MIRAI")
     .setting(AppSettings::NoBinaryName)
     .version("v1.0.5")
     .arg(Arg::with_name("single_func")
@@ -21,12 +21,6 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .takes_value(true)
         .help("Focus analysis on the named function.")
         .long_help("Name is the simple name of a top-level crate function or a MIRAI summary key."))
-    .arg(Arg::with_name("test_only")
-        .long("test_only")
-        .short("t")
-        .takes_value(false)
-        .help("Focus analysis on #[test] methods.")
-        .long_help("Only #[test] methods and their usage are analyzed. This must be used together with the rustc --test option.")) 
     .arg(Arg::with_name("diag")
         .long("diag")
         .possible_values(&["default", "verify", "library", "paranoid"])
@@ -60,7 +54,16 @@ fn make_options_parser<'a>() -> App<'a, 'a> {
         .long("call_graph_config")
         .takes_value(true)
         .help("Path call graph config.")
-        .long_help(r#"Path to a JSON file that configures call graph output. Please see the documentation for details (https://github.com/facebookexperimental/MIRAI/blob/main/documentation/CallGraph.md)."#))
+        .long_help(r#"Path to a JSON file that configures call graph output. Please see the documentation for details (https://github.com/facebookexperimental/MIRAI/blob/main/documentation/CallGraph.md)."#));
+    if running_test_harness {
+        parser = parser.arg(Arg::with_name("test_only")
+            .long("test_only")
+            .short("t")
+            .takes_value(false)
+            .help("Focus analysis on #[test] methods.")
+            .long_help("Only #[test] methods and their usage are analyzed. This must be used together with the rustc --test option."));
+    }
+    parser
 }
 
 /// Represents options passed to MIRAI.
@@ -103,18 +106,21 @@ impl Options {
     /// Parse options from an argument string. The argument string will be split using unix
     /// shell escaping rules. Any content beyond the leftmost `--` token will be returned
     /// (excluding this token).
-    pub fn parse_from_str(&mut self, s: &str) -> Vec<String> {
-        self.parse(&shellwords::split(s).unwrap_or_else(|e| {
-            early_error(
-                ErrorOutputType::default(),
-                &format!("Cannot parse argument string: {:?}", e),
-            )
-        }))
+    pub fn parse_from_str(&mut self, s: &str, running_test_harness: bool) -> Vec<String> {
+        self.parse(
+            &shellwords::split(s).unwrap_or_else(|e| {
+                early_error(
+                    ErrorOutputType::default(),
+                    &format!("Cannot parse argument string: {:?}", e),
+                )
+            }),
+            running_test_harness,
+        )
     }
 
     /// Parses options from a list of strings. Any content beyond the leftmost `--` token
     /// will be returned (excluding this token).
-    pub fn parse(&mut self, args: &[String]) -> Vec<String> {
+    pub fn parse(&mut self, args: &[String], running_test_harness: bool) -> Vec<String> {
         let mut mirai_args_end = args.len();
         let mut rustc_args_start = 0;
         if let Some((p, _)) = args.iter().find_position(|s| s.as_str() == "--") {
@@ -126,7 +132,8 @@ impl Options {
             // The arguments may not be intended for MIRAI and may get here
             // via some tool, so do not report errors here, but just assume
             // that the arguments were not meant for MIRAI.
-            match make_options_parser().get_matches_from_safe(mirai_args.iter()) {
+            match make_options_parser(running_test_harness).get_matches_from_safe(mirai_args.iter())
+            {
                 Ok(matches) => {
                     // Looks like these are MIRAI options after all and there are no rustc options.
                     rustc_args_start = args.len();
@@ -157,7 +164,7 @@ impl Options {
             }
         } else {
             // This will display error diagnostics for arguments that are not valid for MIRAI.
-            make_options_parser().get_matches_from(mirai_args.iter())
+            make_options_parser(running_test_harness).get_matches_from(mirai_args.iter())
         };
 
         if matches.is_present("single_func") {

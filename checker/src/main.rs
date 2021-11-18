@@ -46,7 +46,7 @@ fn main() {
 
     // Get any options specified via the MIRAI_FLAGS environment variable
     let mut options = Options::default();
-    let rustc_args = options.parse_from_str(&env::var("MIRAI_FLAGS").unwrap_or_default());
+    let rustc_args = options.parse_from_str(&env::var("MIRAI_FLAGS").unwrap_or_default(), false);
     info!("MIRAI options from environment: {:?}", options);
 
     // Let arguments supplied on the command line override the environment variable.
@@ -69,7 +69,7 @@ fn main() {
         args.remove(1);
     }
 
-    let mut rustc_command_line_arguments = options.parse(&args[1..]);
+    let mut rustc_command_line_arguments = options.parse(&args[1..], false);
     info!("MIRAI options modified by command line: {:?}", options);
 
     rustc_driver::install_ice_hook();
@@ -122,15 +122,6 @@ fn main() {
                     if s.ends_with(&postfix) {
                         *s = s.replace(&postfix, ".rlib");
                     }
-                }
-
-                let test: String = "--test".into();
-                if !rustc_command_line_arguments
-                    .iter()
-                    .any(|arg| arg.ends_with(&test))
-                {
-                    // Tell compiler to compile test code
-                    rustc_command_line_arguments.push(test);
                 }
             }
         }

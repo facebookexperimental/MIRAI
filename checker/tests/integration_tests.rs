@@ -149,7 +149,7 @@ fn run_directory(directory_path: PathBuf) -> Vec<(String, String)> {
 
 fn build_options() -> Options {
     let mut options = Options::default();
-    options.parse_from_str(""); // get defaults
+    options.parse_from_str("", true); // get defaults
     options.diag_level = DiagLevel::Paranoid; // override default
     options.max_analysis_time_for_body = 20;
     options.max_analysis_time_for_crate = 60;
@@ -264,7 +264,7 @@ fn invoke_driver(
         let file_content = read_to_string(&Path::new(&file_name)).unwrap();
         let options_re = Regex::new(r"(?m)^\s*//\s*MIRAI_FLAGS\s(?P<flags>.*)$").unwrap();
         if let Some(captures) = options_re.captures(&file_content) {
-            rustc_args = options.parse_from_str(&captures["flags"]); // override based on test source
+            rustc_args = options.parse_from_str(&captures["flags"], true); // override based on test source
         }
     }
 
