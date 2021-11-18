@@ -23,8 +23,9 @@ use rustc_middle::ty::{
 };
 use rustc_target::abi::VariantIdx;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result};
+use std::ops::DerefMut;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -73,6 +74,7 @@ impl<'tcx> TypeCache<'tcx> {
 
 pub struct TypeVisitor<'tcx> {
     pub actual_argument_types: Vec<Ty<'tcx>>,
+    pub closures_being_specialized: RefCell<HashSet<DefId>>,
     pub def_id: DefId,
     pub generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     pub generic_arguments: Option<SubstsRef<'tcx>>,
@@ -99,6 +101,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         let dummy_untagged_value_type = tcx.types.i8;
         TypeVisitor {
             actual_argument_types: Vec::new(),
+            closures_being_specialized: RefCell::new(HashSet::new()),
             def_id,
             generic_argument_map: None,
             generic_arguments: None,
@@ -1155,9 +1158,27 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     region,
                 )
             }
-            TyKind::Closure(def_id, substs) => self
-                .tcx
-                .mk_closure(*def_id, self.specialize_substs(substs, map)),
+            TyKind::Closure(def_id, substs) => {
+                // Closure types can be part of their own type parameters...
+                // so need to guard against endless recursion
+                {
+                    let mut borrowed_closures_being_specialized =
+                        self.closures_being_specialized.borrow_mut();
+                    let closures_being_specialized =
+                        borrowed_closures_being_specialized.deref_mut();
+                    if !closures_being_specialized.insert(*def_id) {
+                        return gen_arg_type;
+                    }
+                }
+                let specialized_closure = self
+                    .tcx
+                    .mk_closure(*def_id, self.specialize_substs(substs, map));
+                let mut borrowed_closures_being_specialized =
+                    self.closures_being_specialized.borrow_mut();
+                let closures_being_specialized = borrowed_closures_being_specialized.deref_mut();
+                closures_being_specialized.remove(def_id);
+                specialized_closure
+            }
             TyKind::Generator(def_id, substs, movability) => {
                 self.tcx
                     .mk_generator(*def_id, self.specialize_substs(substs, map), *movability)
