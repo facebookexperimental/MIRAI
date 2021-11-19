@@ -2305,7 +2305,10 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 );
                 operand.dereference(target_type)
             }
-            Expression::CompileTimeConstant(..) => self.clone(),
+            Expression::CompileTimeConstant(..) => {
+                // de-referencing a constant value is an illegal operation, so return bottom
+                BOTTOM.into()
+            }
             Expression::ConditionalExpression {
                 condition,
                 consequent,
@@ -2333,7 +2336,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::InitialParameterValue { path, .. } => {
                 AbstractValue::make_initial_parameter_value(
                     target_type,
-                    Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
+                    Path::new_deref(path.clone(), target_type),
                 )
             }
             Expression::Reference(path) => {
@@ -2361,12 +2364,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     .collect(),
                 default.dereference(target_type),
             ),
-            Expression::UninterpretedCall { path, .. } | Expression::Variable { path, .. } => {
-                AbstractValue::make_typed_unknown(
-                    target_type,
-                    Path::new_qualified(path.clone(), Rc::new(PathSelector::Deref)),
-                )
+            Expression::UninterpretedCall {
+                path,
+                result_type: var_type,
+                ..
             }
+            | Expression::Variable { path, var_type } => AbstractValue::make_typed_unknown(
+                target_type,
+                Path::new_deref(path.clone(), *var_type),
+            ),
             Expression::WidenedJoin { path, operand } => operand
                 .dereference(target_type)
                 .widen(&Path::new_deref(path.clone(), target_type)),

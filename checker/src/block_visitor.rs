@@ -3509,15 +3509,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     } else if type_visitor.is_slice_pointer(ty.kind()) {
                         // Deref the thin pointer part of the slice pointer
                         ty = type_visitor.get_dereferenced_type(ty);
-                        let thin_pointer_path = Path::new_field(result, 0);
-                        let deref_path =
-                            Path::new_deref(thin_pointer_path, ExpressionType::from(ty.kind()));
-                        type_visitor.set_path_rustc_type(deref_path.clone(), ty);
-                        result = deref_path;
-                        continue;
+                        result = Path::new_field(result, 0);
                     } else {
                         ty = type_visitor.get_dereferenced_type(ty);
                     }
+                    result = Path::new_deref(result, ExpressionType::from(ty.kind()));
+                    type_visitor.set_path_rustc_type(result.clone(), ty);
+                    continue;
                 }
                 mir::ProjectionElem::Field(_, field_ty) => {
                     ty = self.type_visitor().specialize_generic_argument_type(
