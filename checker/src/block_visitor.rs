@@ -1488,7 +1488,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
 
                     // At this point, we don't know that this assert is unreachable and we don't know
                     // that the condition is as expected, so we need to warn about it somewhere.
+                    check_for_early_return!(self.bv);
                     let promotable_cond_val = cond_val.extract_promotable_disjuncts(false);
+                    check_for_early_return!(self.bv);
                     let promotable_entry_cond = self
                         .bv
                         .current_environment

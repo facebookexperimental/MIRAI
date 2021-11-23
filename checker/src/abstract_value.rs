@@ -680,7 +680,8 @@ impl AbstractValue {
     #[logfn_inputs(TRACE)]
     pub fn make_typed_unknown(var_type: ExpressionType, path: Rc<Path>) -> Rc<AbstractValue> {
         let path = path.remove_initial_value_wrapper();
-        Rc::new(make_value(Expression::Variable { path, var_type }))
+        let path_length = path.path_length() as u64;
+        AbstractValue::make_from(Expression::Variable { path, var_type }, path_length)
     }
 
     /// Creates an abstract value about which nothing is known other than its type, address and that
@@ -692,10 +693,12 @@ impl AbstractValue {
         var_type: ExpressionType,
         path: Rc<Path>,
     ) -> Rc<AbstractValue> {
-        Rc::new(make_value(Expression::InitialParameterValue {
-            path: path.remove_initial_value_wrapper(),
-            var_type,
-        }))
+        let path = path.remove_initial_value_wrapper();
+        let path_length = path.path_length() as u64;
+        AbstractValue::make_from(
+            Expression::InitialParameterValue { path, var_type },
+            path_length,
+        )
     }
 
     /// Creates an abstract value which represents the result of comparing the left operand with
