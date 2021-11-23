@@ -637,6 +637,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         precondition!(self.actual_argument_types.len() == 1);
         if let TyKind::Ref(_, t, _) = self.actual_argument_types[0].kind() {
             if let TyKind::Adt(def, substs) = t.kind() {
+                if def.variants.is_empty() {
+                    return false;
+                }
                 let variant_0 = VariantIdx::from_u32(0);
                 if Some(def.variants[variant_0].def_id)
                     == self.block_visitor.bv.tcx.lang_items().option_none_variant()
