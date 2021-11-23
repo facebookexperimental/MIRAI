@@ -831,7 +831,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             let arg_root = arg_path.get_path_root();
             for (p, t, f) in self
-                .all_paths_from(arg_root, &roots_that_can_reach_functions)
+                .all_paths_from(
+                    arg_root,
+                    &roots_that_can_reach_functions,
+                    &mut HashSet::new(),
+                )
                 .into_iter()
             {
                 if f.eq(arg_value) {
@@ -854,6 +858,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         &self,
         root: &Rc<Path>,
         roots_that_can_reach_functions: &HashMap<Rc<Path>, Vec<(Rc<Path>, PathOrFunction<'tcx>)>>,
+        explored_roots: &mut HashSet<Rc<Path>>,
     ) -> Vec<(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)> {
         let mut result: Vec<(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)> = vec![];
         if let Some(v) = roots_that_can_reach_functions.get(root) {
@@ -864,18 +869,22 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     }
                     PathOrFunction::Path(indirect_path, needs_deref) => {
                         let indirect_root = indirect_path.get_path_root();
-                        for (ip, t, f) in
-                            self.all_paths_from(indirect_root, roots_that_can_reach_functions)
-                        {
-                            let path = ip.replace_root(
+                        if explored_roots.insert(indirect_root.clone()) {
+                            for (ip, t, f) in self.all_paths_from(
                                 indirect_root,
-                                if *needs_deref {
-                                    Path::new_deref(p.clone(), ExpressionType::NonPrimitive)
-                                } else {
-                                    p.clone()
-                                },
-                            );
-                            result.push((path, t, f));
+                                roots_that_can_reach_functions,
+                                explored_roots,
+                            ) {
+                                let path = ip.replace_root(
+                                    indirect_root,
+                                    if *needs_deref {
+                                        Path::new_deref(p.clone(), ExpressionType::NonPrimitive)
+                                    } else {
+                                        p.clone()
+                                    },
+                                );
+                                result.push((path, t, f));
+                            }
                         }
                     }
                 }
