@@ -1148,7 +1148,13 @@ impl Debug for PathSelector {
                 case_index,
                 num_cases,
             } => f.write_fmt(format_args!("({:?} of {:?})", case_index, num_cases)),
-            PathSelector::Index(value) => f.write_fmt(format_args!("[{:?}]", value)),
+            PathSelector::Index(value) => {
+                if value.expression_size > 100 {
+                    f.write_fmt(format_args!("[...]"))
+                } else {
+                    f.write_fmt(format_args!("[{:?}]", value))
+                }
+            }
             PathSelector::Slice(value) => f.write_fmt(format_args!("[0..{:?}]", value)),
             PathSelector::ConstantIndex {
                 offset,
