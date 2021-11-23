@@ -1721,6 +1721,13 @@ impl Z3Solver {
                 let path_symbol = self.get_symbol_for(path);
                 z3_sys::Z3_mk_const(self.z3_context, path_symbol, self.bool_sort)
             },
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => self.general_switch(discriminator, cases, default, |e| {
+                self.get_as_bool_z3_ast(e)
+            }),
             Expression::Top | Expression::Bottom => unsafe {
                 z3_sys::Z3_mk_fresh_const(self.z3_context, self.empty_str, self.bool_sort)
             },

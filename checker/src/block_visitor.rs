@@ -2840,10 +2840,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.type_visitor_mut()
             .set_path_rustc_type(target_path.clone(), ty);
         match ty.kind() {
+            TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
+                //todo: deserialize the enum
+                bytes
+            }
             TyKind::Adt(def, substs) => {
                 trace!("deserializing {:?} {:?}", def, substs);
                 let mut bytes_left_deserialize = bytes;
-                // todo: if there is more than one variant we need to use union fields
                 for variant in def.variants.iter() {
                     trace!("deserializing variant {:?}", variant);
                     bytes_left_deserialize = bytes;
