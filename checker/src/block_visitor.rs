@@ -2840,48 +2840,65 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.type_visitor_mut()
             .set_path_rustc_type(target_path.clone(), ty);
         match ty.kind() {
-            TyKind::Adt(adt_def, substs) if adt_def.is_enum() => {
-                let mut bytes_left_deserialize = bytes;
+            TyKind::Adt(def, substs) if def.is_enum() => {
+                trace!("deserializing {:?} {:?}", def, substs);
                 let discr_val_path = Path::new_discriminant(target_path.clone());
                 // Assume (probably incorrectly) that the discriminant is encoded into a single byte
                 // todo: somehow figure out what the Rust compiler is actually doing here. (Not easy.)
                 self.bv
                     .update_value_at(discr_val_path, Rc::new((bytes[0] as u128).into()));
-                let enum_ty_layout = self.type_visitor().layout_of(ty).unwrap();
-                let (_, _, discr_index, _) =
-                    self.get_discriminator_info(bytes[0] as u128, &enum_ty_layout);
-                bytes_left_deserialize = &bytes_left_deserialize[1..];
-                let variant = &adt_def.variants[discr_index];
-                for (i, field) in variant.fields.iter().enumerate() {
-                    let field_path = Path::new_field(target_path.clone(), i);
-                    let field_ty = field.ty(self.bv.tcx, substs);
-                    bytes_left_deserialize = self.deserialize_constant_bytes(
-                        field_path,
-                        bytes_left_deserialize,
-                        field_ty,
-                    );
-                }
-                bytes_left_deserialize
-            }
-            TyKind::Adt(def, substs) => {
-                trace!("deserializing {:?} {:?}", def, substs);
-                let mut bytes_left_deserialize = bytes;
-                for variant in def.variants.iter() {
+                let mut bytes_left_to_deserialize = bytes;
+                if let Ok(enum_ty_layout) = self.type_visitor().layout_of(ty) {
+                    let (_, _, discr_index, discr_has_data) =
+                        self.get_discriminator_info(bytes[0] as u128, &enum_ty_layout);
+                    trace!("discr_index {:?}", discr_index);
+                    trace!("discr_has_data {:?}", discr_has_data);
+                    if !discr_has_data {
+                        bytes_left_to_deserialize = &bytes_left_to_deserialize[1..];
+                    }
+                    let variant = &def.variants[discr_index];
                     trace!("deserializing variant {:?}", variant);
-                    bytes_left_deserialize = bytes;
-                    trace!("bytes_left_deserialize {:?}", bytes_left_deserialize);
                     for (i, field) in variant.fields.iter().enumerate() {
                         trace!("deserializing field({}) {:?}", i, field);
+                        trace!("bytes_left_deserialize {:?}", bytes_left_to_deserialize);
                         let field_path = Path::new_field(target_path.clone(), i);
                         let field_ty = field.ty(self.bv.tcx, substs);
-                        bytes_left_deserialize = self.deserialize_constant_bytes(
+                        trace!(
+                            "field ty layout {:?}",
+                            self.type_visitor().layout_of(field_ty)
+                        );
+                        bytes_left_to_deserialize = self.deserialize_constant_bytes(
                             field_path,
-                            bytes_left_deserialize,
+                            bytes_left_to_deserialize,
                             field_ty,
                         );
                     }
                 }
-                bytes_left_deserialize
+                bytes_left_to_deserialize
+            }
+            TyKind::Adt(def, substs) => {
+                trace!("deserializing {:?} {:?}", def, substs);
+                let mut bytes_left_to_deserialize = bytes;
+                for variant in def.variants.iter() {
+                    trace!("deserializing variant {:?}", variant);
+                    bytes_left_to_deserialize = bytes;
+                    for (i, field) in variant.fields.iter().enumerate() {
+                        trace!("deserializing field({}) {:?}", i, field);
+                        trace!("bytes_left_deserialize {:?}", bytes_left_to_deserialize);
+                        let field_path = Path::new_field(target_path.clone(), i);
+                        let field_ty = field.ty(self.bv.tcx, substs);
+                        trace!(
+                            "field ty layout {:?}",
+                            self.type_visitor().layout_of(field_ty)
+                        );
+                        bytes_left_to_deserialize = self.deserialize_constant_bytes(
+                            field_path,
+                            bytes_left_to_deserialize,
+                            field_ty,
+                        );
+                    }
+                }
+                bytes_left_to_deserialize
             }
             TyKind::Array(elem_type, length) => {
                 let length = self.bv.get_array_length(length);
@@ -3003,7 +3020,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 self.bv.update_value_at(target_path, Rc::new(f.into()));
                 &bytes[8..]
             },
-            TyKind::RawPtr(rustc_middle::ty::TypeAndMut { .. }) | TyKind::Ref(..) => {
+            TyKind::FnPtr(..)
+            | TyKind::RawPtr(rustc_middle::ty::TypeAndMut { .. })
+            | TyKind::Ref(..) => {
                 // serialized pointers are not the values pointed to, just some number.
                 // todo: figure out how to deference that number and deserialize the
                 // value to which this pointer refers.
@@ -3258,7 +3277,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         } else {
                             data
                         };
-                        discr_bits = discr_ty_layout.size.truncate(v);
+                        // Not clear what is going on here, but we can't return a variant index
+                        // if the discriminant value (discr_bits) does not fall in the valid range.
+                        if tag.valid_range.start <= tag.valid_range.end {
+                            discr_bits = u128::clamp(v, tag.valid_range.start, tag.valid_range.end);
+                        } else {
+                            // No idea why the range specification goes from high to low, but it happens.
+                            discr_bits = u128::clamp(v, tag.valid_range.end, tag.valid_range.start);
+                        }
 
                         // Iterates through all the variant definitions to find the actual index.
                         discr_index = match enum_ty_layout.ty.kind() {
