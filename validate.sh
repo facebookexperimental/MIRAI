@@ -39,6 +39,6 @@ cargo install --path ./checker
 
 # Run mirai on itself (using the optimized build in cargo as the bootstrap).
 cargo clean
-RUSTFLAGS="-Z always_encode_mir" cargo check
+RUSTFLAGS="-Z always_encode_mir" cargo build
 touch checker/src/lib.rs
-RUSTFLAGS="-Z always_encode_mir" RUSTC_WRAPPER=mirai RUST_BACKTRACE=full MIRAI_LOG=warn MIRAI_FLAGS="--body_analysis_timeout 10" cargo check --lib
+RUSTFLAGS="-Z always_encode_mir" RUSTC_WRAPPER=mirai RUST_BACKTRACE=full MIRAI_LOG=warn MIRAI_FLAGS="--body_analysis_timeout 10" cargo build --lib
