@@ -2840,9 +2840,28 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.type_visitor_mut()
             .set_path_rustc_type(target_path.clone(), ty);
         match ty.kind() {
-            TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
-                //todo: deserialize the enum
-                bytes
+            TyKind::Adt(adt_def, substs) if adt_def.is_enum() => {
+                let mut bytes_left_deserialize = bytes;
+                let discr_val_path = Path::new_discriminant(target_path.clone());
+                // Assume (probably incorrectly) that the discriminant is encoded into a single byte
+                // todo: somehow figure out what the Rust compiler is actually doing here. (Not easy.)
+                self.bv
+                    .update_value_at(discr_val_path, Rc::new((bytes[0] as u128).into()));
+                let enum_ty_layout = self.type_visitor().layout_of(ty).unwrap();
+                let (_, _, discr_index, _) =
+                    self.get_discriminator_info(bytes[0] as u128, &enum_ty_layout);
+                bytes_left_deserialize = &bytes_left_deserialize[1..];
+                let variant = &adt_def.variants[discr_index];
+                for (i, field) in variant.fields.iter().enumerate() {
+                    let field_path = Path::new_field(target_path.clone(), i);
+                    let field_ty = field.ty(self.bv.tcx, substs);
+                    bytes_left_deserialize = self.deserialize_constant_bytes(
+                        field_path,
+                        bytes_left_deserialize,
+                        field_ty,
+                    );
+                }
+                bytes_left_deserialize
             }
             TyKind::Adt(def, substs) => {
                 trace!("deserializing {:?} {:?}", def, substs);
@@ -3097,122 +3116,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             let data = scalar_int.to_bits(size).unwrap();
             if let Ok(ty_and_layout) = self.type_visitor().layout_of(ty) {
-                // The type of the discriminant tag
-                let discr_ty = ty_and_layout.ty.discriminant_ty(self.bv.tcx);
-                // The layout of the discriminant tag
-                let discr_layout = self.type_visitor().layout_of(discr_ty).unwrap();
-
-                let discr_signed; // Whether the discriminant tag is signed or not
-                let discr_bits; // The actual representation of the discriminant tag
-                let discr_index; // The index of the discriminant in the enum definition
-                let discr_has_data; // A flag indicating if the enum constant has a sub-component
-
-                match ty_and_layout.variants {
-                    Variants::Single { index } => {
-                        // The enum only contains one variant.
-
-                        // Truncates the value of the discriminant to fit into the layout.
-                        discr_signed = discr_layout.abi.is_signed();
-                        discr_bits = match ty_and_layout
-                            .ty
-                            .discriminant_for_variant(self.bv.tcx, index)
-                        {
-                            Some(discr) => {
-                                if discr_signed {
-                                    discr_layout.size.sign_extend(discr.val)
-                                } else {
-                                    discr_layout.size.truncate(discr.val)
-                                }
-                            }
-                            None => discr_layout.size.truncate(index.as_u32() as u128),
-                        };
-                        discr_index = index;
-                        // A single-variant enum can have niches if and only if this variant has a sub-component
-                        // of some special types (such as char).
-                        discr_has_data = ty_and_layout.largest_niche.is_some();
-                    }
-                    Variants::Multiple {
-                        ref tag,
-                        ref tag_encoding,
-                        ref variants,
-                        ..
-                    } => {
-                        // The enum contains multiple (more than one) variants.
-
-                        // The discriminant tag can be defined explicitly, and it can be negative.
-                        // Extracts the tag layout that indicates the tag's sign.
-                        let tag_layout = self
-                            .type_visitor()
-                            .layout_of(tag.value.to_int_ty(self.bv.tcx))
-                            .unwrap();
-                        discr_signed = tag_layout.abi.is_signed();
-                        match *tag_encoding {
-                            TagEncoding::Direct => {
-                                // Truncates the discriminant value to fit into the layout.
-                                // But before the truncation, we have to extend it properly if the tag can be negative.
-                                // For example, `std::cmp::Ordering::Less` is defined as -1, and its discriminant
-                                // tag is internally represented as u128::MAX in the type definition.
-                                // However, the constant literal might have a different memory layout.
-                                // Currently, Rust encodes the constant `std::cmp::Ordering::Less` as 0xff.
-                                // So we need to first sign_extend 0xff and then truncate to fit into discr_layout.
-                                let v = if discr_signed {
-                                    tag_layout.size.sign_extend(data)
-                                } else {
-                                    data
-                                };
-                                discr_bits = discr_layout.size.truncate(v);
-
-                                // Iterates through all the variant definitions to find the actual index.
-                                discr_index = match ty_and_layout.ty.kind() {
-                                    TyKind::Adt(adt, _) => adt
-                                        .discriminants(self.bv.tcx)
-                                        .find(|(_, var)| var.val == discr_bits),
-                                    TyKind::Generator(def_id, substs, _) => {
-                                        let substs = substs.as_generator();
-                                        substs
-                                            .discriminants(*def_id, self.bv.tcx)
-                                            .find(|(_, var)| var.val == discr_bits)
-                                    }
-                                    _ => verify_unreachable!(),
-                                }
-                                .unwrap()
-                                .0;
-
-                                discr_has_data = false;
-                            }
-                            TagEncoding::Niche {
-                                dataful_variant,
-                                ref niche_variants,
-                                niche_start,
-                            } => {
-                                // A niche means that there are some optimizations in the enum layout.
-                                // For example, a value of type Option<char> is encoded as a 32-bit integer.
-                                // There exists one single data containing variant (Some(char)).
-                                // Other variants are encoded as niches with tag values starting as niche_start.
-                                let variants_start = niche_variants.start().as_u32();
-                                let variant = if data >= niche_start {
-                                    discr_has_data = false;
-                                    let variant_index_relative = (data - niche_start) as u32;
-                                    let variant_index = variants_start + variant_index_relative;
-                                    VariantIdx::from_u32(variant_index)
-                                } else {
-                                    discr_has_data = true;
-                                    let fields = &variants[dataful_variant].fields;
-                                    checked_assume!(
-                                        fields.count() == 1
-                                            && fields.offset(0).bytes() == 0
-                                            && fields.memory_index(0) == 0,
-                                        "the data containing variant should contain a single sub-component"
-                                    );
-                                    dataful_variant
-                                };
-                                discr_bits = discr_layout.size.truncate(variant.as_u32() as u128);
-                                discr_index = variant;
-                            }
-                        }
-                    }
-                };
-
+                // Get the structure of the discriminant tag
+                let (discr_signed, discr_bits, discr_index, discr_has_data) =
+                    self.get_discriminator_info(data, &ty_and_layout);
                 trace!(
                     "discr tag {:?} index {:?} dataful {:?}",
                     discr_bits,
@@ -3285,6 +3191,126 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         debug!("type kind {:?}", ty.kind());
         debug!("unimplemented constant {:?}", val);
         Rc::new(ConstantDomain::Unimplemented.into())
+    }
+
+    fn get_discriminator_info(
+        &mut self,
+        data: u128,
+        enum_ty_layout: &rustc_middle::ty::layout::TyAndLayout<'tcx>,
+    ) -> (bool, u128, VariantIdx, bool) {
+        let discr_signed; // Whether the discriminant tag is signed or not
+        let discr_bits; // The actual representation of the discriminant tag
+        let discr_index; // The index of the discriminant in the enum definition
+        let discr_has_data; // A flag indicating if the enum constant has a sub-component
+
+        let discr_ty = enum_ty_layout.ty.discriminant_ty(self.bv.tcx);
+        let discr_ty_layout = self.type_visitor().layout_of(discr_ty).unwrap();
+        match enum_ty_layout.variants {
+            Variants::Single { index } => {
+                // The enum only contains one variant.
+
+                // Truncates the value of the discriminant to fit into the layout.
+                discr_signed = discr_ty_layout.abi.is_signed();
+                discr_bits = match enum_ty_layout
+                    .ty
+                    .discriminant_for_variant(self.bv.tcx, index)
+                {
+                    Some(discr) => {
+                        if discr_signed {
+                            discr_ty_layout.size.sign_extend(discr.val)
+                        } else {
+                            discr_ty_layout.size.truncate(discr.val)
+                        }
+                    }
+                    None => discr_ty_layout.size.truncate(index.as_u32() as u128),
+                };
+                discr_index = index;
+                // A single-variant enum can have niches if and only if this variant has a sub-component
+                // of some special types (such as char).
+                discr_has_data = enum_ty_layout.largest_niche.is_some();
+            }
+            Variants::Multiple {
+                ref tag,
+                ref tag_encoding,
+                ref variants,
+                ..
+            } => {
+                // The enum contains multiple (more than one) variants.
+
+                // The discriminant tag can be defined explicitly, and it can be negative.
+                // Extracts the tag layout that indicates the tag's sign.
+                let tag_layout = self
+                    .type_visitor()
+                    .layout_of(tag.value.to_int_ty(self.bv.tcx))
+                    .unwrap();
+                discr_signed = tag_layout.abi.is_signed();
+                match *tag_encoding {
+                    TagEncoding::Direct => {
+                        // Truncates the discriminant value to fit into the layout.
+                        // But before the truncation, we have to extend it properly if the tag can be negative.
+                        // For example, `std::cmp::Ordering::Less` is defined as -1, and its discriminant
+                        // tag is internally represented as u128::MAX in the type definition.
+                        // However, the constant literal might have a different memory layout.
+                        // Currently, Rust encodes the constant `std::cmp::Ordering::Less` as 0xff.
+                        // So we need to first sign_extend 0xff and then truncate to fit into discr_layout.
+                        let v = if discr_signed {
+                            tag_layout.size.sign_extend(data)
+                        } else {
+                            data
+                        };
+                        discr_bits = discr_ty_layout.size.truncate(v);
+
+                        // Iterates through all the variant definitions to find the actual index.
+                        discr_index = match enum_ty_layout.ty.kind() {
+                            TyKind::Adt(adt, _) => adt
+                                .discriminants(self.bv.tcx)
+                                .find(|(_, var)| var.val == discr_bits),
+                            TyKind::Generator(def_id, substs, _) => {
+                                let substs = substs.as_generator();
+                                substs
+                                    .discriminants(*def_id, self.bv.tcx)
+                                    .find(|(_, var)| var.val == discr_bits)
+                            }
+                            _ => assume_unreachable!(),
+                        }
+                        .unwrap()
+                        .0;
+
+                        discr_has_data = false;
+                    }
+                    TagEncoding::Niche {
+                        dataful_variant,
+                        ref niche_variants,
+                        niche_start,
+                    } => {
+                        // A niche means that there are some optimizations in the enum layout.
+                        // For example, a value of type Option<char> is encoded as a 32-bit integer.
+                        // There exists one single data containing variant (Some(char)).
+                        // Other variants are encoded as niches with tag values starting as niche_start.
+                        let variants_start = niche_variants.start().as_u32();
+                        let variant = if data >= niche_start {
+                            discr_has_data = false;
+                            let variant_index_relative = (data - niche_start) as u32;
+                            let variant_index = variants_start + variant_index_relative;
+                            VariantIdx::from_u32(variant_index)
+                        } else {
+                            discr_has_data = true;
+                            let fields = &variants[dataful_variant].fields;
+                            checked_assume!(
+                                fields.count() == 1
+                                    && fields.offset(0).bytes() == 0
+                                    && fields.memory_index(0) == 0,
+                                "the data containing variant should contain a single sub-component"
+                            );
+                            dataful_variant
+                        };
+                        discr_bits = discr_ty_layout.size.truncate(variant.as_u32() as u128);
+                        discr_index = variant;
+                    }
+                }
+            }
+        };
+        (discr_signed, discr_bits, discr_index, discr_has_data)
     }
 
     /// Used only for types with `layout::abi::Scalar` ABI and ZSTs.
