@@ -844,13 +844,50 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     }
                     _ => {
                         let arguments_struct_path = self.actual_args[0].0.clone();
-                        let pieces_path_fat = Path::new_field(arguments_struct_path, 0)
+                        let pieces_path_fat = Path::new_field(arguments_struct_path.clone(), 0)
                             .canonicalize(&self.block_visitor.bv.current_environment);
-                        let pieces_path_thin = Path::new_field(pieces_path_fat, 0);
-                        let index = Rc::new(0u128.into());
-                        let piece0_path_fat = Path::new_index(pieces_path_thin, index)
+                        let pieces_path_thin = Path::new_field(pieces_path_fat.clone(), 0);
+                        let pieces_path_len = Path::new_length(pieces_path_fat);
+                        let len_val = self.block_visitor.bv.lookup_path_and_refine_result(
+                            pieces_path_len,
+                            self.block_visitor.bv.tcx.types.usize,
+                        );
+                        let len = if let Expression::CompileTimeConstant(ConstantDomain::U128(v)) =
+                            &len_val.expression
+                        {
+                            *v
+                        } else {
+                            1u128
+                        };
+                        let args_path_fat = Path::new_field(arguments_struct_path, 2)
                             .canonicalize(&self.block_visitor.bv.current_environment);
-                        self.coerce_to_string(&piece0_path_fat)
+                        let args_path_len = Path::new_length(args_path_fat);
+                        let arg_len_val = self.block_visitor.bv.lookup_path_and_refine_result(
+                            args_path_len,
+                            self.block_visitor.bv.tcx.types.usize,
+                        );
+                        let num_args =
+                            if let Expression::CompileTimeConstant(ConstantDomain::U128(v)) =
+                                &arg_len_val.expression
+                            {
+                                *v
+                            } else {
+                                1u128
+                            };
+
+                        let mut msg = String::new();
+                        for i in 0..len {
+                            let index = Rc::new(i.into());
+                            let piece_path_fat = Path::new_index(pieces_path_thin.clone(), index)
+                                .canonicalize(&self.block_visitor.bv.current_environment);
+                            msg += self.coerce_to_string(&piece_path_fat).as_ref();
+                            if i < num_args {
+                                msg += "{}";
+                                // todo: attach arg value to precondition and let caller refine them
+                                // and turn them into strings suitable for display in the diagnostics
+                            }
+                        }
+                        Rc::from(msg)
                     }
                 };
                 if msg.contains("entered unreachable code")
