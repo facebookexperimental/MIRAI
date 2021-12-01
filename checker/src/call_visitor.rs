@@ -855,6 +855,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 };
                 if msg.contains("entered unreachable code")
                     || msg.contains("not yet implemented")
+                    || msg.contains("not implemented")
                     || msg.starts_with("unrecoverable: ")
                 {
                     // We treat unreachable!() as an assumption rather than an assertion to prove.
@@ -2476,16 +2477,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 .entry_condition
                 .extract_promotable_conjuncts(false)
             {
-                if promotable_entry_condition.as_bool_if_known().is_none() {
+                if promotable_entry_condition.as_bool_if_known().is_none()
+                    && self.block_visitor.bv.cv.options.diag_level != DiagLevel::Default
+                {
                     let precondition = Precondition {
-                        condition: promotable_entry_condition.logical_not(),
-                        message: Rc::from("incomplete analysis of call because of failure to resolve a nested call"),
-                        provenance: None,
-                        spans: vec![self.block_visitor.bv.current_span.source_callsite()],
-                    };
+                            condition: promotable_entry_condition.logical_not(),
+                            message: Rc::from("incomplete analysis of call because of failure to resolve a nested call"),
+                            provenance: None,
+                            spans: vec![self.block_visitor.bv.current_span.source_callsite()],
+                        };
                     self.block_visitor.bv.preconditions.push(precondition);
-                    return;
                 }
+                return;
             }
             self.block_visitor.bv.analysis_is_incomplete = true;
             // If the callee is local, there will already be a diagnostic about the incomplete summary.
