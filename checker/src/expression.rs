@@ -502,7 +502,7 @@ impl Debug for Expression {
                 alignment,
                 source,
             } => f.write_fmt(format_args!(
-                "layout({:?}/{:?} from {:?})",
+                "layout(length: {:?}; alignment: {:?}; source: {:?})",
                 length, alignment, source
             )),
             Expression::IntrinsicBinary { left, right, name } => {
@@ -755,6 +755,97 @@ impl Expression {
             Expression::WidenedJoin { operand, .. } => operand
                 .expression
                 .contains_local_variable(is_post_condition),
+        }
+    }
+
+    /// Returns true if any part of the expression is TOP.
+    #[logfn_inputs(TRACE)]
+    pub fn contains_top(&self) -> bool {
+        match &self {
+            Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
+            | Expression::Ne { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Or { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
+            | Expression::Shr { left, right, .. }
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => {
+                left.expression.contains_top() || right.expression.contains_top()
+            }
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::Transmute { operand, .. } => operand.expression.contains_top(),
+            Expression::Bottom => false,
+
+            Expression::CompileTimeConstant(..) => false,
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                condition.expression.contains_top()
+                    || consequent.expression.contains_top()
+                    || alternate.expression.contains_top()
+            }
+            Expression::HeapBlock { .. } => false,
+            Expression::HeapBlockLayout {
+                length, alignment, ..
+            } => length.expression.contains_top() || alignment.expression.contains_top(),
+            Expression::InitialParameterValue { path, .. } => path.contains_top(),
+            Expression::Join { left, right, .. } => {
+                left.expression.contains_top() || right.expression.contains_top()
+            }
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                left.expression.contains_top()
+                    || right.expression.contains_top()
+                    || length.expression.contains_top()
+            }
+            Expression::Neg { operand }
+            | Expression::LogicalNot { operand }
+            | Expression::UnknownTagCheck { operand, .. } => operand.expression.contains_top(),
+            Expression::Reference(path) => path.contains_top(),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                discriminator.expression.contains_top()
+                    || default.expression.contains_top()
+                    || cases.iter().any(|(_, v)| v.expression.contains_top())
+            }
+            Expression::Top => true,
+            Expression::UninterpretedCall { .. } => true,
+            Expression::UnknownModelField { path, default } => {
+                path.contains_top() || default.expression.contains_top()
+            }
+            Expression::UnknownTagField { path } | Expression::Variable { path, .. } => {
+                path.contains_top()
+            }
+            Expression::WidenedJoin { operand, .. } => operand.expression.contains_top(),
         }
     }
 

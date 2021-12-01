@@ -357,6 +357,35 @@ impl Path {
         }
     }
 
+    /// Returns true if the path contains a value whose expression is TOP.
+    #[logfn_inputs(TRACE)]
+    pub fn contains_top(&self) -> bool {
+        match &self.value {
+            PathEnum::Computed { value } => value.expression.contains_top(),
+            PathEnum::HeapBlock { .. } => false,
+            PathEnum::LocalVariable { .. } => true,
+            PathEnum::Offset { value } => value.expression.contains_top(),
+            PathEnum::Parameter { .. } => false,
+            PathEnum::Result => false,
+            PathEnum::StaticVariable { .. } => true,
+            PathEnum::PhantomData => false,
+            PathEnum::PromotedConstant { .. } => false,
+            PathEnum::QualifiedPath {
+                qualifier,
+                selector,
+                ..
+            } => {
+                qualifier.contains_top() || {
+                    if let PathSelector::Index(value) = selector.as_ref() {
+                        value.expression.contains_top()
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
+    }
+
     /// Returns an abstract value for "true if the path is the same runtime location as other"
     #[logfn_inputs(TRACE)]
     pub fn equals(&self, other: &Rc<Path>) -> Rc<AbstractValue> {
