@@ -2563,10 +2563,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     alternate: v2,
                     ..
                 },
-            ) if !v1.is_top() && !v2.is_top() => {
+            ) if !v1.is_top()
+                && v1.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10
+                && !v2.is_top()
+                && v2.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10 =>
+            {
                 let self_eq_v2 = self.equals(v2.clone()).as_bool_if_known().unwrap_or(false);
-                if v1
-                    .not_equals(self.clone())
+                if self
+                    .not_equals(v1.clone())
                     .as_bool_if_known()
                     .unwrap_or(false)
                     && self_eq_v2
@@ -3793,20 +3797,25 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     alternate: v2,
                     ..
                 },
-            ) if !v1.is_top() && !v2.is_top() => {
-                let v2_ne_self = v2
-                    .not_equals(self.clone())
+            ) if !v1.is_top()
+                && v1.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10
+                && !v2.is_top()
+                && v2.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10 =>
+            {
+                // Don't make self the second operand, since it might be a constant
+                let v2_ne_self = self
+                    .not_equals(v2.clone())
                     .as_bool_if_known()
                     .unwrap_or(false);
-                if v1.equals(self.clone()).as_bool_if_known().unwrap_or(false) && v2_ne_self {
+                if self.equals(v1.clone()).as_bool_if_known().unwrap_or(false) && v2_ne_self {
                     return c.logical_not();
                 }
-                if v1
-                    .not_equals(self.clone())
+                if self
+                    .not_equals(v1.clone())
                     .as_bool_if_known()
                     .unwrap_or(false)
                 {
-                    if v2.equals(self.clone()).as_bool_if_known().unwrap_or(false) {
+                    if self.equals(v2.clone()).as_bool_if_known().unwrap_or(false) {
                         return c.clone();
                     } else if v2_ne_self {
                         return Rc::new(TRUE);
