@@ -2723,6 +2723,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     continue;
                 }
             }
+            if self.block_visitor.bv.cv.options.diag_level == DiagLevel::Default
+                && refined_condition.expression.contains_top()
+            {
+                // If the refined precondition contains TOP expressions, precision has
+                // been lost and the message is more likely than not a false positive.
+                continue;
+            }
             self.issue_diagnostic_for_call(precondition, &refined_condition, warn);
         }
     }
