@@ -903,7 +903,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 .entry_condition
                 .extract_promotable_conjuncts(false)
             {
-                if promotable_entry_condition.as_bool_if_known().is_none() {
+                if promotable_entry_condition.as_bool_if_known().is_none()
+                    && self.bv.cv.options.diag_level != DiagLevel::Default
+                {
                     let precondition = Precondition {
                         condition: promotable_entry_condition.logical_not(),
                         message: Rc::from("incomplete analysis of call because of a nested call to a function without a MIR body"),
