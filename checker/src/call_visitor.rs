@@ -192,13 +192,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             return;
         }
         if let Some(gen_args) = self.callee_generic_arguments {
-            if let Some(ty) = self.actual_argument_types.get(0) {
-                if !utils::is_concrete(ty.kind()) {
-                    // rustc_middle::ty::Instance::resolve panics if the type of arg 0 does not
-                    // have a vtable with a slot for self.callee_def_id
-                    return;
-                }
-            }
             // The parameter environment of the caller provides a resolution context for the callee.
             let param_env = rustc_middle::ty::ParamEnv::reveal_all();
             trace!(
@@ -2706,7 +2699,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             .or(promotable_condition)
                     }
                     (Some(promotable_entry_condition), None) => {
-                        promotable_entry_condition.logical_not()
+                        if self.block_visitor.bv.cv.options.diag_level == DiagLevel::Default {
+                            // If refined condition cannot be promoted, it may not be reasonable
+                            // to require our caller to prove that this call can't be reached.
+                            // Hence, we'll just leave the precondition un-promoted.
+                            continue;
+                        } else {
+                            promotable_entry_condition.logical_not()
+                        }
                     }
                     (None, Some(promotable_condition)) => promotable_condition,
                     _ => Rc::new(abstract_value::FALSE),
