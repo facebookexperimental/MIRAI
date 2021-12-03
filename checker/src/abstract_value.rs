@@ -6164,10 +6164,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 if matches!(refined_operand.expression, Expression::Join { .. }) {
                     refined_operand.widen(&refined_path)
                 } else {
-                    AbstractValue::make_typed_unknown(
-                        refined_operand.expression.infer_type(),
-                        refined_path,
-                    )
+                    AbstractValue::make_typed_unknown(operand.expression.infer_type(), refined_path)
                 }
             }
         }
