@@ -647,9 +647,8 @@ impl Path {
         }
         let qualifier_length = qualifier.path_length();
         if qualifier_length >= k_limits::MAX_PATH_LENGTH {
-            debug!("max path length exceeded {:?}.{:?}", qualifier, selector);
+            return Path::new_computed(abstract_value::BOTTOM.into());
         }
-        assume!(qualifier_length < 1_000_000_000); // We'll run out of memory long before this happens
         Rc::new(
             PathEnum::QualifiedPath {
                 qualifier,
