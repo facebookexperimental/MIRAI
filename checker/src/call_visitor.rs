@@ -201,6 +201,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             );
             trace!("devirtualize resolving func_ref {:?}", self.callee_func_ref,);
             trace!("gen_args {:?}", gen_args);
+            if let Some(arg0_ty) = gen_args.types().next() {
+                if matches!(arg0_ty.kind(), TyKind::Dynamic(..)) {
+                    // Instance::resolve panics if it can't find a vtable entry for the given def_id
+                    // It is hard to figure out exactly when this will be the case, but it does
+                    // happen in a case where the first generic argument type is Dynamic.
+                    return;
+                }
+            }
             let abi = tcx.type_of(self.callee_def_id).fn_sig(tcx).abi();
             let resolved_instance = if abi == rustc_target::spec::abi::Abi::Rust {
                 Some(rustc_middle::ty::Instance::resolve(
