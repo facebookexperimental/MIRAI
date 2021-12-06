@@ -874,11 +874,11 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     TyKind::RawPtr(ty_and_mut) => ty_and_mut.ty,
                     TyKind::Ref(_, ty, _) => *ty,
                     _ => {
-                        debug!(
-                            "span: {:?}\nelem: {:?} type: {:?}",
+                        info!(
+                            "bad deref projection span: {:?}\nelem: {:?} type: {:?}",
                             current_span, projection_elem, base_ty
                         );
-                        assume_unreachable!();
+                        self.tcx.types.never
                     }
                 },
                 mir::ProjectionElem::Field(_, ty) => {
