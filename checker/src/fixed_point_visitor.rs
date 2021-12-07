@@ -9,7 +9,6 @@ use crate::body_visitor::BodyVisitor;
 use crate::environment::Environment;
 use crate::options::DiagLevel;
 use crate::{abstract_value, k_limits};
-use itertools::Itertools;
 use log_derive::*;
 use mirai_annotations::*;
 use rpds::{HashTrieMap, HashTrieSet};
@@ -319,12 +318,12 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
             let entry_condition = predecessor_states_and_conditions
                 .iter()
                 .map(|(_, c)| c.clone())
-                .fold1(|c1, c2| c1.or(c2))
+                .reduce(|c1, c2| c1.or(c2))
                 .unwrap();
             trace!("entry_condition {:?}", entry_condition);
             let mut state = predecessor_states_and_conditions
                 .into_iter()
-                .fold1(|(state1, cond1), (state2, cond2)| {
+                .reduce(|(state1, cond1), (state2, cond2)| {
                     (state2.conditional_join(state1, &cond2, &cond1), cond1)
                 })
                 .expect("one or more states to fold into something")

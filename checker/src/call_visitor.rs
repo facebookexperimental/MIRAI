@@ -895,6 +895,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     || msg.contains("not yet implemented")
                     || msg.contains("not implemented")
                     || msg.starts_with("unrecoverable: ")
+                    || (msg.starts_with("assertion failed")
+                        && self.block_visitor.bv.cv.options.test_only)
                 {
                     // We treat unreachable!() as an assumption rather than an assertion to prove.
                     // unimplemented!() is unlikely to be a programmer mistake, so need to fixate on that either.
