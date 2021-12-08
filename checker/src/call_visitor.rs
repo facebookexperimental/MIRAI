@@ -2611,6 +2611,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         {
             self.check_function_preconditions(function_summary);
         } else {
+            if let Some(fr) = &self.callee_func_ref {
+                if fr.summary_cache_key.ends_with(".deref") {
+                    return;
+                }
+            }
             self.block_visitor.bv.assume_preconditions_of_next_call = false;
         }
     }
