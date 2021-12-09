@@ -2640,11 +2640,11 @@ pub mod core {
             add_with_overflow!(i32, i128, add_with_overflow__i32, std::i32::MAX);
             add_with_overflow!(i64, i128, add_with_overflow__i64, std::i64::MAX);
             add_with_overflow!(isize, i128, add_with_overflow__isize, std::isize::MAX);
-            add_with_overflow!(u8, i128, add_with_overflow__u8, std::u8::MAX);
-            add_with_overflow!(u16, i128, add_with_overflow__u16, std::u16::MAX);
-            add_with_overflow!(u32, i128, add_with_overflow__u32, std::u32::MAX);
-            add_with_overflow!(u64, i128, add_with_overflow__u64, std::u64::MAX);
-            add_with_overflow!(usize, i128, add_with_overflow__usize, std::usize::MAX);
+            add_with_overflow!(u8, u128, add_with_overflow__u8, std::u8::MAX);
+            add_with_overflow!(u16, u128, add_with_overflow__u16, std::u16::MAX);
+            add_with_overflow!(u32, u128, add_with_overflow__u32, std::u32::MAX);
+            add_with_overflow!(u64, u128, add_with_overflow__u64, std::u64::MAX);
+            add_with_overflow!(usize, u128, add_with_overflow__usize, std::usize::MAX);
             default_contract!(add_with_overflow__i128);
             default_contract!(add_with_overflow__u128);
 
