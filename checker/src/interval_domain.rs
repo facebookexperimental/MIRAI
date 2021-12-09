@@ -6,7 +6,7 @@
 
 use crate::expression::ExpressionType::{self, *};
 
-use log_derive::logfn_inputs;
+use log_derive::*;
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::convert::TryFrom;
@@ -106,6 +106,25 @@ impl IntervalDomain {
         IntervalDomain {
             lower_bound: self.lower_bound.saturating_add(other.lower_bound),
             upper_bound: self.upper_bound.saturating_add(other.upper_bound),
+        }
+    }
+
+    //[x...y] / [a...b] = [x/b...y/a] if a > 0
+    #[logfn_inputs(TRACE)]
+    pub fn div(&self, other: &Self) -> Self {
+        if self.is_bottom() || other.is_bottom() {
+            return BOTTOM.clone();
+        }
+        if self.is_top() || other.is_top() {
+            return TOP.clone();
+        }
+        if other.lower_bound > 0 {
+            IntervalDomain {
+                lower_bound: self.lower_bound / other.upper_bound,
+                upper_bound: self.upper_bound.saturating_add(other.lower_bound),
+            }
+        } else {
+            TOP.clone()
         }
     }
 
@@ -293,6 +312,14 @@ impl IntervalDomain {
         }
     }
 
+    #[logfn_inputs(TRACE)]
+    pub fn replace_upper_bound(&self, new_value: i128) -> Self {
+        IntervalDomain {
+            lower_bound: self.lower_bound,
+            upper_bound: new_value,
+        }
+    }
+
     // [x...y] * [a...b] = [x*a...y*b]
     #[logfn_inputs(TRACE)]
     pub fn mul(&self, other: &Self) -> Self {
@@ -320,6 +347,25 @@ impl IntervalDomain {
         IntervalDomain {
             lower_bound: self.upper_bound.checked_neg().unwrap_or(i128::MAX),
             upper_bound: self.lower_bound.checked_neg().unwrap_or(i128::MAX),
+        }
+    }
+
+    // [x...y] % [1...b] = [0...min(y, b-1)]
+    #[logfn_inputs(TRACE)]
+    pub fn rem(&self, other: &Self) -> Self {
+        if self.is_bottom() || other.is_bottom() {
+            return BOTTOM.clone();
+        }
+        if self.is_top() || other.is_top() {
+            return TOP.clone();
+        }
+        if self.lower_bound >= 0 && other.lower_bound >= 1 {
+            IntervalDomain {
+                lower_bound: 0,
+                upper_bound: i128::min(self.upper_bound, other.upper_bound - 1),
+            }
+        } else {
+            TOP.clone()
         }
     }
 

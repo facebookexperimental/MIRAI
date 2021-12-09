@@ -4597,20 +4597,24 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     #[logfn_inputs(TRACE)]
     fn remainder(&self, other: Rc<AbstractValue>) -> Rc<AbstractValue> {
         // [(x as t) % c] -> x % c if c.is_power_of_two() && c <= t.modulo_value()
-        if let Expression::Cast {
-            operand: x,
-            target_type: t,
-            ..
-        } = &self.expression
-        {
+        if let Expression::Cast { operand: x, .. } = &self.expression {
+            let ct = x.expression.infer_type();
             if let Expression::CompileTimeConstant(ConstantDomain::U128(c)) = &other.expression {
-                if c.is_power_of_two()
-                    && other
-                        .less_or_equal(t.modulo_value())
+                if c.is_power_of_two() {
+                    if other
+                        .equals(ct.modulo_value())
                         .as_bool_if_known()
                         .unwrap_or(false)
-                {
-                    return x.remainder(other);
+                    {
+                        return x.clone();
+                    }
+                    if other
+                        .less_than(ct.modulo_value())
+                        .as_bool_if_known()
+                        .unwrap_or(false)
+                    {
+                        return x.remainder(other);
+                    }
                 }
             }
         }
@@ -5365,6 +5369,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => consequent
                 .get_as_interval()
                 .widen(&alternate.get_as_interval()),
+            Expression::Div { left, right } => left.get_as_interval().div(&right.get_as_interval()),
             Expression::IntrinsicBitVectorUnary {
                 name, bit_length, ..
             } => match name {
@@ -5384,6 +5389,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
             Expression::Mul { left, right } => left.get_as_interval().mul(&right.get_as_interval()),
             Expression::Neg { operand } => operand.get_as_interval().neg(),
+            Expression::Rem { left, right } => left.get_as_interval().rem(&right.get_as_interval()),
             Expression::Sub { left, right } => left.get_as_interval().sub(&right.get_as_interval()),
             Expression::Switch { cases, default, .. } => cases
                 .iter()
@@ -5391,6 +5397,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     acc.widen(&result.get_as_interval())
                 }),
             Expression::TaggedExpression { operand, .. } => operand.get_as_interval(),
+            Expression::Variable { var_type, .. } => IntervalDomain::from(*var_type),
             Expression::WidenedJoin { operand, .. } => {
                 let interval = operand.get_as_interval();
                 if interval.is_bottom() {
@@ -5404,16 +5411,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     match (left_interval.lower_bound(), interval.lower_bound()) {
                         (Some(llb), Some(lb)) if llb == lb => {
                             // The lower bound is finite and does not change as a result of the fixed
-                            // point computation, so we can keep it, but we remove the upper bound.
-                            return interval.remove_upper_bound();
+                            // point computation, so we can keep it, but we widen the upper bound.
+                            let target_type = operand.expression.infer_type();
+                            return interval
+                                .remove_upper_bound()
+                                .intersect(&IntervalDomain::from(target_type));
                         }
                         _ => (),
                     }
                     match (left_interval.upper_bound(), interval.upper_bound()) {
                         (Some(lub), Some(ub)) if lub == ub => {
                             // The upper bound is finite and does not change as a result of the fixed
-                            // point computation, so we can keep it, but we remove the lower bound.
-                            return interval.remove_lower_bound();
+                            // point computation, so we can keep it, but we widen the lower bound.
+                            let target_type = operand.expression.infer_type();
+                            return interval
+                                .remove_lower_bound()
+                                .intersect(&IntervalDomain::from(target_type));
                         }
                         _ => (),
                     }
