@@ -1278,8 +1278,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     rvalue =
                         callee.uninterpreted_call(arguments.clone(), *result_type, tpath.clone());
                 }
-                Expression::InitialParameterValue { path, .. }
-                | Expression::Variable { path, .. } => {
+                Expression::InitialParameterValue { path, var_type }
+                | Expression::Variable { path, var_type } => {
                     if matches!(&path.value, PathEnum::PhantomData) {
                         continue;
                     }
@@ -1291,9 +1291,22 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     // If the copy does an upcast we have to track the type of
                     // the source value and use it to override the type system
                     // when resolving methods using the target value as self.
-                    let source_type = self
-                        .type_visitor
-                        .get_path_rustc_type(path, self.current_span);
+                    let source_type = if var_type.is_primitive() {
+                        var_type.as_rustc_type(self.tcx)
+                    } else {
+                        let t = self
+                            .type_visitor
+                            .get_path_rustc_type(path, self.current_span);
+                        if t.is_never() {
+                            // The right hand value has lost precision in such a way that we cannot
+                            // even get its rustc type. In that case, let's try using the type of
+                            // the left hand value.
+                            self.type_visitor
+                                .get_path_rustc_type(&tpath, self.current_span)
+                        } else {
+                            t
+                        }
+                    };
                     self.type_visitor
                         .set_path_rustc_type(tpath.clone(), source_type);
                     if rtype == ExpressionType::NonPrimitive {
