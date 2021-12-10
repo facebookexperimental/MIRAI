@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use core::fmt;
+use mirai_annotations::*;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::visit::Bfs;
@@ -336,7 +337,7 @@ impl CallGraph {
             });
         match config_result {
             Ok(config) => config,
-            Err(e) => panic!("Failed to read call graph config: {:?}", e),
+            Err(e) => unrecoverable!("Failed to read call graph config: {:?}", e),
         }
     }
 

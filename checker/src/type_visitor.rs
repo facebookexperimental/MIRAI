@@ -570,6 +570,12 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     }
                     PathSelector::Downcast(_, ordinal) => {
                         // Down casting to an enum variant
+                        if t == self.tcx.types.usize {
+                            // Down casting from an untyped pointer. This happens often enough
+                            // that we don't want to log this an informational message.
+                            debug!("The qualifier of the downcast can't be typed");
+                            return self.tcx.types.never;
+                        }
                         while type_visitor::is_transparent_wrapper(t)
                             || matches!(t.kind(), TyKind::Adt(..))
                         {

@@ -1121,7 +1121,13 @@ pub mod core {
         }
 
         pub mod float {
+            pub mod implement_f32 {
+                default_contract!(fmt);
+            }
             pub mod implement_f64 {
+                default_contract!(fmt);
+            }
+            pub mod implement_i128 {
                 default_contract!(fmt);
             }
         }
@@ -1131,6 +1137,7 @@ pub mod core {
         }
 
         pub mod implement_core_fmt_Formatter {
+            default_contract!(debug_lower_hex);
             default_contract!(debug_struct);
             default_contract!(debug_tuple);
             default_contract!(new);
