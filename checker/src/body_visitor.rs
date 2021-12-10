@@ -719,21 +719,12 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
 
         // The byte size of the closure object is not used, so we just fake it.
         let zero: Rc<AbstractValue> = Rc::new(0u128.into());
-        let closure_object = self.get_new_heap_block(
+        let (closure_object, closure_path) = self.get_new_heap_block(
             zero.clone(),
             zero,
             false,
             self.tcx.types.trait_object_dummy_self,
         );
-        let closure_path: Rc<Path> = match &closure_object.expression {
-            Expression::HeapBlock { .. } => Rc::new(
-                PathEnum::HeapBlock {
-                    value: closure_object.clone(),
-                }
-                .into(),
-            ),
-            _ => assume_unreachable!(),
-        };
 
         // Setting the discriminant to 0 allows the related conditions in the closure's preconditions
         // to get simplified away.
@@ -857,14 +848,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     self.lookup_path_and_refine_result(result_root.clone(), result_rustc_type);
                 match &value.expression {
                     Expression::HeapBlock { .. } => {
-                        let heap_root: Rc<Path> = Rc::new(
-                            PathEnum::HeapBlock {
-                                value: value.clone(),
-                            }
-                            .into(),
-                        );
-                        self.type_visitor_mut()
-                            .set_path_rustc_type(heap_root.clone(), result_rustc_type);
+                        let heap_root: Rc<Path> = Path::new_heap_block(value.clone());
                         for (path, value) in self
                             .exit_environment
                             .as_ref()
@@ -951,8 +935,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         } else if let TyKind::Ref(_, t, _) = target_type.kind() {
             // Promoting a reference to a reference.
             let eight: Rc<AbstractValue> = self.get_u128_const_val(8);
-            let heap_value = self.get_new_heap_block(eight.clone(), eight, false, target_type);
-            let heap_root = Path::get_as_path(heap_value);
+            let (_, heap_root) = self.get_new_heap_block(eight.clone(), eight, false, target_type);
             let layout_path = Path::new_layout(heap_root.clone());
             let layout_value = self
                 .current_environment
@@ -1030,9 +1013,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 } as u128)
                     .into(),
             );
-            let heap_value =
+            let (_, heap_root) =
                 self.get_new_heap_block(byte_size_value, alignment, false, target_type);
-            let heap_root = Path::get_as_path(heap_value);
             let layout_path = Path::new_layout(heap_root.clone());
             let layout_value = self
                 .current_environment
@@ -2677,17 +2659,17 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         alignment: Rc<AbstractValue>,
         is_zeroed: bool,
         ty: Ty<'tcx>,
-    ) -> Rc<AbstractValue> {
+    ) -> (Rc<AbstractValue>, Rc<Path>) {
         let addresses = &mut self.heap_addresses;
         let constants = &mut self.cv.constant_value_cache;
         let block = addresses
             .entry(self.current_location)
             .or_insert_with(|| AbstractValue::make_from(constants.get_new_heap_block(is_zeroed), 1))
             .clone();
-        let block_path = Path::get_as_path(block.clone());
+        let block_path = Path::new_heap_block(block.clone());
         self.type_visitor_mut()
             .set_path_rustc_type(block_path.clone(), ty);
-        let layout_path = Path::new_layout(block_path);
+        let layout_path = Path::new_layout(block_path.clone());
         let layout = AbstractValue::make_from(
             Expression::HeapBlockLayout {
                 length,
@@ -2698,7 +2680,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         );
         self.current_environment
             .strong_update_value_at(layout_path, layout);
-        block
+        (block, block_path)
     }
 
     /// Attach `tag` to the value located at `value_path`. The `value_path` may be pattern paths

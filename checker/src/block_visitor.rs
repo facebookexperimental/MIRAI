@@ -1689,7 +1689,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             self.bv.update_value_at(path, const_value);
                         }
                         Expression::HeapBlock { .. } => {
-                            let rpath = Path::get_as_path(const_value);
+                            let rpath = Path::new_heap_block(const_value);
                             self.bv.copy_or_move_elements(path, rpath, rh_type, false);
                         }
                         Expression::Reference(rpath) | Expression::Variable { path: rpath, .. } => {
@@ -1910,7 +1910,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             PathEnum::PromotedConstant { .. } => {
                 if let Some(val) = self.bv.current_environment.value_at(&value_path) {
                     if let Expression::HeapBlock { .. } = &val.expression {
-                        let heap_path = Rc::new(PathEnum::HeapBlock { value: val.clone() }.into());
+                        let heap_path = Path::new_heap_block(val.clone());
                         AbstractValue::make_reference(heap_path)
                     } else {
                         AbstractValue::make_reference(value_path.clone())
@@ -2264,9 +2264,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 // in a subsequent MIR instruction of the form (*box) = box_value.
                 // De-referencing a box structure amounts to de-referencing the unwrapped pointer.
                 path = Path::new_field(Path::new_field(path, 0), 0);
-                AbstractValue::make_reference(Path::get_as_path(
-                    self.bv.get_new_heap_block(len, alignment, false, ty),
-                ))
+                let (_, heap_block_path) = self.bv.get_new_heap_block(len, alignment, false, ty);
+                AbstractValue::make_reference(heap_block_path)
             }
             mir::NullOp::SizeOf => len,
         };
@@ -2346,6 +2345,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .specialize_generic_argument_type(ty, &self.type_visitor().generic_argument_map);
         self.type_visitor_mut()
             .set_path_rustc_type(value_path.clone(), ty);
+        // todo: set value_path to boxed type
         self.visit_used_operand(value_path, operand);
     }
 
@@ -2612,17 +2612,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 let num_bytes = alloc_len - offset_bytes;
                 let bytes =
                     alloc.inspect_with_uninit_and_ptr_outside_interpreter(offset_bytes..alloc_len);
-                let heap_val = self.bv.get_new_heap_block(
+                let (heap_val, target_path) = self.bv.get_new_heap_block(
                     Rc::new((num_bytes as u128).into()),
                     Rc::new(1u128.into()),
                     false,
                     lty,
                 );
-                let bytes_left_to_deserialize = self.deserialize_constant_bytes(
-                    Path::get_as_path(heap_val.clone()),
-                    bytes,
-                    lty,
-                );
+                let bytes_left_to_deserialize =
+                    self.deserialize_constant_bytes(target_path, bytes, lty);
                 if !bytes_left_to_deserialize.is_empty() {
                     debug!("span: {:?}", self.bv.current_span);
                     debug!("type kind {:?}", lty.kind());
@@ -2648,17 +2645,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         if *scalar_int == ScalarInt::ZST {
                             return Rc::new(ConstantDomain::Unit.into());
                         }
-                        let heap_val = self.bv.get_new_heap_block(
+                        let (heap_val, target_path) = self.bv.get_new_heap_block(
                             Rc::new((size as u128).into()),
                             Rc::new(1u128.into()),
                             false,
                             lty,
                         );
-                        let bytes_left_to_deserialize = self.deserialize_constant_bytes(
-                            Path::get_as_path(heap_val.clone()),
-                            bytes,
-                            lty,
-                        );
+                        let bytes_left_to_deserialize =
+                            self.deserialize_constant_bytes(target_path, bytes, lty);
                         if !bytes_left_to_deserialize.is_empty() {
                             debug!("span: {:?}", self.bv.current_span);
                             debug!("type kind {:?}", lty.kind());
@@ -2749,13 +2743,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 .clone()
                                 .into(),
                         );
-                        let heap_val = self.bv.get_new_heap_block(
+                        let (heap_val, heap_path) = self.bv.get_new_heap_block(
                             Rc::new((8u128).into()),
                             Rc::new(1u128.into()),
                             false,
                             lty,
                         );
-                        let heap_path = Path::get_as_path(heap_val.clone());
                         let field_0 = Path::new_field(heap_path, 0);
                         self.bv
                             .current_environment
@@ -3089,11 +3082,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .get_type_size_and_alignment(element_type);
         let alignment = self.get_u128_const_val(elem_alignment);
         let byte_len_value = self.get_u128_const_val(size_in_bytes as u128);
-        let array_value = self
-            .bv
-            .get_new_heap_block(byte_len_value, alignment, false, array_type);
-        let array_path = Path::get_as_path(array_value.clone());
-        (array_value, array_path)
+        self.bv
+            .get_new_heap_block(byte_len_value, alignment, false, array_type)
     }
 
     /// Use a prefix of the byte slice as a serialized value of the given array type.
@@ -3148,65 +3138,60 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 );
                 let raw_length = ty_and_layout.size.bytes();
                 let raw_alignment = ty_and_layout.align.abi.bytes();
-                let e = self.bv.get_new_heap_block(
+                let (heap_val, heap_path) = self.bv.get_new_heap_block(
                     Rc::new((raw_length as u128).into()),
                     Rc::new((raw_alignment as u128).into()),
                     false,
                     ty,
                 );
-                if let Expression::HeapBlock { .. } = &e.expression {
-                    let discr_path = Path::new_discriminant(Path::get_as_path(e.clone()));
-                    let discr_data = if discr_signed {
-                        self.get_i128_const_val(discr_bits as i128)
-                    } else {
-                        self.get_u128_const_val(discr_bits)
+                let discr_path = Path::new_discriminant(heap_path.clone());
+                let discr_data = if discr_signed {
+                    self.get_i128_const_val(discr_bits as i128)
+                } else {
+                    self.get_u128_const_val(discr_bits)
+                };
+                self.bv.update_value_at(discr_path, discr_data);
+
+                if discr_has_data {
+                    use std::ops::Deref;
+
+                    // Obtains the name of this variant.
+                    let name_str = {
+                        let enum_def = ty.ty_adt_def().unwrap();
+                        let variant_def = &enum_def.variants[discr_index];
+                        variant_def.ident.name.as_str()
                     };
-                    self.bv.update_value_at(discr_path, discr_data);
+                    trace!("discr name {:?}", name_str);
 
-                    if discr_has_data {
-                        use std::ops::Deref;
-
-                        // Obtains the name of this variant.
-                        let name_str = {
-                            let enum_def = ty.ty_adt_def().unwrap();
-                            let variant_def = &enum_def.variants[discr_index];
-                            variant_def.ident.name.as_str()
-                        };
-                        trace!("discr name {:?}", name_str);
-
-                        // Obtains the path to store the data. For example, for Option<char>,
-                        // the path should be `(x as Some).0`.
-                        let content_path = Path::new_field(
-                            Path::new_qualified(
-                                Path::get_as_path(e.clone()),
-                                Rc::new(PathSelector::Downcast(
-                                    Rc::from(name_str.deref()),
-                                    discr_index.as_usize(),
-                                )),
-                            ),
-                            0,
-                        );
-                        let content_data = self.get_u128_const_val(data);
-                        self.bv.update_value_at(content_path, content_data);
-                    }
-
-                    return e;
+                    // Obtains the path to store the data. For example, for Option<char>,
+                    // the path should be `(x as Some).0`.
+                    let content_path = Path::new_field(
+                        Path::new_qualified(
+                            heap_path,
+                            Rc::new(PathSelector::Downcast(
+                                Rc::from(name_str.deref()),
+                                discr_index.as_usize(),
+                            )),
+                        ),
+                        0,
+                    );
+                    let content_data = self.get_u128_const_val(data);
+                    self.bv.update_value_at(content_path, content_data);
                 }
+
+                return heap_val;
             } else {
-                let e = self.bv.get_new_heap_block(
+                let (heap_val, heap_path) = self.bv.get_new_heap_block(
                     Rc::new(1u128.into()),
                     Rc::new(1u128.into()),
                     false,
                     ty,
                 );
-                if let Expression::HeapBlock { .. } = &e.expression {
-                    let p = Path::new_discriminant(Path::get_as_path(e.clone()));
-                    let d = self.get_u128_const_val(data);
-                    self.bv.update_value_at(p, d);
-                    return e;
-                }
+                let discr_path = Path::new_discriminant(heap_path);
+                let discr_data = self.get_u128_const_val(data);
+                self.bv.update_value_at(discr_path, discr_data);
+                return heap_val;
             }
-            verify_unreachable!();
         }
         debug!("span: {:?}", self.bv.current_span);
         debug!("type kind {:?}", ty.kind());

@@ -2053,13 +2053,16 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         checked_assume!(self.actual_args.len() == 2);
         let length = self.actual_args[0].1.clone();
         let alignment = self.actual_args[1].1.clone();
-        let tcx = self.block_visitor.bv.tcx;
-        let byte_slice = tcx.mk_slice(tcx.types.u8);
-        let heap_path = Path::get_as_path(
-            self.block_visitor
-                .bv
-                .get_new_heap_block(length, alignment, false, byte_slice),
-        );
+        let ty = if let Some((place, _)) = &self.destination {
+            self.type_visitor()
+                .get_rustc_place_type(place, self.block_visitor.bv.current_span)
+        } else {
+            assume_unreachable!("call to alloc::alloc::__rust_alloc without return value place");
+        };
+        let (_, heap_path) = self
+            .block_visitor
+            .bv
+            .get_new_heap_block(length, alignment, false, ty);
         AbstractValue::make_reference(heap_path)
     }
 
@@ -2069,13 +2072,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         checked_assume!(self.actual_args.len() == 2);
         let length = self.actual_args[0].1.clone();
         let alignment = self.actual_args[1].1.clone();
-        let tcx = self.block_visitor.bv.tcx;
-        let byte_slice = tcx.mk_slice(tcx.types.u8);
-        let heap_path = Path::get_as_path(
-            self.block_visitor
-                .bv
-                .get_new_heap_block(length, alignment, true, byte_slice),
-        );
+        let ty = if let Some((place, _)) = &self.destination {
+            self.type_visitor()
+                .get_rustc_place_type(place, self.block_visitor.bv.current_span)
+        } else {
+            assume_unreachable!(
+                "call to alloc::alloc::__rust_alloc_zeroed without return value place"
+            );
+        };
+        let (_, heap_path) = self
+            .block_visitor
+            .bv
+            .get_new_heap_block(length, alignment, true, ty);
         AbstractValue::make_reference(heap_path)
     }
 
