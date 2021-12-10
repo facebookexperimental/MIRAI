@@ -85,7 +85,9 @@ impl Path {
             Expression::Cast { operand, .. } => {
                 return Path::get_as_path(operand.clone());
             }
-            Expression::HeapBlock { .. } => PathEnum::HeapBlock { value }.into(),
+            Expression::HeapBlock { .. } => {
+                return Path::new_heap_block(value);
+            }
             Expression::Offset { .. } => PathEnum::Offset { value }.into(),
             Expression::UninterpretedCall { path, .. }
             | Expression::InitialParameterValue { path, .. }
@@ -540,6 +542,13 @@ impl Path {
         Self::new_qualified(qualifier, selector)
     }
 
+    /// Creates a path to the given heap block.
+    #[logfn_inputs(TRACE)]
+    pub fn new_heap_block(value: Rc<AbstractValue>) -> Rc<Path> {
+        precondition!(matches!(&value.expression, Expression::HeapBlock { .. }));
+        Rc::new(PathEnum::HeapBlock { value }.into())
+    }
+
     /// Creates a path the selects the element at the given index value of the array at the given path.
     #[logfn_inputs(TRACE)]
     pub fn new_index(collection_path: Rc<Path>, index_value: Rc<AbstractValue>) -> Rc<Path> {
@@ -758,7 +767,7 @@ impl PathRefinement for Rc<Path> {
             PathEnum::HeapBlock { value } => {
                 let refined_value =
                     value.refine_parameters_and_paths(args, result, pre_env, post_env, fresh);
-                Path::get_as_path(refined_value)
+                Path::new_heap_block(refined_value)
             }
             PathEnum::LocalVariable {
                 ordinal,
