@@ -228,26 +228,7 @@ impl PathRoot for Rc<Path> {
     #[logfn_inputs(TRACE)]
     fn get_path_root(&self) -> &Rc<Path> {
         match &self.value {
-            PathEnum::Computed { value } => {
-                if let Expression::InitialParameterValue { path, .. }
-                | Expression::Reference(path)
-                | Expression::Variable { path, .. } = &value.expression
-                {
-                    return path.get_path_root();
-                }
-                self
-            }
-            PathEnum::Offset { value } => {
-                if let Expression::Offset { left, .. } = &value.expression {
-                    if let Expression::InitialParameterValue { path, .. }
-                    | Expression::Reference(path)
-                    | Expression::Variable { path, .. } = &left.expression
-                    {
-                        return path.get_path_root();
-                    }
-                }
-                self
-            }
+            PathEnum::Computed { value } | PathEnum::Offset { value } => value.get_path_root(self),
             PathEnum::QualifiedPath { qualifier, .. } => qualifier.get_path_root(),
             _ => self,
         }
@@ -827,7 +808,6 @@ impl PathRefinement for Rc<Path> {
     /// it reduces the problem to dealing with PathEnum::Computed and PathSelector::Index and
     /// PathSelector::Slice.
     #[logfn_inputs(TRACE)]
-    #[logfn(TRACE)]
     fn canonicalize(&self, environment: &Environment) -> Rc<Path> {
         if let Some(val) = environment.value_at(self) {
             // If self binds to value &p then self and path &p are equivalent paths.

@@ -844,6 +844,7 @@ pub trait AbstractValueTrait: Sized {
     fn get_as_interval(&self) -> IntervalDomain;
     fn get_is_non_null(&self) -> bool;
     fn get_cached_tags(&self) -> Rc<TagDomain>;
+    fn get_path_root<'a>(&'a self, default: &'a Rc<Path>) -> &'a Rc<Path>;
     fn get_tags(&self) -> TagDomain;
     fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>>;
     fn refine_parameters_and_paths(
@@ -5469,6 +5470,18 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         self.get_cached_tags()
     }
 
+    /// If the expression contains a sub expression that wraps a path, return a reference to the
+    /// root of that path. If not, return default.
+    #[logfn_inputs(TRACE)]
+    fn get_path_root<'a>(&'a self, default: &'a Rc<Path>) -> &'a Rc<Path> {
+        match &self.expression {
+            Expression::InitialParameterValue { path, .. }
+            | Expression::Reference(path)
+            | Expression::Variable { path, .. } => path.get_path_root(),
+            _ => default,
+        }
+    }
+
     /// Constructs an element of the tag domain for simple expressions.
     #[logfn_inputs(TRACE)]
     fn get_tags(&self) -> TagDomain {
@@ -5537,7 +5550,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
 
             _ => {
-                verify!(exp_tag_prop_opt.is_some());
+                checked_assume!(exp_tag_prop_opt.is_some());
             }
         }
 
