@@ -1150,12 +1150,14 @@ pub mod core {
         }
 
         pub mod num {
-            pub mod imp {
-                pub mod implement_u64 {
-                    default_contract!(fmt);
-                }
+            pub mod implement_i128 {
+                default_contract!(fmt);
+            }
+            pub mod implement_u64 {
+                default_contract!(fmt);
             }
         }
+
         pub mod rt {
             pub mod v1 {
                 pub struct Argument {}
@@ -4244,6 +4246,24 @@ pub mod ref_cast {
     }
 }
 
+pub mod rpds {
+    pub mod map {
+        pub mod red_black_tree_map {
+            pub mod implement_1 {
+                pub mod insert {
+                    default_contract!(ins);
+                }
+            }
+            pub mod implement_rpds_map_red_black_tree_map_Node_generic_par_K_generic_par_V_generic_par_P {
+                default_contract!(balance);
+            }
+            pub mod iter_utils {
+                default_contract!(conservative_height);
+            }
+        }
+    }
+}
+
 pub mod rustc_data_structures {
     pub mod profiling {
         pub mod implement {
@@ -4311,6 +4331,13 @@ pub mod rustc_middle {
         pub mod canonical {
             pub mod implement_rustc_middle_infer_canonical_Canonical_generic_par_V {
                 default_contract!(clone);
+            }
+        }
+    }
+    pub mod mir {
+        pub mod terminator {
+            pub mod implement_rustc_middle_mir_terminator_Terminator {
+                default_contract!(successors);
             }
         }
     }
@@ -4386,6 +4413,10 @@ pub mod rustc_middle {
                     default_contract!(try_collect_active_jobs);
                 }
             }
+            pub mod QueryEngine {
+                default_contract!(opt_def_kind);
+                default_contract!(promoted_mir);
+            }
         }
         pub mod sty {
             pub mod implement_rustc_middle_ty_sty_Binder_ref_rustc_middle_ty_list_List_rustc_middle_ty_sty_ExistentialPredicate {
@@ -4414,6 +4445,12 @@ pub mod rustc_middle {
                 default_contract!(expect_const);
                 default_contract!(expect_ty);
                 default_contract!(from);
+            }
+        }
+        pub mod util {
+            pub mod implement_rustc_middle_ty_context_TyCtxt {
+                default_contract!(is_closure);
+                default_contract!(typeck_root_def_id);
             }
         }
     }
@@ -5090,6 +5127,22 @@ pub mod tinyvec {
     }
 }
 
+pub mod tracing {
+    pub mod __macro_support {
+        pub mod implement {
+            default_contract!(is_enabled);
+            default_contract!(register);
+        }
+    }
+
+    pub mod span {
+        pub mod implement {
+            default_contract!(drop);
+            default_contract!(new);
+        }
+    }
+}
+
 pub mod tracing_core {
     pub mod callsite {
         default_contract!(register);
@@ -5123,6 +5176,13 @@ pub mod tracing_core {
     pub mod metadata {
         pub mod implement {
             default_contract!(fields);
+        }
+    }
+
+    pub mod subscriber {
+        pub mod Subscriber {
+            default_contract!(enter);
+            default_contract!(exit);
         }
     }
 }

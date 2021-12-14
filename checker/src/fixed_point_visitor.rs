@@ -355,7 +355,7 @@ fn add_predecessors_then_root_block<'tcx>(
         };
         if dominators.is_dominated_by(*pred_bb, root_block) {
             // pred_bb has still to be added, so it has a greater index than root_block, making root_block the loop anchor.
-            checked_assume!(root_block.index() < pred_bb.index());
+            //todo: checked_assume!(root_block.index() < pred_bb.index());
             // Root block has a smaller index than pred_bb because it has not already been added.
             loop_anchors.insert(root_block);
             continue;

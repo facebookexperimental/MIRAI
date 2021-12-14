@@ -2677,6 +2677,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 continue;
             }
 
+            if refined_condition.is_bottom() {
+                // The precondition has no value, assume it is unreachable after all.
+                debug!("precondition refines to BOTTOM {:?}", precondition);
+                continue;
+            }
+
             let warn;
             if !refined_precondition_as_bool.unwrap_or(true) {
                 // The precondition is definitely false.

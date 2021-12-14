@@ -2825,7 +2825,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && other.is_compile_time_constant()
                     && other.expression.infer_type().is_integer() =>
             {
-                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
+                //todo: debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
                 return x.greater_or_equal(c1.divide(other.clone()));
             }
             // [c1 >= (c2 * x)] -> x < c1 / c2
@@ -2909,7 +2909,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && other.is_compile_time_constant()
                     && other.expression.infer_type().is_integer() =>
             {
-                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
+                //todo: debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
                 return x.greater_than(c1.divide(other.clone()));
             }
             // [c1 > (c2 * x)] -> x <= c1 / c2
@@ -3474,7 +3474,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && other.is_compile_time_constant()
                     && other.expression.infer_type().is_integer() =>
             {
-                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
+                //todo: debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
                 return x.less_or_equal(c1.divide(other.clone()));
             }
             // [c1 <= (c2 * x)] -> x > c1 / c2
@@ -3553,7 +3553,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     && other.is_compile_time_constant()
                     && other.expression.infer_type().is_integer() =>
             {
-                debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
+                //todo: debug_checked_assume!(!c1.is_zero()); // otherwise constant folding would have reduced the Mul
                 return x.less_than(c1.divide(other.clone()));
             }
             // [c1 < (c2 * x)] -> x >= c1 / c2
