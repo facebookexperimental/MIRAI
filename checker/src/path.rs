@@ -428,7 +428,7 @@ impl Path {
                     selector: s2,
                     ..
                 },
-            ) => q1.equals(q2).and(s1.equals(s2)),
+            ) => s1.equals(s2).and(q1.equals(q2)),
             _ => Rc::new(abstract_value::FALSE),
         };
     }
