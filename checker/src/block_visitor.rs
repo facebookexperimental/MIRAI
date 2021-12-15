@@ -578,9 +578,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         trace!("env {:?}", self.bv.current_environment);
         let func_to_call = self.visit_operand(func);
         let func_ref = self.get_func_ref(&func_to_call);
-        let func_ref_to_call;
-        if let Some(fr) = func_ref {
-            func_ref_to_call = fr;
+        let func_ref_to_call = if let Some(fr) = func_ref {
+            fr
         } else {
             if self.might_be_reachable().unwrap_or(true)
                 && self
@@ -591,7 +590,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 self.report_missing_summary();
             }
             return;
-        }
+        };
         let callee_def_id = func_ref_to_call
             .def_id
             .expect("callee obtained via operand should have def id");

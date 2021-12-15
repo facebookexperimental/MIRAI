@@ -193,7 +193,7 @@ impl CallGraphNode {
     fn format_name(defid: DefId) -> Box<str> {
         let tmp1 = format!("{:?}", defid);
         let tmp2: &str = tmp1.split("~ ").collect::<Vec<&str>>()[1];
-        let tmp3 = tmp2.replace(")", "");
+        let tmp3 = tmp2.replace(')', "");
         let lhs = tmp3.split('[').collect::<Vec<&str>>()[0];
         let rhs = tmp3.split(']').collect::<Vec<&str>>()[1];
         format!("{}{}", lhs, rhs).into_boxed_str()
@@ -690,7 +690,7 @@ impl CallGraph {
     /// - std::iter::Enumerate<std::slice::Iter<T1, T2>> == [T1], [T2]
     fn extract_iterator_type(&self, name: &str) -> Vec<Box<str>> {
         let s1 = name.replace("&mut ", "");
-        let s2 = s1.replace("&", "");
+        let s2 = s1.replace('&', "");
         let mut base_types = Vec::<Box<str>>::new();
         let type_regex = Regex::new(r"(?P<type>[^<>,\s]+)").unwrap();
         for caps in type_regex.captures_iter(&s2) {
@@ -709,9 +709,9 @@ impl CallGraph {
     fn simplify_single_type(&self, name: &str) -> SimpleType {
         let mut base_type = name.to_owned();
         base_type = base_type.replace("mut ", "");
-        base_type = base_type.replace("&", "");
+        base_type = base_type.replace('&', "");
         if base_type.contains('[') && base_type.contains(']') {
-            base_type = base_type.replace("[", "").replace("]", "");
+            base_type = base_type.replace('[', "").replace(']', "");
             SimpleType::Collection(base_type.into_boxed_str())
         } else {
             SimpleType::Base(base_type.into_boxed_str())

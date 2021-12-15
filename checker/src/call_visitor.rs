@@ -1185,15 +1185,15 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
 
             // Unpack the type of the second argument, which should be a tuple.
             checked_assume!(self.actual_argument_types.len() == 2);
-            let mut actual_argument_types: Vec<Ty<'tcx>>;
-            if let TyKind::Tuple(tuple_types) = self.actual_argument_types[1].kind() {
-                actual_argument_types = tuple_types
-                    .iter()
-                    .map(|gen_arg| gen_arg.expect_ty())
-                    .collect();
-            } else {
-                assume_unreachable!("expected second type argument to be a tuple type");
-            }
+            let mut actual_argument_types: Vec<Ty<'tcx>> =
+                if let TyKind::Tuple(tuple_types) = self.actual_argument_types[1].kind() {
+                    tuple_types
+                        .iter()
+                        .map(|gen_arg| gen_arg.expect_ty())
+                        .collect()
+                } else {
+                    assume_unreachable!("expected second type argument to be a tuple type");
+                };
 
             // Unpack the second argument, which should be a tuple
             let mut actual_args: Vec<(Rc<Path>, Rc<AbstractValue>)> = actual_argument_types
@@ -3052,24 +3052,22 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 checked_assume!(rustc_gen_args.len() == 2);
 
                 // The second generic argument of the function call is the tag type.
-                let tag_rustc_type;
-                match rustc_gen_args[1].unpack() {
-                    GenericArgKind::Type(rustc_type) => tag_rustc_type = rustc_type,
+                let tag_rustc_type = match rustc_gen_args[1].unpack() {
+                    GenericArgKind::Type(rustc_type) => rustc_type,
                     _ => {
                         // The rust type checker should ensure that the second generic argument is a type.
                         assume_unreachable!(
                             "expected the second generic argument of tag-related function calls to be a type"
                         );
                     }
-                }
+                };
 
                 // The tag type should be a generic ADT whose first parameter is a constant.
                 let tag_adt_def;
-                let tag_substs_ref;
-                match tag_rustc_type.kind() {
+                let tag_substs_ref = match tag_rustc_type.kind() {
                     TyKind::Adt(adt_def, substs_ref) if substs_ref.len() > 0 => {
                         tag_adt_def = adt_def;
-                        tag_substs_ref = substs_ref;
+                        substs_ref
                     }
                     _ => {
                         if self.block_visitor.bv.check_for_errors {
@@ -3081,15 +3079,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         }
                         return None;
                     }
-                }
+                };
 
                 // Extract the tag type's first parameter.
-                let tag_propagation_set_rustc_const;
-                match tag_substs_ref[0].unpack() {
+                let tag_propagation_set_rustc_const = match tag_substs_ref[0].unpack() {
                     GenericArgKind::Const(rustc_const)
                         if *rustc_const.ty.kind() == TyKind::Uint(UintTy::U128) =>
                     {
-                        tag_propagation_set_rustc_const = rustc_const
+                        rustc_const
                     }
                     _ => {
                         if self.block_visitor.bv.check_for_errors {
@@ -3101,7 +3098,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         }
                         return None;
                     }
-                }
+                };
 
                 // Analyze the tag type's first parameter to obtain a compile-time constant.
                 let tag_propagation_set_value = self

@@ -26,7 +26,7 @@ use mirai::call_graph::{CallGraphConfig, CallGraphReduction, DatalogBackend, Dat
 use mirai::callbacks;
 use mirai::options::{DiagLevel, Options};
 use mirai::utils;
-use mirai_annotations::unrecoverable;
+use mirai_annotations::{assume, unrecoverable};
 use regex::Regex;
 use rustc_rayon::iter::IntoParallelIterator;
 use rustc_rayon::iter::ParallelIterator;
@@ -177,15 +177,15 @@ struct CallGraphTestConfig {
 fn generate_call_graph_config(file_name: &str, temp_dir_path: &str) -> (CallGraphConfig, String) {
     let test_case_data =
         fs::read_to_string(Path::new(&file_name)).expect("Failed to read test case");
-    let call_graph_test_config: CallGraphTestConfig;
     let config_regex = Regex::new(r"(/\* CONFIG)([\S\s]*?)(\*/)").unwrap();
-    if let Some(captures) = config_regex.captures(&test_case_data) {
-        assert!(captures.len() == 4);
-        call_graph_test_config = serde_json::from_str(&captures[2].to_owned())
-            .expect("Failed to deserialize test config");
+    let call_graph_test_config: CallGraphTestConfig = if let Some(captures) =
+        config_regex.captures(&test_case_data)
+    {
+        assume!(captures.len() == 4);
+        serde_json::from_str(&captures[2].to_owned()).expect("Failed to deserialize test config")
     } else {
         unrecoverable!("Could not find a call graph config in test file");
-    }
+    };
     let datalog_path = match call_graph_test_config.datalog_config.datalog_backend {
         DatalogBackend::DifferentialDatalog => {
             format!("{}/graph.dat", temp_dir_path).into_boxed_str()
@@ -366,7 +366,6 @@ fn check_call_graph_output(
     let test_case_data =
         fs::read_to_string(Path::new(&file_name)).expect("Failed to read test case");
     // Check that the expected and actual output files match
-    let expected: String;
     let expected_regex = match output_type {
         CallGraphOutputType::Dot => Regex::new(r"(/\* EXPECTED:DOT)([\S\s]*?)(\*/)").unwrap(),
         CallGraphOutputType::Ddlog => Regex::new(r"(/\* EXPECTED:DDLOG)([\S\s]*?)(\*/)").unwrap(),
@@ -377,12 +376,12 @@ fn check_call_graph_output(
             Regex::new(r"(/\* EXPECTED:SOUFFLE)([\S\s]*?)(\*/)").unwrap()
         }
     };
-    if let Some(captures) = expected_regex.captures(&test_case_data) {
-        assert!(captures.len() == 4);
-        expected = captures[2].to_owned();
+    let expected: String = if let Some(captures) = expected_regex.captures(&test_case_data) {
+        assume!(captures.len() == 4);
+        captures[2].to_owned()
     } else {
         unrecoverable!("Could not find expected output in test file");
-    }
+    };
     let actual = match output_type {
         CallGraphOutputType::Dot => fs::read_to_string(call_graph_config.get_dot_path().unwrap()),
         CallGraphOutputType::Ddlog => {
