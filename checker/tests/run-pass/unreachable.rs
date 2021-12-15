@@ -44,7 +44,8 @@ fn panic_a_bit() -> i32 {
 }
 
 pub fn foo6(x: Option<i32>) -> i32 {
-    x.unwrap_or_else(|| panic_a_bit()) //~ aaargh!
+    x.unwrap_or_else(|| panic_a_bit()) //~ possible aaargh!
 }
+//~ related location
 
 pub fn main() {}

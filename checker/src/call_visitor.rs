@@ -2686,8 +2686,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             let warn;
             if !refined_precondition_as_bool.unwrap_or(true) {
                 // The precondition is definitely false.
-                if entry_cond_as_bool.unwrap_or(false) {
-                    // We always get to this call
+                if entry_cond_as_bool.unwrap_or(false)
+                    && self.block_visitor.bv.function_being_analyzed_is_root()
+                {
+                    // We always get to this call and we are at the analysis root
                     self.issue_diagnostic_for_call(precondition, &refined_condition, false);
                     return;
                 } else {
@@ -2775,6 +2777,25 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         .preconditions
                         .push(promoted_precondition);
                     continue;
+                } else if !refined_condition.as_bool_if_known().unwrap_or(true)
+                    && !self.block_visitor.bv.function_being_analyzed_is_root()
+                {
+                    if let Some(true) = self
+                        .block_visitor
+                        .bv
+                        .current_environment
+                        .entry_condition
+                        .as_bool_if_known()
+                    {
+                        // Just a pass through function
+                        let mut promoted_precondition = precondition.clone();
+                        promoted_precondition.condition = refined_condition;
+                        self.block_visitor
+                            .bv
+                            .preconditions
+                            .push(promoted_precondition);
+                        continue;
+                    }
                 }
             }
 
