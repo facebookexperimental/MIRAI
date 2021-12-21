@@ -4,24 +4,8 @@ In order to use MIRAI, you need to install Rust, install Z3, and install MIRAI i
 
 ## Installing Rust
 
-You should install rustup and then use it to get hold of the latest Rust compiler.
-See [here](https://doc.rust-lang.org/book/ch01-01-installation.html) for instructions.
-
-Before installing and running MIRAI you should set the current compiler to be same as the compiler
-listed in the MIRAI [rust-toolchain] (https://github.com/facebookexperimental/MIRAI/blob/main/rust-toolchain).
-
-For example:
-```
-rustup override set nightly-2020-01-30
-```
-
-In addition, explicitly install non default rustc components and cargo commands:
-```
-./setup.sh
-```
-
-Remember to do this again every time the tool chain gets updated.
-
+You should install Rust using rustup. See [here](https://doc.rust-lang.org/book/ch01-01-installation.html) 
+for instructions.
 
 ## Installing Z3
 
@@ -29,8 +13,12 @@ On Fedora install it with
 ```
 dnf install z3-devel
 ```
+On Ubuntu install it with
+```
+sudo apt-get install libz3-dev
+```
 
-If that works, you're done. If not, you can find pre-built binaries for Z3 
+Otherwise, you can find pre-built binaries for Z3 
 [here](https://github.com/Z3Prover/z3/releases). There are also binary libraries
 for linux included in the binaries directory of MIRAI.
 
@@ -47,10 +35,9 @@ git clone https://github.com/facebookexperimental/MIRAI.git
 cd MIRAI
 ```
 
-If you want a particular version of MIRAI, checkout the corresponding tag.
+Next, make sure that the correct version of rustc is installed, along with some optional components
 ```
-git fetch origin
-git checkout tags/v1.0.3
+./setup.sh
 ```
 
 If you rebuilt the Z3 binaries yourself, copy it to the `./binaries` directory.

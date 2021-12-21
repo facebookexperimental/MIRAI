@@ -1,30 +1,7 @@
 # Developer Guide
 
-You'll need to install the latest nighly build of the Rust compiler, as well as the Z3 theorem prover. See the
-[installation guide](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md)
-for details.
-
-
-## Clone the MIRAI source repository into your home directory
-
-```
-cd ~
-git clone git@github.com:facebookexperimental/MIRAI.git
-```
-
-## Install necessary Rust components for the build
-
-```
-cd ~/MIRAI
-./setup.sh
-```
-
-## Build and install your local MIRAI build into cargo
-
-```
-cd ~/MIRAI
-cargo install --path ./checker
-```
+Install MIRAI following the instructions in the
+[installation guide](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md).
 
 ## Editing
 
@@ -34,7 +11,6 @@ Alternatively there is also
 [VSCode](https://code.visualstudio.com/). You'll want to install these extensions: 
 [Rust (rls)](https://github.com/rust-lang-nursery/rls-vscode), [CodeLLDB](https://github.com/vadimcn/vscode-lldb) and
 [Better TOML](https://github.com/bungcip/better-toml).
-
 
 ## Running
 
