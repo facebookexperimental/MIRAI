@@ -45,33 +45,15 @@ MIRAI project is inspired by and the problem space that it finds itself in.
 
 ## Current status of MIRAI
 
-Verification tools are hard to build (even when they are not novel) and require highly specialized and hard to
-find developers, so MIRAI is still in development. The initial focus of MIRAI is the Diem code base. So far MIRAI has
-not found any crashing bugs of note (and hopefully never will). 
-
-Since there is a strong disinclination among developers to spend time poring over false positives and adding explicit
-annotations, much of the time of the MIRAI team (Herman Venter and interns) is spent on reducing the number of false
-positives, even if that means creating false negatives. As far as possible, things should work without annotations.
-
-In order to be this precise, MIRAI needs to have an in depth understanding of what happens in the standard libraries
-and other dependencies of the Diem code base, including unsafe code. There is just too much of this code for the MIRAI
-team to summarize by hand, so MIRAI needs to be able to analyze and summarize it without human help. This requires MIRAI
-to resolve all functions calls, including those made via traits and function parameters. Fortunately, the rust compiler
-has extensive support for this, so it is possible to do this. Unfortunately, the rust compiler prefers to panic whenever
-a plug-in issues a query that is not quite right, so MIRAI is still quite likely to crash when you run it over a crate
-that is not part of Diem. There are  also performance problems that arise from inherently exponential nature of automated
-code analysis.
-
-If you would like to use MIRAI to analyze your code, you should not expect things to work perfectly out of the box.
-Try out MIRAI anyway, and let the MIRAI team know how things went and if they can help you in some way.
+MIRAI v1.1.* is a stable release and is expected to work in most cases. Any issues reported on Github will be
+investigated and fixed as appropriate. There are currently no plans for a v2.
 
 ## How to use MIRAI
 
 You'll need to build and install MIRAI as described [here](https://github.com/facebookexperimental/MIRAI#using-mirai).
-That done, you just build your project as normal (but start clean and set `RUSTFLAGS="-Z always_encode_mir"`) and then
-touch the lib.rs file of your project and build again while also setting `RUSTC_WRAPPER=mirai`.
+That done, just run `cargo mirai` in the root directory of your project.
 
-Using the MIRAI wrapper rather than just plain old Rustc will statically analyze all the code reachable from entry
+When run this way, MIRAI, will statically analyze all the code reachable from entry
 points in your project. If any of these code paths can lead to an abrupt termination, you'll see Rustc-like diagnostics.
 
 ## Entry points

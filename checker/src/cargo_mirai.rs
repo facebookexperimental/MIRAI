@@ -153,6 +153,11 @@ fn call_cargo_on_target(target: &Target, kind: &str) {
     // the RUSTC_WRAPPER setting.
     cmd.env("MIRAI_KIND", kind);
 
+    // Set the tool chain to be compatible with mirai
+    if let Some(toolchain) = option_env!("RUSTUP_TOOLCHAIN") {
+        cmd.env("RUSTUP_TOOLCHAIN", toolchain);
+    }
+
     // Execute cmd
     let exit_status = cmd
         .spawn()

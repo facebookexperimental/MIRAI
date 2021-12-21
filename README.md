@@ -23,13 +23,6 @@ become security problems (denial of service, undefined behavior).
 You'll need to install MIRAI as described here for [MacOS and Windows](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md)
 and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Linux.md).
 
-To run MIRAI, first use `rustup override set $TOOLCHAIN`, where `$TOOLCHAIN` contains the value of 
-[rust-toolchain](https://github.com/facebookexperimental/MIRAI/blob/main/rust-toolchain), so that Cargo uses the same
-nightly version of rustc as MIRAI does. TODO: can cargo-mirai figure out the tool-chain business?
-
-If you forget to do the override or use the wrong version, you'll see an error message complaining about a dynamic 
-load library not being found.
-
 Then use `cargo mirai` to run MIRAI over your current package. This works much like `cargo check` but uses MIRAI rather
 than rustc to analyze the targets of your current package.
 
