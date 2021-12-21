@@ -1,7 +1,7 @@
 [package]
 
 name = "mirai"
-version = "1.0.5"
+version = "1.1.0"
 authors = ["Herman Venter <hermanv@fb.com>"]
 description = "A static analysis tool for Rust, based on Abstract Interpretation of MIR"
 repository = "https://github.com/facebookexperimental/MIRAI"
@@ -15,6 +15,12 @@ test = false # we have no unit tests
 doctest = false # and no doc tests
 
 [[bin]]
+name = "cargo-mirai"
+path = "src/cargo_mirai.rs"
+test = false # we have no unit tests
+doctest = false # and no doc tests
+
+[[bin]]
 name = "mirai"
 path = "src/main.rs"
 test = false # we have no unit tests
@@ -22,6 +28,7 @@ doctest = false # and no doc tests
 
 [dependencies]
 bincode = { version = "*", features = ["i128"] }
+cargo_metadata = "*"
 clap = "*"
 env_logger = "*"
 fs2 = "*"
@@ -32,6 +39,7 @@ mirai-annotations = { path = "../annotations" }
 itertools = "*"
 rand = "*"
 rpds = { version = "*", features = ["serde"] }
+rustc_tools_util = "*"
 serde = {version = "*", features = ["derive", "alloc", "rc"] }
 tar = "0.4.36"
 sled = "*"

@@ -35,10 +35,9 @@ time cargo test
 
 # Install MIRAI into cargo so that we can use optimized binaries to analyze debug binaries built with special flags
 cargo uninstall mirai || true
+cargo uninstall cargo-mirai || true
 cargo install --path ./checker
 
 # Run mirai on itself (using the optimized build in cargo as the bootstrap).
 cargo clean
-RUSTFLAGS="-Z always_encode_mir" cargo build
-touch checker/src/lib.rs
-RUSTFLAGS="-Z always_encode_mir" RUSTC_WRAPPER=mirai MIRAI_FLAGS="--body_analysis_timeout 10" cargo build --lib -v
+cargo mirai

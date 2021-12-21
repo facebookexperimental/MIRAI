@@ -23,28 +23,15 @@ become security problems (denial of service, undefined behavior).
 You'll need to install MIRAI as described here for [MacOS and Windows](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md)
 and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Linux.md).
 
-To run MIRAI, use cargo with `RUSTC_WRAPPER` set to `mirai`.
-Use `rustup override set nightly-YYYY-MM-DD` to make Cargo use the same version of Rust as MIRAI. See the above installation
-instruction to determine which version to use. If you forget to do that or use the wrong version,
-you'll see an error message complaining about a dynamic load library not being found.
+To run MIRAI, first use `rustup override set $TOOLCHAIN`, where `$TOOLCHAIN` contains the value of 
+[rust-toolchain](https://github.com/facebookexperimental/MIRAI/blob/main/rust-toolchain), so that Cargo uses the same
+nightly version of rustc as MIRAI does. TODO: can cargo-mirai figure out the tool-chain business?
 
-The easiest way to get started is to first build your project in the normal way (with one exception:
- set `RUSTFLAGS="-Z always_encode_mir --cfg="mirai"` to force the rust compiler to include MIR into its compiled output 
-and enable any MIRAI annotations that are present in the source code).
-Refer to [this link](https://doc.rust-lang.org/stable/book/ch01-00-getting-started.html) for details
-on compiling a cargo project.
-When there are no compile errors,
-no lint errors and no test failures, you can proceed to the next step and run MIRAI. For example:
-```
-touch src/lib.rs
-RUSTC_WRAPPER=mirai cargo test --no-run
-```
-You could also just use `cargo check` if you do not have unit tests with good code coverage. The reason that 
-`cargo test` is recommended is because unit tests are good entry points for the analysis. If you use cargo check,
-also do an initial check rather than build for the dependencies that you do not want to analyze with MIRAI.
+If you forget to do the override or use the wrong version, you'll see an error message complaining about a dynamic 
+load library not being found.
 
-The touch command (which needs to reference a real file in your project) forces Cargo to re-run rustc and to not assume
-that its cached error messages are still correct.
+Then use `cargo mirai` to run MIRAI over your current package. This works much like `cargo check` but uses MIRAI rather
+than rustc to analyze the targets of your current package.
 
 This will likely produce some warnings, which you can then fix by adding annotations declared in this
 [crate](https://crates.io/crates/mirai-annotations). Keep running cargo as above until
