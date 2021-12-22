@@ -1,0 +1,63 @@
+[package]
+
+name = "mirai"
+version = "1.1.0"
+authors = ["Herman Venter <hermanv@fb.com>"]
+description = "A static analysis tool for Rust, based on Abstract Interpretation of MIR"
+repository = "https://github.com/facebookexperimental/MIRAI"
+readme = "../README.md"
+license = "MIT"
+edition = "2021"
+build = "build.rs"
+
+[lib]
+test = false # we have no unit tests
+doctest = false # and no doc tests
+
+[[bin]]
+name = "cargo-mirai"
+path = "src/cargo_mirai.rs"
+test = false # we have no unit tests
+doctest = false # and no doc tests
+
+[[bin]]
+name = "mirai"
+path = "src/main.rs"
+test = false # we have no unit tests
+doctest = false # and no doc tests
+
+[dependencies]
+bincode = { version = "*", features = ["i128"] }
+cargo_metadata = "*"
+clap = "*"
+env_logger = "*"
+fs2 = "*"
+lazy_static = "*"
+log = "*"
+log-derive = "*"
+mirai-annotations = { path = "../annotations" }
+itertools = "*"
+rand = "*"
+rpds = { version = "*", features = ["serde"] }
+rustc_tools_util = "*"
+serde = { version = "*", features = ["derive", "alloc", "rc"] }
+tar = "*"
+sled = "*"
+shellwords = "*"
+tempfile = "*"
+z3-sys = { version = "*", features = ["static-link-z3"] }
+regex = "*"
+petgraph = "*"
+serde_json = "*"
+
+[dev-dependencies]
+walkdir = "*"
+
+# Dependencies for tests which aren't already included by the checker.
+# Note if you add one here it also needs to be added to the command line
+# of the cargo command using it, e.g.
+# `--extern contracts=$PROJECT_DIR$/target/debug/deps/libcontracts-c8ea818f33e46907.dylib`
+# or similar, and to integration_tests.rs (search for extern_deps there).
+# We set the dep to a specific revision so we don't get paths as above not longer working after update of the repo
+# and the Cargo.lock.
+contracts = { version = "0.6.0", features = ["mirai_assertions"] }
