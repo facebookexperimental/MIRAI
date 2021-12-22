@@ -5,5 +5,7 @@
 //
 
 fn main() {
-    println!("cargo:rustc-link-search=binaries");
+    if cfg!(windows) {
+        println!("cargo:rustc-link-search=binaries");
+    }
 }

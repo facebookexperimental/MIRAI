@@ -3,51 +3,51 @@ on: push
 name: Continuous Integration
 
 jobs:
-  grcov:
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v2
-
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          override: true
-          profile: minimal
-          components: clippy, rustc-dev, llvm-tools-preview
-          
-      - name: Install Z3
-        run: |
-          cp binaries/libz3.dylib /usr/local/lib
-          cp include/*.h /usr/local/include
-
-      - name: Run Clippy
-        uses: actions-rs/clippy@master
-        with:
-          args: --all-features --all-targets -- -D warnings
-
-      - name: Execute tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all -- --test-threads=1
-        env:
-          CARGO_INCREMENTAL: 0
-          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"          
-      - uses: actions-rs/grcov@v0.1
-
-      - name: Run grcov        
-        run: |
-          zip -0 cov.zip $(find . -name "mirai*.gc*" -print)
-          grcov cov.zip -s . -t lcov --llvm --ignore-not-existing --ignore "/*" -o lcov.info
-      
-      - name: Upload coverage data to codecov.io
-        uses: codecov/codecov-action@v1
-        with:
-          files: "lcov.info"
+#  grcov:
+#    runs-on: macos-latest
+#
+#    steps:
+#      - uses: actions/checkout@v2
+#
+#      - name: Install toolchain
+#        uses: actions-rs/toolchain@v1
+#        with:
+#          override: true
+#          profile: minimal
+#          components: clippy, rustc-dev, llvm-tools-preview
+#
+#      - name: Install Z3
+#        run: |
+#          cp binaries/libz3.dylib /usr/local/lib
+#          cp include/*.h /usr/local/include
+#
+#      - name: Run Clippy
+#        uses: actions-rs/clippy@master
+#        with:
+#          args: --all-features --all-targets -- -D warnings
+#
+#      - name: Execute tests
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: test
+#          args: --all -- --test-threads=1
+#        env:
+#          CARGO_INCREMENTAL: 0
+#          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
+#      - uses: actions-rs/grcov@v0.1
+#
+#      - name: Run grcov
+#        run: |
+#          zip -0 cov.zip $(find . -name "mirai*.gc*" -print)
+#          grcov cov.zip -s . -t lcov --llvm --ignore-not-existing --ignore "/*" -o lcov.info
+#
+#      - name: Upload coverage data to codecov.io
+#        uses: codecov/codecov-action@v1
+#        with:
+#          files: "lcov.info"
 
   mirai_on_mirai:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
@@ -61,8 +61,8 @@ jobs:
 
       - name: Install Z3
         run: |
-          cp binaries/libz3.dylib /usr/local/lib
-          cp include/*.h /usr/local/include
+          apt list --installed
+          sudo apt-get install libz3-dev
 
       - name: Install MIRAI
         uses: actions-rs/cargo@v1
