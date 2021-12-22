@@ -45,3 +45,31 @@ jobs:
         uses: codecov/codecov-action@v1
         with:
           files: "lcov.info"
+
+  mirai_on_mirai:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          profile: minimal
+          components: clippy, rustc-dev, llvm-tools-preview
+
+      - name: Install Z3
+        run: |
+          cp binaries/libz3.dylib /usr/local/lib
+          cp include/*.h /usr/local/include
+
+      - name: Install MIRAI
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path ./checker
+
+      - name: Run MIRAI on MIRAI
+        run: |
+          cargo mirai
