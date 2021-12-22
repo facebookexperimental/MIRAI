@@ -15,7 +15,7 @@ jobs:
           override: true
           profile: minimal
           components: clippy, rustc-dev, llvm-tools-preview
-          
+
       - name: Install Z3
         run: |
           cp binaries/libz3.dylib /usr/local/lib
@@ -33,20 +33,20 @@ jobs:
           args: --all -- --test-threads=1
         env:
           CARGO_INCREMENTAL: 0
-          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"          
+          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
       - uses: actions-rs/grcov@v0.1
 
-      - name: Run grcov        
+      - name: Run grcov
         run: |
           zip -0 cov.zip $(find . -name "mirai*.gc*" -print)
           grcov cov.zip -s . -t lcov --llvm --ignore-not-existing --ignore "/*" -o lcov.info
-      
+
       - name: Upload coverage data to codecov.io
         uses: codecov/codecov-action@v1
         with:
           files: "lcov.info"
 
-  mirai_on_mirai:
+  mirai_on_mirai_macos:
     runs-on: macos-latest
 
     steps:
@@ -63,6 +63,33 @@ jobs:
         run: |
           cp binaries/libz3.dylib /usr/local/lib
           cp include/*.h /usr/local/include
+
+      - name: Install MIRAI
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path ./checker
+
+      - name: Run MIRAI on MIRAI
+        run: |
+          cargo mirai
+
+  mirai_on_mirai_ubuntu:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          profile: minimal
+          components: clippy, rustc-dev, llvm-tools-preview
+
+      - name: Install Z3
+        run: |
+          sudo apt-get install libz3-dev
 
       - name: Install MIRAI
         uses: actions-rs/cargo@v1
