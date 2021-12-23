@@ -43,14 +43,14 @@ new expressions that just encode the operands and operators. At the very least t
 The questions we may want to ask about the values of an Expression Domain element are in general undecidable, but in 
 practice many questions can trivially be answered by tree pattern matching heuristics. A more heavyweight, but also more 
 powerful heuristic approach is to encode the question in a form that a theorem prover like Z3 can (sometimes) answer. 
-This can be done asynchronously and the result can be cached for use if the same question is asked again. The downside 
-of this is that the behavior of the analyzer will become non deterministic. It is likely that there will be ways to 
-mitigate that.
+This can be done on demand and the result can be cached for use if the same question is asked again. The downside 
+of this is that the behavior of the analyzer will become non-deterministic. (This does not seem to be a problem
+in practice.)
 
-Of particular interest for this domain is the common pattern of creating an expression that is the conditional join of 
-two expressions, for example the value that results from the expression c ? e1 : e2 where c is an unknown value. In 
-practice such values are often referred to in a path where c is actually known and so the abstract value can be 
-simplified to e1 or e2 using the Expression Domain. This use of path sensitivity is both cheap and surprisingly 
+Of particular interest in this domain is the common pattern of creating an expression that is the conditional join of 
+two expressions, for example the value that results from the expression if c { e1 } else { e2 } where c is an unknown
+value. In practice such values are often referred to in a path where c is actually known and so the abstract value can
+be simplified to e1 or e2 using the Expression Domain. This use of path sensitivity is both cheap and surprisingly 
 effective.
 
 If the heuristics produce an answer, the answer will typically be precise because it is based on the actual expression, 
@@ -78,14 +78,13 @@ of expression trees, such as found in the Expression Domain, should work well in
 The less precise domains are well covered in the Abstract Interpretation literature and will be added to MIRAI as 
 needed.
 
-It is likely that the type of an abstract value will be encoded as a Type Domain, where the predicate is just a type 
-expression. Since a type defines a set of values, this fits the definition of an abstract domain and it makes sense 
-to use types to cheaply answer some of the questions we want to ask about abstract values in a consistent manner.
-
-Another easy domain that will probably be of use is a Range domain, where the predicate is of the form c1 <= v <= c2. 
+An easy domain is a Interval domain, where the predicate is of the form c1 <= v <= c2. 
 This is usually good for checking index out of range errors and to check for arithmetic overflow.
 
 Hopefully, future contributors to this project may find it interesting to add more abstract domains. As long as all 
 domains expose the same set of operations and queries and perhaps some kind of cost estimate, it should be very easy to 
 just plug in a new abstract domain.
+
+Right now, MIRAI implements the Interval domain, a special domain for tracking tags, a domain for tracking compile
+time constant values and a domain for tracking Boolean values.
 

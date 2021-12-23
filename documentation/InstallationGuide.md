@@ -22,7 +22,7 @@ cp binaries/libz3.dylib /usr/local/lib
 
 ## Installing MIRAI into cargo
 
-The best way to install MIRAI is to clone the MIRAI repository:
+The best way to install MIRAI into cargo is to clone the MIRAI repository:
 
 ```
 git clone https://github.com/facebookexperimental/MIRAI.git
