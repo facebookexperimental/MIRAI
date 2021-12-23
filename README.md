@@ -26,11 +26,12 @@ and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/main/doc
 Then use `cargo mirai` to run MIRAI over your current package. This works much like `cargo check` but uses MIRAI rather
 than rustc to analyze the targets of your current package.
 
-This will likely produce some warnings, which you can then fix by adding annotations declared in this
-[crate](https://crates.io/crates/mirai-annotations). Keep running cargo as above until
-there are no more warnings.
+This will likely produce some warnings. Some of these will be real issues (true positives) that you'll fix by changing
+the offending code. Other warnings will be due to limitations of MIRAI and you can silence them by adding annotations
+declared in this [crate](https://crates.io/crates/mirai-annotations).
 
-At this stage your code will be better documented and more readable. Perhaps you'll also have found and fixed a few bugs.
+Once MIRAI gives your code a clean bill of health, your code will be better documented and more readable. Perhaps you'll 
+also have found and fixed a few bugs.
 
 You can use the environment variable `MIRAI_FLAGS` to get cargo to provide command line options to MIRAI. The value is a
 string which can contain any of the following flags:
@@ -47,11 +48,6 @@ string which can contain any of the following flags:
 You can get some insight into the inner workings of MIRAI by setting the verbosity level of log output to one of 
 `warn`, `info`, `debug`, or `trace`, via the environment variable `MIRAI_LOG`.
 
-## Using MIRAI together with the Rust design by contracts crate
-
-Support for MIRAI is available in the [design by contracts crate](https://gitlab.com/karroffel/contracts).
-See the [shopping cart example](https://github.com/facebookexperimental/MIRAI/blob/main/examples/shopping_cart/src/main.rs) for usage.
-
 ## Developing MIRAI
 See the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/main/documentation//DeveloperGuide.md)
 for instructions on how to build, run and debug MIRAI.
@@ -61,10 +57,6 @@ for instructions on how to build, run and debug MIRAI.
 * [Architecture](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Architecture.md).
 * [Design discussions](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/DesignDiscussions.md).
 * [Further reading](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/FurtherReading.md).
-
-## Road map
-* Stabilize MIRAI and get rid of crashing bugs.
-* Summaries for intrinsics and standard library functions without MIR.
 
 ## Join the MIRAI community
 <!-- * Website:
