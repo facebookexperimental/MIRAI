@@ -18,17 +18,15 @@ On Ubuntu install it with
 sudo apt-get install libz3-dev
 ```
 
-Otherwise, you can find pre-built binaries for Z3 
-[here](https://github.com/Z3Prover/z3/releases). There are also binary libraries
-for linux included in the binaries directory of MIRAI.
+If you are using a distribution other than Fedora or Ubuntu and neither of the options above are available to you,
+you'll have to figure out for yourself how to install Z3. This [link](https://github.com/Z3Prover/z3) would be
+good place to start looking for help.
 
-Alternatively you'll have to build the Z3 binaries yourself, 
-as described [here](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Z3AndLinux.md).
+If you figure things out, please submit a pull request to update this page.
 
 ## Installing MIRAI into cargo
 
-On Linux the z3 library has to be statically linked into the mirai executable. The best way to do that is
-clone the MIRAI repository:
+The best way to install MIRAI into cargo is to clone the MIRAI repository:
 
 ```
 git clone https://github.com/facebookexperimental/MIRAI.git
@@ -40,12 +38,9 @@ Next, make sure that the correct version of rustc is installed, along with some 
 ./setup.sh
 ```
 
-If you rebuilt the Z3 binaries yourself, copy it to the `./binaries` directory.
-
-Then build and install MIRAI into cargo, using the RUSTFLAGS variable to tell the linker where to find z3.
-
+Then build and install MIRAI into cargo:
 ```
-RUSTFLAGS='-Clink-arg=-L./binaries -Clink-arg=-lstdc++' cargo install  --path ./checker
+cargo install  --path ./checker
 ```
 
 ## Contributing to MIRAI

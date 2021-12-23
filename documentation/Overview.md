@@ -289,7 +289,7 @@ Indirect calls via function pointers and traits present a challenge since they c
 site information into account. The summary cache is therefore keyed not just with the function definition id,
 but also with some call site information.
 
-The easiest problem to deal with is when a trait call has a receiver argument is typed with a generic type that is
+The easiest problem to deal with is when a trait call has a receiver argument that is typed with a generic type that is
 required to implement a trait. As long as the call site can specialize the receiver argument type with a non generic
 type, the rust compiler can be queried for the actual method that implements the trait method for this type of
 receiver. The book keeping required is non trivial and the result of getting it wrong is quite painful (the rust
