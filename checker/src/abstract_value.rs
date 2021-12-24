@@ -725,32 +725,52 @@ impl AbstractValue {
 }
 
 pub trait AbstractValueTrait: Sized {
+    #[must_use]
     fn addition(&self, other: Self) -> Self;
+    #[must_use]
     fn add_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
+    #[must_use]
     fn add_tag(&self, tag: Tag) -> Self;
+    #[must_use]
     fn and(&self, other: Self) -> Self;
     fn trim_prefix_conjuncts(&self, target_size: u64) -> Option<Self>;
     fn as_bool_if_known(&self) -> Option<bool>;
     fn as_int_if_known(&self) -> Option<Self>;
+    #[must_use]
     fn bit_and(&self, other: Self) -> Self;
+    #[must_use]
     fn bit_not(&self, target_type: ExpressionType) -> Self;
+    #[must_use]
     fn bit_or(&self, other: Self) -> Self;
+    #[must_use]
     fn bit_xor(&self, other: Self) -> Self;
+    #[must_use]
     fn cast(&self, target_type: ExpressionType) -> Self;
+    #[must_use]
     fn conditional_expression(&self, consequent: Self, alternate: Self) -> Self;
+    #[must_use]
     fn dereference(&self, target_type: ExpressionType) -> Self;
+    #[must_use]
     fn divide(&self, other: Self) -> Self;
+    #[must_use]
     fn does_not_have_tag(&self, tag: &Tag) -> Self;
+    #[must_use]
     fn equals(&self, other: Self) -> Self;
+    #[must_use]
     fn extract_promotable_conjuncts(&self, is_post_condition: bool) -> Option<Self>;
     fn extract_promotable_disjuncts(&self, is_post_condition: bool) -> Option<Self>;
+    #[must_use]
     fn greater_or_equal(&self, other: Self) -> Self;
+    #[must_use]
     fn greater_than(&self, other: Self) -> Self;
     fn has_tag(&self, tag: &Tag) -> Rc<AbstractValue>;
     fn implies(&self, other: &Self) -> bool;
     fn implies_not(&self, other: &Self) -> bool;
+    #[must_use]
     fn intrinsic_binary(&self, other: Self, name: KnownNames) -> Self;
+    #[must_use]
     fn intrinsic_bit_vector_unary(&self, bit_length: u8, name: KnownNames) -> Self;
+    #[must_use]
     fn intrinsic_floating_point_unary(&self, name: KnownNames) -> Self;
     fn inverse_implies(&self, other: &Rc<AbstractValue>) -> bool;
     fn inverse_implies_not(&self, other: &Rc<AbstractValue>) -> bool;
@@ -762,24 +782,42 @@ pub trait AbstractValueTrait: Sized {
     fn is_top(&self) -> bool;
     fn is_unit(&self) -> bool;
     fn is_zero(&self) -> bool;
+    #[must_use]
     fn join(&self, other: Self) -> Self;
+    #[must_use]
     fn less_or_equal(&self, other: Self) -> Self;
+    #[must_use]
     fn less_than(&self, other: Self) -> Self;
+    #[must_use]
     fn multiply(&self, other: Self) -> Self;
+    #[must_use]
     fn mul_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
+    #[must_use]
     fn negate(&self) -> Self;
+    #[must_use]
     fn not_equals(&self, other: Self) -> Self;
+    #[must_use]
     fn logical_not(&self) -> Self;
+    #[must_use]
     fn offset(&self, other: Self) -> Self;
+    #[must_use]
     fn or(&self, other: Self) -> Self;
     fn record_heap_blocks_and_strings(&self, result: &mut HashSet<Rc<AbstractValue>>);
+    #[must_use]
     fn remainder(&self, other: Self) -> Self;
+    #[must_use]
     fn remove_conjuncts_that_depend_on(&self, variables: &HashSet<Rc<Path>>) -> Self;
+    #[must_use]
     fn shift_left(&self, other: Self) -> Self;
+    #[must_use]
     fn shl_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
+    #[must_use]
     fn shr(&self, other: Self) -> Self;
+    #[must_use]
     fn shr_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
+    #[must_use]
     fn subtract(&self, other: Self) -> Self;
+    #[must_use]
     fn sub_overflows(&self, other: Self, target_type: ExpressionType) -> Self;
     fn subset(&self, other: &Self) -> bool;
     fn switch(
@@ -787,7 +825,9 @@ pub trait AbstractValueTrait: Sized {
         cases: Vec<(Rc<AbstractValue>, Rc<AbstractValue>)>,
         default: Rc<AbstractValue>,
     ) -> Rc<AbstractValue>;
+    #[must_use]
     fn try_to_retype_as(&self, target_type: ExpressionType) -> Self;
+    #[must_use]
     fn try_to_constant_fold_and_distribute_binary_op(
         &self,
         other: Self,
@@ -795,6 +835,7 @@ pub trait AbstractValueTrait: Sized {
         recursive_op: fn(&Self, Self) -> Self,
         operation: fn(Self, Self) -> Self,
     ) -> Self;
+    #[must_use]
     fn try_to_constant_fold_and_distribute_typed_binary_op(
         &self,
         other: Self,
@@ -803,6 +844,7 @@ pub trait AbstractValueTrait: Sized {
         recursive_op: fn(&Self, Self, ExpressionType) -> Self,
         operation: fn(Self, Self, ExpressionType) -> Self,
     ) -> Self;
+    #[must_use]
     fn try_to_constant_fold_and_distribute_typed_unary_op(
         &self,
         target_type: ExpressionType,
@@ -810,18 +852,21 @@ pub trait AbstractValueTrait: Sized {
         recursive_op: fn(&Self, ExpressionType) -> Self,
         operation: fn(Self, ExpressionType) -> Self,
     ) -> Self;
+    #[must_use]
     fn try_to_constant_fold_and_distribute_unary_op(
         &self,
         const_op: fn(&ConstantDomain) -> ConstantDomain,
         recursive_op: fn(&Self) -> Self,
         operation: fn(Self) -> Self,
     ) -> Self;
+    #[must_use]
     fn try_to_distribute_binary_op(
         &self,
         other: Self,
         recursive_op: fn(&Self, Self) -> Self,
         operation: fn(Self, Self) -> Self,
     ) -> Self;
+    #[must_use]
     fn try_to_distribute_typed_binary_op(
         &self,
         other: Self,
@@ -829,12 +874,14 @@ pub trait AbstractValueTrait: Sized {
         recursive_op: fn(&Self, Self, ExpressionType) -> Self,
         operation: fn(Self, Self, ExpressionType) -> Self,
     ) -> Self;
+    #[must_use]
     fn try_to_distribute_typed_unary_op(
         &self,
         target_type: ExpressionType,
         recursive_op: fn(&Self, ExpressionType) -> Self,
         operation: fn(Self, ExpressionType) -> Self,
     ) -> Self;
+    #[must_use]
     fn try_to_distribute_unary_op(
         &self,
         recursive_op: fn(&Self) -> Self,
@@ -847,6 +894,7 @@ pub trait AbstractValueTrait: Sized {
     fn get_path_root<'a>(&'a self, default: &'a Rc<Path>) -> &'a Rc<Path>;
     fn get_tags(&self) -> TagDomain;
     fn get_widened_subexpression(&self, path: &Rc<Path>) -> Option<Rc<AbstractValue>>;
+    #[must_use]
     fn refine_parameters_and_paths(
         &self,
         args: &[(Rc<Path>, Rc<AbstractValue>)],
@@ -855,21 +903,29 @@ pub trait AbstractValueTrait: Sized {
         post_env: &Environment,
         fresh: usize,
     ) -> Self;
+    #[must_use]
     fn refine_with(&self, path_condition: &Self, depth: usize) -> Self;
+    #[must_use]
     fn replace_embedded_path_root(&self, old_root: &Rc<Path>, new_root: Rc<Path>) -> Self;
+    #[must_use]
     fn transmute(&self, target_type: ExpressionType) -> Self;
     fn try_resolve_as_byte_array(&self, _environment: &Environment) -> Option<Vec<u8>>;
     fn try_resolve_as_ref_to_str(&self, environment: &Environment) -> Option<Rc<str>>;
+    #[must_use]
     fn uninterpreted_call(
         &self,
         arguments: Vec<Rc<AbstractValue>>,
         result_type: ExpressionType,
         path: Rc<Path>,
     ) -> Self;
+    #[must_use]
     fn unsigned_modulo(&self, num_bits: u8) -> Self;
+    #[must_use]
     fn unsigned_shift_left(&self, num_bits: u8) -> Self;
+    #[must_use]
     fn unsigned_shift_right(&self, num_bits: u8) -> Self;
     fn uses(&self, variables: &HashSet<Rc<Path>>) -> bool;
+    #[must_use]
     fn widen(&self, path: &Rc<Path>) -> Self;
 }
 

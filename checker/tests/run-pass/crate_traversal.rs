@@ -8,11 +8,11 @@
 
 #![allow(const_err)]
 #![allow(unused)]
-#![feature(asm)]
 #![feature(generators)]
 
 use mirai_annotations::*;
 
+use std::arch::asm;
 use std::mem;
 
 pub trait TestTrait {

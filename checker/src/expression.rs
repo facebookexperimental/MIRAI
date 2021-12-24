@@ -1378,6 +1378,7 @@ impl ExpressionType {
 
     /// Returns the unsigned equivalent of a signed integer type, otherwise returns self.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn as_unsigned(&self) -> ExpressionType {
         use self::ExpressionType::*;
         match self {

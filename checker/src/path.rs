@@ -1221,6 +1221,7 @@ impl PathSelector {
 
 pub trait PathSelectorRefinement: Sized {
     /// Refine parameters inside embedded index values with the given arguments.
+    #[must_use]
     fn refine_parameters_and_paths(
         &self,
         args: &[(Rc<Path>, Rc<AbstractValue>)],

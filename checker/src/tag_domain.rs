@@ -168,6 +168,7 @@ impl TagDomain {
 impl TagDomain {
     /// Return a new tag domain element by setting `tag` to True in `self`.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn add_tag(&self, tag: Tag) -> Self {
         TagDomain {
             map: self.map.insert(tag, BoolDomain::True),
@@ -183,6 +184,7 @@ impl TagDomain {
 
     /// Return the pointwise logical-or of two tag domain elements.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn or(&self, other: &Self) -> Self {
         let mut new_map = rbt_map![];
         for tag in self.map.keys().chain(other.map.keys()) {
@@ -204,6 +206,7 @@ impl TagDomain {
 
     /// Return the pointwise join of two tag domain elements.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn join(&self, other: &Self) -> Self {
         let mut new_map = rbt_map![];
         for tag in self.map.keys().chain(other.map.keys()) {
@@ -226,6 +229,7 @@ impl TagDomain {
     /// Return a tag domain element that filters out tags which are not propagated by an expression.
     /// The expression kind is identified by `exp_tag_prop`.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn propagate_through(&self, exp_tag_prop: TagPropagation) -> Self {
         let new_map: RedBlackTreeMap<Tag, BoolDomain> = self
             .map

@@ -158,29 +158,37 @@ impl KnownNamesCache {
                 })
             };
 
+        let is_foreign_module =
+            |def_path_data_elem: Option<&rustc_hir::definitions::DisambiguatedDefPathData>| {
+                if let Some(elem) = def_path_data_elem {
+                    let DisambiguatedDefPathData { data, .. } = elem;
+                    matches!(&data, ForeignMod)
+                } else {
+                    false
+                }
+            };
+
         let path_data_elem_as_disambiguator = |def_path_data_elem: Option<
             &rustc_hir::definitions::DisambiguatedDefPathData,
         >| {
             def_path_data_elem.map(|DisambiguatedDefPathData { disambiguator, .. }| *disambiguator)
         };
 
-        let get_known_name_for_alloc_namespace =
-            |mut def_path_data_iter: Iter<'_>| match get_path_data_elem_name(
-                def_path_data_iter.next(),
-            ) {
-                Some(n) if n.as_str().deref() == "" => {
-                    get_path_data_elem_name(def_path_data_iter.next())
-                        .map(|n| match n.as_str().deref() {
-                            "__rust_alloc" => KnownNames::RustAlloc,
-                            "__rust_alloc_zeroed" => KnownNames::RustAllocZeroed,
-                            "__rust_dealloc" => KnownNames::RustDealloc,
-                            "__rust_realloc" => KnownNames::RustRealloc,
-                            _ => KnownNames::None,
-                        })
-                        .unwrap_or(KnownNames::None)
-                }
-                _ => KnownNames::None,
-            };
+        let get_known_name_for_alloc_namespace = |mut def_path_data_iter: Iter<'_>| {
+            if is_foreign_module(def_path_data_iter.next()) {
+                get_path_data_elem_name(def_path_data_iter.next())
+                    .map(|n| match n.as_str().deref() {
+                        "__rust_alloc" => KnownNames::RustAlloc,
+                        "__rust_alloc_zeroed" => KnownNames::RustAllocZeroed,
+                        "__rust_dealloc" => KnownNames::RustDealloc,
+                        "__rust_realloc" => KnownNames::RustRealloc,
+                        _ => KnownNames::None,
+                    })
+                    .unwrap_or(KnownNames::None)
+            } else {
+                KnownNames::None
+            }
+        };
 
         let get_known_name_for_clone_trait = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())

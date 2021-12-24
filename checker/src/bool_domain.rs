@@ -34,6 +34,7 @@ impl From<bool> for BoolDomain {
 impl BoolDomain {
     /// Return the join of two Boolean domain elements, which is essentially the set union.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn join(&self, other: &Self) -> Self {
         match (self, other) {
             // [Top join _] -> Top
@@ -58,6 +59,7 @@ impl BoolDomain {
 
     /// Return the logical-or of two Boolean domain elements.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn or(&self, other: &Self) -> Self {
         match (self, other) {
             // [Bottom || _] -> Bottom
