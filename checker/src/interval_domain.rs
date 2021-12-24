@@ -96,6 +96,7 @@ impl From<ExpressionType> for IntervalDomain {
 impl IntervalDomain {
     //[x...y] + [a...b] = [x+a...y+b]
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn add(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();
@@ -111,6 +112,7 @@ impl IntervalDomain {
 
     //[x...y] / [a...b] = [x/b...y/a] if a > 0
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn div(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();
@@ -226,6 +228,7 @@ impl IntervalDomain {
 
     // [x...y] intersect [a...b] = [max(x,a)...min(y,b)],
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn intersect(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();
@@ -297,6 +300,7 @@ impl IntervalDomain {
     }
 
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn remove_lower_bound(&self) -> Self {
         IntervalDomain {
             lower_bound: TOP.lower_bound,
@@ -305,6 +309,7 @@ impl IntervalDomain {
     }
 
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn remove_upper_bound(&self) -> Self {
         IntervalDomain {
             lower_bound: self.lower_bound,
@@ -313,6 +318,7 @@ impl IntervalDomain {
     }
 
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn replace_upper_bound(&self, new_value: i128) -> Self {
         IntervalDomain {
             lower_bound: self.lower_bound,
@@ -322,6 +328,7 @@ impl IntervalDomain {
 
     // [x...y] * [a...b] = [x*a...y*b]
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn mul(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();
@@ -337,6 +344,7 @@ impl IntervalDomain {
 
     // -[x...y] = [-y...-x]
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn neg(&self) -> Self {
         if self.is_bottom() {
             return BOTTOM.clone();
@@ -352,6 +360,7 @@ impl IntervalDomain {
 
     // [x...y] % [1...b] = [0...min(y, b-1)]
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn rem(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();
@@ -371,6 +380,7 @@ impl IntervalDomain {
 
     // [x...y] - [a...b] = [x-b...y-a]
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn sub(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();
@@ -386,6 +396,7 @@ impl IntervalDomain {
 
     // [x...y] widen [a...b] = [min(x,a)...max(y,b)],
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn widen(&self, other: &Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return BOTTOM.clone();

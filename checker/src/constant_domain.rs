@@ -154,6 +154,7 @@ impl From<bool> for ConstantDomain {
 impl ConstantDomain {
     /// Returns a constant that is "self + other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn add(&self, other: &Self) -> Self {
         match (self, other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -174,6 +175,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is true if "self + other" is not in range of target_type.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn add_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => match target_type {
@@ -202,6 +204,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self && other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn and(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::False, ConstantDomain::False) => ConstantDomain::False,
@@ -224,6 +227,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self & other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn bit_and(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => {
@@ -240,6 +244,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "!self" where self is an integer.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn bit_not(&self, result_type: ExpressionType) -> Self {
         match self {
             ConstantDomain::I128(val) => ConstantDomain::I128(!*val),
@@ -252,6 +257,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self | other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn bit_or(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => {
@@ -268,6 +274,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self ^ other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn bit_xor(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => {
@@ -289,6 +296,7 @@ impl ConstantDomain {
     /// if an unsigned integer is being cast to a thin pointer.
     #[allow(clippy::cast_lossless)]
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn cast(&self, target_type: ExpressionType) -> Self {
         match self {
             ConstantDomain::Bottom => self.clone(),
@@ -381,6 +389,7 @@ impl ConstantDomain {
 
     /// Returns the number of one bits in an unsigned integer
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn count_ones(&self) -> Self {
         if let ConstantDomain::U128(val) = self {
             ConstantDomain::U128(val.count_ones() as u128)
@@ -391,6 +400,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self / other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn div(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -423,6 +433,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self == other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn equals(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -444,6 +455,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self >= other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn greater_or_equal(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -459,6 +471,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self > other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn greater_than(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -474,6 +487,7 @@ impl ConstantDomain {
 
     /// Returns self.f() where f is an intrinsic unary function.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn intrinsic_binary(&self, other: &Self, name: KnownNames) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -543,6 +557,7 @@ impl ConstantDomain {
 
     /// Returns self.f() where f is an intrinsic unary function.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn intrinsic_bit_vector_unary(&self, bit_length: u8, name: KnownNames) -> Self {
         match self {
             ConstantDomain::I128(val) => match bit_length {
@@ -589,6 +604,7 @@ impl ConstantDomain {
 
     /// Returns self.f() where f is an intrinsic unary function.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn intrinsic_floating_point_unary(&self, name: KnownNames) -> Self {
         match self {
             ConstantDomain::F32(val) => {
@@ -695,6 +711,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self <= other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn less_or_equal(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -710,6 +727,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self < other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn less_than(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -725,6 +743,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self * other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn mul(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -747,6 +766,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is true if "self * other" is not in range of target_type.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn mul_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => {
@@ -783,6 +803,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "-self".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn neg(&self) -> Self {
         match self {
             ConstantDomain::F32(val) => {
@@ -801,6 +822,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self != other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn not_equals(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -822,6 +844,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "!self" where self is a bool.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn logical_not(&self) -> Self {
         match &self {
             ConstantDomain::False => ConstantDomain::True,
@@ -832,6 +855,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self || other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn or(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::False, ConstantDomain::False) => ConstantDomain::False,
@@ -844,6 +868,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self % other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn rem(&self, other: &Self) -> Self {
         match (&self, &other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -874,6 +899,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self << other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn shl(&self, other: &Self) -> Self {
         let other_as_u32 = match &other {
             ConstantDomain::I128(val2) => Some(*val2 as u32),
@@ -893,6 +919,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is true if "self << other" is not in range of target_type.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn shl_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
         let other_as_u32 = match &other {
             ConstantDomain::I128(val2) => Some(*val2 as u32),
@@ -926,6 +953,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self >> other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn shr(&self, other: &Self) -> Self {
         let other_as_u32 = match &other {
             ConstantDomain::I128(val2) => Some(*val2 as u32),
@@ -945,6 +973,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is true if "self >> other" shifts away all bits.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn shr_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
         let other_as_u32 = match &other {
             ConstantDomain::I128(val2) => Some(*val2 as u32),
@@ -978,6 +1007,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is "self - other".
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn sub(&self, other: &Self) -> Self {
         match (self, other) {
             (ConstantDomain::F32(val1), ConstantDomain::F32(val2)) => {
@@ -1000,6 +1030,7 @@ impl ConstantDomain {
 
     /// Returns a constant that is true if "self - other" is not in range of target_type.
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn sub_overflows(&self, other: &Self, target_type: ExpressionType) -> Self {
         match (&self, &other) {
             (ConstantDomain::I128(val1), ConstantDomain::I128(val2)) => match target_type {

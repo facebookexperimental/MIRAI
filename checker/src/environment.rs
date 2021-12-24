@@ -483,6 +483,7 @@ impl Environment {
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is condition.conditional_expression(self.value_at(path), other.value_at(path))
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn conditional_join(
         &self,
         other: Environment,
@@ -510,6 +511,7 @@ impl Environment {
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the join of self.value_at(path) and other.value_at(path)
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn join(&self, other: Environment) -> Environment {
         self.join_or_widen(other, |x, y, p| {
             if let Some(val) = x.get_widened_subexpression(p) {
@@ -525,6 +527,7 @@ impl Environment {
     /// Returns an environment with a path for every entry in self and other and an associated
     /// value that is the widen of self.value_at(path) and other.value_at(path)
     #[logfn_inputs(TRACE)]
+    #[must_use]
     pub fn widen(&self, other: Environment) -> Environment {
         self.join_or_widen(other, |x, y, p| {
             if let Some(val) = x.get_widened_subexpression(p) {
