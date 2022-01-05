@@ -34,7 +34,7 @@ use std::path::Path;
 
 fn main() {
     // Initialize loggers.
-    if env::var("RUST_LOG").is_ok() {
+    if env::var("RUSTC_LOG").is_ok() {
         rustc_driver::init_rustc_env_logger();
     }
     if env::var("MIRAI_LOG").is_ok() {

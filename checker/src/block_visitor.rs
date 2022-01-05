@@ -2228,7 +2228,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     #[logfn_inputs(TRACE)]
     fn visit_nullary_op(
         &mut self,
-        mut path: Rc<Path>,
+        path: Rc<Path>,
         null_op: mir::NullOp,
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
@@ -2254,18 +2254,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         };
         let value = match null_op {
             mir::NullOp::AlignOf => alignment,
-            mir::NullOp::Box => {
-                // The box is a struct that is located at path.
-                // It contains a Unique (transparently wrapped) pointer at field 0 of the Box struct.
-                // The unwrapped pointer to the new heap block is stored at field 0 of the Unique struct.
-                // This instruction only allocates the heap block and fills in the pointer.
-                // The initialization of the heap block (and thus the Box) is done
-                // in a subsequent MIR instruction of the form (*box) = box_value.
-                // De-referencing a box structure amounts to de-referencing the unwrapped pointer.
-                path = Path::new_field(Path::new_field(path, 0), 0);
-                let (_, heap_block_path) = self.bv.get_new_heap_block(len, alignment, false, ty);
-                AbstractValue::make_reference(heap_block_path)
-            }
+            mir::NullOp::Box => unreachable!("NullOp::Box is no longer used"),
             mir::NullOp::SizeOf => len,
         };
         self.bv.update_value_at(path, value);
