@@ -307,7 +307,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         }
         Param(param_ty) => {
             str.push_str("generic_par_");
-            str.push_str(param_ty.name.as_str());
+            str.push_str(&param_ty.name.as_str());
         }
         Projection(projection_ty) => {
             append_mangled_type(str, projection_ty.self_ty(), tcx);
