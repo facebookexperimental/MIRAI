@@ -2254,7 +2254,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         };
         let value = match null_op {
             mir::NullOp::AlignOf => alignment,
-            mir::NullOp::Box => unreachable!("NullOp::Box is no longer used"),
             mir::NullOp::SizeOf => len,
         };
         self.bv.update_value_at(path, value);
