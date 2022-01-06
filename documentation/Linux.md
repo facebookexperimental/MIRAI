@@ -4,7 +4,7 @@ In order to use MIRAI, you need to install Rust, install Z3, and install MIRAI i
 
 ## Installing Rust
 
-You should install Rust using rustup. See [here](https://doc.rust-lang.org/book/ch01-01-installation.html) 
+You should install Rust using rustup. See [here](https://doc.rust-lang.org/book/ch01-01-installation.html)
 for instructions.
 
 ## Installing Z3
@@ -41,6 +41,12 @@ Next, make sure that the correct version of rustc is installed, along with some 
 Then build and install MIRAI into cargo:
 ```
 cargo install  --path ./checker
+```
+
+On Fedora, z3-sys is currently unable to find the `z3.h` header file, so
+you may need to specify the path to it as follows:
+```
+CPATH=/usr/include/z3 cargo install  --path ./checker
 ```
 
 ## Contributing to MIRAI
