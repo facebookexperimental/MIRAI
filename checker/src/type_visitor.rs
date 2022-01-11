@@ -1066,7 +1066,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     if projection_trait == self.tcx.lang_items().pointee_trait() {
                         assume!(!specialized_substs.is_empty());
                         if let GenericArgKind::Type(ty) = specialized_substs[0].unpack() {
-                            return ty.ptr_metadata_ty(self.tcx);
+                            return ty.ptr_metadata_ty(self.tcx, |ty| ty);
                         }
                     } else if projection_trait == self.tcx.lang_items().discriminant_kind_trait() {
                         assume!(!specialized_substs.is_empty());

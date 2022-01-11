@@ -3143,11 +3143,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     use std::ops::Deref;
 
                     // Obtains the name of this variant.
-                    let name_str = {
+                    let name = {
                         let enum_def = ty.ty_adt_def().unwrap();
                         let variant_def = &enum_def.variants[discr_index];
-                        variant_def.ident.name.as_str()
+                        variant_def.ident(self.bv.tcx)
                     };
+                    let name_str = name.as_str();
                     trace!("discr name {:?}", name_str);
 
                     // Obtains the path to store the data. For example, for Option<char>,
