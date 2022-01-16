@@ -122,7 +122,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             } => self.visit_set_discriminant(place, *variant_index),
             mir::StatementKind::StorageLive(local) => self.visit_storage_live(*local),
             mir::StatementKind::StorageDead(local) => self.visit_storage_dead(*local),
-            mir::StatementKind::LlvmInlineAsm(inline_asm) => self.visit_llvm_inline_asm(inline_asm),
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
             mir::StatementKind::AscribeUserType(..) => assume_unreachable!(),
             mir::StatementKind::Coverage(..) => (),
@@ -217,18 +216,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             type_index,
         );
         self.bv.update_value_at(path, abstract_value::BOTTOM.into());
-    }
-
-    /// Execute a piece of inline Assembly.
-    #[logfn_inputs(TRACE)]
-    fn visit_llvm_inline_asm(&mut self, inline_asm: &mir::LlvmInlineAsm<'tcx>) {
-        let span = self.bv.current_span;
-        let warning = self.bv.cv.session.struct_span_warn(
-            span,
-            "Inline llvm assembly code cannot be analyzed by MIRAI.",
-        );
-        self.bv.emit_diagnostic(warning);
-        self.bv.analysis_is_incomplete = true;
     }
 
     /// Retag references in the given place, ensuring they got fresh tags.  This is
@@ -2440,15 +2427,15 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
 
     fn visit_const_kind(&mut self, mut val: ConstKind<'tcx>, lty: Ty<'tcx>) -> Rc<AbstractValue> {
         if let rustc_middle::ty::ConstKind::Unevaluated(unevaluated) = &val {
-            let substs = unevaluated.substs(self.bv.cv.tcx);
             let def_ty = unevaluated.def;
             if def_ty.const_param_did.is_some() {
                 val = val.eval(self.bv.tcx, self.type_visitor().get_param_env());
             } else {
                 let mut def_id = def_ty.def_id_for_type_of();
-                let substs = self
-                    .type_visitor()
-                    .specialize_substs(substs, &self.type_visitor().generic_argument_map);
+                let substs = self.type_visitor().specialize_substs(
+                    unevaluated.substs,
+                    &self.type_visitor().generic_argument_map,
+                );
                 self.bv.cv.substs_cache.insert(def_id, substs);
                 let path = match unevaluated.promoted {
                     Some(promoted) => {
