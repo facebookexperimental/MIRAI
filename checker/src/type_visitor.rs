@@ -19,7 +19,7 @@ use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc_middle::ty::{
     AdtDef, Const, ConstKind, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef,
-    FnSig, ParamTy, Ty, TyCtxt, TyKind, TypeAndMut,
+    FnSig, ParamTy, Term, Ty, TyCtxt, TyKind, TypeAndMut,
 };
 use rustc_target::abi::VariantIdx;
 use std::cell::RefCell;
@@ -1148,12 +1148,24 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                             ExistentialPredicate::Projection(ExistentialProjection {
                                 item_def_id,
                                 substs,
-                                ty,
-                            }) => ExistentialPredicate::Projection(ExistentialProjection {
-                                item_def_id,
-                                substs: self.specialize_substs(substs, map),
-                                ty: self.specialize_generic_argument_type(ty, map),
-                            }),
+                                term,
+                            }) => {
+                                if let Term::Ty(ty) = term {
+                                    ExistentialPredicate::Projection(ExistentialProjection {
+                                        item_def_id,
+                                        substs: self.specialize_substs(substs, map),
+                                        term: Term::Ty(
+                                            self.specialize_generic_argument_type(ty, map),
+                                        ),
+                                    })
+                                } else {
+                                    ExistentialPredicate::Projection(ExistentialProjection {
+                                        item_def_id,
+                                        substs: self.specialize_substs(substs, map),
+                                        term,
+                                    })
+                                }
+                            }
                             ExistentialPredicate::AutoTrait(_) => pred,
                         })
                     },
