@@ -276,36 +276,112 @@ bundled with the source code and conditionally compiled when the mirai configura
 the way intrinsics are handled on target platforms that do not support them.
 
 ## Abstract Interpretation
+MIRAI is structured as an abstract interpreter over MIR instructions.
 ### Positives
+The interpreter can directly use the rust compiler's data structures. The subtle semantics of MIR can be addressed
+operationally rather than by translation from MIR to an intermediate verification language. Because the semantics
+of MIR is encoded into the interpreter, it is likely more performant than any alternative.
 ### Negatives
+A lot of the complexity of the abstract interpreter could be avoided by a translational approach. It is not clear
+which approach is simpler overall.
 ### Alternatives
+#### Translating MIR into intermediate verification language
+For example [Boogie](https://github.com/boogie-org/boogie)
+#### Symbolic execution
+Much of what happens in MIRAI is actually just symbolic execution. An alternative would be to do without
+abstract domains.
 
 ## Symbolic expression domain
+The abstract domain used by default uses a symbolic expression as its representation. 
+See [Abstract Values](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/AbstractValues.md). 
 ### Positives
+The most precise way to specify which values an expression can result in is the expression itself.
 ### Negatives
+Determining whether a concrete value belongs to an expression domain element is costly and sometimes undecidable.
+Likewise for various other domain operations. MIRAI implements these operations by translating the operation into
+an SMT solver expression and then using the solver to determine the result. This is subject to a small time-out
+(100 ms) and can be non-deterministic.
 ### Alternatives
+Abstract interpreters typically use specialized domains that are much easier to reason about.
+### Compromise
+MIRAI constructs an interval domain (or if appropriate, a tag domain) from the expression of an expression domain
+element before it resorts to doing an SMT solver query.
 
 ## Simplify symbolic expressions
+The transfer functions of the symbolic expression domain attempt to simplify the resulting expression using 
+heuristically chosen algebraic simplification rules.
 ### Positives
+These rules are unreasonably effective in practice, so many queries end up being trivially true or false. The
+simplification rules also help to keep expressions small, which is a big performance win.
 ### Negatives
+There are many rules and some of them are complicated. Great care must be taken to ensure that the rules are sound,
+that they don't interfere with each other and that they don't incur costs that are related to the size of the
+expression being simplified. A lot of this code duplicates what happens inside SMT solvers, which is suboptimal
+because these solvers have been heavily optimized over decades and are very hard to beat.
 ### Alternatives
+#### Always use an SMT solver to simplify expressions
+A good idea in principle, but the cost of translating an expression to the input format of the solver is significant.
+This also makes the analyzer more non-deterministic.
 
 ## Devirtualize
+Calls to virtual functions are resolved to particular implementations by tracking the concrete types of argument values
+during the analyses of the caller and then obtaining a specialized summary for the virtual function using the actual
+argument types (along with actual generic arguments and the function values reachable from arguments).
 ### Positives
+Resolving a virtual function to a particular implementation makes the analysis of the caller more precise. Furthermore,
+if no annotations are available, it is quite difficult to arrive at an auto summary because the compiler's query system
+does not make it easy to efficiently traverse the whole program to find every function that might implement the virtual
+function.
 ### Negatives
+Method resolution is very complex in Rust and still evolving. This means that the Rust compiler's query system must be
+used to do the resolution, which makes the analyzer brittle because the compiler's query system panics if subtle and
+undocumented invariants are not satisfied.
 ### Alternatives
+#### Auto summarize virtual functions by joining the summaries of all function that implement virtual functions.
+This is both imprecise and difficult to do, as noted above.
+#### Require programmers to provide summaries of virtual functions
+This a big burden because there are lots of virtual functions. It is also runs into the problem that it is unsound
+unless every implementation of the virtual function is verified to conform to the summary.
 
 ## Use automated theorem prover (Z3)
+The analyzer almost always needs to know nothing more than whether an expression is satisfiable or not, so we just
+use an SMT solver (Z3) to do this.
 ### Positives
+Answering such queries is a sweet spot for SMT solvers. Duplicating all of that logic inside the analyzer makes no 
+sense.
 ### Negatives
+The Expression types of the analyzer cannot be used by Z3 and vice versa. The consequent serialization presents a
+cost in time and memory that is significant enough that the analyzer does its own simplification before involving the
+SMT solver. Also, the SMT solver is heuristic and this introduces non-determinism.
 ### Alternatives
+#### Run an abstract interpreter over the expression in question.
+This is already done during expression simplification in cases where the Interval Domain might be of help. Additionally,
+taint tracking is done solely using the Tag Domain (not least because Z3 has no theory that is a good match for that).
 
 ## Avoid quantifiers
+The MIRAI expressions encoded as SMT (Z3) expressions contain no quantifiers.
 ### Positives
+Without quantifiers, Z3 mostly just works as one would expect. Also, in the absence of explicit annotations, quantifiers
+have to be inferred, which is a tricky business. Not implementing quantifiers for V1 of MIRAI made the project more
+tractable. Perhaps surprisingly, there has been little impact on the ability of MIRAI to reason about code in the
+absence of explicit annotations. My best guess about why, is that the presence of widened loop variables in the SMT
+encoding effectively Skolemizes the expressions.
 ### Negatives
+It is sometimes necessary to make assumptions inside loop bodies, not least because inferred preconditions drop
+terms containing widened variables, which can result in preconditions that are too strong for callers to uphold.
 ### Alternatives
+#### Infer quantifiers
+#### Recognize Iter.all and Iter.any as quantifiers
 
 ## Data flow analysis
+MIRAI provides a mechanism to use explicit annotations to tag values at their source and then to check for their
+presence or absence at annotated sink points. It is also possible to designate all control flow conditions as sink
+points.
 ### Positives
+Annotations provide a highly customizable way to create tagged values and to control how tags propagate to values
+computed from tagged arguments.
 ### Negatives
+This needs annotations by specialists and it is easy to mess it up.
 ### Alternatives
+#### Provide a way to plug in custom analyzers
+#### Serialize analyzer state for downstream tools
