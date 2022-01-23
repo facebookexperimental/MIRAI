@@ -10,55 +10,53 @@ use rustc_session::config::ErrorOutputType;
 use rustc_session::early_error;
 
 /// Creates the clap::App metadata for argument parsing.
-fn make_options_parser<'a>(running_test_harness: bool) -> App<'a, 'a> {
+fn make_options_parser<'help>(running_test_harness: bool) -> App<'help> {
     // We could put this into lazy_static! with a Mutex around, but we really do not expect
     // to construct this more then once per regular program run.
     let mut parser = App::new("MIRAI")
     .setting(AppSettings::NoBinaryName)
     .version("v1.0.5")
-    .arg(Arg::with_name("single_func")
+    .arg(Arg::new("single_func")
         .long("single_func")
         .takes_value(true)
         .help("Focus analysis on the named function.")
         .long_help("Name is the simple name of a top-level crate function or a MIRAI summary key."))
-    .arg(Arg::with_name("diag")
+    .arg(Arg::new("diag")
         .long("diag")
         .possible_values(&["default", "verify", "library", "paranoid"])
         .default_value("default")
         .help("Level of diagnostics.\n")
         .long_help("With `default`, false positives will be avoided where possible.\nWith 'verify' errors are reported for incompletely analyzed functions.\nWith `paranoid`, all possible errors will be reported.\n"))
-    .arg(Arg::with_name("constant_time")
+    .arg(Arg::new("constant_time")
         .long("constant_time")
         .takes_value(true)
         .help("Enable verification of constant-time security.")
         .long_help("Name is a top-level crate type"))
-    .arg(Arg::with_name("body_analysis_timeout")
+    .arg(Arg::new("body_analysis_timeout")
         .long("body_analysis_timeout")
         .takes_value(true)
         .default_value("30")
         .help("The maximum number of seconds that MIRAI will spend analyzing a function body.")
         .long_help("The default is 30 seconds."))
-    .arg(Arg::with_name("crate_analysis_timeout")
+    .arg(Arg::new("crate_analysis_timeout")
         .long("crate_analysis_timeout")
         .takes_value(true)
         .default_value("240")
         .help("The maximum number of seconds that MIRAI will spend analyzing a function body.")
         .long_help("The default is 240 seconds."))
-    .arg(Arg::with_name("statistics")
+    .arg(Arg::new("statistics")
         .long("statistics")
-        .short("stats")
         .takes_value(false)
         .help("Just print out whether crates were analyzed, etc.")
         .long_help("Just print out whether crates were analyzed and how many diagnostics were produced for each crate."))
-    .arg(Arg::with_name("call_graph_config")
+    .arg(Arg::new("call_graph_config")
         .long("call_graph_config")
         .takes_value(true)
         .help("Path call graph config.")
         .long_help(r#"Path to a JSON file that configures call graph output. Please see the documentation for details (https://github.com/facebookexperimental/MIRAI/blob/main/documentation/CallGraph.md)."#));
     if running_test_harness {
-        parser = parser.arg(Arg::with_name("test_only")
+        parser = parser.arg(Arg::new("test_only")
             .long("test_only")
-            .short("t")
             .takes_value(false)
             .help("Focus analysis on #[test] methods.")
             .long_help("Only #[test] methods and their usage are analyzed. This must be used together with the rustc --test option."));
@@ -132,35 +130,37 @@ impl Options {
             // The arguments may not be intended for MIRAI and may get here
             // via some tool, so do not report errors here, but just assume
             // that the arguments were not meant for MIRAI.
-            match make_options_parser(running_test_harness).get_matches_from_safe(mirai_args.iter())
+            match make_options_parser(running_test_harness).try_get_matches_from(mirai_args.iter())
             {
                 Ok(matches) => {
                     // Looks like these are MIRAI options after all and there are no rustc options.
                     rustc_args_start = args.len();
                     matches
                 }
-                Err(Error {
-                    kind: ErrorKind::HelpDisplayed,
-                    message,
-                    ..
-                }) => {
-                    // help is ambiguous, so display both MIRAI and rustc help.
-                    println!("{}\n", message);
-                    return args.to_vec();
-                }
-                Err(Error {
-                    kind: ErrorKind::UnknownArgument,
-                    ..
-                }) => {
-                    // Just send all of the arguments to rustc.
-                    // Note that this means that MIRAI options and rustc options must always
-                    // be separated by --. I.e. any  MIRAI options present in arguments list
-                    // will stay unknown to MIRAI and will make rustc unhappy.
-                    return args.to_vec();
-                }
-                Err(e) => {
-                    e.exit();
-                }
+                Err(e) => match e {
+                    Error {
+                        kind: ErrorKind::DisplayHelp,
+                        ..
+                    } => {
+                        // help is ambiguous, so display both MIRAI and rustc help.
+                        eprintln!("{}", e);
+                        return args.to_vec();
+                    }
+                    Error {
+                        kind: ErrorKind::UnknownArgument,
+                        ..
+                    } => {
+                        // Just send all of the arguments to rustc.
+                        // Note that this means that MIRAI options and rustc options must always
+                        // be separated by --. I.e. any  MIRAI options present in arguments list
+                        // will stay unknown to MIRAI and will make rustc unhappy.
+                        return args.to_vec();
+                    }
+                    _ => {
+                        eprintln!("{}", e);
+                        e.exit();
+                    }
+                },
             }
         } else {
             // This will display error diagnostics for arguments that are not valid for MIRAI.
@@ -179,7 +179,7 @@ impl Options {
                 _ => assume_unreachable!(),
             };
         }
-        if matches.is_present("test_only") {
+        if running_test_harness && matches.is_present("test_only") {
             self.test_only = true;
             if self.diag_level != DiagLevel::Paranoid {
                 self.diag_level = DiagLevel::Library;
