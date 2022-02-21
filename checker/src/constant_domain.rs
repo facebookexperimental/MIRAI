@@ -4,20 +4,22 @@
 // LICENSE file in the root directory of this source tree.
 #![allow(clippy::float_cmp)]
 
-use crate::expression::{Expression, ExpressionType};
-use crate::known_names::{KnownNames, KnownNamesCache};
-use crate::summaries::PersistentSummaryCache;
-use crate::utils;
+use std::collections::HashMap;
+use std::fmt::{Debug, Formatter, Result};
+use std::rc::Rc;
 
 use log_derive::{logfn, logfn_inputs};
+use serde::{Deserialize, Serialize};
+
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{Ty, TyCtxt};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter, Result};
-use std::rc::Rc;
+
+use crate::expression::{Expression, ExpressionType};
+use crate::known_names::{KnownNames, KnownNamesCache};
+use crate::summaries::PersistentSummaryCache;
+use crate::utils;
 
 /// Abstracts over constant values referenced in MIR and adds information
 /// that is useful for the abstract interpreter. More importantly, this
