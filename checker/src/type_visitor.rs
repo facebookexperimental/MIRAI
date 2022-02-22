@@ -3,15 +3,14 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::abstract_value::AbstractValue;
-use crate::environment::Environment;
-use crate::expression::{Expression, ExpressionType};
-use crate::path::{Path, PathEnum, PathRefinement, PathRoot, PathSelector};
-use crate::rustc_middle::ty::DefIdTree;
-use crate::{type_visitor, utils};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Formatter, Result};
+use std::ops::DerefMut;
+use std::rc::Rc;
 
-use crate::constant_domain::ConstantDomain;
 use log_derive::*;
+
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_index::vec::Idx;
@@ -22,11 +21,14 @@ use rustc_middle::ty::{
     FnSig, ParamTy, Term, Ty, TyCtxt, TyKind, TypeAndMut,
 };
 use rustc_target::abi::VariantIdx;
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::fmt::{Debug, Formatter, Result};
-use std::ops::DerefMut;
-use std::rc::Rc;
+
+use crate::abstract_value::AbstractValue;
+use crate::constant_domain::ConstantDomain;
+use crate::environment::Environment;
+use crate::expression::{Expression, ExpressionType};
+use crate::path::{Path, PathEnum, PathRefinement, PathRoot, PathSelector};
+use crate::rustc_middle::ty::DefIdTree;
+use crate::{type_visitor, utils};
 
 #[derive(Debug)]
 pub struct TypeCache<'tcx> {
@@ -51,13 +53,13 @@ impl<'tcx> TypeCache<'tcx> {
     }
 
     /// Returns a non zero index that can be used to retrieve ty via get_type.
-    pub fn get_index(&mut self, ty: Ty<'tcx>) -> usize {
+    pub fn get_index(&mut self, ty: &Ty<'tcx>) -> usize {
         if let Some(index) = self.type_to_index_map.get(ty) {
             *index
         } else {
             let index = self.type_list.len() + 1;
-            self.type_list.push(ty);
-            self.type_to_index_map.insert(ty, index);
+            self.type_list.push(*ty);
+            self.type_to_index_map.insert(*ty, index);
             index
         }
     }
@@ -129,7 +131,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     #[logfn_inputs(TRACE)]
     pub fn add_any_closure_fields_for(
         &mut self,
-        mut path_ty: Ty<'tcx>,
+        mut path_ty: &Ty<'tcx>,
         path: &Rc<Path>,
         first_state: &mut Environment,
     ) {
@@ -177,7 +179,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 let map = self.get_generic_arguments_map(*def_id, substs, &[]);
                 let path_ty =
                     self.specialize_generic_argument_type(self.tcx.type_of(*def_id), &map);
-                self.add_any_closure_fields_for(path_ty, path, first_state);
+                self.add_any_closure_fields_for(&path_ty, path, first_state);
             }
             TyKind::Dynamic(..) | TyKind::FnDef(..) | TyKind::FnPtr(..) => {}
             _ => {
@@ -190,7 +192,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// If the type is not a collection, it returns one.
     pub fn get_elem_type_size(&self, ty: Ty<'tcx>) -> u64 {
         match ty.kind() {
-            TyKind::Array(ty, _) | TyKind::Slice(ty) => self.get_type_size(ty),
+            TyKind::Array(ty, _) | TyKind::Slice(ty) => self.get_type_size(*ty),
             TyKind::RawPtr(t) => self.get_type_size(t.ty),
             _ => 1,
         }
@@ -238,7 +240,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
 
     pub fn get_index_for(&self, ty: Ty<'tcx>) -> usize {
         let mut cache = self.type_cache.borrow_mut();
-        cache.get_index(ty)
+        cache.get_index(&ty)
     }
 
     pub fn get_type_from_index(&self, type_index: usize) -> Ty<'tcx> {
@@ -448,7 +450,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     0 => {
                                         // Field 0 of a sized array is a raw pointer to the array element type
                                         return self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                                            ty: elem_ty,
+                                            ty: *elem_ty,
                                             mutbl: rustc_hir::Mutability::Not,
                                         });
                                     }
@@ -676,7 +678,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 TyKind::Array(t, _) => *t,
                 TyKind::Slice(t) => *t,
                 TyKind::Str => self.tcx.types.char,
-                _ => t,
+                _ => *t,
             },
             TyKind::Slice(t) => *t,
             TyKind::Str => self.tcx.types.char,
@@ -728,7 +730,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         if ty.is_adt() {
                             let param_path = p.replace_root(arg_path, Path::new_parameter(i + 1));
                             let ptr_ty = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                                ty,
+                                ty: *ty,
                                 mutbl: rustc_hir::Mutability::Not,
                             });
                             result.insert(param_path, ptr_ty);
@@ -780,7 +782,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             let self_ty = if let TyKind::Ref(_, ty, _) = self_ty.kind() {
                 *ty
             } else {
-                self_ty
+                *self_ty
             };
             let self_sym = rustc_span::Symbol::intern("Self");
             map.entry(self_sym).or_insert_with(|| self_ty.into());
@@ -850,7 +852,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 if let TyKind::Param(t_par) = ty.kind() {
                     if t_par.name.as_str() == "Self" && !self.actual_argument_types.is_empty() {
                         return self.tcx.mk_ref(
-                            region,
+                            *region,
                             rustc_middle::ty::TypeAndMut {
                                 ty: self.actual_argument_types[0],
                                 mutbl: *mutbl,
@@ -888,7 +890,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     }
                 },
                 mir::ProjectionElem::Field(_, ty) => {
-                    self.specialize_generic_argument_type(ty, &self.generic_argument_map)
+                    self.specialize_generic_argument_type(*ty, &self.generic_argument_map)
                 }
                 mir::ProjectionElem::Subslice { .. } => base_ty,
                 mir::ProjectionElem::Index(_) | mir::ProjectionElem::ConstantIndex { .. } => {
@@ -1001,10 +1003,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     #[logfn_inputs(TRACE)]
     fn specialize_const(
         &self,
-        constant: &'tcx Const<'tcx>,
+        constant: Const<'tcx>,
         map: &Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
-    ) -> &'tcx Const<'tcx> {
-        if let ConstKind::Param(param_const) = constant.val {
+    ) -> Const<'tcx> {
+        if let ConstKind::Param(param_const) = constant.val() {
             if let Some(gen_arg) = map.as_ref().unwrap().get(&param_const.name) {
                 return gen_arg.expect_const();
             }
@@ -1088,26 +1090,26 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         match gen_arg_type.kind() {
             TyKind::Adt(def, substs) => self.tcx.mk_adt(def, self.specialize_substs(substs, map)),
             TyKind::Array(elem_ty, len) => {
-                let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
-                let specialized_len = self.specialize_const(len, map);
+                let specialized_elem_ty = self.specialize_generic_argument_type(*elem_ty, map);
+                let specialized_len = self.specialize_const(*len, map);
                 self.tcx
                     .mk_ty(TyKind::Array(specialized_elem_ty, specialized_len))
             }
             TyKind::Slice(elem_ty) => {
-                let specialized_elem_ty = self.specialize_generic_argument_type(elem_ty, map);
+                let specialized_elem_ty = self.specialize_generic_argument_type(*elem_ty, map);
                 self.tcx.mk_slice(specialized_elem_ty)
             }
             TyKind::RawPtr(rustc_middle::ty::TypeAndMut { ty, mutbl }) => {
-                let specialized_ty = self.specialize_generic_argument_type(ty, map);
+                let specialized_ty = self.specialize_generic_argument_type(*ty, map);
                 self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
                     ty: specialized_ty,
                     mutbl: *mutbl,
                 })
             }
             TyKind::Ref(region, ty, mutbl) => {
-                let specialized_ty = self.specialize_generic_argument_type(ty, map);
+                let specialized_ty = self.specialize_generic_argument_type(*ty, map);
                 self.tcx.mk_ref(
-                    region,
+                    *region,
                     rustc_middle::ty::TypeAndMut {
                         ty: specialized_ty,
                         mutbl: *mutbl,
@@ -1173,7 +1175,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 self.tcx.mk_dynamic(
                     self.tcx
                         .mk_poly_existential_predicates(specialized_predicates),
-                    region,
+                    *region,
                 )
             }
             TyKind::Closure(def_id, substs) => {

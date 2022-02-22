@@ -3,8 +3,12 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use std::io::Write;
+use std::rc::Rc;
+
 use log::debug;
 use log_derive::{logfn, logfn_inputs};
+
 use mirai_annotations::assume_unreachable;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
@@ -14,8 +18,6 @@ use rustc_middle::ty;
 use rustc_middle::ty::print::{FmtPrinter, Printer};
 use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
 use rustc_middle::ty::{DefIdTree, FloatTy, IntTy, ProjectionTy, Ty, TyCtxt, TyKind, UintTy};
-use std::io::Write;
-use std::rc::Rc;
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
 /// The location is obtained by looking at the contents of the environmental variables that were
@@ -52,7 +54,7 @@ pub fn is_higher_order_function(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
     if fn_ty.is_fn() {
         let fn_sig = fn_ty.fn_sig(tcx).skip_binder();
         for param_ty in fn_sig.inputs() {
-            if contains_function(param_ty, tcx) {
+            if contains_function(*param_ty, tcx) {
                 return true;
             }
         }
@@ -267,11 +269,11 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         Str => str.push_str("str"),
         Array(ty, _) => {
             str.push_str("array_");
-            append_mangled_type(str, ty, tcx);
+            append_mangled_type(str, *ty, tcx);
         }
         Slice(ty) => {
             str.push_str("slice_");
-            append_mangled_type(str, ty, tcx);
+            append_mangled_type(str, *ty, tcx);
         }
         RawPtr(ty_and_mut) => {
             str.push_str("pointer_");
@@ -286,13 +288,13 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
             if *mutability == rustc_hir::Mutability::Mut {
                 str.push_str("mut_");
             }
-            append_mangled_type(str, ty, tcx);
+            append_mangled_type(str, *ty, tcx);
         }
         FnPtr(poly_fn_sig) => {
             let fn_sig = poly_fn_sig.skip_binder();
             str.push_str("fn_ptr_");
             for arg_type in fn_sig.inputs() {
-                append_mangled_type(str, arg_type, tcx);
+                append_mangled_type(str, *arg_type, tcx);
                 str.push('_');
             }
             append_mangled_type(str, fn_sig.output(), tcx);

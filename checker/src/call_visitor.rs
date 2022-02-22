@@ -3,16 +3,18 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use std::collections::HashMap;
+use std::fmt::{Debug, Formatter, Result};
+use std::rc::Rc;
+
 use log_derive::*;
+
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, SubstsRef};
 use rustc_middle::ty::{Ty, TyKind, UintTy};
 use rustc_target::abi::VariantIdx;
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter, Result};
-use std::rc::Rc;
 
 use crate::abstract_value::{AbstractValue, AbstractValueTrait};
 use crate::block_visitor::BlockVisitor;
@@ -1204,7 +1206,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     let arg_val = self
                         .block_visitor
                         .bv
-                        .lookup_path_and_refine_result(arg_path.clone(), t);
+                        .lookup_path_and_refine_result(arg_path.clone(), *t);
                     (arg_path, arg_val)
                 })
                 .collect();
@@ -1476,7 +1478,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     self.block_visitor.bv.current_span,
                     format!(
                         "the macro {} expects its first argument to be a reference to a non-reference value",
-                        if checking_presence { "has_tag! "} else { "does_not_have_tag!" },
+                        if checking_presence { "has_tag! " } else { "does_not_have_tag!" },
                     ).as_str(),
                 );
                 self.block_visitor.bv.emit_diagnostic(warning);
@@ -2529,11 +2531,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     && self.block_visitor.bv.cv.options.diag_level != DiagLevel::Default
                 {
                     let precondition = Precondition {
-                            condition: promotable_entry_condition.logical_not(),
-                            message: Rc::from("incomplete analysis of call because of failure to resolve a nested call"),
-                            provenance: None,
-                            spans: vec![self.block_visitor.bv.current_span.source_callsite()],
-                        };
+                        condition: promotable_entry_condition.logical_not(),
+                        message: Rc::from("incomplete analysis of call because of failure to resolve a nested call"),
+                        provenance: None,
+                        spans: vec![self.block_visitor.bv.current_span.source_callsite()],
+                    };
                     self.block_visitor.bv.preconditions.push(precondition);
                 }
                 return;
@@ -3084,7 +3086,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 // Extract the tag type's first parameter.
                 let tag_propagation_set_rustc_const = match tag_substs_ref[0].unpack() {
                     GenericArgKind::Const(rustc_const)
-                        if *rustc_const.ty.kind() == TyKind::Uint(UintTy::U128) =>
+                        if *rustc_const.ty().kind() == TyKind::Uint(UintTy::U128) =>
                     {
                         rustc_const
                     }
@@ -3092,7 +3094,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         if self.block_visitor.bv.check_for_errors {
                             let warning = self.block_visitor.bv.cv.session.struct_span_warn(
                                 self.block_visitor.bv.current_span,
-                                "the first parameter of the tag type should have type TagPropagationSet"
+                                "the first parameter of the tag type should have type TagPropagationSet",
                             );
                             self.block_visitor.bv.emit_diagnostic(warning);
                         }
@@ -3103,7 +3105,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 // Analyze the tag type's first parameter to obtain a compile-time constant.
                 let tag_propagation_set_value = self
                     .block_visitor
-                    .visit_const(tag_propagation_set_rustc_const);
+                    .visit_const(&tag_propagation_set_rustc_const);
                 if let Expression::CompileTimeConstant(ConstantDomain::U128(data)) =
                     &tag_propagation_set_value.expression
                 {

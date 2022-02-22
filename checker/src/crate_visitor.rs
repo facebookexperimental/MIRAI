@@ -7,6 +7,25 @@
 // 'tcx is the lifetime of the type context created during the lifetime of the after_analysis call back.
 // 'analysis is the life time of the analyze_with_mirai call back that is invoked with the type context.
 
+use std::cell::RefCell;
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::fmt::{Debug, Formatter, Result};
+use std::ops::Deref;
+use std::rc::Rc;
+use std::time::Instant;
+
+use log::*;
+use log_derive::{logfn, logfn_inputs};
+
+use mirai_annotations::*;
+use rustc_errors::{Diagnostic, DiagnosticBuilder};
+use rustc_hir::def_id::{DefId, DefIndex};
+use rustc_middle::mir;
+use rustc_middle::ty::subst::SubstsRef;
+use rustc_middle::ty::{TyCtxt, Unevaluated};
+use rustc_session::Session;
+
 use crate::body_visitor::BodyVisitor;
 use crate::call_graph::CallGraph;
 use crate::constant_domain::ConstantValueCache;
@@ -15,25 +34,8 @@ use crate::known_names::KnownNamesCache;
 use crate::options::Options;
 use crate::summaries::PersistentSummaryCache;
 use crate::tag_domain::Tag;
-use crate::utils;
-
 use crate::type_visitor::TypeCache;
-use log::*;
-use log_derive::{logfn, logfn_inputs};
-use mirai_annotations::*;
-use rustc_errors::{Diagnostic, DiagnosticBuilder};
-use rustc_hir::def_id::{DefId, DefIndex};
-use rustc_middle::mir;
-use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{TyCtxt, Unevaluated};
-use rustc_session::Session;
-use std::cell::RefCell;
-use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter, Result};
-use std::ops::Deref;
-use std::rc::Rc;
-use std::time::Instant;
+use crate::utils;
 
 /// A visitor that takes information gathered by the Rust compiler when compiling a particular
 /// crate and then analyses some of the functions in that crate to see if any of the assertions
@@ -234,7 +236,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                             .literal
                             .const_for_ty()
                             .expect("expected function literal to have type")
-                            .val
+                            .val()
                         {
                             result.push(utils::def_id_display_name(
                                 self.tcx,

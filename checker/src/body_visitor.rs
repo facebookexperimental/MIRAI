@@ -3,10 +3,31 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
+use std::fmt::{Debug, Formatter, Result};
+use std::rc::Rc;
+use std::time::Instant;
+
+use log_derive::*;
+use rpds::HashTrieMap;
+
+use mirai_annotations::*;
+use rustc_errors::DiagnosticBuilder;
+use rustc_hir::def_id::DefId;
+use rustc_middle::mir;
+use rustc_middle::ty::subst::SubstsRef;
+use rustc_middle::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, TypeAndMut, UintTy};
+
 use crate::abstract_value::{self, AbstractValue, AbstractValueTrait};
+use crate::block_visitor::BlockVisitor;
+use crate::call_visitor::CallVisitor;
 use crate::constant_domain::ConstantDomain;
+use crate::crate_visitor::CrateVisitor;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType, LayoutSource};
+use crate::fixed_point_visitor::FixedPointVisitor;
 use crate::options::DiagLevel;
 use crate::path::{Path, PathEnum, PathSelector};
 use crate::path::{PathRefinement, PathRoot};
@@ -15,27 +36,8 @@ use crate::summaries;
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
 use crate::type_visitor::{self, TypeCache, TypeVisitor};
-use crate::{k_limits, utils};
-
-use crate::block_visitor::BlockVisitor;
-use crate::call_visitor::CallVisitor;
-use crate::crate_visitor::CrateVisitor;
-use crate::fixed_point_visitor::FixedPointVisitor;
 use crate::z3_solver::Z3Solver;
-use log_derive::*;
-use mirai_annotations::*;
-use rpds::HashTrieMap;
-use rustc_errors::DiagnosticBuilder;
-use rustc_hir::def_id::DefId;
-use rustc_middle::mir;
-use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, TypeAndMut, UintTy};
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
-use std::fmt::{Debug, Formatter, Result};
-use std::rc::Rc;
-use std::time::Instant;
+use crate::{k_limits, utils};
 
 /// Holds the state for the function body visitor.
 pub struct BodyVisitor<'analysis, 'compilation, 'tcx> {
@@ -946,7 +948,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             if !exit_env_map.contains_key(local_path) {
                 self.promote_reference(
                     environment,
-                    t,
+                    *t,
                     &Path::new_field(heap_root.clone(), 0),
                     &Path::new_field(local_path.clone(), 0),
                 );
@@ -1817,7 +1819,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
                 let source_rustc_type = self
                     .tcx
-                    .mk_ref(region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                    .mk_ref(*region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
                 let s_ref_val = AbstractValue::make_reference(s_path);
                 let source_path = Path::new_computed(s_ref_val);
                 if self.type_visitor.is_slice_pointer(source_rustc_type.kind()) {
@@ -1888,7 +1890,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 }
                 let target_rustc_type = self
                     .tcx
-                    .mk_ref(region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                    .mk_ref(*region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
                 let t_ref_val = AbstractValue::make_reference(t_path);
                 let target_path = Path::new_computed(t_ref_val);
                 if self
@@ -1964,7 +1966,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             }
             let (source_path, source_type) = &source_fields[source_field_index];
             let source_type = self.type_visitor().specialize_generic_argument_type(
-                source_type,
+                *source_type,
                 &self.type_visitor().generic_argument_map,
             );
             let source_path = source_path.canonicalize(&self.current_environment);
@@ -2053,7 +2055,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     let source_path = source_path.canonicalize(&self.current_environment);
                     let source_bits = ExpressionType::from(source_type.kind()).bit_length();
                     let mut next_val =
-                        self.lookup_path_and_refine_result(source_path.clone(), source_type);
+                        self.lookup_path_and_refine_result(source_path.clone(), *source_type);
                     // discard higher order bits that wont fit into the target field
                     next_val = next_val.unsigned_modulo(target_bits_to_write);
                     // shift next value to the left, making space for val in the lower order bits
