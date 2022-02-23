@@ -304,7 +304,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
             str.push_str(&format!("{}", types.len()));
             types.iter().for_each(|t| {
                 str.push('_');
-                append_mangled_type(str, t.expect_ty(), tcx);
+                append_mangled_type(str, t, tcx);
             });
         }
         Param(param_ty) => {
@@ -464,8 +464,8 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
         | TyKind::Generator(_, gen_args, _)
         | TyKind::Projection(ProjectionTy {
             substs: gen_args, ..
-        })
-        | TyKind::Tuple(gen_args) => are_concrete(gen_args),
+        }) => are_concrete(gen_args),
+        TyKind::Tuple(types) => types.iter().all(|t| is_concrete(t.kind())),
         TyKind::Bound(..)
         | TyKind::Dynamic(..)
         | TyKind::Error(..)

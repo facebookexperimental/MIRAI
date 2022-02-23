@@ -1189,10 +1189,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             checked_assume!(self.actual_argument_types.len() == 2);
             let mut actual_argument_types: Vec<Ty<'tcx>> =
                 if let TyKind::Tuple(tuple_types) = self.actual_argument_types[1].kind() {
-                    tuple_types
-                        .iter()
-                        .map(|gen_arg| gen_arg.expect_ty())
-                        .collect()
+                    tuple_types.iter().collect()
                 } else {
                     assume_unreachable!("expected second type argument to be a tuple type");
                 };

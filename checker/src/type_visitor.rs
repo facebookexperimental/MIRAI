@@ -208,7 +208,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         current_span: rustc_span::Span,
     ) -> ExpressionType {
         match self.get_path_rustc_type(path, current_span).kind() {
-            TyKind::Tuple(types) => ExpressionType::from(types[0].expect_ty().kind()),
+            TyKind::Tuple(types) => ExpressionType::from(types[0].kind()),
             _ => assume_unreachable!(),
         }
     }
@@ -523,8 +523,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                 }
                             }
                             TyKind::Tuple(types) => {
-                                if let Some(gen_arg) = types.get(*ordinal as usize) {
-                                    return gen_arg.expect_ty();
+                                if let Some(ty) = types.get(*ordinal as usize) {
+                                    return *ty;
                                 }
                                 if types.is_empty() {
                                     return self.tcx.types.never;
@@ -1214,10 +1214,10 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 let specialized_types = bound_types.map_bound(map_types);
                 self.tcx.mk_generator_witness(specialized_types)
             }
-            TyKind::Tuple(substs) => self.tcx.mk_tup(
-                self.specialize_substs(substs, map)
+            TyKind::Tuple(types) => self.tcx.mk_tup(
+                types
                     .iter()
-                    .map(|gen_arg| gen_arg.expect_ty()),
+                    .map(|ty| self.specialize_generic_argument_type(ty, map)),
             ),
             TyKind::Opaque(def_id, substs) => self
                 .tcx

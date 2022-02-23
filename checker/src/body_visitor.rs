@@ -1834,13 +1834,14 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     source_fields.push((source_path, source_rustc_type));
                 }
             }
-            TyKind::Tuple(substs) => {
-                let specialized_substs = self
-                    .type_visitor()
-                    .specialize_substs(substs, &self.type_visitor().generic_argument_map);
-                for (i, ty) in specialized_substs.types().enumerate() {
+            TyKind::Tuple(types) => {
+                for (i, ty) in types.iter().enumerate() {
+                    let field_ty = self.type_visitor.specialize_generic_argument_type(
+                        ty,
+                        &self.type_visitor.generic_argument_map,
+                    );
                     let field = Path::new_field(source_path.clone(), i);
-                    source_fields.push((field, ty));
+                    source_fields.push((field, field_ty));
                 }
             }
             _ => {
@@ -1909,13 +1910,14 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     target_fields.push((target_path, target_rustc_type))
                 }
             }
-            TyKind::Tuple(substs) => {
-                let specialized_substs = self
-                    .type_visitor()
-                    .specialize_substs(substs, &self.type_visitor().generic_argument_map);
-                for (i, ty) in specialized_substs.types().enumerate() {
+            TyKind::Tuple(types) => {
+                for (i, ty) in types.iter().enumerate() {
+                    let field_ty = self.type_visitor().specialize_generic_argument_type(
+                        ty,
+                        &self.type_visitor().generic_argument_map,
+                    );
                     let field = Path::new_field(target_path.clone(), i);
-                    target_fields.push((field, ty));
+                    target_fields.push((field, field_ty));
                 }
             }
             _ => {
