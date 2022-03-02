@@ -45,7 +45,7 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub def_id: DefId,
     pub mir: &'tcx mir::Body<'tcx>,
-    pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
+    pub buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation, ()>>,
     pub active_calls_map: &'analysis mut HashMap<DefId, u64>,
 
     pub already_reported_errors_for_call_to: HashSet<Rc<AbstractValue>>,
@@ -87,7 +87,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     pub fn new(
         crate_visitor: &'analysis mut CrateVisitor<'compilation, 'tcx>,
         def_id: DefId,
-        buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation>>,
+        buffered_diagnostics: &'analysis mut Vec<DiagnosticBuilder<'compilation, ()>>,
         active_calls_map: &'analysis mut HashMap<DefId, u64>,
         type_cache: Rc<RefCell<TypeCache<'tcx>>>,
     ) -> BodyVisitor<'analysis, 'compilation, 'tcx> {
@@ -312,7 +312,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     /// Buffering diagnostics gives us the chance to sort them before printing them out,
     /// which is desirable for tools that compare the diagnostics from one run of MIRAI with another.
     #[logfn_inputs(TRACE)]
-    pub fn emit_diagnostic(&mut self, mut diagnostic_builder: DiagnosticBuilder<'compilation>) {
+    pub fn emit_diagnostic(&mut self, diagnostic_builder: DiagnosticBuilder<'compilation, ()>) {
         if (self.treat_as_foreign || !self.def_id.is_local())
             && !matches!(self.cv.options.diag_level, DiagLevel::Paranoid)
         {

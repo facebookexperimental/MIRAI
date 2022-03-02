@@ -1360,7 +1360,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             // Check if the tagged value has a pointer type (e.g., a reference).
             // Emit an warning message if so.
             if self.block_visitor.bv.check_for_errors && source_rustc_type.is_any_ptr() {
-                let warning = self.block_visitor.bv.cv.session.struct_span_err(
+                let warning = self.block_visitor.bv.cv.session.struct_span_warn(
                     self.block_visitor.bv.current_span,
                     "the macro add_tag! expects its argument to be a reference to a non-reference value",
                 );
