@@ -1189,10 +1189,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             checked_assume!(self.actual_argument_types.len() == 2);
             let mut actual_argument_types: Vec<Ty<'tcx>> =
                 if let TyKind::Tuple(tuple_types) = self.actual_argument_types[1].kind() {
-                    tuple_types
-                        .iter()
-                        .map(|gen_arg| gen_arg.expect_ty())
-                        .collect()
+                    tuple_types.iter().collect()
                 } else {
                     assume_unreachable!("expected second type argument to be a tuple type");
                 };
@@ -1363,7 +1360,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             // Check if the tagged value has a pointer type (e.g., a reference).
             // Emit an warning message if so.
             if self.block_visitor.bv.check_for_errors && source_rustc_type.is_any_ptr() {
-                let warning = self.block_visitor.bv.cv.session.struct_span_err(
+                let warning = self.block_visitor.bv.cv.session.struct_span_warn(
                     self.block_visitor.bv.current_span,
                     "the macro add_tag! expects its argument to be a reference to a non-reference value",
                 );

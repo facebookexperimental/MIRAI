@@ -3022,11 +3022,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .update_value_at(target_path, AbstractValue::make_reference(str_path));
                 &[]
             }
-            TyKind::Tuple(substs) => {
+            TyKind::Tuple(types) => {
                 let mut bytes_left_deserialize = bytes;
-                for (i, subst) in substs.iter().enumerate() {
+                for (i, field_ty) in types.iter().enumerate() {
                     let field_path = Path::new_field(target_path.clone(), i);
-                    let field_ty = subst.expect_ty();
                     bytes_left_deserialize = self.deserialize_constant_bytes(
                         field_path,
                         bytes_left_deserialize,

@@ -44,11 +44,11 @@ use crate::utils;
 // 'compilation is the lifetime of the call to MiraiCallbacks::after_analysis.
 // 'tcx is the lifetime of the closure call that calls analyze_with_mirai, which calls analyze_some_bodies.
 pub struct CrateVisitor<'compilation, 'tcx> {
-    pub buffered_diagnostics: Vec<DiagnosticBuilder<'compilation>>,
+    pub buffered_diagnostics: Vec<DiagnosticBuilder<'compilation, ()>>,
     pub constant_time_tag_cache: Option<Tag>,
     pub constant_time_tag_not_found: bool,
     pub constant_value_cache: ConstantValueCache<'tcx>,
-    pub diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'compilation>>>,
+    pub diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'compilation, ()>>>,
     pub file_name: &'compilation str,
     pub known_names_cache: KnownNamesCache,
     pub options: &'compilation Options,
@@ -173,7 +173,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     /// and collect any diagnostics into the buffer.
     #[logfn(TRACE)]
     fn analyze_body(&mut self, def_id: DefId) {
-        let mut diagnostics: Vec<DiagnosticBuilder<'compilation>> = Vec::new();
+        let mut diagnostics: Vec<DiagnosticBuilder<'compilation, ()>> = Vec::new();
         let mut active_calls_map: HashMap<DefId, u64> = HashMap::new();
         let mut body_visitor = BodyVisitor::new(
             self,
@@ -255,29 +255,31 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     fn emit_or_check_diagnostics(&mut self) {
         self.session.diagnostic().reset_err_count();
         if self.options.statistics {
-            let mut num_diags = 0;
-            self.diagnostics_for.values_mut().flatten().for_each(|db| {
-                db.cancel();
-                num_diags += 1;
-            });
+            let num_diags = self.diagnostics_for.values().flatten().count();
+            for (_, mut diags) in self.diagnostics_for.drain() {
+                for db in diags.drain(0..) {
+                    db.cancel();
+                }
+            }
             print!("{}, analyzed, {}", self.file_name, num_diags);
         } else if self.test_run {
             let mut expected_errors = expected_errors::ExpectedErrors::new(self.file_name);
             let mut diags = vec![];
-            self.diagnostics_for.values_mut().flatten().for_each(|db| {
-                db.cancel();
-                db.clone().buffer(&mut diags)
-            });
+            for (_, mut dbs) in self.diagnostics_for.drain() {
+                for db in dbs.drain(0..) {
+                    db.buffer(&mut diags);
+                }
+            }
             if !expected_errors.check_messages(diags) {
                 self.session
                     .fatal(&format!("test failed: {}", self.file_name));
             }
         } else {
-            let mut diagnostics: Vec<&mut DiagnosticBuilder<'_>> =
+            let mut diagnostics: Vec<&mut DiagnosticBuilder<'_, ()>> =
                 self.diagnostics_for.values_mut().flatten().collect();
             fn compare_diagnostics<'a>(
-                x: &&mut DiagnosticBuilder<'a>,
-                y: &&mut DiagnosticBuilder<'a>,
+                x: &&mut DiagnosticBuilder<'a, ()>,
+                y: &&mut DiagnosticBuilder<'a, ()>,
             ) -> Ordering {
                 let xd: &Diagnostic = x.deref();
                 let yd: &Diagnostic = y.deref();
@@ -290,7 +292,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                 }
             }
             diagnostics.sort_by(compare_diagnostics);
-            fn emit(db: &mut DiagnosticBuilder<'_>) {
+            fn emit(db: &mut DiagnosticBuilder<'_, ()>) {
                 db.emit();
             }
             diagnostics.into_iter().for_each(emit);
