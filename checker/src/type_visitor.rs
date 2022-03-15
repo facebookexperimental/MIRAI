@@ -946,7 +946,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// Returns the size in bytes (including padding) of an instance of the given type.
     pub fn get_type_size(&self, ty: Ty<'tcx>) -> u64 {
         if let Ok(ty_and_layout) = self.layout_of(ty) {
-            ty_and_layout.layout.size.bytes()
+            ty_and_layout.layout.size().bytes()
         } else {
             0
         }
@@ -956,7 +956,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     pub fn get_type_size_and_alignment(&self, ty: Ty<'tcx>) -> (u128, u128) {
         if let Ok(ty_and_layout) = self.layout_of(ty) {
             (
-                ty_and_layout.layout.size.bytes() as u128,
+                ty_and_layout.layout.size().bytes() as u128,
                 ty_and_layout.align.pref.bytes() as u128,
             )
         } else {

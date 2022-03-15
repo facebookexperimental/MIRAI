@@ -2274,7 +2274,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .expect_ty();
         if let Ok(ty_and_layout) = self.type_visitor().layout_of(t) {
             if !ty_and_layout.is_unsized() {
-                return Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
+                return Rc::new((ty_and_layout.layout.size().bytes() as u128).into());
             }
         }
         let path = self.block_visitor.visit_rh_place(
@@ -2318,7 +2318,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .type_visitor()
             .get_dereferenced_type(self.actual_argument_types[0]);
         if let Ok(ty_and_layout) = self.type_visitor().layout_of(t) {
-            return Rc::new((ty_and_layout.layout.align.abi.bytes() as u128).into());
+            return Rc::new((ty_and_layout.layout.align().abi.bytes() as u128).into());
         }
         // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).
         let path = self.block_visitor.visit_rh_place(
@@ -2357,7 +2357,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             if let Ok(ty_and_layout) = self.type_visitor().layout_of(elem_t) {
                 if !ty_and_layout.is_unsized() {
                     let elem_size_val: Rc<AbstractValue> =
-                        Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
+                        Rc::new((ty_and_layout.layout.size().bytes() as u128).into());
                     let length_path = Path::new_length(self.actual_args[0].0.clone());
                     let len_val = self.block_visitor.bv.lookup_path_and_refine_result(
                         length_path,
@@ -2375,7 +2375,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .expect_ty();
         if let Ok(ty_and_layout) = self.type_visitor().layout_of(t) {
             if !ty_and_layout.is_unsized() {
-                return Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
+                return Rc::new((ty_and_layout.layout.size().bytes() as u128).into());
             }
         }
         // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).

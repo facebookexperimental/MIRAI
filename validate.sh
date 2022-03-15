@@ -13,7 +13,7 @@ cargo update
 cargo fmt --all
 # Run lint checks
 cargo audit
-cargo clippy --all-features --all-targets -- -D warnings
+cargo clippy --locked --all-features --all-targets -- -D warnings
 # Build mirai (in debug mode) so that we can build the standard contracts
 cargo build
 
@@ -35,7 +35,7 @@ time cargo test
 
 # Install MIRAI into cargo so that we can use optimized binaries to analyze debug binaries built with special flags
 cargo uninstall mirai || true
-cargo install --path ./checker
+cargo install --locked --path ./checker
 
 # Run mirai on itself (using the optimized build in cargo as the bootstrap).
 cargo clean

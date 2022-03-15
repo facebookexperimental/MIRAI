@@ -2224,8 +2224,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let (len, alignment) = if let Ok(ty_and_layout) = self.type_visitor().layout_of(ty) {
             let layout = ty_and_layout.layout;
             (
-                Rc::new((layout.size.bytes() as u128).into()),
-                Rc::new((layout.align.abi.bytes() as u128).into()),
+                Rc::new((layout.size().bytes() as u128).into()),
+                Rc::new((layout.align().abi.bytes() as u128).into()),
             )
         } else {
             let type_index = self.type_visitor().get_index_for(self.bv.tcx.types.u128);
@@ -2468,7 +2468,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 self.type_visitor().layout_of(substs.type_at(0))
                             {
                                 if !ty_and_layout.is_unsized() {
-                                    let size_of_t = ty_and_layout.layout.size.bytes();
+                                    let size_of_t = ty_and_layout.layout.size().bytes();
                                     let min_non_zero_cap: u128 = if size_of_t == 1 {
                                         8
                                     } else if size_of_t <= 1024 {
@@ -3284,7 +3284,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             VariantIdx::from_u32(variant_index)
                         } else {
                             discr_has_data = true;
-                            let fields = &variants[dataful_variant].fields;
+                            let fields = &variants[dataful_variant].fields();
                             checked_assume!(
                                 fields.count() == 1
                                     && fields.offset(0).bytes() == 0
