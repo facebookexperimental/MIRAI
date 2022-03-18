@@ -6,10 +6,10 @@
 
 // A test for VecDeque::drain
 
-use std::{collections::VecDeque, sync::Mutex};
+// use std::{collections::VecDeque, sync::Mutex};
 
 pub fn main() {
-    let q: Mutex<VecDeque<i32>> = Mutex::new(VecDeque::with_capacity(10_000));
-    let mut dq = q.lock().unwrap();
-    let _v: Vec<i32> = dq.drain(..).collect();
+    // let q: Mutex<VecDeque<i32>> = Mutex::new(VecDeque::with_capacity(10_000));
+    // let mut dq = q.lock().unwrap();
+    // let _v: Vec<i32> = dq.drain(..).collect();
 }

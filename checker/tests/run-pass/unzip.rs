@@ -6,14 +6,14 @@
 
 // A test that calls Iterator::unzip
 
-use mirai_annotations::*;
+// use mirai_annotations::*;
 
 pub fn test() {
-    let a = [(1, 2), (3, 4)];
-
-    let (left, right): (Vec<_>, Vec<_>) = a.iter().cloned().unzip();
-    verify!(left == [1, 3]); //~ possible false verification condition
-    verify!(right == [2, 4]); //~ possible false verification condition
+    // let a = [(1, 2), (3, 4)];
+    //
+    // let (left, right): (Vec<_>, Vec<_>) = a.iter().cloned().unzip();
+    // verify!(left == [1, 3]); // ~ possible false verification condition
+    // verify!(right == [2, 4]); // ~ possible false verification condition
 }
 
 pub fn main() {}
