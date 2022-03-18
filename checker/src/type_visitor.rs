@@ -589,8 +589,8 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                                     t = self.get_field_type(def, substs, 0);
                                     continue;
                                 }
-                                if *ordinal < def.variants.len() {
-                                    let variant = &def.variants[VariantIdx::new(*ordinal)];
+                                if *ordinal < def.variants().len() {
+                                    let variant = &def.variants()[VariantIdx::new(*ordinal)];
                                     let field_tys =
                                         variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
                                     return self.tcx.mk_tup(field_tys);
@@ -694,7 +694,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
         substs: SubstsRef<'tcx>,
         ordinal: usize,
     ) -> Ty<'tcx> {
-        for variant in &def.variants {
+        for variant in def.variants().iter() {
             if ordinal < variant.fields.len() {
                 let field = &variant.fields[ordinal];
                 let ft = field.ty(self.tcx, substs);
@@ -910,18 +910,18 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                 }
                 mir::ProjectionElem::Downcast(_, ordinal) => {
                     if let TyKind::Adt(def, substs) = base_ty.kind() {
-                        if ordinal.index() >= def.variants.len() {
+                        if ordinal.index() >= def.variants().len() {
                             debug!(
                                 "illegally down casting to index {} of {:?} at {:?}",
                                 ordinal.index(),
                                 base_ty,
                                 current_span
                             );
-                            let variant = &def.variants.iter().last().unwrap();
+                            let variant = &def.variants().iter().last().unwrap();
                             let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
                             return self.tcx.mk_tup(field_tys);
                         }
-                        let variant = &def.variants[*ordinal];
+                        let variant = &def.variants()[*ordinal];
                         let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
                         return self.tcx.mk_tup(field_tys);
                     } else if let TyKind::Generator(def_id, substs, ..) = base_ty.kind() {
@@ -946,7 +946,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     /// Returns the size in bytes (including padding) of an instance of the given type.
     pub fn get_type_size(&self, ty: Ty<'tcx>) -> u64 {
         if let Ok(ty_and_layout) = self.layout_of(ty) {
-            ty_and_layout.layout.size.bytes()
+            ty_and_layout.layout.size().bytes()
         } else {
             0
         }
@@ -956,7 +956,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
     pub fn get_type_size_and_alignment(&self, ty: Ty<'tcx>) -> (u128, u128) {
         if let Ok(ty_and_layout) = self.layout_of(ty) {
             (
-                ty_and_layout.layout.size.bytes() as u128,
+                ty_and_layout.layout.size().bytes() as u128,
                 ty_and_layout.align.pref.bytes() as u128,
             )
         } else {
@@ -982,9 +982,9 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
 
     pub fn remove_transparent_wrapper(&self, ty: Ty<'tcx>) -> Ty<'tcx> {
         if let TyKind::Adt(def, substs) = ty.kind() {
-            if def.repr.transparent() {
+            if def.repr().transparent() {
                 let variant_0 = VariantIdx::from_u32(0);
-                let v = &def.variants[variant_0];
+                let v = &def.variants()[variant_0];
                 let non_zst_field = v.fields.iter().find(|field| {
                     let field_ty = self.tcx.type_of(field.did);
                     let is_zst = self
@@ -1068,7 +1068,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                     if projection_trait == self.tcx.lang_items().pointee_trait() {
                         assume!(!specialized_substs.is_empty());
                         if let GenericArgKind::Type(ty) = specialized_substs[0].unpack() {
-                            return ty.ptr_metadata_ty(self.tcx, |ty| ty);
+                            return ty.ptr_metadata_ty(self.tcx, |ty| ty).0;
                         }
                     } else if projection_trait == self.tcx.lang_items().discriminant_kind_trait() {
                         assume!(!specialized_substs.is_empty());
@@ -1088,7 +1088,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
             return gen_arg_type;
         }
         match gen_arg_type.kind() {
-            TyKind::Adt(def, substs) => self.tcx.mk_adt(def, self.specialize_substs(substs, map)),
+            TyKind::Adt(def, substs) => self.tcx.mk_adt(*def, self.specialize_substs(substs, map)),
             TyKind::Array(elem_ty, len) => {
                 let specialized_elem_ty = self.specialize_generic_argument_type(*elem_ty, map);
                 let specialized_len = self.specialize_const(*len, map);
@@ -1250,7 +1250,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
 
 pub fn is_transparent_wrapper(ty: Ty) -> bool {
     return if let TyKind::Adt(def, _) = ty.kind() {
-        def.repr.transparent()
+        def.repr().transparent()
     } else {
         false
     };

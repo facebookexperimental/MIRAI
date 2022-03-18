@@ -1776,8 +1776,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             tcx: TyCtxt<'a>,
             accumulator: &mut Vec<(Rc<Path>, Ty<'a>)>,
         ) {
-            if !def.variants.is_empty() {
-                let variant = def.variants.iter().next().expect("at least one variant");
+            if !def.variants().is_empty() {
+                let variant = def.variants().iter().next().expect("at least one variant");
                 for (i, field) in variant.fields.iter().enumerate() {
                     let field_path = Path::new_field(path.clone(), i);
                     let field_ty = field.ty(tcx, substs);

@@ -10,12 +10,13 @@ for instructions.
 ## Installing Z3
 
 The simplest way to install Z3 on a (non linux) system with brew is just
+
 ```
 brew install z3
 ```
 
-For macOS the binary will have to be placed somewhere where it can be 
-found and dynamically loaded by the Rust runtime. 
+For macOS the binary will have to be placed somewhere where it can be found and dynamically loaded by the Rust runtime.
+
 ```
 cp binaries/libz3.dylib /usr/local/lib
 ```
@@ -30,15 +31,18 @@ cd MIRAI
 ```
 
 Next, make sure that the correct version of rustc is installed, along with some optional components
+
 ```
 ./setup.sh
 ```
 
 Then build and install MIRAI into cargo:
+
 ```
-cargo install  --path ./checker
+cargo install --locked --path ./checker
 ```
 
 ## Contributing to MIRAI
 
-If you want to help develop MIRAI see the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/DeveloperGuide.md)
+If you want to help develop MIRAI see
+the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/DeveloperGuide.md)

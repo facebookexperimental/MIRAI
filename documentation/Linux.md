@@ -10,17 +10,20 @@ for instructions.
 ## Installing Z3
 
 On Fedora install it with
+
 ```
 dnf install z3-devel
 ```
+
 On Ubuntu install it with
+
 ```
 sudo apt-get install libz3-dev
 ```
 
 If you are using a distribution other than Fedora or Ubuntu and neither of the options above are available to you,
-you'll have to figure out for yourself how to install Z3. This [link](https://github.com/Z3Prover/z3) would be
-good place to start looking for help.
+you'll have to figure out for yourself how to install Z3. This [link](https://github.com/Z3Prover/z3) would be good
+place to start looking for help.
 
 If you figure things out, please submit a pull request to update this page.
 
@@ -34,21 +37,25 @@ cd MIRAI
 ```
 
 Next, make sure that the correct version of rustc is installed, along with some optional components
+
 ```
 ./setup.sh
 ```
 
 Then build and install MIRAI into cargo:
+
 ```
-cargo install  --path ./checker
+cargo install --locked --path ./checker
 ```
 
-On Fedora, z3-sys is currently unable to find the `z3.h` header file, so
-you may need to specify the path to it as follows:
+On Fedora, z3-sys is currently unable to find the `z3.h` header file, so you may need to specify the path to it as
+follows:
+
 ```
-CPATH=/usr/include/z3 cargo install  --path ./checker
+CPATH=/usr/include/z3 cargo install --locked --path ./checker
 ```
 
 ## Contributing to MIRAI
 
-If you want to help develop MIRAI see the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/DeveloperGuide.md)
+If you want to help develop MIRAI see
+the [developer guide](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/DeveloperGuide.md)
