@@ -447,7 +447,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .set_path_rustc_type(path.clone(), ty);
 
         if let TyKind::Adt(def, substs) = ty.kind() {
-            if let Some(destructor) = self.bv.tcx.adt_destructor(def.did) {
+            if let Some(destructor) = self.bv.tcx.adt_destructor(def.did()) {
                 let actual_argument_types = vec![self
                     .bv
                     .cv
@@ -457,7 +457,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .type_visitor()
                     .specialize_substs(substs, &self.type_visitor().generic_argument_map);
                 let callee_generic_argument_map = self.type_visitor().get_generic_arguments_map(
-                    def.did,
+                    def.did(),
                     callee_generic_arguments,
                     &actual_argument_types,
                 );
@@ -2224,8 +2224,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let (len, alignment) = if let Ok(ty_and_layout) = self.type_visitor().layout_of(ty) {
             let layout = ty_and_layout.layout;
             (
-                Rc::new((layout.size.bytes() as u128).into()),
-                Rc::new((layout.align.abi.bytes() as u128).into()),
+                Rc::new((layout.size().bytes() as u128).into()),
+                Rc::new((layout.align().abi.bytes() as u128).into()),
             )
         } else {
             let type_index = self.type_visitor().get_index_for(self.bv.tcx.types.u128);
@@ -2468,7 +2468,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 self.type_visitor().layout_of(substs.type_at(0))
                             {
                                 if !ty_and_layout.is_unsized() {
-                                    let size_of_t = ty_and_layout.layout.size.bytes();
+                                    let size_of_t = ty_and_layout.layout.size().bytes();
                                     let min_non_zero_cap: u128 = if size_of_t == 1 {
                                         8
                                     } else if size_of_t <= 1024 {
@@ -2581,13 +2581,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 );
             }
             rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
-                let alloc_len = alloc.len();
+                let alloc_len = alloc.inner().len();
                 let offset_bytes = offset.bytes() as usize;
                 // The Rust compiler should ensure this.
                 assume!(alloc_len > offset_bytes);
                 let num_bytes = alloc_len - offset_bytes;
-                let bytes =
-                    alloc.inspect_with_uninit_and_ptr_outside_interpreter(offset_bytes..alloc_len);
+                let bytes = alloc
+                    .inner()
+                    .inspect_with_uninit_and_ptr_outside_interpreter(offset_bytes..alloc_len);
                 let (heap_val, target_path) = self.bv.get_new_heap_block(
                     Rc::new((num_bytes as u128).into()),
                     Rc::new(1u128.into()),
@@ -2655,12 +2656,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(ptr, _))) => {
                 match self.bv.tcx.get_global_alloc(ptr.provenance) {
                     Some(GlobalAlloc::Memory(alloc)) => {
-                        let alloc_len = alloc.len() as u64;
+                        let alloc_len = alloc.inner().len() as u64;
                         let offset_bytes = ptr.into_parts().1.bytes();
                         // The Rust compiler should ensure this.
                         assume!(alloc_len > offset_bytes);
                         let size = alloc_len - offset_bytes;
                         let bytes = alloc
+                            .inner()
                             .get_bytes(
                                 &self.bv.tcx,
                                 alloc_range(
@@ -2743,6 +2745,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 assume!(*end > *start); // The Rust compiler should ensure this.
                 let size = *end - *start;
                 let bytes = data
+                    .inner()
                     .get_bytes(
                         &self.bv.tcx,
                         alloc_range(
@@ -2827,7 +2830,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     if !discr_has_data {
                         bytes_left_to_deserialize = &bytes_left_to_deserialize[1..];
                     }
-                    let variant = &def.variants[discr_index];
+                    let variant = &def.variants()[discr_index];
                     trace!("deserializing variant {:?}", variant);
                     for (i, field) in variant.fields.iter().enumerate() {
                         trace!("deserializing field({}) {:?}", i, field);
@@ -2850,7 +2853,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             TyKind::Adt(def, substs) => {
                 trace!("deserializing {:?} {:?}", def, substs);
                 let mut bytes_left_to_deserialize = bytes;
-                for variant in def.variants.iter() {
+                for variant in def.variants().iter() {
                     trace!("deserializing variant {:?}", variant);
                     bytes_left_to_deserialize = bytes;
                     for (i, field) in variant.fields.iter().enumerate() {
@@ -3133,7 +3136,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     // Obtains the name of this variant.
                     let name = {
                         let enum_def = ty.ty_adt_def().unwrap();
-                        let variant_def = &enum_def.variants[discr_index];
+                        let variant_def = &enum_def.variants()[discr_index];
                         variant_def.ident(self.bv.tcx)
                     };
                     let name_str = name.as_str();
@@ -3284,7 +3287,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             VariantIdx::from_u32(variant_index)
                         } else {
                             discr_has_data = true;
-                            let fields = &variants[dataful_variant].fields;
+                            let fields = &variants[dataful_variant].fields();
                             checked_assume!(
                                 fields.count() == 1
                                     && fields.offset(0).bytes() == 0
@@ -3467,7 +3470,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         if place.projection.is_empty() {
             match ty.kind() {
                 TyKind::Adt(def, ..) => {
-                    let ty_name = self.bv.cv.known_names_cache.get(self.bv.tcx, def.did);
+                    let ty_name = self.bv.cv.known_names_cache.get(self.bv.tcx, def.did());
                     if ty_name == KnownNames::StdMarkerPhantomData {
                         return Rc::new(PathEnum::PhantomData.into());
                     }
@@ -3552,7 +3555,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         &self.type_visitor().generic_argument_map,
                     );
                     if let TyKind::Adt(def, ..) = ty.kind() {
-                        let ty_name = self.bv.cv.known_names_cache.get(tcx, def.did);
+                        let ty_name = self.bv.cv.known_names_cache.get(tcx, def.did());
                         if ty_name == KnownNames::StdMarkerPhantomData {
                             return Rc::new(PathEnum::PhantomData.into());
                         }
@@ -3590,7 +3593,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::ProjectionElem::Field(field, ..) => {
                 if let TyKind::Adt(def, _) = base_ty.kind() {
                     if def.is_union() {
-                        let variants = &def.variants;
+                        let variants = &def.variants();
                         assume!(variants.len() == 1); // only enums have more than one variant
                         let variant = &variants[variants.last().unwrap()];
                         return PathSelector::UnionField {

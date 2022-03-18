@@ -71,7 +71,7 @@ pub fn contains_function<'tcx>(ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
         return true;
     }
     if let TyKind::Adt(def, substs) = ty.kind() {
-        for variant in def.variants.iter() {
+        for variant in def.variants().iter() {
             for (_, field) in variant.fields.iter().enumerate() {
                 let field_ty = field.ty(tcx, substs);
                 if contains_function(field_ty, tcx) {
@@ -194,7 +194,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
             });
         }
         Adt(def, subs) => {
-            str.push_str(qualified_type_name(tcx, def.did).as_str());
+            str.push_str(qualified_type_name(tcx, def.did()).as_str());
             for sub in *subs {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');

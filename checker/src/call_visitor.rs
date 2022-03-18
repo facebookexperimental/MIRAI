@@ -647,11 +647,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         precondition!(self.actual_argument_types.len() == 1);
         if let TyKind::Ref(_, t, _) = self.actual_argument_types[0].kind() {
             if let TyKind::Adt(def, substs) = t.kind() {
-                if def.variants.is_empty() {
+                if def.variants().is_empty() {
                     return false;
                 }
                 let variant_0 = VariantIdx::from_u32(0);
-                if Some(def.variants[variant_0].def_id)
+                if Some(def.variants()[variant_0].def_id)
                     == self.block_visitor.bv.tcx.lang_items().option_none_variant()
                 {
                     if let Some((place, _)) = &self.destination {
@@ -2274,7 +2274,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .expect_ty();
         if let Ok(ty_and_layout) = self.type_visitor().layout_of(t) {
             if !ty_and_layout.is_unsized() {
-                return Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
+                return Rc::new((ty_and_layout.layout.size().bytes() as u128).into());
             }
         }
         let path = self.block_visitor.visit_rh_place(
@@ -2318,7 +2318,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .type_visitor()
             .get_dereferenced_type(self.actual_argument_types[0]);
         if let Ok(ty_and_layout) = self.type_visitor().layout_of(t) {
-            return Rc::new((ty_and_layout.layout.align.abi.bytes() as u128).into());
+            return Rc::new((ty_and_layout.layout.align().abi.bytes() as u128).into());
         }
         // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).
         let path = self.block_visitor.visit_rh_place(
@@ -2357,7 +2357,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             if let Ok(ty_and_layout) = self.type_visitor().layout_of(elem_t) {
                 if !ty_and_layout.is_unsized() {
                     let elem_size_val: Rc<AbstractValue> =
-                        Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
+                        Rc::new((ty_and_layout.layout.size().bytes() as u128).into());
                     let length_path = Path::new_length(self.actual_args[0].0.clone());
                     let len_val = self.block_visitor.bv.lookup_path_and_refine_result(
                         length_path,
@@ -2375,7 +2375,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .expect_ty();
         if let Ok(ty_and_layout) = self.type_visitor().layout_of(t) {
             if !ty_and_layout.is_unsized() {
-                return Rc::new((ty_and_layout.layout.size.bytes() as u128).into());
+                return Rc::new((ty_and_layout.layout.size().bytes() as u128).into());
             }
         }
         // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).
@@ -3107,12 +3107,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     &tag_propagation_set_value.expression
                 {
                     let tag = Tag {
-                        def_id: tag_adt_def.did.into(),
+                        def_id: tag_adt_def.did().into(),
                         prop_set: *data,
                     };
 
                     // Record the tag if it is the constant-time verification tag.
-                    self.check_and_record_constant_time_verification_tag(tag_adt_def.did, &tag);
+                    self.check_and_record_constant_time_verification_tag(tag_adt_def.did(), &tag);
 
                     Some(tag)
                 } else {

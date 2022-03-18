@@ -256,8 +256,8 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
         self.session.diagnostic().reset_err_count();
         if self.options.statistics {
             let num_diags = self.diagnostics_for.values().flatten().count();
-            for (_, mut diags) in self.diagnostics_for.drain() {
-                for db in diags.drain(0..) {
+            for (_, diags) in self.diagnostics_for.drain() {
+                for db in diags.into_iter() {
                     db.cancel();
                 }
             }
@@ -265,8 +265,8 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
         } else if self.test_run {
             let mut expected_errors = expected_errors::ExpectedErrors::new(self.file_name);
             let mut diags = vec![];
-            for (_, mut dbs) in self.diagnostics_for.drain() {
-                for db in dbs.drain(0..) {
+            for (_, dbs) in self.diagnostics_for.drain() {
+                for db in dbs.into_iter() {
                     db.buffer(&mut diags);
                 }
             }
