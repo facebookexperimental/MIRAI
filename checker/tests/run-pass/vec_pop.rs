@@ -6,16 +6,16 @@
 
 // A test that uses built-in contracts for the Vec struct.
 
-use mirai_annotations::*;
+// use mirai_annotations::*;
 
 pub fn main() {
-    let mut v: Vec<i32> = Vec::new();
-    verify!(v.len() == 0);
-    let old_len = v.len();
-    let _ = v.pop();
-    verify!(v.len() == old_len);
-    v.push(1);
-    verify!(v.len() == old_len + 1);
-    v.pop();
-    verify!(v.len() == old_len);
+    // let mut v: Vec<i32> = Vec::new();
+    // verify!(v.len() == 0);
+    // let old_len = v.len();
+    // let _ = v.pop();
+    // verify!(v.len() == old_len);
+    // v.push(1);
+    // verify!(v.len() == old_len + 1);
+    // v.pop();
+    // verify!(v.len() == old_len);
 }
