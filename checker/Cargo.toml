@@ -40,8 +40,8 @@ itertools = "*"
 rand = "*"
 rpds = { version = "*", features = ["serde"] }
 rustc_tools_util = "*"
-serde = {version = "*", features = ["derive", "alloc", "rc"] }
-tar = "0.4.36"
+serde = { version = "*", features = ["derive", "alloc", "rc"] }
+tar = "*"
 sled = "*"
 shellwords = "*"
 tempfile = "*"
@@ -60,4 +60,4 @@ walkdir = "*"
 # or similar, and to integration_tests.rs (search for extern_deps there).
 # We set the dep to a specific revision so we don't get paths as above not longer working after update of the repo
 # and the Cargo.lock.
-contracts = {version = "0.6.0", features = ["mirai_assertions"]}
+contracts = { version = "0.6.0", features = ["mirai_assertions"] }
