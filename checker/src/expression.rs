@@ -3,19 +3,22 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::abstract_value::{AbstractValue, AbstractValueTrait};
-use crate::constant_domain::ConstantDomain;
-use crate::known_names::KnownNames;
-use crate::path::Path;
-use crate::tag_domain::Tag;
-
-use log_derive::*;
-use mirai_annotations::*;
-use rustc_middle::ty::{FloatTy, IntTy, Ty, TyCtxt, TyKind, TypeAndMut, UintTy};
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
+
+use log_derive::*;
+use serde::{Deserialize, Serialize};
+
+use mirai_annotations::*;
+use rustc_middle::ty::{FloatTy, IntTy, Ty, TyCtxt, TyKind, TypeAndMut, UintTy};
+
+use crate::abstract_value::{AbstractValue, AbstractValueTrait};
+use crate::constant_domain::ConstantDomain;
+use crate::environment::Environment;
+use crate::known_names::KnownNames;
+use crate::path::{Path, PathRoot};
+use crate::tag_domain::Tag;
 
 /// Closely based on the expressions found in MIR.
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -909,6 +912,114 @@ impl Expression {
             Expression::UnknownTagField { .. } => None,
             Expression::Variable { .. } => None,
             Expression::WidenedJoin { .. } => None,
+        }
+    }
+
+    /// Returns true if the given expression is known to have a subcomponent in the given
+    /// environment that is tagged with the given tag. False does not imply the absence of the tag.
+    #[logfn_inputs(TRACE)]
+    pub fn has_tagged_subcomponent(&self, tag: &Tag, env: &Environment) -> bool {
+        match self {
+            Expression::Add { left, right }
+            | Expression::AddOverflows { left, right, .. }
+            | Expression::And { left, right }
+            | Expression::BitAnd { left, right }
+            | Expression::BitOr { left, right }
+            | Expression::BitXor { left, right }
+            | Expression::Div { left, right }
+            | Expression::Equals { left, right }
+            | Expression::GreaterOrEqual { left, right }
+            | Expression::GreaterThan { left, right }
+            | Expression::IntrinsicBinary { left, right, .. }
+            | Expression::LessOrEqual { left, right }
+            | Expression::LessThan { left, right }
+            | Expression::Mul { left, right }
+            | Expression::MulOverflows { left, right, .. }
+            | Expression::Ne { left, right }
+            | Expression::Offset { left, right }
+            | Expression::Or { left, right }
+            | Expression::Rem { left, right }
+            | Expression::Shl { left, right }
+            | Expression::ShlOverflows { left, right, .. }
+            | Expression::Shr { left, right, .. }
+            | Expression::ShrOverflows { left, right, .. }
+            | Expression::Sub { left, right }
+            | Expression::SubOverflows { left, right, .. } => {
+                left.expression.has_tagged_subcomponent(tag, env)
+                    || right.expression.has_tagged_subcomponent(tag, env)
+            }
+            Expression::BitNot { operand, .. }
+            | Expression::Cast { operand, .. }
+            | Expression::IntrinsicBitVectorUnary { operand, .. }
+            | Expression::IntrinsicFloatingPointUnary { operand, .. }
+            | Expression::TaggedExpression { operand, .. }
+            | Expression::Transmute { operand, .. } => {
+                operand.expression.has_tagged_subcomponent(tag, env)
+            }
+            Expression::Bottom => false,
+
+            Expression::CompileTimeConstant(..) => false,
+            Expression::ConditionalExpression {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                condition.expression.has_tagged_subcomponent(tag, env)
+                    || consequent.expression.has_tagged_subcomponent(tag, env)
+                    || alternate.expression.has_tagged_subcomponent(tag, env)
+            }
+            Expression::HeapBlock { .. } => false,
+            Expression::HeapBlockLayout {
+                length, alignment, ..
+            } => {
+                length.expression.has_tagged_subcomponent(tag, env)
+                    || alignment.expression.has_tagged_subcomponent(tag, env)
+            }
+            Expression::InitialParameterValue { path, .. } => {
+                path.has_tagged_subcomponent(tag, env)
+            }
+            Expression::Join { left, right, .. } => {
+                left.expression.has_tagged_subcomponent(tag, env)
+                    || right.expression.has_tagged_subcomponent(tag, env)
+            }
+            Expression::Memcmp {
+                left,
+                right,
+                length,
+            } => {
+                left.expression.has_tagged_subcomponent(tag, env)
+                    || right.expression.has_tagged_subcomponent(tag, env)
+                    || length.expression.has_tagged_subcomponent(tag, env)
+            }
+            Expression::Neg { operand }
+            | Expression::LogicalNot { operand }
+            | Expression::UnknownTagCheck { operand, .. } => {
+                operand.expression.has_tagged_subcomponent(tag, env)
+            }
+            Expression::Reference(path) => path.has_tagged_subcomponent(tag, env),
+            Expression::Switch {
+                discriminator,
+                cases,
+                default,
+            } => {
+                discriminator.expression.has_tagged_subcomponent(tag, env)
+                    || default.expression.has_tagged_subcomponent(tag, env)
+                    || cases
+                        .iter()
+                        .any(|(_, v)| v.expression.has_tagged_subcomponent(tag, env))
+            }
+            Expression::Top => true,
+            Expression::UninterpretedCall { .. } => true,
+            Expression::UnknownModelField { path, default } => {
+                path.has_tagged_subcomponent(tag, env)
+                    || default.expression.has_tagged_subcomponent(tag, env)
+            }
+            Expression::UnknownTagField { path } | Expression::Variable { path, .. } => {
+                path.has_tagged_subcomponent(tag, env)
+            }
+            Expression::WidenedJoin { operand, .. } => {
+                operand.expression.has_tagged_subcomponent(tag, env)
+            }
         }
     }
 

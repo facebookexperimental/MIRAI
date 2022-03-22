@@ -4,6 +4,19 @@
 // LICENSE file in the root directory of this source tree.
 
 #![allow(clippy::declare_interior_mutable_const)]
+
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::fmt::{Debug, Formatter, Result};
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::rc::Rc;
+
+use log_derive::{logfn, logfn_inputs};
+use serde::{Deserialize, Serialize};
+
+use mirai_annotations::*;
+
 use crate::bool_domain::BoolDomain;
 use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
@@ -11,20 +24,10 @@ use crate::expression::Expression::{ConditionalExpression, Join};
 use crate::expression::{Expression, ExpressionType};
 use crate::interval_domain::{self, IntervalDomain};
 use crate::k_limits;
+use crate::known_names::KnownNames;
 use crate::path::{Path, PathEnum, PathSelector};
 use crate::path::{PathRefinement, PathRoot};
 use crate::tag_domain::{Tag, TagDomain};
-
-use crate::known_names::KnownNames;
-use log_derive::{logfn, logfn_inputs};
-use mirai_annotations::*;
-use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
-use std::collections::HashSet;
-use std::fmt::{Debug, Formatter, Result};
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::rc::Rc;
 
 // See https://github.com/facebookexperimental/MIRAI/blob/main/documentation/AbstractValues.md.
 
@@ -292,8 +295,7 @@ impl AbstractValue {
         }
     }
 
-    #[logfn_inputs(DEBUG)]
-    #[logfn(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn make_presence_check(&self, tag: Tag) -> Rc<AbstractValue> {
         let exp_tag_prop_opt = self.expression.get_tag_propagation();
 
@@ -311,14 +313,24 @@ impl AbstractValue {
                 return Rc::new(FALSE);
             }
 
-            Expression::InitialParameterValue { .. }
-            | Expression::UnknownModelField { .. }
-            | Expression::UnknownTagField { .. }
-            | Expression::Variable { .. } => {
+            Expression::InitialParameterValue { path, .. }
+            | Expression::UnknownModelField { path, .. }
+            | Expression::UnknownTagField { path, .. }
+            | Expression::Variable { path, .. } => {
                 let expression_size = self.expression_size.saturating_add(1);
+                let root = path.get_path_root();
+                let operand =
+                    if root != path && tag.is_propagated_by(TagPropagation::SuperComponent) {
+                        AbstractValue::make_typed_unknown(
+                            ExpressionType::NonPrimitive,
+                            Path::new_tag_field(root.clone()),
+                        )
+                    } else {
+                        Rc::new(self.clone())
+                    };
                 return AbstractValue::make_from(
                     Expression::UnknownTagCheck {
-                        operand: Rc::new(self.clone()),
+                        operand,
                         tag,
                         checking_presence: true,
                     },
@@ -364,7 +376,7 @@ impl AbstractValue {
                     Rc::new(TRUE)
                 } else {
                     operand.make_presence_check(tag)
-                }
+                };
             }
 
             Expression::WidenedJoin { operand, .. } => return operand.make_presence_check(tag),
@@ -532,7 +544,7 @@ impl AbstractValue {
                     Rc::new(FALSE)
                 } else {
                     operand.make_absence_check(tag)
-                }
+                };
             }
 
             Expression::WidenedJoin { operand, .. } => return operand.make_absence_check(tag),

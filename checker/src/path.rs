@@ -3,22 +3,25 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-use crate::abstract_value::{self, AbstractValue, AbstractValueTrait};
-use crate::constant_domain::ConstantDomain;
-use crate::environment::Environment;
-use crate::expression::{Expression, ExpressionType};
-use crate::{k_limits, utils};
-
-use log_derive::*;
-use mirai_annotations::*;
-use rustc_hir::def_id::DefId;
-use rustc_middle::ty::{Ty, TyCtxt};
-use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+
+use log_derive::*;
+use serde::{Deserialize, Serialize};
+
+use mirai_annotations::*;
+use rustc_hir::def_id::DefId;
+use rustc_middle::ty::{Ty, TyCtxt};
+
+use crate::abstract_value::{self, AbstractValue, AbstractValueTrait};
+use crate::constant_domain::ConstantDomain;
+use crate::environment::Environment;
+use crate::expression::{Expression, ExpressionType};
+use crate::tag_domain::Tag;
+use crate::{k_limits, utils};
 
 /// During join and widen operations, paths are copied from one environment to another, causing them
 /// to get rehashed. This turns out to be expensive, so for this case we cache the hash to avoid
@@ -217,6 +220,7 @@ impl Debug for PathEnum {
 pub trait PathRoot: Sized {
     fn get_path_root(&self) -> &Self;
     fn get_parameter_root_ordinal(&self) -> Option<usize>;
+    fn has_tagged_subcomponent(&self, tag: &Tag, env: &Environment) -> bool;
     fn is_rooted_by(&self, root: &Rc<Path>) -> bool;
     fn is_rooted_by_non_local_structure(&self) -> bool;
     fn is_rooted_by_zeroed_heap_block(&self) -> bool;
@@ -242,6 +246,24 @@ impl PathRoot for Rc<Path> {
         } else {
             None
         }
+    }
+
+    /// Returns true if the given expression is known to have a subcomponent in the given
+    /// environment that is tagged with the given tag. False does not imply the absence of the tag.
+    #[logfn_inputs(TRACE)]
+    fn has_tagged_subcomponent(&self, tag: &Tag, env: &Environment) -> bool {
+        let root = self.get_path_root();
+        for (p, v) in env.value_map.iter() {
+            if p != root && !p.is_rooted_by(root) {
+                continue;
+            }
+            if v.has_tag(tag).as_bool_if_known().unwrap_or(false)
+                || v.expression.has_tagged_subcomponent(tag, env)
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// True if path qualifies root, or another qualified path rooted by root.

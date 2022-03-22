@@ -1346,7 +1346,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         let span = self.bv.current_span.source_callsite();
                         let warning = self.bv.cv.session.struct_span_warn(
                             span,
-                            format!("the {} may have a {} tag", value_name, tag_name).as_str(),
+                            format!(
+                                "the {} {} have a {} tag",
+                                value_name,
+                                if checking_presence { "may not" } else { "may" },
+                                tag_name
+                            )
+                            .as_str(),
                         );
                         self.bv.emit_diagnostic(warning);
                     } else if promotable_entry_condition.is_none()
@@ -1395,8 +1401,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     let precondition = Precondition {
                         condition,
                         message: Rc::from(format!(
-                            "the {} may have a {} tag",
-                            value_name, tag_name
+                            "the {} {} have a {} tag",
+                            value_name,
+                            if checking_presence { "may not" } else { "may" },
+                            tag_name
                         )),
                         provenance: None,
                         spans: vec![self.bv.current_span.source_callsite()],
