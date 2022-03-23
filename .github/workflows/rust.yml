@@ -100,3 +100,31 @@ jobs:
       - name: Run MIRAI on MIRAI
         run: |
           cargo mirai
+
+  mirai_on_mirai_windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          profile: minimal
+          components: clippy, rustc-dev, llvm-tools-preview
+
+      - name: Use static linking
+        run: |
+          cp checker/Cargo.toml.windows checker/Cargo.toml 
+
+      - name: Install MIRAI
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path ./checker
+
+      - name: Run MIRAI on MIRAI
+        run: |
+          cargo mirai
+

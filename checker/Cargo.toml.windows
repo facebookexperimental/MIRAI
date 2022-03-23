@@ -45,7 +45,7 @@ tar = "*"
 sled = "*"
 shellwords = "*"
 tempfile = "*"
-z3-sys = "*"
+z3-sys = { version = "*", features = ["static-link-z3"] }
 regex = "*"
 petgraph = "*"
 serde_json = "*"
