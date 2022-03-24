@@ -1549,11 +1549,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
 
             // If the tag can be propagated from a sub-component to its container
             if tag.is_propagated_by(TagPropagation::SuperComponent) {
+                let root = source_path.get_path_root();
                 let value_map = self.block_visitor.bv.current_environment.value_map.clone();
-                for (_, value) in value_map
-                    .iter()
-                    .filter(|(p, _)| p.is_rooted_by(&source_path))
-                {
+                for (_, value) in value_map.iter().filter(|(p, _)| p.is_rooted_by(root)) {
                     let mut value = value.clone();
                     if let Expression::Reference(p) = &value.expression {
                         if let PathEnum::HeapBlock { .. } = &p.value {
@@ -2698,6 +2696,29 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 }
             } else {
                 warn = true;
+            }
+
+            // Is the precondition a tag check for a tag that flows from a subcomponent to the
+            // container?
+            if let Expression::UnknownTagCheck {
+                operand,
+                tag,
+                checking_presence,
+            } = &refined_condition.expression
+            {
+                if tag.is_propagated_by(TagPropagation::SuperComponent) {
+                    // Look at sub components. If components that are located via
+                    // pointers are tagged, those tags will not have propagated to here
+                    // because the pointers are unidirectional.
+                    if *checking_presence
+                        && operand.expression.has_tagged_subcomponent(
+                            tag,
+                            &self.block_visitor.bv.current_environment,
+                        )
+                    {
+                        continue;
+                    }
+                }
             }
 
             // If the current function is not an analysis root, promote the precondition, subject to a k-limit.
