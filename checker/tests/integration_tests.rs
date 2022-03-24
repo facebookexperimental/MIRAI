@@ -16,29 +16,31 @@
 #![feature(box_syntax)]
 
 extern crate mirai;
+extern crate rayon;
 extern crate rustc_ast;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
-extern crate rustc_rayon;
 extern crate tempfile;
 
-use mirai::call_graph::{CallGraphConfig, CallGraphReduction, DatalogBackend, DatalogConfig};
-use mirai::callbacks;
-use mirai::options::{DiagLevel, Options};
-use mirai::utils;
-use mirai_annotations::{assume, unrecoverable};
-use regex::Regex;
-use rustc_rayon::iter::IntoParallelIterator;
-use rustc_rayon::iter::ParallelIterator;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::read_to_string;
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
+use regex::Regex;
+use serde::Deserialize;
 use tempfile::TempDir;
 use walkdir::WalkDir;
+
+use mirai::call_graph::{CallGraphConfig, CallGraphReduction, DatalogBackend, DatalogConfig};
+use mirai::callbacks;
+use mirai::options::{DiagLevel, Options};
+use mirai::utils;
+use mirai_annotations::{assume, unrecoverable};
 
 // Run the tests in the tests/run-pass directory.
 // Eventually, there will be separate test cases for other directories such as compile-fail.
