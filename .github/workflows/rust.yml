@@ -116,7 +116,7 @@ jobs:
 
       - name: Use static linking
         run: |
-          cp checker/Cargo.toml.windows checker/Cargo.toml 
+          cp checker/Cargo.windows.toml checker/Cargo.toml 
 
       - name: Install MIRAI
         uses: actions-rs/cargo@v1
