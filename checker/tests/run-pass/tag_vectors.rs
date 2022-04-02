@@ -50,7 +50,7 @@ pub mod propagation_for_vectors {
         let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar, SecretTaint);
-        // verify!(has_tag!(&bar[0], SecretTaint));
+        verify!(has_tag!(&bar[0], SecretTaint));
     }
 
     pub fn test5() {
