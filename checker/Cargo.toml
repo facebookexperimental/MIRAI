@@ -42,6 +42,7 @@ rpds = { version = "*", features = ["serde"] }
 rustc_tools_util = "*"
 serde = { version = "*", features = ["derive", "alloc", "rc"] }
 tar = "*"
+rayon = "*"
 sled = "*"
 shellwords = "*"
 tempfile = "*"

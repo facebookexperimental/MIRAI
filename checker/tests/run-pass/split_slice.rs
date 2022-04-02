@@ -6,7 +6,7 @@
 // Bug regression
 
 pub fn foo(v: Vec<i32>) {
-    v.as_slice().split_first();
+    let _ = v.as_slice().split_first();
 }
 
 pub fn main() {}
