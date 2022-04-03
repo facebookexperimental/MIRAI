@@ -2802,7 +2802,11 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         );
 
         // Propagate the tag to all tag fields rooted by value_path.
-        self.propagate_tag_to_tag_fields(value_path, |value| value.add_tag(tag));
+        self.propagate_tag_to_tag_fields(
+            value_path,
+            &|value| value.add_tag(tag),
+            &mut HashSet::new(),
+        );
     }
 
     /// Extract the path and the value of the tag field of the value located at `qualifier`.
@@ -2858,20 +2862,24 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
 
     /// Attach a tag to all tag field paths that are rooted by root_path.
     /// If v is the value at a tag field path, then it is updated to attach_tag(v).
-    fn propagate_tag_to_tag_fields<F>(&mut self, root_path: Rc<Path>, attach_tag: F)
-    where
+    fn propagate_tag_to_tag_fields<F>(
+        &mut self,
+        root_path: Rc<Path>,
+        attach_tag: &F,
+        visited_path_prefixes: &mut HashSet<Rc<Path>>,
+    ) where
         F: Fn(Rc<AbstractValue>) -> Rc<AbstractValue>,
     {
         trace!("propagate_tag_to_tag_fields(root_path: {:?})", root_path);
-        // Record visited prefixes of paths. We need this information to avoid handling the same prefix for multiple times.
-        let mut visited_path_prefixes: HashSet<Rc<Path>> = HashSet::new();
-
         let old_value_map = self.current_environment.value_map.clone();
 
-        for (path, _) in old_value_map
+        for (path, val) in old_value_map
             .iter()
             .filter(|(p, _)| p.is_rooted_by(&root_path))
         {
+            if let Expression::Reference(p) = &val.expression {
+                self.propagate_tag_to_tag_fields(p.clone(), attach_tag, visited_path_prefixes);
+            }
             let mut path_prefix = path;
 
             loop {
