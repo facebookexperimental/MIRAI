@@ -299,7 +299,7 @@ impl PathRoot for Rc<Path> {
 
     /// True if path qualifies an abstract heap block, string or static, or another qualified path
     /// rooted by an abstract heap block, string or static.
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn is_rooted_by_non_local_structure(&self) -> bool {
         match &self.get_path_root().value {
             PathEnum::HeapBlock { .. } | PathEnum::StaticVariable { .. } => true,

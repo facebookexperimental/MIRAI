@@ -18,6 +18,10 @@
 #![feature(core_intrinsics)]
 #![allow(clippy::mutable_key_type)]
 
+#[macro_use]
+extern crate log;
+extern crate rustc_ast;
+extern crate rustc_attr;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_errors;
@@ -28,9 +32,6 @@ extern crate rustc_middle;
 extern crate rustc_session;
 extern crate rustc_span;
 extern crate rustc_target;
-
-#[macro_use]
-extern crate log;
 
 /// If the currently analyzed function has been marked as angelic because was discovered
 /// to do something that cannot be analyzed, or if the time taken to analyze the current

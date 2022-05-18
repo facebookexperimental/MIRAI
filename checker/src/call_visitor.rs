@@ -949,7 +949,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 .bv
                                 .cv
                                 .session
-                                .struct_span_warn(span, msg.as_ref());
+                                .struct_span_warn(span, msg.as_str());
                             self.block_visitor.bv.emit_diagnostic(warning);
                         }
                         return;
@@ -1199,7 +1199,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 .iter()
                 .enumerate()
                 .map(|(i, t)| {
-                    let arg_path = Path::new_field(callee_arg_array_path.clone(), i);
+                    let arg_path = Path::new_field(callee_arg_array_path.clone(), i)
+                        .canonicalize(&self.block_visitor.bv.current_environment);
                     let arg_val = self
                         .block_visitor
                         .bv

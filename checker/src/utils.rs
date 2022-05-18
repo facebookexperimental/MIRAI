@@ -13,7 +13,7 @@ use mirai_annotations::assume_unreachable;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
 use rustc_hir::definitions::{DefPathData, DisambiguatedDefPathData};
-use rustc_hir::{ItemKind, Node};
+use rustc_hir::Node;
 use rustc_middle::ty;
 use rustc_middle::ty::print::{FmtPrinter, Printer};
 use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
@@ -86,44 +86,51 @@ pub fn contains_function<'tcx>(ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
 /// Returns true if the function identified by def_id is a public function.
 #[logfn(TRACE)]
 pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
-    if let Some(node) = tcx.hir().get_if_local(def_id) {
-        match node {
-            Node::Expr(rustc_hir::Expr {
-                kind: rustc_hir::ExprKind::Closure(..),
-                ..
-            }) => {
-                if let Some(parent_def_id) = tcx.parent(def_id) {
-                    is_public(parent_def_id, tcx)
-                } else {
-                    false
+    if tcx.hir().get_if_local(def_id).is_some() {
+        let def_id = def_id.expect_local();
+        match tcx.resolutions(()).visibilities.get(&def_id) {
+            Some(vis) => vis.is_public(),
+            None => {
+                let hir_id = tcx.hir().local_def_id_to_hir_id(def_id);
+                match tcx.hir().get(hir_id) {
+                    Node::Expr(rustc_hir::Expr {
+                        kind: rustc_hir::ExprKind::Closure(..),
+                        ..
+                    })
+                    | Node::Item(rustc_hir::Item {
+                        kind:
+                            rustc_hir::ItemKind::Use(_, rustc_hir::UseKind::ListStem)
+                            | rustc_hir::ItemKind::OpaqueTy(..),
+                        ..
+                    }) => ty::Visibility::Restricted(tcx.parent_module(hir_id).to_def_id())
+                        .is_public(),
+                    Node::ImplItem(..) => {
+                        match tcx.hir().get_by_def_id(tcx.hir().get_parent_item(hir_id)) {
+                            Node::Item(rustc_hir::Item {
+                                kind:
+                                    rustc_hir::ItemKind::Impl(rustc_hir::Impl {
+                                        of_trait: Some(tr),
+                                        ..
+                                    }),
+                                ..
+                            }) => tr
+                                .path
+                                .res
+                                .opt_def_id()
+                                .map_or_else(
+                                    || {
+                                        tcx.sess
+                                            .delay_span_bug(tr.path.span, "trait without a def-id");
+                                        ty::Visibility::Public
+                                    },
+                                    |def_id| tcx.visibility(def_id),
+                                )
+                                .is_public(),
+                            _ => false,
+                        }
+                    }
+                    _ => false,
                 }
-            }
-            Node::Item(item) => match &item.kind {
-                ItemKind::Const(..) | ItemKind::Fn(..) | ItemKind::Static(..) => {
-                    item.vis.node.is_pub()
-                }
-                ItemKind::Impl(item) => item.of_trait.is_some(),
-                _ => {
-                    debug!("def_id is unsupported item kind {:?}", item.kind);
-                    false
-                }
-            },
-            Node::ImplItem(item) => {
-                if item.vis.node.is_pub_restricted() {
-                    false
-                } else if item.vis.node.is_pub() {
-                    true
-                } else if let Some(parent_def_id) = tcx.parent(def_id) {
-                    is_public(parent_def_id, tcx)
-                } else {
-                    false
-                }
-            }
-            Node::TraitItem(..) => true,
-            Node::AnonConst(..) => false,
-            _ => {
-                debug!("def_id is not an item {:?}", node);
-                false
             }
         }
     } else {
@@ -134,11 +141,7 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
 /// Returns true if the function identified by def_id is defined as part of a trait.
 #[logfn(TRACE)]
 pub fn is_trait_method(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
-    if let Some(parent) = tcx.parent(def_id) {
-        tcx.is_trait(parent)
-    } else {
-        false
-    }
+    tcx.is_trait(tcx.parent(def_id))
 }
 
 /// Returns a string that is a valid identifier, made up from the concatenation of
@@ -163,6 +166,7 @@ pub fn argument_types_key_str<'tcx>(
 /// generic trait methods).
 fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) {
     trace!("append_mangled_type {:?} to {}", ty.kind(), str);
+    use std::fmt::Write;
     use TyKind::*;
     match ty.kind() {
         Bool => str.push_str("bool"),
@@ -301,7 +305,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         }
         Tuple(types) => {
             str.push_str("tuple_");
-            str.push_str(&format!("{}", types.len()));
+            write!(str, "{}", types.len()).expect("enough space");
             types.iter().for_each(|t| {
                 str.push('_');
                 append_mangled_type(str, t, tcx);
@@ -323,7 +327,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
             //todo: add cases as the need arises, meanwhile make the need obvious.
             debug!("{:?}", ty);
             debug!("{:?}", ty.kind());
-            str.push_str(&format!("default formatted {:?}", ty))
+            write!(str, "default formatted {:?}", ty).expect("enough space");
         }
     }
 }
@@ -372,20 +376,19 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
         if component.disambiguator != 0 {
             name.push('_');
             if component.data == DefPathData::Impl {
-                if let Some(parent_def_id) = tcx.parent(def_id) {
-                    let parent_def_kind = tcx.def_kind(parent_def_id);
-                    if matches!(
-                        parent_def_kind,
-                        DefKind::Struct
-                            | DefKind::Union
-                            | DefKind::Enum
-                            | DefKind::Variant
-                            | DefKind::TyAlias
-                            | DefKind::Impl
-                    ) {
-                        append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
-                        continue;
-                    }
+                let parent_def_id = tcx.parent(def_id);
+                let parent_def_kind = tcx.def_kind(parent_def_id);
+                if matches!(
+                    parent_def_kind,
+                    DefKind::Struct
+                        | DefKind::Union
+                        | DefKind::Enum
+                        | DefKind::Variant
+                        | DefKind::TyAlias
+                        | DefKind::Impl
+                ) {
+                    append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
+                    continue;
                 }
             }
             let da = component.disambiguator.to_string();
@@ -420,7 +423,8 @@ fn push_component_name(component_data: DefPathData, target: &mut String) {
             CrateRoot => "crate_root",
             Impl => "implement",
             ForeignMod => "foreign",
-            Misc => "miscellaneous",
+            Use => "use",
+            GlobalAsm => "global_asm",
             ClosureExpr => "closure",
             Ctor => "ctor",
             AnonConst => "constant",

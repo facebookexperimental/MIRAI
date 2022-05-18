@@ -16,12 +16,11 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{alloc_range, ConstValue, GlobalAlloc, Scalar};
 use rustc_middle::ty::adjustment::PointerCast;
-use rustc_middle::ty::layout::PrimitiveExt;
 use rustc_middle::ty::subst::{GenericArg, SubstsRef};
 use rustc_middle::ty::{
     Const, ConstKind, FloatTy, IntTy, ParamConst, ScalarInt, Ty, TyKind, UintTy,
 };
-use rustc_target::abi::{TagEncoding, VariantIdx, Variants};
+use rustc_target::abi::{Primitive, TagEncoding, VariantIdx, Variants};
 
 use crate::abstract_value;
 use crate::abstract_value::AbstractValue;
@@ -122,6 +121,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 place,
                 variant_index,
             } => self.visit_set_discriminant(place, *variant_index),
+            mir::StatementKind::Deinit(box place) => {
+                self.visit_deinit(place);
+            }
             mir::StatementKind::StorageLive(local) => self.visit_storage_live(*local),
             mir::StatementKind::StorageDead(local) => self.visit_storage_dead(*local),
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
@@ -201,6 +203,22 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             _ => assume_unreachable!("rustc should ensure this"),
         }
+    }
+
+    /// Deinitializes the place.
+    ///
+    /// This writes `uninit` bytes to the entire place.
+    #[logfn_inputs(TRACE)]
+    fn visit_deinit(&mut self, place: &mir::Place<'tcx>) {
+        // let target_path = self.visit_lh_place(place);
+        // let value_map = self.bv.current_environment.value_map.clone();
+        // for (path, _) in value_map
+        //     .iter()
+        //     .filter(|(p, _)| (**p) == target_path || p.is_rooted_by(&target_path))
+        // {
+        //     self.bv
+        //         .update_value_at(path.clone(), abstract_value::BOTTOM.into());
+        // }
     }
 
     /// Start a live range for the storage of the local.
@@ -3232,11 +3250,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
 
                 // The discriminant tag can be defined explicitly, and it can be negative.
                 // Extracts the tag layout that indicates the tag's sign.
-                let tag_layout = self
-                    .type_visitor()
-                    .layout_of(tag.value.to_int_ty(self.bv.tcx))
-                    .unwrap();
-                discr_signed = tag_layout.abi.is_signed();
+                let tag_primitive = tag.primitive();
+                discr_signed = matches!(tag_primitive, Primitive::Int(_, true));
                 match *tag_encoding {
                     TagEncoding::Direct => {
                         // Truncates the discriminant value to fit into the layout.
@@ -3247,17 +3262,18 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // Currently, Rust encodes the constant `std::cmp::Ordering::Less` as 0xff.
                         // So we need to first sign_extend 0xff and then truncate to fit into discr_layout.
                         let v = if discr_signed {
-                            tag_layout.size.sign_extend(data)
+                            tag_primitive.size(&self.bv.tcx).sign_extend(data)
                         } else {
                             data
                         };
                         // Not clear what is going on here, but we can't return a variant index
                         // if the discriminant value (discr_bits) does not fall in the valid range.
-                        if tag.valid_range.start <= tag.valid_range.end {
-                            discr_bits = u128::clamp(v, tag.valid_range.start, tag.valid_range.end);
+                        let valid_range = tag.valid_range(&self.bv.tcx);
+                        if valid_range.start <= valid_range.end {
+                            discr_bits = u128::clamp(v, valid_range.start, valid_range.end);
                         } else {
                             // No idea why the range specification goes from high to low, but it happens.
-                            discr_bits = u128::clamp(v, tag.valid_range.end, tag.valid_range.start);
+                            discr_bits = u128::clamp(v, valid_range.end, valid_range.start);
                         }
 
                         // Iterates through all the variant definitions to find the actual index.

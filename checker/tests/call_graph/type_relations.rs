@@ -82,30 +82,30 @@ insert Edge(2,0,3);
 insert Edge(3,0,4);
 insert EdgeType(0,0);
 insert EdgeType(1,6);
-insert EdgeType(2,25);
-insert EdgeType(3,42);
-insert EqType(0,45);
-insert EqType(0,46);
+insert EdgeType(2,26);
+insert EdgeType(3,44);
+insert EqType(0,47);
+insert EqType(0,48);
 insert EqType(0,6);
-insert EqType(25,42);
-insert EqType(25,44);
-insert EqType(44,42);
-insert EqType(46,45);
-insert EqType(6,45);
-insert EqType(6,46);
-insert Member(25,0);
-insert Member(25,45);
-insert Member(25,46);
-insert Member(25,6);
-insert Member(42,0);
-insert Member(42,45);
-insert Member(42,46);
-insert Member(42,6);
-insert Member(43,44);
+insert EqType(26,44);
+insert EqType(26,46);
+insert EqType(46,44);
+insert EqType(48,47);
+insert EqType(6,47);
+insert EqType(6,48);
+insert Member(26,0);
+insert Member(26,47);
+insert Member(26,48);
+insert Member(26,6);
 insert Member(44,0);
-insert Member(44,45);
-insert Member(44,46);
+insert Member(44,47);
+insert Member(44,48);
 insert Member(44,6);
+insert Member(45,46);
+insert Member(46,0);
+insert Member(46,47);
+insert Member(46,48);
+insert Member(46,6);
 commit;
 */
 
@@ -113,11 +113,11 @@ commit;
 {
   "0": "&Foo",
   "6": "&mut Foo",
-  "25": "&[Foo]",
-  "42": "std::vec::Vec<Foo>",
-  "43": "Bar",
-  "44": "[test::Foo]",
-  "45": "test::Foo",
-  "46": "Foo"
+  "26": "&[Foo]",
+  "44": "std::vec::Vec<Foo>",
+  "45": "Bar",
+  "46": "[test::Foo]",
+  "47": "test::Foo",
+  "48": "Foo"
 }
 */
