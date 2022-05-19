@@ -29,11 +29,20 @@ macro_rules! abstract_value {
 pub type TagPropagationSet = u128;
 
 
-
+/// Enable this `TagPropagation` kind in this `TagPropagationSet`. This function
+/// is `const` so you are able to call it when constructing a mask for taint
+/// propagation.
 pub const fn add_propagation(set: TagPropagationSet, propagation: TagPropagation) -> TagPropagationSet {
     set | propagation.into_set()
 }
 
+/// Disable this `TagPropagation` kind in this `TagPropagationSet`. This
+/// function is `const` so you are able to call it when constructing a mask for
+/// taint propagation. 
+/// 
+/// The intended is so you can conveniently disable propagations from the set of
+/// all propagations, e.g. `remove-propagation(TAG_PROPAGATION_ALL,
+/// TagPropagation::Add)`.
 pub const fn remove_propagation(set: TagPropagationSet, propagation: TagPropagation) -> TagPropagationSet {
     set & !propagation.into_set()
 }
