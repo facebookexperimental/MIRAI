@@ -28,6 +28,29 @@ macro_rules! abstract_value {
 /// If a bit is set to zero, the corresponding operation will block the tag.
 pub type TagPropagationSet = u128;
 
+
+
+pub const fn add_propagation(set: TagPropagationSet, propagation: TagPropagation) -> TagPropagationSet {
+    set | propagation.into_set()
+}
+
+pub const fn remove_propagation(set: TagPropagationSet, propagation: TagPropagation) -> TagPropagationSet {
+    set & !propagation.into_set()
+}
+
+#[test]
+fn test_rem_tag() {
+    assert!(remove_propagation(tag_propagation_set!(TagPropagation::Add), TagPropagation::Add) == 0);
+    assert!(remove_propagation(TAG_PROPAGATION_ALL, TagPropagation::SuperComponent) & TagPropagation::SuperComponent.into_set() == 0)
+}
+
+#[test]
+fn test_add_prop() {
+    assert!(add_propagation(TAG_PROPAGATION_ALL, TagPropagation::Add) == TAG_PROPAGATION_ALL);
+    assert!(add_propagation(0, TagPropagation::SuperComponent) == TagPropagation::SuperComponent.into_set())
+}
+
+
 /// An enum type of controllable operations for MIRAI tag types.
 /// In general, the result of the operation corresponding to an enum value will
 /// get tagged with all of the tags of the operands.
@@ -73,11 +96,19 @@ pub enum TagPropagation {
     UninterpretedCall,
 }
 
+impl TagPropagation {
+    const fn into_set(self) -> TagPropagationSet {
+        1 << (self as u8)
+    }
+}
+
 /// Provide a way to create tag propagation sets. It is equivalent to bitwise-or of all its arguments.
 #[macro_export]
 macro_rules! tag_propagation_set {
-    ($($x:expr),*) => {
-        0 $(| (1 << ($x as u8)))*
+    () => { 0 };
+    ($x:expr) => { $x.into_set() };
+    ($x:expr,$($xs:expr),*) => {
+        add_propagation(tag_propagation_set!($($xs),*), $x)
     };
 }
 
