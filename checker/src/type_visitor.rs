@@ -87,13 +87,13 @@ pub struct TypeVisitor<'tcx> {
     type_cache: Rc<RefCell<TypeCache<'tcx>>>,
 }
 
-impl<'analysis, 'tcx> Debug for TypeVisitor<'tcx> {
+impl<'tcx> Debug for TypeVisitor<'tcx> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         "TypeVisitor".fmt(f)
     }
 }
 
-impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
+impl<'tcx> TypeVisitor<'tcx> {
     pub fn new(
         def_id: DefId,
         mir: &'tcx mir::Body<'tcx>,
@@ -1064,7 +1064,7 @@ impl<'analysis, 'compilation, 'tcx> TypeVisitor<'tcx> {
                         self.specialize_generic_argument_type(item_type, &map)
                     }
                 } else {
-                    let projection_trait = self.tcx.parent(item_def_id);
+                    let projection_trait = Some(self.tcx.parent(item_def_id));
                     if projection_trait == self.tcx.lang_items().pointee_trait() {
                         assume!(!specialized_substs.is_empty());
                         if let GenericArgKind::Type(ty) = specialized_substs[0].unpack() {

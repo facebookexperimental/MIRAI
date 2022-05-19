@@ -3,15 +3,16 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use log_derive::logfn_inputs;
-use mirai_annotations::assume;
-use rustc_errors::Diagnostic;
-use rustc_span::MultiSpan;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+
+use log_derive::logfn_inputs;
+
+use mirai_annotations::assume;
+use rustc_errors::{Diagnostic, MultiSpan};
 
 /// A collection of error strings that are expected for a test case.
 #[derive(Debug)]
@@ -34,11 +35,11 @@ impl ExpectedErrors {
     #[logfn_inputs(TRACE)]
     pub fn check_messages(&mut self, diagnostics: Vec<Diagnostic>) -> bool {
         for diag in diagnostics.iter() {
-            if !self.remove_message(&diag.span, &diag.message()) {
+            if !self.remove_message(&diag.span, diag.styled_message()[0].0.expect_str()) {
                 return false;
             }
             for child in &diag.children {
-                if !self.remove_message(&child.span, &child.message()) {
+                if !self.remove_message(&child.span, child.message[0].0.expect_str()) {
                     return false;
                 }
             }

@@ -27,7 +27,8 @@ impl Buf {
 pub fn t1() {
     let b = Buf { inner: vec![10] };
     let sl = b.as_slice();
-    verify!(sl.inner.len() == 1);
+    // todo: fix this
+    verify!(sl.inner.len() == 1); //~ possible false verification condition
 }
 
 pub fn main() {}

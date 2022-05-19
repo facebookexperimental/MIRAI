@@ -1521,7 +1521,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     /// Checks that the layout used to allocate a pointer has an equivalent runtime value to the
     /// layout used to deallocate the pointer.
     /// Also checks that a pointer is deallocated at most once.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn check_for_layout_consistency(&mut self, old_layout: &Expression, new_layout: &Expression) {
         precondition!(self.check_for_errors);
         if let (
@@ -1776,7 +1776,28 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             tcx: TyCtxt<'a>,
             accumulator: &mut Vec<(Rc<Path>, Ty<'a>)>,
         ) {
-            if !def.variants().is_empty() {
+            if let Some(int_ty) = def.repr().int {
+                let ty = match int_ty {
+                    rustc_attr::IntType::SignedInt(t) => match t {
+                        rustc_ast::IntTy::Isize => tcx.types.isize,
+                        rustc_ast::IntTy::I8 => tcx.types.i8,
+                        rustc_ast::IntTy::I16 => tcx.types.i16,
+                        rustc_ast::IntTy::I32 => tcx.types.i32,
+                        rustc_ast::IntTy::I64 => tcx.types.i64,
+                        rustc_ast::IntTy::I128 => tcx.types.i128,
+                    },
+                    rustc_attr::IntType::UnsignedInt(t) => match t {
+                        rustc_ast::UintTy::Usize => tcx.types.usize,
+                        rustc_ast::UintTy::U8 => tcx.types.u8,
+                        rustc_ast::UintTy::U16 => tcx.types.u16,
+                        rustc_ast::UintTy::U32 => tcx.types.u32,
+                        rustc_ast::UintTy::U64 => tcx.types.u64,
+                        rustc_ast::UintTy::U128 => tcx.types.u128,
+                    },
+                };
+                let discr_path = Path::new_discriminant(path);
+                accumulator.push((discr_path, ty));
+            } else if !def.variants().is_empty() {
                 let variant = def.variants().iter().next().expect("at least one variant");
                 for (i, field) in variant.fields.iter().enumerate() {
                     let field_path = Path::new_field(path.clone(), i);
