@@ -26,12 +26,20 @@ macro_rules! abstract_value {
 /// Each bit of the bit vector controls the transfer function for an operation.
 /// If a bit is set to one, the corresponding operation will propagate the tag.
 /// If a bit is set to zero, the corresponding operation will block the tag.
+///
+/// For convenience the `tag_propagation_set!` macro can be used to construct a
+/// `TagPropagationSet` out of `TagPropagation`s. Also the functions
+/// `add_propagation` and `remove_propagation` are provided which take a set and
+/// a `TagPropagation` as input and respectively enable or disable the
+/// particular propagation.
 pub type TagPropagationSet = u128;
 
 
 /// Enable this `TagPropagation` kind in this `TagPropagationSet`. This function
 /// is `const` so you are able to call it when constructing a mask for taint
 /// propagation.
+/// 
+/// This function is a no-op if this propagation is already enabled.
 pub const fn add_propagation(set: TagPropagationSet, propagation: TagPropagation) -> TagPropagationSet {
     set | propagation.into_set()
 }
@@ -40,15 +48,17 @@ pub const fn add_propagation(set: TagPropagationSet, propagation: TagPropagation
 /// function is `const` so you are able to call it when constructing a mask for
 /// taint propagation. 
 /// 
+/// This function is a no-op if this propagation is already disabled.
+/// 
 /// The intended is so you can conveniently disable propagations from the set of
-/// all propagations, e.g. `remove-propagation(TAG_PROPAGATION_ALL,
+/// all propagations, e.g. `remove_propagation(TAG_PROPAGATION_ALL,
 /// TagPropagation::Add)`.
 pub const fn remove_propagation(set: TagPropagationSet, propagation: TagPropagation) -> TagPropagationSet {
     set & !propagation.into_set()
 }
 
 #[test]
-fn test_rem_tag() {
+fn test_rem_prop() {
     assert!(remove_propagation(tag_propagation_set!(TagPropagation::Add), TagPropagation::Add) == 0);
     assert!(remove_propagation(TAG_PROPAGATION_ALL, TagPropagation::SuperComponent) & TagPropagation::SuperComponent.into_set() == 0)
 }
@@ -106,7 +116,9 @@ pub enum TagPropagation {
 }
 
 impl TagPropagation {
-    const fn into_set(self) -> TagPropagationSet {
+    /// Construct a singleton `TagPropagationSet` that only enables this
+    /// propagation type.
+    pub const fn into_set(self) -> TagPropagationSet {
         1 << (self as u8)
     }
 }
@@ -114,13 +126,10 @@ impl TagPropagation {
 /// Provide a way to create tag propagation sets. It is equivalent to bitwise-or of all its arguments.
 #[macro_export]
 macro_rules! tag_propagation_set {
-    () => { 0 };
-    ($x:expr) => { $x.into_set() };
-    ($x:expr,$($xs:expr),*) => {
-        add_propagation(tag_propagation_set!($($xs),*), $x)
+    ($($x:expr),*) => {
+        0 $(| (1 << ($x as u8)))*
     };
 }
-
 /// A tag propagation set indicating a tag is propagated by all operations.
 pub const TAG_PROPAGATION_ALL: TagPropagationSet = tag_propagation_set!(
     TagPropagation::Add,
