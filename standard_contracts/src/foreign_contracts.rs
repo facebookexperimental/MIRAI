@@ -673,6 +673,7 @@ pub mod core {
             default_contract!(simd_fma);
         }
 
+        #[cfg(target_arch = "x86_64")]
         pub mod x86 {
             pub mod avx {
                 use core::arch::x86_64::__m128;
@@ -3075,15 +3076,15 @@ pub mod core {
             pub fn MAX() -> isize {
                 if cfg!(any(
                     target_arch = "x86",
-                    tagret_arch = "mips",
-                    tagret_arch = "powerpc",
-                    tagret_arch = "arm"
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
                 )) {
                     2147483647
                 } else if cfg!(any(
                     target_arch = "x86_64",
-                    tagret_arch = "powerpc64",
-                    tagret_arch = "aarch64"
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
                 )) {
                     9223372036854775807
                 } else {
@@ -3093,15 +3094,15 @@ pub mod core {
             pub fn max_value() -> isize {
                 if cfg!(any(
                     target_arch = "x86",
-                    tagret_arch = "mips",
-                    tagret_arch = "powerpc",
-                    tagret_arch = "arm"
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
                 )) {
                     2147483647
                 } else if cfg!(any(
                     target_arch = "x86_64",
-                    tagret_arch = "powerpc64",
-                    tagret_arch = "aarch64"
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
                 )) {
                     9223372036854775807
                 } else {
@@ -3111,15 +3112,15 @@ pub mod core {
             pub fn MIN() -> isize {
                 if cfg!(any(
                     target_arch = "x86",
-                    tagret_arch = "mips",
-                    tagret_arch = "powerpc",
-                    tagret_arch = "arm"
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
                 )) {
                     -2147483648
                 } else if cfg!(any(
                     target_arch = "x86_64",
-                    tagret_arch = "powerpc64",
-                    tagret_arch = "aarch64"
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
                 )) {
                     -9223372036854775808
                 } else {
@@ -3129,15 +3130,15 @@ pub mod core {
             pub fn min_value() -> isize {
                 if cfg!(any(
                     target_arch = "x86",
-                    tagret_arch = "mips",
-                    tagret_arch = "powerpc",
-                    tagret_arch = "arm"
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
                 )) {
                     -2147483648
                 } else if cfg!(any(
                     target_arch = "x86_64",
-                    tagret_arch = "powerpc64",
-                    tagret_arch = "aarch64"
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
                 )) {
                     -9223372036854775808
                 } else {
@@ -3270,15 +3271,15 @@ pub mod core {
             pub fn MAX() -> usize {
                 if cfg!(any(
                     target_arch = "x86",
-                    tagret_arch = "mips",
-                    tagret_arch = "powerpc",
-                    tagret_arch = "arm"
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
                 )) {
                     4294967295
                 } else if cfg!(any(
                     target_arch = "x86_64",
-                    tagret_arch = "powerpc64",
-                    tagret_arch = "aarch64"
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
                 )) {
                     18446744073709551615
                 } else {
@@ -3288,15 +3289,15 @@ pub mod core {
             pub fn max_value() -> usize {
                 if cfg!(any(
                     target_arch = "x86",
-                    tagret_arch = "mips",
-                    tagret_arch = "powerpc",
-                    tagret_arch = "arm"
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
                 )) {
                     4294967295
                 } else if cfg!(any(
                     target_arch = "x86_64",
-                    tagret_arch = "powerpc64",
-                    tagret_arch = "aarch64"
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64",
                 )) {
                     18446744073709551615
                 } else {
