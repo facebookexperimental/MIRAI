@@ -32,23 +32,24 @@ cargo_metadata = "*"
 clap = "*"
 env_logger = "*"
 fs2 = "*"
+itertools = "*"
 lazy_static = "*"
 log = "*"
 log-derive = "*"
 mirai-annotations = { path = "../annotations" }
-itertools = "*"
+petgraph = "*"
 rand = "*"
+rayon = "*"
+regex = "1.5.6"
 rpds = { version = "*", features = ["serde"] }
 rustc_tools_util = "*"
 serde = { version = "*", features = ["derive", "alloc", "rc"] }
-tar = "*"
-sled = "*"
+serde_json = "*"
 shellwords = "*"
+sled = "*"
+tar = "0.4.38"
 tempfile = "*"
 z3-sys = { version = "*", features = ["static-link-z3"] }
-regex = "*"
-petgraph = "*"
-serde_json = "*"
 
 [dev-dependencies]
 walkdir = "*"
