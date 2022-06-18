@@ -11,6 +11,7 @@ use petgraph::visit::Bfs;
 use petgraph::{Direction, Graph};
 use regex::Regex;
 use rustc_hir::def_id::DefId;
+use rustc_middle::ty::TyCtxt;
 use serde::ser::{SerializeMap, Serializer};
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -100,6 +101,9 @@ impl DatalogConfig {
 /// Configuration options for call graph generation.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct CallGraphConfig {
+    /// Optionally specified location for graph to be output as
+    /// (call-site, caller, callee) triples, along with supporting tables.
+    call_sites_output_path: Option<Box<str>>,
     /// Optionally specifies location for graph to be output in dot format
     /// (for Graphviz).
     dot_output_path: Option<Box<str>>,
@@ -115,17 +119,23 @@ pub struct CallGraphConfig {
 
 impl CallGraphConfig {
     pub fn new(
+        call_sites_output_path: Option<Box<str>>,
         dot_output_path: Option<Box<str>>,
         reductions: Vec<CallGraphReduction>,
         included_crates: Vec<Box<str>>,
         datalog_config: Option<DatalogConfig>,
     ) -> CallGraphConfig {
         CallGraphConfig {
+            call_sites_output_path,
             dot_output_path,
             reductions,
             included_crates,
             datalog_config,
         }
+    }
+
+    pub fn get_call_sites_path(&self) -> Option<&str> {
+        self.call_sites_output_path.as_deref()
     }
 
     pub fn get_dot_path(&self) -> Option<&str> {
@@ -300,10 +310,19 @@ impl CallGraphEdge {
 
 /// `CallGraph` stores all information related to the call graph
 /// and it's associated information.
-#[derive(Debug, Clone)]
-pub struct CallGraph {
+#[derive(Clone)]
+pub struct CallGraph<'tcx> {
     /// Configuration for the call graph
     config: CallGraphConfig,
+    /// A context to use for getting the information about DefIds that is needed
+    /// to generate fully qualified names for them.
+    tcx: TyCtxt<'tcx>,
+    /// Functions that are defined in other crates, or that have no bodies.
+    /// This does not include functions that are specialized with call site information.
+    non_local_defs: HashSet<DefId>,
+    /// (call_site, (caller, callee)). One entry per call that is reachable from
+    /// an analysis root.
+    call_sites: HashMap<rustc_span::Span, (DefId, DefId)>,
     /// The graph structure capturing calls between nodes
     graph: Graph<CallGraphNode, CallGraphEdge>,
     /// A map from DefId to node information
@@ -314,14 +333,17 @@ pub struct CallGraph {
     dominance: HashMap<DefId, HashSet<DefId>>,
 }
 
-impl CallGraph {
-    pub fn new(path_to_config: Option<String>) -> CallGraph {
+impl<'tcx> CallGraph<'tcx> {
+    pub fn new(path_to_config: Option<String>, tcx: TyCtxt<'tcx>) -> CallGraph {
         let config = match path_to_config {
             Some(path) => CallGraph::parse_config(Path::new(&path)),
             None => CallGraphConfig::default(),
         };
         CallGraph {
             config,
+            tcx,
+            non_local_defs: HashSet::new(),
+            call_sites: HashMap::new(),
             graph: Graph::<CallGraphNode, CallGraphEdge>::new(),
             nodes: HashMap::<DefId, NodeId>::new(),
             edge_types: HashMap::<Box<str>, EdgeType>::new(),
@@ -341,12 +363,19 @@ impl CallGraph {
         }
     }
 
+    pub fn needs_edges(&self) -> bool {
+        self.config.dot_output_path.is_some() || self.config.datalog_config.is_some()
+    }
+
     /// Produce an updated call graph structure that preserves all of the
     /// fields except `graph`, which is replaced.
-    fn update(&self, graph: Graph<CallGraphNode, CallGraphEdge>) -> CallGraph {
+    fn update(&self, graph: Graph<CallGraphNode, CallGraphEdge>) -> CallGraph<'tcx> {
         CallGraph {
             config: self.config.clone(),
+            tcx: self.tcx,
             graph,
+            non_local_defs: self.non_local_defs.clone(),
+            call_sites: self.call_sites.clone(),
             nodes: self.nodes.clone(),
             edge_types: self.edge_types.clone(),
             dominance: self.dominance.clone(),
@@ -388,6 +417,25 @@ impl CallGraph {
             Entry::Vacant(v) => {
                 let node_id = self.graph.add_node(CallGraphNode::new_root(defid));
                 *v.insert(node_id)
+            }
+        }
+    }
+
+    // Record a call site in the call graph. Only do so if call_sites_output_path is specified
+    // and omit any calls where the caller is known to be external to the crate being analyzed.
+    //todo: to make this a precise as possible a callee should only be marked as external
+    // if no Trait type is reachable from a parameter type.
+    pub fn add_call_site(
+        &mut self,
+        loc: rustc_span::Span,
+        caller: DefId,
+        callee: DefId,
+        external_callee: bool,
+    ) {
+        if self.config.call_sites_output_path.is_some() && !self.non_local_defs.contains(&caller) {
+            self.call_sites.insert(loc, (caller, callee));
+            if external_callee {
+                self.non_local_defs.insert(callee);
             }
         }
     }
@@ -457,7 +505,7 @@ impl CallGraph {
     ///
     /// If there are multiple edges from a caller to a callee with different types,
     /// this has the effect of including only one of those edges.
-    fn deduplicate_edges(&self) -> CallGraph {
+    fn deduplicate_edges(&self) -> CallGraph<'tcx> {
         let mut edges = HashSet::<(NodeId, NodeId)>::new();
         let graph = self.graph.filter_map(
             |_, node| Some(node.to_owned()),
@@ -501,7 +549,7 @@ impl CallGraph {
 
     /// Filter out all nodes from the graph that are not reachable
     /// via start node identifiable by `name`.
-    fn filter_reachable(&self, name: &str) -> CallGraph {
+    fn filter_reachable(&self, name: &str) -> CallGraph<'tcx> {
         if let Some(start_node) = self.get_node_by_name(name) {
             let reachable = self.reachable_from(start_node);
             let graph = self.graph.filter_map(
@@ -582,7 +630,7 @@ impl CallGraph {
     /// An excluded edge is an edge with at least one excluded endpoint.
     ///
     /// The outgoing edges of an excluded node are joined to the node's non-excluded parents.
-    fn fold_excluded(&self) -> CallGraph {
+    fn fold_excluded(&self) -> CallGraph<'tcx> {
         let mut excluded = MidpointExcludedMap::new();
         // 1. Find all excluded nodes
         let mut graph = self.graph.filter_map(
@@ -641,7 +689,7 @@ impl CallGraph {
 
     /// Filter out nodes from that graph that have no incoming
     /// or outgoing edges (unconnected from the rest of the graph).
-    fn filter_no_edges(&self) -> CallGraph {
+    fn filter_no_edges(&self) -> CallGraph<'tcx> {
         let graph = self.graph.filter_map(
             |node_id, node| {
                 let has_in_edges = self
@@ -674,7 +722,11 @@ impl CallGraph {
     }
 
     /// Perform a specified sequence of reductions on the call graph.
-    fn reduce_graph(&self, call_graph: CallGraph, reductions: &[CallGraphReduction]) -> CallGraph {
+    fn reduce_graph(
+        &self,
+        call_graph: CallGraph<'tcx>,
+        reductions: &[CallGraphReduction],
+    ) -> CallGraph<'tcx> {
         reductions
             .iter()
             .fold(call_graph, |graph, reduction| match reduction {
@@ -1002,6 +1054,18 @@ impl CallGraph {
         };
     }
 
+    fn to_call_sites(&self, call_site_path: &Path) {
+        let call_site_info = CallSiteOutput::new(self);
+        match serde_json::to_string_pretty(&call_site_info)
+            .map_err(|e| e.to_string())
+            .and_then(|call_site_output| {
+                fs::write(call_site_path, call_site_output).map_err(|e| e.to_string())
+            }) {
+            Ok(_) => (),
+            Err(e) => panic!("Failed to write call site output: {:?}", e),
+        };
+    }
+
     /// Top-level output function.
     ///
     /// First applies a set of reductions to the call graph.
@@ -1017,8 +1081,10 @@ impl CallGraph {
             );
         }
         if let Some(dot_path) = &self.config.dot_output_path {
-            let dot_path_str: &str = &*dot_path;
-            call_graph.to_dot(Path::new(dot_path_str));
+            call_graph.to_dot(Path::new(dot_path.as_ref()));
+        }
+        if let Some(call_path) = &self.config.call_sites_output_path {
+            call_graph.to_call_sites(Path::new(call_path.as_ref()));
         }
     }
 }
@@ -1254,5 +1320,114 @@ impl DatalogOutput {
                 DatalogBackend::Souffle,
             ),
         )
+    }
+}
+
+/// Summarizes the call graph of the current crate. Calls to higher order external functions
+/// are treated as local calls (i.e. the calls they make are also included here) because
+/// their call graphs are imprecise unless specialized with call site information.
+#[derive(Serialize)]
+struct CallSiteOutput {
+    /// Relative paths from the crate root directory for files that are compiled
+    /// by this build. Absolute (but "virtual") paths for files from prebuild libraries, such as the
+    /// Rust standard library.
+    files: Vec<String>,
+    /// Fully qualified callable name including name of defining crate.
+    /// If the flag is true, this is an external call, i.e. the calls
+    /// made by the callee are not included in the list of calls.
+    /// Calls to higher order external functions are treated as local calls
+    /// because they are in effect templates that only have meaning when
+    /// specialized with call site information.
+    callables: Vec<(String, bool)>,
+    /// File index, line, column, caller index, callee index.
+    /// Line and column numbers are 1 based.
+    calls: Vec<(usize, usize, usize, usize, usize)>,
+}
+
+impl CallSiteOutput {
+    pub fn new(call_graph: &CallGraph) -> CallSiteOutput {
+        let source_map = call_graph.tcx.sess.source_map();
+        let mut files = vec![];
+        let mut file_map = HashMap::<rustc_span::FileName, usize>::new();
+        let mut callables = vec![];
+        let mut callable_index = HashMap::<DefId, usize>::new();
+        let mut calls = vec![];
+        let mut sites: Vec<(&rustc_span::Span, &(DefId, DefId))> =
+            call_graph.call_sites.iter().collect();
+        sites.sort();
+        for (loc, (caller, callee)) in sites.iter() {
+            let source_loc = loc.source_callsite();
+            if let Ok(line_and_file) = source_map.span_to_lines(source_loc) {
+                let file_index =
+                    Self::get_file_index(&mut files, &mut file_map, &line_and_file.file.name);
+                let line = line_and_file.lines[0];
+                let caller_index = Self::get_callable_index(
+                    &mut callables,
+                    &mut callable_index,
+                    *caller,
+                    call_graph,
+                );
+                let callee_index = Self::get_callable_index(
+                    &mut callables,
+                    &mut callable_index,
+                    *callee,
+                    call_graph,
+                );
+                calls.push((
+                    file_index,
+                    line.line_index + 1,
+                    line.start_col.0 + 1,
+                    caller_index,
+                    callee_index,
+                ));
+            }
+        }
+        CallSiteOutput {
+            files,
+            callables,
+            calls,
+        }
+    }
+
+    fn get_file_index(
+        files: &mut Vec<String>,
+        file_map: &mut HashMap<rustc_span::FileName, usize>,
+        fname: &rustc_span::FileName,
+    ) -> usize {
+        match file_map.entry(fname.clone()) {
+            Entry::Occupied(o) => *o.get(),
+            Entry::Vacant(v) => {
+                let index = files.len();
+                v.insert(index);
+                let mut file_name = None;
+                if let rustc_span::FileName::Real(real_fname) = fname {
+                    if let Some(p) = real_fname.remapped_path_if_available().to_str() {
+                        file_name = Some(p.into());
+                    }
+                }
+                files.push(file_name.unwrap_or_else(|| "unknown".into()));
+                index
+            }
+        }
+    }
+
+    fn get_callable_index<'tcx>(
+        callables: &mut Vec<(String, bool)>,
+        callable_index: &mut HashMap<DefId, usize>,
+        callable: DefId,
+        call_graph: &CallGraph<'tcx>,
+    ) -> usize {
+        let tcx = call_graph.tcx;
+        let index = callable_index.len();
+        match callable_index.entry(callable) {
+            Entry::Occupied(o) => *o.get(),
+            Entry::Vacant(v) => {
+                v.insert(index);
+                let name = crate::utils::summary_key_str(tcx, callable);
+                let external = call_graph.non_local_defs.contains(&callable);
+                callables.push((name.to_string(), external));
+                index
+            }
+        }
     }
 }

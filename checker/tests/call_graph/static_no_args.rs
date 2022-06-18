@@ -44,3 +44,30 @@ commit;
   "0": ""
 }
 */
+
+/* EXPECTED:CALL_SITES
+{
+  "files": [
+    "tests/call_graph/static_no_args.rs"
+  ],
+  "callables": [
+    [
+      "static_no_args.main",
+      false
+    ],
+    [
+      "static_no_args.fn1",
+      false
+    ]
+  ],
+  "calls": [
+    [
+      0,
+      14,
+      5,
+      0,
+      1
+    ]
+  ]
+}
+*/

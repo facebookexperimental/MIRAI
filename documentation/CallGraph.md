@@ -61,6 +61,7 @@ MIRAI's call graph generator output can be configured with the CLI option
 at that path using the following schema:
 ```
 {
+    "call_sites_output_path": "path/to/call_sites.json",
     "dot_output_path": "path/to/graph.dot",
     "reductions": [
         {"Slice": "function name"},
@@ -79,6 +80,8 @@ at that path using the following schema:
 ```
 
 Below, we explain each field in detail:
+- `"call_sites_output_path"`: (**Optional**) Path where call site output of graph will be saved,
+  if provided. See the section below on "Call site output".
 - `"dot_output_path"`: (**Optional**) Path where dot output of graph will be saved,
 if provided. See the section below on "Dot output".
 - `"reductions"`: Possibly empty list of reductions to apply to the call graph. 
@@ -123,6 +126,26 @@ that have no incoming or outgoing edges. Expected configuration format is `"Clea
 
 Reductions may be specified in any order (and even multiple times), and they are
 applied sequentially in the order specified.
+
+## Call site output
+
+This is a JSON encoded file providing a list of call sites where each call site is contains
+a source location, the caller and the callee. The source location consists of an index into
+the vector contents of the `files` property, along with a 1-based start line number and start column
+of the call expression. The caller and callee values are indices into the vector contents of the 
+`callables` property.
+
+File entries are paths: Relative paths from the crate root directory for files that are compiled
+by this build. Absolute (but "virtual") paths for files from prebuild libraries, such as the
+Rust standard library.
+
+Callable entries are fully qualified names of functions, where the first qualifier is the name of
+the crate in which the callable is defined. The other qualifiers are module names and type names.
+Qualified names are unique.
+
+When a call site is inside a macro invocation (such as println!(..)), the source location is that
+of the macro invocation rather than the source file where the macro is defined. This has the consequence
+that there may be more than one entry in the `call_sites` property with the same source location.
 
 ## Dot output
 

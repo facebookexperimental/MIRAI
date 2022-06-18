@@ -58,7 +58,7 @@ pub struct CrateVisitor<'compilation, 'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub type_cache: Rc<RefCell<TypeCache<'tcx>>>,
     pub test_run: bool,
-    pub call_graph: CallGraph,
+    pub call_graph: CallGraph<'tcx>,
 }
 
 impl<'compilation, 'tcx> Debug for CrateVisitor<'compilation, 'tcx> {

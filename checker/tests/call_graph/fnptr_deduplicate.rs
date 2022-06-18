@@ -59,3 +59,52 @@ commit;
   "0": "u32"
 }
 */
+
+/* EXPECTED:CALL_SITES
+{
+  "files": [
+    "tests/call_graph/fnptr_deduplicate.rs"
+  ],
+  "callables": [
+    [
+      "fnptr_deduplicate.fn1",
+      false
+    ],
+    [
+      "fnptr_deduplicate.fn2",
+      false
+    ],
+    [
+      "fnptr_deduplicate.fn3",
+      false
+    ],
+    [
+      "fnptr_deduplicate.main",
+      false
+    ]
+  ],
+  "calls": [
+    [
+      0,
+      11,
+      5,
+      0,
+      1
+    ],
+    [
+      0,
+      14,
+      5,
+      1,
+      2
+    ],
+    [
+      0,
+      21,
+      5,
+      3,
+      0
+    ]
+  ]
+}
+*/
