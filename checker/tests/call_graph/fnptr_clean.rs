@@ -5,7 +5,7 @@
 //
 
 // Linear call graph with function pointer calls, single type, no dominance, no loops.
-// Orphan function (unconnected to call graph from main) should be removed 
+// Orphan function (unconnected to call graph from main) should be removed
 // by the "Clean" reduction.
 
 pub fn orphan(x: u32) -> u32 {
@@ -67,3 +67,50 @@ commit;
   "1": "&fn(u32) -> u32"
 }
 */
+
+/* EXPECTED:CALL_SITES{
+  "files": [
+    "tests/call_graph/fnptr_clean.rs"
+  ],
+  "callables": [
+    [
+      "fnptr_clean.fn1",
+      false
+    ],
+    [
+      "fnptr_clean.fn2",
+      false
+    ],
+    [
+      "fnptr_clean.fn3",
+      false
+    ],
+    [
+      "fnptr_clean.main",
+      false
+    ]
+  ],
+  "calls": [
+    [
+      0,
+      15,
+      5,
+      0,
+      1
+    ],
+    [
+      0,
+      18,
+      5,
+      1,
+      2
+    ],
+    [
+      0,
+      25,
+      5,
+      3,
+      0
+    ]
+  ]
+}*/

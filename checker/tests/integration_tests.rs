@@ -195,6 +195,7 @@ fn generate_call_graph_config(file_name: &str, temp_dir_path: &str) -> (CallGrap
         DatalogBackend::Souffle => temp_dir_path.to_owned().into_boxed_str(),
     };
     let call_graph_config = CallGraphConfig::new(
+        Some(format!("{}/call_sites.json", temp_dir_path).into_boxed_str()),
         Some(format!("{}/graph.dot", temp_dir_path).into_boxed_str()),
         call_graph_test_config.reductions,
         call_graph_test_config.included_crates,
@@ -342,6 +343,7 @@ fn compare_lines(actual: &str, expected: &str) -> bool {
 // Checked call graph output types
 #[derive(Debug, PartialEq)]
 enum CallGraphOutputType {
+    CallSites,
     Dot,
     Ddlog,
     TypeMap,
@@ -369,6 +371,9 @@ fn check_call_graph_output(
         fs::read_to_string(Path::new(&file_name)).expect("Failed to read test case");
     // Check that the expected and actual output files match
     let expected_regex = match output_type {
+        CallGraphOutputType::CallSites => {
+            Regex::new(r"(.*/\* EXPECTED:CALL_SITES)([\S\s]*?)(\*/)").unwrap()
+        }
         CallGraphOutputType::Dot => Regex::new(r"(/\* EXPECTED:DOT)([\S\s]*?)(\*/)").unwrap(),
         CallGraphOutputType::Ddlog => Regex::new(r"(/\* EXPECTED:DDLOG)([\S\s]*?)(\*/)").unwrap(),
         CallGraphOutputType::TypeMap => {
@@ -385,6 +390,9 @@ fn check_call_graph_output(
         unrecoverable!("Could not find expected output in test file");
     };
     let actual = match output_type {
+        CallGraphOutputType::CallSites => {
+            fs::read_to_string(call_graph_config.get_call_sites_path().unwrap())
+        }
         CallGraphOutputType::Dot => fs::read_to_string(call_graph_config.get_dot_path().unwrap()),
         CallGraphOutputType::Ddlog => {
             fs::read_to_string(call_graph_config.get_ddlog_path().unwrap())
@@ -400,13 +408,20 @@ fn check_call_graph_output(
         if compare_lines(&expected, &actual) {
             0
         } else {
-            println!("{} failed {:?} output", file_name, output_type);
+            println!("{} failed to match {:?} output", file_name, output_type);
             println!("Expected:\n{}", expected);
             println!("Actual:\n{}", actual);
             1
+            // let c = expected_regex.captures(&test_case_data).unwrap();
+            // let updated = expected_regex.replace(
+            //     &test_case_data,
+            //     format!("{}{}{}", c[1].to_string(), actual, c[3].to_string()),
+            // );
+            // fs::write(Path::new(&file_name), updated.to_string()).unwrap();
+            // 0
         }
     } else {
-        println!("{} failed dot output", file_name);
+        println!("{} failed to read {:?} output", file_name, output_type);
         1
     }
 }
@@ -441,6 +456,10 @@ fn start_driver_call_graph(config: DriverConfig) -> usize {
     );
     if result == 0 {
         check_call_graph_output(
+            &config.file_name,
+            &call_graph_config,
+            CallGraphOutputType::CallSites,
+        ) + check_call_graph_output(
             &config.file_name,
             &call_graph_config,
             CallGraphOutputType::Dot,

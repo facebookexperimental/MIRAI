@@ -55,3 +55,50 @@ commit;
   "0": "u32"
 }
 */
+
+/* EXPECTED:CALL_SITES{
+  "files": [
+    "tests/call_graph/static_slice.rs"
+  ],
+  "callables": [
+    [
+      "static_slice.fn1",
+      false
+    ],
+    [
+      "static_slice.fn2",
+      false
+    ],
+    [
+      "static_slice.fn3",
+      false
+    ],
+    [
+      "static_slice.main",
+      false
+    ]
+  ],
+  "calls": [
+    [
+      0,
+      11,
+      5,
+      0,
+      1
+    ],
+    [
+      0,
+      14,
+      5,
+      1,
+      2
+    ],
+    [
+      0,
+      21,
+      5,
+      3,
+      0
+    ]
+  ]
+}*/

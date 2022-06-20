@@ -22,7 +22,6 @@ pub fn main() {
     fn1(x, &(fn2 as fn(u32) -> u32));
 }
 
-
 /* CONFIG
 {
     "reductions": ["Fold"],
@@ -65,3 +64,80 @@ commit;
   "1": "&fn(u32) -> u32"
 }
 */
+
+/* EXPECTED:CALL_SITES{
+  "files": [
+    "tests/call_graph/fnptr_fold.rs",
+    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/fmt/mod.rs"
+  ],
+  "callables": [
+    [
+      "fnptr_fold.fn1",
+      false
+    ],
+    [
+      "fnptr_fold.fn2",
+      false
+    ],
+    [
+      "fnptr_fold.fn3",
+      false
+    ],
+    [
+      "fnptr_fold.main",
+      false
+    ],
+    [
+      "std.io.stdio._print",
+      true
+    ],
+    [
+      "core.fmt.implement_core_fmt_Arguments.new_v1",
+      false
+    ]
+  ],
+  "calls": [
+    [
+      0,
+      11,
+      5,
+      0,
+      1
+    ],
+    [
+      0,
+      14,
+      5,
+      1,
+      2
+    ],
+    [
+      0,
+      22,
+      5,
+      3,
+      0
+    ],
+    [
+      0,
+      17,
+      5,
+      2,
+      4
+    ],
+    [
+      0,
+      17,
+      5,
+      2,
+      5
+    ],
+    [
+      1,
+      390,
+      13,
+      5,
+      5
+    ]
+  ]
+}*/

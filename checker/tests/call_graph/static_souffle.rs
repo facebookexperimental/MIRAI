@@ -56,3 +56,50 @@ digraph {
   "0": "u32"
 }
 */
+
+/* EXPECTED:CALL_SITES{
+  "files": [
+    "tests/call_graph/static_souffle.rs"
+  ],
+  "callables": [
+    [
+      "static_souffle.fn1",
+      false
+    ],
+    [
+      "static_souffle.fn2",
+      false
+    ],
+    [
+      "static_souffle.fn3",
+      false
+    ],
+    [
+      "static_souffle.main",
+      false
+    ]
+  ],
+  "calls": [
+    [
+      0,
+      11,
+      5,
+      0,
+      1
+    ],
+    [
+      0,
+      14,
+      5,
+      1,
+      2
+    ],
+    [
+      0,
+      21,
+      5,
+      3,
+      0
+    ]
+  ]
+}*/
