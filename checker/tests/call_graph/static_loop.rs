@@ -65,3 +65,57 @@ commit;
   "0": "u32"
 }
 */
+
+/* EXPECTED:CALL_SITES{
+  "files": [
+    "tests/call_graph/static_loop.rs"
+  ],
+  "callables": [
+    [
+      "static_loop.fn1",
+      false
+    ],
+    [
+      "static_loop.fn2",
+      false
+    ],
+    [
+      "static_loop.fn3",
+      false
+    ],
+    [
+      "static_loop.main",
+      false
+    ]
+  ],
+  "calls": [
+    [
+      0,
+      10,
+      5,
+      0,
+      1
+    ],
+    [
+      0,
+      13,
+      5,
+      1,
+      2
+    ],
+    [
+      0,
+      17,
+      9,
+      2,
+      0
+    ],
+    [
+      0,
+      24,
+      5,
+      3,
+      0
+    ]
+  ]
+}*/

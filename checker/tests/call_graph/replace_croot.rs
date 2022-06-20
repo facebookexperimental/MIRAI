@@ -45,3 +45,30 @@ commit;
   "0": ""
 }
 */
+
+/* EXPECTED:CALL_SITES
+{
+  "files": [
+    "tests/call_graph/replace_croot.rs"
+  ],
+  "callables": [
+    [
+      "replace_croot.main",
+      false
+    ],
+    [
+      "replace_croot.fn1",
+      false
+    ]
+  ],
+  "calls": [
+    [
+      0,
+      11,
+      5,
+      0,
+      1
+    ]
+  ]
+}
+*/

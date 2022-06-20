@@ -81,8 +81,6 @@ impl<'analysis, 'compilation, 'tcx> Debug for BodyVisitor<'analysis, 'compilatio
     }
 }
 
-/// A visitor that simply traverses enough of the MIR associated with a particular code body
-/// so that we can test a call to every default implementation of the MirVisitor trait.
 impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     pub fn new(
         crate_visitor: &'analysis mut CrateVisitor<'compilation, 'tcx>,

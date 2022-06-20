@@ -310,19 +310,21 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     #[logfn_inputs(TRACE)]
     pub fn get_function_summary(&mut self) -> Option<Summary> {
         self.try_to_devirtualize();
-        if self.actual_argument_types.is_empty() {
-            self.block_visitor.bv.cv.call_graph.add_edge(
-                self.block_visitor.bv.def_id,
-                self.callee_def_id,
-                "".to_string().into_boxed_str(),
-            );
-        } else {
-            for ty in self.actual_argument_types.iter() {
+        if self.block_visitor.bv.cv.call_graph.needs_edges() {
+            if self.actual_argument_types.is_empty() {
                 self.block_visitor.bv.cv.call_graph.add_edge(
                     self.block_visitor.bv.def_id,
                     self.callee_def_id,
-                    ty.to_string().into_boxed_str(),
+                    "".to_string().into_boxed_str(),
                 );
+            } else {
+                for ty in self.actual_argument_types.iter() {
+                    self.block_visitor.bv.cv.call_graph.add_edge(
+                        self.block_visitor.bv.def_id,
+                        self.callee_def_id,
+                        ty.to_string().into_boxed_str(),
+                    );
+                }
             }
         }
         if let Some(func_ref) = &self.callee_func_ref.clone() {
@@ -332,6 +334,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             // predefined summaries.
 
             let func_args = self.get_function_constant_signature(self.function_constant_args);
+            let tcx = self.block_visitor.bv.tcx;
+            let callee_defid = func_ref.def_id.unwrap_or(self.callee_def_id);
+            self.block_visitor.bv.cv.call_graph.add_call_site(
+                self.block_visitor.bv.current_span,
+                self.block_visitor.bv.def_id,
+                callee_defid,
+                !tcx.is_mir_available(callee_defid)
+                    || (!callee_defid.is_local()
+                        && (self.callee_generic_arguments.is_none()
+                            || self.callee_generic_arguments.unwrap().is_empty())
+                        && func_args.is_none()),
+            );
             let initial_type_cache = self.initial_type_cache.clone();
             let call_depth = *self
                 .block_visitor

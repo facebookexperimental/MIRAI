@@ -69,3 +69,57 @@ commit;
   "1": "&fn(u32) -> u32"
 }
 */
+
+/* EXPECTED:CALL_SITES{
+  "files": [
+    "tests/call_graph/fnptr_loop.rs"
+  ],
+  "callables": [
+    [
+      "fnptr_loop.fn1",
+      false
+    ],
+    [
+      "fnptr_loop.fn2",
+      false
+    ],
+    [
+      "fnptr_loop.fn3",
+      false
+    ],
+    [
+      "fnptr_loop.main",
+      false
+    ]
+  ],
+  "calls": [
+    [
+      0,
+      10,
+      5,
+      0,
+      1
+    ],
+    [
+      0,
+      13,
+      5,
+      1,
+      2
+    ],
+    [
+      0,
+      17,
+      9,
+      2,
+      0
+    ],
+    [
+      0,
+      24,
+      5,
+      3,
+      0
+    ]
+  ]
+}*/

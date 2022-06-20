@@ -5,7 +5,7 @@
 //
 
 // Linear call graph with static calls, single type, no dominance, no loops.
-// Orphan function (unconnected to call graph from main) should be removed 
+// Orphan function (unconnected to call graph from main) should be removed
 // by the "Clean" reduction.
 
 pub fn orphan(x: u32) -> u32 {
@@ -63,3 +63,50 @@ commit;
   "0": "u32"
 }
 */
+
+/* EXPECTED:CALL_SITES{
+  "files": [
+    "tests/call_graph/static_clean.rs"
+  ],
+  "callables": [
+    [
+      "static_clean.fn1",
+      false
+    ],
+    [
+      "static_clean.fn2",
+      false
+    ],
+    [
+      "static_clean.fn3",
+      false
+    ],
+    [
+      "static_clean.main",
+      false
+    ]
+  ],
+  "calls": [
+    [
+      0,
+      15,
+      5,
+      0,
+      1
+    ],
+    [
+      0,
+      18,
+      5,
+      1,
+      2
+    ],
+    [
+      0,
+      25,
+      5,
+      3,
+      0
+    ]
+  ]
+}*/
