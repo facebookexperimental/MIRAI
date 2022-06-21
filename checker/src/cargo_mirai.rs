@@ -88,11 +88,15 @@ fn call_cargo() {
 }
 
 fn call_cargo_on_each_package_target(package: &Package) {
+    let lib_only = get_arg_flag_presence("--lib");
     for target in &package.targets {
         let kind = target
             .kind
             .get(0)
             .expect("bad cargo metadata: target::kind");
+        if lib_only && kind != "lib" {
+            continue;
+        }
         call_cargo_on_target(target, kind);
     }
 }
@@ -112,6 +116,7 @@ fn call_cargo_on_target(target: &Target, kind: &str) {
         }
         "test" => {
             cmd.arg("test");
+            cmd.arg("--test").arg(&target.name);
             cmd.arg("--no-run");
         }
         _ => {
@@ -124,6 +129,9 @@ fn call_cargo_on_target(target: &Target, kind: &str) {
     for arg in args.by_ref() {
         if arg == "--" {
             break;
+        }
+        if arg == "--lib" {
+            continue;
         }
         cmd.arg(arg);
     }
@@ -180,15 +188,19 @@ fn call_rustc_or_mirai() {
                             call_mirai();
                             return;
                         }
-                    } else if kind == "test" {
+                    }
+                    if get_arg_flag_value("--test").is_some() {
                         call_mirai();
                         return;
                     }
                 }
+                return;
             }
         }
     }
-    call_rustc()
+    if get_arg_flag_value("--test").is_none() {
+        call_rustc();
+    }
 }
 
 fn call_mirai() {
@@ -225,6 +237,20 @@ fn call_rustc() {
 
     if !exit_status.success() {
         std::process::exit(exit_status.code().unwrap_or(-1))
+    }
+}
+
+// `--name` is present
+fn get_arg_flag_presence(name: &str) -> bool {
+    let mut args = std::env::args().take_while(|val| val != "--");
+    loop {
+        let arg = match args.next() {
+            Some(arg) => arg,
+            None => return false,
+        };
+        if arg.starts_with(name) {
+            return true;
+        }
     }
 }
 
