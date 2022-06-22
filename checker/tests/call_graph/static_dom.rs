@@ -64,51 +64,57 @@ commit;
 }
 */
 
-/* EXPECTED:CALL_SITES
-{
+/* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/static_dom.rs"
   ],
   "callables": [
-    [
-      "static_dom.main",
-      false
-    ],
-    [
-      "static_dom.fn2",
-      false
-    ],
-    [
-      "static_dom.fn3",
-      false
-    ],
-    [
-      "static_dom.fn1",
-      false
-    ]
+    {
+      "name": "static_dom.main",
+      "file_index": 0,
+      "first_line": 18,
+      "local": true
+    },
+    {
+      "name": "static_dom.fn1",
+      "file_index": 0,
+      "first_line": 9,
+      "local": true
+    },
+    {
+      "name": "static_dom.fn2",
+      "file_index": 0,
+      "first_line": 12,
+      "local": true
+    },
+    {
+      "name": "static_dom.fn3",
+      "file_index": 0,
+      "first_line": 15,
+      "local": true
+    }
   ],
   "calls": [
     [
       0,
-      21,
+      20,
       13,
       0,
       1
     ],
     [
       0,
-      22,
-      5,
+      21,
+      13,
       0,
       2
     ],
     [
       0,
-      20,
-      13,
+      22,
+      5,
       0,
       3
     ]
   ]
-}
-*/
+}*/

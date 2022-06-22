@@ -68,22 +68,30 @@ commit;
     "tests/call_graph/fnptr.rs"
   ],
   "callables": [
-    [
-      "fnptr.fn1",
-      false
-    ],
-    [
-      "fnptr.fn2",
-      false
-    ],
-    [
-      "fnptr.fn3",
-      false
-    ],
-    [
-      "fnptr.main",
-      false
-    ]
+    {
+      "name": "fnptr.fn1",
+      "file_index": 0,
+      "first_line": 9,
+      "local": true
+    },
+    {
+      "name": "fnptr.fn2",
+      "file_index": 0,
+      "first_line": 12,
+      "local": true
+    },
+    {
+      "name": "fnptr.fn3",
+      "file_index": 0,
+      "first_line": 15,
+      "local": true
+    },
+    {
+      "name": "fnptr.main",
+      "file_index": 0,
+      "first_line": 18,
+      "local": true
+    }
   ],
   "calls": [
     [

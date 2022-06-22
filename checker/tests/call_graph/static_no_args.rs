@@ -45,20 +45,23 @@ commit;
 }
 */
 
-/* EXPECTED:CALL_SITES
-{
+/* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/static_no_args.rs"
   ],
   "callables": [
-    [
-      "static_no_args.main",
-      false
-    ],
-    [
-      "static_no_args.fn1",
-      false
-    ]
+    {
+      "name": "static_no_args.main",
+      "file_index": 0,
+      "first_line": 13,
+      "local": true
+    },
+    {
+      "name": "static_no_args.fn1",
+      "file_index": 0,
+      "first_line": 10,
+      "local": true
+    }
   ],
   "calls": [
     [
@@ -69,5 +72,4 @@ commit;
       1
     ]
   ]
-}
-*/
+}*/

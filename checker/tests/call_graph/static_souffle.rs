@@ -62,22 +62,30 @@ digraph {
     "tests/call_graph/static_souffle.rs"
   ],
   "callables": [
-    [
-      "static_souffle.fn1",
-      false
-    ],
-    [
-      "static_souffle.fn2",
-      false
-    ],
-    [
-      "static_souffle.fn3",
-      false
-    ],
-    [
-      "static_souffle.main",
-      false
-    ]
+    {
+      "name": "static_souffle.fn1",
+      "file_index": 0,
+      "first_line": 10,
+      "local": true
+    },
+    {
+      "name": "static_souffle.fn2",
+      "file_index": 0,
+      "first_line": 13,
+      "local": true
+    },
+    {
+      "name": "static_souffle.fn3",
+      "file_index": 0,
+      "first_line": 16,
+      "local": true
+    },
+    {
+      "name": "static_souffle.main",
+      "file_index": 0,
+      "first_line": 19,
+      "local": true
+    }
   ],
   "calls": [
     [

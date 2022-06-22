@@ -46,20 +46,23 @@ commit;
 }
 */
 
-/* EXPECTED:CALL_SITES
-{
+/* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/replace_croot.rs"
   ],
   "callables": [
-    [
-      "replace_croot.main",
-      false
-    ],
-    [
-      "replace_croot.fn1",
-      false
-    ]
+    {
+      "name": "replace_croot.main",
+      "file_index": 0,
+      "first_line": 10,
+      "local": true
+    },
+    {
+      "name": "replace_croot.fn1",
+      "file_index": 0,
+      "first_line": 14,
+      "local": true
+    }
   ],
   "calls": [
     [
@@ -70,5 +73,4 @@ commit;
       1
     ]
   ]
-}
-*/
+}*/

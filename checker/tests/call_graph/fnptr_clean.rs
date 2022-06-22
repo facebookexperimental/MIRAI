@@ -73,22 +73,30 @@ commit;
     "tests/call_graph/fnptr_clean.rs"
   ],
   "callables": [
-    [
-      "fnptr_clean.fn1",
-      false
-    ],
-    [
-      "fnptr_clean.fn2",
-      false
-    ],
-    [
-      "fnptr_clean.fn3",
-      false
-    ],
-    [
-      "fnptr_clean.main",
-      false
-    ]
+    {
+      "name": "fnptr_clean.fn1",
+      "file_index": 0,
+      "first_line": 14,
+      "local": true
+    },
+    {
+      "name": "fnptr_clean.fn2",
+      "file_index": 0,
+      "first_line": 17,
+      "local": true
+    },
+    {
+      "name": "fnptr_clean.fn3",
+      "file_index": 0,
+      "first_line": 20,
+      "local": true
+    },
+    {
+      "name": "fnptr_clean.main",
+      "file_index": 0,
+      "first_line": 23,
+      "local": true
+    }
   ],
   "calls": [
     [

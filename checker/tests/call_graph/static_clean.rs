@@ -69,22 +69,30 @@ commit;
     "tests/call_graph/static_clean.rs"
   ],
   "callables": [
-    [
-      "static_clean.fn1",
-      false
-    ],
-    [
-      "static_clean.fn2",
-      false
-    ],
-    [
-      "static_clean.fn3",
-      false
-    ],
-    [
-      "static_clean.main",
-      false
-    ]
+    {
+      "name": "static_clean.fn1",
+      "file_index": 0,
+      "first_line": 14,
+      "local": true
+    },
+    {
+      "name": "static_clean.fn2",
+      "file_index": 0,
+      "first_line": 17,
+      "local": true
+    },
+    {
+      "name": "static_clean.fn3",
+      "file_index": 0,
+      "first_line": 20,
+      "local": true
+    },
+    {
+      "name": "static_clean.main",
+      "file_index": 0,
+      "first_line": 23,
+      "local": true
+    }
   ],
   "calls": [
     [

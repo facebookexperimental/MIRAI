@@ -64,22 +64,30 @@ commit;
     "tests/call_graph/static.rs"
   ],
   "callables": [
-    [
-      "static.fn1",
-      false
-    ],
-    [
-      "static.fn2",
-      false
-    ],
-    [
-      "static.fn3",
-      false
-    ],
-    [
-      "static.main",
-      false
-    ]
+    {
+      "name": "static.fn1",
+      "file_index": 0,
+      "first_line": 9,
+      "local": true
+    },
+    {
+      "name": "static.fn2",
+      "file_index": 0,
+      "first_line": 12,
+      "local": true
+    },
+    {
+      "name": "static.fn3",
+      "file_index": 0,
+      "first_line": 15,
+      "local": true
+    },
+    {
+      "name": "static.main",
+      "file_index": 0,
+      "first_line": 18,
+      "local": true
+    }
   ],
   "calls": [
     [

@@ -71,22 +71,30 @@ commit;
     "tests/call_graph/static_loop.rs"
   ],
   "callables": [
-    [
-      "static_loop.fn1",
-      false
-    ],
-    [
-      "static_loop.fn2",
-      false
-    ],
-    [
-      "static_loop.fn3",
-      false
-    ],
-    [
-      "static_loop.main",
-      false
-    ]
+    {
+      "name": "static_loop.fn1",
+      "file_index": 0,
+      "first_line": 9,
+      "local": true
+    },
+    {
+      "name": "static_loop.fn2",
+      "file_index": 0,
+      "first_line": 12,
+      "local": true
+    },
+    {
+      "name": "static_loop.fn3",
+      "file_index": 0,
+      "first_line": 15,
+      "local": true
+    },
+    {
+      "name": "static_loop.main",
+      "file_index": 0,
+      "first_line": 22,
+      "local": true
+    }
   ],
   "calls": [
     [

@@ -81,26 +81,36 @@ digraph {
     "tests/call_graph/fnptr_dom_loop_souffle.rs"
   ],
   "callables": [
-    [
-      "fnptr_dom_loop_souffle.fn1",
-      false
-    ],
-    [
-      "fnptr_dom_loop_souffle.fn2",
-      false
-    ],
-    [
-      "fnptr_dom_loop_souffle.fn3",
-      false
-    ],
-    [
-      "fnptr_dom_loop_souffle.fn4",
-      false
-    ],
-    [
-      "fnptr_dom_loop_souffle.main",
-      false
-    ]
+    {
+      "name": "fnptr_dom_loop_souffle.fn1",
+      "file_index": 0,
+      "first_line": 10,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom_loop_souffle.fn2",
+      "file_index": 0,
+      "first_line": 14,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom_loop_souffle.fn3",
+      "file_index": 0,
+      "first_line": 17,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom_loop_souffle.fn4",
+      "file_index": 0,
+      "first_line": 20,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom_loop_souffle.main",
+      "file_index": 0,
+      "first_line": 27,
+      "local": true
+    }
   ],
   "calls": [
     [
