@@ -84,26 +84,36 @@ commit;
     "tests/call_graph/fnptr_dom_loop.rs"
   ],
   "callables": [
-    [
-      "fnptr_dom_loop.fn1",
-      false
-    ],
-    [
-      "fnptr_dom_loop.fn2",
-      false
-    ],
-    [
-      "fnptr_dom_loop.fn3",
-      false
-    ],
-    [
-      "fnptr_dom_loop.fn4",
-      false
-    ],
-    [
-      "fnptr_dom_loop.main",
-      false
-    ]
+    {
+      "name": "fnptr_dom_loop.fn1",
+      "file_index": 0,
+      "first_line": 9,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom_loop.fn2",
+      "file_index": 0,
+      "first_line": 13,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom_loop.fn3",
+      "file_index": 0,
+      "first_line": 16,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom_loop.fn4",
+      "file_index": 0,
+      "first_line": 19,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom_loop.main",
+      "file_index": 0,
+      "first_line": 26,
+      "local": true
+    }
   ],
   "calls": [
     [

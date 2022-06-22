@@ -65,22 +65,30 @@ commit;
     "tests/call_graph/static_deduplicate.rs"
   ],
   "callables": [
-    [
-      "static_deduplicate.fn1",
-      false
-    ],
-    [
-      "static_deduplicate.fn2",
-      false
-    ],
-    [
-      "static_deduplicate.fn3",
-      false
-    ],
-    [
-      "static_deduplicate.main",
-      false
-    ]
+    {
+      "name": "static_deduplicate.fn1",
+      "file_index": 0,
+      "first_line": 10,
+      "local": true
+    },
+    {
+      "name": "static_deduplicate.fn2",
+      "file_index": 0,
+      "first_line": 13,
+      "local": true
+    },
+    {
+      "name": "static_deduplicate.fn3",
+      "file_index": 0,
+      "first_line": 16,
+      "local": true
+    },
+    {
+      "name": "static_deduplicate.main",
+      "file_index": 0,
+      "first_line": 19,
+      "local": true
+    }
   ],
   "calls": [
     [

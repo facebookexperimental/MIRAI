@@ -80,26 +80,36 @@ commit;
     "tests/call_graph/static_dom_loop.rs"
   ],
   "callables": [
-    [
-      "static_dom_loop.fn1",
-      false
-    ],
-    [
-      "static_dom_loop.fn2",
-      false
-    ],
-    [
-      "static_dom_loop.fn3",
-      false
-    ],
-    [
-      "static_dom_loop.fn4",
-      false
-    ],
-    [
-      "static_dom_loop.main",
-      false
-    ]
+    {
+      "name": "static_dom_loop.fn1",
+      "file_index": 0,
+      "first_line": 9,
+      "local": true
+    },
+    {
+      "name": "static_dom_loop.fn2",
+      "file_index": 0,
+      "first_line": 13,
+      "local": true
+    },
+    {
+      "name": "static_dom_loop.fn3",
+      "file_index": 0,
+      "first_line": 16,
+      "local": true
+    },
+    {
+      "name": "static_dom_loop.fn4",
+      "file_index": 0,
+      "first_line": 19,
+      "local": true
+    },
+    {
+      "name": "static_dom_loop.main",
+      "file_index": 0,
+      "first_line": 26,
+      "local": true
+    }
   ],
   "calls": [
     [

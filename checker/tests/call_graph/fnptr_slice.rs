@@ -61,22 +61,30 @@ commit;
     "tests/call_graph/fnptr_slice.rs"
   ],
   "callables": [
-    [
-      "fnptr_slice.fn1",
-      false
-    ],
-    [
-      "fnptr_slice.fn2",
-      false
-    ],
-    [
-      "fnptr_slice.fn3",
-      false
-    ],
-    [
-      "fnptr_slice.main",
-      false
-    ]
+    {
+      "name": "fnptr_slice.fn1",
+      "file_index": 0,
+      "first_line": 10,
+      "local": true
+    },
+    {
+      "name": "fnptr_slice.fn2",
+      "file_index": 0,
+      "first_line": 13,
+      "local": true
+    },
+    {
+      "name": "fnptr_slice.fn3",
+      "file_index": 0,
+      "first_line": 16,
+      "local": true
+    },
+    {
+      "name": "fnptr_slice.main",
+      "file_index": 0,
+      "first_line": 19,
+      "local": true
+    }
   ],
   "calls": [
     [

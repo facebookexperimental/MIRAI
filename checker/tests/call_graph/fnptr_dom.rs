@@ -70,22 +70,30 @@ commit;
     "tests/call_graph/fnptr_dom.rs"
   ],
   "callables": [
-    [
-      "fnptr_dom.fn1",
-      false
-    ],
-    [
-      "fnptr_dom.fn2",
-      false
-    ],
-    [
-      "fnptr_dom.fn3",
-      false
-    ],
-    [
-      "fnptr_dom.main",
-      false
-    ]
+    {
+      "name": "fnptr_dom.fn1",
+      "file_index": 0,
+      "first_line": 9,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom.fn2",
+      "file_index": 0,
+      "first_line": 13,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom.fn3",
+      "file_index": 0,
+      "first_line": 16,
+      "local": true
+    },
+    {
+      "name": "fnptr_dom.main",
+      "file_index": 0,
+      "first_line": 19,
+      "local": true
+    }
   ],
   "calls": [
     [

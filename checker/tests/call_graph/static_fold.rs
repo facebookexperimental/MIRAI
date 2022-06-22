@@ -64,33 +64,46 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/static_fold.rs",
+    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/std/src/io/stdio.rs",
     "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/fmt/mod.rs"
   ],
   "callables": [
-    [
-      "static_fold.fn1",
-      false
-    ],
-    [
-      "static_fold.fn2",
-      false
-    ],
-    [
-      "static_fold.fn3",
-      false
-    ],
-    [
-      "static_fold.main",
-      false
-    ],
-    [
-      "std.io.stdio._print",
-      true
-    ],
-    [
-      "core.fmt.implement_core_fmt_Arguments.new_v1",
-      false
-    ]
+    {
+      "name": "static_fold.fn1",
+      "file_index": 0,
+      "first_line": 10,
+      "local": true
+    },
+    {
+      "name": "static_fold.fn2",
+      "file_index": 0,
+      "first_line": 13,
+      "local": true
+    },
+    {
+      "name": "static_fold.fn3",
+      "file_index": 0,
+      "first_line": 16,
+      "local": true
+    },
+    {
+      "name": "static_fold.main",
+      "file_index": 0,
+      "first_line": 20,
+      "local": true
+    },
+    {
+      "name": "std.io.stdio._print",
+      "file_index": 1,
+      "first_line": 1027,
+      "local": false
+    },
+    {
+      "name": "core.fmt.implement_core_fmt_Arguments.new_v1",
+      "file_index": 2,
+      "first_line": 388,
+      "local": true
+    }
   ],
   "calls": [
     [
@@ -129,7 +142,7 @@ commit;
       5
     ],
     [
-      1,
+      2,
       390,
       13,
       5,

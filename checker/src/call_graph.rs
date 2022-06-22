@@ -1332,16 +1332,30 @@ struct CallSiteOutput {
     /// by this build. Absolute (but "virtual") paths for files from prebuild libraries, such as the
     /// Rust standard library.
     files: Vec<String>,
-    /// Fully qualified callable name including name of defining crate.
-    /// If the flag is true, this is an external call, i.e. the calls
-    /// made by the callee are not included in the list of calls.
-    /// Calls to higher order external functions are treated as local calls
-    /// because they are in effect templates that only have meaning when
-    /// specialized with call site information.
-    callables: Vec<(String, bool)>,
+    /// Metadata for each callable that is mentioned in the calls collection.
+    /// The index of the callable in this vector is the caller/callee index
+    /// that appears in a calls entry.
+    callables: Vec<Callable>,
     /// File index, line, column, caller index, callee index.
     /// Line and column numbers are 1 based.
     calls: Vec<(usize, usize, usize, usize, usize)>,
+}
+
+/// Metadata for each callable that is mentioned in the calls collection.
+#[derive(Serialize)]
+struct Callable {
+    /// Fully qualified callable name including name of defining crate.
+    name: String,
+    /// The index of the CallSiteOutput.files entry that provides the path
+    /// of the source file in which this callable is defined.
+    file_index: Option<usize>,
+    /// The 1-based number of the first source line of the callable.
+    first_line: Option<usize>,
+    /// If true, this callable is defined in the crate being analyzed, or it is a higher
+    /// order/generic function that may need specialized call site information before its
+    /// call graph can be precisely determined. If true, calls made inside this function
+    /// will show up in CallSiteOutput.calls.
+    local: bool,
 }
 
 impl CallSiteOutput {
@@ -1366,12 +1380,16 @@ impl CallSiteOutput {
                     &mut callable_index,
                     *caller,
                     call_graph,
+                    &mut files,
+                    &mut file_map,
                 );
                 let callee_index = Self::get_callable_index(
                     &mut callables,
                     &mut callable_index,
                     *callee,
                     call_graph,
+                    &mut files,
+                    &mut file_map,
                 );
                 calls.push((
                     file_index,
@@ -1412,20 +1430,40 @@ impl CallSiteOutput {
     }
 
     fn get_callable_index<'tcx>(
-        callables: &mut Vec<(String, bool)>,
+        callables: &mut Vec<Callable>,
         callable_index: &mut HashMap<DefId, usize>,
         callable: DefId,
         call_graph: &CallGraph<'tcx>,
+        files: &mut Vec<String>,
+        file_map: &mut HashMap<rustc_span::FileName, usize>,
     ) -> usize {
-        let tcx = call_graph.tcx;
         let index = callable_index.len();
         match callable_index.entry(callable) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
                 v.insert(index);
-                let name = crate::utils::summary_key_str(tcx, callable);
-                let external = call_graph.non_local_defs.contains(&callable);
-                callables.push((name.to_string(), external));
+                let tcx = call_graph.tcx;
+                let name = crate::utils::summary_key_str(tcx, callable).to_string();
+                let local = !call_graph.non_local_defs.contains(&callable);
+                let span = tcx.def_span(callable);
+                let source_map = tcx.sess.source_map();
+                let mut file_index = None;
+                let mut first_line = None;
+                if let Ok(line_and_file) = source_map.span_to_lines(span) {
+                    file_index = Some(Self::get_file_index(
+                        files,
+                        file_map,
+                        &line_and_file.file.name,
+                    ));
+                    first_line = line_and_file.lines.iter().next().map(|l| l.line_index + 1);
+                }
+                let callable = Callable {
+                    name,
+                    file_index,
+                    first_line,
+                    local,
+                };
+                callables.push(callable);
                 index
             }
         }
