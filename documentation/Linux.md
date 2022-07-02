@@ -19,6 +19,7 @@ On Ubuntu install it with
 
 ```
 sudo apt-get install libz3-dev
+sudo apt-get install libclang-dev
 ```
 
 If you are using a distribution other than Fedora or Ubuntu and neither of the options above are available to you,
