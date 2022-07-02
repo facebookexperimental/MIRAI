@@ -123,7 +123,7 @@ impl IntervalDomain {
         if other.lower_bound > 0 {
             IntervalDomain {
                 lower_bound: self.lower_bound / other.upper_bound,
-                upper_bound: self.upper_bound.saturating_add(other.lower_bound),
+                upper_bound: self.upper_bound / other.lower_bound,
             }
         } else {
             TOP.clone()
@@ -326,7 +326,7 @@ impl IntervalDomain {
         }
     }
 
-    // [x...y] * [a...b] = [x*a...y*b]
+    // [x,y] * [a,b] = [min(x*a, x*b, y*a, y*b), max(x*a, x*b, y*a, y*b)]
     #[logfn_inputs(TRACE)]
     #[must_use]
     pub fn mul(&self, other: &Self) -> Self {
@@ -336,9 +336,13 @@ impl IntervalDomain {
         if self.is_top() || other.is_top() {
             return TOP.clone();
         }
+        let xa = self.lower_bound.saturating_mul(other.lower_bound);
+        let xb = self.lower_bound.saturating_mul(other.upper_bound);
+        let ya = self.upper_bound.saturating_mul(other.lower_bound);
+        let yb = self.upper_bound.saturating_mul(other.upper_bound);
         IntervalDomain {
-            lower_bound: self.lower_bound.saturating_mul(other.lower_bound),
-            upper_bound: self.upper_bound.saturating_mul(other.upper_bound),
+            lower_bound: xa.min(xb).min(ya).min(yb),
+            upper_bound: xa.max(xb).max(ya).max(yb),
         }
     }
 
