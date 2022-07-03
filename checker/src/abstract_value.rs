@@ -3829,6 +3829,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             (Expression::CompileTimeConstant(ConstantDomain::False), _) => {
                 return other.clone();
             }
+            // [0 != ref] -> true
+            (
+                Expression::CompileTimeConstant(ConstantDomain::U128(0)),
+                Expression::Reference { .. },
+            ) => {
+                return Rc::new(TRUE);
+            }
             // [0 != (1 << x)] -> true (we can assume no overflows occur)
             (
                 Expression::CompileTimeConstant(ConstantDomain::U128(0)),
