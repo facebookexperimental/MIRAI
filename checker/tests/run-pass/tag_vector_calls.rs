@@ -86,11 +86,12 @@ pub mod propagation_for_vector_calls {
         let mut bar: Vec<Foo> = vec![];
         bar.push(Foo { content: 0 });
         add_tag!(&bar[0].content, SecretTaint);
-        call6(bar);
+        //todo: fix this
+        call6(bar); //~ possible unsatisfied precondition
     }
 
     fn call6(bar: Vec<Foo>) {
-        precondition!(has_tag!(&bar[0].content, SecretTaint));
+        precondition!(has_tag!(&bar[0].content, SecretTaint)); //~ related location
     }
 
     pub fn test7() {

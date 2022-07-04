@@ -31,7 +31,7 @@ impl Item {
     // Creates a new Item, satisfying the invariant.
     #[requires(!name.is_empty() && price > 0)]
     //#[ensures(ret.invariant())]
-    fn new(name: &str, price: u64) -> Item {
+    pub fn new(name: &str, price: u64) -> Item {
         Item {
             name: Rc::from(name),
             price,

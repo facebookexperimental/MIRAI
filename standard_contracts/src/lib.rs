@@ -11,7 +11,6 @@
 #![feature(exclusive_range_pattern)]
 #![feature(hashmap_internals)]
 #![feature(pattern)]
-#![feature(toowned_clone_into)]
 #![feature(ptr_internals)]
 #![feature(ptr_metadata)]
 #![feature(control_flow_enum)]

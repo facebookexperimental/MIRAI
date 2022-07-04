@@ -1006,7 +1006,7 @@ impl<'tcx> TypeVisitor<'tcx> {
         constant: Const<'tcx>,
         map: &Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     ) -> Const<'tcx> {
-        if let ConstKind::Param(param_const) = constant.val() {
+        if let ConstKind::Param(param_const) = constant.kind() {
             if let Some(gen_arg) = map.as_ref().unwrap().get(&param_const.name) {
                 return gen_arg.expect_const();
             }

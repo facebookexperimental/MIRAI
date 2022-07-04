@@ -377,8 +377,8 @@ fn add_predecessors_then_root_block<'tcx>(
 // predecessors (except in the case of loop anchors).
 #[logfn_inputs(TRACE)]
 #[logfn(TRACE)]
-fn get_sorted_block_indices(
-    mir: &'_ mir::Body<'_>,
+fn get_sorted_block_indices<'tcx>(
+    mir: &'tcx mir::Body<'tcx>,
     dominators: &Dominators<mir::BasicBlock>,
 ) -> (Vec<mir::BasicBlock>, HashSet<mir::BasicBlock>) {
     let mut block_indices = Vec::new();

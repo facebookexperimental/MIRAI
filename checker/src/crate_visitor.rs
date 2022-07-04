@@ -238,7 +238,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                             .literal
                             .const_for_ty()
                             .expect("expected function literal to have type")
-                            .val()
+                            .kind()
                         {
                             result.push(utils::def_id_display_name(
                                 self.tcx,
